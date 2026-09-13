@@ -1,6 +1,6 @@
 import { bindLegacySetlists, ensureSongIds, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
-export interface SyncLibrary { songs: ActiveSongState[]; setlists: WebSetlist[] }
+export interface SyncLibrary { songs: ActiveSongState[]; setlists: WebSetlist[]; allowedUsers?: string[] }
 const canonical = (value: unknown): string => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item)
 const equal = (a: unknown, b: unknown) => canonical(a) === canonical(b)
 // Stable IDs are authoritative. Legacy names resolve only references without IDs;

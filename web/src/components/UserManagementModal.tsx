@@ -21,9 +21,10 @@ import {
 interface UserManagementModalProps {
   isOpen: boolean
   onClose: () => void
+  onUpdateUsers?: () => void
 }
 
-export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen, onClose }) => {
+export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen, onClose, onUpdateUsers }) => {
   const [emails, setEmails] = useState<string[]>([])
   const [newEmail, setNewEmail] = useState('')
   const [error, setError] = useState('')
@@ -31,6 +32,13 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen
 
   const rootAdmin = (import.meta.env.VITE_ROOT_ADMIN_EMAIL as string | undefined) || DEFAULT_ROOT_ADMIN
   const configuredEmails = import.meta.env.VITE_AUTHORIZED_EMAILS as string | undefined
+
+  const notifyChange = () => {
+    onUpdateUsers?.()
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gtar:auth_updated'))
+    }
+  }
 
   const reload = () => {
     setEmails(getAuthorizedEmailsList(configuredEmails))
@@ -63,6 +71,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen
     addAuthorizedEmail(trimmed, configuredEmails)
     setNewEmail('')
     reload()
+    notifyChange()
   }
 
   const handleRemove = (emailToRemove: string) => {
@@ -73,6 +82,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen
     if (window.confirm(`Revoke access for ${emailToRemove}? They will be blocked upon their next session check.`)) {
       removeAuthorizedEmail(emailToRemove, configuredEmails, rootAdmin)
       reload()
+      notifyChange()
     }
   }
 
@@ -80,6 +90,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen
     if (window.confirm('Reset whitelist to default build configuration? All locally added emails will be cleared.')) {
       resetAuthorizedEmails()
       reload()
+      notifyChange()
     }
   }
 

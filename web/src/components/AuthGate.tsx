@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { authorizedEmail, allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
+import { authorizedEmail, allowLocalBypass, getUserRole, mergeCloudAuthorizedEmails, type UserRole } from '../utils/authPolicy'
 import { loadGoogleIdentity, readGoogleSession, requestGoogleSession, refreshGoogleSession, saveGoogleSession, validSession, verifyGoogleSession, type GoogleSession } from '../utils/googleAuth'
+import { pullCloudWhitelist } from '../utils/driveSync'
 import { GtaLogoIcon } from './GtaLogoIcon'
 
 interface AuthState {
@@ -80,9 +81,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const generation = ++epoch.current
     const cached = readGoogleSession()
     if (!cached) { saveGoogleSession(null); setChecking(false) }
-    else void verifyGoogleSession(cached).then(verified => {
+    else void verifyGoogleSession(cached).then(async verified => {
       if (generation !== epoch.current) return
-      saveGoogleSession(verified); setSession(verified)
+      saveGoogleSession(verified)
+      if (!authorizedEmail(verified.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)) {
+        try {
+          const cloudUsers = await pullCloudWhitelist(verified.token)
+          if (cloudUsers && Array.isArray(cloudUsers)) {
+            mergeCloudAuthorizedEmails(cloudUsers, import.meta.env.VITE_AUTHORIZED_EMAILS)
+          }
+        } catch { /* ignore network error; fallback to local */ }
+      }
+      if (generation !== epoch.current) return
+      setSession(verified)
     }).catch(() => {
       if (generation !== epoch.current) return
       saveGoogleSession(null); setError('Unable to verify your session. Please sign in again.')
@@ -144,9 +155,38 @@ export function AuthGate({ children }: { children: ReactNode }) {
     try {
       const next = await requestGoogleSession(clientId)
       if (generation !== epoch.current) return
+      if (!authorizedEmail(next.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)) {
+        try {
+          const cloudUsers = await pullCloudWhitelist(next.token)
+          if (cloudUsers && Array.isArray(cloudUsers)) {
+            mergeCloudAuthorizedEmails(cloudUsers, import.meta.env.VITE_AUTHORIZED_EMAILS)
+          }
+        } catch { /* ignore network error; fallback to local */ }
+      }
+      if (generation !== epoch.current) return
       saveGoogleSession(next); setBypass(false); setSession(next)
     } catch (failure) { if (generation === epoch.current) setError(failure instanceof Error ? failure.message : 'Sign-in failed.') }
     finally { if (generation === epoch.current) { setBusy(false); setChecking(false) } }
+  }
+
+  const recheckApproval = async () => {
+    if (!session || busy) return
+    setBusy(true); setError('')
+    try {
+      const cloudUsers = await pullCloudWhitelist(session.token)
+      if (cloudUsers && Array.isArray(cloudUsers)) {
+        mergeCloudAuthorizedEmails(cloudUsers, import.meta.env.VITE_AUTHORIZED_EMAILS)
+      }
+      if (authorizedEmail(session.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)) {
+        setSession({ ...session })
+      } else {
+        setError('Approval still pending. Ask the owner to add your email and sync.')
+      }
+    } catch {
+      setError('Unable to check cloud authorization. Check your connection.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const copyRequestInfo = () => {
@@ -180,7 +220,10 @@ User Agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'
       </p>
       {checking ? <p role="status">Verifying your session...</p> : denied ? (
         <div className="space-y-3">
-          <button className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 hover:bg-[#268bd2] transition-colors" onClick={copyRequestInfo}>
+          <button disabled={busy} className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 hover:bg-[#268bd2] transition-colors disabled:opacity-50" onClick={() => void recheckApproval()}>
+            {busy ? 'Checking Cloud Authorization...' : 'Check Approval Status'}
+          </button>
+          <button className="w-full rounded-xl bg-transparent border border-[#2AA198] text-[#2AA198] font-bold py-3 hover:bg-[#002B36] transition-colors" onClick={copyRequestInfo}>
             {copied ? 'Copied Request Info!' : 'Copy Request Info'}
           </button>
           <button className="w-full rounded-xl bg-transparent border border-[#93A1A1] text-[#93A1A1] font-semibold py-3 hover:bg-[#002B36] transition-colors" onClick={signOut}>

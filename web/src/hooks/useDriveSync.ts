@@ -3,6 +3,7 @@ import { createBackupPayload, exportRecoveryData } from '../utils/jsonBackup'
 import { clearDriveSession, readCloudRecovery, prepareCloudResolution, DriveSyncError, pullCloudBackup, pushCloudBackup } from '../utils/driveSync'
 import { validSession } from '../utils/googleAuth'
 import { openSyncJournal, persistLibrary, readRecoverySnapshots, isQuotaError } from '../utils/syncJournal'
+import { getAuthorizedEmailsList, mergeCloudAuthorizedEmails } from '../utils/authPolicy'
 import { useGoogleAuth } from '../components/AuthGate'
 import { mergeSyncLibrary, type SyncLibrary } from '../utils/syncMerge'
 import { isDefaultTemplateLibrary } from '../utils/defaultTemplateLibrary'
@@ -69,6 +70,9 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       journal.archive(null)
       const cloud = await pullCloudBackup(auth.token)
       if (epoch !== generation.current || latest.current.session?.user.sub !== auth.user.sub) return
+      if (cloud?.allowedUsers && Array.isArray(cloud.allowedUsers)) {
+        mergeCloudAuthorizedEmails(cloud.allowedUsers)
+      }
       journal.archive(cloud)
       const before = latest.current.library
 
@@ -84,7 +88,8 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       }
 
       journal.prepare(before, merged)
-      await pushCloudBackup(auth.token, createBackupPayload(merged.songs, merged.setlists))
+      const currentAllowedUsers = getAuthorizedEmailsList()
+      await pushCloudBackup(auth.token, createBackupPayload(merged.songs, merged.setlists, undefined, currentAllowedUsers))
       if (epoch !== generation.current || latest.current.session?.user.sub !== auth.user.sub) return
       journal.acknowledge()
       const current = mergeSyncLibrary(latest.current.library, merged, before)
@@ -126,6 +131,12 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
     window.addEventListener('online', online)
     return () => window.removeEventListener('online', online)
   }, [syncNow])
+  // Auto-sync when dynamic user whitelist is updated
+  useEffect(() => {
+    const handleAuthUpdate = () => { void syncNow() }
+    window.addEventListener('gtar:auth_updated', handleAuthUpdate)
+    return () => window.removeEventListener('gtar:auth_updated', handleAuthUpdate)
+  }, [syncNow])
   const publishResolvedLibrary = async () => {
     const auth = latest.current.session
     if (!auth || running.current) return
@@ -138,7 +149,8 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       await prepareCloudResolution(auth.token)
       if (epoch !== generation.current) return
       journal.prepare(before, before)
-      await pushCloudBackup(auth.token, createBackupPayload(before.songs, before.setlists))
+      const currentAllowedUsers = getAuthorizedEmailsList()
+      await pushCloudBackup(auth.token, createBackupPayload(before.songs, before.setlists, undefined, currentAllowedUsers))
       if (epoch !== generation.current) return
       journal.acknowledge()
       persistLibrary(latest.current.library)
@@ -169,6 +181,9 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       if (!cloud) {
         setStatus('Cloud library is empty. Nothing to adopt.')
         return
+      }
+      if (cloud.allowedUsers && Array.isArray(cloud.allowedUsers)) {
+        mergeCloudAuthorizedEmails(cloud.allowedUsers)
       }
       journal.archive(cloud)
       journal.prepare(before, cloud)

@@ -11,6 +11,7 @@ export interface FullBackupPayload extends BackupSettings {
   exportType: 'FULL_BACKUP'
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  allowedUsers?: string[]
 }
 export interface ParsedBackupResult extends BackupSettings {
   isValid: boolean
@@ -18,6 +19,7 @@ export interface ParsedBackupResult extends BackupSettings {
   singleSetlistName?: string
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  allowedUsers?: string[]
   error?: string
 }
 
@@ -36,13 +38,14 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
 }
 
 /** Download and clipboard share the same metadata and settings payload. */
-export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION): FullBackupPayload {
+export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, allowedUsers?: string[]): FullBackupPayload {
   const normalized = ensureSongIds(songs).map(normalizeBackupSong)
   const exportedSetlists = bindLegacySetlists(setlists, normalized)
   const errors = validateSetlistReferences(exportedSetlists, normalized)
   if (errors.length) throw new Error(`Backup blocked: ${errors.join('; ')}. Restore the missing songs or repair the setlist entries before exporting. Original data is unchanged.`)
   return { app: 'GTAR', version, exportedAt: new Date().toISOString(), exportType: 'FULL_BACKUP',
-    ...readBackupSettings(), songs: normalized, setlists: exportedSetlists }
+    ...readBackupSettings(), songs: normalized, setlists: exportedSetlists,
+    ...(allowedUsers && Array.isArray(allowedUsers) ? { allowedUsers } : {}) }
 }
 
 export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[]): string {
@@ -152,8 +155,12 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     const boundIncoming = bindLegacySetlists(setlists, songs)
     errors.push(...validateSetlistReferences(boundIncoming, combined))
     if (errors.length) return invalid(errors, single)
+    const allowedUsers = Array.isArray(data.allowedUsers)
+      ? data.allowedUsers.filter((u: unknown) => typeof u === 'string' && (u as string).trim().length > 0)
+      : undefined
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
-      ...settings, songs, setlists: bindLegacySetlists(boundIncoming, combined) }
+      ...settings, songs, setlists: bindLegacySetlists(boundIncoming, combined),
+      ...(allowedUsers ? { allowedUsers } : {}) }
   } catch (err) { return invalid([err instanceof Error ? err.message : 'Invalid JSON']) }
 }
 

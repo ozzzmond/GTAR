@@ -104,3 +104,28 @@ test('whitelist management supports add, remove, and protects root admin', () =>
     resetAuthorizedEmails()
   }
 })
+
+test('baseline whitelist includes johncriscaculitan01@gmail.com and jlopez3rd@gmail.com by default', () => {
+  const { authorizedEmail, getAuthorizedEmailsList, resetAuthorizedEmails } = require('../src/utils/authPolicy.ts')
+  resetAuthorizedEmails()
+  assert.equal(authorizedEmail('jlopez3rd@gmail.com'), true)
+  assert.equal(authorizedEmail('johncriscaculitan01@gmail.com'), true)
+  assert.equal(authorizedEmail(' JOHNCRISCACULITAN01@GMAIL.COM '), true)
+  const defaultList = getAuthorizedEmailsList()
+  assert.ok(defaultList.includes('jlopez3rd@gmail.com'))
+  assert.ok(defaultList.includes('johncriscaculitan01@gmail.com'))
+})
+
+test('mergeCloudAuthorizedEmails dynamically synchronizes and caches remote approved users', () => {
+  const { mergeCloudAuthorizedEmails, authorizedEmail, resetAuthorizedEmails } = require('../src/utils/authPolicy.ts')
+  resetAuthorizedEmails()
+  try {
+    assert.equal(authorizedEmail('newbandmate@example.com'), false)
+    const merged = mergeCloudAuthorizedEmails(['newbandmate@example.com', 'another@example.com'])
+    assert.ok(merged.includes('newbandmate@example.com'))
+    assert.equal(authorizedEmail('newbandmate@example.com'), true)
+    assert.equal(authorizedEmail('another@example.com'), true)
+  } finally {
+    resetAuthorizedEmails()
+  }
+})

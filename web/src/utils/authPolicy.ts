@@ -1,13 +1,16 @@
 export type UserRole = 'SUPER_ADMIN' | 'USER' | 'NONE'
 
 export const DEFAULT_ROOT_ADMIN = 'jlopez3rd@gmail.com'
+export const DEFAULT_BUILTIN_ALLOWED = [DEFAULT_ROOT_ADMIN, 'johncriscaculitan01@gmail.com']
+export const DEFAULT_AUTHORIZED_EMAILS = DEFAULT_BUILTIN_ALLOWED.join(', ')
 const WHITELIST_STORAGE_KEY = 'gtar_authorized_emails_override'
 
 // In-memory set to ensure overrides function reliably even if localStorage is unavailable
 let memoryOverrides: Set<string> | null = null
 
 export function getAuthorizedEmailsList(configured?: string): string[] {
-  const base = (configured ?? DEFAULT_ROOT_ADMIN)
+  const rawBase = configured !== undefined ? configured : DEFAULT_AUTHORIZED_EMAILS
+  const base = rawBase
     .split(/[,;\s]+/)
     .map(val => val.trim().toLowerCase())
     .filter(Boolean)
@@ -34,6 +37,29 @@ export function getAuthorizedEmailsList(configured?: string): string[] {
 
   const combined = new Set<string>([...base, ...memoryOverrides])
   return Array.from(combined)
+}
+
+export function mergeCloudAuthorizedEmails(cloudEmails: string[], configured?: string): string[] {
+  if (!Array.isArray(cloudEmails) || cloudEmails.length === 0) {
+    return getAuthorizedEmailsList(configured)
+  }
+  getAuthorizedEmailsList(configured)
+  let added = false
+  for (const email of cloudEmails) {
+    const cleaned = String(email).trim().toLowerCase()
+    if (cleaned && !memoryOverrides?.has(cleaned)) {
+      memoryOverrides?.add(cleaned)
+      added = true
+    }
+  }
+  if (added) {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+        localStorage.setItem(WHITELIST_STORAGE_KEY, JSON.stringify(Array.from(memoryOverrides ?? [])))
+      }
+    } catch { /* storage quota or blocked */ }
+  }
+  return getAuthorizedEmailsList(configured)
 }
 
 export function authorizedEmail(email: string, configured?: string): boolean {
