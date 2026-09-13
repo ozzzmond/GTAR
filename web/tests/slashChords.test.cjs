@@ -152,3 +152,37 @@ test('lyric text and English prose are never classified as chord lines', () => {
   }
 })
 
+test('stage view typography engine supports independent chord scaling, weights and line spacing', () => {
+  const raw = 'When the [G]night has [D/F#]come and the [Em]land is dark'
+  const parsed = parseGtarSong(raw)
+
+  // Test chord scale 120% with bold and relaxed line spacing (Stage Distance preset)
+  const html = renderToStaticMarkup(React.createElement(SongLineRenderer, {
+    lines: parsed.lines,
+    fontSizePx: 24,
+    chordScale: 1.2,
+    fontWeight: 'bold',
+    lineSpacing: 'relaxed',
+  }))
+
+  // Chords scaled and bold
+  assert.match(html, /font-black/)
+  assert.match(html, /padding:\s*8px 0 10px/)
+  assert.match(html, /line-height:\s*1\.6/)
+
+  // Check two-line mode preserves layout with transform scaling
+  const twoLineRaw = '  G   D/F#  Em\nSing along together'
+  const twoLineParsed = parseGtarSong(twoLineRaw)
+  const twoLineHtml = renderToStaticMarkup(React.createElement(SongLineRenderer, {
+    lines: twoLineParsed.lines,
+    fontSizePx: 20,
+    chordScale: 1.3,
+    fontWeight: 'medium',
+    lineSpacing: 'compact',
+  }))
+
+  assert.match(twoLineHtml, /scale\(1\.3\)/)
+  assert.match(twoLineHtml, /padding-top:\s*2px/)
+  assert.match(twoLineHtml, /Sing along together/)
+})
+

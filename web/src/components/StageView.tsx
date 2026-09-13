@@ -26,6 +26,7 @@ import {
   Cast,
   MoreHorizontal,
   SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
@@ -33,7 +34,12 @@ import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
 import { getChordVoicing, type ChordVoicing } from '../utils/chordDictionary'
-import { SongLineRenderer } from './SongLineRenderer'
+import {
+  SongLineRenderer,
+  type StageChordScale,
+  type StageFontWeight,
+  type StageLineSpacing,
+} from './SongLineRenderer'
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
@@ -67,6 +73,32 @@ interface StageViewProps {
 }
 
 
+
+export const STAGE_SIZE_PRESETS = {
+  S: 16,
+  M: 20,
+  L: 24, // Stage default
+  XL: 30,
+} as const
+
+export const CHORD_SCALE_OPTIONS: { value: StageChordScale; label: string }[] = [
+  { value: 1.0, label: '100%' },
+  { value: 1.1, label: '110%' },
+  { value: 1.2, label: '120%' },
+  { value: 1.3, label: '130%' },
+]
+
+export const FONT_WEIGHT_OPTIONS: { value: StageFontWeight; label: string }[] = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'bold', label: 'Bold' },
+]
+
+export const LINE_SPACING_OPTIONS: { value: StageLineSpacing; label: string }[] = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'relaxed', label: 'Relaxed' },
+]
 
 export const StageView: React.FC<StageViewProps> = ({
   song,
@@ -112,6 +144,144 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     return 20
   })
+
+  // Device-level persistent Stage Typography preferences
+  const [chordScale, setChordScaleState] = useState<StageChordScale>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_stage_chord_scale')
+      if (saved) {
+        const val = parseFloat(saved)
+        if ([1.0, 1.1, 1.2, 1.3].includes(val)) return val as StageChordScale
+      }
+    }
+    return 1.0
+  })
+
+  const [fontWeight, setFontWeightState] = useState<StageFontWeight>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_stage_font_weight')
+      if (saved && ['regular', 'medium', 'bold'].includes(saved)) {
+        return saved as StageFontWeight
+      }
+    }
+    return 'regular'
+  })
+
+  const [lineSpacing, setLineSpacingState] = useState<StageLineSpacing>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_stage_line_spacing')
+      if (saved && ['compact', 'normal', 'relaxed'].includes(saved)) {
+        return saved as StageLineSpacing
+      }
+    }
+    return 'normal'
+  })
+
+  const setChordScale = useCallback((scale: StageChordScale) => {
+    setChordScaleState(scale)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_stage_chord_scale', String(scale))
+    }
+  }, [])
+
+  const setFontWeight = useCallback((weight: StageFontWeight) => {
+    setFontWeightState(weight)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_stage_font_weight', weight)
+    }
+  }, [])
+
+  const setLineSpacing = useCallback((spacing: StageLineSpacing) => {
+    setLineSpacingState(spacing)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_stage_line_spacing', spacing)
+    }
+  }, [])
+
+  const setStageFontSize = useCallback((size: number) => {
+    const clamped = Math.max(12, Math.min(38, size))
+    setFontSizePx(clamped)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(clamped))
+    }
+  }, [])
+
+  // Double tap detection on numeric font size display to reset to Stage default (L / 24px)
+  const lastNumericTapRef = useRef<number>(0)
+  const handleNumericDoubleTap = useCallback(() => {
+    const now = Date.now()
+    if (now - lastNumericTapRef.current < 320) {
+      setStageFontSize(STAGE_SIZE_PRESETS.L)
+      lastNumericTapRef.current = 0
+    } else {
+      lastNumericTapRef.current = now
+    }
+  }, [setStageFontSize])
+
+  // Continuous hold on A- / A+ stepper
+  const holdStep = useCallback((delta: number) => {
+    setFontSizePx((prev) => {
+      const next = Math.max(12, Math.min(38, prev + delta))
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
+      }
+      return next
+    })
+  }, [])
+
+  const createHoldHandlers = useCallback((delta: number) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const clear = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+
+    const onPointerDown = (e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      holdStep(delta)
+      timer = setTimeout(() => {
+        interval = setInterval(() => {
+          holdStep(delta)
+        }, 70)
+      }, 320)
+    }
+
+    return {
+      onPointerDown,
+      onPointerUp: clear,
+      onPointerLeave: clear,
+      onPointerCancel: clear,
+    }
+  }, [holdStep])
+
+  // 1-Tap Stage Distance (1–2m) Master Preset
+  const isStageDistanceActive =
+    fontSizePx >= 24 &&
+    chordScale === 1.2 &&
+    fontWeight === 'bold' &&
+    lineSpacing === 'relaxed'
+
+  const handleToggleStageDistance = useCallback(() => {
+    if (isStageDistanceActive) {
+      setStageFontSize(STAGE_SIZE_PRESETS.M)
+      setChordScale(1.0)
+      setFontWeight('regular')
+      setLineSpacing('normal')
+    } else {
+      setStageFontSize(STAGE_SIZE_PRESETS.L)
+      setChordScale(1.2)
+      setFontWeight('bold')
+      setLineSpacing('relaxed')
+    }
+  }, [isStageDistanceActive, setStageFontSize, setChordScale, setFontWeight, setLineSpacing])
   const [localFontStyle, setLocalFontStyle] = useState<'mono' | 'sans' | 'serif'>('mono')
   const [localIsTwoColumn, setLocalIsTwoColumn] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -988,8 +1158,11 @@ export const StageView: React.FC<StageViewProps> = ({
       fontSizePx,
       fontStyle,
       isTwoColumn,
+      chordScale,
+      fontWeight,
+      lineSpacing,
     })
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
 
   useEffect(() => {
     // Listen for REQUEST_STATE from external teleprompter window
@@ -1004,10 +1177,13 @@ export const StageView: React.FC<StageViewProps> = ({
           fontSizePx,
           fontStyle,
           isTwoColumn,
+          chordScale,
+          fontWeight,
+          lineSpacing,
         })
       }
     )
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
 
   const handleChordClick = (chordName: string) => {
     const voicing = getChordVoicing(chordName)
@@ -1213,32 +1389,25 @@ export const StageView: React.FC<StageViewProps> = ({
           <div className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] p-0.5">
             <button
               type="button"
-              onClick={() => {
-                const next = Math.max(12, fontSizePx - 1)
-                setFontSizePx(next)
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
-                }
-              }}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none"
-              title="Decrease Font Size (A-)"
+              {...createHoldHandlers(-1)}
+              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              title="Decrease Font Size (Hold for smooth resizing)"
             >
               A-
             </button>
-            <span className="text-[11px] font-mono text-[#93A1A1] px-1 font-semibold">
+            <span
+              onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
+              onTouchStart={handleNumericDoubleTap}
+              className="text-[11px] font-mono text-[#93A1A1] px-1 font-semibold cursor-pointer select-none"
+              title="Double-tap to reset to Stage default (L / 24px)"
+            >
               {fontSizePx}
             </span>
             <button
               type="button"
-              onClick={() => {
-                const next = Math.min(38, fontSizePx + 1)
-                setFontSizePx(next)
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
-                }
-              }}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none"
-              title="Increase Font Size (A+)"
+              {...createHoldHandlers(1)}
+              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              title="Increase Font Size (Hold for smooth resizing)"
             >
               A+
             </button>
@@ -1462,6 +1631,9 @@ export const StageView: React.FC<StageViewProps> = ({
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
+                  chordScale={chordScale}
+                  fontWeight={fontWeight}
+                  lineSpacing={lineSpacing}
                 />
               </div>
 
@@ -1471,6 +1643,9 @@ export const StageView: React.FC<StageViewProps> = ({
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
+                  chordScale={chordScale}
+                  fontWeight={fontWeight}
+                  lineSpacing={lineSpacing}
                 />
               </div>
             </div>
@@ -1480,6 +1655,9 @@ export const StageView: React.FC<StageViewProps> = ({
               fontSizePx={fontSizePx}
               fontFamily={fontStyle}
               onChordClick={handleChordClick}
+              chordScale={chordScale}
+              fontWeight={fontWeight}
+              lineSpacing={lineSpacing}
             />
           )}
 
@@ -1679,16 +1857,54 @@ export const StageView: React.FC<StageViewProps> = ({
 
           {/* Sheet */}
           <div
-            className="relative z-10 rounded-t-3xl bg-[#073642] border-t border-x border-[#1A4A55] shadow-2xl px-5 pt-3"
+            className="relative z-10 rounded-t-3xl bg-[#073642] border-t border-x border-[#1A4A55] shadow-2xl px-5 pt-3 max-h-[85vh] overflow-y-auto"
             style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drag handle */}
             <div className="w-10 h-1 bg-[#1A4A55] rounded-full mx-auto mb-4" />
 
-            <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase mb-4 flex items-center gap-2">
-              <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
+              </h2>
+              {isStageDistanceActive && (
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  1–2m Stage Distance
+                </span>
+              )}
+            </div>
+
+            {/* --- One-Tap Stage Distance (1–2m) Master Preset --- */}
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={handleToggleStageDistance}
+                className={`w-full py-2.5 px-3 rounded-2xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
+                  isStageDistanceActive
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-md ring-1 ring-amber-500/40'
+                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:border-[#2AA198]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                    isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-amber-400'
+                  }`}>
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="font-bold text-xs">Stage Distance (1–2m)</span>
+                    <span className="text-[10px] text-[#93A1A1] font-mono">24px (L) • 120% Bold Chords • Relaxed</span>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-lg font-bold ${
+                  isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-[#93A1A1] border border-[#1A4A55]'
+                }`}>
+                  {isStageDistanceActive ? 'ACTIVE' : 'APPLY'}
+                </span>
+              </button>
+            </div>
 
             {/* --- Transpose row --- */}
             <div className="flex items-center gap-2 mb-4">
@@ -1719,21 +1935,122 @@ export const StageView: React.FC<StageViewProps> = ({
               </div>
             </div>
 
-            {/* --- Font size row --- */}
+            {/* --- Font size row & Presets --- */}
+            <div className="mb-4 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Font Size</span>
+                <div className="flex items-center bg-[#002B36] rounded-xl border border-[#1A4A55] flex-1">
+                  <button
+                    type="button"
+                    {...createHoldHandlers(-1)}
+                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    title="Decrease font size (Hold to adjust)"
+                  >
+                    A-
+                  </button>
+                  <span
+                    onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
+                    onTouchStart={handleNumericDoubleTap}
+                    className="flex-1 text-center text-sm font-mono font-bold text-[#B58900] cursor-pointer select-none py-1"
+                    title="Double-tap to reset to Stage default (L / 24px)"
+                  >
+                    {fontSizePx}px
+                  </span>
+                  <button
+                    type="button"
+                    {...createHoldHandlers(1)}
+                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    title="Increase font size (Hold to adjust)"
+                  >
+                    A+
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Stage Size Presets [ S | M | L | XL ] */}
+              <div className="flex items-center gap-1.5 pl-[88px]">
+                {(['S', 'M', 'L', 'XL'] as const).map((key) => {
+                  const size = STAGE_SIZE_PRESETS[key]
+                  const isSelected = fontSizePx === size
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setStageFontSize(size)}
+                      className={`flex-1 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer text-center ${
+                        isSelected
+                          ? 'bg-[#B58900] text-black border-[#B58900] shadow-sm'
+                          : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                      }`}
+                      title={`${key} (${size}px)`}
+                    >
+                      {key}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* --- Chord Scaling Ratio --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Font Size</span>
-              <div className="flex items-center bg-[#002B36] rounded-xl border border-[#1A4A55] flex-1">
-                <button type="button"
-                  onClick={() => { const n = Math.max(12, fontSizePx - 1); setFontSizePx(n); localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(n)) }}
-                  className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
-                  A-
-                </button>
-                <span className="flex-1 text-center text-sm font-mono font-bold text-[#B58900]">{fontSizePx}px</span>
-                <button type="button"
-                  onClick={() => { const n = Math.min(38, fontSizePx + 1); setFontSizePx(n); localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(n)) }}
-                  className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
-                  A+
-                </button>
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Chord Size</span>
+              <div className="grid grid-cols-4 gap-1.5 flex-1">
+                {CHORD_SCALE_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setChordScale(value)}
+                    className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                      chordScale === value
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* --- Font Weight --- */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Weight</span>
+              <div className="grid grid-cols-3 gap-1.5 flex-1">
+                {FONT_WEIGHT_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFontWeight(value)}
+                    className={`py-1.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
+                      fontWeight === value
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] font-bold shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* --- Line Spacing --- */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Spacing</span>
+              <div className="grid grid-cols-3 gap-1.5 flex-1">
+                {LINE_SPACING_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setLineSpacing(value)}
+                    className={`py-1.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
+                      lineSpacing === value
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] font-bold shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 

@@ -14,6 +14,9 @@ export interface StageCastState {
   fontSizePx: number
   fontStyle: 'mono' | 'sans' | 'serif'
   isTwoColumn: boolean
+  chordScale?: number
+  fontWeight?: 'regular' | 'medium' | 'bold'
+  lineSpacing?: 'compact' | 'normal' | 'relaxed'
   themeMode?: string
   customThemeColors?: {
     bgHex: string
