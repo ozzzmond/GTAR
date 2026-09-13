@@ -1,5 +1,5 @@
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
   createWakeLockController,
@@ -66,15 +66,7 @@ interface StageViewProps {
   onPerformanceModeChange?: (isActive: boolean) => void
 }
 
-/**
- * MetaBadge component matching Android SongViewerScreen.kt:
- * Surface(shape = RoundedCornerShape(6.dp), color = surfaceBackground, border = 1.dp divider)
- */
-const MetaBadge: React.FC<{ label: string }> = ({ label }) => (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#073642] border border-[#1A4A55] text-[#B58900] font-mono font-semibold text-xs uppercase tracking-wide select-none">
-    {label}
-  </span>
-)
+
 
 export const StageView: React.FC<StageViewProps> = ({
   song,
@@ -136,6 +128,41 @@ export const StageView: React.FC<StageViewProps> = ({
   const iosOnly = useMemo(() => isIosDevice() && !isStandalonePwa(), [])
   // True whenever the stage is in any full-attention performance mode
   const isPerformanceMode = isFullscreen || isDistractionFree
+
+  // Focus mode auto-hiding song title banner
+  const [showFocusTitle, setShowFocusTitle] = useState(true)
+  const titleHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastScrollTopRef = useRef<number>(0)
+
+  const triggerTitleShow = useCallback(() => {
+    setShowFocusTitle(true)
+    if (titleHideTimeoutRef.current) {
+      clearTimeout(titleHideTimeoutRef.current)
+    }
+    titleHideTimeoutRef.current = setTimeout(() => {
+      setShowFocusTitle(false)
+    }, 3500)
+  }, [])
+
+  useEffect(() => {
+    if (isPerformanceMode) {
+      triggerTitleShow()
+    } else {
+      setShowFocusTitle(false)
+      if (titleHideTimeoutRef.current) {
+        clearTimeout(titleHideTimeoutRef.current)
+        titleHideTimeoutRef.current = null
+      }
+    }
+  }, [isPerformanceMode, song.id, song.title, triggerTitleShow])
+
+  useEffect(() => {
+    return () => {
+      if (titleHideTimeoutRef.current) {
+        clearTimeout(titleHideTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const fontStyle = externalFontStyle !== undefined ? externalFontStyle : localFontStyle
   const setFontStyle = externalOnSelectFontStyle || setLocalFontStyle
@@ -399,6 +426,25 @@ export const StageView: React.FC<StageViewProps> = ({
   // the scroll position (e.g. touch-scroll during autoscroll pause).
   const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget
+    const currentTop = target.scrollTop
+    const isScrollingDown = currentTop > lastScrollTopRef.current + 5
+    const isAtTop = currentTop <= 20
+
+    if (inPerformanceMode) {
+      if (isScrollingDown && currentTop > 30) {
+        // Immediately fades/hides when the user scrolls down
+        setShowFocusTitle(false)
+        if (titleHideTimeoutRef.current) {
+          clearTimeout(titleHideTimeoutRef.current)
+          titleHideTimeoutRef.current = null
+        }
+      } else if (isAtTop) {
+        // Re-appears momentarily when scrolling back to the top
+        triggerTitleShow()
+      }
+    }
+    lastScrollTopRef.current = currentTop
+
     const maxScroll = target.scrollHeight - target.clientHeight
     const fraction = maxScroll > 0 ? target.scrollTop / maxScroll : 0
 
@@ -455,6 +501,129 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }
 
+  const handlePrevSong = useCallback(() => {
+    if (isInSetlistMode && onSelectSetlistSongIndex) {
+      if (activeSetlistSongIndex > 0) {
+        onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
+      }
+    } else if (activeSongIndex > 0) {
+      onSelectSongIndex(activeSongIndex - 1)
+    }
+  }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSongIndex, onSelectSongIndex])
+
+  const handleNextSong = useCallback(() => {
+    if (isInSetlistMode && onSelectSetlistSongIndex) {
+      if (activeSetlistSongIndex < activeSetlistSongs.length - 1) {
+        onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
+      }
+    } else if (activeSongIndex < songs.length - 1) {
+      onSelectSongIndex(activeSongIndex + 1)
+    }
+  }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSetlistSongs.length, activeSongIndex, songs.length, onSelectSongIndex])
+
+  const handlePrevSongRef = useRef(handlePrevSong)
+  handlePrevSongRef.current = handlePrevSong
+  const handleNextSongRef = useRef(handleNextSong)
+  handleNextSongRef.current = handleNextSong
+  const fontSizePxRef = useRef(fontSizePx)
+  fontSizePxRef.current = fontSizePx
+
+  // Pinch-to-Zoom & Horizontal Swipe Navigation Gesture Listener
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    let initialPinchDist = 0
+    let initialPinchFontSize = fontSizePxRef.current
+    let lastPinchSize = fontSizePxRef.current
+    let isPinching = false
+
+    let touchStartX = 0
+    let touchStartY = 0
+    let touchStartTime = 0
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        isPinching = true
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        )
+        initialPinchFontSize = fontSizePxRef.current
+        lastPinchSize = fontSizePxRef.current
+      } else if (e.touches.length === 1) {
+        isPinching = false
+        initialPinchDist = 0
+        touchStartX = e.touches[0].clientX
+        touchStartY = e.touches[0].clientY
+        touchStartTime = Date.now()
+      }
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && initialPinchDist > 0) {
+        if (e.cancelable) e.preventDefault()
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        )
+        const scale = currentDist / initialPinchDist
+        const targetSize = Math.round(initialPinchFontSize * scale)
+        const clamped = Math.max(12, Math.min(38, targetSize))
+        if (clamped !== lastPinchSize) {
+          lastPinchSize = clamped
+          setFontSizePx(clamped)
+        }
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (isPinching) {
+        if (e.touches.length < 2) {
+          isPinching = false
+          initialPinchDist = 0
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(lastPinchSize))
+          }
+        }
+        return
+      }
+
+      if (e.changedTouches.length === 1) {
+        const touchEndX = e.changedTouches[0].clientX
+        const touchEndY = e.changedTouches[0].clientY
+        const deltaX = touchEndX - touchStartX
+        const deltaY = touchEndY - touchStartY
+        const elapsed = Date.now() - touchStartTime
+
+        // Strict horizontal angle tolerance to ensure normal vertical scrolling is never interrupted
+        if (
+          Math.abs(deltaX) >= 50 &&
+          Math.abs(deltaX) >= Math.abs(deltaY) * 1.5 &&
+          (elapsed < 600 || Math.abs(deltaX) >= 90)
+        ) {
+          if (deltaX < 0) {
+            handleNextSongRef.current()
+          } else {
+            handlePrevSongRef.current()
+          }
+        }
+      }
+    }
+
+    container.addEventListener('touchstart', onTouchStart, { passive: true })
+    container.addEventListener('touchmove', onTouchMove, { passive: false })
+    container.addEventListener('touchend', onTouchEnd, { passive: true })
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true })
+
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart)
+      container.removeEventListener('touchmove', onTouchMove)
+      container.removeEventListener('touchend', onTouchEnd)
+      container.removeEventListener('touchcancel', onTouchEnd)
+    }
+  }, [])
+
   // Keyboard stage controls:
   // - Spacebar: Toggle Auto-Scroll (Play / Pause)
   // - ArrowRight or 'n': Next song in setlist
@@ -481,26 +650,14 @@ export const StageView: React.FC<StageViewProps> = ({
       // ArrowRight or 'n': Next song in setlist or library
       if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {
         e.preventDefault()
-        if (isInSetlistMode && onSelectSetlistSongIndex) {
-          if (activeSetlistSongIndex < activeSetlistSongs.length - 1) {
-            onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
-          }
-        } else if (activeSongIndex < songs.length - 1) {
-          onSelectSongIndex(activeSongIndex + 1)
-        }
+        handleNextSong()
         return
       }
 
       // ArrowLeft or 'p': Previous song in setlist or library
       if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {
         e.preventDefault()
-        if (isInSetlistMode && onSelectSetlistSongIndex) {
-          if (activeSetlistSongIndex > 0) {
-            onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
-          }
-        } else if (activeSongIndex > 0) {
-          onSelectSongIndex(activeSongIndex - 1)
-        }
+        handlePrevSong()
         return
       }
 
@@ -649,27 +806,64 @@ export const StageView: React.FC<StageViewProps> = ({
       style={{ height: inPerformanceMode ? '100vh' : 'calc(100vh - 4rem)' }}
     >
       {/* =================================================================== */}
-      {/* PERFORMANCE MODE — discreet top-edge safe-area exit tap zone only.  */}
-      {/* No HUD here: avoids Dynamic Island / notch on iOS.                  */}
+      {/* PERFORMANCE MODE — Focus Mode Auto-Hiding Song Title Banner        */}
       {/* =================================================================== */}
       {inPerformanceMode && (
-        <button
-          type="button"
-          onClick={() => {
-            if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
-            else setIsDistractionFree(false)
-          }}
-          className="absolute z-50 left-1/2 -translate-x-1/2 opacity-0 hover:opacity-100
-                     focus:opacity-100 transition-opacity duration-300
-                     flex items-center gap-1 px-3 py-1 rounded-b-xl
-                     bg-black/50 backdrop-blur-md text-white/60 text-[10px]
-                     font-mono uppercase tracking-widest cursor-pointer border-x border-b border-white/10"
-          style={{ top: 'env(safe-area-inset-top, 0px)' }}
-          aria-label="Exit performance mode"
-          title="Exit performance mode (tap or press Esc)"
+        <div
+          onClick={triggerTitleShow}
+          className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 sm:px-6 py-2.5
+                      bg-[#073642]/95 backdrop-blur-md border-b border-[#1A4A55] shadow-xl
+                      transition-all duration-300 ease-in-out transform ${
+                        showFocusTitle
+                          ? 'opacity-100 translate-y-0 pointer-events-auto'
+                          : 'opacity-0 -translate-y-full pointer-events-none'
+                      }`}
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
         >
-          <Minimize2 className="w-2.5 h-2.5" /> Exit
-        </button>
+          <div className="min-w-0 flex-1 pr-3">
+            <h1 className="text-base sm:text-lg font-extrabold text-[#EEE8D5] tracking-tight leading-tight truncate">
+              {song.title || 'Untitled Song'}
+            </h1>
+            {song.artist && (
+              <p className="text-[11px] sm:text-xs text-[#2AA198] font-semibold truncate leading-none mt-0.5">
+                {song.artist}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {effectiveKey && (
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#002B36] text-[#B58900] border border-[#B58900]/40">
+                {effectiveKey}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
+                else setIsDistractionFree(false)
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#EEE8D5] text-xs font-semibold
+                         flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
+              title="Exit focus mode"
+              aria-label="Exit focus mode"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px]">Exit</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top area tap zone to reveal the banner when hidden */}
+      {inPerformanceMode && !showFocusTitle && (
+        <div
+          onClick={triggerTitleShow}
+          className="absolute top-0 left-0 right-0 h-14 z-30 cursor-pointer pointer-events-auto"
+          style={{ top: 'env(safe-area-inset-top, 0px)' }}
+          aria-label="Reveal song title banner"
+          title="Tap to show song title"
+        />
       )}
 
       {/* =================================================================== */}
@@ -963,28 +1157,9 @@ export const StageView: React.FC<StageViewProps> = ({
         ref={scrollContainerRef}
         onScroll={handleContainerScroll}
         onTouchStart={handleContainerTouchStart}
-        className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-4 select-text"
+        className="flex-1 overflow-y-auto overflow-x-auto px-3 sm:px-6 md:px-8 py-4 select-text"
       >
         <div className={`mx-auto transition-all ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}>
-          {/* Metadata Header Badges (Key, Capo, 2 Columns / Format) */}
-          <div className="flex items-center gap-2 pb-3 flex-wrap">
-            {effectiveKey && <MetaBadge label={`KEY: ${effectiveKey}`} />}
-            {song.capo &&
-              song.capo.toLowerCase() !== 'no capo' &&
-              song.capo.toLowerCase() !== 'none' && (
-                <MetaBadge
-                  label={
-                    song.capo.toLowerCase().startsWith('capo')
-                      ? song.capo.toUpperCase()
-                      : `CAPO: ${song.capo}`
-                  }
-                />
-              )}
-            <MetaBadge label={isTwoColumn ? '2 COLUMNS' : '1 COLUMN'} />
-          </div>
-
-          {/* HorizontalDivider (color = customColors.divider, thickness = 1.dp) */}
-          <div className="h-[1px] bg-[#1A4A55] mb-4" />
 
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
           {song.isMissing ? (
@@ -1046,10 +1221,7 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             disabled={isInSetlistMode ? activeSetlistSongIndex <= 0 : activeSongIndex <= 0}
-            onClick={() => {
-              if (isInSetlistMode && onSelectSetlistSongIndex) onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
-              else if (!isInSetlistMode) onSelectSongIndex(activeSongIndex - 1)
-            }}
+            onClick={handlePrevSong}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
             }`}
@@ -1074,10 +1246,7 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             disabled={isInSetlistMode ? activeSetlistSongIndex >= activeSetlistSongs.length - 1 : activeSongIndex >= songs.length - 1}
-            onClick={() => {
-              if (isInSetlistMode && onSelectSetlistSongIndex) onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
-              else if (!isInSetlistMode) onSelectSongIndex(activeSongIndex + 1)
-            }}
+            onClick={handleNextSong}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
             }`}

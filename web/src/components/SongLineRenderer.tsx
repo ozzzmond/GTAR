@@ -143,9 +143,11 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   lineHeight: `${fontSizePx * 1.35}px`,
                   letterSpacing: '0.8px',
                   color: '#B58900',
-                  whiteSpace: 'pre',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
                 }}
-                className={`stage-mono stage-chord-text font-bold whitespace-pre select-text`}
+                className={`stage-mono stage-chord-text font-bold whitespace-pre-wrap select-text`}
               >
                 {renderInteractiveChordLine(line.raw, onChordClick)}
               </div>
@@ -167,9 +169,11 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                         lineHeight: `${fontSizePx * 1.35}px`,
                         letterSpacing: '0.8px',
                         color: '#B58900',
-                  whiteSpace: 'pre',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'break-word',
                       }}
-                      className={`stage-mono stage-chord-text font-bold whitespace-pre`}
+                      className={`stage-mono stage-chord-text font-bold whitespace-pre-wrap`}
                     >
                       {renderInteractiveChordLine(chordLine, onChordClick)}
                     </div>
@@ -183,8 +187,11 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                         lineHeight: `${fontSizePx * 1.35}px`,
                         letterSpacing: '0.8px',
                         color: '#EEE8D5',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'break-word',
                       }}
-                      className={`stage-mono stage-lyric-text font-normal whitespace-pre`}
+                      className={`stage-mono stage-lyric-text font-normal whitespace-pre-wrap`}
                     >
                       {lyricLine}
                     </div>
@@ -205,8 +212,11 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   lineHeight: `${fontSizePx * 1.35}px`,
                   letterSpacing: '0.8px',
                   color: '#EEE8D5',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
                 }}
-                className={`stage-mono stage-lyric-text font-normal whitespace-pre select-text`}
+                className={`stage-mono stage-lyric-text font-normal whitespace-pre-wrap select-text`}
               >
                 {line.lyrics}
               </div>
