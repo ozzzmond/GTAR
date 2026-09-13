@@ -6,15 +6,16 @@ import {
   Type,
   User,
   Tag,
-  Check,
+  Save,
   FileEdit,
   Library,
   Bookmark,
   ClipboardPaste,
   Copy,
   Trash2,
-  Sparkles,
   ArrowLeft,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react'
 import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
@@ -54,6 +55,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
   const [isSaved, setIsSaved] = useState(true)
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
 
   // Reset local state when active song changes
   useEffect(() => {
@@ -100,7 +102,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     }
 
     setIsSaved(true)
-    showToast('Song saved successfully')
+    showToast('Songbook saved!')
   }
 
   // Toggle quick genre tag chip
@@ -330,196 +332,112 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-[#002B36]">
       {/* =================================================================== */}
-      {/* 1. TOP BAR: Title & Primary Amber [ ✓ Save Changes ] Action         */}
+      {/* 1. TOP BAR: Compact Header & Save Icon Action                       */}
       {/* =================================================================== */}
-      <div className="border-b border-[#1A4A55] bg-[#073642] px-4 py-2.5 flex items-center justify-between gap-3 select-none shrink-0 shadow-sm">
-        <div className="flex items-center gap-3">
+      <div className="border-b border-[#1A4A55] bg-[#073642] px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#93A1A1] hover:text-[#FDF6E3] hover:border-[#2AA198] transition-colors cursor-pointer"
+              className="p-1 sm:p-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#93A1A1] hover:text-[#FDF6E3] hover:border-[#2AA198] transition-colors cursor-pointer shrink-0"
               title="Return to Stage View"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           )}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#002B36] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
-              <FileEdit className="w-4 h-4" />
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-[#002B36] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198] shrink-0">
+              <FileEdit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-black text-sm text-[#FDF6E3] tracking-wide">
-                  Songbook Editor
+                <span className="font-bold text-xs sm:text-sm text-[#FDF6E3] tracking-wide">
+                  Editor
                 </span>
                 {!isSaved ? (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    Unsaved Edits
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Unsaved
                   </span>
                 ) : (
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30">
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30">
                     Saved
                   </span>
                 )}
               </div>
-              <span className="text-[11px] text-[#93A1A1] font-mono truncate max-w-[240px] sm:max-w-[400px]">
+              <span className="text-[10px] sm:text-[11px] text-[#93A1A1] font-mono truncate max-w-[180px] sm:max-w-[400px]">
                 {localTitle || 'Untitled Song'} {localArtist ? `• ${localArtist}` : ''}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Primary Action Save Button: Amber/Yellow bg-amber-500 hover:bg-amber-600 */}
-        <div className="flex items-center gap-2">
+        {/* Compact Save Action Button */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleSave}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
-            title="Save changes to Songbook Library"
+            className="p-1.5 sm:p-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-black shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
+            title="Save changes"
+            aria-label="Save changes"
           >
-            <Check className="w-4 h-4 text-black stroke-[3]" />
-            <span>✓ Save Changes</span>
+            <Save className="w-4 h-4 text-black stroke-[2.5]" />
           </button>
         </div>
       </div>
 
       {/* =================================================================== */}
-      {/* 2. METADATA STRIP: Title, Artist, Key, Capo, BPM, & Quick Tags      */}
+      {/* 2. SUB-HEADER: Title, Artist & Collapsible Metadata Drawer/Modal    */}
       {/* =================================================================== */}
-      <div className="border-b border-[#1A4A55] bg-[#073642]/80 px-4 py-2.5 flex flex-col gap-2 text-xs shrink-0">
-        {/* Row 1: Basic Song Metadata */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Song Title */}
-          <div className="flex-[1.8] min-w-[180px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-            <Type className="w-3.5 h-3.5 text-[#2AA198] shrink-0" />
-            <input
-              type="text"
-              value={localTitle}
-              onChange={(e) => {
-                setIsSaved(false)
-                setLocalTitle(e.target.value)
-                onUpdateSong({ title: e.target.value })
-              }}
-              placeholder="Song Title *"
-              className="w-full bg-transparent text-[#FDF6E3] font-semibold focus:outline-none placeholder-[#93A1A1]/60"
-            />
-          </div>
-
-          {/* Artist */}
-          <div className="flex-[1.4] min-w-[150px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-            <User className="w-3.5 h-3.5 text-[#93A1A1] shrink-0" />
-            <span className="text-[#93A1A1] font-mono text-[11px] shrink-0">ARTIST:</span>
-            <input
-              type="text"
-              value={localArtist}
-              onChange={(e) => {
-                setIsSaved(false)
-                setLocalArtist(e.target.value)
-                onUpdateSong({ artist: e.target.value })
-              }}
-              placeholder="Artist / Band"
-              className="w-full bg-transparent text-[#EEE8D5] focus:outline-none placeholder-[#93A1A1]/60"
-            />
-          </div>
-
-          {/* Key */}
-          <div className="w-24 sm:w-28 flex items-center gap-1.5 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#B58900] transition-colors">
-            <Music className="w-3.5 h-3.5 text-[#B58900] shrink-0" />
-            <span className="text-[#93A1A1] font-mono text-[11px] shrink-0">KEY:</span>
-            <input
-              type="text"
-              value={localKey}
-              onChange={(e) => {
-                setIsSaved(false)
-                setLocalKey(e.target.value)
-                onUpdateSong({ key: e.target.value })
-              }}
-              placeholder="e.g. G"
-              className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center uppercase"
-            />
-          </div>
-
-          {/* Capo */}
-          <div className="w-28 sm:w-32 flex items-center gap-1.5 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-            <Hash className="w-3.5 h-3.5 text-[#2AA198] shrink-0" />
-            <span className="text-[#93A1A1] font-mono text-[11px] shrink-0">CAPO:</span>
-            <input
-              type="text"
-              value={localCapo}
-              onChange={(e) => {
-                setIsSaved(false)
-                setLocalCapo(e.target.value)
-                onUpdateSong({ capo: e.target.value })
-              }}
-              placeholder="No Capo"
-              className="w-full bg-transparent text-[#EEE8D5] font-mono focus:outline-none text-center"
-            />
-          </div>
-
-          {/* BPM */}
-          <div className="w-24 sm:w-28 flex items-center gap-1.5 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#CB4B16] transition-colors">
-            <Activity className="w-3.5 h-3.5 text-[#CB4B16] shrink-0" />
-            <span className="text-[#93A1A1] font-mono text-[11px] shrink-0">BPM:</span>
-            <input
-              type="text"
-              value={localBpm}
-              onChange={(e) => {
-                setIsSaved(false)
-                setLocalBpm(e.target.value)
-                onUpdateSong({ bpm: e.target.value })
-              }}
-              placeholder="120"
-              className="w-full bg-transparent text-[#CB4B16] font-mono focus:outline-none text-center"
-            />
-          </div>
+      <div className="border-b border-[#1A4A55] bg-[#073642]/80 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 text-xs shrink-0">
+        {/* Song Title */}
+        <div className="flex-[1.8] min-w-[130px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+          <Type className="w-3.5 h-3.5 text-[#2AA198] shrink-0" />
+          <input
+            type="text"
+            value={localTitle}
+            onChange={(e) => {
+              setIsSaved(false)
+              setLocalTitle(e.target.value)
+              onUpdateSong({ title: e.target.value })
+            }}
+            placeholder="Song Title *"
+            className="w-full bg-transparent text-[#FDF6E3] font-semibold focus:outline-none placeholder-[#93A1A1]/60 text-xs sm:text-sm"
+          />
         </div>
 
-        {/* Row 2: Genre Tags Input + Quick Suggestion Chips (Parity with Android) */}
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-amber-500/60 transition-colors">
-            <Tag className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <input
-              type="text"
-              value={localTags}
-              onChange={(e) => {
-                setIsSaved(false)
-                setLocalTags(e.target.value)
-                onUpdateSong({ tags: e.target.value })
-              }}
-              placeholder="Tags (e.g. Worship, OPM, Acoustic, Rock)"
-              className="w-full bg-transparent text-[#EEE8D5] font-mono text-[11px] focus:outline-none placeholder-[#93A1A1]/60"
-            />
-          </div>
+        {/* Artist */}
+        <div className="flex-[1.4] min-w-[110px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+          <User className="w-3.5 h-3.5 text-[#93A1A1] shrink-0" />
+          <input
+            type="text"
+            value={localArtist}
+            onChange={(e) => {
+              setIsSaved(false)
+              setLocalArtist(e.target.value)
+              onUpdateSong({ artist: e.target.value })
+            }}
+            placeholder="Artist / Band"
+            className="w-full bg-transparent text-[#EEE8D5] focus:outline-none placeholder-[#93A1A1]/60 text-xs"
+          />
+        </div>
 
-          {/* Quick Tag Suggestion Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-            <span className="text-[10px] font-mono text-[#93A1A1] uppercase tracking-wider mr-0.5">
-              Quick Tags:
+        {/* Compact Metadata / Settings Icon Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsMetadataModalOpen(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] text-[#93A1A1] hover:text-[#FDF6E3] font-mono text-xs transition-colors cursor-pointer shrink-0"
+          title="Song Details & Metadata (Key, Capo, BPM, Tags)"
+          aria-label="Song Details & Metadata"
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5 text-[#2AA198]" />
+          <span className="hidden sm:inline">Details</span>
+          {(localKey || localCapo || localBpm) ? (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 max-w-[120px] truncate">
+              {[localKey && `Key: ${localKey}`, localCapo && `Capo: ${localCapo}`, localBpm && `${localBpm} BPM`].filter(Boolean).join(' • ')}
             </span>
-            {QUICK_GENRE_TAGS.map((tag) => {
-              const isSelected = localTags
-                .split(',')
-                .map((t) => t.trim().toLowerCase())
-                .includes(tag.toLowerCase())
-
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => handleToggleTag(tag)}
-                  className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
-                      : 'bg-[#002B36] text-[#93A1A1] border-[#1A4A55] hover:text-[#FDF6E3] hover:border-[#2AA198]/60'
-                  }`}
-                >
-                  {tag}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+          ) : null}
+        </button>
       </div>
 
       {/* =================================================================== */}
@@ -586,21 +504,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <span>Clear</span>
               </button>
             </div>
-
-            {/* Right: Quick ChordPro Format Standardizer Badge */}
-            <button
-              type="button"
-              onClick={() => {
-                const cleaned = standardizeChordProBrackets(localRawContent)
-                handleRawContentChange(cleaned)
-                showToast('Standardized to ChordPro bracket notation [Chord]')
-              }}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#002B36] border border-[#1A4A55] hover:border-amber-500/60 text-[#93A1A1] hover:text-amber-300 font-mono text-[11px] transition-colors cursor-pointer"
-              title="Ensure all chords are in ChordPro bracket notation [C]"
-            >
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>ChordPro Format</span>
-            </button>
           </div>
 
           {/* Quick Section Snippets Bar */}
@@ -630,42 +533,16 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             />
           </div>
 
-          {/* Editor Footer Status */}
-          <div className="h-7 px-4 bg-[#073642] border-t border-[#1A4A55] flex items-center justify-between text-[11px] font-mono text-[#93A1A1] shrink-0 select-none">
-            <span>
-              Lines: {localRawContent.split('\n').length} | Characters: {localRawContent.length}
-            </span>
-            <span className="text-[#2AA198] flex items-center gap-1">
-              <span>Standard ChordPro [Bracket] Notation</span>
-            </span>
-          </div>
         </div>
 
         {/* ----------------------------------------------------------------- */}
         {/* RIGHT PANE: Live Real-time Stage Preview Sync                     */}
         {/* ----------------------------------------------------------------- */}
         <div className="flex-1 flex flex-col bg-[#002B36] h-1/2 md:h-full overflow-hidden">
-          <div className="px-4 py-2 bg-[#073642] border-b border-[#1A4A55] flex items-center justify-between shrink-0 select-none">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-bold text-[#B58900] uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#B58900] animate-pulse" />
-                Live Stage Preview
-              </span>
-              {transposeOffset !== 0 && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#B58900]/15 text-[#B58900] border border-[#B58900]/30 font-bold">
-                  Transposed ({transposeOffset > 0 ? `+${transposeOffset}` : transposeOffset})
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] font-mono text-[#93A1A1]">
-              Real-time 1:1 Stage Sync
-            </span>
-          </div>
-
           {/* Formatted Song Rendering */}
-          <div className="flex-1 p-6 overflow-y-auto bg-[#002B36] select-text">
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[#002B36] select-text">
             {/* Song Preview Header */}
-            <div className="mb-6 pb-4 border-b border-[#1A4A55]/50">
+            <div className="mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-[#1A4A55]/50">
               <h1 className="text-2xl font-bold text-[#FDF6E3] tracking-tight mb-1">
                 {localTitle || parsedSong.title || 'Untitled Song'}
               </h1>
@@ -713,13 +590,161 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             <SongLineRenderer lines={parsedSong.lines} fontSizePx={16} />
           </div>
 
-          {/* Right Footer */}
-          <div className="h-7 px-4 bg-[#073642] border-t border-[#1A4A55] flex items-center justify-between text-[11px] font-mono text-[#93A1A1] shrink-0 select-none">
-            <span>High Contrast Solarized Engine</span>
-            <span className="text-[#859900] font-semibold">Stage Ready</span>
-          </div>
         </div>
       </div>
+
+      {/* Song Metadata & Settings Modal */}
+      {isMetadataModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[#073642] border border-[#1A4A55] rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-[#1A4A55] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#002B36] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-sm text-[#FDF6E3]">Song Details & Metadata</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMetadataModalOpen(false)}
+                className="p-1 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Inputs: Key, Capo, BPM */}
+            <div className="grid grid-cols-3 gap-2.5">
+              {/* Key */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Music className="w-3 h-3 text-[#B58900]" />
+                  <span>Key</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#B58900] transition-colors">
+                  <input
+                    type="text"
+                    value={localKey}
+                    onChange={(e) => {
+                      setIsSaved(false)
+                      setLocalKey(e.target.value)
+                      onUpdateSong({ key: e.target.value })
+                    }}
+                    placeholder="e.g. G"
+                    className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center uppercase text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Capo */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Hash className="w-3 h-3 text-[#2AA198]" />
+                  <span>Capo</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+                  <input
+                    type="text"
+                    value={localCapo}
+                    onChange={(e) => {
+                      setIsSaved(false)
+                      setLocalCapo(e.target.value)
+                      onUpdateSong({ capo: e.target.value })
+                    }}
+                    placeholder="e.g. 2"
+                    className="w-full bg-transparent text-[#EEE8D5] font-mono focus:outline-none text-center text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* BPM */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Activity className="w-3 h-3 text-[#CB4B16]" />
+                  <span>BPM</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#CB4B16] transition-colors">
+                  <input
+                    type="text"
+                    value={localBpm}
+                    onChange={(e) => {
+                      setIsSaved(false)
+                      setLocalBpm(e.target.value)
+                      onUpdateSong({ bpm: e.target.value })
+                    }}
+                    placeholder="120"
+                    className="w-full bg-transparent text-[#CB4B16] font-mono focus:outline-none text-center text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Tags Input */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                <Tag className="w-3 h-3 text-amber-400" />
+                <span>Tags</span>
+              </label>
+              <div className="flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-amber-500/60 transition-colors">
+                <input
+                  type="text"
+                  value={localTags}
+                  onChange={(e) => {
+                    setIsSaved(false)
+                    setLocalTags(e.target.value)
+                    onUpdateSong({ tags: e.target.value })
+                  }}
+                  placeholder="Tags (e.g. Worship, OPM, Acoustic)"
+                  className="w-full bg-transparent text-[#EEE8D5] font-mono text-xs focus:outline-none placeholder-[#93A1A1]/60"
+                />
+              </div>
+            </div>
+
+            {/* Quick Tag Suggestion Chips */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-mono text-[#93A1A1] uppercase tracking-wider">
+                Quick Tags:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_GENRE_TAGS.map((tag) => {
+                  const isSelected = localTags
+                    .split(',')
+                    .map((t) => t.trim().toLowerCase())
+                    .includes(tag.toLowerCase())
+
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => handleToggleTag(tag)}
+                      className={`px-2.5 py-1 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                          : 'bg-[#002B36] text-[#93A1A1] border-[#1A4A55] hover:text-[#FDF6E3] hover:border-[#2AA198]/60'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Done Button */}
+            <div className="pt-2 border-t border-[#1A4A55] flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsMetadataModalOpen(false)}
+                className="px-4 py-1.5 rounded-lg bg-[#2AA198] hover:bg-[#2AA198]/80 text-[#002B36] font-bold text-xs transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Local Toast Notification Popup */}
       {toastMessage && (
