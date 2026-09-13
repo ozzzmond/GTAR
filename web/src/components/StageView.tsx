@@ -36,10 +36,12 @@ import { stageCast } from '../utils/stageCast'
 import { getChordVoicing, type ChordVoicing } from '../utils/chordDictionary'
 import {
   SongLineRenderer,
+  getMaxStageFontSize,
   type StageChordScale,
   type StageFontWeight,
   type StageLineSpacing,
 } from './SongLineRenderer'
+export { getMaxStageFontSize }
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
@@ -71,8 +73,6 @@ interface StageViewProps {
   /** Called whenever the stage enters or exits "performance mode" (fullscreen or focus). */
   onPerformanceModeChange?: (isActive: boolean) => void
 }
-
-
 
 export const STAGE_SIZE_PRESETS = {
   S: 16,
@@ -134,16 +134,67 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     return 35
   })
+  // Viewport width tracking for responsive typography bounds
+  const [viewportWidth, setViewportWidth] = useState<number>(() => {
+    return typeof window !== 'undefined' ? window.innerWidth : 1024
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize, { passive: true })
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const maxFontSize = useMemo(() => getMaxStageFontSize(viewportWidth), [viewportWidth])
+
   const [fontSizePx, setFontSizePx] = useState<number>(() => {
+    const currentMax = typeof window !== 'undefined' ? getMaxStageFontSize(window.innerWidth) : 34
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(SETTINGS_KEYS.fontSizePx)
       if (saved) {
         const val = parseInt(saved, 10)
-        if (!isNaN(val) && val >= 12 && val <= 38) return val
+        if (!isNaN(val) && val >= 12) return Math.min(val, currentMax)
       }
     }
     return 20
   })
+
+  // Debounced persistence for font size changes to eliminate layout micro-stutters during rapid taps/hold
+  const saveFontSizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedSaveFontSize = useCallback((size: number) => {
+    if (typeof window === 'undefined') return
+    if (saveFontSizeTimeoutRef.current) {
+      clearTimeout(saveFontSizeTimeoutRef.current)
+    }
+    saveFontSizeTimeoutRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(size))
+      } catch {
+        // Ignore quota/storage errors
+      }
+      saveFontSizeTimeoutRef.current = null
+    }, 250)
+  }, [])
+
+  // Auto-clamp if viewport shrinks below current font size
+  useEffect(() => {
+    setFontSizePx((prev) => {
+      if (prev > maxFontSize) {
+        debouncedSaveFontSize(maxFontSize)
+        return maxFontSize
+      }
+      return prev
+    })
+  }, [maxFontSize, debouncedSaveFontSize])
+
+  useEffect(() => {
+    return () => {
+      if (saveFontSizeTimeoutRef.current) {
+        clearTimeout(saveFontSizeTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Device-level persistent Stage Typography preferences
   const [chordScale, setChordScaleState] = useState<StageChordScale>(() => {
@@ -199,12 +250,11 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [])
 
   const setStageFontSize = useCallback((size: number) => {
-    const clamped = Math.max(12, Math.min(38, size))
+    const currentMax = getMaxStageFontSize(typeof window !== 'undefined' ? window.innerWidth : 1024)
+    const clamped = Math.max(12, Math.min(currentMax, size))
     setFontSizePx(clamped)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(clamped))
-    }
-  }, [])
+    debouncedSaveFontSize(clamped)
+  }, [debouncedSaveFontSize])
 
   // Double tap detection on numeric font size display to reset to Stage default (L / 24px)
   const lastNumericTapRef = useRef<number>(0)
@@ -218,16 +268,15 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [setStageFontSize])
 
-  // Continuous hold on A- / A+ stepper
+  // Continuous hold on A- / A+ stepper with debounced storage save and bounded scaling
   const holdStep = useCallback((delta: number) => {
+    const currentMax = getMaxStageFontSize(typeof window !== 'undefined' ? window.innerWidth : 1024)
     setFontSizePx((prev) => {
-      const next = Math.max(12, Math.min(38, prev + delta))
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
-      }
+      const next = Math.max(12, Math.min(currentMax, prev + delta))
+      debouncedSaveFontSize(next)
       return next
     })
-  }, [])
+  }, [debouncedSaveFontSize])
 
   const createHoldHandlers = useCallback((delta: number) => {
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -250,7 +299,7 @@ export const StageView: React.FC<StageViewProps> = ({
       timer = setTimeout(() => {
         interval = setInterval(() => {
           holdStep(delta)
-        }, 70)
+        }, 110)
       }, 320)
     }
 
@@ -1390,8 +1439,16 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               {...createHoldHandlers(-1)}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
-              title="Decrease Font Size (Hold for smooth resizing)"
+              className={`px-2 py-1 text-xs font-extrabold rounded select-none transition-all ${
+                fontSizePx <= 12
+                  ? 'text-[#586E75] opacity-40 cursor-not-allowed'
+                  : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
+              }`}
+              title={
+                fontSizePx <= 12
+                  ? 'Minimum font size reached (12px)'
+                  : 'Decrease Font Size (Hold for smooth resizing)'
+              }
             >
               A-
             </button>
@@ -1406,8 +1463,16 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               {...createHoldHandlers(1)}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
-              title="Increase Font Size (Hold for smooth resizing)"
+              className={`px-2 py-1 text-xs font-extrabold rounded select-none transition-all ${
+                fontSizePx >= maxFontSize
+                  ? 'text-[#586E75] opacity-40 cursor-not-allowed'
+                  : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
+              }`}
+              title={
+                fontSizePx >= maxFontSize
+                  ? `Maximum font size reached for this screen (${maxFontSize}px)`
+                  : 'Increase Font Size (Hold for smooth resizing)'
+              }
             >
               A+
             </button>
@@ -1610,11 +1675,19 @@ export const StageView: React.FC<StageViewProps> = ({
         onTouchStart={handleContainerTouchStart}
         onClick={handleContainerClick}
         className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 md:px-8 py-4 select-text"
+        style={{
+          contain: 'layout style',
+          overflowAnchor: 'none',
+        }}
       >
         <div
           ref={slideContentRef}
           className={`mx-auto transition-[max-width] duration-300 ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}
-          style={{ willChange: 'transform' }}
+          style={{
+            willChange: 'transform',
+            contain: 'layout style',
+            overflowAnchor: 'none',
+          }}
         >
 
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
@@ -1624,8 +1697,8 @@ export const StageView: React.FC<StageViewProps> = ({
               <p className="mt-2">This setlist entry is unavailable. Restore the song from Trash or a backup, or remove this entry from the setlist.</p>
             </div>
           ) : isTwoColumn && col2Lines.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10 items-start">
-              <div className="min-w-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10 items-start" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
+              <div className="min-w-0" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
                 <SongLineRenderer
                   lines={col1Lines}
                   fontSizePx={fontSizePx}
@@ -1637,7 +1710,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 />
               </div>
 
-              <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-6 lg:pl-10">
+              <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-6 lg:pl-10" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
                 <SongLineRenderer
                   lines={col2Lines}
                   fontSizePx={fontSizePx}
@@ -1943,8 +2016,16 @@ export const StageView: React.FC<StageViewProps> = ({
                   <button
                     type="button"
                     {...createHoldHandlers(-1)}
-                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
-                    title="Decrease font size (Hold to adjust)"
+                    className={`px-4 py-2 text-sm font-extrabold select-none transition-all ${
+                      fontSizePx <= 12
+                        ? 'text-[#586E75] opacity-40 cursor-not-allowed'
+                        : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
+                    }`}
+                    title={
+                      fontSizePx <= 12
+                        ? 'Minimum font size reached (12px)'
+                        : 'Decrease font size (Hold to adjust)'
+                    }
                   >
                     A-
                   </button>
@@ -1959,8 +2040,16 @@ export const StageView: React.FC<StageViewProps> = ({
                   <button
                     type="button"
                     {...createHoldHandlers(1)}
-                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
-                    title="Increase font size (Hold to adjust)"
+                    className={`px-4 py-2 text-sm font-extrabold select-none transition-all ${
+                      fontSizePx >= maxFontSize
+                        ? 'text-[#586E75] opacity-40 cursor-not-allowed'
+                        : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
+                    }`}
+                    title={
+                      fontSizePx >= maxFontSize
+                        ? `Maximum font size reached for this screen (${maxFontSize}px)`
+                        : 'Increase font size (Hold to adjust)'
+                    }
                   >
                     A+
                   </button>
@@ -1970,19 +2059,24 @@ export const StageView: React.FC<StageViewProps> = ({
               {/* Quick Stage Size Presets [ S | M | L | XL ] */}
               <div className="flex items-center gap-1.5 pl-[88px]">
                 {(['S', 'M', 'L', 'XL'] as const).map((key) => {
-                  const size = STAGE_SIZE_PRESETS[key]
-                  const isSelected = fontSizePx === size
+                  const presetTarget = STAGE_SIZE_PRESETS[key]
+                  const effectiveTarget = Math.min(presetTarget, maxFontSize)
+                  const isSelected = fontSizePx === effectiveTarget
                   return (
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setStageFontSize(size)}
+                      onClick={() => setStageFontSize(presetTarget)}
                       className={`flex-1 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer text-center ${
                         isSelected
                           ? 'bg-[#B58900] text-black border-[#B58900] shadow-sm'
                           : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
                       }`}
-                      title={`${key} (${size}px)`}
+                      title={
+                        effectiveTarget < presetTarget
+                          ? `${key} (${effectiveTarget}px - clamped for screen)`
+                          : `${key} (${presetTarget}px)`
+                      }
                     >
                       {key}
                     </button>
