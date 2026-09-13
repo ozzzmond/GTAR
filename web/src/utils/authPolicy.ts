@@ -73,8 +73,10 @@ export function getUserRole(email: string | undefined | null, rootAdminEmail?: s
   const normalizedEmail = email.trim().toLowerCase()
   const root = (rootAdminEmail || DEFAULT_ROOT_ADMIN).trim().toLowerCase()
   if (normalizedEmail === root) return 'SUPER_ADMIN'
-  if (authorizedEmail(normalizedEmail, configuredEmails)) return 'USER'
-  return 'NONE'
+  if (configuredEmails !== undefined) {
+    return authorizedEmail(normalizedEmail, configuredEmails) ? 'USER' : 'NONE'
+  }
+  return 'USER'
 }
 
 export function addAuthorizedEmail(email: string, configured?: string): string[] {

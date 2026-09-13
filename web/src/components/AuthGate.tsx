@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { authorizedEmail, allowLocalBypass, getUserRole, mergeCloudAuthorizedEmails, type UserRole } from '../utils/authPolicy'
+import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
 import { loadGoogleIdentity, readGoogleSession, requestGoogleSession, refreshGoogleSession, saveGoogleSession, validSession, verifyGoogleSession, type GoogleSession } from '../utils/googleAuth'
-import { pullCloudWhitelist } from '../utils/driveSync'
 import { GtaLogoIcon } from './GtaLogoIcon'
 
 interface AuthState {
@@ -26,16 +25,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [bypass, setBypass] = useState(false)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState(false)
   const epoch = useRef(0)
   const refreshing = useRef(false)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-  const permitted = !!session && validSession(session) && authorizedEmail(session.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)
+  const permitted = !!session && validSession(session)
   const canBypass = allowLocalBypass(import.meta.env.DEV, window.location.hostname)
 
   const role: UserRole = useMemo(() => {
     if (bypass && canBypass) return 'SUPER_ADMIN'
-    return getUserRole(session?.user?.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, import.meta.env.VITE_AUTHORIZED_EMAILS)
+    if (!session?.user?.email) return 'NONE'
+    const r = getUserRole(session.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL)
+    return r === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'USER'
   }, [session, bypass, canBypass])
 
   const isSuperAdmin = role === 'SUPER_ADMIN'
@@ -81,18 +81,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const generation = ++epoch.current
     const cached = readGoogleSession()
     if (!cached) { saveGoogleSession(null); setChecking(false) }
-    else void verifyGoogleSession(cached).then(async verified => {
+    else void verifyGoogleSession(cached).then(verified => {
       if (generation !== epoch.current) return
       saveGoogleSession(verified)
-      if (!authorizedEmail(verified.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)) {
-        try {
-          const cloudUsers = await pullCloudWhitelist(verified.token)
-          if (cloudUsers && Array.isArray(cloudUsers)) {
-            mergeCloudAuthorizedEmails(cloudUsers, import.meta.env.VITE_AUTHORIZED_EMAILS)
-          }
-        } catch { /* ignore network error; fallback to local */ }
-      }
-      if (generation !== epoch.current) return
       setSession(verified)
     }).catch(() => {
       if (generation !== epoch.current) return
@@ -155,50 +146,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     try {
       const next = await requestGoogleSession(clientId)
       if (generation !== epoch.current) return
-      if (!authorizedEmail(next.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)) {
-        try {
-          const cloudUsers = await pullCloudWhitelist(next.token)
-          if (cloudUsers && Array.isArray(cloudUsers)) {
-            mergeCloudAuthorizedEmails(cloudUsers, import.meta.env.VITE_AUTHORIZED_EMAILS)
-          }
-        } catch { /* ignore network error; fallback to local */ }
-      }
-      if (generation !== epoch.current) return
       saveGoogleSession(next); setBypass(false); setSession(next)
     } catch (failure) { if (generation === epoch.current) setError(failure instanceof Error ? failure.message : 'Sign-in failed.') }
     finally { if (generation === epoch.current) { setBusy(false); setChecking(false) } }
-  }
-
-  const recheckApproval = async () => {
-    if (!session || busy) return
-    setBusy(true); setError('')
-    try {
-      const cloudUsers = await pullCloudWhitelist(session.token)
-      if (cloudUsers && Array.isArray(cloudUsers)) {
-        mergeCloudAuthorizedEmails(cloudUsers, import.meta.env.VITE_AUTHORIZED_EMAILS)
-      }
-      if (authorizedEmail(session.user.email, import.meta.env.VITE_AUTHORIZED_EMAILS)) {
-        setSession({ ...session })
-      } else {
-        setError('Approval still pending. Ask the owner to add your email and sync.')
-      }
-    } catch {
-      setError('Unable to check cloud authorization. Check your connection.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const copyRequestInfo = () => {
-    if (!session) return
-    const info = `Access Request:
-Email: ${session.user.email}
-Time: ${new Date().toISOString()}
-User Agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}`
-    void navigator.clipboard?.writeText(info).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    })
   }
 
   if (permitted || (bypass && canBypass)) return <AuthContext.Provider value={{ session: permitted ? session : null, signOut, signIn, ready, bypass, role, isSuperAdmin }}>
@@ -206,31 +156,16 @@ User Agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'
     {children}
   </AuthContext.Provider>
 
-  const denied = !!session && !permitted
   return <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
     <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
       <GtaLogoIcon className="w-16 h-16 mx-auto text-[#2AA198] mb-4" />
       <h1 className="text-3xl font-bold">GTAR</h1>
       <p className="text-[#93A1A1] mt-2">Songbook &amp; Live Stage Companion</p>
-      <h2 className="text-lg font-semibold mt-8">{denied ? 'Access Denied: Pending Owner Approval' : 'Owner Access'}</h2>
+      <h2 className="text-lg font-semibold mt-8">Owner Access</h2>
       <p className="text-sm text-[#93A1A1] mt-2 mb-6">
-        {denied ?
-          `Account ${session.user.email} is signed in, but has not been approved by the songbook owner.` :
-          'Access is restricted to authorized owners. Sign in with your approved Google account.'}
+        Access is restricted to authorized owners. Sign in with your approved Google account.
       </p>
-      {checking ? <p role="status">Verifying your session...</p> : denied ? (
-        <div className="space-y-3">
-          <button disabled={busy} className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 hover:bg-[#268bd2] transition-colors disabled:opacity-50" onClick={() => void recheckApproval()}>
-            {busy ? 'Checking Cloud Authorization...' : 'Check Approval Status'}
-          </button>
-          <button className="w-full rounded-xl bg-transparent border border-[#2AA198] text-[#2AA198] font-bold py-3 hover:bg-[#002B36] transition-colors" onClick={copyRequestInfo}>
-            {copied ? 'Copied Request Info!' : 'Copy Request Info'}
-          </button>
-          <button className="w-full rounded-xl bg-transparent border border-[#93A1A1] text-[#93A1A1] font-semibold py-3 hover:bg-[#002B36] transition-colors" onClick={signOut}>
-            Sign Out / Switch Account
-          </button>
-        </div>
-      ) : (
+      {checking ? <p role="status">Verifying your session...</p> : (
         <button disabled={!ready || busy} className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50" onClick={() => void signIn()}>
           {busy ? 'Signing in...' : 'Sign In with Google'}
         </button>
