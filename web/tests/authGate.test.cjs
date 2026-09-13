@@ -73,6 +73,10 @@ test('getUserRole correctly identifies SUPER_ADMIN, USER, and NONE', () => {
   assert.equal(getUserRole('bandmate@example.com', 'jlopez3rd@gmail.com', 'jlopez3rd@gmail.com, bandmate@example.com'), 'USER')
   assert.equal(getUserRole(' BANDMATE@example.com ', 'jlopez3rd@gmail.com', 'bandmate@example.com'), 'USER')
 
+  // Direct authenticated users without explicit whitelist
+  assert.equal(getUserRole('newuser@example.com', 'jlopez3rd@gmail.com'), 'USER')
+  assert.equal(getUserRole('anyone@gmail.com'), 'USER')
+
   // Unauthorized users
   assert.equal(getUserRole('stranger@example.com', 'jlopez3rd@gmail.com', 'bandmate@example.com'), 'NONE')
   assert.equal(getUserRole('', 'jlopez3rd@gmail.com'), 'NONE')
