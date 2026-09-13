@@ -2,7 +2,7 @@
  * GTAR Android Room Entity, Setlist & Stage Line Type Definitions (v1.1.62 compatible)
  */
 
-export const GTAR_APP_VERSION = '1.1.83';
+export const GTAR_APP_VERSION = '1.1.85';
 export const GTAR_DEV_VERSION = '1.0.83-dev.2';
 export const GTAR_SETLIST_VERSION = 1
 export const GTAR_SETLIST_TYPE = 'GTAR_SETLIST'
