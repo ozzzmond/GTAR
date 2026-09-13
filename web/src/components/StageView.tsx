@@ -501,7 +501,7 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }
 
-  const handlePrevSong = useCallback(() => {
+  const executePrevSong = useCallback(() => {
     if (isInSetlistMode && onSelectSetlistSongIndex) {
       if (activeSetlistSongIndex > 0) {
         onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
@@ -511,7 +511,7 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSongIndex, onSelectSongIndex])
 
-  const handleNextSong = useCallback(() => {
+  const executeNextSong = useCallback(() => {
     if (isInSetlistMode && onSelectSetlistSongIndex) {
       if (activeSetlistSongIndex < activeSetlistSongs.length - 1) {
         onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
@@ -521,14 +521,83 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSetlistSongs.length, activeSongIndex, songs.length, onSelectSongIndex])
 
-  const handlePrevSongRef = useRef(handlePrevSong)
-  handlePrevSongRef.current = handlePrevSong
-  const handleNextSongRef = useRef(handleNextSong)
-  handleNextSongRef.current = handleNextSong
+  const executePrevSongRef = useRef(executePrevSong)
+  executePrevSongRef.current = executePrevSong
+  const executeNextSongRef = useRef(executeNextSong)
+  executeNextSongRef.current = executeNextSong
+
+  const canPrev = isInSetlistMode
+    ? activeSetlistSongIndex > 0
+    : activeSongIndex > 0
+  const canNext = isInSetlistMode
+    ? activeSetlistSongIndex < activeSetlistSongs.length - 1
+    : activeSongIndex < songs.length - 1
+
+  const canPrevRef = useRef(canPrev)
+  canPrevRef.current = canPrev
+  const canNextRef = useRef(canNext)
+  canNextRef.current = canNext
+
   const fontSizePxRef = useRef(fontSizePx)
   fontSizePxRef.current = fontSizePx
 
-  // Pinch-to-Zoom & Horizontal Swipe Navigation Gesture Listener
+  const slideContentRef = useRef<HTMLDivElement>(null)
+  const isAnimatingRef = useRef(false)
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const triggerSongSlide = useCallback((direction: 'next' | 'prev') => {
+    const slideEl = slideContentRef.current
+    const container = scrollContainerRef.current
+    if (!slideEl || isAnimatingRef.current) {
+      if (direction === 'next') executeNextSongRef.current()
+      else executePrevSongRef.current()
+      return
+    }
+
+    if (direction === 'next' && !canNextRef.current) return
+    if (direction === 'prev' && !canPrevRef.current) return
+
+    isAnimatingRef.current = true
+    const slideOutDuration = 200
+    const slideInDuration = 240
+    const outX = direction === 'next' ? '-100%' : '100%'
+    const inX = direction === 'next' ? '100%' : '-100%'
+
+    slideEl.style.transition = `transform ${slideOutDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${slideOutDuration}ms ease-out`
+    slideEl.style.transform = `translateX(${outX})`
+    slideEl.style.opacity = '0.15'
+
+    if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+    transitionTimeoutRef.current = setTimeout(() => {
+      if (direction === 'next') executeNextSongRef.current()
+      else executePrevSongRef.current()
+      if (container) container.scrollTop = 0
+
+      slideEl.style.transition = 'none'
+      slideEl.style.transform = `translateX(${inX})`
+      slideEl.style.opacity = '0.15'
+      void slideEl.offsetWidth
+
+      requestAnimationFrame(() => {
+        slideEl.style.transition = `transform ${slideInDuration}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${slideInDuration}ms ease-out`
+        slideEl.style.transform = 'translateX(0)'
+        slideEl.style.opacity = '1'
+
+        transitionTimeoutRef.current = setTimeout(() => {
+          slideEl.style.transform = ''
+          slideEl.style.transition = ''
+          slideEl.style.opacity = ''
+          isAnimatingRef.current = false
+        }, slideInDuration + 30)
+      })
+    }, slideOutDuration)
+  }, [])
+
+  const handlePrevSong = useCallback(() => triggerSongSlide('prev'), [triggerSongSlide])
+  const handleNextSong = useCallback(() => triggerSongSlide('next'), [triggerSongSlide])
+
+  // Pinch-to-Zoom & Interactive Touch Drag Physics Gesture Listener
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
@@ -541,9 +610,12 @@ export const StageView: React.FC<StageViewProps> = ({
     let touchStartX = 0
     let touchStartY = 0
     let touchStartTime = 0
+    let gestureDirection: 'undecided' | 'horizontal' | 'vertical' | 'pinch' = 'undecided'
+    let currentDragX = 0
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
+        gestureDirection = 'pinch'
         isPinching = true
         initialPinchDist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
@@ -551,12 +623,26 @@ export const StageView: React.FC<StageViewProps> = ({
         )
         initialPinchFontSize = fontSizePxRef.current
         lastPinchSize = fontSizePxRef.current
-      } else if (e.touches.length === 1) {
+
+        const slideEl = slideContentRef.current
+        if (slideEl && !isAnimatingRef.current) {
+          slideEl.style.transform = ''
+          slideEl.style.transition = ''
+          slideEl.style.opacity = ''
+        }
+      } else if (e.touches.length === 1 && !isAnimatingRef.current) {
         isPinching = false
         initialPinchDist = 0
         touchStartX = e.touches[0].clientX
         touchStartY = e.touches[0].clientY
         touchStartTime = Date.now()
+        gestureDirection = 'undecided'
+        currentDragX = 0
+
+        const slideEl = slideContentRef.current
+        if (slideEl) {
+          slideEl.style.transition = 'none'
+        }
       }
     }
 
@@ -574,6 +660,51 @@ export const StageView: React.FC<StageViewProps> = ({
           lastPinchSize = clamped
           setFontSizePx(clamped)
         }
+        return
+      }
+
+      if (e.touches.length === 1 && !isPinching && !isAnimatingRef.current) {
+        const currentX = e.touches[0].clientX
+        const currentY = e.touches[0].clientY
+        const deltaX = currentX - touchStartX
+        const deltaY = currentY - touchStartY
+        const absX = Math.abs(deltaX)
+        const absY = Math.abs(deltaY)
+
+        // Decide gesture direction once threshold is crossed
+        if (gestureDirection === 'undecided') {
+          if (Math.hypot(deltaX, deltaY) >= 8) {
+            if (absX >= absY * 1.25 && absX >= 8) {
+              gestureDirection = 'horizontal'
+            } else if (absY > absX) {
+              gestureDirection = 'vertical'
+            }
+          }
+        }
+
+        if (gestureDirection === 'horizontal') {
+          // Lock scrolling: prevent native browser horizontal navigation & vertical scroll
+          if (e.cancelable) e.preventDefault()
+
+          const canPrevNow = canPrevRef.current
+          const canNextNow = canNextRef.current
+
+          // Rubber-band resistance dampening when dragging past boundaries
+          let effectiveDeltaX = deltaX
+          if (deltaX > 0 && !canPrevNow) {
+            effectiveDeltaX = Math.min(50, Math.pow(deltaX, 0.7))
+          } else if (deltaX < 0 && !canNextNow) {
+            effectiveDeltaX = -Math.min(50, Math.pow(-deltaX, 0.7))
+          }
+
+          currentDragX = effectiveDeltaX
+          const slideEl = slideContentRef.current
+          if (slideEl) {
+            slideEl.style.transform = `translateX(${effectiveDeltaX}px)`
+            const fadeOpacity = Math.max(0.75, 1 - Math.abs(effectiveDeltaX) / 1200)
+            slideEl.style.opacity = String(fadeOpacity)
+          }
+        }
       }
     }
 
@@ -589,25 +720,102 @@ export const StageView: React.FC<StageViewProps> = ({
         return
       }
 
-      if (e.changedTouches.length === 1) {
-        const touchEndX = e.changedTouches[0].clientX
-        const touchEndY = e.changedTouches[0].clientY
+      if (gestureDirection === 'horizontal' && !isAnimatingRef.current) {
+        const slideEl = slideContentRef.current
+        const touchEndX = e.changedTouches[0]?.clientX ?? (touchStartX + currentDragX)
         const deltaX = touchEndX - touchStartX
-        const deltaY = touchEndY - touchStartY
-        const elapsed = Date.now() - touchStartTime
+        const elapsed = Math.max(1, Date.now() - touchStartTime)
+        const velocity = Math.abs(deltaX) / elapsed
+        const canPrevNow = canPrevRef.current
+        const canNextNow = canNextRef.current
 
-        // Strict horizontal angle tolerance to ensure normal vertical scrolling is never interrupted
-        if (
-          Math.abs(deltaX) >= 50 &&
-          Math.abs(deltaX) >= Math.abs(deltaY) * 1.5 &&
-          (elapsed < 600 || Math.abs(deltaX) >= 90)
-        ) {
-          if (deltaX < 0) {
-            handleNextSongRef.current()
+        // Release threshold: ~60px distance OR >=30px with high velocity flick (>0.45 px/ms)
+        const isNext = (deltaX <= -60 || (deltaX <= -30 && velocity >= 0.45)) && canNextNow
+        const isPrev = (deltaX >= 60 || (deltaX >= 30 && velocity >= 0.45)) && canPrevNow
+
+        if (slideEl) {
+          if (isNext) {
+            isAnimatingRef.current = true
+            const slideOutDuration = 200
+            const slideInDuration = 240
+            slideEl.style.transition = `transform ${slideOutDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${slideOutDuration}ms ease-out`
+            slideEl.style.transform = 'translateX(-100%)'
+            slideEl.style.opacity = '0.15'
+
+            if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+            transitionTimeoutRef.current = setTimeout(() => {
+              executeNextSongRef.current()
+              if (container) container.scrollTop = 0
+
+              slideEl.style.transition = 'none'
+              slideEl.style.transform = 'translateX(100%)'
+              slideEl.style.opacity = '0.15'
+              void slideEl.offsetWidth
+
+              requestAnimationFrame(() => {
+                slideEl.style.transition = `transform ${slideInDuration}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${slideInDuration}ms ease-out`
+                slideEl.style.transform = 'translateX(0)'
+                slideEl.style.opacity = '1'
+
+                transitionTimeoutRef.current = setTimeout(() => {
+                  slideEl.style.transform = ''
+                  slideEl.style.transition = ''
+                  slideEl.style.opacity = ''
+                  isAnimatingRef.current = false
+                }, slideInDuration + 30)
+              })
+            }, slideOutDuration)
+          } else if (isPrev) {
+            isAnimatingRef.current = true
+            const slideOutDuration = 200
+            const slideInDuration = 240
+            slideEl.style.transition = `transform ${slideOutDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${slideOutDuration}ms ease-out`
+            slideEl.style.transform = 'translateX(100%)'
+            slideEl.style.opacity = '0.15'
+
+            if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+            transitionTimeoutRef.current = setTimeout(() => {
+              executePrevSongRef.current()
+              if (container) container.scrollTop = 0
+
+              slideEl.style.transition = 'none'
+              slideEl.style.transform = 'translateX(-100%)'
+              slideEl.style.opacity = '0.15'
+              void slideEl.offsetWidth
+
+              requestAnimationFrame(() => {
+                slideEl.style.transition = `transform ${slideInDuration}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${slideInDuration}ms ease-out`
+                slideEl.style.transform = 'translateX(0)'
+                slideEl.style.opacity = '1'
+
+                transitionTimeoutRef.current = setTimeout(() => {
+                  slideEl.style.transform = ''
+                  slideEl.style.transition = ''
+                  slideEl.style.opacity = ''
+                  isAnimatingRef.current = false
+                }, slideInDuration + 30)
+              })
+            }, slideOutDuration)
           } else {
-            handlePrevSongRef.current()
+            // Cancel / Snap back to center
+            isAnimatingRef.current = true
+            slideEl.style.transition = 'transform 240ms cubic-bezier(0.25, 1, 0.5, 1), opacity 240ms ease-out'
+            slideEl.style.transform = 'translateX(0)'
+            slideEl.style.opacity = '1'
+
+            if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+            transitionTimeoutRef.current = setTimeout(() => {
+              slideEl.style.transform = ''
+              slideEl.style.transition = ''
+              slideEl.style.opacity = ''
+              isAnimatingRef.current = false
+            }, 250)
           }
         }
+        gestureDirection = 'undecided'
       }
     }
 
@@ -621,6 +829,9 @@ export const StageView: React.FC<StageViewProps> = ({
       container.removeEventListener('touchmove', onTouchMove)
       container.removeEventListener('touchend', onTouchEnd)
       container.removeEventListener('touchcancel', onTouchEnd)
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -703,6 +914,8 @@ export const StageView: React.FC<StageViewProps> = ({
     isAutoScrolling,
     scrollSpeed,
     syncState.role,
+    handleNextSong,
+    handlePrevSong,
   ])
 
   // ---------------------------------------------------------------------------
@@ -1157,9 +1370,13 @@ export const StageView: React.FC<StageViewProps> = ({
         ref={scrollContainerRef}
         onScroll={handleContainerScroll}
         onTouchStart={handleContainerTouchStart}
-        className="flex-1 overflow-y-auto overflow-x-auto px-3 sm:px-6 md:px-8 py-4 select-text"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 md:px-8 py-4 select-text"
       >
-        <div className={`mx-auto transition-all ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}>
+        <div
+          ref={slideContentRef}
+          className={`mx-auto transition-[max-width] duration-300 ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}
+          style={{ willChange: 'transform' }}
+        >
 
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
           {song.isMissing ? (
