@@ -1,5 +1,5 @@
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
   createWakeLockController,
@@ -42,7 +42,10 @@ import {
   type StageLineSpacing,
 } from './SongLineRenderer'
 export { getMaxStageFontSize }
+import { ScrollAnchorController } from '../utils/scrollAnchor'
 import { KeyPickerModal } from './KeyPickerModal'
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
 import type { ActiveSongState } from '../types/gtar'
@@ -160,6 +163,16 @@ export const StageView: React.FC<StageViewProps> = ({
     return 20
   })
 
+  // Main canvas scrolling container and visual scroll anchor controller
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const scrollAnchorControllerRef = useRef<ScrollAnchorController>(new ScrollAnchorController(450))
+  const isProgrammaticScrollRef = useRef(false)
+  const songIdKey = song.id !== undefined ? String(song.id) : (song.title || 'active-song')
+
+  const captureScrollAnchor = useCallback(() => {
+    scrollAnchorControllerRef.current.capture(scrollContainerRef.current, songIdKey)
+  }, [songIdKey])
+
   // Debounced persistence for font size changes to eliminate layout micro-stutters during rapid taps/hold
   const saveFontSizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debouncedSaveFontSize = useCallback((size: number) => {
@@ -229,32 +242,36 @@ export const StageView: React.FC<StageViewProps> = ({
   })
 
   const setChordScale = useCallback((scale: StageChordScale) => {
+    captureScrollAnchor()
     setChordScaleState(scale)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_chord_scale', String(scale))
     }
-  }, [])
+  }, [captureScrollAnchor])
 
   const setFontWeight = useCallback((weight: StageFontWeight) => {
+    captureScrollAnchor()
     setFontWeightState(weight)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_font_weight', weight)
     }
-  }, [])
+  }, [captureScrollAnchor])
 
   const setLineSpacing = useCallback((spacing: StageLineSpacing) => {
+    captureScrollAnchor()
     setLineSpacingState(spacing)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_line_spacing', spacing)
     }
-  }, [])
+  }, [captureScrollAnchor])
 
   const setStageFontSize = useCallback((size: number) => {
+    captureScrollAnchor()
     const currentMax = getMaxStageFontSize(typeof window !== 'undefined' ? window.innerWidth : 1024)
     const clamped = Math.max(12, Math.min(currentMax, size))
     setFontSizePx(clamped)
     debouncedSaveFontSize(clamped)
-  }, [debouncedSaveFontSize])
+  }, [debouncedSaveFontSize, captureScrollAnchor])
 
   // Double tap detection on numeric font size display to reset to Stage default (L / 24px)
   const lastNumericTapRef = useRef<number>(0)
@@ -270,13 +287,14 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Continuous hold on A- / A+ stepper with debounced storage save and bounded scaling
   const holdStep = useCallback((delta: number) => {
+    captureScrollAnchor()
     const currentMax = getMaxStageFontSize(typeof window !== 'undefined' ? window.innerWidth : 1024)
     setFontSizePx((prev) => {
       const next = Math.max(12, Math.min(currentMax, prev + delta))
       debouncedSaveFontSize(next)
       return next
     })
-  }, [debouncedSaveFontSize])
+  }, [debouncedSaveFontSize, captureScrollAnchor])
 
   const createHoldHandlers = useCallback((delta: number) => {
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -385,22 +403,82 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [])
 
   const fontStyle = externalFontStyle !== undefined ? externalFontStyle : localFontStyle
-  const setFontStyle = externalOnSelectFontStyle || setLocalFontStyle
+  const rawSetFontStyle = externalOnSelectFontStyle || setLocalFontStyle
+  const setFontStyle = useCallback(
+    (style: 'mono' | 'sans' | 'serif') => {
+      captureScrollAnchor()
+      rawSetFontStyle(style)
+    },
+    [rawSetFontStyle, captureScrollAnchor]
+  )
+
+  // Track external fontStyle prop transitions to capture anchor before paint
+  const prevExternalFontStyleRef = useRef(externalFontStyle)
+  if (externalFontStyle !== prevExternalFontStyleRef.current) {
+    scrollAnchorControllerRef.current.capture(scrollContainerRef.current, songIdKey)
+    prevExternalFontStyleRef.current = externalFontStyle
+  }
 
   const isTwoColumn = externalIsTwoColumn !== undefined ? externalIsTwoColumn : localIsTwoColumn
-  const setIsTwoColumn = (enabled: boolean) => {
-    if (externalOnToggleTwoColumn) {
-      externalOnToggleTwoColumn(enabled)
-    } else {
-      setLocalIsTwoColumn(enabled)
+  const setIsTwoColumn = useCallback(
+    (enabled: boolean) => {
+      captureScrollAnchor()
+      if (externalOnToggleTwoColumn) {
+        externalOnToggleTwoColumn(enabled)
+      } else {
+        setLocalIsTwoColumn(enabled)
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SETTINGS_KEYS.isTwoColumn, String(enabled))
+      }
+    },
+    [externalOnToggleTwoColumn, captureScrollAnchor]
+  )
+
+  // Clear visual scroll anchor on song transitions and unmount
+  useEffect(() => {
+    scrollAnchorControllerRef.current.clear()
+  }, [songIdKey])
+
+  useEffect(() => {
+    return () => {
+      scrollAnchorControllerRef.current.clear()
     }
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(SETTINGS_KEYS.isTwoColumn, String(enabled))
+  }, [])
+
+  // Anchor Restoration: Measure visual anchor after DOM mutation and correct container.scrollTop
+  // synchronously before browser paint, with a scheduled frame verification for async layout reflow
+  useIsomorphicLayoutEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const applyRestoration = () => {
+      const drift = scrollAnchorControllerRef.current.restore(container, songIdKey)
+      if (drift !== 0) {
+        isProgrammaticScrollRef.current = true
+        accumulatedScrollRef.current = container.scrollTop
+        requestAnimationFrame(() => {
+          isProgrammaticScrollRef.current = false
+        })
+      }
     }
-  }
+
+    // 1. Immediate synchronous correction before paint
+    applyRestoration()
+
+    // 2. Scheduled frame check for secondary font/wrapping reflow
+    const rafId = requestAnimationFrame(() => {
+      applyRestoration()
+    })
+
+    return () => {
+      cancelAnimationFrame(rafId)
+    }
+  }, [fontSizePx, fontStyle, chordScale, fontWeight, lineSpacing, isTwoColumn, songIdKey])
 
   useEffect(() => {
     const reloadSettings = () => {
+      captureScrollAnchor()
       const stage = readBackupSettings().stageSettings
       if (stage?.fontSizePx !== undefined) setFontSizePx(stage.fontSizePx)
       if (stage?.scrollSpeed !== undefined) setScrollSpeed(stage.scrollSpeed)
@@ -409,7 +487,7 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     window.addEventListener(SETTINGS_CHANGED, reloadSettings)
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
-  }, [])
+  }, [captureScrollAnchor])
 
   // Modals & Drawers
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
@@ -433,7 +511,6 @@ export const StageView: React.FC<StageViewProps> = ({
     return unsubscribe
   }, [])
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollAnimRef = useRef<number | null>(null)
   // Sub-pixel accumulator: iOS Safari rounds scrollTop to integers, so we accumulate
   // fractional pixels here and only commit whole-pixel increments.
@@ -672,6 +749,11 @@ export const StageView: React.FC<StageViewProps> = ({
     // correct position after a manual scroll.
     if (!isAutoScrolling) {
       accumulatedScrollRef.current = target.scrollTop
+    }
+
+    // Release visual anchor lock when user manually scrolls
+    if (!isProgrammaticScrollRef.current && !isAutoScrolling) {
+      scrollAnchorControllerRef.current.clear()
     }
 
     // Mirror to Stage Cast teleprompter screen in real time
@@ -1701,6 +1783,7 @@ export const StageView: React.FC<StageViewProps> = ({
               <div className="min-w-0" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
                 <SongLineRenderer
                   lines={col1Lines}
+                  lineIndexOffset={0}
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
@@ -1713,6 +1796,7 @@ export const StageView: React.FC<StageViewProps> = ({
               <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-6 lg:pl-10" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
                 <SongLineRenderer
                   lines={col2Lines}
+                  lineIndexOffset={col1Lines.length}
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
@@ -1725,6 +1809,7 @@ export const StageView: React.FC<StageViewProps> = ({
           ) : (
             <SongLineRenderer
               lines={parsedSong.lines}
+              lineIndexOffset={0}
               fontSizePx={fontSizePx}
               fontFamily={fontStyle}
               onChordClick={handleChordClick}

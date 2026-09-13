@@ -38,6 +38,7 @@ export interface SongLineRendererProps {
   chordScale?: number
   fontWeight?: StageFontWeight
   lineSpacing?: StageLineSpacing
+  lineIndexOffset?: number
 }
 
 interface LineSpacingConfig {
@@ -222,6 +223,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   chordScale = 1.0,
   fontWeight = 'regular',
   lineSpacing = 'normal',
+  lineIndexOffset = 0,
 }) => {
   const fontClass =
     fontFamily === 'serif'
@@ -244,21 +246,41 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
       className="select-text"
     >
       {lines.map((line, idx) => {
+        const lineIndex = lineIndexOffset + idx
         switch (line.type) {
           case 'EMPTY':
-            return <div key={idx} style={{ height: spacing.emptySpacerHeight, overflowAnchor: 'none' }} />
+            return (
+              <div
+                key={idx}
+                data-song-line={lineIndex}
+                style={{ height: spacing.emptySpacerHeight, overflowAnchor: 'none' }}
+              />
+            )
 
           case 'SECTION_HEADER':
             return (
-              <div key={idx} role="heading" aria-level={3}
+              <div
+                key={idx}
+                role="heading"
+                aria-level={3}
+                data-song-line={lineIndex}
+                data-section={line.title}
                 className={`${fontClass} stage-section-header select-none`}
                 style={{
-                  fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
-                  paddingTop: spacing.sectionHeaderPt, paddingBottom: spacing.sectionHeaderPb, margin: 0,
-                  color: '#A78BFA', fontWeight: 600, letterSpacing: '0.04em',
-                  whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', breakAfter: 'avoid',
+                  fontSize: `${fontSizePx}px`,
+                  lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
+                  paddingTop: spacing.sectionHeaderPt,
+                  paddingBottom: spacing.sectionHeaderPb,
+                  margin: 0,
+                  color: '#A78BFA',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  breakAfter: 'avoid',
                   overflowAnchor: 'none',
-                }}>
+                }}
+              >
                 [{line.title}]
               </div>
             )
@@ -267,6 +289,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             return (
               <div
                 key={idx}
+                data-song-line={lineIndex}
                 style={{
                   paddingTop: spacing.chordRowPt,
                   paddingBottom: spacing.chordRowPb,
@@ -288,7 +311,12 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             if (/\[[A-G][b#]?[^\]]*\]|<[A-G][b#]?[^>]*>/.test(line.lyrics)) {
               const [chordLine, lyricLine] = convertChordProToTwoLine(line.lyrics)
               return (
-                <div key={idx} className="select-text" style={{ overflowAnchor: 'none' }}>
+                <div
+                  key={idx}
+                  data-song-line={lineIndex}
+                  className="select-text"
+                  style={{ overflowAnchor: 'none' }}
+                >
                   {chordLine.trim() && (
                     <div
                       style={{
@@ -332,6 +360,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             return (
               <div
                 key={idx}
+                data-song-line={lineIndex}
                 style={{
                   paddingTop: spacing.lyricRowPt,
                   paddingBottom: spacing.lyricRowPb,
@@ -356,6 +385,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               return (
                 <div
                   key={idx}
+                  data-song-line={lineIndex}
                   style={{
                     paddingTop: '1.5px',
                     paddingBottom: '1.5px',
@@ -376,6 +406,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             return (
               <div
                 key={idx}
+                data-song-line={lineIndex}
                 className={`${fontClass} select-text`}
                 style={{
                   fontSize: fontSizePx,
@@ -429,3 +460,4 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
     </div>
   )
 }
+
