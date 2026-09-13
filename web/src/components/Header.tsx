@@ -1146,6 +1146,7 @@ export const Header: React.FC<HeaderProps> = ({
       <UserManagementModal
         isOpen={showUserManagementModal}
         onClose={() => setShowUserManagementModal(false)}
+        onUpdateUsers={onSyncNow}
       />
     </>
   )

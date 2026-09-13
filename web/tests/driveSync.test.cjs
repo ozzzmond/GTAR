@@ -146,3 +146,22 @@ test('Google Drive API quota and storage quota limits are classified explicitly'
   }
 })
 
+test('pullCloudWhitelist extracts allowedUsers from cloud sync files', async () => {
+  const { pullCloudWhitelist } = require('../src/utils/driveSync.ts')
+  const original = global.fetch
+  try {
+    const customPayload = { ...payload, allowedUsers: ['johncriscaculitan01@gmail.com', 'jlopez3rd@gmail.com'] }
+    global.fetch = async url => {
+      if (url.includes('spaces')) return json({ files: [{ id: 'file-wl', name: 'gtar_songbook_revision_v1.json', version: '1' }] })
+      if (url.includes('alt=media')) return json(customPayload)
+      return json({ id: 'file-wl', version: '1' })
+    }
+    const whitelist = await pullCloudWhitelist('test-wl')
+    assert.deepEqual(whitelist, ['johncriscaculitan01@gmail.com', 'jlopez3rd@gmail.com'])
+  } finally {
+    global.fetch = original
+    clearDriveSession('test-wl')
+  }
+})
+
+

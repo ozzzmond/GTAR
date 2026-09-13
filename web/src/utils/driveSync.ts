@@ -125,8 +125,19 @@ export async function pushCloudBackup(token: string, payload: FullBackupPayload)
   const snapshot = snapshots.get(token)
   if (!snapshot) throw new DriveSyncError('Download and validate the cloud backup before uploading.')
   const boundary = `gtar_${crypto.randomUUID()}`
-  const metadata = { name: REVISION_NAME, parents: ['appDataFolder'] }
-  const revisionPayload = { ...payload, syncProtocol: 1, syncParents: snapshot.parents }
+  const metadata: Record<string, unknown> = {
+    name: REVISION_NAME,
+    parents: ['appDataFolder'],
+    ...(payload.allowedUsers && Array.isArray(payload.allowedUsers)
+      ? { appProperties: { allowedUsers: JSON.stringify(payload.allowedUsers) } }
+      : {})
+  }
+  const revisionPayload = {
+    ...payload,
+    syncProtocol: 1,
+    syncParents: snapshot.parents,
+    ...(payload.allowedUsers && Array.isArray(payload.allowedUsers) ? { allowedUsers: payload.allowedUsers } : {})
+  }
   const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(revisionPayload)}\r\n--${boundary}--`
   snapshots.delete(token)
   // Create-only protocol: neither ETag availability nor a preflight read guards a
@@ -137,6 +148,29 @@ export async function pushCloudBackup(token: string, payload: FullBackupPayload)
   const uploaded: SyncFile = await response.json()
   if (!uploaded.id) throw new DriveSyncError('Unexpected upload metadata. Pull again before uploading.')
   revision(uploaded)
+}
+
+/** Query and retrieve dynamic allowed users whitelist from the cloud sync files */
+export async function pullCloudWhitelist(token: string): Promise<string[] | null> {
+  try {
+    const files = await findSyncFiles(token)
+    if (!files.length) return null
+    for (const file of files) {
+      try {
+        const response = await request(token, `${API}/${encodeURIComponent(file.id)}?alt=media`)
+        const raw = await response.text()
+        const parsed = parseBackupJson(raw)
+        if (parsed.isValid && Array.isArray(parsed.allowedUsers) && parsed.allowedUsers.length > 0) {
+          return parsed.allowedUsers
+        }
+      } catch {
+        // Fallback to checking next revision file
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
 }
 
 /** Download every retained revision for manual recovery, including conflicting heads. */
