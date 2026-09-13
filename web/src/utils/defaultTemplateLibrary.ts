@@ -162,25 +162,81 @@ export const DEFAULT_TEMPLATE_SETLISTS: WebSetlist[] = [
 export function isDefaultTemplateLibrary(library: SyncLibrary | null | undefined): boolean {
   if (!library) return true
   const songs = library.songs || []
-  if (songs.length === 0) return true
+  const setlists = library.setlists || []
+
+  if (songs.length === 0 && setlists.length === 0) return true
 
   // Check if all songs are a subset of the default template songs (matching title and artist)
-  const defaultMap = new Map<string, string>()
+  // and have untouched content, transpose, BPM, favorites, and tags
+  const defaultSongMap = new Map<string, ActiveSongState>()
   for (const song of DEFAULT_TEMPLATE_SONGS) {
     const key = `${song.title.trim().toLowerCase()}::${(song.artist || '').trim().toLowerCase()}`
-    defaultMap.set(key, (song.rawContent || '').trim())
+    defaultSongMap.set(key, song)
   }
 
   for (const song of songs) {
     const key = `${song.title.trim().toLowerCase()}::${(song.artist || '').trim().toLowerCase()}`
-    const defaultRaw = defaultMap.get(key)
-    if (defaultRaw === undefined) {
+    const defaultSong = defaultSongMap.get(key)
+    if (!defaultSong) {
       // User has added a non-default song
       return false
     }
     // If raw content was modified, it's not a pristine template song
-    if ((song.rawContent || '').trim() !== defaultRaw) {
+    if ((song.rawContent || '').trim() !== (defaultSong.rawContent || '').trim()) {
       return false
+    }
+    // If transpose was modified
+    if ((song.transposeOffset || 0) !== (defaultSong.transposeOffset || 0)) {
+      return false
+    }
+    // If custom BPM
+    if ((song.bpm || '').trim() !== (defaultSong.bpm || '').trim()) {
+      return false
+    }
+    // If marked as favorite
+    if (song.isFavorite) {
+      return false
+    }
+    // If user added tags
+    if (song.tags && song.tags.trim() !== '') {
+      return false
+    }
+    // If key or capo was modified
+    if ((song.key || '').trim() !== (defaultSong.key || '').trim()) {
+      return false
+    }
+    if ((song.capo || '').trim() !== (defaultSong.capo || '').trim()) {
+      return false
+    }
+  }
+
+  // Check setlists: user with custom setlists or customized default setlists is not pristine
+  if (setlists.length > 0) {
+    const defaultSetlistMap = new Map<string, WebSetlist>()
+    for (const s of DEFAULT_TEMPLATE_SETLISTS) {
+      defaultSetlistMap.set(s.name.trim().toLowerCase(), s)
+    }
+
+    for (const setlist of setlists) {
+      const defaultSetlist = defaultSetlistMap.get(setlist.name.trim().toLowerCase())
+      if (!defaultSetlist) {
+        // User created a custom setlist
+        return false
+      }
+      // Check if songs in setlist match default setlist
+      if (setlist.songs.length !== defaultSetlist.songs.length) {
+        return false
+      }
+      for (let i = 0; i < setlist.songs.length; i++) {
+        const ref = setlist.songs[i]
+        const defRef = defaultSetlist.songs[i]
+        if (
+          ref.title.trim().toLowerCase() !== defRef.title.trim().toLowerCase() ||
+          (ref.artist || '').trim().toLowerCase() !== (defRef.artist || '').trim().toLowerCase()
+        ) {
+          return false
+        }
+      }
     }
   }
 

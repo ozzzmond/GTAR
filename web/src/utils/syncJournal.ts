@@ -9,13 +9,50 @@ const key = (account: string) => `gtar_sync_v1:${account}`
 const ownerKey = 'gtar_sync_library_owner'
 const MAX_RECOVERY_SNAPSHOTS = 2
 
-function pruneRecoverySnapshots(storage: Storage, account: string, maxAllowed: number) {
+export function isQuotaError(err: unknown): boolean {
+  if (!err) return false
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException) {
+    return err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014
+  }
+  if (err instanceof Error) {
+    return err.name === 'QuotaExceededError' || /quota/i.test(err.message)
+  }
+  if (typeof err === 'object') {
+    const e = err as Record<string, unknown>
+    return (
+      e.name === 'QuotaExceededError' ||
+      e.code === 22 ||
+      e.code === 1014 ||
+      (typeof e.message === 'string' && /quota/i.test(e.message))
+    )
+  }
+  return false
+}
+
+export function pruneRecoverySnapshots(storage: Storage, account: string, maxAllowed: number) {
   const prefix = `gtar_sync_recovery:${account}:`
   const existingKeys: string[] = []
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i)
     if (k?.startsWith(prefix)) existingKeys.push(k)
   }
+  existingKeys.sort()
+  while (existingKeys.length > maxAllowed) {
+    const oldest = existingKeys.shift()
+    if (oldest) {
+      try { storage.removeItem(oldest) } catch { /* ignore storage error on remove */ }
+    }
+  }
+}
+
+export function pruneAllRecoverySnapshots(storage: Storage, maxAllowed = 0) {
+  const prefix = 'gtar_sync_recovery:'
+  const existingKeys: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k?.startsWith(prefix)) existingKeys.push(k)
+  }
+  existingKeys.sort()
   while (existingKeys.length > maxAllowed) {
     const oldest = existingKeys.shift()
     if (oldest) {
@@ -29,7 +66,16 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
   if (!account) throw new Error('Verified account ID is required for sync.')
   const owner = storage.getItem(ownerKey)
   if (owner && owner !== account) throw new Error('This device library belongs to another Google account. Sign in to that account to sync; export its backup before moving data to another account.')
-  storage.setItem(ownerKey, account)
+  try {
+    storage.setItem(ownerKey, account)
+  } catch (err) {
+    if (isQuotaError(err)) {
+      pruneRecoverySnapshots(storage, account, 0)
+      storage.setItem(ownerKey, account)
+    } else {
+      throw err
+    }
+  }
   const raw = storage.getItem(key(account))
   const journal: Journal = raw ? JSON.parse(raw) : { version: 1, baseline: null }
   if (journal.version !== 1) throw new Error('Unsupported sync recovery state. Export device data before recovery.')
@@ -42,17 +88,27 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
       // Prune older recovery entries to keep at most MAX_RECOVERY_SNAPSHOTS - 1 before adding new
       pruneRecoverySnapshots(storage, account, Math.max(0, MAX_RECOVERY_SNAPSHOTS - 1))
       const prefix = `gtar_sync_recovery:${account}:`
-      const recovery = `${prefix}${crypto.randomUUID()}`
+      const recovery = `${prefix}${Date.now()}_${crypto.randomUUID()}`
+      const minimalSnapshot = JSON.stringify({
+        timestamp: Date.now(),
+        local,
+        remote,
+        journal: { version: journal.version, baseline: journal.baseline }
+      })
       try {
-        storage.setItem(recovery, JSON.stringify({ local, remote, journal }))
+        storage.setItem(recovery, minimalSnapshot)
       } catch (e) {
-        // If quota exceeded, aggressively purge older recovery snapshots and try once more
-        console.warn('Initial recovery snapshot save failed. Purging older snapshots to free quota.', e)
-        pruneRecoverySnapshots(storage, account, 0)
-        try {
-          storage.setItem(recovery, JSON.stringify({ local, remote, journal }))
-        } catch (retryErr) {
-          console.warn('Unable to persist recovery snapshot to storage (quota exceeded). Proceeding with sync.', retryErr)
+        if (isQuotaError(e)) {
+          console.warn('Initial recovery snapshot save failed (quota exceeded). Purging older snapshots down to 0.', e)
+          pruneRecoverySnapshots(storage, account, 0)
+          try {
+            storage.setItem(recovery, minimalSnapshot)
+          } catch (retryErr) {
+            // Gracefully degrade local backup journal caching without crashing the sync process
+            console.warn('Unable to persist recovery snapshot to storage (quota exceeded). Proceeding with sync with degraded journal caching.', retryErr)
+          }
+        } else {
+          throw e
         }
       }
     },
@@ -61,10 +117,18 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
       journal.pending = { before, merged, acknowledged: false }
       try {
         storage.setItem(key(account), JSON.stringify(journal))
-      } catch {
-        // Free recovery snapshots if quota is hit when updating the journal
-        pruneRecoverySnapshots(storage, account, 0)
-        storage.setItem(key(account), JSON.stringify(journal))
+      } catch (err) {
+        if (isQuotaError(err)) {
+          // Free recovery snapshots if quota is hit when updating the journal
+          pruneRecoverySnapshots(storage, account, 0)
+          try {
+            storage.setItem(key(account), JSON.stringify(journal))
+          } catch (retryErr) {
+            console.warn('Unable to persist sync journal pending state (quota exceeded). Proceeding in-memory.', retryErr)
+          }
+        } else {
+          throw err
+        }
       }
     },
     complete() {
@@ -73,9 +137,17 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
       delete journal.pending
       try {
         storage.setItem(key(account), JSON.stringify(journal))
-      } catch {
-        pruneRecoverySnapshots(storage, account, 0)
-        storage.setItem(key(account), JSON.stringify(journal))
+      } catch (err) {
+        if (isQuotaError(err)) {
+          pruneRecoverySnapshots(storage, account, 0)
+          try {
+            storage.setItem(key(account), JSON.stringify(journal))
+          } catch (retryErr) {
+            console.warn('Unable to persist sync journal completed state (quota exceeded). Proceeding in-memory.', retryErr)
+          }
+        } else {
+          throw err
+        }
       }
     },
     acknowledge() {
@@ -83,9 +155,17 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
       journal.pending.acknowledged = true
       try {
         storage.setItem(key(account), JSON.stringify(journal))
-      } catch {
-        pruneRecoverySnapshots(storage, account, 0)
-        storage.setItem(key(account), JSON.stringify(journal))
+      } catch (err) {
+        if (isQuotaError(err)) {
+          pruneRecoverySnapshots(storage, account, 0)
+          try {
+            storage.setItem(key(account), JSON.stringify(journal))
+          } catch (retryErr) {
+            console.warn('Unable to persist sync journal acknowledge state (quota exceeded). Proceeding in-memory.', retryErr)
+          }
+        } else {
+          throw err
+        }
       }
     },
   }
@@ -93,7 +173,20 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
 
 export const LIBRARY_KEY = 'gtar_library_v1'
 export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
-  storage.setItem(LIBRARY_KEY, JSON.stringify(library))
+  try {
+    storage.setItem(LIBRARY_KEY, JSON.stringify(library))
+  } catch (err) {
+    if (isQuotaError(err)) {
+      pruneAllRecoverySnapshots(storage, 0)
+      try {
+        storage.setItem(LIBRARY_KEY, JSON.stringify(library))
+        return
+      } catch (retryErr) {
+        throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr })
+      }
+    }
+    throw err
+  }
 }
 export function readPersistedLibrary(storage: Storage = localStorage): SyncLibrary | null {
   const raw = storage.getItem(LIBRARY_KEY)

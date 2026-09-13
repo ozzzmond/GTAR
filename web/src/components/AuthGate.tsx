@@ -49,12 +49,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (!clientId || refreshing.current) return
     const current = session ?? readGoogleSession()
     if (!current || !current.user?.email) return
+    const generation = epoch.current
+    const accountSub = current.user.sub
     refreshing.current = true
     try {
       const renewed = await refreshGoogleSession(clientId, current)
+      // Epoch/account guards: late responses after sign-out or account switch must not re-authenticate
+      if (generation !== epoch.current || !readGoogleSession() || renewed.user.sub !== accountSub) {
+        return
+      }
       saveGoogleSession(renewed)
       setSession(renewed)
     } catch (err) {
+      if (generation !== epoch.current) return
       // If offline/network outage during gig, do NOT kick the user out of stage view.
       // If GIS explicitly rejected or unauthorized, sign out.
       const isOffline = typeof window !== 'undefined' && window.navigator ? window.navigator.onLine === false : (typeof navigator !== 'undefined' && navigator.onLine === false)
