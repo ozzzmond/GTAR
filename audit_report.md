@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-13 05:18:21 UTC
+- **Timestamp:** 2026-09-13 06:06:07 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 0.39s
+- **Total Duration:** 0.38s
 - **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
@@ -75,16 +75,15 @@
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `2`
+- **Uncommitted Files Count:** `1`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
 - **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `08cb4fc - chore(web): bump web to 1.0.87-dev.2 (63 minutes ago)`
+- **Latest Commit:** `ce3c902 - chore(web): bump web to 1.0.87-dev.3 (48 minutes ago)`
 
 #### Detailed Findings / Warnings:
-- 2 uncommitted file(s) in working tree:
--   M web/src/components/StageView.tsx
--   ?? audit_local.py
+- 1 uncommitted file(s) in working tree:
+-    M web/src/components/StageView.tsx
 
 ---
 

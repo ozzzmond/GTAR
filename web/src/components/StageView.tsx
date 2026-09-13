@@ -128,38 +128,39 @@ export const StageView: React.FC<StageViewProps> = ({
   const iosOnly = useMemo(() => isIosDevice() && !isStandalonePwa(), [])
   // True whenever the stage is in any full-attention performance mode
   const isPerformanceMode = isFullscreen || isDistractionFree
+  const inPerformanceMode = isPerformanceMode
 
-  // Focus mode auto-hiding song title banner
-  const [showFocusTitle, setShowFocusTitle] = useState(true)
-  const titleHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Focus mode unified auto-hiding overlays (top header + bottom controls)
+  const [showStageOverlays, setShowStageOverlays] = useState(true)
+  const overlaysHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastScrollTopRef = useRef<number>(0)
 
-  const triggerTitleShow = useCallback(() => {
-    setShowFocusTitle(true)
-    if (titleHideTimeoutRef.current) {
-      clearTimeout(titleHideTimeoutRef.current)
+  const triggerOverlaysShow = useCallback(() => {
+    setShowStageOverlays(true)
+    if (overlaysHideTimeoutRef.current) {
+      clearTimeout(overlaysHideTimeoutRef.current)
     }
-    titleHideTimeoutRef.current = setTimeout(() => {
-      setShowFocusTitle(false)
+    overlaysHideTimeoutRef.current = setTimeout(() => {
+      setShowStageOverlays(false)
     }, 3500)
   }, [])
 
   useEffect(() => {
     if (isPerformanceMode) {
-      triggerTitleShow()
+      triggerOverlaysShow()
     } else {
-      setShowFocusTitle(false)
-      if (titleHideTimeoutRef.current) {
-        clearTimeout(titleHideTimeoutRef.current)
-        titleHideTimeoutRef.current = null
+      setShowStageOverlays(true)
+      if (overlaysHideTimeoutRef.current) {
+        clearTimeout(overlaysHideTimeoutRef.current)
+        overlaysHideTimeoutRef.current = null
       }
     }
-  }, [isPerformanceMode, song.id, song.title, triggerTitleShow])
+  }, [isPerformanceMode, song.id, song.title, triggerOverlaysShow])
 
   useEffect(() => {
     return () => {
-      if (titleHideTimeoutRef.current) {
-        clearTimeout(titleHideTimeoutRef.current)
+      if (overlaysHideTimeoutRef.current) {
+        clearTimeout(overlaysHideTimeoutRef.current)
       }
     }
   }, [])
@@ -432,15 +433,15 @@ export const StageView: React.FC<StageViewProps> = ({
 
     if (inPerformanceMode) {
       if (isScrollingDown && currentTop > 30) {
-        // Immediately fades/hides when the user scrolls down
-        setShowFocusTitle(false)
-        if (titleHideTimeoutRef.current) {
-          clearTimeout(titleHideTimeoutRef.current)
-          titleHideTimeoutRef.current = null
+        // Immediately fades/hides overlays when the user scrolls down
+        setShowStageOverlays(false)
+        if (overlaysHideTimeoutRef.current) {
+          clearTimeout(overlaysHideTimeoutRef.current)
+          overlaysHideTimeoutRef.current = null
         }
       } else if (isAtTop) {
-        // Re-appears momentarily when scrolling back to the top
-        triggerTitleShow()
+        // Re-appears smoothly when scrolling back to the top
+        triggerOverlaysShow()
       }
     }
     lastScrollTopRef.current = currentTop
@@ -468,10 +469,19 @@ export const StageView: React.FC<StageViewProps> = ({
   // content, but NOT when the event is the touch-end bleed from tapping the FAB.
   // We ignore touch events within 400ms of the last autoscroll activation.
   const handleContainerTouchStart = () => {
+    if (inPerformanceMode) {
+      triggerOverlaysShow()
+    }
     if (!isAutoScrolling) return
     const msSinceStart = performance.now() - autoScrollStartedAtRef.current
     if (msSinceStart > 400) {
       setIsAutoScrolling(false)
+    }
+  }
+
+  const handleContainerClick = () => {
+    if (inPerformanceMode) {
+      triggerOverlaysShow()
     }
   }
 
@@ -540,6 +550,11 @@ export const StageView: React.FC<StageViewProps> = ({
 
   const fontSizePxRef = useRef(fontSizePx)
   fontSizePxRef.current = fontSizePx
+
+  const isPerformanceModeRef = useRef(inPerformanceMode)
+  isPerformanceModeRef.current = inPerformanceMode
+  const triggerOverlaysShowRef = useRef(triggerOverlaysShow)
+  triggerOverlaysShowRef.current = triggerOverlaysShow
 
   const slideContentRef = useRef<HTMLDivElement>(null)
   const isAnimatingRef = useRef(false)
@@ -614,6 +629,9 @@ export const StageView: React.FC<StageViewProps> = ({
     let currentDragX = 0
 
     const onTouchStart = (e: TouchEvent) => {
+      if (isPerformanceModeRef.current) {
+        triggerOverlaysShowRef.current()
+      }
       if (e.touches.length === 2) {
         gestureDirection = 'pinch'
         isPinching = true
@@ -1012,8 +1030,6 @@ export const StageView: React.FC<StageViewProps> = ({
     setIsSpeedPromptOpen(false)
   }
 
-  const inPerformanceMode = isPerformanceMode
-
   return (
     <div className="flex-1 flex flex-col bg-[#002B36] select-none relative overflow-hidden"
       style={{ height: inPerformanceMode ? '100vh' : 'calc(100vh - 4rem)' }}
@@ -1023,32 +1039,85 @@ export const StageView: React.FC<StageViewProps> = ({
       {/* =================================================================== */}
       {inPerformanceMode && (
         <div
-          onClick={triggerTitleShow}
-          className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 sm:px-6 py-2.5
+          onClick={triggerOverlaysShow}
+          className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3 sm:px-6 py-2
                       bg-[#073642]/95 backdrop-blur-md border-b border-[#1A4A55] shadow-xl
                       transition-all duration-300 ease-in-out transform ${
-                        showFocusTitle
+                        showStageOverlays
                           ? 'opacity-100 translate-y-0 pointer-events-auto'
                           : 'opacity-0 -translate-y-full pointer-events-none'
                       }`}
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
         >
-          <div className="min-w-0 flex-1 pr-3">
-            <h1 className="text-base sm:text-lg font-extrabold text-[#EEE8D5] tracking-tight leading-tight truncate">
+          <div className="min-w-0 flex-1 pr-2 sm:pr-4">
+            <h1 className="text-sm sm:text-base md:text-lg font-extrabold text-[#EEE8D5] tracking-tight leading-tight truncate">
               {song.title || 'Untitled Song'}
             </h1>
             {song.artist && (
-              <p className="text-[11px] sm:text-xs text-[#2AA198] font-semibold truncate leading-none mt-0.5">
+              <p className="text-[10px] sm:text-xs text-[#2AA198] font-semibold truncate leading-none mt-0.5">
                 {song.artist}
               </p>
             )}
           </div>
+
           <div className="flex items-center gap-2 shrink-0">
-            {effectiveKey && (
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#002B36] text-[#B58900] border border-[#B58900]/40">
-                {effectiveKey}
-              </span>
-            )}
+            {/* Quick Transpose [- Key +] Control */}
+            <div
+              className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTransposeChange(transposeOffset - 1)
+                  triggerOverlaysShow()
+                }}
+                className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                title="Transpose Down (-1)"
+                aria-label="Transpose Down (-1 semitone)"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsKeyPickerOpen(true)
+                  triggerOverlaysShow()
+                }}
+                className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
+                  transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
+                }`}
+                title="Choose Target Key"
+                aria-label={`Current Key: ${effectiveKey || 'Orig'}, Tap to choose key`}
+              >
+                <span>{effectiveKey || 'Orig'}</span>
+                {transposeOffset !== 0 && (
+                  <span className="text-[10px] font-bold text-[#B58900]/90">
+                    {offsetStr}
+                  </span>
+                )}
+                <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTransposeChange(transposeOffset + 1)
+                  triggerOverlaysShow()
+                }}
+                className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                title="Transpose Up (+1)"
+                aria-label="Transpose Up (+1 semitone)"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Exit Focus Mode Button */}
             <button
               type="button"
               onClick={(e) => {
@@ -1056,7 +1125,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
                 else setIsDistractionFree(false)
               }}
-              className="px-2.5 py-1 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#EEE8D5] text-xs font-semibold
+              className="px-2.5 py-1.5 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#EEE8D5] text-xs font-semibold
                          flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
               title="Exit focus mode"
               aria-label="Exit focus mode"
@@ -1068,14 +1137,14 @@ export const StageView: React.FC<StageViewProps> = ({
         </div>
       )}
 
-      {/* Top area tap zone to reveal the banner when hidden */}
-      {inPerformanceMode && !showFocusTitle && (
+      {/* Top area tap zone to reveal overlays when hidden */}
+      {inPerformanceMode && !showStageOverlays && (
         <div
-          onClick={triggerTitleShow}
+          onClick={triggerOverlaysShow}
           className="absolute top-0 left-0 right-0 h-14 z-30 cursor-pointer pointer-events-auto"
           style={{ top: 'env(safe-area-inset-top, 0px)' }}
-          aria-label="Reveal song title banner"
-          title="Tap to show song title"
+          aria-label="Reveal stage controls"
+          title="Tap to show stage controls"
         />
       )}
 
@@ -1370,6 +1439,7 @@ export const StageView: React.FC<StageViewProps> = ({
         ref={scrollContainerRef}
         onScroll={handleContainerScroll}
         onTouchStart={handleContainerTouchStart}
+        onClick={handleContainerClick}
         className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 md:px-8 py-4 select-text"
       >
         <div
@@ -1413,8 +1483,14 @@ export const StageView: React.FC<StageViewProps> = ({
             />
           )}
 
-          {/* Bottom Padding for scroll clearance (Spacer(height = 140.dp)) */}
-          <div className="h-44 flex items-center justify-center text-xs font-mono text-[#1A4A55] select-none">
+          {/* Bottom Padding for scroll clearance: ensures floating controls never occlude the final lines */}
+          <div
+            className="flex items-center justify-center text-xs font-mono text-[#1A4A55] select-none"
+            style={{
+              height: 'max(240px, calc(180px + env(safe-area-inset-bottom, 24px)))',
+              paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+            }}
+          >
             — End of Song —
           </div>
         </div>
@@ -1428,8 +1504,15 @@ export const StageView: React.FC<StageViewProps> = ({
       {((isInSetlistMode && activeSetlistSongs.length > 1) ||
         (!isInSetlistMode && songs.length > 1)) && (
         <div
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center gap-0 pointer-events-auto
-                     bg-[#073642]/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none"
+          className={`absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center gap-0
+                     bg-[#073642]/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none
+                     transition-all duration-300 ease-in-out transform ${
+                       inPerformanceMode
+                         ? showStageOverlays
+                           ? 'opacity-100 translate-y-0 pointer-events-auto'
+                           : 'opacity-0 translate-y-16 pointer-events-none'
+                         : 'opacity-100 translate-y-0 pointer-events-auto'
+                     }`}
           style={{
             borderColor: isInSetlistMode ? 'rgba(181,137,0,0.35)' : 'rgba(42,161,152,0.35)',
             paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
@@ -1438,7 +1521,11 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             disabled={isInSetlistMode ? activeSetlistSongIndex <= 0 : activeSongIndex <= 0}
-            onClick={handlePrevSong}
+            onClick={(e) => {
+              e.stopPropagation()
+              handlePrevSong()
+              triggerOverlaysShow()
+            }}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
             }`}
@@ -1449,7 +1536,11 @@ export const StageView: React.FC<StageViewProps> = ({
 
           <button
             type="button"
-            onClick={onOpenSetlistDrawer}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenSetlistDrawer()
+              triggerOverlaysShow()
+            }}
             className={`px-3 py-2 font-extrabold text-[11px] transition-colors cursor-pointer ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
             }`}
@@ -1463,7 +1554,11 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             disabled={isInSetlistMode ? activeSetlistSongIndex >= activeSetlistSongs.length - 1 : activeSongIndex >= songs.length - 1}
-            onClick={handleNextSong}
+            onClick={(e) => {
+              e.stopPropagation()
+              handleNextSong()
+              triggerOverlaysShow()
+            }}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
             }`}
@@ -1476,7 +1571,14 @@ export const StageView: React.FC<StageViewProps> = ({
 
       {/* --- Bottom-right FAB stack (autoscroll + options) --- */}
       <div
-        className="absolute bottom-0 right-0 z-30 flex flex-col items-end gap-3 pointer-events-none"
+        className={`absolute bottom-0 right-0 z-30 flex flex-col items-end gap-3 pointer-events-none
+                   transition-all duration-300 ease-in-out transform ${
+                     inPerformanceMode
+                       ? showStageOverlays
+                         ? 'opacity-100 translate-y-0'
+                         : 'opacity-0 translate-y-20'
+                       : 'opacity-100 translate-y-0'
+                   }`}
         style={{
           paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
           paddingRight: 'max(16px, env(safe-area-inset-right, 16px))',
@@ -1485,11 +1587,17 @@ export const StageView: React.FC<StageViewProps> = ({
         {/* ··· Stage Options FAB */}
         <button
           type="button"
-          onClick={() => setIsStageMenuOpen(true)}
-          className="pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsStageMenuOpen(true)
+            triggerOverlaysShow()
+          }}
+          className={`w-11 h-11 rounded-full flex items-center justify-center
                      bg-[#073642]/90 backdrop-blur-md border border-[#1A4A55] shadow-xl
                      text-[#93A1A1] hover:text-[#EEE8D5] hover:border-[#2AA198]
-                     transition-all active:scale-90 cursor-pointer"
+                     transition-all active:scale-90 cursor-pointer ${
+                       inPerformanceMode && !showStageOverlays ? 'pointer-events-none' : 'pointer-events-auto'
+                     }`}
           title="Stage options (transpose, font, speed, exit)"
           aria-label="Open stage options"
         >
@@ -1499,10 +1607,16 @@ export const StageView: React.FC<StageViewProps> = ({
         {/* Autoscroll FAB — circular, Android yellow/red */}
         <button
           type="button"
-          onClick={handleToggleAutoScroll}
-          className={`pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center
+          onClick={(e) => {
+            e.stopPropagation()
+            handleToggleAutoScroll()
+            triggerOverlaysShow()
+          }}
+          className={`w-14 h-14 rounded-full flex items-center justify-center
                      shadow-2xl transition-all active:scale-90 cursor-pointer select-none
                      border-2 ${
+                       inPerformanceMode && !showStageOverlays ? 'pointer-events-none' : 'pointer-events-auto'
+                     } ${
             isAutoScrolling
               ? 'bg-[#EF4444] border-[#EF4444]/60 text-white hover:bg-[#DC2626] shadow-red-900/50'
               : 'bg-[#B58900] border-[#B58900]/60 text-black hover:bg-[#C89600] shadow-amber-900/40'
