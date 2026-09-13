@@ -2,10 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createBackupPayload, exportRecoveryData } from '../utils/jsonBackup'
 import { clearDriveSession, readCloudRecovery, prepareCloudResolution, DriveSyncError, pullCloudBackup, pushCloudBackup } from '../utils/driveSync'
 import { validSession } from '../utils/googleAuth'
-import { openSyncJournal, persistLibrary, readRecoverySnapshots } from '../utils/syncJournal'
+import { openSyncJournal, persistLibrary, readRecoverySnapshots, isQuotaError } from '../utils/syncJournal'
 import { useGoogleAuth } from '../components/AuthGate'
 import { mergeSyncLibrary, type SyncLibrary } from '../utils/syncMerge'
 import { isDefaultTemplateLibrary } from '../utils/defaultTemplateLibrary'
+
+function formatSyncError(error: unknown, fallback: string): string {
+  if (isQuotaError(error)) {
+    return 'Local browser storage quota exceeded. Free up device storage or export a backup.'
+  }
+  if (error instanceof DriveSyncError && error.isDriveQuota) {
+    return error.message
+  }
+  return error instanceof Error ? error.message : fallback
+}
 
 export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary) => void) {
   const { session, signOut: lockApp, signIn, ready } = useGoogleAuth()
@@ -88,7 +98,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
     } catch (error) {
       if (epoch !== generation.current) return
       if (error instanceof DriveSyncError && error.status === 401) signOut()
-      setStatus(error instanceof Error ? error.message : 'Sync failed. Local changes are saved.')
+      setStatus(formatSyncError(error, 'Sync failed. Local changes are saved.'))
     } finally {
       running.current = false; setBusy(false)
       if (queued.current) { queued.current = false; setTimeout(() => { void runSync() }, 1500) }
@@ -134,7 +144,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       persistLibrary(latest.current.library)
       journal.complete()
       setStatus('Resolved device library published. Previous cloud revisions are retained.')
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Resolution failed; recovery copies retained.') }
+    } catch (error) { setStatus(formatSyncError(error, 'Resolution failed; recovery copies retained.')) }
     finally { running.current = false; setBusy(false) }
   }
   const adoptCloudLibrary = async () => {
@@ -169,7 +179,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       journal.complete()
       setStatus('Cloud library adopted successfully.')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Failed to adopt cloud library.')
+      setStatus(formatSyncError(error, 'Failed to adopt cloud library.'))
     } finally {
       running.current = false; setBusy(false)
     }

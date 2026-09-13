@@ -123,3 +123,26 @@ test('invalid historical payloads, missing revisions, and expired credentials fa
     await assert.rejects(pullCloudBackup('invalid'),/no revision/)
   } finally {global.fetch=original;clearDriveSession('invalid')}
 })
+
+test('Google Drive API quota and storage quota limits are classified explicitly', async () => {
+  const original = global.fetch
+  try {
+    global.fetch = async () => new Response(JSON.stringify({
+      error: { code: 403, message: 'User storage quota exceeded', errors: [{ reason: 'storageQuotaExceeded' }] }
+    }), { status: 403 })
+    await assert.rejects(pullCloudBackup('test-quota'), err => {
+      return err.status === 403 && err.isDriveQuota === true && /Google Drive storage quota exceeded/.test(err.message)
+    })
+
+    global.fetch = async () => new Response(JSON.stringify({
+      error: { code: 403, message: 'Rate limit exceeded', errors: [{ reason: 'rateLimitExceeded' }] }
+    }), { status: 403 })
+    await assert.rejects(pullCloudBackup('test-quota'), err => {
+      return err.status === 403 && err.isDriveQuota === true && /Google Drive API quota limit reached/.test(err.message)
+    })
+  } finally {
+    global.fetch = original
+    clearDriveSession('test-quota')
+  }
+})
+

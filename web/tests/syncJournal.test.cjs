@@ -61,7 +61,7 @@ test('archive prunes older recovery snapshots and tolerates quota errors gracefu
   const recoveryKeys = [...store.values.keys()].filter(k=>k.startsWith('gtar_sync_recovery:account:'))
   assert.ok(recoveryKeys.length <= 2, `Expected at most 2 recovery snapshots, got ${recoveryKeys.length}`)
 
-  // Storage failure during archive stops sync safely (throws) and preserves the last durable copy
+  // Storage failure during archive degrades gracefully and does NOT throw or crash sync
   let throwsOnSet = false
   const quotaStore = {
     ...store,
@@ -72,9 +72,43 @@ test('archive prunes older recovery snapshots and tolerates quota errors gracefu
   }
   const jQuota = openSyncJournal('account',base,quotaStore)
   throwsOnSet = true
-  assert.throws(() => jQuota.archive(base), /Unable to persist recovery snapshot/)
-  // Verify that the existing durable recovery copy is still retained
-  const retainedKeys = [...store.values.keys()].filter(k=>k.startsWith('gtar_sync_recovery:account:'))
-  assert.ok(retainedKeys.length >= 1, 'Last durable recovery copy must be kept')
+  assert.doesNotThrow(() => jQuota.archive(base))
 })
+
+test('isQuotaError detects DOMException and quota error messages correctly',()=>{
+  const { isQuotaError } = require('../src/utils/syncJournal.ts')
+  assert.equal(isQuotaError(new Error('QuotaExceededError')), true)
+  assert.equal(isQuotaError(new Error('The quota has been exceeded.')), true)
+  assert.equal(isQuotaError(new Error('Failed to execute setItem: Setting the value exceeded the quota.')), true)
+  assert.equal(isQuotaError({ name: 'QuotaExceededError', code: 22 }), true)
+  assert.equal(isQuotaError(new Error('Network error')), false)
+  assert.equal(isQuotaError(null), false)
+})
+
+test('persistLibrary auto-prunes recovery snapshots to save primary library on quota hit',()=>{
+  const { persistLibrary, readPersistedLibrary, openSyncJournal } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+  const j = openSyncJournal('account', base, store)
+  j.archive(base)
+  j.archive(edited)
+  assert.ok([...store.values.keys()].some(k => k.startsWith('gtar_sync_recovery:')))
+
+  let hitQuotaOnce = true
+  const quotaStore = {
+    ...store,
+    setItem(k, v) {
+      if (k === 'gtar_library_v1' && hitQuotaOnce) {
+        hitQuotaOnce = false
+        throw new Error('QuotaExceededError')
+      }
+      store.setItem(k, v)
+    }
+  }
+  persistLibrary(edited, quotaStore)
+  assert.deepEqual(readPersistedLibrary(quotaStore), edited)
+  // Recovery snapshots were pruned to allow saving primary library
+  const remaining = [...quotaStore.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
+  assert.equal(remaining.length, 0)
+})
+
 

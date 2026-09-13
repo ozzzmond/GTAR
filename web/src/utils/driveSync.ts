@@ -5,7 +5,12 @@ const NAME = 'gtar_songbook_sync.json'
 const FIELDS = 'id,name,version,modifiedTime,md5Checksum'
 export class DriveSyncError extends Error {
   status: number
-  constructor(message: string, status = 0) { super(message); this.status = status }
+  isDriveQuota?: boolean
+  constructor(message: string, status = 0, isDriveQuota = false) {
+    super(message)
+    this.status = status
+    this.isDriveQuota = isDriveQuota
+  }
 }
 export interface SyncFile { id: string; name?: string; version?: string; modifiedTime?: string; md5Checksum?: string }
 function revision(file: SyncFile): string {
@@ -26,7 +31,44 @@ const REVISION_NAME = 'gtar_songbook_revision_v1.json'
 export function clearDriveSession(token: string) { snapshots.delete(token) }
 async function request(token: string, url: string, init: RequestInit = {}) {
   const response = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...init.headers }, signal: AbortSignal.timeout(30000) })
-  if (!response.ok) throw new DriveSyncError(response.status === 401 ? 'Google session expired. Sign in again.' : response.status === 412 ? 'Cloud changed during sync. Try Sync Now again.' : `Drive request failed (${response.status}). Local changes are saved.`, response.status)
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new DriveSyncError('Google session expired. Sign in again.', 401)
+    }
+    if (response.status === 412) {
+      throw new DriveSyncError('Cloud changed during sync. Try Sync Now again.', 412)
+    }
+    let errorDetail = ''
+    try {
+      const text = await response.text()
+      try {
+        const errJson = JSON.parse(text)
+        if (errJson?.error?.message) errorDetail = String(errJson.error.message)
+        const reason = errJson?.error?.errors?.[0]?.reason
+        if (reason === 'storageQuotaExceeded' || errJson?.error?.code === 507) {
+          throw new DriveSyncError('Google Drive storage quota exceeded. Free up space in your Google Drive account.', response.status, true)
+        }
+        if (reason === 'quotaExceeded' || reason === 'userRateLimitExceeded' || reason === 'rateLimitExceeded') {
+          throw new DriveSyncError('Google Drive API quota limit reached. Try again later.', response.status, true)
+        }
+      } catch (inner) {
+        if (inner instanceof DriveSyncError) throw inner
+        if (text) errorDetail = text
+      }
+    } catch (e) {
+      if (e instanceof DriveSyncError) throw e
+    }
+    if (response.status === 429) {
+      throw new DriveSyncError('Google Drive rate limit exceeded. Try again later.', 429, true)
+    }
+    if (response.status === 507) {
+      throw new DriveSyncError('Google Drive storage quota exceeded. Free up space in your Google Drive account.', 507, true)
+    }
+    if (response.status === 403 && /quota/i.test(errorDetail)) {
+      throw new DriveSyncError(`Google Drive quota exceeded: ${errorDetail}`, 403, true)
+    }
+    throw new DriveSyncError(`Drive request failed (${response.status}). Local changes are saved.`, response.status)
+  }
   return response
 }
 async function findSyncFiles(token: string): Promise<SyncFile[]> {
