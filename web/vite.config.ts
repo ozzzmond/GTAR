@@ -272,6 +272,7 @@ export default defineConfig(({ mode }) => {
           icons: isDev ? devIcons : prodIcons,
         },
         workbox: {
+          cacheId: `gtar-${isDev ? 'dev' : 'prod'}-${process.env.npm_package_version || '1.0.87'}`,
           globPatterns: [
             '**/*.{js,css,html,ico,png,jpg,jpeg,svg,gif,webp,json,woff,woff2,ttf,eot,otf,mp3,wav,webmanifest}',
           ],

@@ -1034,13 +1034,27 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 4000)
   }
 
-  // Check for updates simulation
-  const handleCheckForUpdates = () => {
+  // Active check for updates via Service Worker
+  const handleCheckForUpdates = async () => {
     setIsCheckingUpdates(true)
-    setTimeout(() => {
+    try {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (registration) {
+          await registration.update()
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+            window.location.reload()
+            return
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Manual update check failed:', err)
+    } finally {
       setIsCheckingUpdates(false)
       setShowUpdateSuccessModal(true)
-    }, 850)
+    }
   }
 
   // Filter songs if searchQuery is active

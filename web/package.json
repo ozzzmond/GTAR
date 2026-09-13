@@ -1,13 +1,14 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.0.87-dev.7",
+  "version": "1.0.87-dev.8",
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "dev": "vite --port 5173",
     "dev:debug": "vite --port 5174 --mode debug",
     "build": "tsc -b && vite build",
+    "pages:ignore": "node scripts/ignore-build.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "lint:sync": "eslint src/utils/syncMerge.ts src/utils/syncJournal.ts src/utils/driveSync.ts src/hooks/useDriveSync.ts src/utils/jsonBackup.ts src/utils/setlistSongs.ts src/utils/backupSettings.ts src/utils/stagePerformance.ts src/utils/googleAuth.ts src/utils/authPolicy.ts src/utils/bandSyncAddress.ts src/utils/defaultTemplateLibrary.ts --max-warnings 0"

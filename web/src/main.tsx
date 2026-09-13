@@ -84,16 +84,27 @@ if (isDevApp) {
   }
 }
 
-// Register PWA Service Worker for offline stage caching & local testing
+// Register PWA Service Worker for offline stage caching & automatic version rollout
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  // Seamlessly reload active tab when updated Service Worker activates and claims clients
+  let refreshing = false
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true
+      window.location.reload()
+    }
+  })
+
   registerSW({
     immediate: true,
     onRegisteredSW(_swScriptUrl, registration) {
       if (registration) {
-        // Periodically check for updates (every hour)
+        // Immediate check on initial registration
+        registration.update().catch(() => { })
+        // Periodically check for updates (every 15 minutes)
         setInterval(() => {
           registration.update().catch(() => { })
-        }, 60 * 60 * 1000)
+        }, 15 * 60 * 1000)
       }
     },
     onRegisterError(error) {
