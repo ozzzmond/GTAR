@@ -1,5 +1,5 @@
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
   createWakeLockController,
@@ -36,16 +36,11 @@ import { stageCast } from '../utils/stageCast'
 import { getChordVoicing, type ChordVoicing } from '../utils/chordDictionary'
 import {
   SongLineRenderer,
-  getMaxStageFontSize,
   type StageChordScale,
   type StageFontWeight,
   type StageLineSpacing,
 } from './SongLineRenderer'
-export { getMaxStageFontSize }
-import { ScrollAnchorController } from '../utils/scrollAnchor'
 import { KeyPickerModal } from './KeyPickerModal'
-
-const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
 import type { ActiveSongState } from '../types/gtar'
@@ -76,6 +71,8 @@ interface StageViewProps {
   /** Called whenever the stage enters or exits "performance mode" (fullscreen or focus). */
   onPerformanceModeChange?: (isActive: boolean) => void
 }
+
+
 
 export const STAGE_SIZE_PRESETS = {
   S: 16,
@@ -137,77 +134,16 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     return 35
   })
-  // Viewport width tracking for responsive typography bounds
-  const [viewportWidth, setViewportWidth] = useState<number>(() => {
-    return typeof window !== 'undefined' ? window.innerWidth : 1024
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const handleResize = () => setViewportWidth(window.innerWidth)
-    window.addEventListener('resize', handleResize, { passive: true })
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  const maxFontSize = useMemo(() => getMaxStageFontSize(viewportWidth), [viewportWidth])
-
   const [fontSizePx, setFontSizePx] = useState<number>(() => {
-    const currentMax = typeof window !== 'undefined' ? getMaxStageFontSize(window.innerWidth) : 34
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(SETTINGS_KEYS.fontSizePx)
       if (saved) {
         const val = parseInt(saved, 10)
-        if (!isNaN(val) && val >= 12) return Math.min(val, currentMax)
+        if (!isNaN(val) && val >= 12 && val <= 38) return val
       }
     }
     return 20
   })
-
-  // Main canvas scrolling container and visual scroll anchor controller
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const scrollAnchorControllerRef = useRef<ScrollAnchorController>(new ScrollAnchorController(450))
-  const isProgrammaticScrollRef = useRef(false)
-  const songIdKey = song.id !== undefined ? String(song.id) : (song.title || 'active-song')
-
-  const captureScrollAnchor = useCallback(() => {
-    scrollAnchorControllerRef.current.capture(scrollContainerRef.current, songIdKey)
-  }, [songIdKey])
-
-  // Debounced persistence for font size changes to eliminate layout micro-stutters during rapid taps/hold
-  const saveFontSizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const debouncedSaveFontSize = useCallback((size: number) => {
-    if (typeof window === 'undefined') return
-    if (saveFontSizeTimeoutRef.current) {
-      clearTimeout(saveFontSizeTimeoutRef.current)
-    }
-    saveFontSizeTimeoutRef.current = setTimeout(() => {
-      try {
-        localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(size))
-      } catch {
-        // Ignore quota/storage errors
-      }
-      saveFontSizeTimeoutRef.current = null
-    }, 250)
-  }, [])
-
-  // Auto-clamp if viewport shrinks below current font size
-  useEffect(() => {
-    setFontSizePx((prev) => {
-      if (prev > maxFontSize) {
-        debouncedSaveFontSize(maxFontSize)
-        return maxFontSize
-      }
-      return prev
-    })
-  }, [maxFontSize, debouncedSaveFontSize])
-
-  useEffect(() => {
-    return () => {
-      if (saveFontSizeTimeoutRef.current) {
-        clearTimeout(saveFontSizeTimeoutRef.current)
-      }
-    }
-  }, [])
 
   // Device-level persistent Stage Typography preferences
   const [chordScale, setChordScaleState] = useState<StageChordScale>(() => {
@@ -242,36 +178,33 @@ export const StageView: React.FC<StageViewProps> = ({
   })
 
   const setChordScale = useCallback((scale: StageChordScale) => {
-    captureScrollAnchor()
     setChordScaleState(scale)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_chord_scale', String(scale))
     }
-  }, [captureScrollAnchor])
+  }, [])
 
   const setFontWeight = useCallback((weight: StageFontWeight) => {
-    captureScrollAnchor()
     setFontWeightState(weight)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_font_weight', weight)
     }
-  }, [captureScrollAnchor])
+  }, [])
 
   const setLineSpacing = useCallback((spacing: StageLineSpacing) => {
-    captureScrollAnchor()
     setLineSpacingState(spacing)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_line_spacing', spacing)
     }
-  }, [captureScrollAnchor])
+  }, [])
 
   const setStageFontSize = useCallback((size: number) => {
-    captureScrollAnchor()
-    const currentMax = getMaxStageFontSize(typeof window !== 'undefined' ? window.innerWidth : 1024)
-    const clamped = Math.max(12, Math.min(currentMax, size))
+    const clamped = Math.max(12, Math.min(38, size))
     setFontSizePx(clamped)
-    debouncedSaveFontSize(clamped)
-  }, [debouncedSaveFontSize, captureScrollAnchor])
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(clamped))
+    }
+  }, [])
 
   // Double tap detection on numeric font size display to reset to Stage default (L / 24px)
   const lastNumericTapRef = useRef<number>(0)
@@ -285,16 +218,16 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [setStageFontSize])
 
-  // Continuous hold on A- / A+ stepper with debounced storage save and bounded scaling
+  // Continuous hold on A- / A+ stepper
   const holdStep = useCallback((delta: number) => {
-    captureScrollAnchor()
-    const currentMax = getMaxStageFontSize(typeof window !== 'undefined' ? window.innerWidth : 1024)
     setFontSizePx((prev) => {
-      const next = Math.max(12, Math.min(currentMax, prev + delta))
-      debouncedSaveFontSize(next)
+      const next = Math.max(12, Math.min(38, prev + delta))
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
+      }
       return next
     })
-  }, [debouncedSaveFontSize, captureScrollAnchor])
+  }, [])
 
   const createHoldHandlers = useCallback((delta: number) => {
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -317,7 +250,7 @@ export const StageView: React.FC<StageViewProps> = ({
       timer = setTimeout(() => {
         interval = setInterval(() => {
           holdStep(delta)
-        }, 110)
+        }, 70)
       }, 320)
     }
 
@@ -403,82 +336,22 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [])
 
   const fontStyle = externalFontStyle !== undefined ? externalFontStyle : localFontStyle
-  const rawSetFontStyle = externalOnSelectFontStyle || setLocalFontStyle
-  const setFontStyle = useCallback(
-    (style: 'mono' | 'sans' | 'serif') => {
-      captureScrollAnchor()
-      rawSetFontStyle(style)
-    },
-    [rawSetFontStyle, captureScrollAnchor]
-  )
-
-  // Track external fontStyle prop transitions to capture anchor before paint
-  const prevExternalFontStyleRef = useRef(externalFontStyle)
-  if (externalFontStyle !== prevExternalFontStyleRef.current) {
-    scrollAnchorControllerRef.current.capture(scrollContainerRef.current, songIdKey)
-    prevExternalFontStyleRef.current = externalFontStyle
-  }
+  const setFontStyle = externalOnSelectFontStyle || setLocalFontStyle
 
   const isTwoColumn = externalIsTwoColumn !== undefined ? externalIsTwoColumn : localIsTwoColumn
-  const setIsTwoColumn = useCallback(
-    (enabled: boolean) => {
-      captureScrollAnchor()
-      if (externalOnToggleTwoColumn) {
-        externalOnToggleTwoColumn(enabled)
-      } else {
-        setLocalIsTwoColumn(enabled)
-      }
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(SETTINGS_KEYS.isTwoColumn, String(enabled))
-      }
-    },
-    [externalOnToggleTwoColumn, captureScrollAnchor]
-  )
-
-  // Clear visual scroll anchor on song transitions and unmount
-  useEffect(() => {
-    scrollAnchorControllerRef.current.clear()
-  }, [songIdKey])
-
-  useEffect(() => {
-    return () => {
-      scrollAnchorControllerRef.current.clear()
+  const setIsTwoColumn = (enabled: boolean) => {
+    if (externalOnToggleTwoColumn) {
+      externalOnToggleTwoColumn(enabled)
+    } else {
+      setLocalIsTwoColumn(enabled)
     }
-  }, [])
-
-  // Anchor Restoration: Measure visual anchor after DOM mutation and correct container.scrollTop
-  // synchronously before browser paint, with a scheduled frame verification for async layout reflow
-  useIsomorphicLayoutEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    const applyRestoration = () => {
-      const drift = scrollAnchorControllerRef.current.restore(container, songIdKey)
-      if (drift !== 0) {
-        isProgrammaticScrollRef.current = true
-        accumulatedScrollRef.current = container.scrollTop
-        requestAnimationFrame(() => {
-          isProgrammaticScrollRef.current = false
-        })
-      }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SETTINGS_KEYS.isTwoColumn, String(enabled))
     }
-
-    // 1. Immediate synchronous correction before paint
-    applyRestoration()
-
-    // 2. Scheduled frame check for secondary font/wrapping reflow
-    const rafId = requestAnimationFrame(() => {
-      applyRestoration()
-    })
-
-    return () => {
-      cancelAnimationFrame(rafId)
-    }
-  }, [fontSizePx, fontStyle, chordScale, fontWeight, lineSpacing, isTwoColumn, songIdKey])
+  }
 
   useEffect(() => {
     const reloadSettings = () => {
-      captureScrollAnchor()
       const stage = readBackupSettings().stageSettings
       if (stage?.fontSizePx !== undefined) setFontSizePx(stage.fontSizePx)
       if (stage?.scrollSpeed !== undefined) setScrollSpeed(stage.scrollSpeed)
@@ -487,7 +360,7 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     window.addEventListener(SETTINGS_CHANGED, reloadSettings)
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
-  }, [captureScrollAnchor])
+  }, [])
 
   // Modals & Drawers
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
@@ -511,6 +384,7 @@ export const StageView: React.FC<StageViewProps> = ({
     return unsubscribe
   }, [])
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollAnimRef = useRef<number | null>(null)
   // Sub-pixel accumulator: iOS Safari rounds scrollTop to integers, so we accumulate
   // fractional pixels here and only commit whole-pixel increments.
@@ -749,11 +623,6 @@ export const StageView: React.FC<StageViewProps> = ({
     // correct position after a manual scroll.
     if (!isAutoScrolling) {
       accumulatedScrollRef.current = target.scrollTop
-    }
-
-    // Release visual anchor lock when user manually scrolls
-    if (!isProgrammaticScrollRef.current && !isAutoScrolling) {
-      scrollAnchorControllerRef.current.clear()
     }
 
     // Mirror to Stage Cast teleprompter screen in real time
@@ -1521,16 +1390,8 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               {...createHoldHandlers(-1)}
-              className={`px-2 py-1 text-xs font-extrabold rounded select-none transition-all ${
-                fontSizePx <= 12
-                  ? 'text-[#586E75] opacity-40 cursor-not-allowed'
-                  : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
-              }`}
-              title={
-                fontSizePx <= 12
-                  ? 'Minimum font size reached (12px)'
-                  : 'Decrease Font Size (Hold for smooth resizing)'
-              }
+              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              title="Decrease Font Size (Hold for smooth resizing)"
             >
               A-
             </button>
@@ -1545,16 +1406,8 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               {...createHoldHandlers(1)}
-              className={`px-2 py-1 text-xs font-extrabold rounded select-none transition-all ${
-                fontSizePx >= maxFontSize
-                  ? 'text-[#586E75] opacity-40 cursor-not-allowed'
-                  : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
-              }`}
-              title={
-                fontSizePx >= maxFontSize
-                  ? `Maximum font size reached for this screen (${maxFontSize}px)`
-                  : 'Increase Font Size (Hold for smooth resizing)'
-              }
+              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              title="Increase Font Size (Hold for smooth resizing)"
             >
               A+
             </button>
@@ -1757,19 +1610,11 @@ export const StageView: React.FC<StageViewProps> = ({
         onTouchStart={handleContainerTouchStart}
         onClick={handleContainerClick}
         className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 md:px-8 py-4 select-text"
-        style={{
-          contain: 'layout style',
-          overflowAnchor: 'none',
-        }}
       >
         <div
           ref={slideContentRef}
           className={`mx-auto transition-[max-width] duration-300 ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}
-          style={{
-            willChange: 'transform',
-            contain: 'layout style',
-            overflowAnchor: 'none',
-          }}
+          style={{ willChange: 'transform' }}
         >
 
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
@@ -1779,11 +1624,10 @@ export const StageView: React.FC<StageViewProps> = ({
               <p className="mt-2">This setlist entry is unavailable. Restore the song from Trash or a backup, or remove this entry from the setlist.</p>
             </div>
           ) : isTwoColumn && col2Lines.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10 items-start" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
-              <div className="min-w-0" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-10 items-start">
+              <div className="min-w-0">
                 <SongLineRenderer
                   lines={col1Lines}
-                  lineIndexOffset={0}
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
@@ -1793,10 +1637,9 @@ export const StageView: React.FC<StageViewProps> = ({
                 />
               </div>
 
-              <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-6 lg:pl-10" style={{ contain: 'layout style', overflowAnchor: 'none' }}>
+              <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-6 lg:pl-10">
                 <SongLineRenderer
                   lines={col2Lines}
-                  lineIndexOffset={col1Lines.length}
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
@@ -1809,7 +1652,6 @@ export const StageView: React.FC<StageViewProps> = ({
           ) : (
             <SongLineRenderer
               lines={parsedSong.lines}
-              lineIndexOffset={0}
               fontSizePx={fontSizePx}
               fontFamily={fontStyle}
               onChordClick={handleChordClick}
@@ -2101,16 +1943,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   <button
                     type="button"
                     {...createHoldHandlers(-1)}
-                    className={`px-4 py-2 text-sm font-extrabold select-none transition-all ${
-                      fontSizePx <= 12
-                        ? 'text-[#586E75] opacity-40 cursor-not-allowed'
-                        : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
-                    }`}
-                    title={
-                      fontSizePx <= 12
-                        ? 'Minimum font size reached (12px)'
-                        : 'Decrease font size (Hold to adjust)'
-                    }
+                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    title="Decrease font size (Hold to adjust)"
                   >
                     A-
                   </button>
@@ -2125,16 +1959,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   <button
                     type="button"
                     {...createHoldHandlers(1)}
-                    className={`px-4 py-2 text-sm font-extrabold select-none transition-all ${
-                      fontSizePx >= maxFontSize
-                        ? 'text-[#586E75] opacity-40 cursor-not-allowed'
-                        : 'text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer active:scale-95'
-                    }`}
-                    title={
-                      fontSizePx >= maxFontSize
-                        ? `Maximum font size reached for this screen (${maxFontSize}px)`
-                        : 'Increase font size (Hold to adjust)'
-                    }
+                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    title="Increase font size (Hold to adjust)"
                   >
                     A+
                   </button>
@@ -2144,24 +1970,19 @@ export const StageView: React.FC<StageViewProps> = ({
               {/* Quick Stage Size Presets [ S | M | L | XL ] */}
               <div className="flex items-center gap-1.5 pl-[88px]">
                 {(['S', 'M', 'L', 'XL'] as const).map((key) => {
-                  const presetTarget = STAGE_SIZE_PRESETS[key]
-                  const effectiveTarget = Math.min(presetTarget, maxFontSize)
-                  const isSelected = fontSizePx === effectiveTarget
+                  const size = STAGE_SIZE_PRESETS[key]
+                  const isSelected = fontSizePx === size
                   return (
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setStageFontSize(presetTarget)}
+                      onClick={() => setStageFontSize(size)}
                       className={`flex-1 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer text-center ${
                         isSelected
                           ? 'bg-[#B58900] text-black border-[#B58900] shadow-sm'
                           : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
                       }`}
-                      title={
-                        effectiveTarget < presetTarget
-                          ? `${key} (${effectiveTarget}px - clamped for screen)`
-                          : `${key} (${presetTarget}px)`
-                      }
+                      title={`${key} (${size}px)`}
                     >
                       {key}
                     </button>

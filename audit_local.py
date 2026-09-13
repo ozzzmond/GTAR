@@ -296,19 +296,8 @@ def check_pwa_health(web_dir: Path) -> CheckResult:
         sw_file = dist_dir / "sw.js"
         if sw_file.exists():
             metrics["dist_sw_generated"] = f"Yes ({sw_file.stat().st_size} bytes)"
-    # Check Cloudflare Pages _headers for cache control
-    headers_file = web_dir / "public" / "_headers"
-    if headers_file.exists():
-        headers_txt = headers_file.read_text(encoding="utf-8")
-        if "/sw.js" in headers_txt and "no-cache" in headers_txt:
-            metrics["cloudflare_headers_configured"] = "Yes (/sw.js no-cache & assets immutable)"
         else:
-            details.append("_headers exists but /sw.js cache-control is missing.")
-            status = CheckStatus.WARN
-    else:
-        details.append("web/public/_headers missing (required for Cloudflare Pages cache invalidation).")
-        if status == CheckStatus.PASS:
-            status = CheckStatus.WARN
+            details.append("dist/ directory exists but dist/sw.js was not generated.")
 
     if status == CheckStatus.PASS:
         summary = "PWA configuration, manifest icons, and Workbox caching strategies are healthy."

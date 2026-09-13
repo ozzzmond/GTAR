@@ -186,29 +186,3 @@ test('stage view typography engine supports independent chord scaling, weights a
   assert.match(twoLineHtml, /Sing along together/)
 })
 
-test('stage typography scaling clamps mobile bounds and enforces layout containment', () => {
-  const { getMaxStageFontSize } = require('../src/components/SongLineRenderer.tsx')
-
-  // Clamping bounds
-  assert.equal(getMaxStageFontSize(360), 26, 'Narrow mobile viewport (<640px) clamps to 26px')
-  assert.equal(getMaxStageFontSize(412), 26, 'Standard mobile viewport (<640px) clamps to 26px')
-  assert.equal(getMaxStageFontSize(639), 26, 'Edge mobile viewport (<640px) clamps to 26px')
-  assert.equal(getMaxStageFontSize(640), 28, 'Tablet portrait (640-767px) clamps to 28px')
-  assert.equal(getMaxStageFontSize(767), 28, 'Tablet portrait (640-767px) clamps to 28px')
-  assert.equal(getMaxStageFontSize(768), 34, 'Desktop/large tablet (>=768px) clamps to 34px')
-  assert.equal(getMaxStageFontSize(1280), 34, 'Desktop (>=768px) clamps to 34px')
-
-  // Layout containment and overflow-anchor stability
-  const parsed = parseGtarSong('[G]Amazing [D/F#]grace, how [Em]sweet the sound')
-  const html = renderToStaticMarkup(React.createElement(SongLineRenderer, {
-    lines: parsed.lines,
-    fontSizePx: 26,
-    chordScale: 1.1,
-  }))
-
-  assert.match(html, /contain:layout style/, 'Viewer root enforces CSS layout containment')
-  assert.match(html, /overflow-anchor:none/, 'Viewer root enforces overflow-anchor:none to prevent scroll jumping')
-  assert.match(html, /min-height:1\.15em/, 'Chord row enforces locked proportional minimum height')
-})
-
-
