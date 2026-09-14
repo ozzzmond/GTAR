@@ -41,17 +41,20 @@ test('validateSearchQuery handles valid, empty, and bounded queries correctly', 
   assert.deepEqual(validateSearchQuery('Creep Radiohead'), { valid: true, query: 'Creep Radiohead' })
   assert.deepEqual(validateSearchQuery('  Ang Huling El Bimbo  '), { valid: true, query: 'Ang Huling El Bimbo' })
 
-  // Query exceeding MAX_QUERY_LENGTH (500 chars) is rejected
-  const oversized = 'a'.repeat(MAX_QUERY_LENGTH + 1)
-  const resOversized = validateSearchQuery(oversized)
-  assert.equal(resOversized.valid, false)
-  assert.match(resOversized.error, /exceeds maximum length of 500/)
+  // Boundary tests: 200 chars passes, 201+ chars rejected
+  assert.equal(MAX_QUERY_LENGTH, 200)
 
-  // Query between 200 and 500 chars is clamped to 200 chars
-  const mediumLong = 'x'.repeat(300)
-  const resClamped = validateSearchQuery(mediumLong)
-  assert.equal(resClamped.valid, true)
-  assert.equal(resClamped.query.length, 200)
+  const boundary200 = 'x'.repeat(200)
+  const res200 = validateSearchQuery(boundary200)
+  assert.deepEqual(res200, { valid: true, query: boundary200 })
+
+  const oversized201 = 'x'.repeat(201)
+  const res201 = validateSearchQuery(oversized201)
+  assert.deepEqual(res201, {
+    valid: false,
+    query: '',
+    error: 'Query exceeds maximum length of 200 characters',
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -352,4 +355,199 @@ test('parseTabSheet returns 404 error when chord sheet content is missing', () =
   assert.equal(res.success, false)
   assert.equal(res.status, 404)
   assert.match(res.error, /No chord sheet text in tab data/)
+})
+
+// ---------------------------------------------------------------------------
+// 5. Client Cutover & Proxy Deprecation Invariants
+// ---------------------------------------------------------------------------
+
+const { searchOnlineChords, fetchOnlineChordSheet, OnlineSearchError } = require('../src/utils/onlineSearch.ts')
+
+test('onlineSearch.ts source code has zero deprecated third-party proxy paths or candidate infrastructure', () => {
+  const source = fs.readFileSync(require.resolve('../src/utils/onlineSearch.ts'), 'utf8')
+  assert.equal(source.includes('corsproxy.io'), false, 'corsproxy.io must be completely removed')
+  assert.equal(source.includes('codetabs'), false, 'codetabs must be completely removed')
+  assert.equal(source.includes('PROXY_CANDIDATES'), false, 'PROXY_CANDIDATES array must be eliminated')
+  assert.equal(source.includes('fetchHtml'), false, 'fetchHtml scraper helper must be eliminated')
+})
+
+test('searchOnlineChords successful 200 with empty list returns empty result array', async () => {
+  const originalFetch = global.fetch
+  try {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, results: [] }),
+    })
+    const results = await searchOnlineChords('nonexistent query')
+    assert.deepEqual(results, [], '200 OK with empty list must yield empty results')
+  } finally {
+    global.fetch = originalFetch
+  }
+})
+
+test('searchOnlineChords live attempt network failure throws structured error and never falls back to curated catalog', async () => {
+  const originalFetch = global.fetch
+  const originalWarn = console.warn
+  console.warn = () => {}
+
+  try {
+    global.fetch = async () => {
+      throw new Error('Connection refused')
+    }
+
+    // Query 'Stand By Me' (which exists in CURATED_CATALOG)
+    await assert.rejects(
+      searchOnlineChords('Stand By Me'),
+      (err) => {
+        assert.equal(err.name, 'OnlineSearchError')
+        assert.equal(err.code, 'NETWORK_ERROR')
+        assert.match(err.message, /Network error — unable to reach search service/)
+        return true
+      },
+      'Live fetch failure must throw OnlineSearchError and never return curated catalog'
+    )
+  } finally {
+    global.fetch = originalFetch
+    console.warn = originalWarn
+  }
+})
+
+test('searchOnlineChords backend HTTP 400, 403, 429, 502, 504 return distinct structured failure semantics', async () => {
+  const originalFetch = global.fetch
+  const originalWarn = console.warn
+  console.warn = () => {}
+
+  const cases = [
+    { status: 400, code: 'INVALID_QUERY', msg: 'Invalid search query' },
+    { status: 403, code: 'RESTRICTED', msg: 'Online search temporarily restricted' },
+    { status: 429, code: 'RATE_LIMITED', msg: 'Search rate limit reached — please wait a moment' },
+    { status: 502, code: 'PARSE_ERROR', msg: 'Unable to parse online search results' },
+    { status: 504, code: 'TIMEOUT', msg: 'Online search timed out — please try again' },
+  ]
+
+  try {
+    for (const c of cases) {
+      global.fetch = async () => ({
+        ok: false,
+        status: c.status,
+        json: async () => ({ error: 'Error payload' }),
+      })
+
+      await assert.rejects(
+        searchOnlineChords('Stand By Me'),
+        (err) => {
+          assert.equal(err.name, 'OnlineSearchError')
+          assert.equal(err.status, c.status)
+          assert.equal(err.code, c.code)
+          assert.equal(err.message, c.msg)
+          return true
+        },
+        `HTTP ${c.status} must reject with code ${c.code} and exact message "${c.msg}" without curated fallback`
+      )
+    }
+  } finally {
+    global.fetch = originalFetch
+    console.warn = originalWarn
+  }
+})
+
+test('fetchOnlineChordSheet calls /api/ug-tab directly with encoded URL', async () => {
+  const originalFetch = global.fetch
+  let requestedUrl = ''
+
+  try {
+    global.fetch = async (url) => {
+      requestedUrl = String(url)
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          sheet: {
+            title: 'Yellow',
+            artist: 'Coldplay',
+            key: 'B',
+            capo: 'No Capo',
+            bpm: '88',
+            format: 'CHORD_PRO',
+            rawContent: '{title: Yellow}\n[B]Look at the stars',
+            sourceUrl: 'https://tabs.ultimate-guitar.com/tab/coldplay/yellow-chords-92843',
+          },
+        }),
+      }
+    }
+
+    const sheet = await fetchOnlineChordSheet({
+      id: 999,
+      songName: 'Yellow',
+      artistName: 'Coldplay',
+      type: 'Chords',
+      version: 1,
+      votes: 500,
+      rating: 4.8,
+      tabUrl: 'https://tabs.ultimate-guitar.com/tab/coldplay/yellow-chords-92843',
+    })
+
+    assert.equal(
+      requestedUrl,
+      `/api/ug-tab?url=${encodeURIComponent('https://tabs.ultimate-guitar.com/tab/coldplay/yellow-chords-92843')}`
+    )
+    assert.equal(sheet.title, 'Yellow')
+    assert.equal(sheet.key, 'B')
+  } finally {
+    global.fetch = originalFetch
+  }
+})
+
+test('searchOnlineChords and fetchOnlineChordSheet handle offline state gracefully', async () => {
+  const originalFetch = global.fetch
+  const originalWarn = console.warn
+  console.warn = () => {}
+
+  const originalOnLine = typeof navigator !== 'undefined' ? navigator.onLine : undefined
+  try {
+    if (typeof navigator !== 'undefined') {
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true, writable: true })
+    } else {
+      global.navigator = { onLine: false }
+    }
+    let fetchCalled = false
+    global.fetch = async () => {
+      fetchCalled = true
+      throw new Error('Should not call fetch when offline')
+    }
+
+    // 1. Offline search: returns curated example for matching showcase song
+    const offlineCurated = await searchOnlineChords('Toxic')
+    assert.equal(fetchCalled, false, 'Fetch must not be called when navigator.onLine is false')
+    assert.equal(offlineCurated.length, 1)
+    assert.equal(offlineCurated[0].songName, 'Toxic')
+    assert.equal(offlineCurated[0].type, 'Offline example')
+
+    // 2. Offline search for non-curated song returns [] without throwing
+    const offlineUnknown = await searchOnlineChords('Nonexistent Unknown Song')
+    assert.deepEqual(offlineUnknown, [])
+
+    // 3. Offline tab fetch for non-curated song rejects with offline guidance
+    await assert.rejects(
+      fetchOnlineChordSheet({
+        id: 123,
+        songName: 'Nonexistent Song',
+        artistName: 'Unknown',
+        type: 'Chords',
+        version: 1,
+        votes: 10,
+        rating: 4.0,
+        tabUrl: 'https://tabs.ultimate-guitar.com/tab/unknown/nonexistent-chords-123',
+      }),
+      /Device is currently offline/
+    )
+  } finally {
+    global.fetch = originalFetch
+    if (typeof navigator !== 'undefined') {
+      Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true, writable: true })
+    }
+    console.warn = originalWarn
+  }
 })

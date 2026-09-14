@@ -111,6 +111,10 @@ test('settings round-trip uses exactly the runtime storage keys and valid bounds
 test('network failure never selects a substring-matched song or unrelated source', async () => {
   const originalFetch = global.fetch
   const originalWarn = console.warn
+  const originalOnLine = typeof navigator !== 'undefined' ? navigator.onLine : undefined
+  if (typeof navigator !== 'undefined') {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true, writable: true })
+  }
   global.fetch = async () => { throw new Error('offline') }
   console.warn = () => {}
   try {
@@ -123,7 +127,13 @@ test('network failure never selects a substring-matched song or unrelated source
     assert.match(example.rawContent, /Offline example/)
     await assert.rejects(fetchOnlineChordSheet({ ...results[0], id: 'wrong-source' }), /Unknown offline/)
     await assert.rejects(fetchOnlineChordSheet({ ...results[0], offlineExample: false, songName: 'Remember Me' }), /Could not extract/)
-  } finally { global.fetch = originalFetch; console.warn = originalWarn }
+  } finally {
+    global.fetch = originalFetch
+    if (typeof navigator !== 'undefined') {
+      Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true, writable: true })
+    }
+    console.warn = originalWarn
+  }
 })
 
 test('legacy Android merge resolves incoming references before matching existing library', () => {

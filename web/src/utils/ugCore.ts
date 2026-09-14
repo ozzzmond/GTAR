@@ -5,8 +5,7 @@
 
 export const ALLOWED_UG_HOSTS = ['tabs.ultimate-guitar.com', 'www.ultimate-guitar.com']
 export const MAX_URL_LENGTH = 2048
-export const MAX_QUERY_LENGTH = 500
-export const CLAMP_QUERY_LENGTH = 200
+export const MAX_QUERY_LENGTH = 200
 
 export interface UgSearchResult {
   id: number | string
@@ -47,7 +46,7 @@ export function validateSearchQuery(raw: unknown): {
       error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters`,
     }
   }
-  return { valid: true, query: q.slice(0, CLAMP_QUERY_LENGTH).trim() }
+  return { valid: true, query: q }
 }
 
 export function validateTabUrl(raw: unknown): {

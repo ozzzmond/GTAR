@@ -30,112 +30,34 @@ export interface FetchedChordSheet {
 }
 
 /**
- * Robust JSON store extractor from Ultimate-Guitar HTML without fragile regex backtracking
+ * Graceful online connectivity detection
  */
-function extractJsStoreJson(html: string): any {
-  const jsStoreIdx = html.indexOf('class="js-store"')
-  const dataContentMarker = 'data-content="'
-  const searchStart = jsStoreIdx === -1 ? 0 : jsStoreIdx
-  const dataContentIdx = html.indexOf(dataContentMarker, searchStart)
-  if (dataContentIdx === -1) return null
-
-  const contentStart = dataContentIdx + dataContentMarker.length
-  const endIdx = html.indexOf('">', contentStart)
-  if (endIdx === -1) return null
-
-  const escaped = html.substring(contentStart, endIdx)
-  const jsonStr = escaped
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-
-  try {
-    return JSON.parse(jsonStr)
-  } catch (e) {
-    console.warn('Failed to parse js-store JSON:', e)
-    return null
-  }
+export function isOnline(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
-/**
- * Sanitizes Ultimate Guitar markup (e.g. [ch]Am[/ch], [tab]...[/tab])
- */
-function sanitizeUgContent(content: string): string {
-  return content
-    .replace(/\[ch\](.*?)\[\/ch\]/gi, '$1')
-    .replace(/\[\/?tab\]/gi, '')
-    .trim()
-}
+export type OnlineSearchErrorCode =
+  | 'NETWORK_ERROR'
+  | 'INVALID_QUERY'
+  | 'RESTRICTED'
+  | 'RATE_LIMITED'
+  | 'PARSE_ERROR'
+  | 'TIMEOUT'
+  | 'UNKNOWN'
 
-// Proxies to query in sequence
-const PROXY_CANDIDATES: Array<{ name: string; getUrl: (target: string) => string | null }> = [
-  {
-    name: 'vite-dev-proxy',
-    getUrl: (target: string) => {
-      // Only route through Vite proxy on local development loopback
-      if (
-        typeof window !== 'undefined' &&
-        Boolean(import.meta.env.DEV) &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ) {
-        if (target.startsWith('https://www.ultimate-guitar.com')) {
-          return target.replace('https://www.ultimate-guitar.com', '/api/ug')
-        }
-        if (target.startsWith('https://tabs.ultimate-guitar.com')) {
-          return target.replace('https://tabs.ultimate-guitar.com', '/api/ug-tabs')
-        }
-      }
-      return null
-    },
-  },
-  {
-    name: 'corsproxy-io',
-    getUrl: (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
-  },
-  {
-    name: 'codetabs-proxy',
-    getUrl: (target: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`,
-  },
-]
+export class OnlineSearchError extends Error {
+  status?: number
+  code: OnlineSearchErrorCode
 
-/**
- * Multi-candidate fetcher with sanitized diagnostics
- */
-async function fetchHtml(targetUrl: string, timeoutMs = 6000): Promise<string> {
-  const diagnostics: Array<{ candidate: string; status?: number | string; category: string }> = []
-  for (const candidate of PROXY_CANDIDATES) {
-    const url = candidate.getUrl(targetUrl)
-    if (!url) continue
-    try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), timeoutMs)
-      const res = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer))
-      if (res.ok) {
-        const text = await res.text()
-        if (text && text.length > 500 && text.includes('js-store')) {
-          return text
-        }
-        diagnostics.push({ candidate: candidate.name, status: res.status, category: 'INVALID_HTML_PAYLOAD' })
-      } else {
-        diagnostics.push({
-          candidate: candidate.name,
-          status: res.status,
-          category: res.status === 403 ? 'BOT_BLOCKED_403' : res.status === 429 ? 'RATE_LIMITED_429' : 'HTTP_ERROR',
-        })
-      }
-    } catch (err) {
-      const isTimeout = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
-      diagnostics.push({
-        candidate: candidate.name,
-        status: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
-        category: isTimeout ? 'PROXY_TIMEOUT' : 'CORS_OR_NETWORK_ERROR',
-      })
-    }
+  constructor(
+    message: string,
+    options?: { status?: number; code?: OnlineSearchErrorCode }
+  ) {
+    super(message)
+    this.name = 'OnlineSearchError'
+    this.status = options?.status
+    this.code = options?.code || 'UNKNOWN'
   }
-  const summary = diagnostics.map(d => `${d.candidate}:${d.category}(${d.status ?? 'err'})`).join(', ')
-  throw new Error(`Could not fetch from live web source. Diagnostics: [${summary || 'NO_AVAILABLE_PROXIES'}]`)
 }
 
 /**
@@ -420,7 +342,7 @@ Ay papunta na sa dulo`,
 ]
 
 /**
- * Searches for chord charts online (parity with Android WebScraperEngine.searchSongs).
+ * Searches for chord charts online via GTAR Cloudflare Pages Functions / Vite dev backend.
  */
 export async function searchOnlineChords(query: string): Promise<OnlineChordResult[]> {
   const trimmed = query.trim()
@@ -428,87 +350,58 @@ export async function searchOnlineChords(query: string): Promise<OnlineChordResu
 
   const qLower = trimmed.toLowerCase()
 
-  // 1. Try Vite dev backend scraper endpoint first (bypasses CORS/Cloudflare reliably)
+  // Graceful offline detection (pre-request): if offline, check curated showcase catalog
+  if (!isOnline()) {
+    const curatedMatch = CURATED_CATALOG.find(cat => {
+      const sample = cat.results[0]
+      return [sample.songName, `${sample.songName} ${sample.artistName}`, String(sample.id), sample.tabUrl]
+        .some(identity => identity.toLowerCase() === qLower)
+    })
+    if (curatedMatch) {
+      return [{ ...curatedMatch.results[0], type: 'Offline example', offlineExample: true }]
+    }
+    return []
+  }
+
+  // Live request: call GTAR backend scraper endpoint directly
   try {
     const res = await fetch(`/api/ug-search?q=${encodeURIComponent(trimmed)}`)
     if (res.ok) {
       const data = await res.json()
-      if (data.success && Array.isArray(data.results) && data.results.length > 0) {
+      if (data.success && Array.isArray(data.results)) {
         return data.results
       }
+      throw new OnlineSearchError('Unable to parse online search results', { status: 502, code: 'PARSE_ERROR' })
     }
-  } catch (_) {
-    // continue to fallback
-  }
 
-  // 2. Check curated catalog for instant zero-latency results
-  const curatedMatch = CURATED_CATALOG.find(cat => {
-    const sample = cat.results[0]
-    return [sample.songName, `${sample.songName} ${sample.artistName}`, String(sample.id), sample.tabUrl]
-      .some(identity => identity.toLowerCase() === qLower)
-  })
-  if (curatedMatch) {
-    return [{ ...curatedMatch.results[0], type: 'Offline example', offlineExample: true }]
-  }
-
-  // 3. Try direct live scraping from Ultimate Guitar via proxy
-  const searchUrl = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(trimmed)}`
-
-  try {
-    const html = await fetchHtml(searchUrl, 6000)
-    const json = extractJsStoreJson(html)
-    const store = json?.store || json
-    const page = store?.page || store
-    const data = page?.data || page
-    const results = data?.results || []
-
-    if (Array.isArray(results) && results.length > 0) {
-      const parsedResults: OnlineChordResult[] = []
-
-      for (let i = 0; i < results.length; i++) {
-        const item = results[i]
-        if (!item) continue
-
-        const songName = (item.song_name || '').trim()
-        const artistName = (item.artist_name || '').trim()
-        const tabUrl = (item.tab_url || '').trim()
-        const type = (item.type || '').trim()
-
-        if (songName && tabUrl) {
-          const isChord =
-            type.toLowerCase() === 'chords' ||
-            tabUrl.includes('-chords-') ||
-            type.toLowerCase() === 'tab'
-
-          if (isChord) {
-            parsedResults.push({
-              id: item.id || `ug-${i}-${Date.now()}`,
-              songName,
-              artistName,
-              type: type || 'Chords',
-              version: Number(item.version) || 1,
-              votes: Number(item.votes) || 0,
-              rating: Number(item.rating) || 4.5,
-              tabUrl,
-              tonality: item.tonality_name || undefined,
-            })
-          }
-        }
-      }
-
-      if (parsedResults.length > 0) {
-        return parsedResults.sort((a, b) => b.votes - a.votes || b.rating - a.rating)
-      }
+    if (res.status === 400) {
+      throw new OnlineSearchError('Invalid search query', { status: 400, code: 'INVALID_QUERY' })
     }
+    if (res.status === 403) {
+      throw new OnlineSearchError('Online search temporarily restricted', { status: 403, code: 'RESTRICTED' })
+    }
+    if (res.status === 429) {
+      throw new OnlineSearchError('Search rate limit reached — please wait a moment', { status: 429, code: 'RATE_LIMITED' })
+    }
+    if (res.status === 502) {
+      throw new OnlineSearchError('Unable to parse online search results', { status: 502, code: 'PARSE_ERROR' })
+    }
+    if (res.status === 504) {
+      throw new OnlineSearchError('Online search timed out — please try again', { status: 504, code: 'TIMEOUT' })
+    }
+    throw new OnlineSearchError(`Search error (${res.status})`, { status: res.status, code: 'UNKNOWN' })
   } catch (err) {
-    console.warn('[OnlineSearch] Live Ultimate-Guitar fetch error:', err instanceof Error ? err.message : err)
+    if (err instanceof OnlineSearchError) {
+      throw err
+    }
+    console.warn('[OnlineSearch] Network or backend unreachable:', err)
+    // Live attempt network/fetch failure: NEVER fall back to CURATED_CATALOG!
+    throw new OnlineSearchError('Network error — unable to reach search service', { code: 'NETWORK_ERROR' })
   }
-
-  return []
 }
 
 /**
- * Fetches and parses chord sheet text from a tab URL (parity with Android WebScraperEngine.scrapeUrl).
+ * Fetches and parses chord sheet text from a tab URL via GTAR backend scraper endpoint.
  */
 export async function fetchOnlineChordSheet(result: OnlineChordResult): Promise<FetchedChordSheet> {
   if (result.offlineExample) {
@@ -521,92 +414,26 @@ export async function fetchOnlineChordSheet(result: OnlineChordResult): Promise<
     const sheet = catalog.sheet(1)
     return { ...sheet, offlineExample: true, rawContent: `{comment: Offline example}\n${sheet.rawContent}` }
   }
-  // 1. Try Vite dev backend scraper endpoint first (local dev only)
-  if (
-    typeof window !== 'undefined' &&
-    Boolean(import.meta.env.DEV) &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ) {
-    try {
-      const res = await fetch(`/api/ug-tab?url=${encodeURIComponent(result.tabUrl)}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success && data.sheet && data.sheet.rawContent) {
-          return data.sheet
-        }
-      }
-    } catch {
-      // continue to fallback
-    }
+
+  // If offline, reject early with clear guidance
+  if (!isOnline()) {
+    throw new Error(`Could not extract authentic chord sheet for "${result.songName}": Device is currently offline. Please connect to the internet.`)
   }
 
-  // 3. Try direct live fetch via proxy
   try {
-    const html = await fetchHtml(result.tabUrl, 7000)
-    const json = extractJsStoreJson(html)
-    const store = json?.store || json
-    const page = store?.page || store
-    const tabData = page?.data || page
-
-    let rawContent = ''
-    if (tabData) {
-      const wikiTab = tabData?.tab_view?.wiki_tab || tabData?.tab || {}
-      rawContent = wikiTab.content || tabData?.tab_view?.wiki_tab?.content || ''
-    }
-
-    if (!rawContent) {
-      const contentMatch = html.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/)
-      if (contentMatch && contentMatch[1]) {
-        try {
-          rawContent = JSON.parse(`"${contentMatch[1]}"`)
-        } catch {
-          rawContent = contentMatch[1].replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\"/g, '"')
-        }
+    const res = await fetch(`/api/ug-tab?url=${encodeURIComponent(result.tabUrl)}`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data.success && data.sheet && data.sheet.rawContent) {
+        return data.sheet
       }
+      throw new Error(data.error || 'Invalid chord sheet payload received')
     }
-
-    if (!rawContent) {
-      const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i)
-      if (preMatch && preMatch[1]) {
-        rawContent = preMatch[1]
-          .replace(/<[^>]+>/g, '')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-      }
-    }
-
-    if (rawContent && rawContent.length > 50) {
-      const cleanContent = sanitizeUgContent(rawContent)
-      const title = tabData?.tab?.song_name || result.songName
-      const artist = tabData?.tab?.artist_name || result.artistName
-      const key = tabData?.tab_view?.meta?.tonality || tabData?.tab?.tonality_name || result.tonality || 'G'
-      const capoNum = tabData?.tab_view?.meta?.capo || tabData?.tab?.capo || 0
-      const capoStr = capoNum > 0 ? `Capo ${capoNum}` : 'No Capo'
-
-      const formatted = `{title: ${title}}
-{artist: ${artist}}
-{key: ${key}}
-{capo: ${capoStr}}
-{tempo: 120}
-
-${cleanContent}`
-
-      return {
-        title,
-        artist,
-        key,
-        capo: capoStr,
-        bpm: '120',
-        format: cleanContent.includes('[') && cleanContent.includes(']') ? 'CHORD_PRO' : 'TWO_LINE',
-        rawContent: formatted,
-        sourceUrl: result.tabUrl,
-      }
-    }
+    const errData = await res.json().catch(() => null)
+    const errorMsg = errData?.error || `Server responded with status ${res.status}`
+    throw new Error(errorMsg)
   } catch (err) {
-    console.warn('[OnlineSearch] Live tab fetch error:', err)
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not extract authentic chord sheet for "${result.songName}": ${message}`)
   }
-
-  // Never fall back to dummy placeholder lyrics
-  throw new Error(`Could not extract authentic chord sheet for "${result.songName}" (live web scraping blocked by source). You can paste the chord chart URL or text in Import to add it.`)
 }

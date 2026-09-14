@@ -139,6 +139,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isSetlistDropdownOpen, setIsSetlistDropdownOpen] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
+  const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
   const [previewResult, setPreviewResult] = useState<OnlineChordResult | null>(null)
   const [importingId, setImportingId] = useState<string | number | null>(null)
@@ -147,6 +148,20 @@ export const Header: React.FC<HeaderProps> = ({
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
   const [showAvatarPopover, setShowAvatarPopover] = useState(false)
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  )
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   // Retrieve user role & auth state from AuthGate context
   let isSuperAdmin = false
@@ -269,18 +284,23 @@ export const Header: React.FC<HeaderProps> = ({
     const trimmed = searchQuery.trim()
     if (!trimmed || trimmed.length < 2) {
       setOnlineResults([])
+      setOnlineError(null)
       setIsSearchingOnline(false)
       return
     }
 
     setIsSearchingOnline(true)
+    setOnlineError(null)
     const timeout = setTimeout(() => {
       searchOnlineChords(trimmed)
         .then((res) => {
           setOnlineResults(res)
+          setOnlineError(null)
           setIsSearchingOnline(false)
         })
-        .catch(() => {
+        .catch((err) => {
+          setOnlineResults([])
+          setOnlineError(err instanceof Error ? err.message : 'Network error — unable to reach search service')
           setIsSearchingOnline(false)
         })
     }, 350)
@@ -843,6 +863,11 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-[#2AA198]" />
                     <span>Online Results ({onlineResults.length})</span>
+                    {isOffline && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#DC6E67]/20 text-[#DC6E67] border border-[#DC6E67]/30">
+                        Offline
+                      </span>
+                    )}
                   </div>
                   {isSearchingOnline && (
                     <div className="flex items-center gap-1 text-[#2AA198]">
@@ -920,26 +945,58 @@ export const Header: React.FC<HeaderProps> = ({
                     )
                   })
                 ) : !isSearchingOnline ? (
-                  <div className="p-3 text-center space-y-2">
-                    <p className="text-xs text-[#93A1A1]">
-                      Search online sources for &quot;{searchQuery}&quot;
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsSearchFocused(false)
-                        if (onSearchWebExternal) {
-                          onSearchWebExternal(searchQuery)
-                        } else {
-                          onOpenWebsiteUrlSource()
-                        }
-                      }}
-                      className="w-full py-1.5 px-3 rounded-xl bg-[#2AA198]/20 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] font-bold text-xs flex items-center justify-center gap-2 border border-[#2AA198]/40 transition-all cursor-pointer shadow-sm"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>Search on Web Sources / Ultimate-Guitar</span>
-                    </button>
-                  </div>
+                  isOffline ? (
+                    <div className="p-3 text-center space-y-1">
+                      <p className="text-xs font-semibold text-[#DC6E67]">
+                        Device is currently offline
+                      </p>
+                      <p className="text-[11px] text-[#93A1A1]">
+                        Connect to the internet to search online chord sheets.
+                      </p>
+                    </div>
+                  ) : onlineError ? (
+                    <div className="p-3 text-center space-y-1.5">
+                      <p className="text-xs font-semibold text-[#DC6E67]">
+                        {onlineError}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSearchFocused(false)
+                          if (onSearchWebExternal) {
+                            onSearchWebExternal(searchQuery)
+                          } else {
+                            onOpenWebsiteUrlSource()
+                          }
+                        }}
+                        className="mt-1 py-1 px-2.5 rounded-lg bg-[#073642] hover:bg-[#1A4A55] text-[#2AA198] text-[11px] font-bold border border-[#1A4A55] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Globe className="w-3 h-3" />
+                        <span>Search Web Sources</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 text-center space-y-2">
+                      <p className="text-xs text-[#93A1A1]">
+                        No online results found for &quot;{searchQuery}&quot;
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSearchFocused(false)
+                          if (onSearchWebExternal) {
+                            onSearchWebExternal(searchQuery)
+                          } else {
+                            onOpenWebsiteUrlSource()
+                          }
+                        }}
+                        className="w-full py-1.5 px-3 rounded-xl bg-[#2AA198]/20 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] font-bold text-xs flex items-center justify-center gap-2 border border-[#2AA198]/40 transition-all cursor-pointer shadow-sm"
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                        <span>Search on Web Sources / Ultimate-Guitar</span>
+                      </button>
+                    </div>
+                  )
                 ) : null}
               </div>
             )}
