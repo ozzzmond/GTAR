@@ -241,7 +241,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
                 Import File (.txt, .chordpro, .json)
               </div>
               <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
-                Select single song or chord sheet from Local storage or Google Drive
+                Select single song or chord sheet from your device
               </div>
             </div>
           </button>

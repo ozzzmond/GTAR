@@ -16,8 +16,46 @@ export interface LogEntry {
   details?: string
 }
 
-const STORAGE_KEY = 'gtar_web_debug_logs'
-const MAX_LOGS = 1000
+export const STORAGE_KEY = 'gtar_web_debug_logs'
+export const MAX_MEMORY_LOGS = 1000
+export const MAX_LOGS = MAX_MEMORY_LOGS
+export const MAX_PERSISTED_LOGS = 30
+
+/**
+ * Redacts OAuth tokens, access tokens, client secrets, auth cookies, and authorization headers.
+ */
+export function redactSensitiveData(text: string): string {
+  if (!text || typeof text !== 'string') return text
+  return text
+    // Redact OAuth Bearer tokens
+    .replace(/Bearer\s+[-A-Za-z0-9_.]+/gi, 'Bearer [REDACTED]')
+    // Redact Google OAuth access tokens (typically start with ya29.)
+    .replace(/ya29\.[-A-Za-z0-9_]+/gi, '[REDACTED_OAUTH_TOKEN]')
+    // Redact access_token, id_token, refresh_token, client_secret in query strings or JSON
+    .replace(/(["']?(?:access_token|id_token|refresh_token|client_secret)["']?\s*[:=]\s*["']?)([^"'&\s\\]+)(["']?)/gi, '$1[REDACTED]$3')
+    // Redact Authorization headers
+    .replace(/(?:Authorization)\s*:\s*[^\r\n]+/gi, 'Authorization: [REDACTED]')
+    // Redact Cookies / Set-Cookie headers
+    .replace(/(?:Cookie|Set-Cookie)\s*:\s*[^\r\n]+/gi, 'Cookie: [REDACTED]')
+    // Redact session / token cookies
+    .replace(/((?:session|token|auth_token)=)[^;\s&"']+/gi, '$1[REDACTED]')
+}
+
+export function prunePersistedLogs(storage: Storage = localStorage, targetCount = 10): void {
+  try {
+    const raw = storage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > targetCount) {
+      storage.setItem(STORAGE_KEY, JSON.stringify(parsed.slice(-targetCount)))
+    }
+  } catch {
+    // If quota error occurs even when writing trimmed logs, remove key cleanly
+    try {
+      storage.removeItem(STORAGE_KEY)
+    } catch { /* ignore */ }
+  }
+}
 
 type LogListener = (logs: LogEntry[]) => void
 
@@ -33,6 +71,13 @@ class WebLoggerEngine {
     log: console.log,
   }
 
+  constructor() {
+    // In dev mode, auto-resume so pre-auth diagnostic logs are captured immediately
+    if (import.meta.env?.DEV) {
+      this.resume()
+    }
+  }
+
   public resume() {
     this.storageEnabled = true
     this.loadPersistedLogs()
@@ -42,13 +87,13 @@ class WebLoggerEngine {
   public suspend() { this.storageEnabled = false }
 
   private loadPersistedLogs() {
-    if (typeof window === 'undefined') return
+    if (typeof localStorage === 'undefined') return
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
-          this.logs = parsed.slice(-MAX_LOGS)
+          this.logs = parsed.slice(-MAX_MEMORY_LOGS)
         }
       }
     } catch {
@@ -58,17 +103,15 @@ class WebLoggerEngine {
 
   private persistLogs() {
     if (!this.storageEnabled) return
-    if (typeof window === 'undefined') return
+    if (typeof localStorage === 'undefined') return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
+      const persisted = this.logs.slice(-MAX_PERSISTED_LOGS)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted))
     } catch {
-      // If quota exceeded, trim older entries
-      if (this.logs.length > 100) {
-        this.logs = this.logs.slice(-Math.floor(this.logs.length / 2))
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
-        } catch { }
-      }
+      // If quota exceeded, emergency prune or swallow to prevent error storm cascades
+      try {
+        prunePersistedLogs(localStorage, 10)
+      } catch { /* swallow quota errors inside logger persistence */ }
     }
   }
 
@@ -172,7 +215,11 @@ class WebLoggerEngine {
     const newLog: LogEntry = {
       id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: new Date().toISOString(),
-      ...entry,
+      level: entry.level,
+      tag: entry.tag,
+      message: redactSensitiveData(entry.message),
+      ...(entry.stack ? { stack: redactSensitiveData(entry.stack) } : {}),
+      ...(entry.details ? { details: redactSensitiveData(entry.details) } : {}),
     }
 
     this.logs.push(newLog)
@@ -214,7 +261,7 @@ class WebLoggerEngine {
 
   public clearLogs() {
     this.logs = []
-    if (typeof window !== 'undefined') {
+    if (typeof localStorage !== 'undefined') {
       try {
         localStorage.removeItem(STORAGE_KEY)
       } catch { }
@@ -243,7 +290,7 @@ class WebLoggerEngine {
     const header = [
       '=========================================================================',
       `GTAR WEB DEBUG LOG EXPORT - ${new Date().toISOString()}`,
-      `Environment: ${import.meta.env.DEV ? 'development' : 'production'}`, ,
+      `Environment: ${import.meta.env.DEV ? 'development' : 'production'}`,
       `User Agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}`,
       `Total Log Entries: ${this.logs.length}`,
       '=========================================================================',
@@ -253,12 +300,12 @@ class WebLoggerEngine {
     const body = this.logs
       .map((log) => {
         const timeStr = log.timestamp.replace('T', ' ').replace('Z', '')
-        let line = `[${timeStr}] [${log.level.padEnd(5)}] [${log.tag}] ${log.message}`
+        let line = `[${timeStr}] [${log.level.padEnd(5)}] [${log.tag}] ${redactSensitiveData(log.message)}`
         if (log.details) {
-          line += `\r\n  Details: ${log.details}`
+          line += `\r\n  Details: ${redactSensitiveData(log.details)}`
         }
         if (log.stack) {
-          line += `\r\n  Stack Trace:\r\n${log.stack
+          line += `\r\n  Stack Trace:\r\n${redactSensitiveData(log.stack)
             .split('\n')
             .map((s) => `    ${s.trim()}`)
             .join('\r\n')}`
@@ -267,7 +314,7 @@ class WebLoggerEngine {
       })
       .join('\r\n\r\n')
 
-    return header + body
+    return redactSensitiveData(header + body)
   }
 
   public downloadLogFile() {

@@ -353,12 +353,12 @@ body.theme-custom .chord-sheet-container .comment {
   opacity: 1;
 }
 
-/* Avatar sync-status dot */
+/* Avatar auth-status dot */
 .avatar-wrapper {
   position: relative;
   cursor: pointer;
 }
-.avatar-wrapper .sync-dot {
+.avatar-wrapper .auth-dot {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -368,9 +368,9 @@ body.theme-custom .chord-sheet-container .comment {
   border: 2px solid #073642;
   z-index: 2;
 }
-.sync-dot.synced    { background-color: #10B981; }
-.sync-dot.syncing   { background-color: #F59E0B; }
-.sync-dot.error     { background-color: #EF4444; }
+.auth-dot.synced    { background-color: #10B981; }
+.auth-dot.syncing   { background-color: #F59E0B; }
+.auth-dot.error     { background-color: #EF4444; }
 
 /* Avatar popover */
 .avatar-popover {

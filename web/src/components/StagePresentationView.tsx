@@ -272,6 +272,9 @@ export const StagePresentationView: React.FC = () => {
                 lines={col1Lines}
                 fontSizePx={fontSizePx}
                 fontFamily={fontStyle}
+                chordScale={castState.chordScale}
+                fontWeight={castState.fontWeight}
+                lineSpacing={castState.lineSpacing}
               />
             </div>
             <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-8 lg:pl-14">
@@ -279,6 +282,9 @@ export const StagePresentationView: React.FC = () => {
                 lines={col2Lines}
                 fontSizePx={fontSizePx}
                 fontFamily={fontStyle}
+                chordScale={castState.chordScale}
+                fontWeight={castState.fontWeight}
+                lineSpacing={castState.lineSpacing}
               />
             </div>
           </div>
@@ -287,6 +293,9 @@ export const StagePresentationView: React.FC = () => {
             lines={parsedSong.lines}
             fontSizePx={fontSizePx}
             fontFamily={fontStyle}
+            chordScale={castState.chordScale}
+            fontWeight={castState.fontWeight}
+            lineSpacing={castState.lineSpacing}
           />
         )}
 

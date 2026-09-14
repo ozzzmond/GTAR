@@ -1,5 +1,5 @@
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
   createWakeLockController,
@@ -26,6 +26,7 @@ import {
   Cast,
   MoreHorizontal,
   SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
@@ -33,7 +34,12 @@ import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
 import { getChordVoicing, type ChordVoicing } from '../utils/chordDictionary'
-import { SongLineRenderer } from './SongLineRenderer'
+import {
+  SongLineRenderer,
+  type StageChordScale,
+  type StageFontWeight,
+  type StageLineSpacing,
+} from './SongLineRenderer'
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
@@ -66,15 +72,33 @@ interface StageViewProps {
   onPerformanceModeChange?: (isActive: boolean) => void
 }
 
-/**
- * MetaBadge component matching Android SongViewerScreen.kt:
- * Surface(shape = RoundedCornerShape(6.dp), color = surfaceBackground, border = 1.dp divider)
- */
-const MetaBadge: React.FC<{ label: string }> = ({ label }) => (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#073642] border border-[#1A4A55] text-[#B58900] font-mono font-semibold text-xs uppercase tracking-wide select-none">
-    {label}
-  </span>
-)
+
+
+export const STAGE_SIZE_PRESETS = {
+  S: 16,
+  M: 20,
+  L: 24, // Stage default
+  XL: 30,
+} as const
+
+export const CHORD_SCALE_OPTIONS: { value: StageChordScale; label: string }[] = [
+  { value: 1.0, label: '100%' },
+  { value: 1.1, label: '110%' },
+  { value: 1.2, label: '120%' },
+  { value: 1.3, label: '130%' },
+]
+
+export const FONT_WEIGHT_OPTIONS: { value: StageFontWeight; label: string }[] = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'bold', label: 'Bold' },
+]
+
+export const LINE_SPACING_OPTIONS: { value: StageLineSpacing; label: string }[] = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'relaxed', label: 'Relaxed' },
+]
 
 export const StageView: React.FC<StageViewProps> = ({
   song,
@@ -120,6 +144,144 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     return 20
   })
+
+  // Device-level persistent Stage Typography preferences
+  const [chordScale, setChordScaleState] = useState<StageChordScale>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_stage_chord_scale')
+      if (saved) {
+        const val = parseFloat(saved)
+        if ([1.0, 1.1, 1.2, 1.3].includes(val)) return val as StageChordScale
+      }
+    }
+    return 1.0
+  })
+
+  const [fontWeight, setFontWeightState] = useState<StageFontWeight>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_stage_font_weight')
+      if (saved && ['regular', 'medium', 'bold'].includes(saved)) {
+        return saved as StageFontWeight
+      }
+    }
+    return 'regular'
+  })
+
+  const [lineSpacing, setLineSpacingState] = useState<StageLineSpacing>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_stage_line_spacing')
+      if (saved && ['compact', 'normal', 'relaxed'].includes(saved)) {
+        return saved as StageLineSpacing
+      }
+    }
+    return 'normal'
+  })
+
+  const setChordScale = useCallback((scale: StageChordScale) => {
+    setChordScaleState(scale)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_stage_chord_scale', String(scale))
+    }
+  }, [])
+
+  const setFontWeight = useCallback((weight: StageFontWeight) => {
+    setFontWeightState(weight)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_stage_font_weight', weight)
+    }
+  }, [])
+
+  const setLineSpacing = useCallback((spacing: StageLineSpacing) => {
+    setLineSpacingState(spacing)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_stage_line_spacing', spacing)
+    }
+  }, [])
+
+  const setStageFontSize = useCallback((size: number) => {
+    const clamped = Math.max(12, Math.min(38, size))
+    setFontSizePx(clamped)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(clamped))
+    }
+  }, [])
+
+  // Double tap detection on numeric font size display to reset to Stage default (L / 24px)
+  const lastNumericTapRef = useRef<number>(0)
+  const handleNumericDoubleTap = useCallback(() => {
+    const now = Date.now()
+    if (now - lastNumericTapRef.current < 320) {
+      setStageFontSize(STAGE_SIZE_PRESETS.L)
+      lastNumericTapRef.current = 0
+    } else {
+      lastNumericTapRef.current = now
+    }
+  }, [setStageFontSize])
+
+  // Continuous hold on A- / A+ stepper
+  const holdStep = useCallback((delta: number) => {
+    setFontSizePx((prev) => {
+      const next = Math.max(12, Math.min(38, prev + delta))
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
+      }
+      return next
+    })
+  }, [])
+
+  const createHoldHandlers = useCallback((delta: number) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const clear = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+
+    const onPointerDown = (e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      holdStep(delta)
+      timer = setTimeout(() => {
+        interval = setInterval(() => {
+          holdStep(delta)
+        }, 70)
+      }, 320)
+    }
+
+    return {
+      onPointerDown,
+      onPointerUp: clear,
+      onPointerLeave: clear,
+      onPointerCancel: clear,
+    }
+  }, [holdStep])
+
+  // 1-Tap Stage Distance (1–2m) Master Preset
+  const isStageDistanceActive =
+    fontSizePx >= 24 &&
+    chordScale === 1.2 &&
+    fontWeight === 'bold' &&
+    lineSpacing === 'relaxed'
+
+  const handleToggleStageDistance = useCallback(() => {
+    if (isStageDistanceActive) {
+      setStageFontSize(STAGE_SIZE_PRESETS.M)
+      setChordScale(1.0)
+      setFontWeight('regular')
+      setLineSpacing('normal')
+    } else {
+      setStageFontSize(STAGE_SIZE_PRESETS.L)
+      setChordScale(1.2)
+      setFontWeight('bold')
+      setLineSpacing('relaxed')
+    }
+  }, [isStageDistanceActive, setStageFontSize, setChordScale, setFontWeight, setLineSpacing])
   const [localFontStyle, setLocalFontStyle] = useState<'mono' | 'sans' | 'serif'>('mono')
   const [localIsTwoColumn, setLocalIsTwoColumn] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -136,6 +298,42 @@ export const StageView: React.FC<StageViewProps> = ({
   const iosOnly = useMemo(() => isIosDevice() && !isStandalonePwa(), [])
   // True whenever the stage is in any full-attention performance mode
   const isPerformanceMode = isFullscreen || isDistractionFree
+  const inPerformanceMode = isPerformanceMode
+
+  // Focus mode unified auto-hiding overlays (top header + bottom controls)
+  const [showStageOverlays, setShowStageOverlays] = useState(true)
+  const overlaysHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastScrollTopRef = useRef<number>(0)
+
+  const triggerOverlaysShow = useCallback(() => {
+    setShowStageOverlays(true)
+    if (overlaysHideTimeoutRef.current) {
+      clearTimeout(overlaysHideTimeoutRef.current)
+    }
+    overlaysHideTimeoutRef.current = setTimeout(() => {
+      setShowStageOverlays(false)
+    }, 3500)
+  }, [])
+
+  useEffect(() => {
+    if (isPerformanceMode) {
+      triggerOverlaysShow()
+    } else {
+      setShowStageOverlays(true)
+      if (overlaysHideTimeoutRef.current) {
+        clearTimeout(overlaysHideTimeoutRef.current)
+        overlaysHideTimeoutRef.current = null
+      }
+    }
+  }, [isPerformanceMode, song.id, song.title, triggerOverlaysShow])
+
+  useEffect(() => {
+    return () => {
+      if (overlaysHideTimeoutRef.current) {
+        clearTimeout(overlaysHideTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const fontStyle = externalFontStyle !== undefined ? externalFontStyle : localFontStyle
   const setFontStyle = externalOnSelectFontStyle || setLocalFontStyle
@@ -399,6 +597,25 @@ export const StageView: React.FC<StageViewProps> = ({
   // the scroll position (e.g. touch-scroll during autoscroll pause).
   const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget
+    const currentTop = target.scrollTop
+    const isScrollingDown = currentTop > lastScrollTopRef.current + 5
+    const isAtTop = currentTop <= 20
+
+    if (inPerformanceMode) {
+      if (isScrollingDown && currentTop > 30) {
+        // Immediately fades/hides overlays when the user scrolls down
+        setShowStageOverlays(false)
+        if (overlaysHideTimeoutRef.current) {
+          clearTimeout(overlaysHideTimeoutRef.current)
+          overlaysHideTimeoutRef.current = null
+        }
+      } else if (isAtTop) {
+        // Re-appears smoothly when scrolling back to the top
+        triggerOverlaysShow()
+      }
+    }
+    lastScrollTopRef.current = currentTop
+
     const maxScroll = target.scrollHeight - target.clientHeight
     const fraction = maxScroll > 0 ? target.scrollTop / maxScroll : 0
 
@@ -422,10 +639,19 @@ export const StageView: React.FC<StageViewProps> = ({
   // content, but NOT when the event is the touch-end bleed from tapping the FAB.
   // We ignore touch events within 400ms of the last autoscroll activation.
   const handleContainerTouchStart = () => {
+    if (inPerformanceMode) {
+      triggerOverlaysShow()
+    }
     if (!isAutoScrolling) return
     const msSinceStart = performance.now() - autoScrollStartedAtRef.current
     if (msSinceStart > 400) {
       setIsAutoScrolling(false)
+    }
+  }
+
+  const handleContainerClick = () => {
+    if (inPerformanceMode) {
+      triggerOverlaysShow()
     }
   }
 
@@ -455,6 +681,348 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }
 
+  const executePrevSong = useCallback(() => {
+    if (isInSetlistMode && onSelectSetlistSongIndex) {
+      if (activeSetlistSongIndex > 0) {
+        onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
+      }
+    } else if (activeSongIndex > 0) {
+      onSelectSongIndex(activeSongIndex - 1)
+    }
+  }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSongIndex, onSelectSongIndex])
+
+  const executeNextSong = useCallback(() => {
+    if (isInSetlistMode && onSelectSetlistSongIndex) {
+      if (activeSetlistSongIndex < activeSetlistSongs.length - 1) {
+        onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
+      }
+    } else if (activeSongIndex < songs.length - 1) {
+      onSelectSongIndex(activeSongIndex + 1)
+    }
+  }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSetlistSongs.length, activeSongIndex, songs.length, onSelectSongIndex])
+
+  const executePrevSongRef = useRef(executePrevSong)
+  executePrevSongRef.current = executePrevSong
+  const executeNextSongRef = useRef(executeNextSong)
+  executeNextSongRef.current = executeNextSong
+
+  const canPrev = isInSetlistMode
+    ? activeSetlistSongIndex > 0
+    : activeSongIndex > 0
+  const canNext = isInSetlistMode
+    ? activeSetlistSongIndex < activeSetlistSongs.length - 1
+    : activeSongIndex < songs.length - 1
+
+  const canPrevRef = useRef(canPrev)
+  canPrevRef.current = canPrev
+  const canNextRef = useRef(canNext)
+  canNextRef.current = canNext
+
+  const fontSizePxRef = useRef(fontSizePx)
+  fontSizePxRef.current = fontSizePx
+
+  const isPerformanceModeRef = useRef(inPerformanceMode)
+  isPerformanceModeRef.current = inPerformanceMode
+  const triggerOverlaysShowRef = useRef(triggerOverlaysShow)
+  triggerOverlaysShowRef.current = triggerOverlaysShow
+
+  const slideContentRef = useRef<HTMLDivElement>(null)
+  const isAnimatingRef = useRef(false)
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const triggerSongSlide = useCallback((direction: 'next' | 'prev') => {
+    const slideEl = slideContentRef.current
+    const container = scrollContainerRef.current
+    if (!slideEl || isAnimatingRef.current) {
+      if (direction === 'next') executeNextSongRef.current()
+      else executePrevSongRef.current()
+      return
+    }
+
+    if (direction === 'next' && !canNextRef.current) return
+    if (direction === 'prev' && !canPrevRef.current) return
+
+    isAnimatingRef.current = true
+    const slideOutDuration = 200
+    const slideInDuration = 240
+    const outX = direction === 'next' ? '-100%' : '100%'
+    const inX = direction === 'next' ? '100%' : '-100%'
+
+    slideEl.style.transition = `transform ${slideOutDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${slideOutDuration}ms ease-out`
+    slideEl.style.transform = `translateX(${outX})`
+    slideEl.style.opacity = '0.15'
+
+    if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+    transitionTimeoutRef.current = setTimeout(() => {
+      if (direction === 'next') executeNextSongRef.current()
+      else executePrevSongRef.current()
+      if (container) container.scrollTop = 0
+
+      slideEl.style.transition = 'none'
+      slideEl.style.transform = `translateX(${inX})`
+      slideEl.style.opacity = '0.15'
+      void slideEl.offsetWidth
+
+      requestAnimationFrame(() => {
+        slideEl.style.transition = `transform ${slideInDuration}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${slideInDuration}ms ease-out`
+        slideEl.style.transform = 'translateX(0)'
+        slideEl.style.opacity = '1'
+
+        transitionTimeoutRef.current = setTimeout(() => {
+          slideEl.style.transform = ''
+          slideEl.style.transition = ''
+          slideEl.style.opacity = ''
+          isAnimatingRef.current = false
+        }, slideInDuration + 30)
+      })
+    }, slideOutDuration)
+  }, [])
+
+  const handlePrevSong = useCallback(() => triggerSongSlide('prev'), [triggerSongSlide])
+  const handleNextSong = useCallback(() => triggerSongSlide('next'), [triggerSongSlide])
+
+  // Pinch-to-Zoom & Interactive Touch Drag Physics Gesture Listener
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    let initialPinchDist = 0
+    let initialPinchFontSize = fontSizePxRef.current
+    let lastPinchSize = fontSizePxRef.current
+    let isPinching = false
+
+    let touchStartX = 0
+    let touchStartY = 0
+    let touchStartTime = 0
+    let gestureDirection: 'undecided' | 'horizontal' | 'vertical' | 'pinch' = 'undecided'
+    let currentDragX = 0
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (isPerformanceModeRef.current) {
+        triggerOverlaysShowRef.current()
+      }
+      if (e.touches.length === 2) {
+        gestureDirection = 'pinch'
+        isPinching = true
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        )
+        initialPinchFontSize = fontSizePxRef.current
+        lastPinchSize = fontSizePxRef.current
+
+        const slideEl = slideContentRef.current
+        if (slideEl && !isAnimatingRef.current) {
+          slideEl.style.transform = ''
+          slideEl.style.transition = ''
+          slideEl.style.opacity = ''
+        }
+      } else if (e.touches.length === 1 && !isAnimatingRef.current) {
+        isPinching = false
+        initialPinchDist = 0
+        touchStartX = e.touches[0].clientX
+        touchStartY = e.touches[0].clientY
+        touchStartTime = Date.now()
+        gestureDirection = 'undecided'
+        currentDragX = 0
+
+        const slideEl = slideContentRef.current
+        if (slideEl) {
+          slideEl.style.transition = 'none'
+        }
+      }
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && initialPinchDist > 0) {
+        if (e.cancelable) e.preventDefault()
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        )
+        const scale = currentDist / initialPinchDist
+        const targetSize = Math.round(initialPinchFontSize * scale)
+        const clamped = Math.max(12, Math.min(38, targetSize))
+        if (clamped !== lastPinchSize) {
+          lastPinchSize = clamped
+          setFontSizePx(clamped)
+        }
+        return
+      }
+
+      if (e.touches.length === 1 && !isPinching && !isAnimatingRef.current) {
+        const currentX = e.touches[0].clientX
+        const currentY = e.touches[0].clientY
+        const deltaX = currentX - touchStartX
+        const deltaY = currentY - touchStartY
+        const absX = Math.abs(deltaX)
+        const absY = Math.abs(deltaY)
+
+        // Decide gesture direction once threshold is crossed
+        if (gestureDirection === 'undecided') {
+          if (Math.hypot(deltaX, deltaY) >= 8) {
+            if (absX >= absY * 1.25 && absX >= 8) {
+              gestureDirection = 'horizontal'
+            } else if (absY > absX) {
+              gestureDirection = 'vertical'
+            }
+          }
+        }
+
+        if (gestureDirection === 'horizontal') {
+          // Lock scrolling: prevent native browser horizontal navigation & vertical scroll
+          if (e.cancelable) e.preventDefault()
+
+          const canPrevNow = canPrevRef.current
+          const canNextNow = canNextRef.current
+
+          // Rubber-band resistance dampening when dragging past boundaries
+          let effectiveDeltaX = deltaX
+          if (deltaX > 0 && !canPrevNow) {
+            effectiveDeltaX = Math.min(50, Math.pow(deltaX, 0.7))
+          } else if (deltaX < 0 && !canNextNow) {
+            effectiveDeltaX = -Math.min(50, Math.pow(-deltaX, 0.7))
+          }
+
+          currentDragX = effectiveDeltaX
+          const slideEl = slideContentRef.current
+          if (slideEl) {
+            slideEl.style.transform = `translateX(${effectiveDeltaX}px)`
+            const fadeOpacity = Math.max(0.75, 1 - Math.abs(effectiveDeltaX) / 1200)
+            slideEl.style.opacity = String(fadeOpacity)
+          }
+        }
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (isPinching) {
+        if (e.touches.length < 2) {
+          isPinching = false
+          initialPinchDist = 0
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(lastPinchSize))
+          }
+        }
+        return
+      }
+
+      if (gestureDirection === 'horizontal' && !isAnimatingRef.current) {
+        const slideEl = slideContentRef.current
+        const touchEndX = e.changedTouches[0]?.clientX ?? (touchStartX + currentDragX)
+        const deltaX = touchEndX - touchStartX
+        const elapsed = Math.max(1, Date.now() - touchStartTime)
+        const velocity = Math.abs(deltaX) / elapsed
+        const canPrevNow = canPrevRef.current
+        const canNextNow = canNextRef.current
+
+        // Release threshold: ~60px distance OR >=30px with high velocity flick (>0.45 px/ms)
+        const isNext = (deltaX <= -60 || (deltaX <= -30 && velocity >= 0.45)) && canNextNow
+        const isPrev = (deltaX >= 60 || (deltaX >= 30 && velocity >= 0.45)) && canPrevNow
+
+        if (slideEl) {
+          if (isNext) {
+            isAnimatingRef.current = true
+            const slideOutDuration = 200
+            const slideInDuration = 240
+            slideEl.style.transition = `transform ${slideOutDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${slideOutDuration}ms ease-out`
+            slideEl.style.transform = 'translateX(-100%)'
+            slideEl.style.opacity = '0.15'
+
+            if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+            transitionTimeoutRef.current = setTimeout(() => {
+              executeNextSongRef.current()
+              if (container) container.scrollTop = 0
+
+              slideEl.style.transition = 'none'
+              slideEl.style.transform = 'translateX(100%)'
+              slideEl.style.opacity = '0.15'
+              void slideEl.offsetWidth
+
+              requestAnimationFrame(() => {
+                slideEl.style.transition = `transform ${slideInDuration}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${slideInDuration}ms ease-out`
+                slideEl.style.transform = 'translateX(0)'
+                slideEl.style.opacity = '1'
+
+                transitionTimeoutRef.current = setTimeout(() => {
+                  slideEl.style.transform = ''
+                  slideEl.style.transition = ''
+                  slideEl.style.opacity = ''
+                  isAnimatingRef.current = false
+                }, slideInDuration + 30)
+              })
+            }, slideOutDuration)
+          } else if (isPrev) {
+            isAnimatingRef.current = true
+            const slideOutDuration = 200
+            const slideInDuration = 240
+            slideEl.style.transition = `transform ${slideOutDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${slideOutDuration}ms ease-out`
+            slideEl.style.transform = 'translateX(100%)'
+            slideEl.style.opacity = '0.15'
+
+            if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+            transitionTimeoutRef.current = setTimeout(() => {
+              executePrevSongRef.current()
+              if (container) container.scrollTop = 0
+
+              slideEl.style.transition = 'none'
+              slideEl.style.transform = 'translateX(-100%)'
+              slideEl.style.opacity = '0.15'
+              void slideEl.offsetWidth
+
+              requestAnimationFrame(() => {
+                slideEl.style.transition = `transform ${slideInDuration}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${slideInDuration}ms ease-out`
+                slideEl.style.transform = 'translateX(0)'
+                slideEl.style.opacity = '1'
+
+                transitionTimeoutRef.current = setTimeout(() => {
+                  slideEl.style.transform = ''
+                  slideEl.style.transition = ''
+                  slideEl.style.opacity = ''
+                  isAnimatingRef.current = false
+                }, slideInDuration + 30)
+              })
+            }, slideOutDuration)
+          } else {
+            // Cancel / Snap back to center
+            isAnimatingRef.current = true
+            slideEl.style.transition = 'transform 240ms cubic-bezier(0.25, 1, 0.5, 1), opacity 240ms ease-out'
+            slideEl.style.transform = 'translateX(0)'
+            slideEl.style.opacity = '1'
+
+            if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current)
+
+            transitionTimeoutRef.current = setTimeout(() => {
+              slideEl.style.transform = ''
+              slideEl.style.transition = ''
+              slideEl.style.opacity = ''
+              isAnimatingRef.current = false
+            }, 250)
+          }
+        }
+        gestureDirection = 'undecided'
+      }
+    }
+
+    container.addEventListener('touchstart', onTouchStart, { passive: true })
+    container.addEventListener('touchmove', onTouchMove, { passive: false })
+    container.addEventListener('touchend', onTouchEnd, { passive: true })
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true })
+
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart)
+      container.removeEventListener('touchmove', onTouchMove)
+      container.removeEventListener('touchend', onTouchEnd)
+      container.removeEventListener('touchcancel', onTouchEnd)
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current)
+      }
+    }
+  }, [])
+
   // Keyboard stage controls:
   // - Spacebar: Toggle Auto-Scroll (Play / Pause)
   // - ArrowRight or 'n': Next song in setlist
@@ -481,26 +1049,14 @@ export const StageView: React.FC<StageViewProps> = ({
       // ArrowRight or 'n': Next song in setlist or library
       if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {
         e.preventDefault()
-        if (isInSetlistMode && onSelectSetlistSongIndex) {
-          if (activeSetlistSongIndex < activeSetlistSongs.length - 1) {
-            onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
-          }
-        } else if (activeSongIndex < songs.length - 1) {
-          onSelectSongIndex(activeSongIndex + 1)
-        }
+        handleNextSong()
         return
       }
 
       // ArrowLeft or 'p': Previous song in setlist or library
       if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {
         e.preventDefault()
-        if (isInSetlistMode && onSelectSetlistSongIndex) {
-          if (activeSetlistSongIndex > 0) {
-            onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
-          }
-        } else if (activeSongIndex > 0) {
-          onSelectSongIndex(activeSongIndex - 1)
-        }
+        handlePrevSong()
         return
       }
 
@@ -546,6 +1102,8 @@ export const StageView: React.FC<StageViewProps> = ({
     isAutoScrolling,
     scrollSpeed,
     syncState.role,
+    handleNextSong,
+    handlePrevSong,
   ])
 
   // ---------------------------------------------------------------------------
@@ -600,8 +1158,11 @@ export const StageView: React.FC<StageViewProps> = ({
       fontSizePx,
       fontStyle,
       isTwoColumn,
+      chordScale,
+      fontWeight,
+      lineSpacing,
     })
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
 
   useEffect(() => {
     // Listen for REQUEST_STATE from external teleprompter window
@@ -616,10 +1177,13 @@ export const StageView: React.FC<StageViewProps> = ({
           fontSizePx,
           fontStyle,
           isTwoColumn,
+          chordScale,
+          fontWeight,
+          lineSpacing,
         })
       }
     )
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
 
   const handleChordClick = (chordName: string) => {
     const voicing = getChordVoicing(chordName)
@@ -642,34 +1206,122 @@ export const StageView: React.FC<StageViewProps> = ({
     setIsSpeedPromptOpen(false)
   }
 
-  const inPerformanceMode = isPerformanceMode
-
   return (
     <div className="flex-1 flex flex-col bg-[#002B36] select-none relative overflow-hidden"
       style={{ height: inPerformanceMode ? '100vh' : 'calc(100vh - 4rem)' }}
     >
       {/* =================================================================== */}
-      {/* PERFORMANCE MODE — discreet top-edge safe-area exit tap zone only.  */}
-      {/* No HUD here: avoids Dynamic Island / notch on iOS.                  */}
+      {/* PERFORMANCE MODE — Focus Mode Auto-Hiding Song Title Banner        */}
       {/* =================================================================== */}
       {inPerformanceMode && (
-        <button
-          type="button"
-          onClick={() => {
-            if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
-            else setIsDistractionFree(false)
-          }}
-          className="absolute z-50 left-1/2 -translate-x-1/2 opacity-0 hover:opacity-100
-                     focus:opacity-100 transition-opacity duration-300
-                     flex items-center gap-1 px-3 py-1 rounded-b-xl
-                     bg-black/50 backdrop-blur-md text-white/60 text-[10px]
-                     font-mono uppercase tracking-widest cursor-pointer border-x border-b border-white/10"
-          style={{ top: 'env(safe-area-inset-top, 0px)' }}
-          aria-label="Exit performance mode"
-          title="Exit performance mode (tap or press Esc)"
+        <div
+          onClick={triggerOverlaysShow}
+          className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3 sm:px-6 py-2
+                      bg-[#073642]/95 backdrop-blur-md border-b border-[#1A4A55] shadow-xl
+                      transition-all duration-300 ease-in-out transform ${
+                        showStageOverlays
+                          ? 'opacity-100 translate-y-0 pointer-events-auto'
+                          : 'opacity-0 -translate-y-full pointer-events-none'
+                      }`}
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
         >
-          <Minimize2 className="w-2.5 h-2.5" /> Exit
-        </button>
+          <div className="min-w-0 flex-1 pr-2 sm:pr-4">
+            <h1 className="text-sm sm:text-base md:text-lg font-extrabold text-[#EEE8D5] tracking-tight leading-tight truncate">
+              {song.title || 'Untitled Song'}
+            </h1>
+            {song.artist && (
+              <p className="text-[10px] sm:text-xs text-[#2AA198] font-semibold truncate leading-none mt-0.5">
+                {song.artist}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Transpose [- Key +] Control */}
+            <div
+              className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTransposeChange(transposeOffset - 1)
+                  triggerOverlaysShow()
+                }}
+                className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                title="Transpose Down (-1)"
+                aria-label="Transpose Down (-1 semitone)"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsKeyPickerOpen(true)
+                  triggerOverlaysShow()
+                }}
+                className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
+                  transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
+                }`}
+                title="Choose Target Key"
+                aria-label={`Current Key: ${effectiveKey || 'Orig'}, Tap to choose key`}
+              >
+                <span>{effectiveKey || 'Orig'}</span>
+                {transposeOffset !== 0 && (
+                  <span className="text-[10px] font-bold text-[#B58900]/90">
+                    {offsetStr}
+                  </span>
+                )}
+                <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTransposeChange(transposeOffset + 1)
+                  triggerOverlaysShow()
+                }}
+                className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                title="Transpose Up (+1)"
+                aria-label="Transpose Up (+1 semitone)"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Exit Focus Mode Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
+                else setIsDistractionFree(false)
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#EEE8D5] text-xs font-semibold
+                         flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
+              title="Exit focus mode"
+              aria-label="Exit focus mode"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px]">Exit</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top area tap zone to reveal overlays when hidden */}
+      {inPerformanceMode && !showStageOverlays && (
+        <div
+          onClick={triggerOverlaysShow}
+          className="absolute top-0 left-0 right-0 h-14 z-30 cursor-pointer pointer-events-auto"
+          style={{ top: 'env(safe-area-inset-top, 0px)' }}
+          aria-label="Reveal stage controls"
+          title="Tap to show stage controls"
+        />
       )}
 
       {/* =================================================================== */}
@@ -737,32 +1389,25 @@ export const StageView: React.FC<StageViewProps> = ({
           <div className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] p-0.5">
             <button
               type="button"
-              onClick={() => {
-                const next = Math.max(12, fontSizePx - 1)
-                setFontSizePx(next)
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
-                }
-              }}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none"
-              title="Decrease Font Size (A-)"
+              {...createHoldHandlers(-1)}
+              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              title="Decrease Font Size (Hold for smooth resizing)"
             >
               A-
             </button>
-            <span className="text-[11px] font-mono text-[#93A1A1] px-1 font-semibold">
+            <span
+              onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
+              onTouchStart={handleNumericDoubleTap}
+              className="text-[11px] font-mono text-[#93A1A1] px-1 font-semibold cursor-pointer select-none"
+              title="Double-tap to reset to Stage default (L / 24px)"
+            >
               {fontSizePx}
             </span>
             <button
               type="button"
-              onClick={() => {
-                const next = Math.min(38, fontSizePx + 1)
-                setFontSizePx(next)
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(next))
-                }
-              }}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none"
-              title="Increase Font Size (A+)"
+              {...createHoldHandlers(1)}
+              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              title="Increase Font Size (Hold for smooth resizing)"
             >
               A+
             </button>
@@ -963,28 +1608,14 @@ export const StageView: React.FC<StageViewProps> = ({
         ref={scrollContainerRef}
         onScroll={handleContainerScroll}
         onTouchStart={handleContainerTouchStart}
-        className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-4 select-text"
+        onClick={handleContainerClick}
+        className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 md:px-8 py-4 select-text"
       >
-        <div className={`mx-auto transition-all ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}>
-          {/* Metadata Header Badges (Key, Capo, 2 Columns / Format) */}
-          <div className="flex items-center gap-2 pb-3 flex-wrap">
-            {effectiveKey && <MetaBadge label={`KEY: ${effectiveKey}`} />}
-            {song.capo &&
-              song.capo.toLowerCase() !== 'no capo' &&
-              song.capo.toLowerCase() !== 'none' && (
-                <MetaBadge
-                  label={
-                    song.capo.toLowerCase().startsWith('capo')
-                      ? song.capo.toUpperCase()
-                      : `CAPO: ${song.capo}`
-                  }
-                />
-              )}
-            <MetaBadge label={isTwoColumn ? '2 COLUMNS' : '1 COLUMN'} />
-          </div>
-
-          {/* HorizontalDivider (color = customColors.divider, thickness = 1.dp) */}
-          <div className="h-[1px] bg-[#1A4A55] mb-4" />
+        <div
+          ref={slideContentRef}
+          className={`mx-auto transition-[max-width] duration-300 ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}
+          style={{ willChange: 'transform' }}
+        >
 
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
           {song.isMissing ? (
@@ -1000,6 +1631,9 @@ export const StageView: React.FC<StageViewProps> = ({
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
+                  chordScale={chordScale}
+                  fontWeight={fontWeight}
+                  lineSpacing={lineSpacing}
                 />
               </div>
 
@@ -1009,6 +1643,9 @@ export const StageView: React.FC<StageViewProps> = ({
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
+                  chordScale={chordScale}
+                  fontWeight={fontWeight}
+                  lineSpacing={lineSpacing}
                 />
               </div>
             </div>
@@ -1018,11 +1655,20 @@ export const StageView: React.FC<StageViewProps> = ({
               fontSizePx={fontSizePx}
               fontFamily={fontStyle}
               onChordClick={handleChordClick}
+              chordScale={chordScale}
+              fontWeight={fontWeight}
+              lineSpacing={lineSpacing}
             />
           )}
 
-          {/* Bottom Padding for scroll clearance (Spacer(height = 140.dp)) */}
-          <div className="h-44 flex items-center justify-center text-xs font-mono text-[#1A4A55] select-none">
+          {/* Bottom Padding for scroll clearance: ensures floating controls never occlude the final lines */}
+          <div
+            className="flex items-center justify-center text-xs font-mono text-[#1A4A55] select-none"
+            style={{
+              height: 'max(240px, calc(180px + env(safe-area-inset-bottom, 24px)))',
+              paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+            }}
+          >
             — End of Song —
           </div>
         </div>
@@ -1036,8 +1682,15 @@ export const StageView: React.FC<StageViewProps> = ({
       {((isInSetlistMode && activeSetlistSongs.length > 1) ||
         (!isInSetlistMode && songs.length > 1)) && (
         <div
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center gap-0 pointer-events-auto
-                     bg-[#073642]/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none"
+          className={`absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center gap-0
+                     bg-[#073642]/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none
+                     transition-all duration-300 ease-in-out transform ${
+                       inPerformanceMode
+                         ? showStageOverlays
+                           ? 'opacity-100 translate-y-0 pointer-events-auto'
+                           : 'opacity-0 translate-y-16 pointer-events-none'
+                         : 'opacity-100 translate-y-0 pointer-events-auto'
+                     }`}
           style={{
             borderColor: isInSetlistMode ? 'rgba(181,137,0,0.35)' : 'rgba(42,161,152,0.35)',
             paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
@@ -1046,9 +1699,10 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             disabled={isInSetlistMode ? activeSetlistSongIndex <= 0 : activeSongIndex <= 0}
-            onClick={() => {
-              if (isInSetlistMode && onSelectSetlistSongIndex) onSelectSetlistSongIndex(activeSetlistSongIndex - 1)
-              else if (!isInSetlistMode) onSelectSongIndex(activeSongIndex - 1)
+            onClick={(e) => {
+              e.stopPropagation()
+              handlePrevSong()
+              triggerOverlaysShow()
             }}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
@@ -1060,7 +1714,11 @@ export const StageView: React.FC<StageViewProps> = ({
 
           <button
             type="button"
-            onClick={onOpenSetlistDrawer}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenSetlistDrawer()
+              triggerOverlaysShow()
+            }}
             className={`px-3 py-2 font-extrabold text-[11px] transition-colors cursor-pointer ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
             }`}
@@ -1074,9 +1732,10 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             disabled={isInSetlistMode ? activeSetlistSongIndex >= activeSetlistSongs.length - 1 : activeSongIndex >= songs.length - 1}
-            onClick={() => {
-              if (isInSetlistMode && onSelectSetlistSongIndex) onSelectSetlistSongIndex(activeSetlistSongIndex + 1)
-              else if (!isInSetlistMode) onSelectSongIndex(activeSongIndex + 1)
+            onClick={(e) => {
+              e.stopPropagation()
+              handleNextSong()
+              triggerOverlaysShow()
             }}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
@@ -1090,7 +1749,14 @@ export const StageView: React.FC<StageViewProps> = ({
 
       {/* --- Bottom-right FAB stack (autoscroll + options) --- */}
       <div
-        className="absolute bottom-0 right-0 z-30 flex flex-col items-end gap-3 pointer-events-none"
+        className={`absolute bottom-0 right-0 z-30 flex flex-col items-end gap-3 pointer-events-none
+                   transition-all duration-300 ease-in-out transform ${
+                     inPerformanceMode
+                       ? showStageOverlays
+                         ? 'opacity-100 translate-y-0'
+                         : 'opacity-0 translate-y-20'
+                       : 'opacity-100 translate-y-0'
+                   }`}
         style={{
           paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
           paddingRight: 'max(16px, env(safe-area-inset-right, 16px))',
@@ -1099,11 +1765,17 @@ export const StageView: React.FC<StageViewProps> = ({
         {/* ··· Stage Options FAB */}
         <button
           type="button"
-          onClick={() => setIsStageMenuOpen(true)}
-          className="pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsStageMenuOpen(true)
+            triggerOverlaysShow()
+          }}
+          className={`w-11 h-11 rounded-full flex items-center justify-center
                      bg-[#073642]/90 backdrop-blur-md border border-[#1A4A55] shadow-xl
                      text-[#93A1A1] hover:text-[#EEE8D5] hover:border-[#2AA198]
-                     transition-all active:scale-90 cursor-pointer"
+                     transition-all active:scale-90 cursor-pointer ${
+                       inPerformanceMode && !showStageOverlays ? 'pointer-events-none' : 'pointer-events-auto'
+                     }`}
           title="Stage options (transpose, font, speed, exit)"
           aria-label="Open stage options"
         >
@@ -1113,10 +1785,16 @@ export const StageView: React.FC<StageViewProps> = ({
         {/* Autoscroll FAB — circular, Android yellow/red */}
         <button
           type="button"
-          onClick={handleToggleAutoScroll}
-          className={`pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center
+          onClick={(e) => {
+            e.stopPropagation()
+            handleToggleAutoScroll()
+            triggerOverlaysShow()
+          }}
+          className={`w-14 h-14 rounded-full flex items-center justify-center
                      shadow-2xl transition-all active:scale-90 cursor-pointer select-none
                      border-2 ${
+                       inPerformanceMode && !showStageOverlays ? 'pointer-events-none' : 'pointer-events-auto'
+                     } ${
             isAutoScrolling
               ? 'bg-[#EF4444] border-[#EF4444]/60 text-white hover:bg-[#DC2626] shadow-red-900/50'
               : 'bg-[#B58900] border-[#B58900]/60 text-black hover:bg-[#C89600] shadow-amber-900/40'
@@ -1179,16 +1857,54 @@ export const StageView: React.FC<StageViewProps> = ({
 
           {/* Sheet */}
           <div
-            className="relative z-10 rounded-t-3xl bg-[#073642] border-t border-x border-[#1A4A55] shadow-2xl px-5 pt-3"
+            className="relative z-10 rounded-t-3xl bg-[#073642] border-t border-x border-[#1A4A55] shadow-2xl px-5 pt-3 max-h-[85vh] overflow-y-auto"
             style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drag handle */}
             <div className="w-10 h-1 bg-[#1A4A55] rounded-full mx-auto mb-4" />
 
-            <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase mb-4 flex items-center gap-2">
-              <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
+              </h2>
+              {isStageDistanceActive && (
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  1–2m Stage Distance
+                </span>
+              )}
+            </div>
+
+            {/* --- One-Tap Stage Distance (1–2m) Master Preset --- */}
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={handleToggleStageDistance}
+                className={`w-full py-2.5 px-3 rounded-2xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
+                  isStageDistanceActive
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-md ring-1 ring-amber-500/40'
+                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:border-[#2AA198]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                    isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-amber-400'
+                  }`}>
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="font-bold text-xs">Stage Distance (1–2m)</span>
+                    <span className="text-[10px] text-[#93A1A1] font-mono">24px (L) • 120% Bold Chords • Relaxed</span>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-lg font-bold ${
+                  isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-[#93A1A1] border border-[#1A4A55]'
+                }`}>
+                  {isStageDistanceActive ? 'ACTIVE' : 'APPLY'}
+                </span>
+              </button>
+            </div>
 
             {/* --- Transpose row --- */}
             <div className="flex items-center gap-2 mb-4">
@@ -1219,21 +1935,122 @@ export const StageView: React.FC<StageViewProps> = ({
               </div>
             </div>
 
-            {/* --- Font size row --- */}
+            {/* --- Font size row & Presets --- */}
+            <div className="mb-4 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Font Size</span>
+                <div className="flex items-center bg-[#002B36] rounded-xl border border-[#1A4A55] flex-1">
+                  <button
+                    type="button"
+                    {...createHoldHandlers(-1)}
+                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    title="Decrease font size (Hold to adjust)"
+                  >
+                    A-
+                  </button>
+                  <span
+                    onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
+                    onTouchStart={handleNumericDoubleTap}
+                    className="flex-1 text-center text-sm font-mono font-bold text-[#B58900] cursor-pointer select-none py-1"
+                    title="Double-tap to reset to Stage default (L / 24px)"
+                  >
+                    {fontSizePx}px
+                  </span>
+                  <button
+                    type="button"
+                    {...createHoldHandlers(1)}
+                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    title="Increase font size (Hold to adjust)"
+                  >
+                    A+
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Stage Size Presets [ S | M | L | XL ] */}
+              <div className="flex items-center gap-1.5 pl-[88px]">
+                {(['S', 'M', 'L', 'XL'] as const).map((key) => {
+                  const size = STAGE_SIZE_PRESETS[key]
+                  const isSelected = fontSizePx === size
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setStageFontSize(size)}
+                      className={`flex-1 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer text-center ${
+                        isSelected
+                          ? 'bg-[#B58900] text-black border-[#B58900] shadow-sm'
+                          : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                      }`}
+                      title={`${key} (${size}px)`}
+                    >
+                      {key}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* --- Chord Scaling Ratio --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Font Size</span>
-              <div className="flex items-center bg-[#002B36] rounded-xl border border-[#1A4A55] flex-1">
-                <button type="button"
-                  onClick={() => { const n = Math.max(12, fontSizePx - 1); setFontSizePx(n); localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(n)) }}
-                  className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
-                  A-
-                </button>
-                <span className="flex-1 text-center text-sm font-mono font-bold text-[#B58900]">{fontSizePx}px</span>
-                <button type="button"
-                  onClick={() => { const n = Math.min(38, fontSizePx + 1); setFontSizePx(n); localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(n)) }}
-                  className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
-                  A+
-                </button>
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Chord Size</span>
+              <div className="grid grid-cols-4 gap-1.5 flex-1">
+                {CHORD_SCALE_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setChordScale(value)}
+                    className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                      chordScale === value
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* --- Font Weight --- */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Weight</span>
+              <div className="grid grid-cols-3 gap-1.5 flex-1">
+                {FONT_WEIGHT_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFontWeight(value)}
+                    className={`py-1.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
+                      fontWeight === value
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] font-bold shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* --- Line Spacing --- */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Spacing</span>
+              <div className="grid grid-cols-3 gap-1.5 flex-1">
+                {LINE_SPACING_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setLineSpacing(value)}
+                    className={`py-1.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
+                      lineSpacing === value
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] font-bold shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 

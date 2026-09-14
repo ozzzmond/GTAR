@@ -39,29 +39,6 @@ export function getAuthorizedEmailsList(configured?: string): string[] {
   return Array.from(combined)
 }
 
-export function mergeCloudAuthorizedEmails(cloudEmails: string[], configured?: string): string[] {
-  if (!Array.isArray(cloudEmails) || cloudEmails.length === 0) {
-    return getAuthorizedEmailsList(configured)
-  }
-  getAuthorizedEmailsList(configured)
-  let added = false
-  for (const email of cloudEmails) {
-    const cleaned = String(email).trim().toLowerCase()
-    if (cleaned && !memoryOverrides?.has(cleaned)) {
-      memoryOverrides?.add(cleaned)
-      added = true
-    }
-  }
-  if (added) {
-    try {
-      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
-        localStorage.setItem(WHITELIST_STORAGE_KEY, JSON.stringify(Array.from(memoryOverrides ?? [])))
-      }
-    } catch { /* storage quota or blocked */ }
-  }
-  return getAuthorizedEmailsList(configured)
-}
-
 export function authorizedEmail(email: string, configured?: string): boolean {
   if (!email) return false
   const allowed = getAuthorizedEmailsList(configured)

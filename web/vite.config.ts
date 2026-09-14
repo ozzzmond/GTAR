@@ -6,6 +6,13 @@ import https from 'node:https'
 import url from 'node:url'
 import os from 'node:os'
 
+import {
+  parseSearchResults,
+  parseTabSheet,
+  validateSearchQuery,
+  validateTabUrl,
+} from './src/utils/ugCore.ts'
+
 const UG_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
@@ -13,45 +20,26 @@ const UG_HEADERS = {
     'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.5',
   Referer: 'https://www.ultimate-guitar.com/',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
 }
 
-function fetchHttps(targetUrl: string): Promise<{ status: number; data: string }> {
+function fetchHttps(targetUrl: string, timeoutMs = 8000): Promise<{ status: number; data: string }> {
   return new Promise((resolve, reject) => {
-    https
-      .get(targetUrl, { headers: UG_HEADERS }, (res) => {
+    const req = https
+      .get(targetUrl, { headers: UG_HEADERS, timeout: timeoutMs }, (res) => {
         let data = ''
         res.on('data', (chunk) => (data += chunk))
         res.on('end', () => resolve({ status: res.statusCode || 200, data }))
       })
+      .on('timeout', () => {
+        req.destroy(new Error('ETIMEDOUT: Request timed out'))
+      })
       .on('error', reject)
   })
-}
-
-function extractJsStore(html: string): any {
-  const marker = 'data-content="'
-  const idx = html.indexOf(marker)
-  if (idx === -1) return null
-  const end = html.indexOf('">', idx + marker.length)
-  if (end === -1) return null
-  const jsonStr = html
-    .substring(idx + marker.length, end)
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-  try {
-    return JSON.parse(jsonStr)
-  } catch {
-    return null
-  }
-}
-
-function sanitizeUgMarkup(content: string): string {
-  return content
-    .replace(/\[ch\](.*?)\[\/ch\]/gi, '$1')
-    .replace(/\[\/?tab\]/gi, '')
-    .trim()
 }
 
 function ugScraperPlugin(): Plugin {
@@ -59,125 +47,127 @@ function ugScraperPlugin(): Plugin {
     name: 'ug-scraper-plugin',
     configureServer(server) {
       server.middlewares.use('/api/ug-search', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Cache-Control', 'no-store')
+
         try {
           const parsedUrl = url.parse(req.url || '', true)
-          const q = String(parsedUrl.query.q || '').trim()
-          if (!q) {
-            res.writeHead(200, { 'Content-Type': 'application/json' })
+          const validation = validateSearchQuery(parsedUrl.query.q)
+
+          if (!validation.valid) {
+            res.writeHead(400)
+            res.end(JSON.stringify({ success: false, error: validation.error }))
+            return
+          }
+
+          if (!validation.query) {
+            res.writeHead(200)
             res.end(JSON.stringify({ success: true, results: [] }))
             return
           }
 
-          const target = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(q)}`
+          const target = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(validation.query)}`
           const { status, data } = await fetchHttps(target)
-          if (status !== 200) {
-            res.writeHead(status, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: false, error: `Search HTTP ${status}` }))
+
+          if (status === 404) {
+            res.writeHead(200)
+            res.end(JSON.stringify({ success: true, results: [] }))
             return
           }
 
-          const storeJson = extractJsStore(data)
-          const rawResults =
-            storeJson?.store?.page?.data?.results || storeJson?.data?.results || []
+          if (status === 403) {
+            res.writeHead(403)
+            res.end(JSON.stringify({ success: false, error: 'Ultimate Guitar access restricted by WAF' }))
+            return
+          }
 
-          const results = rawResults
-            .filter(
-              (r: any) =>
-                r.song_name &&
-                r.tab_url &&
-                (r.type === 'Chords' || r.tab_url.includes('-chords-') || r.type === 'Tab')
-            )
-            .map((r: any, i: number) => ({
-              id: r.id || i,
-              songName: String(r.song_name).trim(),
-              artistName: String(r.artist_name || '').trim(),
-              type: r.type || 'Chords',
-              version: Number(r.version) || 1,
-              votes: Number(r.votes) || 0,
-              rating: Number(r.rating) || 0,
-              tabUrl: String(r.tab_url).trim(),
-              tonality: r.tonality_name || undefined,
-            }))
-            .sort((a: any, b: any) => b.votes - a.votes || b.rating - a.rating)
+          if (status === 429) {
+            res.writeHead(429)
+            res.end(JSON.stringify({ success: false, error: 'Rate limit exceeded on Ultimate Guitar' }))
+            return
+          }
 
-          res.writeHead(200, { 'Content-Type': 'application/json' })
+          if (status !== 200) {
+            res.writeHead(502)
+            res.end(JSON.stringify({ success: false, error: `Upstream error from Ultimate Guitar (HTTP ${status})` }))
+            return
+          }
+
+          const results = parseSearchResults(data)
+          res.writeHead(200)
           res.end(JSON.stringify({ success: true, results }))
         } catch (err: any) {
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: err.message }))
+          const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('timed out')
+          const statusCode = isTimeout ? 504 : 502
+          const errorMsg = isTimeout
+            ? 'Gateway timeout contacting Ultimate Guitar'
+            : (err?.message || 'Internal proxy error')
+          res.writeHead(statusCode)
+          res.end(JSON.stringify({ success: false, error: errorMsg }))
         }
       })
 
       server.middlewares.use('/api/ug-tab', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Cache-Control', 'no-store')
+
         try {
           const parsedUrl = url.parse(req.url || '', true)
-          const tabUrl = String(parsedUrl.query.url || '').trim()
-          if (!tabUrl) {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: false, error: 'Missing tab url' }))
+          const validation = validateTabUrl(parsedUrl.query.url)
+
+          if (!validation.valid || !validation.parsedUrl) {
+            res.writeHead(validation.status)
+            res.end(JSON.stringify({ success: false, error: validation.error }))
             return
           }
 
-          const { status, data } = await fetchHttps(tabUrl)
+          const { status, data } = await fetchHttps(validation.parsedUrl.toString())
+
+          if (status === 404) {
+            res.writeHead(404)
+            res.end(JSON.stringify({ success: false, error: 'Tab not found on Ultimate Guitar' }))
+            return
+          }
+
+          if (status === 403) {
+            res.writeHead(403)
+            res.end(JSON.stringify({ success: false, error: 'Ultimate Guitar access restricted by WAF' }))
+            return
+          }
+
+          if (status === 429) {
+            res.writeHead(429)
+            res.end(JSON.stringify({ success: false, error: 'Rate limit exceeded on Ultimate Guitar' }))
+            return
+          }
+
           if (status !== 200) {
-            res.writeHead(status, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: false, error: `Tab fetch HTTP ${status}` }))
+            res.writeHead(502)
+            res.end(JSON.stringify({ success: false, error: `Upstream error from Ultimate Guitar (HTTP ${status})` }))
             return
           }
 
-          const storeJson = extractJsStore(data)
-          const tabData = storeJson?.store?.page?.data || storeJson?.data
-          const wikiTab = tabData?.tab_view?.wiki_tab || tabData?.tab
-          let rawContent = wikiTab?.content || ''
-
-          if (!rawContent) {
-            const preMatch = data.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i)
-            if (preMatch && preMatch[1]) {
-              rawContent = preMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&')
-            }
-          }
-
-          if (!rawContent) {
-            res.writeHead(404, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: false, error: 'No chord sheet text in tab' }))
+          const parseResult = parseTabSheet(data, validation.parsedUrl.toString())
+          if (!parseResult.success) {
+            res.writeHead(parseResult.status)
+            res.end(JSON.stringify({ success: false, error: parseResult.error }))
             return
           }
 
-          const cleanContent = sanitizeUgMarkup(rawContent)
-          const title = tabData?.tab?.song_name || 'Unknown'
-          const artist = tabData?.tab?.artist_name || ''
-          const key =
-            tabData?.tab_view?.meta?.tonality || tabData?.tab?.tonality_name || 'G'
-          const capoNum = tabData?.tab_view?.meta?.capo || tabData?.tab?.capo || 0
-          const capoStr = capoNum > 0 ? `Capo ${capoNum}` : 'No Capo'
-
-          const formatted = `{title: ${title}}
-{artist: ${artist}}
-{key: ${key}}
-{capo: ${capoStr}}
-{tempo: 120}
-
-${cleanContent}`
-
-          const sheet = {
-            title,
-            artist,
-            key,
-            capo: capoStr,
-            bpm: '120',
-            format:
-              cleanContent.includes('[') && cleanContent.includes(']')
-                ? 'CHORD_PRO'
-                : 'TWO_LINE',
-            rawContent: formatted,
-            sourceUrl: tabUrl,
-          }
-
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: true, sheet }))
+          res.writeHead(200)
+          res.end(JSON.stringify({ success: true, sheet: parseResult.sheet }))
         } catch (err: any) {
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: err.message }))
+          const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('timed out')
+          const statusCode = isTimeout ? 504 : 502
+          const errorMsg = isTimeout
+            ? 'Gateway timeout contacting Ultimate Guitar'
+            : (err?.message || 'Internal proxy error')
+          res.writeHead(statusCode)
+          res.end(JSON.stringify({ success: false, error: errorMsg }))
         }
       })
 
@@ -217,16 +207,28 @@ export default defineConfig(({ mode }) => {
   // PWA manifest icon sets
   const devIcons = [
     {
-      src: '/pwa-dev-icon.svg',
-      sizes: '192x192 512x512',
-      type: 'image/svg+xml',
+      src: '/pwa-192x192.png',
+      sizes: '192x192',
+      type: 'image/png',
       purpose: 'any',
+    },
+    {
+      src: '/pwa-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: '/pwa-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
     },
     {
       src: '/pwa-dev-icon.svg',
       sizes: '192x192 512x512',
       type: 'image/svg+xml',
-      purpose: 'maskable',
+      purpose: 'any',
     },
   ]
   const prodIcons = [
@@ -258,8 +260,16 @@ export default defineConfig(({ mode }) => {
           enabled: true,
         },
         includeAssets: isDev
-          ? ['favicon.svg', 'icons.svg', 'pwa-dev-icon.svg']
-          : ['favicon.svg', 'icons.svg'],
+          ? [
+              'favicon.ico',
+              'favicon.png',
+              'apple-touch-icon.png',
+              'pwa-192x192.png',
+              'pwa-512x512.png',
+              'favicon.svg',
+              'pwa-dev-icon.svg',
+            ]
+          : ['favicon.svg'],
         manifest: {
           name: isDev ? 'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion',
           short_name: isDev ? 'GTAR-Dev' : 'GTAR',

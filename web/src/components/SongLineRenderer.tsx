@@ -2,11 +2,85 @@ import React from 'react'
 import type { SongLine } from '../types/gtar'
 import { CHORD_TOKEN_REGEX, convertChordProToTwoLine } from '../utils/songParser'
 
+export type StageChordScale = 1.0 | 1.1 | 1.2 | 1.3
+export type StageFontWeight = 'regular' | 'medium' | 'bold'
+export type StageLineSpacing = 'compact' | 'normal' | 'relaxed'
+
 export interface SongLineRendererProps {
   lines: SongLine[]
   fontSizePx: number
   fontFamily?: 'mono' | 'sans' | 'serif'
   onChordClick?: (chord: string) => void
+  chordScale?: number
+  fontWeight?: StageFontWeight
+  lineSpacing?: StageLineSpacing
+}
+
+interface LineSpacingConfig {
+  lineHeightMultiplier: number
+  chordRowPt: string
+  chordRowPb: string
+  lyricRowPt: string
+  lyricRowPb: string
+  emptySpacerHeight: string
+  sectionHeaderPt: string
+  sectionHeaderPb: string
+  chordProPadding: string
+  chordProMb: string
+}
+
+const SPACING_CONFIGS: Record<StageLineSpacing, LineSpacingConfig> = {
+  compact: {
+    lineHeightMultiplier: 1.2,
+    chordRowPt: '2px',
+    chordRowPb: '0px',
+    lyricRowPt: '0px',
+    lyricRowPb: '3px',
+    emptySpacerHeight: '14px',
+    sectionHeaderPt: '10px',
+    sectionHeaderPb: '4px',
+    chordProPadding: '2px 0 3px',
+    chordProMb: 'mb-0.5',
+  },
+  normal: {
+    lineHeightMultiplier: 1.35,
+    chordRowPt: '4px',
+    chordRowPb: '1px',
+    lyricRowPt: '1px',
+    lyricRowPb: '5px',
+    emptySpacerHeight: '20px',
+    sectionHeaderPt: '14px',
+    sectionHeaderPb: '8px',
+    chordProPadding: '4px 0 5px',
+    chordProMb: 'mb-1',
+  },
+  relaxed: {
+    lineHeightMultiplier: 1.6,
+    chordRowPt: '7px',
+    chordRowPb: '3px',
+    lyricRowPt: '3px',
+    lyricRowPb: '9px',
+    emptySpacerHeight: '28px',
+    sectionHeaderPt: '20px',
+    sectionHeaderPb: '12px',
+    chordProPadding: '8px 0 10px',
+    chordProMb: 'mb-1.5',
+  },
+}
+
+const FONT_WEIGHT_CONFIGS: Record<StageFontWeight, { lyricClass: string; chordClass: string }> = {
+  regular: {
+    lyricClass: 'font-normal',
+    chordClass: 'font-bold',
+  },
+  medium: {
+    lyricClass: 'font-medium',
+    chordClass: 'font-bold',
+  },
+  bold: {
+    lyricClass: 'font-semibold',
+    chordClass: 'font-black',
+  },
 }
 
 /**
@@ -15,7 +89,9 @@ export interface SongLineRendererProps {
  */
 function renderInteractiveChordLine(
   text: string,
-  onChordClick?: (chord: string) => void
+  onChordClick?: (chord: string) => void,
+  chordScale: number = 1.0,
+  isHighContrast: boolean = false
 ): React.ReactNode[] {
   const elements: React.ReactNode[] = []
   let i = 0
@@ -51,6 +127,17 @@ function renderInteractiveChordLine(
                 key={`chord-${start}-${sIdx}`}
                 onClick={() => onChordClick?.(cleanSub)}
                 className="stage-chord-token cursor-pointer select-none"
+                style={{
+                  ...(chordScale !== 1.0
+                    ? {
+                        display: 'inline-block',
+                        transform: `scale(${chordScale})`,
+                        transformOrigin: 'left bottom',
+                        verticalAlign: 'baseline',
+                      }
+                    : undefined),
+                  ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
+                }}
                 title={`View ${cleanSub} fretboard diagram`}
               >
                 {cleanSub}
@@ -68,6 +155,17 @@ function renderInteractiveChordLine(
               key={`chord-${start}`}
               onClick={() => onChordClick?.(cleanToken)}
               className="stage-chord-token cursor-pointer select-none"
+              style={{
+                ...(chordScale !== 1.0
+                  ? {
+                      display: 'inline-block',
+                      transform: `scale(${chordScale})`,
+                      transformOrigin: 'left bottom',
+                      verticalAlign: 'baseline',
+                    }
+                  : undefined),
+                ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
+              }}
               title={`View ${cleanToken} fretboard diagram`}
             >
               {cleanToken}
@@ -85,18 +183,21 @@ function renderInteractiveChordLine(
 
 /**
  * 1:1 Jetpack Compose RenderSongLine translation from Android SongViewerScreen.kt:
- * - EmptyLine: 20px spacer
- * - SectionHeader: muted-accent block with explicit line height and non-collapsing 14px/8px padding
- * - ChordLine: Bold in #B58900, letterSpacing 0.8px, paddingTop 4px, paddingBottom 1px
- * - LyricLine: Normal in #EEE8D5, letterSpacing 0.8px, paddingTop 1px, paddingBottom 5px
- * - TabLine: Monospace in #35B8AD, letterSpacing 0.8px, paddingVertical 1.5px
- * - Standalone Progression: Clean floating chord labels with comfortable spacing (no boxes/borders)
+ * - EmptyLine: customizable spacer height
+ * - SectionHeader: muted-accent block with explicit line height and padding
+ * - ChordLine: Bold in #B58900, with independent scaling & weights
+ * - LyricLine: In #EEE8D5, with selectable font weight
+ * - TabLine: Monospace in #35B8AD
+ * - Standalone Progression: Clean floating chord labels with comfortable spacing
  */
 export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   lines,
   fontSizePx,
   fontFamily = 'mono',
   onChordClick,
+  chordScale = 1.0,
+  fontWeight = 'regular',
+  lineSpacing = 'normal',
 }) => {
   const fontClass =
     fontFamily === 'serif'
@@ -104,6 +205,10 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
       : fontFamily === 'sans'
       ? 'stage-sans'
       : 'stage-mono'
+
+  const spacing = SPACING_CONFIGS[lineSpacing] || SPACING_CONFIGS.normal
+  const weightConfig = FONT_WEIGHT_CONFIGS[fontWeight] || FONT_WEIGHT_CONFIGS.regular
+  const isHighContrast = chordScale >= 1.2 && fontWeight === 'bold'
 
   return (
     <div
@@ -113,16 +218,15 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
       {lines.map((line, idx) => {
         switch (line.type) {
           case 'EMPTY':
-            // Spacer(modifier = Modifier.height(20.dp))
-            return <div key={idx} style={{ height: '20px' }} />
+            return <div key={idx} style={{ height: spacing.emptySpacerHeight }} />
 
           case 'SECTION_HEADER':
             return (
               <div key={idx} role="heading" aria-level={3}
                 className={`${fontClass} stage-section-header select-none`}
                 style={{
-                  fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * 1.35}px`,
-                  paddingTop: '14px', paddingBottom: '8px', margin: 0,
+                  fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
+                  paddingTop: spacing.sectionHeaderPt, paddingBottom: spacing.sectionHeaderPb, margin: 0,
                   color: '#A78BFA', fontWeight: 600, letterSpacing: '0.04em',
                   whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', breakAfter: 'avoid',
                   overflowAnchor: 'none',
@@ -132,28 +236,27 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             )
 
           case 'CHORD_ROW':
-            // If 2-line chord row over lyrics: exact monospace character-column alignment matching Compose
             return (
               <div
                 key={idx}
                 style={{
-                  paddingTop: '4px',
-                  paddingBottom: '1px',
+                  paddingTop: spacing.chordRowPt,
+                  paddingBottom: spacing.chordRowPb,
                   fontSize: `${fontSizePx}px`,
-                  lineHeight: `${fontSizePx * 1.35}px`,
+                  lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                   letterSpacing: '0.8px',
                   color: '#B58900',
-                  whiteSpace: 'pre',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
                 }}
-                className={`stage-mono stage-chord-text font-bold whitespace-pre select-text`}
+                className={`stage-mono stage-chord-text ${weightConfig.chordClass} whitespace-pre-wrap select-text`}
               >
-                {renderInteractiveChordLine(line.raw, onChordClick)}
+                {renderInteractiveChordLine(line.raw, onChordClick, chordScale, isHighContrast)}
               </div>
             )
 
           case 'LYRIC': {
-            // Defensive check: If lyric line contains bracketed chords (e.g. "When the [A]night" or "<C>"),
-            // automatically split to stacked chord-over-lyric layout matching Android 1:1
             if (/\[[A-G][b#]?[^\]]*\]|<[A-G][b#]?[^>]*>/.test(line.lyrics)) {
               const [chordLine, lyricLine] = convertChordProToTwoLine(line.lyrics)
               return (
@@ -161,30 +264,35 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   {chordLine.trim() && (
                     <div
                       style={{
-                        paddingTop: '4px',
-                        paddingBottom: '1px',
+                        paddingTop: spacing.chordRowPt,
+                        paddingBottom: spacing.chordRowPb,
                         fontSize: `${fontSizePx}px`,
-                        lineHeight: `${fontSizePx * 1.35}px`,
+                        lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                         letterSpacing: '0.8px',
                         color: '#B58900',
-                  whiteSpace: 'pre',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'break-word',
                       }}
-                      className={`stage-mono stage-chord-text font-bold whitespace-pre`}
+                      className={`stage-mono stage-chord-text ${weightConfig.chordClass} whitespace-pre-wrap`}
                     >
-                      {renderInteractiveChordLine(chordLine, onChordClick)}
+                      {renderInteractiveChordLine(chordLine, onChordClick, chordScale, isHighContrast)}
                     </div>
                   )}
                   {lyricLine && (
                     <div
                       style={{
-                        paddingTop: '1px',
-                        paddingBottom: '5px',
+                        paddingTop: spacing.lyricRowPt,
+                        paddingBottom: spacing.lyricRowPb,
                         fontSize: `${fontSizePx}px`,
-                        lineHeight: `${fontSizePx * 1.35}px`,
+                        lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                         letterSpacing: '0.8px',
                         color: '#EEE8D5',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'break-word',
                       }}
-                      className={`stage-mono stage-lyric-text font-normal whitespace-pre`}
+                      className={`${fontClass} stage-lyric-text ${weightConfig.lyricClass} whitespace-pre-wrap`}
                     >
                       {lyricLine}
                     </div>
@@ -193,20 +301,21 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               )
             }
 
-            // Jetpack Compose LyricLine:
-            // text = line.lyrics, textPrimary (#EEE8D5), letterSpacing = 0.8.sp, padding(top = 1.dp, bottom = 5.dp)
             return (
               <div
                 key={idx}
                 style={{
-                  paddingTop: '1px',
-                  paddingBottom: '5px',
+                  paddingTop: spacing.lyricRowPt,
+                  paddingBottom: spacing.lyricRowPb,
                   fontSize: `${fontSizePx}px`,
-                  lineHeight: `${fontSizePx * 1.35}px`,
+                  lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                   letterSpacing: '0.8px',
                   color: '#EEE8D5',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
                 }}
-                className={`stage-mono stage-lyric-text font-normal whitespace-pre select-text`}
+                className={`${fontClass} stage-lyric-text ${weightConfig.lyricClass} whitespace-pre-wrap select-text`}
               >
                 {line.lyrics}
               </div>
@@ -214,8 +323,6 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
           }
 
           case 'TAB':
-            // Jetpack Compose TabLine:
-            // tabFontSize = (fontSizeSp - 1f).coerceAtLeast(11f), tabLineColor (#35B8AD), letterSpacing = 0.8.sp, padding(vertical = 1.5.dp)
             {
               const tabFontSize = Math.max(11, fontSizePx - 1)
               return (
@@ -238,13 +345,21 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
 
           case 'CHORD_PRO': {
             return (
-              <div key={idx} className={`${fontClass} select-text`} style={{ fontSize: fontSizePx, padding: '4px 0 5px' }}>
+              <div key={idx} className={`${fontClass} select-text`} style={{ fontSize: fontSizePx, padding: spacing.chordProPadding }}>
                 {line.segments.map((segment, index) => (
                   <span key={index} className="inline-flex flex-col align-bottom" style={{ whiteSpace: 'pre-wrap', maxWidth: '100%', paddingRight: segment.chord && line.segments[index + 1]?.chord ? '1ch' : undefined }}>
-                    <span className="text-amber-400 font-bold font-mono text-[0.85em] leading-none mb-1 select-none">
-                      {segment.chord ? renderInteractiveChordLine(segment.chord, onChordClick) : '\u00a0'}
+                    <span
+                      className={`text-amber-400 ${weightConfig.chordClass} font-mono leading-none select-none ${spacing.chordProMb}`}
+                      style={{
+                        fontSize: `${chordScale * 0.9}em`,
+                        ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
+                      }}
+                    >
+                      {segment.chord ? renderInteractiveChordLine(segment.chord, onChordClick, 1.0, isHighContrast) : '\u00a0'}
                     </span>
-                    <span className="leading-normal stage-lyric-text">{segment.text || '\u00a0'}</span>
+                    <span className={`stage-lyric-text ${weightConfig.lyricClass}`} style={{ lineHeight: spacing.lineHeightMultiplier }}>
+                      {segment.text || '\u00a0'}
+                    </span>
                   </span>
                 ))}
               </div>
