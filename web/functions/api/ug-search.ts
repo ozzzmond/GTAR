@@ -1,3 +1,5 @@
+import { parseSearchResults, validateSearchQuery } from '../../src/utils/ugCore.ts'
+
 interface CloudflarePagesContext {
   request: Request
 }
@@ -23,113 +25,90 @@ const JSON_HEADERS = {
   'Cache-Control': 'no-store',
 }
 
-function extractJsStore(html: string): any {
-  // 1. Check data-content="..." in js-store
-  const marker = 'data-content="'
-  const idx = html.indexOf(marker)
-  if (idx !== -1) {
-    const end = html.indexOf('">', idx + marker.length)
-    if (end !== -1) {
-      const jsonStr = html
-        .substring(idx + marker.length, end)
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .replace(/&#39;/g, "'")
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-      try {
-        return JSON.parse(jsonStr)
-      } catch {
-        // fallback
-      }
-    }
-  }
-
-  // 2. Check window.UGAPP
-  const ugappMatch = html.match(/window\.UGAPP\s*=\s*(\{[\s\S]*?\});/i)
-  if (ugappMatch && ugappMatch[1]) {
-    try {
-      return JSON.parse(ugappMatch[1])
-    } catch {
-      // fallback
-    }
-  }
-
-  return null
-}
-
 export async function onRequestGet(context: CloudflarePagesContext): Promise<Response> {
   const reqUrl = new URL(context.request.url)
-  const q = String(reqUrl.searchParams.get('q') || '').trim()
+  const validation = validateSearchQuery(reqUrl.searchParams.get('q'))
 
-  if (!q) {
+  if (!validation.valid) {
+    return new Response(JSON.stringify({ success: false, error: validation.error }), {
+      status: 400,
+      headers: JSON_HEADERS,
+    })
+  }
+
+  if (!validation.query) {
     return new Response(JSON.stringify({ success: true, results: [] }), {
       status: 200,
       headers: JSON_HEADERS,
     })
   }
 
-  const target = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(q)}`
+  const target = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(validation.query)}`
 
   try {
-    const startTime = Date.now()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
+
     const ugRes = await fetch(target, {
       headers: UG_HEADERS,
-    })
-    const latencyMs = Date.now() - startTime
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId))
+
+    // Idiosyncratic UG behavior: UG returns HTTP 404 when a search yields 0 matches.
+    // Map upstream 404 to an empty result array with HTTP 200.
+    if (ugRes.status === 404) {
+      return new Response(JSON.stringify({ success: true, results: [] }), {
+        status: 200,
+        headers: JSON_HEADERS,
+      })
+    }
+
+    if (ugRes.status === 403) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Ultimate Guitar access restricted by WAF',
+        }),
+        {
+          status: 403,
+          headers: JSON_HEADERS,
+        }
+      )
+    }
+
+    if (ugRes.status === 429) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Rate limit exceeded on Ultimate Guitar',
+        }),
+        {
+          status: 429,
+          headers: JSON_HEADERS,
+        }
+      )
+    }
 
     if (ugRes.status !== 200) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: `Search HTTP ${ugRes.status}`,
-          status: ugRes.status,
-          latencyMs,
+          error: `Upstream error from Ultimate Guitar (HTTP ${ugRes.status})`,
         }),
         {
-          status: ugRes.status === 403 ? 403 : ugRes.status === 429 ? 429 : 502,
+          status: 502,
           headers: JSON_HEADERS,
         }
       )
     }
 
     const html = await ugRes.text()
-    const storeJson = extractJsStore(html)
-    const rawResults =
-      storeJson?.store?.page?.data?.results ||
-      storeJson?.page?.data?.results ||
-      storeJson?.data?.results ||
-      []
-
-    const results = rawResults
-      .filter(
-        (r: any) =>
-          r &&
-          r.song_name &&
-          r.tab_url &&
-          (r.type === 'Chords' || String(r.tab_url).includes('-chords-') || r.type === 'Tab')
-      )
-      .map((r: any, i: number) => ({
-        id: r.id || `ug-${i}-${Date.now()}`,
-        songName: String(r.song_name).trim(),
-        artistName: String(r.artist_name || '').trim(),
-        type: r.type || 'Chords',
-        version: Number(r.version) || 1,
-        votes: Number(r.votes) || 0,
-        rating: Number(r.rating) || 0,
-        tabUrl: String(r.tab_url).trim(),
-        tonality: r.tonality_name || undefined,
-      }))
-      .sort((a: any, b: any) => (b.votes || 0) - (a.votes || 0) || (b.rating || 0) - (a.rating || 0))
+    const results = parseSearchResults(html)
 
     return new Response(
       JSON.stringify({
         success: true,
-        query: q,
         results,
-        count: results.length,
-        latencyMs,
-        payloadSize: html.length,
       }),
       {
         status: 200,
@@ -137,13 +116,31 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
       }
     )
   } catch (err: any) {
+    const isTimeout =
+      err?.name === 'AbortError' ||
+      err?.name === 'TimeoutError' ||
+      err?.message?.includes('aborted')
+
+    if (isTimeout) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Gateway timeout contacting Ultimate Guitar',
+        }),
+        {
+          status: 504,
+          headers: JSON_HEADERS,
+        }
+      )
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: err.message || 'Unknown fetch error',
+        error: err?.message || 'Internal proxy error',
       }),
       {
-        status: 500,
+        status: 502,
         headers: JSON_HEADERS,
       }
     )
