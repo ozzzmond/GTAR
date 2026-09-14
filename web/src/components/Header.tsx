@@ -38,17 +38,7 @@ import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
 import devLogo from '../assets/dev-logo.png'
 import { useGoogleAuth } from './AuthGate'
-
-// Sync session type matching useDriveSync return shape
-export interface SyncSessionInfo {
-  user: {
-    email: string
-    name?: string
-    picture?: string
-  }
-  token: string
-  expiresAt: number
-}
+import type { GoogleSession } from '../utils/googleAuth'
 
 interface HeaderProps {
   activeView: 'songbook' | 'editor' | 'stage' | 'trash'
@@ -83,10 +73,6 @@ interface HeaderProps {
   onSelectSetlist?: (setlistId: string | number) => void
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
-  // Auth props
-  syncSession?: SyncSessionInfo | null
-  onSignOut?: () => void
-  onSignIn?: () => void
 }
 
 /**
@@ -148,10 +134,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSetlistSong,
   onSelectSetlist,
   onDirectImportOnlineSong,
-  // Auth props
-  syncSession,
-  onSignOut,
-  onSignIn,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [isSetlistDropdownOpen, setIsSetlistDropdownOpen] = useState(false)
@@ -168,19 +150,18 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Retrieve user role & auth state from AuthGate context
   let isSuperAdmin = false
-  let authSession: SyncSessionInfo | null = null
+  let currentSession: GoogleSession | null = null
   let handleSignOut: (() => void) | undefined
   let handleSignIn: (() => Promise<void>) | undefined
   try {
     const auth = useGoogleAuth()
     isSuperAdmin = auth.isSuperAdmin
-    authSession = auth.session
+    currentSession = auth.session
     handleSignOut = auth.signOut
     handleSignIn = auth.signIn
   } catch {
     // Header rendered outside AuthGate (e.g. isolated test or preview)
   }
-  const currentSession = syncSession !== undefined ? syncSession : authSession
 
   const isDevApp =
     (import.meta.env.DEV ||
@@ -446,7 +427,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <User className="w-4 h-4" />
               </div>
             )}
-            <span className={`sync-dot ${userDotClass}`} />
+            <span className={`auth-dot ${userDotClass}`} />
 
             {/* Avatar Popover */}
             {showAvatarPopover && (
@@ -465,7 +446,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-bold text-[#FDF6E3] truncate">
-                            {currentSession.user.name || 'User'}
+                            {(currentSession.user as { name?: string }).name || 'User'}
                           </span>
                           {isSuperAdmin ? (
                             <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/30 shrink-0">
@@ -518,8 +499,7 @@ export const Header: React.FC<HeaderProps> = ({
                       type="button"
                       onClick={() => {
                         setShowAvatarPopover(false)
-                        if (onSignOut) onSignOut()
-                        else handleSignOut?.()
+                        handleSignOut?.()
                       }}
                       className="w-full px-3 py-2 rounded-xl hover:bg-[#002B36] text-[#DC6E67] text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
                     >
@@ -536,8 +516,7 @@ export const Header: React.FC<HeaderProps> = ({
                       type="button"
                       onClick={() => {
                         setShowAvatarPopover(false)
-                        if (onSignIn) onSignIn()
-                        else void handleSignIn?.()
+                        void handleSignIn?.()
                       }}
                       className="w-full px-3 py-2 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >

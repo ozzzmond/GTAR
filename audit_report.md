@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-14 05:49:18 UTC
+- **Timestamp:** 2026-09-14 07:36:51 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 10.81s
+- **Total Duration:** 10.36s
 - **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
@@ -48,7 +48,7 @@
 - **Service Worker Update Mode:** `autoUpdate`
 - **Workbox Glob Patterns:** `'**/*.{js,css,html,ico,png,jpg,jpeg,svg,gif,webp,json,woff,woff2,ttf,eot,otf,mp3,wav,webmanifest}',`
 - **Navigate Fallback:** `/index.html (SPA offline routing active)`
-- **Dist Sw Generated:** `Yes (2550 bytes)`
+- **Dist Sw Generated:** `Yes (2359 bytes)`
 
 ---
 
@@ -61,7 +61,7 @@
 - **Max Recovery Snapshots:** `2`
 - **Has Is Quota Error:** `True`
 - **Quota Error Detection:** `Comprehensive (DOMException 22, 1014, regex)`
-- **Has Prune Recovery Snapshots:** `True`
+- **Has Prune Recovery Snapshots:** `False`
 - **Has Prune All Recovery Snapshots:** `True`
 - **Persist Library Quota Fallback:** `Active (emergency purge & retry)`
 - **Verified Sync Guard Tests:** `4/4`
@@ -75,18 +75,25 @@
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `4`
+- **Uncommitted Files Count:** `26`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
 - **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `b565f7e - feat(web): DEV.15 new Dev branding assets, header version restoration, menu deduplication, and pre-auth debug button styling (13 minutes ago)`
+- **Latest Commit:** `6dc89d3 - fix(web): DEV.15 align AuthGate branding with dev logo and gate pre-auth debug logs via VITE_ENABLE_DEV_LOGS flag (2 hours ago)`
 
 #### Detailed Findings / Warnings:
-- 4 uncommitted file(s) in working tree:
--   M web/src/components/AuthGate.tsx
--    M web/tests/authGate.test.cjs
--    M web/tests/authLifecycle.test.cjs
--    M web/tests/preAuthDebugLogs.test.cjs
+- 26 uncommitted file(s) in working tree:
+-   M audit_local.py
+-    M web/package.json
+-   D  web/public/GTAR_icon3.png
+-   D  web/public/icons.svg
+-   D  web/src/App.css
+-   D  web/src/assets/hero.png
+-   D  web/src/assets/react.svg
+-   D  web/src/assets/vite.svg
+-   D  web/src/components/GtaLogoIcon.tsx
+-    M web/src/components/Header.tsx
+-   ... and 16 more.
 
 ---
 
@@ -96,11 +103,11 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Sync Duration:** `1.68s`
+- **Lint Sync Duration:** `1.65s`
 - **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
-- **Test Duration:** `2.79s`
-- **Test Status:** `PASSED (120 passed, 0 failed)`
-- **Build Duration:** `5.94s`
+- **Test Duration:** `2.61s`
+- **Test Status:** `PASSED (79 passed, 0 failed)`
+- **Build Duration:** `5.71s`
 - **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---

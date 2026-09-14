@@ -117,7 +117,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({ isOpen
                 <h2 className="text-base font-bold text-[#FDF6E3]">User Whitelist &amp; Access Control</h2>
               </div>
               <p className="text-xs text-[#93A1A1]">
-                Manage accounts authorized to log in, view songs, and sync
+                Manage accounts authorized to access GTAR
               </p>
             </div>
           </div>

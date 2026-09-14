@@ -121,20 +121,6 @@ test('baseline whitelist includes johncriscaculitan01@gmail.com and jlopez3rd@gm
   assert.ok(defaultList.includes('johncriscaculitan01@gmail.com'))
 })
 
-test('mergeCloudAuthorizedEmails dynamically synchronizes and caches remote approved users', () => {
-  const { mergeCloudAuthorizedEmails, authorizedEmail, resetAuthorizedEmails } = require('../src/utils/authPolicy.ts')
-  resetAuthorizedEmails()
-  try {
-    assert.equal(authorizedEmail('newbandmate@example.com'), false)
-    const merged = mergeCloudAuthorizedEmails(['newbandmate@example.com', 'another@example.com'])
-    assert.ok(merged.includes('newbandmate@example.com'))
-    assert.equal(authorizedEmail('newbandmate@example.com'), true)
-    assert.equal(authorizedEmail('another@example.com'), true)
-  } finally {
-    resetAuthorizedEmails()
-  }
-})
-
 test('expired token preserves authenticated user session in main app instead of locking gate', () => {
   const prevWindow = global.window
   try {

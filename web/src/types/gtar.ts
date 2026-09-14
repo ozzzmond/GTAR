@@ -68,38 +68,6 @@ export interface GtarBackup {
   }>
 }
 
-export function generateGtarBackupPayload(
-  songs: SongEntity[],
-  setlists?: Array<{
-    name: string
-    createdAt: number
-    songs: Array<{
-      title: string
-      artist: string
-      position: number
-    }>
-  }>
-): GtarBackup {
-  return {
-    metadata: {
-      appName: 'GTAR',
-      appVersion: GTAR_APP_VERSION,
-      exportTimestamp: Date.now(),
-    },
-    songs,
-    setlists: setlists || [],
-  }
-}
-
-export function isValidGtarPayload(obj: any): boolean {
-  if (!obj || typeof obj !== 'object') return false
-  if (obj.metadata && (obj.metadata.appName === 'GTAR' || obj.metadata.appVersion)) return true
-  if (obj.type === 'GTAR_SETLIST') return true
-  if (Array.isArray(obj.songs)) return true
-  if (typeof obj.title === 'string') return true
-  return false
-}
-
 export interface ActiveSongState {
   id?: string | number
   title: string

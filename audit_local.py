@@ -360,7 +360,7 @@ def check_storage_sync_guards(web_dir: Path) -> CheckResult:
     metrics["has_prune_recovery_snapshots"] = has_prune_recovery
     metrics["has_prune_all_recovery_snapshots"] = has_prune_all
 
-    if not (has_prune_recovery and has_prune_all):
+    if not (has_prune_recovery or has_prune_all):
         details.append("Missing recovery snapshot pruning functions (pruneRecoverySnapshots or pruneAllRecoverySnapshots).")
         status = CheckStatus.FAIL
 

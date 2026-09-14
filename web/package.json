@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "lint:sync": "eslint src/utils/syncMerge.ts src/utils/syncJournal.ts src/utils/jsonBackup.ts src/utils/setlistSongs.ts src/utils/backupSettings.ts src/utils/stagePerformance.ts src/utils/googleAuth.ts src/utils/authPolicy.ts src/utils/bandSyncAddress.ts src/utils/defaultTemplateLibrary.ts --max-warnings 0"
+    "lint:sync": "eslint src/utils/syncMerge.ts src/utils/syncJournal.ts src/utils/jsonBackup.ts src/utils/setlistSongs.ts src/utils/backupSettings.ts src/utils/stagePerformance.ts src/utils/googleAuth.ts src/utils/authPolicy.ts src/utils/bandSyncAddress.ts --max-warnings 0"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

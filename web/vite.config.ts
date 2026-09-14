@@ -277,10 +277,9 @@ export default defineConfig(({ mode }) => {
               'pwa-192x192.png',
               'pwa-512x512.png',
               'favicon.svg',
-              'icons.svg',
               'pwa-dev-icon.svg',
             ]
-          : ['favicon.svg', 'icons.svg'],
+          : ['favicon.svg'],
         manifest: {
           name: isDev ? 'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion',
           short_name: isDev ? 'GTAR-Dev' : 'GTAR',
