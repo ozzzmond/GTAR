@@ -18,6 +18,7 @@ for (const extension of ['.ts', '.tsx']) {
     module._compile(transpiled.outputText, filename)
   }
 }
+require.extensions['.png'] = (module) => { module.exports = '/assets/dev-logo.png' }
 
 const { appLogger, redactSensitiveData, STORAGE_KEY } = require('../src/utils/logger.ts')
 const React = require('react')
@@ -169,29 +170,16 @@ test('logger and debug log export work with zero Google SDK, zero Drive SDK, and
 })
 
 // =========================================================================
-// 4. DEV-ONLY GATING ON AUTHGATE SCREEN
+// 4. ENVIRONMENT FLAG GATING ON AUTHGATE SCREEN
 // =========================================================================
-test('AuthGate renders "View Debug Logs" trigger in DEV builds', () => {
-  const prevWindow = global.window
-  try {
-    global.window = { location: { hostname: 'localhost' } }
-    const html = renderToString(React.createElement(AuthGate, null, React.createElement('div', null, 'Secret App')))
-    assert.match(html, /View Debug Logs/)
-    assert.doesNotMatch(html, /Secret App/)
-  } finally {
-    global.window = prevWindow
-  }
-})
-
-test('AuthGate completely excludes "View Debug Logs" trigger when DEV is false', () => {
-  // Re-transpile with DEV: false
-  const prodAuthGatePath = require.resolve('../src/components/AuthGate.tsx')
-  delete require.cache[prodAuthGatePath]
-
-  const originalExtension = require.extensions['.tsx']
+function compileAuthGateWithEnv(envObj) {
+  const authGatePath = require.resolve('../src/components/AuthGate.tsx')
+  delete require.cache[authGatePath]
+  const envStr = JSON.stringify(envObj)
+  const prevExt = require.extensions['.tsx']
   require.extensions['.tsx'] = (module, filename) => {
     let content = fs.readFileSync(filename, 'utf8')
-    content = content.replaceAll('import.meta.env', '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-id-123"})')
+    content = content.replaceAll('import.meta.env', `(${envStr})`)
     const transpiled = ts.transpileModule(content, {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
@@ -202,19 +190,48 @@ test('AuthGate completely excludes "View Debug Logs" trigger when DEV is false',
     })
     module._compile(transpiled.outputText, filename)
   }
+  const { AuthGate: Component } = require('../src/components/AuthGate.tsx')
+  require.extensions['.tsx'] = prevExt
+  return Component
+}
 
-  const { AuthGate: ProdAuthGate } = require('../src/components/AuthGate.tsx')
+test('1. Vite DEV mode -> "View Debug Logs" trigger is visible', () => {
+  const DevAuthGate = compileAuthGateWithEnv({ DEV: true, VITE_GOOGLE_CLIENT_ID: 'client-id-123' })
+  const html = renderToString(React.createElement(DevAuthGate, null, React.createElement('div', null, 'Secret App')))
+  assert.match(html, /View Debug Logs/)
+  assert.doesNotMatch(html, /Secret App/)
+})
 
-  const prevWindow = global.window
-  try {
-    global.window = { location: { hostname: 'gtar-web.pages.dev' } }
-    const html = renderToString(React.createElement(ProdAuthGate, null, React.createElement('div', null, 'Secret App')))
-    assert.doesNotMatch(html, /View Debug Logs/)
-    assert.doesNotMatch(html, /Secret App/)
-  } finally {
-    global.window = prevWindow
-    require.extensions['.tsx'] = originalExtension
-  }
+test('2. Production build + VITE_ENABLE_DEV_LOGS=true -> "View Debug Logs" trigger is visible', () => {
+  const ProdWithFlagAuthGate = compileAuthGateWithEnv({
+    DEV: false,
+    VITE_ENABLE_DEV_LOGS: 'true',
+    VITE_GOOGLE_CLIENT_ID: 'client-id-123',
+  })
+  const html = renderToString(React.createElement(ProdWithFlagAuthGate, null, React.createElement('div', null, 'Secret App')))
+  assert.match(html, /View Debug Logs/)
+  assert.doesNotMatch(html, /Secret App/)
+})
+
+test('3. Production build + flag absent or false -> "View Debug Logs" trigger is strictly hidden', () => {
+  // Case 3a: Flag absent
+  const ProdNoFlagAuthGate = compileAuthGateWithEnv({
+    DEV: false,
+    VITE_GOOGLE_CLIENT_ID: 'client-id-123',
+  })
+  const htmlNoFlag = renderToString(React.createElement(ProdNoFlagAuthGate, null, React.createElement('div', null, 'Secret App')))
+  assert.doesNotMatch(htmlNoFlag, /View Debug Logs/)
+  assert.doesNotMatch(htmlNoFlag, /Secret App/)
+
+  // Case 3b: Flag explicitly 'false'
+  const ProdFalseFlagAuthGate = compileAuthGateWithEnv({
+    DEV: false,
+    VITE_ENABLE_DEV_LOGS: 'false',
+    VITE_GOOGLE_CLIENT_ID: 'client-id-123',
+  })
+  const htmlFalseFlag = renderToString(React.createElement(ProdFalseFlagAuthGate, null, React.createElement('div', null, 'Secret App')))
+  assert.doesNotMatch(htmlFalseFlag, /View Debug Logs/)
+  assert.doesNotMatch(htmlFalseFlag, /Secret App/)
 })
 
 // =========================================================================

@@ -5,6 +5,7 @@ const ts = require('typescript')
 for (const extension of ['.ts', '.tsx']) require.extensions[extension] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client"})'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true }
 }).outputText, filename)
+require.extensions['.png'] = (module) => { module.exports = '/assets/dev-logo.png' }
 const { authorizedEmail, allowLocalBypass } = require('../src/utils/authPolicy.ts')
 const { verifyGoogleSession, readGoogleSession, saveGoogleSession } = require('../src/utils/googleAuth.ts')
 const React = require('react')

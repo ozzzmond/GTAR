@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-14 05:34:12 UTC
+- **Timestamp:** 2026-09-14 05:49:18 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 10.74s
+- **Total Duration:** 10.81s
 - **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
@@ -75,25 +75,18 @@
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `12`
+- **Uncommitted Files Count:** `4`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
 - **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `fccc5fd - feat(web): DEV.14 complete Drive sync retirement, one-time storage cleanup, local JSON backup, and pre-auth debug logs (37 minutes ago)`
+- **Latest Commit:** `b565f7e - feat(web): DEV.15 new Dev branding assets, header version restoration, menu deduplication, and pre-auth debug button styling (13 minutes ago)`
 
 #### Detailed Findings / Warnings:
-- 12 uncommitted file(s) in working tree:
--    M web/index.html
--    M web/public/manifest.json
--    M web/src/components/AuthGate.tsx
--    M web/src/components/Header.tsx
--    M web/vite.config.ts
--   ?? web/public/GTAR_icon3.png
--   ?? web/public/apple-touch-icon.png
--   ?? web/public/favicon.ico
--   ?? web/public/favicon.png
--   ?? web/public/pwa-192x192.png
--   ... and 2 more.
+- 4 uncommitted file(s) in working tree:
+-   M web/src/components/AuthGate.tsx
+-    M web/tests/authGate.test.cjs
+-    M web/tests/authLifecycle.test.cjs
+-    M web/tests/preAuthDebugLogs.test.cjs
 
 ---
 
@@ -103,11 +96,11 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Sync Duration:** `1.69s`
+- **Lint Sync Duration:** `1.68s`
 - **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
-- **Test Duration:** `2.81s`
-- **Test Status:** `PASSED (119 passed, 0 failed)`
-- **Build Duration:** `5.85s`
+- **Test Duration:** `2.79s`
+- **Test Status:** `PASSED (120 passed, 0 failed)`
+- **Build Duration:** `5.94s`
 - **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---
