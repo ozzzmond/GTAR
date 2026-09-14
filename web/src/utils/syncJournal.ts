@@ -9,21 +9,52 @@ const key = (account: string) => `gtar_sync_v1:${account}`
 const ownerKey = 'gtar_sync_library_owner'
 const MAX_RECOVERY_SNAPSHOTS = 2
 
+export const LIBRARY_KEY = 'gtar_library_v1'
+
+export const CANONICAL_STORAGE_PREFIXES = [
+  LIBRARY_KEY,
+  ownerKey,
+  'gtar_sync_v1:',
+  'gtar_songs_store',
+  'gtar_trash_songs_store',
+  'gtar_setlists_store',
+  'gtar_active_setlist_id',
+  'gtar_theme_mode',
+  'gtar_custom_theme_colors',
+  'gtar_font_style',
+  'gtar_is_two_column',
+]
+
+export function isCanonicalKey(k: string): boolean {
+  return CANONICAL_STORAGE_PREFIXES.some(prefix => k === prefix || k.startsWith(prefix))
+}
+
 export function isQuotaError(err: unknown): boolean {
   if (!err) return false
   if (typeof DOMException !== 'undefined' && err instanceof DOMException) {
-    return err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014
+    return (
+      err.name === 'QuotaExceededError' ||
+      err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      err.code === 22 ||
+      err.code === 1014 ||
+      /quota/i.test(err.message)
+    )
   }
   if (err instanceof Error) {
-    return err.name === 'QuotaExceededError' || /quota/i.test(err.message)
+    return (
+      err.name === 'QuotaExceededError' ||
+      err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      /quota/i.test(err.message)
+    )
   }
   if (typeof err === 'object') {
     const e = err as Record<string, unknown>
     return (
       e.name === 'QuotaExceededError' ||
+      e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
       e.code === 22 ||
       e.code === 1014 ||
-      (typeof e.message === 'string' && /quota/i.test(e.message))
+      (typeof e.message === 'string' && (/quota/i.test(e.message) || e.message.includes('NS_ERROR_DOM_QUOTA_REACHED')))
     )
   }
   return false
@@ -34,12 +65,12 @@ export function pruneRecoverySnapshots(storage: Storage, account: string, maxAll
   const existingKeys: string[] = []
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i)
-    if (k?.startsWith(prefix)) existingKeys.push(k)
+    if (k?.startsWith(prefix) && !isCanonicalKey(k)) existingKeys.push(k)
   }
   existingKeys.sort()
   while (existingKeys.length > maxAllowed) {
     const oldest = existingKeys.shift()
-    if (oldest) {
+    if (oldest && !isCanonicalKey(oldest)) {
       try { storage.removeItem(oldest) } catch { /* ignore storage error on remove */ }
     }
   }
@@ -50,12 +81,12 @@ export function pruneAllRecoverySnapshots(storage: Storage, maxAllowed = 0) {
   const existingKeys: string[] = []
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i)
-    if (k?.startsWith(prefix)) existingKeys.push(k)
+    if (k?.startsWith(prefix) && !isCanonicalKey(k)) existingKeys.push(k)
   }
   existingKeys.sort()
   while (existingKeys.length > maxAllowed) {
     const oldest = existingKeys.shift()
-    if (oldest) {
+    if (oldest && !isCanonicalKey(oldest)) {
       try { storage.removeItem(oldest) } catch { /* ignore storage error on remove */ }
     }
   }
@@ -82,9 +113,18 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
   const resumed = resumePending && journal.pending?.acknowledged
     ? mergeSyncLibrary(local, journal.pending.merged, journal.pending.before) : local
   const baseline = journal.pending?.acknowledged ? journal.pending.merged : journal.baseline
+
+  let storageDegraded = false
+  let warnedQuotaExceeded = false
+
   return {
-    local: resumed, baseline,
+    local: resumed,
+    get baseline() {
+      return journal.pending?.acknowledged ? journal.pending.merged : journal.baseline
+    },
+    isDegraded: () => storageDegraded,
     archive(remote: SyncLibrary | null) {
+      if (storageDegraded) return
       // Prune older recovery entries to keep at most MAX_RECOVERY_SNAPSHOTS - 1 before adding new
       pruneRecoverySnapshots(storage, account, Math.max(0, MAX_RECOVERY_SNAPSHOTS - 1))
       const prefix = `gtar_sync_recovery:${account}:`
@@ -99,13 +139,19 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
         storage.setItem(recovery, minimalSnapshot)
       } catch (e) {
         if (isQuotaError(e)) {
-          console.warn('Initial recovery snapshot save failed (quota exceeded). Purging older snapshots down to 0.', e)
+          if (!warnedQuotaExceeded) {
+            console.warn('Initial recovery snapshot save failed (quota exceeded). Purging older snapshots down to 0.', e)
+          }
           pruneRecoverySnapshots(storage, account, 0)
           try {
             storage.setItem(recovery, minimalSnapshot)
           } catch (retryErr) {
             // Gracefully degrade local backup journal caching without crashing the sync process
-            console.warn('Unable to persist recovery snapshot to storage (quota exceeded). Proceeding with sync with degraded journal caching.', retryErr)
+            storageDegraded = true
+            if (!warnedQuotaExceeded) {
+              warnedQuotaExceeded = true
+              console.warn('Unable to persist recovery snapshot to storage (quota exceeded). Proceeding with sync with degraded journal caching.', retryErr)
+            }
           }
         } else {
           throw e
@@ -115,6 +161,7 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
     prepare(before: SyncLibrary, merged: SyncLibrary) {
       journal.baseline = baseline
       journal.pending = { before, merged, acknowledged: false }
+      if (storageDegraded) return
       try {
         storage.setItem(key(account), JSON.stringify(journal))
       } catch (err) {
@@ -124,7 +171,11 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
           try {
             storage.setItem(key(account), JSON.stringify(journal))
           } catch (retryErr) {
-            console.warn('Unable to persist sync journal pending state (quota exceeded). Proceeding in-memory.', retryErr)
+            storageDegraded = true
+            if (!warnedQuotaExceeded) {
+              warnedQuotaExceeded = true
+              console.warn('Unable to persist sync journal pending state (quota exceeded). Proceeding in-memory.', retryErr)
+            }
           }
         } else {
           throw err
@@ -135,6 +186,7 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
       if (!journal.pending?.acknowledged) throw new Error('Upload is not acknowledged')
       journal.baseline = journal.pending.merged
       delete journal.pending
+      if (storageDegraded) return
       try {
         storage.setItem(key(account), JSON.stringify(journal))
       } catch (err) {
@@ -143,7 +195,11 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
           try {
             storage.setItem(key(account), JSON.stringify(journal))
           } catch (retryErr) {
-            console.warn('Unable to persist sync journal completed state (quota exceeded). Proceeding in-memory.', retryErr)
+            storageDegraded = true
+            if (!warnedQuotaExceeded) {
+              warnedQuotaExceeded = true
+              console.warn('Unable to persist sync journal completed state (quota exceeded). Proceeding in-memory.', retryErr)
+            }
           }
         } else {
           throw err
@@ -153,6 +209,7 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
     acknowledge() {
       if (!journal.pending) throw new Error('Missing prepared sync journal')
       journal.pending.acknowledged = true
+      if (storageDegraded) return
       try {
         storage.setItem(key(account), JSON.stringify(journal))
       } catch (err) {
@@ -161,7 +218,11 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
           try {
             storage.setItem(key(account), JSON.stringify(journal))
           } catch (retryErr) {
-            console.warn('Unable to persist sync journal acknowledge state (quota exceeded). Proceeding in-memory.', retryErr)
+            storageDegraded = true
+            if (!warnedQuotaExceeded) {
+              warnedQuotaExceeded = true
+              console.warn('Unable to persist sync journal acknowledge state (quota exceeded). Proceeding in-memory.', retryErr)
+            }
           }
         } else {
           throw err
@@ -171,7 +232,6 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
   }
 }
 
-export const LIBRARY_KEY = 'gtar_library_v1'
 export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
   try {
     storage.setItem(LIBRARY_KEY, JSON.stringify(library))
