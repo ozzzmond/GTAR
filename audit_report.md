@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-14 07:51:38 UTC
+- **Timestamp:** 2026-09-14 10:01:28 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 10.26s
+- **Total Duration:** 10.87s
 - **Overall Verdict:** `[PASS]`
 
 ## Executive Summary
@@ -78,8 +78,8 @@
 - **Uncommitted Files Count:** `0`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
-- **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `6f49b97 - refactor(web): DEV.16 dead-code elimination, dormant Drive sync decoupling, UI terminology alignment, and test modernization (5 minutes ago)`
+- **Ahead Behind Upstream:** `+2 / -0`
+- **Latest Commit:** `9a3d4f7 - chore(web): bump dev version (web v1.0.87-dev.17) (6 seconds ago)`
 
 ---
 
@@ -89,11 +89,11 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Sync Duration:** `1.62s`
+- **Lint Sync Duration:** `1.70s`
 - **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
-- **Test Duration:** `2.58s`
-- **Test Status:** `PASSED (79 passed, 0 failed)`
-- **Build Duration:** `5.69s`
+- **Test Duration:** `2.90s`
+- **Test Status:** `PASSED (93 passed, 0 failed)`
+- **Build Duration:** `5.86s`
 - **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---
