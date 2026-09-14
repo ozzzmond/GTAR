@@ -1,6 +1,5 @@
 import { persistLibrary, readPersistedLibrary, isQuotaError, performStorageHousekeeping } from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
-import { useDriveSync } from './hooks/useDriveSync'
 import { generateUUID } from './utils/uuid'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
@@ -247,15 +246,6 @@ function LibraryApp() {
 
   // Custom Setlists (persisted in localStorage)
   const [setlists, setSetlists] = useState<WebSetlist[]>(initialLibrary.setlists)
-
-  const syncSongs = useMemo(() => [...songs, ...deletedSongs], [songs, deletedSongs])
-  const driveSync = useDriveSync({ songs: syncSongs, setlists }, library => {
-    persistLibrary(library)
-    const partition = partitionSongs(library.songs)
-    setSongs(partition.active)
-    setDeletedSongs(partition.deleted)
-    setSetlists(library.setlists)
-  })
 
   // Stage Color Theme (persisted in localStorage)
   const [stageTheme, setStageTheme] = useState<ThemeMode>(() => {
@@ -1064,16 +1054,6 @@ function LibraryApp() {
           onSelectSetlist={handleSelectSetlist}
           onPushSetlistToBandSync={handlePushSetlistToMembers}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
-          syncSession={driveSync.session}
-          syncStatus={driveSync.status}
-          syncBusy={driveSync.busy}
-          onSyncNow={() => void driveSync.syncNow()}
-          onExportSyncRecovery={() => void driveSync.exportRecovery()}
-          onPublishResolvedLibrary={() => void driveSync.publishResolvedLibrary()}
-          onAdoptCloudLibrary={() => void driveSync.adoptCloudLibrary()}
-          onSignOut={driveSync.signOut}
-          onSignIn={() => void driveSync.signIn()}
-          syncReady={driveSync.ready}
         />
       )}
 

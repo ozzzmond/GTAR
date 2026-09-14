@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
 import { loadGoogleIdentity, readGoogleSession, requestGoogleSession, refreshGoogleSession, saveGoogleSession, validSession, verifyGoogleSession, type GoogleSession } from '../utils/googleAuth'
 import { GtaLogoIcon } from './GtaLogoIcon'
+import { DebugLogsModal } from './DebugLogsModal'
 
 interface AuthState {
   session: GoogleSession | null
@@ -25,6 +26,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [bypass, setBypass] = useState(false)
   const [error, setError] = useState('')
+  const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
   const epoch = useRef(0)
   const refreshing = useRef(false)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
@@ -105,7 +107,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!clientId) return
     let active = true
-    void loadGoogleIdentity().then(() => { if (active) setReady(true) }).catch(() => { if (active) setError('Google sign-in is unavailable. Check your connection and reload.') })
+    void loadGoogleIdentity().then(() => { if (active) setReady(true) }).catch((err) => {
+      if (active) {
+        setError('Google sign-in is unavailable. Check your connection and reload.')
+        void import('../utils/logger').then(({ appLogger }) => {
+          appLogger.warn('AuthGate', 'Google Identity Services script load failed (offline or blocked).', String(err))
+        })
+      }
+    })
     return () => { active = false }
   }, [clientId])
 
@@ -126,7 +135,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
         if (isPresentationRoute) {
           signOut()
         }
-        // In the main application, preserve user session and let Drive sync mark re-authorization
       }
     }
     window.addEventListener('online', onRecheck)
@@ -160,12 +168,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const next = await requestGoogleSession(clientId)
       if (generation !== epoch.current) return
       saveGoogleSession(next); setBypass(false); setSession(next)
-    } catch (failure) { if (generation === epoch.current) setError(failure instanceof Error ? failure.message : 'Sign-in failed.') }
+    } catch (failure) {
+      if (generation === epoch.current) {
+        const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
+        setError(errorMsg)
+        void import('../utils/logger').then(({ appLogger }) => {
+          appLogger.error('AuthGate', `Google sign-in attempt failed: ${errorMsg}`, failure instanceof Error ? failure : undefined)
+        })
+      }
+    }
     finally { if (generation === epoch.current) { setBusy(false); setChecking(false) } }
   }
 
   if (permitted || (bypass && canBypass)) return <AuthContext.Provider value={{ session: permitted ? session : null, signOut, signIn, ready, bypass, role, isSuperAdmin }}>
-    {bypass && <div className="bg-amber-500 text-black px-4 py-2 text-sm">Local development bypass · Drive sync disabled <button className="underline ml-3" onClick={signOut}>Exit bypass</button></div>}
+    {bypass && <div className="bg-amber-500 text-black px-4 py-2 text-sm">Local development bypass · Cloud auth bypassed <button className="underline ml-3" onClick={signOut}>Exit bypass</button></div>}
     {children}
   </AuthContext.Provider>
 
@@ -185,6 +201,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
       )}
       <p role="status" className="text-sm text-amber-200 mt-4">{error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}</p>
       {canBypass && !checking && <button className="mt-6 text-sm underline text-[#93A1A1]" onClick={() => { signOut(); setBypass(true) }}>Continue offline (local development)</button>}
+      {import.meta.env.DEV && (
+        <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+          <button
+            type="button"
+            className="text-xs font-mono text-[#2AA198] hover:underline flex items-center gap-1.5 cursor-pointer"
+            onClick={() => setIsDebugLogsOpen(true)}
+          >
+            <span>View Debug Logs</span>
+          </button>
+        </div>
+      )}
+      {import.meta.env.DEV && isDebugLogsOpen && (
+        <DebugLogsModal isOpen={isDebugLogsOpen} onClose={() => setIsDebugLogsOpen(false)} />
+      )}
     </section>
   </main>
 }

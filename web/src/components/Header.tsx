@@ -23,7 +23,6 @@ import {
   Terminal,
   LogOut,
   User,
-  Clock,
   Shield,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -84,17 +83,10 @@ interface HeaderProps {
   onSelectSetlist?: (setlistId: string | number) => void
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
-  // Sync/Auth props (wired from useDriveSync in App.tsx)
+  // Auth props
   syncSession?: SyncSessionInfo | null
-  syncStatus?: string
-  syncBusy?: boolean
-  onPublishResolvedLibrary?: () => void
-  onAdoptCloudLibrary?: () => void
-  onExportSyncRecovery?: () => void
-  onSyncNow?: () => void
   onSignOut?: () => void
   onSignIn?: () => void
-  syncReady?: boolean
 }
 
 /**
@@ -156,17 +148,10 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSetlistSong,
   onSelectSetlist,
   onDirectImportOnlineSong,
-  // Sync props
+  // Auth props
   syncSession,
-  syncStatus = '',
-  syncBusy = false,
-  onSyncNow,
-  onExportSyncRecovery,
-  onPublishResolvedLibrary,
-  onAdoptCloudLibrary,
   onSignOut,
   onSignIn,
-  syncReady = false,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [isSetlistDropdownOpen, setIsSetlistDropdownOpen] = useState(false)
@@ -181,14 +166,21 @@ export const Header: React.FC<HeaderProps> = ({
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
   const [showAvatarPopover, setShowAvatarPopover] = useState(false)
 
-  // Retrieve user role from AuthGate context
+  // Retrieve user role & auth state from AuthGate context
   let isSuperAdmin = false
+  let authSession: SyncSessionInfo | null = null
+  let handleSignOut: (() => void) | undefined
+  let handleSignIn: (() => Promise<void>) | undefined
   try {
     const auth = useGoogleAuth()
     isSuperAdmin = auth.isSuperAdmin
+    authSession = auth.session
+    handleSignOut = auth.signOut
+    handleSignIn = auth.signIn
   } catch {
     // Header rendered outside AuthGate (e.g. isolated test or preview)
   }
+  const currentSession = syncSession !== undefined ? syncSession : authSession
 
   const isDevApp =
     (import.meta.env.DEV ||
@@ -334,14 +326,8 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }
 
-  // Derive sync status indicator color
-  const syncDotClass = useMemo(() => {
-    if (!syncSession) return 'error'
-    if (syncBusy) return 'syncing'
-    if (syncStatus?.toLowerCase().includes('error') || syncStatus?.toLowerCase().includes('offline')) return 'error'
-    if (syncStatus?.toLowerCase().includes('syncing') || syncStatus?.toLowerCase().includes('uploading') || syncStatus?.toLowerCase().includes('downloading')) return 'syncing'
-    return 'synced'
-  }, [syncSession, syncBusy, syncStatus])
+  // Derive auth status indicator color
+  const userDotClass = currentSession ? 'synced' : 'error'
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -382,60 +368,68 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95"
             title="Return to Songbook Library Home"
           >
-            <div className="w-8 h-8 rounded-xl bg-[#002B36] border border-[#2AA198]/40 group-hover:border-[#2AA198] flex items-center justify-center text-[#2AA198] group-hover:text-[#35B8AD] shadow-inner transition-colors shrink-0">
-              <GtaLogoIcon className="w-4.5 h-4.5 fill-current" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-center text-[#2AA198] shadow-inner group-hover:border-[#2AA198] group-hover:scale-105 transition-all">
+              <GtaLogoIcon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
             </div>
-            <div className="flex items-center gap-1.5 leading-none">
-              <span className="font-black text-sm text-[#FDF6E3] group-hover:text-[#2AA198] tracking-wide transition-colors">
-                {isDevApp ? 'GTAR-Dev' : 'GTAR'}
-              </span>
-              {isDevApp && (
-                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white font-black text-[9px] tracking-wider uppercase border border-red-400 shadow-sm animate-pulse">
-                  DEV
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono font-bold text-sm sm:text-base tracking-wider text-[#FDF6E3]">
+                  {import.meta.env.VITE_APP_ENV === 'debug' ? 'GTAR-Debug' : import.meta.env.DEV ? 'GTAR-Dev' : 'GTAR'}
                 </span>
-              )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCheckForUpdates?.()
-                }}
-                title={isDevApp ? `Click to check for updates (web v${GTAR_DEV_VERSION})` : `Click to check for updates (web v${GTAR_APP_VERSION})`}
-                className="text-[9px] font-mono font-bold uppercase bg-transparent text-[#2AA198] px-1.5 py-0.5 rounded border border-[#2AA198]/40 hover:border-[#2AA198] transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-              >
-                {isCheckingUpdates && (
-                  <RefreshCw className="w-2.5 h-2.5 animate-spin text-[#B58900]" />
+                {import.meta.env.DEV && (
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/40">
+                    DEV
+                  </span>
                 )}
-                <span>{isDevApp ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}</span>
-              </button>
+                {import.meta.env.VITE_APP_ENV === 'debug' && (
+                  <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-red-600 text-white shadow-sm animate-pulse">
+                    DEV PORT 5174
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCheckForUpdates?.()
+            }}
+            title={isDevApp ? `Click to check for updates (web v${GTAR_DEV_VERSION})` : `Click to check for updates (web v${GTAR_APP_VERSION})`}
+            className="text-[10px] sm:text-xs font-mono px-2 py-0.5 rounded-full bg-[#002B36] text-[#93A1A1] border border-[#1A4A55] hover:border-[#2AA198] font-semibold hidden md:inline-flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            {isCheckingUpdates && (
+              <RefreshCw className="w-2.5 h-2.5 animate-spin text-[#B58900]" />
+            )}
+            <span>{isDevApp ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}</span>
+          </button>
         </div>
 
-        {/* Right: User Profile Avatar button (with its status indicator) */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* PWA Install App Button (when available and not standalone) */}
+        {/* Right Action Icons & User Avatar */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* PWA Install Button */}
           {deferredInstallPrompt && !isAppInstalled && (
             <button
               type="button"
               onClick={handleTriggerInstall}
-              title="Install GTAR as Standalone Stage App"
-              className="p-1.5 rounded-lg bg-[#10B981]/20 hover:bg-[#10B981] text-[#10B981] hover:text-[#002B36] border border-[#10B981]/50 transition-all cursor-pointer animate-pulse"
+              className="px-2.5 py-1 rounded-xl bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] border border-[#2AA198]/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              title="Install GTAR App to Home Screen"
             >
               <Download className="w-4 h-4" />
             </button>
           )}
 
-          {/* Avatar with Sync Dot */}
+          {/* Avatar with Auth Status Dot */}
           <div
             ref={avatarPopoverRef}
             className="avatar-wrapper"
             onClick={() => setShowAvatarPopover(!showAvatarPopover)}
-            title={syncSession ? `${syncSession.user.email} — ${syncStatus}` : 'Sign in to sync'}
+            title={currentSession ? `${currentSession.user.email} (Authenticated)` : 'Sign in'}
           >
-            {syncSession?.user.picture ? (
+            {currentSession?.user.picture ? (
               <img
-                src={syncSession.user.picture}
+                src={currentSession.user.picture}
                 alt=""
                 referrerPolicy="no-referrer"
                 className="w-8 h-8 rounded-full border-2 border-[#1A4A55] hover:border-[#2AA198] transition-colors"
@@ -445,17 +439,17 @@ export const Header: React.FC<HeaderProps> = ({
                 <User className="w-4 h-4" />
               </div>
             )}
-            <span className={`sync-dot ${syncDotClass}`} />
+            <span className={`sync-dot ${userDotClass}`} />
 
             {/* Avatar Popover */}
             {showAvatarPopover && (
               <div className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
-                {syncSession ? (
+                {currentSession ? (
                   <>
                     <div className="flex items-center gap-3 mb-3">
-                      {syncSession.user.picture && (
+                      {currentSession.user.picture && (
                         <img
-                          src={syncSession.user.picture}
+                          src={currentSession.user.picture}
                           alt=""
                           referrerPolicy="no-referrer"
                           className="w-10 h-10 rounded-full"
@@ -464,7 +458,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-bold text-[#FDF6E3] truncate">
-                            {syncSession.user.name || 'User'}
+                            {currentSession.user.name || 'User'}
                           </span>
                           {isSuperAdmin ? (
                             <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/30 shrink-0">
@@ -477,7 +471,7 @@ export const Header: React.FC<HeaderProps> = ({
                           )}
                         </div>
                         <div className="text-[10px] text-[#93A1A1] truncate">
-                          {syncSession.user.email}
+                          {currentSession.user.email}
                         </div>
                       </div>
                     </div>
@@ -497,61 +491,18 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
-                    {/* Sync Now */}
+                    {/* Backup & Restore (JSON) */}
                     <button
                       type="button"
-                      disabled={syncBusy}
                       onClick={() => {
-                        onSyncNow?.()
                         setShowAvatarPopover(false)
+                        onOpenBackupRestoreModal()
                       }}
-                      className="w-full px-3 py-2 rounded-xl bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] text-xs font-bold flex items-center justify-center gap-2 border border-[#2AA198]/30 transition-all cursor-pointer disabled:opacity-50 mb-2"
+                      className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#094352]/50 text-[#FDF6E3] hover:text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#1A4A55] transition-all cursor-pointer mb-2"
                     >
-                      {syncBusy ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      )}
-                      <span>{syncBusy ? 'Syncing...' : 'Sync Now'}</span>
+                      <CloudUpload className="w-3.5 h-3.5 text-[#B58900]" />
+                      <span>Backup &amp; Restore (JSON)</span>
                     </button>
-
-                    <button type="button" onClick={onExportSyncRecovery} className="w-full text-xs underline py-1 text-[#93A1A1] hover:text-[#FDF6E3]">Download sync recovery data</button>
-                    {syncStatus.includes('Conflicting') && (
-                      <div className="flex flex-col gap-1.5 my-2 p-2 rounded-lg bg-[#002B36] border border-[#DC6E67]/40">
-                        <div className="text-[10px] text-[#DC6E67] font-semibold">Conflict Detected:</div>
-                        <button
-                          type="button"
-                          disabled={syncBusy}
-                          onClick={() => {
-                            if (window.confirm('Discard local device changes and restore the cloud library? Make sure to download sync recovery data first if you wish to keep local edits.')) {
-                              onAdoptCloudLibrary?.()
-                              setShowAvatarPopover(false)
-                            }
-                          }}
-                          className="w-full px-2 py-1.5 rounded bg-[#2AA198]/20 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] text-[11px] font-bold transition-all text-center cursor-pointer disabled:opacity-50"
-                        >
-                          Adopt Cloud Library
-                        </button>
-                        <button
-                          type="button"
-                          disabled={syncBusy}
-                          onClick={() => {
-                            if (window.confirm('First download sync recovery data and reconcile all charts and setlists on this device. Publish this device library as the authoritative resolved version? Previous cloud revisions will be retained.')) {
-                              onPublishResolvedLibrary?.()
-                              setShowAvatarPopover(false)
-                            }
-                          }}
-                          className="w-full px-2 py-1.5 rounded bg-[#D33682]/20 hover:bg-[#D33682] text-[#D33682] hover:text-[#FDF6E3] text-[11px] font-bold transition-all text-center cursor-pointer disabled:opacity-50"
-                        >
-                          Publish Resolved Device Library
-                        </button>
-                      </div>
-                    )}
-                    {/* Sync Status */}
-                    <div className="flex items-center gap-1.5 px-1 mb-3">
-                      <Clock className="w-3 h-3 text-[#93A1A1] shrink-0" />
-                      <span className="text-[10px] text-[#93A1A1] truncate">{syncStatus || 'Ready'}</span>
-                    </div>
 
                     <div className="h-[1px] bg-[#1A4A55]/60 mb-2" />
 
@@ -559,8 +510,9 @@ export const Header: React.FC<HeaderProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        onSignOut?.()
                         setShowAvatarPopover(false)
+                        if (onSignOut) onSignOut()
+                        else handleSignOut?.()
                       }}
                       className="w-full px-3 py-2 rounded-xl hover:bg-[#002B36] text-[#DC6E67] text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
                     >
@@ -571,16 +523,16 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : (
                   <div className="text-center py-2 space-y-3">
                     <p className="text-xs text-[#93A1A1]">
-                      Sign in with Google to sync your songbook across devices.
+                      Sign in with your approved Google account.
                     </p>
                     <button
                       type="button"
                       onClick={() => {
                         setShowAvatarPopover(false)
-                        onSignIn?.()
+                        if (onSignIn) onSignIn()
+                        else void handleSignIn?.()
                       }}
-                      disabled={!syncReady}
-                      className="w-full px-3 py-2 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                      className="w-full px-3 py-2 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
@@ -1146,7 +1098,6 @@ export const Header: React.FC<HeaderProps> = ({
       <UserManagementModal
         isOpen={showUserManagementModal}
         onClose={() => setShowUserManagementModal(false)}
-        onUpdateUsers={onSyncNow}
       />
     </>
   )

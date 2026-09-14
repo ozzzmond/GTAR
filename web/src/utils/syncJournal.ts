@@ -116,9 +116,11 @@ const ownerKey = 'gtar_sync_library_owner'
 const MAX_RECOVERY_SNAPSHOTS = 2
 
 export const LIBRARY_KEY = 'gtar_library_v1'
+export const SYNC_RETIRED_KEY = 'gtar_sync_retired_v1'
 
 export const CANONICAL_STORAGE_PREFIXES = [
   LIBRARY_KEY,
+  SYNC_RETIRED_KEY,
   ownerKey,
   'gtar_sync_v1:',
   'gtar_songs_store',
@@ -367,6 +369,51 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
   }
 }
 
+export function retireDriveSyncState(storage: Storage = localStorage): boolean {
+  try {
+    if (storage.getItem(SYNC_RETIRED_KEY) === 'true') {
+      return true
+    }
+
+    let hasValidCanonical = false
+    try {
+      const saved = readPersistedLibrary(storage)
+      if (saved && Array.isArray(saved.songs) && Array.isArray(saved.setlists)) {
+        hasValidCanonical = true
+      }
+    } catch {
+      hasValidCanonical = false
+    }
+
+    if (!hasValidCanonical) {
+      return false
+    }
+
+    const syncKeys: string[] = []
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i)
+      if (k?.startsWith('gtar_sync_v1:')) {
+        syncKeys.push(k)
+      }
+    }
+    for (const k of syncKeys) {
+      try { storage.removeItem(k) } catch { /* ignore */ }
+    }
+
+    try { storage.removeItem(ownerKey) } catch { /* ignore */ }
+    pruneAllRecoverySnapshots(storage, 0)
+
+    try {
+      storage.setItem(SYNC_RETIRED_KEY, 'true')
+      return true
+    } catch {
+      return false
+    }
+  } catch {
+    return false
+  }
+}
+
 export function performStorageHousekeeping(storage: Storage = localStorage) {
   try {
     // Only purge legacy stores if canonical library exists and is valid
@@ -384,10 +431,11 @@ export function performStorageHousekeeping(storage: Storage = localStorage) {
       storage.removeItem('gtar_songs_store')
       storage.removeItem('gtar_trash_songs_store')
       storage.removeItem('gtar_setlists_store')
+      retireDriveSyncState(storage)
     }
-    // Bound any recovery snapshots to maximum allowed
-    pruneAllRecoverySnapshots(storage, MAX_RECOVERY_SNAPSHOTS)
-    // Bound debug logs in storage
+
+    const maxSnapshots = storage.getItem(SYNC_RETIRED_KEY) === 'true' ? 0 : MAX_RECOVERY_SNAPSHOTS
+    pruneAllRecoverySnapshots(storage, maxSnapshots)
     prunePersistedLogs(storage, 30)
   } catch {
     // Storage access might be restricted/unavailable in private modes

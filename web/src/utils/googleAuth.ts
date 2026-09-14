@@ -1,4 +1,4 @@
-export const GOOGLE_SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.appdata'
+export const GOOGLE_SCOPES = 'openid email profile'
 const KEY = 'gtar_google_session'
 export interface GoogleSession { token: string; expiresAt: number; user: { sub: string; email: string; picture?: string } }
 interface TokenResponse { access_token: string; expires_in: number; scope: string; error?: string }
@@ -66,7 +66,6 @@ export function requestGoogleSession(clientId: string, options?: RequestSessionO
       callback: async response => {
         try {
           if (response.error || !response.access_token || !Number.isFinite(Number(response.expires_in))) throw new Error('Google sign-in failed.')
-          if (!response.scope.split(' ').includes('https://www.googleapis.com/auth/drive.appdata')) throw new Error('Allow application data access to enable sync.')
           const expiresAt = Date.now() + Number(response.expires_in) * 1000
           resolve(await verifyGoogleSession({ token: response.access_token, expiresAt, user: { sub: '', email: '' } }))
         } catch (error) { reject(error) }

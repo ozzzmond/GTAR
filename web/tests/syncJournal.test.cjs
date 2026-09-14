@@ -357,9 +357,10 @@ test('performStorageHousekeeping purges legacy duplicate stores and bounds recov
   assert.ok(store.getItem('gtar_library_v1'))
   assert.equal(store.getItem('gtar_theme_mode'), '"solarized-dark"')
 
-  // Snapshots bounded to MAX_RECOVERY_SNAPSHOTS (2)
+  // In retirement era, recovery snapshots are pruned to 0 and retirement marker is set
   const remainingSnaps = [...store.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
-  assert.equal(remainingSnaps.length, 2)
+  assert.equal(remainingSnaps.length, 0)
+  assert.equal(store.getItem('gtar_sync_retired_v1'), 'true')
 })
 
 test('persistLibrary purges legacy duplicate stores on quota hit to reclaim maximum storage space', () => {

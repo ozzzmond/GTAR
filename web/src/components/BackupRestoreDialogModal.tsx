@@ -176,7 +176,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                   Export Backup
                 </div>
                 <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
-                  Save to Device (.json) or Share / Upload to Cloud / Drive
+                  Save to Device (.json) or share via files
                 </div>
               </div>
             </button>
