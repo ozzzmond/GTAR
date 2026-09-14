@@ -217,16 +217,28 @@ export default defineConfig(({ mode }) => {
   // PWA manifest icon sets
   const devIcons = [
     {
-      src: '/pwa-dev-icon.svg',
-      sizes: '192x192 512x512',
-      type: 'image/svg+xml',
+      src: '/pwa-192x192.png',
+      sizes: '192x192',
+      type: 'image/png',
       purpose: 'any',
+    },
+    {
+      src: '/pwa-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: '/pwa-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
     },
     {
       src: '/pwa-dev-icon.svg',
       sizes: '192x192 512x512',
       type: 'image/svg+xml',
-      purpose: 'maskable',
+      purpose: 'any',
     },
   ]
   const prodIcons = [
@@ -258,7 +270,16 @@ export default defineConfig(({ mode }) => {
           enabled: true,
         },
         includeAssets: isDev
-          ? ['favicon.svg', 'icons.svg', 'pwa-dev-icon.svg']
+          ? [
+              'favicon.ico',
+              'favicon.png',
+              'apple-touch-icon.png',
+              'pwa-192x192.png',
+              'pwa-512x512.png',
+              'favicon.svg',
+              'icons.svg',
+              'pwa-dev-icon.svg',
+            ]
           : ['favicon.svg', 'icons.svg'],
         manifest: {
           name: isDev ? 'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion',

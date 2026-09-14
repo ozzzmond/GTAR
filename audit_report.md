@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-14 04:54:39 UTC
+- **Timestamp:** 2026-09-14 05:34:12 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 11.35s
+- **Total Duration:** 10.74s
 - **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
@@ -42,13 +42,13 @@
 - **Manifest Name:** `GTAR Live Stage Companion`
 - **Manifest Display:** `standalone`
 - **Manifest Start Url:** `/`
-- **Valid Manifest Icons:** `2`
+- **Valid Manifest Icons:** `5`
 - **Maskable Icon Supported:** `True`
 - **Vite Pwa Registered:** `True`
 - **Service Worker Update Mode:** `autoUpdate`
 - **Workbox Glob Patterns:** `'**/*.{js,css,html,ico,png,jpg,jpeg,svg,gif,webp,json,woff,woff2,ttf,eot,otf,mp3,wav,webmanifest}',`
 - **Navigate Fallback:** `/index.html (SPA offline routing active)`
-- **Dist Sw Generated:** `Yes (2095 bytes)`
+- **Dist Sw Generated:** `Yes (2550 bytes)`
 
 ---
 
@@ -75,25 +75,25 @@
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `16`
+- **Uncommitted Files Count:** `12`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
 - **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `8dbe486 - docs: update audit_report.md for DEV.13 [PASS] (78 minutes ago)`
+- **Latest Commit:** `fccc5fd - feat(web): DEV.14 complete Drive sync retirement, one-time storage cleanup, local JSON backup, and pre-auth debug logs (37 minutes ago)`
 
 #### Detailed Findings / Warnings:
-- 16 uncommitted file(s) in working tree:
--    M web/package.json
--    M web/src/App.tsx
+- 12 uncommitted file(s) in working tree:
+-    M web/index.html
+-    M web/public/manifest.json
 -    M web/src/components/AuthGate.tsx
--    M web/src/components/BackupRestoreDialogModal.tsx
--    D web/src/components/DriveSyncControls.tsx
 -    M web/src/components/Header.tsx
--    D web/src/hooks/useDriveSync.ts
--    D web/src/utils/driveSync.ts
--    M web/src/utils/googleAuth.ts
--    M web/src/utils/logger.ts
--   ... and 6 more.
+-    M web/vite.config.ts
+-   ?? web/public/GTAR_icon3.png
+-   ?? web/public/apple-touch-icon.png
+-   ?? web/public/favicon.ico
+-   ?? web/public/favicon.png
+-   ?? web/public/pwa-192x192.png
+-   ... and 2 more.
 
 ---
 
@@ -103,11 +103,11 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Sync Duration:** `1.75s`
+- **Lint Sync Duration:** `1.69s`
 - **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
-- **Test Duration:** `2.96s`
+- **Test Duration:** `2.81s`
 - **Test Status:** `PASSED (119 passed, 0 failed)`
-- **Build Duration:** `6.24s`
+- **Build Duration:** `5.85s`
 - **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---

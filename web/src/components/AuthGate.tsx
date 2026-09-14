@@ -3,6 +3,7 @@ import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolic
 import { loadGoogleIdentity, readGoogleSession, requestGoogleSession, refreshGoogleSession, saveGoogleSession, validSession, verifyGoogleSession, type GoogleSession } from '../utils/googleAuth'
 import { GtaLogoIcon } from './GtaLogoIcon'
 import { DebugLogsModal } from './DebugLogsModal'
+import { Terminal } from 'lucide-react'
 
 interface AuthState {
   session: GoogleSession | null
@@ -205,9 +206,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
           <button
             type="button"
-            className="text-xs font-mono text-[#2AA198] hover:underline flex items-center gap-1.5 cursor-pointer"
+            title="View Debug Logs (DEV only)"
+            aria-label="View Debug Logs"
+            className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
             onClick={() => setIsDebugLogsOpen(true)}
           >
+            <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
             <span>View Debug Logs</span>
           </button>
         </div>

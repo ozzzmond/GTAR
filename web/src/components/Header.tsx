@@ -36,7 +36,7 @@ import {
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
-import { GtaLogoIcon } from './GtaLogoIcon'
+import devLogo from '../assets/dev-logo.png'
 import { useGoogleAuth } from './AuthGate'
 
 // Sync session type matching useDriveSync return shape
@@ -368,15 +368,19 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95"
             title="Return to Songbook Library Home"
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-center text-[#2AA198] shadow-inner group-hover:border-[#2AA198] group-hover:scale-105 transition-all">
-              <GtaLogoIcon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-[#2AA198] group-hover:scale-105 transition-all">
+              <img
+                src={devLogo}
+                alt="GTAR Dev Logo"
+                className="w-full h-full object-contain rounded-lg"
+              />
             </div>
             <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-mono font-bold text-sm sm:text-base tracking-wider text-[#FDF6E3]">
-                  {import.meta.env.VITE_APP_ENV === 'debug' ? 'GTAR-Debug' : import.meta.env.DEV ? 'GTAR-Dev' : 'GTAR'}
+                  {import.meta.env.DEV || import.meta.env.VITE_APP_ENV === 'debug' ? 'GTAR-Dev' : 'GTAR'}
                 </span>
-                {import.meta.env.DEV && (
+                {(import.meta.env.DEV || import.meta.env.VITE_APP_ENV === 'debug') && (
                   <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/40">
                     DEV
                   </span>
@@ -386,6 +390,9 @@ export const Header: React.FC<HeaderProps> = ({
                     DEV PORT 5174
                   </span>
                 )}
+                <span className="text-[10px] font-mono text-[#93A1A1] font-semibold tracking-tight">
+                  v{isDevApp ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
+                </span>
               </div>
             </div>
           </div>
@@ -1012,21 +1019,6 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <FolderOpen className="w-4 h-4 text-[#2AA198]" />
             <span className="font-semibold">Import...</span>
-          </button>
-
-          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
-
-          {/* 3. Backup & Restore... */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenBackupRestoreModal()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#B58900] transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <CloudUpload className="w-4 h-4 text-[#B58900]" />
-            <span className="font-semibold">Backup & Restore...</span>
           </button>
 
           <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
