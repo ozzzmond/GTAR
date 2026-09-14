@@ -232,12 +232,32 @@ export function openSyncJournal(account: string, local: SyncLibrary, storage: St
   }
 }
 
+export function performStorageHousekeeping(storage: Storage = localStorage) {
+  try {
+    // If canonical library exists, purge obsolete duplicate stores to save quota
+    if (storage.getItem(LIBRARY_KEY)) {
+      storage.removeItem('gtar_songs_store')
+      storage.removeItem('gtar_trash_songs_store')
+      storage.removeItem('gtar_setlists_store')
+    }
+    // Bound any recovery snapshots to maximum allowed
+    pruneAllRecoverySnapshots(storage, MAX_RECOVERY_SNAPSHOTS)
+  } catch {
+    // Storage access might be restricted/unavailable in private modes
+  }
+}
+
 export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
   try {
     storage.setItem(LIBRARY_KEY, JSON.stringify(library))
   } catch (err) {
     if (isQuotaError(err)) {
       pruneAllRecoverySnapshots(storage, 0)
+      try {
+        storage.removeItem('gtar_songs_store')
+        storage.removeItem('gtar_trash_songs_store')
+        storage.removeItem('gtar_setlists_store')
+      } catch { /* ignore */ }
       try {
         storage.setItem(LIBRARY_KEY, JSON.stringify(library))
         return

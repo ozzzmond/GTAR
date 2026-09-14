@@ -330,4 +330,66 @@ test('canonical user data keys are never selected for recovery snapshot pruning'
   assert.equal(store.length, canonicalEntries.length)
 })
 
+test('performStorageHousekeeping purges legacy duplicate stores and bounds recovery snapshots', () => {
+  const { performStorageHousekeeping } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+
+  // Simulate canonical library present along with legacy duplicate stores
+  store.setItem('gtar_library_v1', JSON.stringify(base))
+  store.setItem('gtar_songs_store', JSON.stringify(base.songs))
+  store.setItem('gtar_trash_songs_store', '[]')
+  store.setItem('gtar_setlists_store', '[]')
+  store.setItem('gtar_theme_mode', '"solarized-dark"')
+
+  // Simulate extra recovery snapshots
+  store.setItem('gtar_sync_recovery:acc:1_snap', 'snap1')
+  store.setItem('gtar_sync_recovery:acc:2_snap', 'snap2')
+  store.setItem('gtar_sync_recovery:acc:3_snap', 'snap3')
+
+  performStorageHousekeeping(store)
+
+  // Legacy duplicate stores should be purged
+  assert.equal(store.getItem('gtar_songs_store'), null)
+  assert.equal(store.getItem('gtar_trash_songs_store'), null)
+  assert.equal(store.getItem('gtar_setlists_store'), null)
+
+  // Canonical library and theme settings preserved
+  assert.ok(store.getItem('gtar_library_v1'))
+  assert.equal(store.getItem('gtar_theme_mode'), '"solarized-dark"')
+
+  // Snapshots bounded to MAX_RECOVERY_SNAPSHOTS (2)
+  const remainingSnaps = [...store.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
+  assert.equal(remainingSnaps.length, 2)
+})
+
+test('persistLibrary purges legacy duplicate stores on quota hit to reclaim maximum storage space', () => {
+  const { persistLibrary } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+
+  store.setItem('gtar_songs_store', 'legacy-data')
+  store.setItem('gtar_trash_songs_store', 'legacy-data')
+  store.setItem('gtar_setlists_store', 'legacy-data')
+
+  let hitQuotaOnce = true
+  const quotaStore = {
+    ...store,
+    setItem(k, v) {
+      if (k === 'gtar_library_v1' && hitQuotaOnce) {
+        hitQuotaOnce = false
+        throw new Error('QuotaExceededError')
+      }
+      store.setItem(k, v)
+    }
+  }
+
+  persistLibrary(edited, quotaStore)
+
+  // Legacy stores purged during quota recovery
+  assert.equal(store.getItem('gtar_songs_store'), null)
+  assert.equal(store.getItem('gtar_trash_songs_store'), null)
+  assert.equal(store.getItem('gtar_setlists_store'), null)
+  assert.ok(store.getItem('gtar_library_v1'))
+})
+
+
 

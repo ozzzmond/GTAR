@@ -1,4 +1,4 @@
-import { persistLibrary, readPersistedLibrary } from './utils/syncJournal'
+import { persistLibrary, readPersistedLibrary, isQuotaError, performStorageHousekeeping } from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { useDriveSync } from './hooks/useDriveSync'
 import { generateUUID } from './utils/uuid'
@@ -217,6 +217,7 @@ function LibraryApp() {
 
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
+    performStorageHousekeeping()
     const savedLibrary = readPersistedLibrary()
     if (savedLibrary) return { ...partitionSongs(savedLibrary.songs), setlists: savedLibrary.setlists }
     const readSongs = (key: string, fallback: ActiveSongState[]) => {
@@ -235,6 +236,10 @@ function LibraryApp() {
       if (saved && Array.isArray(JSON.parse(saved))) storedSetlists = JSON.parse(saved)
     } catch { /* Keep the existing fallback. */ }
     const repaired = deduplicateLibrary({ songs: combined, setlists: storedSetlists })
+    try {
+      persistLibrary(repaired)
+      performStorageHousekeeping()
+    } catch { /* ignore */ }
     return { ...partitionSongs(repaired.songs), setlists: repaired.setlists }
   })
   const [songs, setSongs] = useState<ActiveSongState[]>(initialLibrary.active)
@@ -316,36 +321,18 @@ function LibraryApp() {
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
   }, [])
 
+  // Persist canonical library on any songs, trash, or setlists change (with quota relief)
   useEffect(() => {
-    persistLibrary({ songs: [...songs, ...deletedSongs], setlists })
+    try {
+      persistLibrary({ songs: [...songs, ...deletedSongs], setlists })
+    } catch (err) {
+      if (isQuotaError(err)) {
+        console.warn('[Storage] Local storage quota reached while persisting library. State preserved in memory.', err)
+      } else {
+        console.warn('[Storage] Failed to persist library to localStorage. State preserved in memory.', err)
+      }
+    }
   }, [songs, deletedSongs, setlists])
-
-  // Save songs to localStorage on any change
-  useEffect(() => {
-    try {
-      localStorage.setItem('gtar_songs_store', JSON.stringify(songs))
-    } catch (e) {
-      console.error('Failed to persist songs to localStorage', e)
-    }
-  }, [songs])
-
-  // Save trash to localStorage on any change
-  useEffect(() => {
-    try {
-      localStorage.setItem('gtar_trash_songs_store', JSON.stringify(deletedSongs))
-    } catch (e) {
-      console.error('Failed to persist trash to localStorage', e)
-    }
-  }, [deletedSongs])
-
-  // Save setlists to localStorage on any change
-  useEffect(() => {
-    try {
-      localStorage.setItem('gtar_setlists_store', JSON.stringify(setlists))
-    } catch (e) {
-      console.error('Failed to persist setlists to localStorage', e)
-    }
-  }, [setlists])
 
   // Save active setlist ID
   useEffect(() => {
@@ -513,13 +500,7 @@ function LibraryApp() {
                   transposeOffset: transpose,
                   rawContent: effectiveContent,
                 }
-                setSongs((prev) => {
-                  const updated = [...prev, newSong]
-                  try {
-                    localStorage.setItem('gtar_songs_store', JSON.stringify(updated))
-                  } catch (_) {}
-                  return updated
-                })
+                setSongs((prev) => [...prev, newSong])
                 setActiveSongIndex(songs.length)
               }
             }
@@ -546,13 +527,7 @@ function LibraryApp() {
                 transposeOffset: transpose,
                 rawContent: effectiveContent,
               }
-              setSongs((prev) => {
-                const updated = [...prev, newSong]
-                try {
-                  localStorage.setItem('gtar_songs_store', JSON.stringify(updated))
-                } catch (_) {}
-                return updated
-              })
+              setSongs((prev) => [...prev, newSong])
               setActiveSongIndex(songs.length)
             }
           }
@@ -592,11 +567,7 @@ function LibraryApp() {
                 newSongsToAppend.push(newSong)
               }
             }
-            const updated = [...prevSongs, ...newSongsToAppend]
-            try {
-              localStorage.setItem('gtar_songs_store', JSON.stringify(updated))
-            } catch (_) {}
-            return updated
+            return [...prevSongs, ...newSongsToAppend]
           })
 
           // Reconstruct/activate received setlist on Member device immediately
@@ -611,11 +582,7 @@ function LibraryApp() {
             const filtered = prevSetlists.filter(
               (sl) => sl.name.trim().toLowerCase() !== incomingSetlistName.trim().toLowerCase()
             )
-            const updated = [...filtered, syncedSetlist]
-            try {
-              localStorage.setItem('gtar_setlists_store', JSON.stringify(updated))
-            } catch (_) {}
-            return updated
+            return [...filtered, syncedSetlist]
           })
 
           setActiveSetlistId(newSetlistId)
@@ -973,9 +940,11 @@ function LibraryApp() {
     setSongs((prev) => {
       const nextSongs = prev.map((s) => (s.id === currentSong.id ? { ...s, ...updatedSong, id: s.id } : s))
       try {
-        localStorage.setItem('gtar_songs_store', JSON.stringify(nextSongs))
+        persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
       } catch (err) {
-        console.error('Failed to persist songs store:', err)
+        if (isQuotaError(err)) {
+          console.warn('[Storage] Local storage quota reached on song save. State preserved in memory.', err)
+        }
       }
       return nextSongs
     })
