@@ -1,11 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
-import { loadGoogleIdentity, readGoogleSession, requestGoogleSession, refreshGoogleSession, saveGoogleSession, validSession, verifyGoogleSession, type GoogleSession } from '../utils/googleAuth'
+import {
+  loadGoogleIdentity,
+  getStoredSessionStatus,
+  requestGoogleSession,
+  refreshGoogleSession,
+  renewDurableSession,
+  saveGoogleSession,
+  validSession,
+  verifyGoogleSession,
+  type GoogleSession,
+} from '../utils/googleAuth'
 import devLogo from '../assets/dev-logo.png'
 import { DebugLogsModal } from './DebugLogsModal'
 import { Terminal } from 'lucide-react'
 
-const isDevLogsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true';
+const isDevLogsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
 interface AuthState {
   session: GoogleSession | null
@@ -29,84 +39,169 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [bypass, setBypass] = useState(false)
   const [error, setError] = useState('')
+  const [isExpiredOffline, setIsExpiredOffline] = useState(false)
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
   const epoch = useRef(0)
   const refreshing = useRef(false)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+  const configuredEmails = import.meta.env.VITE_AUTHORIZED_EMAILS as string | undefined
+
   const isPresentationRoute =
     typeof window !== 'undefined' &&
     ((typeof window.location?.pathname === 'string' && window.location.pathname.includes('/stage/present')) ||
       (typeof window.location?.search === 'string' && window.location.search.includes('view=present')) ||
       (typeof window.location?.hash === 'string' && window.location.hash.includes('present')))
-  const permitted = !!session && (isPresentationRoute ? validSession(session) : Boolean(session.user?.email))
-  const canBypass = allowLocalBypass(import.meta.env.DEV, typeof window !== 'undefined' ? (window.location?.hostname || '') : '')
 
   const role: UserRole = useMemo(() => {
     if (bypass && canBypass) return 'SUPER_ADMIN'
     if (!session?.user?.email) return 'NONE'
-    const r = getUserRole(session.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL)
-    return r === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'USER'
-  }, [session, bypass, canBypass])
+    return getUserRole(session.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+  }, [session, bypass, configuredEmails])
 
+  const canBypass = allowLocalBypass(import.meta.env.DEV, typeof window !== 'undefined' ? (window.location?.hostname || '') : '')
+  const isAuthorized = role !== 'NONE'
+  const permitted = !!session && validSession(session) && isAuthorized
   const isSuperAdmin = role === 'SUPER_ADMIN'
+
   const signOut = useCallback(() => {
     epoch.current++
     saveGoogleSession(null)
-    setSession(null); setBypass(false); setChecking(false); setBusy(false); setError('')
+    setSession(null)
+    setBypass(false)
+    setChecking(false)
+    setBusy(false)
+    setError('')
+    setIsExpiredOffline(false)
   }, [])
 
-  // Attempt silent renewal in the background without user prompts
-  const silentRefresh = useCallback(async () => {
-    if (!clientId || refreshing.current) return
-    const current = session ?? readGoogleSession()
-    if (!current || !current.user?.email) return
-    const generation = epoch.current
-    const accountSub = current.user.sub
+  // Asynchronous non-blocking background recheck
+  const backgroundRecheck = useCallback(async (current: GoogleSession, generation: number) => {
+    if (refreshing.current) return
     refreshing.current = true
     try {
-      const renewed = await refreshGoogleSession(clientId, current)
-      // Epoch/account guards: late responses after sign-out or account switch must not re-authenticate
-      if (generation !== epoch.current || !readGoogleSession() || renewed.user.sub !== accountSub) {
+      const currentRole = getUserRole(current.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+      if (currentRole === 'NONE') {
+        if (generation === epoch.current) {
+          signOut()
+          setError('Access revoked. Your account is not on the authorized whitelist.')
+        }
         return
       }
-      saveGoogleSession(renewed)
-      setSession(renewed)
-    } catch (err) {
-      if (generation !== epoch.current) return
-      // If offline/network outage during gig, do NOT kick the user out of stage view.
-      // If GIS explicitly rejected or unauthorized, sign out.
-      const isOffline = typeof window !== 'undefined' && window.navigator ? window.navigator.onLine === false : (typeof navigator !== 'undefined' && navigator.onLine === false)
-      if (isOffline) {
-        return
+
+      if (current.token) {
+        try {
+          const verified = await verifyGoogleSession(current)
+          if (generation !== epoch.current) return
+          if (verified.user.email.toLowerCase() !== current.user.email.toLowerCase()) {
+            signOut()
+            setError('Session identity mismatch. Please sign in again.')
+            return
+          }
+          const renewed = renewDurableSession(verified)
+          saveGoogleSession(renewed)
+          setSession(renewed)
+          return
+        } catch (err) {
+          if (generation !== epoch.current) return
+          const msg = err instanceof Error ? err.message : String(err)
+          if (/network|failed to fetch|load failed|timeout/i.test(msg)) {
+            void import('../utils/logger').then(({ appLogger }) => {
+              appLogger.warn('AuthGate', 'Background session recheck deferred due to transient network error.', msg)
+            })
+            return
+          }
+        }
       }
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('popup blocked') || /network|failed to fetch|load failed/i.test(msg)) {
-        // Never sign out on popup blocker or network failure; preserve active session
-        return
-      }
-      if (err instanceof Error && (err.message.includes('Google sign-in failed') || err.message.includes('verified'))) {
-        signOut()
+
+      if (typeof window !== 'undefined' && window.google && clientId) {
+        try {
+          const renewed = await refreshGoogleSession(clientId, current)
+          if (generation !== epoch.current) return
+          if (renewed.user.email.toLowerCase() !== current.user.email.toLowerCase()) {
+            signOut()
+            setError('Session identity mismatch. Please sign in again.')
+            return
+          }
+          const durable = renewDurableSession(renewed)
+          saveGoogleSession(durable)
+          setSession(durable)
+        } catch (err) {
+          if (generation !== epoch.current) return
+          void import('../utils/logger').then(({ appLogger }) => {
+            appLogger.warn('AuthGate', 'Silent GIS background refresh deferred; local durable session remains active.', String(err))
+          })
+        }
       }
     } finally {
       refreshing.current = false
     }
-  }, [clientId, session, signOut])
+  }, [clientId, configuredEmails, signOut])
 
+  // Mount session initialization
   useEffect(() => {
     const generation = ++epoch.current
-    const cached = readGoogleSession()
-    if (!cached) { saveGoogleSession(null); setChecking(false) }
-    else void verifyGoogleSession(cached).then(verified => {
-      if (generation !== epoch.current) return
-      saveGoogleSession(verified)
-      setSession(verified)
-    }).catch(() => {
-      if (generation !== epoch.current) return
-      saveGoogleSession(null); setError('Unable to verify your session. Please sign in again.')
-    }).finally(() => { if (generation === epoch.current) setChecking(false) })
-    return () => { epoch.current++ }
-  }, [])
+    const status = getStoredSessionStatus()
 
+    if (status.isMalformed) {
+      saveGoogleSession(null)
+      if (generation === epoch.current) {
+        setError('Corrupt session data detected. Please sign in again.')
+        setChecking(false)
+      }
+      return
+    }
+
+    if (status.isExpired) {
+      const isOffline =
+        typeof window !== 'undefined' && window.navigator && typeof window.navigator.onLine === 'boolean'
+          ? window.navigator.onLine === false
+          : typeof navigator !== 'undefined' && navigator.onLine === false
+
+      if (generation === epoch.current) {
+        if (isOffline) {
+          setIsExpiredOffline(true)
+          setError('Your 30-day offline stage session has expired. Reconnect to the internet once to renew.')
+        } else {
+          setError('Your session has expired. Please sign in again.')
+        }
+        setChecking(false)
+      }
+      return
+    }
+
+    if (!status.session) {
+      if (generation === epoch.current) {
+        setChecking(false)
+      }
+      return
+    }
+
+    const candidate = status.session
+    const candidateRole = getUserRole(candidate.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+    if (candidateRole === 'NONE') {
+      saveGoogleSession(null)
+      if (generation === epoch.current) {
+        setError('Access revoked. Your account is not on the authorized whitelist.')
+        setChecking(false)
+      }
+      return
+    }
+
+    // Unlock immediately from local durable session
+    if (generation === epoch.current) {
+      setSession(candidate)
+      setChecking(false)
+    }
+
+    const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+    if (!isOffline && clientId) {
+      void backgroundRecheck(candidate, generation)
+    }
+
+    return () => { epoch.current++ }
+  }, [configuredEmails, clientId, backgroundRecheck])
+
+  // Load Google Identity Services SDK
   useEffect(() => {
     if (!clientId) return
     let active = true
@@ -121,35 +216,34 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [clientId])
 
-  // Silent refresh 5 minutes before expiry, plus offline-resilient event listeners
+  // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
     if (!session || !clientId) return
-    // Refresh 5 minutes before expiry
-    const refreshDelay = Math.max(0, session.expiresAt - Date.now() - 300000)
-    const refreshTimer = setTimeout(() => { void silentRefresh() }, refreshDelay)
 
     const onRecheck = () => {
-      const isOffline = typeof window !== 'undefined' && window.navigator ? window.navigator.onLine === false : (typeof navigator !== 'undefined' && navigator.onLine === false)
+      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
       if (!validSession(session)) {
         if (isOffline) {
-          // Live stage performance offline resilience: preserve authenticated stage view
+          // Live stage performance offline resilience: preserve active session while offline
           return
         }
         if (isPresentationRoute) {
           signOut()
         }
+      } else if (!isOffline) {
+        void backgroundRecheck(session, epoch.current)
       }
     }
+
     window.addEventListener('online', onRecheck)
     window.addEventListener('focus', onRecheck)
     document.addEventListener('visibilitychange', onRecheck)
     return () => {
-      clearTimeout(refreshTimer)
       window.removeEventListener('online', onRecheck)
       window.removeEventListener('focus', onRecheck)
       document.removeEventListener('visibilitychange', onRecheck)
     }
-  }, [session, clientId, silentRefresh, signOut, isPresentationRoute])
+  }, [session, clientId, signOut, isPresentationRoute, backgroundRecheck])
 
   useEffect(() => {
     if (!permitted && !(bypass && canBypass)) return
@@ -166,11 +260,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const signIn = async () => {
     if (!clientId || busy) return
     const generation = ++epoch.current
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setIsExpiredOffline(false)
     try {
       const next = await requestGoogleSession(clientId)
       if (generation !== epoch.current) return
-      saveGoogleSession(next); setBypass(false); setSession(next)
+      const nextRole = getUserRole(next.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+      if (nextRole === 'NONE') {
+        saveGoogleSession(null)
+        setError(`Access denied. Account ${next.user.email} is not authorized.`)
+        return
+      }
+      saveGoogleSession(next)
+      setBypass(false)
+      setSession(next)
     } catch (failure) {
       if (generation === epoch.current) {
         const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
@@ -179,8 +281,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
           appLogger.error('AuthGate', `Google sign-in attempt failed: ${errorMsg}`, failure instanceof Error ? failure : undefined)
         })
       }
+    } finally {
+      if (generation === epoch.current) {
+        setBusy(false)
+        setChecking(false)
+      }
     }
-    finally { if (generation === epoch.current) { setBusy(false); setChecking(false) } }
   }
 
   if (permitted || (bypass && canBypass)) return <AuthContext.Provider value={{ session: permitted ? session : null, signOut, signIn, ready, bypass, role, isSuperAdmin }}>
@@ -203,13 +309,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <p className="text-sm text-[#93A1A1] mt-2 mb-6">
         Access is restricted to authorized owners. Sign in with your approved Google account.
       </p>
+      {isExpiredOffline && (
+        <div className="p-3 mb-4 rounded-xl bg-[#B58900]/15 border border-[#B58900]/40 text-[#EEE8D5] text-xs text-left">
+          <p className="font-bold text-[#B58900] mb-1">Offline Session Expired</p>
+          <p>Your 30-day offline stage session has expired. Reconnect to the internet once to renew.</p>
+        </div>
+      )}
       {checking ? <p role="status">Verifying your session...</p> : (
-        <button disabled={!ready || busy} className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50" onClick={() => void signIn()}>
+        <button disabled={!ready || busy} className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50 cursor-pointer" onClick={() => void signIn()}>
           {busy ? 'Signing in...' : 'Sign In with Google'}
         </button>
       )}
       <p role="status" className="text-sm text-amber-200 mt-4">{error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}</p>
-      {canBypass && !checking && <button className="mt-6 text-sm underline text-[#93A1A1]" onClick={() => { signOut(); setBypass(true) }}>Continue offline (local development)</button>}
+      {canBypass && !checking && <button className="mt-6 text-sm underline text-[#93A1A1] cursor-pointer" onClick={() => { signOut(); setBypass(true) }}>Continue offline (local development)</button>}
       {isDevLogsEnabled && (
         <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
           <button

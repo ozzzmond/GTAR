@@ -1,9 +1,9 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-14 10:01:28 UTC
+- **Timestamp:** 2026-09-14 10:29:45 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 10.87s
-- **Overall Verdict:** `[PASS]`
+- **Total Duration:** 25.51s
+- **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
 
@@ -12,7 +12,7 @@
 | Offline Asset Hygiene | **`[PASS]`** | All HTML, styles, and scripts are 100% bundled locally with offline font fallbacks. |
 | PWA / Service Worker Health | **`[PASS]`** | PWA configuration, manifest icons, and Workbox caching strategies are healthy. |
 | Local Storage & Sync Guards | **`[PASS]`** | Robust storage quota guards, bounded snapshots, and auto-pruning verified. |
-| Git Workspace Status | **`[PASS]`** | Working tree clean on branch 'dev' (0 uncommitted files). |
+| Git Workspace Status | **`[WARN]`** | Working tree on 'dev' contains uncommitted changes or stashes. |
 | Test & Build Readiness | **`[PASS]`** | All local lint, test, and build verifications succeeded. |
 
 ---
@@ -68,18 +68,25 @@
 
 ---
 
-### [PASS] Git Workspace Status
+### [WARN] Git Workspace Status
 
-**Status:** `PASS`  
-**Summary:** Working tree clean on branch 'dev' (0 uncommitted files).
+**Status:** `WARN`  
+**Summary:** Working tree on 'dev' contains uncommitted changes or stashes.
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `0`
+- **Uncommitted Files Count:** `4`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
-- **Ahead Behind Upstream:** `+2 / -0`
-- **Latest Commit:** `9a3d4f7 - chore(web): bump dev version (web v1.0.87-dev.17) (6 seconds ago)`
+- **Ahead Behind Upstream:** `+0 / -0`
+- **Latest Commit:** `beb9edb - docs: update audit_report.md for DEV.17 [PASS] (28 minutes ago)`
+
+#### Detailed Findings / Warnings:
+- 4 uncommitted file(s) in working tree:
+-   M web/src/components/AuthGate.tsx
+-    M web/src/utils/googleAuth.ts
+-    M web/tests/authLifecycle.test.cjs
+-   ?? web/tests/durableAuthSession.test.cjs
 
 ---
 
@@ -89,15 +96,15 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Sync Duration:** `1.70s`
+- **Lint Sync Duration:** `1.60s`
 - **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
-- **Test Duration:** `2.90s`
-- **Test Status:** `PASSED (93 passed, 0 failed)`
-- **Build Duration:** `5.86s`
+- **Test Duration:** `17.76s`
+- **Test Status:** `PASSED (101 passed, 0 failed)`
+- **Build Duration:** `5.77s`
 - **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---
 
 ## Local Action Guidance
 
-All offline hygiene, PWA health, storage sync guards, and local build/tests are green. Ready for local development or release bumping.
+Review warning items in the breakdown above (e.g. uncommitted workspace changes or pending stashes). No blocking failures detected.
