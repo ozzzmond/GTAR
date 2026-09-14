@@ -11,34 +11,28 @@
   "categories": ["music", "entertainment", "utilities"],
   "icons": [
     {
-      "src": "/favicon.ico",
+      "src": "/favicon-prod.ico",
       "sizes": "16x16 32x32 48x48",
       "type": "image/x-icon",
       "purpose": "any"
     },
     {
-      "src": "/favicon.png",
+      "src": "/favicon-prod.png",
       "sizes": "64x64",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-192x192.png",
+      "src": "/pwa-prod-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-512x512.png",
+      "src": "/pwa-prod-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    },
-    {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
     }
   ]
 }

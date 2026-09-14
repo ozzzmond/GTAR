@@ -5,15 +5,38 @@ import './index.css'
 import { AuthGate } from './components/AuthGate'
 const App = lazy(() => import('./App.tsx'))
 
-// Apply debug environment branding if active
-const isDevApp = import.meta.env.DEV ||
-  import.meta.env.VITE_APP_ENV === 'debug' ||
-  (typeof window !== 'undefined' && window.location.hostname.includes('dev.gtar-web.pages.dev'))
+import { isDevEnv } from './utils/env'
 
-if (isDevApp) {
-  if (typeof document !== 'undefined') {
-    document.title = 'GTAR-Dev Live Stage Companion'
+function applyEnvironmentBranding(isDev: boolean) {
+  if (typeof document === 'undefined') return
 
+  document.title = isDev ? 'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion'
+
+  const iconHref = isDev ? '/favicon.png' : '/favicon-prod.png'
+  const appleHref = isDev ? '/apple-touch-icon.png' : '/apple-touch-icon-prod.png'
+
+  // Update or create standard favicon links
+  const iconLinks = document.querySelectorAll<HTMLLinkElement>("link[rel='icon'], link[rel='shortcut icon']")
+  if (iconLinks.length > 0) {
+    iconLinks.forEach(link => {
+      link.href = iconHref
+      link.type = 'image/png'
+    })
+  } else {
+    const link = document.createElement('link')
+    link.rel = 'icon'
+    link.type = 'image/png'
+    link.href = iconHref
+    document.head.appendChild(link)
+  }
+
+  // Update apple-touch-icon
+  const appleLink = document.querySelector<HTMLLinkElement>("link[rel='apple-touch-icon']")
+  if (appleLink) {
+    appleLink.href = appleHref
+  }
+
+  if (isDev) {
     // Blob manifests need absolute resource URLs and a stable installation identity.
     const devManifest = {
       id: new URL('/?app=gtar-dev', window.location.origin).href,
@@ -21,11 +44,26 @@ if (isDevApp) {
       short_name: 'GTAR-Dev',
       start_url: new URL('/', window.location.origin).href,
       scope: new URL('/', window.location.origin).href,
-      icons: [{
-        src: new URL('/pwa-dev-icon.svg', window.location.origin).href,
-        sizes: 'any',
-        type: 'image/svg+xml',
-      }],
+      icons: [
+        {
+          src: new URL('/pwa-192x192.png', window.location.origin).href,
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: new URL('/pwa-512x512.png', window.location.origin).href,
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: new URL('/pwa-512x512.png', window.location.origin).href,
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
+      ],
       theme_color: '#8B0000',
       background_color: '#1a0000',
       display: 'standalone',
@@ -42,47 +80,10 @@ if (isDevApp) {
     if (import.meta.hot) {
       import.meta.hot.dispose(() => URL.revokeObjectURL(manifestUrl))
     }
-    try {
-      const devFaviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <defs>
-    <linearGradient id="redGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#E50914" />
-      <stop offset="100%" stop-color="#8B0000" />
-    </linearGradient>
-  </defs>
-  <rect width="100" height="100" rx="24" fill="url(#redGrad)" stroke="#FFFFFF" stroke-width="3"/>
-  <circle cx="50" cy="42" r="22" fill="#002B36" stroke="#FFFFFF" stroke-width="2"/>
-  <path d="M42 32 L62 42 L42 52 Z" fill="#2AA198" />
-  <rect x="8" y="66" width="84" height="26" rx="6" fill="#FF1744" stroke="#FFFFFF" stroke-width="2.5"/>
-  <text x="50" y="84" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="16" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">DEV</text>
-</svg>`
-      const iconUrl = `data:image/svg+xml;base64,${btoa(devFaviconSvg)}`
-      let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement
-      if (!link) {
-        link = document.createElement('link')
-        link.rel = 'icon'
-        document.head.appendChild(link)
-      }
-      link.type = 'image/svg+xml'
-      link.href = iconUrl
-
-    } catch { }
-  }
-} else {
-  // Production: explicitly ensure favicon points to the GTAR teal guitar icon
-  if (typeof document !== 'undefined') {
-    try {
-      let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement
-      if (!link) {
-        link = document.createElement('link')
-        link.rel = 'icon'
-        document.head.appendChild(link)
-      }
-      link.type = 'image/svg+xml'
-      link.href = '/favicon.svg'
-    } catch { }
   }
 }
+
+applyEnvironmentBranding(isDevEnv)
 
 // Register PWA Service Worker for offline stage caching & local testing
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
