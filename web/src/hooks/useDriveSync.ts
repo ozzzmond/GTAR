@@ -15,8 +15,18 @@ function formatSyncError(error: unknown, fallback: string): string {
   if (error instanceof DriveSyncError && error.isDriveQuota) {
     return error.message
   }
+  const msg = error instanceof Error ? error.message : String(error || '')
+  if (
+    error instanceof TypeError ||
+    msg.includes('Load failed') ||
+    msg.includes('Failed to fetch') ||
+    msg.includes('Network connection unavailable')
+  ) {
+    return 'Network connection unavailable. Local changes are saved.'
+  }
   return error instanceof Error ? error.message : fallback
 }
+
 
 export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary) => void) {
   const { session, signOut: lockApp, signIn, ready } = useGoogleAuth()
@@ -37,7 +47,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
   useEffect(() => {
     if (!session) return
     const timer = setTimeout(() => {
-      setStatus('Drive sync paused (offline).')
+      setStatus('Google session expired. Re-authenticate in Profile to resume Drive sync.')
     }, Math.max(0, session.expiresAt - Date.now() - 30000))
     return () => clearTimeout(timer)
   }, [session])
@@ -57,7 +67,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       return
     }
     if (!validSession(auth)) {
-      setStatus('Drive sync paused (offline).')
+      setStatus('Google session expired. Re-authenticate in Profile to resume Drive sync.')
       return
     }
     const epoch = generation.current
@@ -102,13 +112,17 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       setStatus('Synced with Google Drive.')
     } catch (error) {
       if (epoch !== generation.current) return
-      if (error instanceof DriveSyncError && error.status === 401) signOut()
+      console.error('[DriveSync] Synchronization failed:', error)
+      if (error instanceof DriveSyncError && error.status === 401) {
+        setStatus('Google session expired. Re-authenticate in Profile to resume Drive sync.')
+        return
+      }
       setStatus(formatSyncError(error, 'Sync failed. Local changes are saved.'))
     } finally {
       running.current = false; setBusy(false)
       if (queued.current) { queued.current = false; setTimeout(() => { void runSync() }, 1500) }
     }
-  }, [signOut])
+  }, [])
   useEffect(() => {
     if (!session) return
     const timer = setTimeout(() => { void syncNow() }, 0)
@@ -156,7 +170,10 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       persistLibrary(latest.current.library)
       journal.complete()
       setStatus('Resolved device library published. Previous cloud revisions are retained.')
-    } catch (error) { setStatus(formatSyncError(error, 'Resolution failed; recovery copies retained.')) }
+    } catch (error) {
+      console.error('[DriveSync] Synchronization failed:', error)
+      setStatus(formatSyncError(error, 'Resolution failed; recovery copies retained.'))
+    }
     finally { running.current = false; setBusy(false) }
   }
   const adoptCloudLibrary = async () => {
@@ -194,6 +211,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
       journal.complete()
       setStatus('Cloud library adopted successfully.')
     } catch (error) {
+      console.error('[DriveSync] Synchronization failed:', error)
       setStatus(formatSyncError(error, 'Failed to adopt cloud library.'))
     } finally {
       running.current = false; setBusy(false)
@@ -206,6 +224,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
     const snapshots = readRecoverySnapshots(auth.user.sub)
     try { exportRecoveryData({ local, snapshots, cloud: await readCloudRecovery(auth.token) }) }
     catch (error) {
+      console.error('[DriveSync] Synchronization failed:', error)
       exportRecoveryData({ local, snapshots, cloudError: error instanceof Error ? error.message : 'Cloud unavailable' })
       setStatus('Device recovery archive exported. Cloud download failed; cloud revisions are retained in Drive.')
     }

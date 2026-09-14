@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-13 06:06:07 UTC
+- **Timestamp:** 2026-09-14 01:55:01 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 0.38s
+- **Total Duration:** 11.12s
 - **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
@@ -75,15 +75,21 @@
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `1`
+- **Uncommitted Files Count:** `7`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
 - **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `ce3c902 - chore(web): bump web to 1.0.87-dev.3 (48 minutes ago)`
+- **Latest Commit:** `a8f4b9e - fix(web): harden local storage quota detection, single-retry pruning, and in-memory degradation (49 minutes ago)`
 
 #### Detailed Findings / Warnings:
-- 1 uncommitted file(s) in working tree:
--    M web/src/components/StageView.tsx
+- 7 uncommitted file(s) in working tree:
+-    M web/src/components/AuthGate.tsx
+-    M web/src/hooks/useDriveSync.ts
+-    M web/src/utils/driveSync.ts
+-    M web/src/utils/onlineSearch.ts
+-    M web/tests/authGate.test.cjs
+-    M web/tests/backupRoundTrip.test.cjs
+-    M web/tests/driveSync.test.cjs
 
 ---
 
@@ -93,9 +99,12 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Status:** `SKIPPED (--quick or --skip-lint)`
-- **Unit Tests:** `SKIPPED (--quick or --skip-tests)`
-- **Build Status:** `SKIPPED (--quick or --skip-build)`
+- **Lint Sync Duration:** `2.03s`
+- **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
+- **Test Duration:** `2.83s`
+- **Test Status:** `PASSED (97 passed, 0 failed)`
+- **Build Duration:** `5.87s`
+- **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---
 

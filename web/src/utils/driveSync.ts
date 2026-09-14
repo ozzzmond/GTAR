@@ -30,7 +30,20 @@ const snapshots = new Map<string, Snapshot>()
 const REVISION_NAME = 'gtar_songbook_revision_v1.json'
 export function clearDriveSession(token: string) { snapshots.delete(token) }
 async function request(token: string, url: string, init: RequestInit = {}) {
-  const response = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...init.headers }, signal: AbortSignal.timeout(30000) })
+  let response: Response
+  try {
+    response = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...init.headers }, signal: AbortSignal.timeout(30000) })
+  } catch (err) {
+    if (err instanceof DriveSyncError) throw err
+    const msg = err instanceof Error ? err.message : String(err)
+    const isTransportError =
+      (err instanceof TypeError && (msg.includes('Load failed') || msg.includes('Failed to fetch') || msg.includes('NetworkError'))) ||
+      (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError'))
+    if (isTransportError) {
+      throw new DriveSyncError('Network connection unavailable. Local changes are saved.', 0)
+    }
+    throw err
+  }
   if (!response.ok) {
     if (response.status === 401) {
       throw new DriveSyncError('Google session expired. Sign in again.', 401)

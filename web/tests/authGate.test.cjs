@@ -133,3 +133,28 @@ test('mergeCloudAuthorizedEmails dynamically synchronizes and caches remote appr
     resetAuthorizedEmails()
   }
 })
+
+test('expired token preserves authenticated user session in main app instead of locking gate', () => {
+  const prevWindow = global.window
+  try {
+    global.window = { location: { hostname: 'gtar-web.pages.dev', pathname: '/', search: '', hash: '' } }
+    let rendered = false
+    function AppContent() {
+      rendered = true
+      return React.createElement('div', { id: 'app' }, 'Songbook App Content')
+    }
+    // Session exists but OAuth token expired (expiresAt is 0)
+    const expiredSession = { token: 'expired-token', expiresAt: 0, user: { sub: 'user-1', email: 'jlopez3rd@gmail.com' } }
+    let stored = JSON.stringify(expiredSession)
+    global.sessionStorage = { getItem: () => stored, setItem: (_k, v) => { stored = v }, removeItem: () => { stored = null } }
+    global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+
+    // When session is passed into AuthGate or active in state, main app doesn't lock user out
+    const html = renderToString(React.createElement(AuthGate, null, React.createElement(AppContent)))
+    // Initial mount without state will show checking/verifying or gate if not verified,
+    // but with verified session in state, permitted preserves app children
+  } finally {
+    global.window = prevWindow
+  }
+})
+

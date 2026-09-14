@@ -164,4 +164,26 @@ test('pullCloudWhitelist extracts allowedUsers from cloud sync files', async () 
   }
 })
 
+test('network transport TypeErrors in Safari and Chrome are cleanly mapped to DriveSyncError', async () => {
+  const original = global.fetch
+  try {
+    // Safari WebKit: TypeError: Load failed
+    global.fetch = async () => { throw new TypeError('Load failed') }
+    await assert.rejects(pullCloudBackup('test-safari'), err => {
+      return err.status === 0 && err.message === 'Network connection unavailable. Local changes are saved.'
+    })
+
+    // Chrome Chromium: TypeError: Failed to fetch
+    global.fetch = async () => { throw new TypeError('Failed to fetch') }
+    await assert.rejects(pullCloudBackup('test-chrome'), err => {
+      return err.status === 0 && err.message === 'Network connection unavailable. Local changes are saved.'
+    })
+  } finally {
+    global.fetch = original
+    clearDriveSession('test-safari')
+    clearDriveSession('test-chrome')
+  }
+})
+
+
 

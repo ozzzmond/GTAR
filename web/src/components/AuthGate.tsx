@@ -28,7 +28,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const epoch = useRef(0)
   const refreshing = useRef(false)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-  const permitted = !!session && validSession(session)
+  const isPresentationRoute =
+    typeof window !== 'undefined' &&
+    ((typeof window.location?.pathname === 'string' && window.location.pathname.includes('/stage/present')) ||
+      (typeof window.location?.search === 'string' && window.location.search.includes('view=present')) ||
+      (typeof window.location?.hash === 'string' && window.location.hash.includes('present')))
+  const permitted = !!session && (isPresentationRoute ? validSession(session) : Boolean(session.user?.email))
   const canBypass = allowLocalBypass(import.meta.env.DEV, window.location.hostname)
 
   const role: UserRole = useMemo(() => {
@@ -69,7 +74,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (isOffline) {
         return
       }
-      if (err instanceof Error && (err.message.includes('popup blocked') || err.message.includes('Google sign-in failed') || err.message.includes('verified'))) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('popup blocked') || /network|failed to fetch|load failed/i.test(msg)) {
+        // Never sign out on popup blocker or network failure; preserve active session
+        return
+      }
+      if (err instanceof Error && (err.message.includes('Google sign-in failed') || err.message.includes('verified'))) {
         signOut()
       }
     } finally {
@@ -113,7 +123,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
           // Live stage performance offline resilience: preserve authenticated stage view
           return
         }
-        signOut()
+        if (isPresentationRoute) {
+          signOut()
+        }
+        // In the main application, preserve user session and let Drive sync mark re-authorization
       }
     }
     window.addEventListener('online', onRecheck)
@@ -125,7 +138,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', onRecheck)
       document.removeEventListener('visibilitychange', onRecheck)
     }
-  }, [session, clientId, silentRefresh, signOut])
+  }, [session, clientId, silentRefresh, signOut, isPresentationRoute])
 
   useEffect(() => {
     if (!permitted && !(bypass && canBypass)) return

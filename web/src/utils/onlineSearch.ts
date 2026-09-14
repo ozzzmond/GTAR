@@ -70,30 +70,45 @@ function sanitizeUgContent(content: string): string {
 }
 
 // Proxies to query in sequence
-const PROXY_CANDIDATES = [
-  (target: string) => {
-    // If local dev server, use Vite proxy directly
-    if (typeof window !== 'undefined') {
-      if (target.startsWith('https://www.ultimate-guitar.com')) {
-        return target.replace('https://www.ultimate-guitar.com', '/api/ug')
+const PROXY_CANDIDATES: Array<{ name: string; getUrl: (target: string) => string | null }> = [
+  {
+    name: 'vite-dev-proxy',
+    getUrl: (target: string) => {
+      // Only route through Vite proxy on local development loopback
+      if (
+        typeof window !== 'undefined' &&
+        Boolean(import.meta.env.DEV) &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ) {
+        if (target.startsWith('https://www.ultimate-guitar.com')) {
+          return target.replace('https://www.ultimate-guitar.com', '/api/ug')
+        }
+        if (target.startsWith('https://tabs.ultimate-guitar.com')) {
+          return target.replace('https://tabs.ultimate-guitar.com', '/api/ug-tabs')
+        }
       }
-      if (target.startsWith('https://tabs.ultimate-guitar.com')) {
-        return target.replace('https://tabs.ultimate-guitar.com', '/api/ug-tabs')
-      }
-    }
-    return target
+      return null
+    },
   },
-  (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
-  (target: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`,
+  {
+    name: 'corsproxy-io',
+    getUrl: (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
+  },
+  {
+    name: 'codetabs-proxy',
+    getUrl: (target: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`,
+  },
 ]
 
 /**
- * Multi-candidate fetcher
+ * Multi-candidate fetcher with sanitized diagnostics
  */
 async function fetchHtml(targetUrl: string, timeoutMs = 6000): Promise<string> {
-  for (const proxyFn of PROXY_CANDIDATES) {
+  const diagnostics: Array<{ candidate: string; status?: number | string; category: string }> = []
+  for (const candidate of PROXY_CANDIDATES) {
+    const url = candidate.getUrl(targetUrl)
+    if (!url) continue
     try {
-      const url = proxyFn(targetUrl)
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
       const res = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer))
@@ -102,12 +117,25 @@ async function fetchHtml(targetUrl: string, timeoutMs = 6000): Promise<string> {
         if (text && text.length > 500 && text.includes('js-store')) {
           return text
         }
+        diagnostics.push({ candidate: candidate.name, status: res.status, category: 'INVALID_HTML_PAYLOAD' })
+      } else {
+        diagnostics.push({
+          candidate: candidate.name,
+          status: res.status,
+          category: res.status === 403 ? 'BOT_BLOCKED_403' : res.status === 429 ? 'RATE_LIMITED_429' : 'HTTP_ERROR',
+        })
       }
-    } catch (_) {
-      // Continue to next candidate
+    } catch (err) {
+      const isTimeout = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+      diagnostics.push({
+        candidate: candidate.name,
+        status: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+        category: isTimeout ? 'PROXY_TIMEOUT' : 'CORS_OR_NETWORK_ERROR',
+      })
     }
   }
-  throw new Error('Could not fetch from live web source.')
+  const summary = diagnostics.map(d => `${d.candidate}:${d.category}(${d.status ?? 'err'})`).join(', ')
+  throw new Error(`Could not fetch from live web source. Diagnostics: [${summary || 'NO_AVAILABLE_PROXIES'}]`)
 }
 
 /**
@@ -473,7 +501,7 @@ export async function searchOnlineChords(query: string): Promise<OnlineChordResu
       }
     }
   } catch (err) {
-    console.warn('Live Ultimate-Guitar fetch error:', err)
+    console.warn('[OnlineSearch] Live Ultimate-Guitar fetch error:', err instanceof Error ? err.message : err)
   }
 
   return []
@@ -493,17 +521,23 @@ export async function fetchOnlineChordSheet(result: OnlineChordResult): Promise<
     const sheet = catalog.sheet(1)
     return { ...sheet, offlineExample: true, rawContent: `{comment: Offline example}\n${sheet.rawContent}` }
   }
-  // 1. Try Vite dev backend scraper endpoint first
-  try {
-    const res = await fetch(`/api/ug-tab?url=${encodeURIComponent(result.tabUrl)}`)
-    if (res.ok) {
-      const data = await res.json()
-      if (data.success && data.sheet && data.sheet.rawContent) {
-        return data.sheet
+  // 1. Try Vite dev backend scraper endpoint first (local dev only)
+  if (
+    typeof window !== 'undefined' &&
+    Boolean(import.meta.env.DEV) &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ) {
+    try {
+      const res = await fetch(`/api/ug-tab?url=${encodeURIComponent(result.tabUrl)}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.sheet && data.sheet.rawContent) {
+          return data.sheet
+        }
       }
+    } catch {
+      // continue to fallback
     }
-  } catch (_) {
-    // continue to fallback
   }
 
   // 3. Try direct live fetch via proxy
@@ -570,9 +604,9 @@ ${cleanContent}`
       }
     }
   } catch (err) {
-    console.warn('Live tab fetch error:', err)
+    console.warn('[OnlineSearch] Live tab fetch error:', err)
   }
 
   // Never fall back to dummy placeholder lyrics
-  throw new Error(`Could not extract authentic chord sheet for "${result.songName}". Please choose another version or check network.`)
+  throw new Error(`Could not extract authentic chord sheet for "${result.songName}" (live web scraping blocked by source). You can paste the chord chart URL or text in Import to add it.`)
 }
