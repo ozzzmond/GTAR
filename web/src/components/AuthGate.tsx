@@ -12,6 +12,8 @@ import {
   type GoogleSession,
 } from '../utils/googleAuth'
 import devLogo from '../assets/dev-logo.png'
+import prodLogo from '../assets/prod-logo.png'
+import { isDevEnv } from '../utils/env'
 import { DebugLogsModal } from './DebugLogsModal'
 import { Terminal } from 'lucide-react'
 
@@ -298,8 +300,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
     <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
       <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-[#002B36] border border-[#1A4A55] p-1 shadow-inner flex items-center justify-center">
         <img
-          src={devLogo}
-          alt="GTAR Dev Logo"
+          src={isDevEnv ? devLogo : prodLogo}
+          alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
           className="w-full h-full object-contain rounded-xl"
         />
       </div>

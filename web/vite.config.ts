@@ -224,24 +224,24 @@ export default defineConfig(({ mode }) => {
       type: 'image/png',
       purpose: 'maskable',
     },
-    {
-      src: '/pwa-dev-icon.svg',
-      sizes: '192x192 512x512',
-      type: 'image/svg+xml',
-      purpose: 'any',
-    },
   ]
   const prodIcons = [
     {
-      src: '/favicon.svg',
-      sizes: '192x192 512x512',
-      type: 'image/svg+xml',
+      src: '/pwa-prod-192x192.png',
+      sizes: '192x192',
+      type: 'image/png',
       purpose: 'any',
     },
     {
-      src: '/favicon.svg',
-      sizes: '192x192 512x512',
-      type: 'image/svg+xml',
+      src: '/pwa-prod-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: '/pwa-prod-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
       purpose: 'maskable',
     },
   ]
@@ -254,22 +254,43 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       react(),
       ugScraperPlugin(),
+      {
+        name: 'html-branding-transform',
+        transformIndexHtml(html: string) {
+          if (isDev) {
+            return html
+              .replace(/<title>.*?<\/title>/, '<title>GTAR-Dev Live Stage Companion</title>')
+              .replace(/href="\/favicon\.png"/, 'href="/favicon.png"')
+              .replace(/href="\/apple-touch-icon\.png"/, 'href="/apple-touch-icon.png"')
+              .replace(/href="\/favicon\.ico"/, 'href="/favicon.ico"')
+          } else {
+            return html
+              .replace(/<title>.*?<\/title>/, '<title>GTAR Live Stage Companion</title>')
+              .replace(/href="\/favicon\.png"/, 'href="/favicon-prod.png"')
+              .replace(/href="\/apple-touch-icon\.png"/, 'href="/apple-touch-icon-prod.png"')
+              .replace(/href="\/favicon\.ico"/, 'href="/favicon-prod.ico"')
+          }
+        },
+      },
       VitePWA({
         registerType: 'autoUpdate',
         devOptions: {
           enabled: true,
         },
-        includeAssets: isDev
-          ? [
-              'favicon.ico',
-              'favicon.png',
-              'apple-touch-icon.png',
-              'pwa-192x192.png',
-              'pwa-512x512.png',
-              'favicon.svg',
-              'pwa-dev-icon.svg',
-            ]
-          : ['favicon.svg'],
+        includeAssets: [
+          'favicon.ico',
+          'favicon.png',
+          'favicon-prod.ico',
+          'favicon-prod.png',
+          'apple-touch-icon.png',
+          'apple-touch-icon-prod.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-prod-192x192.png',
+          'pwa-prod-512x512.png',
+          'prod-logo.png',
+          'dev-logo.png',
+        ],
         manifest: {
           name: isDev ? 'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion',
           short_name: isDev ? 'GTAR-Dev' : 'GTAR',
