@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createBackupPayload, exportRecoveryData } from '../utils/jsonBackup'
 import { clearDriveSession, readCloudRecovery, prepareCloudResolution, DriveSyncError, pullCloudBackup, pushCloudBackup } from '../utils/driveSync'
 import { validSession } from '../utils/googleAuth'
-import { openSyncJournal, persistLibrary, readRecoverySnapshots, isQuotaError } from '../utils/syncJournal'
+import { openSyncJournal, persistLibrary, readRecoverySnapshots, isQuotaError, logStorageFootprint } from '../utils/syncJournal'
 import { getAuthorizedEmailsList, mergeCloudAuthorizedEmails } from '../utils/authPolicy'
 import { useGoogleAuth } from '../components/AuthGate'
 import { mergeSyncLibrary, type SyncLibrary } from '../utils/syncMerge'
@@ -75,6 +75,7 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
     setBusy(true)
     setStatus('Syncing...')
     try {
+      logStorageFootprint('SyncStart')
       const latestAtStart = latest.current.library
       const journal = openSyncJournal(auth.user.sub, latest.current.library)
       journal.archive(null)
@@ -109,9 +110,11 @@ export function useDriveSync(library: SyncLibrary, apply: (library: SyncLibrary)
         latest.current.apply(current)
       }
       journal.complete()
+      logStorageFootprint('SyncComplete')
       setStatus('Synced with Google Drive.')
     } catch (error) {
       if (epoch !== generation.current) return
+      logStorageFootprint('SyncError')
       console.error('[DriveSync] Synchronization failed:', error)
       if (error instanceof DriveSyncError && error.status === 401) {
         setStatus('Google session expired. Re-authenticate in Profile to resume Drive sync.')

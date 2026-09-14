@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs'), ts = require('typescript')
-require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,filename)
+for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename)
 const { openSyncJournal } = require('../src/utils/syncJournal.ts')
 const { mergeSyncLibrary } = require('../src/utils/syncMerge.ts')
 const base = {songs:[{id:'a',title:'Song',rawContent:'old'}],setlists:[]}
@@ -389,6 +389,222 @@ test('persistLibrary purges legacy duplicate stores on quota hit to reclaim maxi
   assert.equal(store.getItem('gtar_trash_songs_store'), null)
   assert.equal(store.getItem('gtar_setlists_store'), null)
   assert.ok(store.getItem('gtar_library_v1'))
+})
+
+test('SAFETY REQUIREMENT 1: performStorageHousekeeping preserves gtar_songs_store when canonical library is absent or damaged', () => {
+  const { performStorageHousekeeping } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+  store.setItem('gtar_songs_store', JSON.stringify([{ id: 'legacy-1', title: 'Sole Source' }]))
+
+  // Scenario A: Canonical library absent
+  performStorageHousekeeping(store)
+  assert.ok(store.getItem('gtar_songs_store'), 'Housekeeping must NOT delete gtar_songs_store if canonical is absent!')
+
+  // Scenario B: Canonical library damaged / invalid JSON
+  store.setItem('gtar_library_v1', '{"invalid": true}')
+  performStorageHousekeeping(store)
+  assert.ok(store.getItem('gtar_songs_store'), 'Housekeeping must NOT delete gtar_songs_store if canonical is damaged!')
+})
+
+test('SAFETY REQUIREMENT 1: persistLibrary never purges gtar_songs_store if it is the sole migration source and write fails', () => {
+  const { persistLibrary } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+  store.setItem('gtar_songs_store', JSON.stringify([{ id: 'legacy-1', title: 'Sole Source Song' }]))
+
+  const permanentQuotaStore = {
+    ...store,
+    setItem(k, v) {
+      if (k === 'gtar_library_v1') {
+        throw new Error('QuotaExceededError')
+      }
+      store.setItem(k, v)
+    }
+  }
+
+  assert.throws(() => {
+    persistLibrary(edited, permanentQuotaStore)
+  }, /quota exceeded/i)
+
+  // gtar_songs_store MUST NOT be deleted!
+  assert.ok(store.getItem('gtar_songs_store'), 'Sole migration source gtar_songs_store must NEVER be deleted on failed migration!')
+  assert.match(store.getItem('gtar_songs_store'), /Sole Source Song/)
+})
+
+// =========================================================================
+// SAFETY REQUIREMENT 2: CRASH / RECOVERY MATRIX FOR LibraryDelta (ALL 6 BOUNDARIES)
+// =========================================================================
+
+test('CRASH BOUNDARY 1: reload after archive, before prepare', () => {
+  const store = storage()
+  synced(store) // establishes initial baseline
+  const localEdit = { songs: [{ id: 'a', title: 'Song', rawContent: 'local edit 1' }], setlists: [] }
+  const j1 = openSyncJournal('account', localEdit, store)
+  j1.archive(base) // Boundary 1 reached: archive saved, prepare not yet called
+
+  // Simulated process crash / reload:
+  const j2 = openSyncJournal('account', localEdit, store)
+  assert.deepEqual(j2.baseline, base, 'Baseline must remain original synced baseline')
+  assert.deepEqual(j2.local, localEdit, 'Local state must remain intact')
+  assert.ok([...store.values.keys()].some(k => k.startsWith('gtar_sync_recovery:account:')), 'Recovery snapshot must exist')
+})
+
+test('CRASH BOUNDARY 2: reload after prepare, before cloud upload', () => {
+  const store = storage()
+  synced(store)
+  const localEdit = { songs: [{ id: 'a', title: 'Song', rawContent: 'local edit 2' }], setlists: [] }
+  const merged = { songs: [{ id: 'a', title: 'Song', rawContent: 'merged candidate' }], setlists: [] }
+  const j1 = openSyncJournal('account', localEdit, store)
+  j1.archive(base)
+  j1.prepare(localEdit, merged) // Boundary 2 reached: prepare called, upload not yet done
+
+  // Simulated process crash / reload before upload:
+  const j2 = openSyncJournal('account', localEdit, store)
+  assert.deepEqual(j2.baseline, base, 'Baseline must remain base since upload was not acknowledged')
+  assert.deepEqual(j2.local, localEdit, 'Local unacknowledged edits must remain authoritative')
+})
+
+test('CRASH BOUNDARY 3: reload after cloud upload, before acknowledge', () => {
+  const store = storage()
+  synced(store)
+  const localEdit = { songs: [{ id: 'a', title: 'Song', rawContent: 'local edit 3' }], setlists: [] }
+  const merged = { songs: [{ id: 'a', title: 'Song', rawContent: 'cloud uploaded' }], setlists: [] }
+  const j1 = openSyncJournal('account', localEdit, store)
+  j1.archive(base)
+  j1.prepare(localEdit, merged)
+  // Cloud upload succeeds in network, but process crashes before j1.acknowledge()!
+
+  // Simulated process reload:
+  const j2 = openSyncJournal('account', localEdit, store)
+  // On next sync cycle, cloud returns merged, and 3-way merge reconstructs clean state:
+  const nextSync = mergeSyncLibrary(j2.local, merged, j2.baseline)
+  assert.deepEqual(nextSync.songs[0].rawContent, 'local edit 3', 'Local changes are preserved against cloud upload')
+})
+
+test('CRASH BOUNDARY 4: reload after acknowledge, before local persistLibrary', () => {
+  const store = storage()
+  synced(store)
+  const localEdit = { songs: [{ id: 'a', title: 'Song', rawContent: 'local edit 4' }], setlists: [] }
+  const merged = { songs: [{ id: 'a', title: 'Song', rawContent: 'merged authoritative' }, { id: 'b', title: 'New Cloud Song', rawContent: 'content b' }], setlists: [] }
+  const j1 = openSyncJournal('account', localEdit, store)
+  j1.archive(base)
+  j1.prepare(localEdit, merged)
+  j1.acknowledge() // Boundary 4 reached: acknowledged on disk, persistLibrary not yet called
+
+  // Simulated crash / reload: disk still has localEdit in gtar_library_v1
+  const j2 = openSyncJournal('account', localEdit, store)
+  // Durable delta recovery must reconstruct pendingMerged and apply it cleanly!
+  assert.deepEqual(j2.local, merged, 'Local state must be reconstructed from acknowledged delta without loss')
+  assert.deepEqual(j2.baseline, merged, 'Baseline must advance to acknowledged merged state')
+})
+
+test('CRASH BOUNDARY 5: reload after local persistLibrary, before complete', () => {
+  const { persistLibrary } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+  synced(store)
+  const localEdit = { songs: [{ id: 'a', title: 'Song', rawContent: 'local edit 5' }], setlists: [] }
+  const merged = { songs: [{ id: 'a', title: 'Song', rawContent: 'persisted merged' }], setlists: [] }
+  const j1 = openSyncJournal('account', localEdit, store)
+  j1.archive(base)
+  j1.prepare(localEdit, merged)
+  j1.acknowledge()
+  persistLibrary(merged, store) // Boundary 5 reached: persisted, complete not yet called
+
+  // Simulated crash / reload:
+  const j2 = openSyncJournal('account', merged, store)
+  assert.deepEqual(j2.local, merged, 'Local state must remain merged')
+  assert.deepEqual(j2.baseline, merged, 'Baseline must remain merged')
+
+  // Next sync cycle can prepare new changes smoothly:
+  assert.doesNotThrow(() => {
+    j2.prepare(merged, merged)
+  })
+})
+
+test('CRASH BOUNDARY 6: reload after complete', () => {
+  const store = storage()
+  synced(store)
+  const localEdit = { songs: [{ id: 'a', title: 'Song', rawContent: 'local edit 6' }], setlists: [] }
+  const merged = { songs: [{ id: 'a', title: 'Song', rawContent: 'final merged' }], setlists: [] }
+  const j1 = openSyncJournal('account', localEdit, store)
+  j1.archive(base)
+  j1.prepare(localEdit, merged)
+  j1.acknowledge()
+  j1.complete() // Boundary 6 reached: complete called
+
+  // Simulated reload:
+  const j2 = openSyncJournal('account', merged, store)
+  assert.deepEqual(j2.baseline, merged, 'Baseline must be final merged state')
+  assert.deepEqual(j2.local, merged, 'Local state matches final merged state')
+})
+
+test('LibraryDelta preserves song reordering and exact structure across round-trip', () => {
+  const { computeDelta, applyDelta } = require('../src/utils/syncJournal.ts')
+  const baseLib = {
+    songs: [
+      { id: '1', title: 'One', rawContent: 'c1' },
+      { id: '2', title: 'Two', rawContent: 'c2' },
+      { id: '3', title: 'Three', rawContent: 'c3' },
+    ],
+    setlists: [{ id: 's1', name: 'Setlist', songIds: ['1', '2'] }],
+    allowedUsers: ['user@example.com'],
+  }
+
+  // Target modifies song 2, deletes song 1, adds song 4, and reorders to [3, 4, 2]
+  const targetLib = {
+    songs: [
+      { id: '3', title: 'Three', rawContent: 'c3' },
+      { id: '4', title: 'Four', rawContent: 'c4' },
+      { id: '2', title: 'Two', rawContent: 'c2-edited' },
+    ],
+    setlists: [{ id: 's1', name: 'Setlist Updated', songIds: ['3', '4', '2'] }],
+    allowedUsers: ['user@example.com', 'admin@example.com'],
+  }
+
+  const delta = computeDelta(baseLib, targetLib)
+  assert.equal(delta.changedSongs.length, 2) // 4 (new) and 2 (edited)
+  assert.deepEqual(delta.deletedSongIds, ['1'])
+  assert.deepEqual(delta.songIdsOrder, ['3', '4', '2'])
+
+  const reconstructed = applyDelta(baseLib, delta)
+  assert.deepEqual(reconstructed, targetLib, 'Delta must reconstruct exact song contents, setlists, allowedUsers, and ordering')
+})
+
+test('estimateStorageFootprint accurately calculates bytes, MB, key counts, and key sizes', () => {
+  const { estimateStorageFootprint } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+  store.setItem('key1', 'abc') // key: 4, val: 3 -> 14 bytes
+  store.setItem('key2', '12345') // key: 4, val: 5 -> 18 bytes
+  const fp = estimateStorageFootprint(store)
+  assert.equal(fp.keyCount, 2)
+  assert.equal(fp.totalBytes, 32)
+  assert.equal(fp.keys['key1'], 14)
+  assert.equal(fp.keys['key2'], 18)
+  assert.equal(typeof fp.totalMB, 'number')
+})
+
+test('logger caps localStorage to MAX_PERSISTED_LOGS (30) and prunes to 10 on quota hit', () => {
+  const { prunePersistedLogs, MAX_PERSISTED_LOGS } = require('../src/utils/logger.ts')
+  const store = storage()
+  const logs = Array.from({ length: 50 }, (_, i) => ({
+    id: `${i}`,
+    timestamp: '2026-09-14T00:00:00.000Z',
+    level: 'INFO',
+    tag: 'Test',
+    message: `log entry ${i}`,
+  }))
+  store.setItem('gtar_web_debug_logs', JSON.stringify(logs))
+
+  // Normal pruning caps to 30
+  prunePersistedLogs(store, MAX_PERSISTED_LOGS)
+  const parsed30 = JSON.parse(store.getItem('gtar_web_debug_logs'))
+  assert.equal(parsed30.length, 30)
+  assert.equal(parsed30[29].message, 'log entry 49')
+
+  // Emergency quota pruning caps to 10
+  prunePersistedLogs(store, 10)
+  const parsed10 = JSON.parse(store.getItem('gtar_web_debug_logs'))
+  assert.equal(parsed10.length, 10)
+  assert.equal(parsed10[9].message, 'log entry 49')
 })
 
 

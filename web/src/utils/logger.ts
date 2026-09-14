@@ -16,8 +16,26 @@ export interface LogEntry {
   details?: string
 }
 
-const STORAGE_KEY = 'gtar_web_debug_logs'
-const MAX_LOGS = 1000
+export const STORAGE_KEY = 'gtar_web_debug_logs'
+export const MAX_MEMORY_LOGS = 1000
+export const MAX_LOGS = MAX_MEMORY_LOGS
+export const MAX_PERSISTED_LOGS = 30
+
+export function prunePersistedLogs(storage: Storage = localStorage, targetCount = 10): void {
+  try {
+    const raw = storage.getItem(STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > targetCount) {
+      storage.setItem(STORAGE_KEY, JSON.stringify(parsed.slice(-targetCount)))
+    }
+  } catch {
+    // If quota error occurs even when writing trimmed logs, remove key cleanly
+    try {
+      storage.removeItem(STORAGE_KEY)
+    } catch { /* ignore */ }
+  }
+}
 
 type LogListener = (logs: LogEntry[]) => void
 
@@ -48,7 +66,7 @@ class WebLoggerEngine {
       if (raw) {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
-          this.logs = parsed.slice(-MAX_LOGS)
+          this.logs = parsed.slice(-MAX_MEMORY_LOGS)
         }
       }
     } catch {
@@ -60,15 +78,13 @@ class WebLoggerEngine {
     if (!this.storageEnabled) return
     if (typeof window === 'undefined') return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
+      const persisted = this.logs.slice(-MAX_PERSISTED_LOGS)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted))
     } catch {
-      // If quota exceeded, trim older entries
-      if (this.logs.length > 100) {
-        this.logs = this.logs.slice(-Math.floor(this.logs.length / 2))
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
-        } catch { }
-      }
+      // If quota exceeded, emergency prune or swallow to prevent error storm cascades
+      try {
+        prunePersistedLogs(localStorage, 10)
+      } catch { /* swallow quota errors inside logger persistence */ }
     }
   }
 

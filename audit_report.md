@@ -1,8 +1,8 @@
 # GTAR Local Offline Audit Report
 
-- **Timestamp:** 2026-09-14 02:13:25 UTC
+- **Timestamp:** 2026-09-14 03:31:05 UTC
 - **Execution Mode:** 100% Offline (Local Filesystem Only)
-- **Total Duration:** 11.12s
+- **Total Duration:** 11.33s
 - **Overall Verdict:** `[WARN]`
 
 ## Executive Summary
@@ -75,17 +75,19 @@
 
 #### Metrics & Settings Verified:
 - **Current Branch:** `dev`
-- **Uncommitted Files Count:** `3`
+- **Uncommitted Files Count:** `5`
 - **Pending Stashes Count:** `0`
 - **Upstream Tracking:** `origin/dev`
 - **Ahead Behind Upstream:** `+0 / -0`
-- **Latest Commit:** `bc7be11 - fix(web): harden Safari auth session preservation, network error translation, and online search routing (17 minutes ago)`
+- **Latest Commit:** `5e1c5e2 - fix(web): eliminate duplicate song storage, add housekeeping, and relieve Safari 5MB quota ceiling (76 minutes ago)`
 
 #### Detailed Findings / Warnings:
-- 3 uncommitted file(s) in working tree:
--    M web/src/App.tsx
+- 5 uncommitted file(s) in working tree:
+-    M web/src/hooks/useDriveSync.ts
+-    M web/src/utils/logger.ts
 -    M web/src/utils/syncJournal.ts
 -    M web/tests/syncJournal.test.cjs
+-   ?? web/tests/adversarialDev13.test.cjs
 
 ---
 
@@ -95,11 +97,11 @@
 **Summary:** All local lint, test, and build verifications succeeded.
 
 #### Metrics & Settings Verified:
-- **Lint Sync Duration:** `2.03s`
+- **Lint Sync Duration:** `2.07s`
 - **Lint Status:** `PASSED (0 warnings on critical sync/auth/backup files)`
-- **Test Duration:** `2.83s`
-- **Test Status:** `PASSED (99 passed, 0 failed)`
-- **Build Duration:** `5.88s`
+- **Test Duration:** `2.95s`
+- **Test Status:** `PASSED (118 passed, 0 failed)`
+- **Build Duration:** `5.93s`
 - **Build Status:** `PASSED (TypeScript check & Vite production bundle created)`
 
 ---

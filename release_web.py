@@ -81,6 +81,7 @@ def main(argv=None):
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--bump-dev", action="store_true", help="Write the next dev version only; no commit or deployment")
     action.add_argument("--promote-to-prod", action="store_true", help="On clean dev: commit/tag prod locally, then commit next dev reset")
+    parser.add_argument("-m", "--message", help="Commit message to use when committing bumped dev changes")
     parser.add_argument("--push", action="store_true", help="With --bump-dev: commit, annotate tag, and atomically push dev and that tag to origin")
     parser.add_argument("--dry-run", action="store_true", help="Print the complete plan without changing files or Git")
     parser.add_argument("--legacy-iteration", type=int, help="Migration only: explicit whole integer for DEPRECATED / LEGACY versions such as DEV.8b")
@@ -153,7 +154,12 @@ def main(argv=None):
             if git("diff", "--cached", "--name-only", "--", *files):
                 raise ValueError("Version files are staged; commit or unstage them before bumping")
             write_files(files)
-            print(f"[DONE] {PLATFORM} v{bump}; files updated, no commit or tag created.")
+            if args.message:
+                git("add", "-A")
+                git("commit", "-m", args.message)
+                print(f"[DONE] {PLATFORM} v{bump}; files updated and committed: {args.message}")
+            else:
+                print(f"[DONE] {PLATFORM} v{bump}; files updated, no commit or tag created.")
             return 0
         if git("status", "--porcelain"):
             raise ValueError("Promotion requires a completely clean working tree and index; commit your tested changes first")
