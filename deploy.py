@@ -5,6 +5,7 @@ Deploys Web to production on 'main' branch cleanly from production release tags,
 and deploys Android by pushing production tags to trigger GitHub Actions release.yml.
 """
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -74,12 +75,32 @@ def validate_prod_tag(tag: str, platform: str) -> str:
     local_tags = git("tag", "-l", tag).split()
     if tag not in local_tags:
         raise ValueError(f"Production release tag '{tag}' does not exist locally.")
+    validate_tag_metadata(tag, expected_platform)
     return tag
+
+
+def validate_tag_metadata(tag: str, platform: str):
+    """Read frozen metadata from the tag, never the current working tree."""
+    ref = f"refs/tags/{tag}"
+    version = tag.split("-v", 1)[1]
+    if platform == "web":
+        package = json.loads(git("show", f"{ref}:web/package.json"))
+        lock = json.loads(git("show", f"{ref}:web/package-lock.json"))
+        constants = git("show", f"{ref}:web/src/types/gtar.ts")
+        if any(value != version for value in (package.get("version"), lock.get("version"), lock.get("packages", {}).get("", {}).get("version"), release_web.constant(constants, "GTAR_APP_VERSION"))):
+            raise ValueError("Tagged web production metadata mismatch or dev-versioned source")
+    else:
+        gradle = git("show", f"{ref}:app/build.gradle.kts")
+        name = release_android.field(gradle, release_android.NAME)
+        suffix = release_android.field(gradle, release_android.SUFFIX)
+        code = int(release_android.field(gradle, release_android.CODE))
+        if name != f"app v{version}" or suffix or not 1 <= code <= 2100000000:
+            raise ValueError("Tagged Android production metadata mismatch or dev-versioned source")
 
 
 def verify_remote_tag_peeled_sha(tag: str, remote: str) -> bool:
     """If tag exists on remote, verify peeled commit SHA matches local commit SHA."""
-    ls_out = git("ls-remote", "--tags", remote, f"refs/tags/{tag}*", check=False)
+    ls_out = git("ls-remote", "--tags", remote, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
     if not ls_out.strip():
         return False
     remote_shas = {}
@@ -139,12 +160,12 @@ def deploy_web(tag: str = None, remote: str = "origin", dry_run: bool = False):
         print("\n[DRY RUN] No changes were made to repository or remote.")
         return 0
 
+    remote_main_exists = bool(git("ls-remote", "--heads", remote, "refs/heads/main").strip())
     print(f"\n[DEPLOY] 1/6 Switching to 'main' branch...")
     git("checkout", "main")
 
     try:
         print(f"[DEPLOY] 2/6 Pulling latest 'main' from {remote}...")
-        remote_main_exists = bool(git("ls-remote", "--heads", remote, "refs/heads/main", check=False).strip())
         if remote_main_exists:
             try:
                 git("pull", "--ff-only", remote, "main")

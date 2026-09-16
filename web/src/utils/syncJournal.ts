@@ -2,7 +2,6 @@ import type { SyncLibrary } from './syncMerge'
 import { prunePersistedLogs } from './logger'
 
 const ownerKey = 'gtar_sync_library_owner'
-const MAX_RECOVERY_SNAPSHOTS = 2
 
 export const LIBRARY_KEY = 'gtar_library_v1'
 export const SYNC_RETIRED_KEY = 'gtar_sync_retired_v1'
@@ -68,139 +67,183 @@ export function pruneAllRecoverySnapshots(storage: Storage, maxAllowed = 0) {
   while (existingKeys.length > maxAllowed) {
     const oldest = existingKeys.shift()
     if (oldest && !isCanonicalKey(oldest)) {
-      try { storage.removeItem(oldest) } catch { /* ignore storage error on remove */ }
+      try {
+        const library = readPersistedLibrary(storage)
+        const snapshot = JSON.parse(storage.getItem(oldest) ?? 'null')
+        if (!library || !snapshot?.local || !Object.hasOwn(snapshot, 'remote') || snapshot.journal?.pending) continue
+        let checked = reconcile(library, snapshot.local)
+        if (snapshot.remote) checked = reconcile(checked, snapshot.remote)
+        if (snapshot.journal?.baseline) checked = reconcile(checked, snapshot.journal.baseline)
+        if (same(library, checked)) storage.removeItem(oldest)
+      } catch { /* Ambiguous snapshots remain available for export. */ }
     }
   }
+}
+
+const legacyKeys = ['gtar_songs_store', 'gtar_trash_songs_store', 'gtar_setlists_store']
+const same = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  const x = a as Record<string, unknown>, y = b as Record<string, unknown>
+  return Object.keys(x).length === Object.keys(y).length && Object.keys(x).every(k => Object.hasOwn(y, k) && same(x[k], y[k]))
+}
+const validId = (id: unknown) => (typeof id === 'string' && id.trim() !== '') || (typeof id === 'number' && Number.isFinite(id))
+
+export function validateLibrary(value: unknown): asserts value is SyncLibrary {
+  const fail = () => { throw new Error('Device library is damaged or ambiguous. Export recovery data before restoring.') }
+  if (!value || typeof value !== 'object') return fail()
+  const lib = value as SyncLibrary
+  if (!Array.isArray(lib.songs) || !Array.isArray(lib.setlists)) return fail()
+  const ids = new Set<string>(), lists = new Set<string>()
+  for (const song of lib.songs) {
+    if (!song || !validId(song.id) || typeof song.title !== 'string' || typeof song.rawContent !== 'string' || ids.has(String(song.id))) return fail()
+    if (song.isDeleted !== undefined && typeof song.isDeleted !== 'boolean') return fail()
+    ids.add(String(song.id))
+  }
+  for (const list of lib.setlists) {
+    if (!list || !validId(list.id) || typeof list.name !== 'string' || !Array.isArray(list.songs) || lists.has(String(list.id))) return fail()
+    lists.add(String(list.id))
+    for (const ref of list.songs) {
+      if (!ref || !validId(ref.id) || !ids.has(String(ref.id)) || typeof ref.title !== 'string') return fail()
+    }
+  }
+  if (lib.allowedUsers !== undefined && (!Array.isArray(lib.allowedUsers) || !lib.allowedUsers.every(x => typeof x === 'string'))) return fail()
+}
+
+// Only choose a changed record when the other side still equals the known base.
+// Conflicting edits, unknown formats and uncertain uploads retain all sources.
+function reconcile(local: SyncLibrary, incoming: SyncLibrary, base?: SyncLibrary): SyncLibrary {
+  validateLibrary(incoming)
+  if (base) validateLibrary(base)
+  function records<T extends { id?: string | number }>(left: T[], right: T[], prior?: T[]): T[] {
+    const l = new Map(left.map(x => [String(x.id), x])), r = new Map(right.map(x => [String(x.id), x]))
+    const b = new Map((prior ?? []).map(x => [String(x.id), x]))
+    const result: T[] = []
+    for (const id of new Set([...l.keys(), ...r.keys()])) {
+      const x = l.get(id), y = r.get(id), old = b.get(id)
+      let chosen: T | undefined
+      if (same(x, y)) chosen = x
+      else if (prior && same(x, old)) chosen = y
+      else if (prior && same(y, old)) chosen = x
+      else if (!prior && (!x || !y)) chosen = x ?? y
+      else throw new Error('Conflicting recovery records')
+      if (chosen) result.push(chosen)
+    }
+    if (prior && same(left.map(x => String(x.id)), prior.map(x => String(x.id)))) {
+      const byId = new Map(result.map(x => [String(x.id), x]))
+      const ordered = right.map(x => byId.get(String(x.id))).filter((x): x is T => x !== undefined)
+      const included = new Set(ordered.map(x => String(x.id)))
+      return [...ordered, ...result.filter(x => !included.has(String(x.id)))]
+    }
+    return result
+  }
+  const result = { ...local, songs: records(local.songs, incoming.songs, base?.songs), setlists: records(local.setlists, incoming.setlists, base?.setlists) }
+  if (incoming.allowedUsers !== undefined && !same(local.allowedUsers, incoming.allowedUsers)) throw new Error('Conflicting legacy access settings')
+  validateLibrary(result)
+  return result
+}
+
+function resolvePending(base: SyncLibrary | null, value: unknown): SyncLibrary {
+  if (!value || typeof value !== 'object') throw new Error('Missing pending library')
+  if ('songs' in value) { validateLibrary(value); return value }
+  const d = value as { changedSongs: SyncLibrary['songs']; deletedSongIds: unknown[]; songIdsOrder?: unknown[]; setlists: SyncLibrary['setlists']; allowedUsers?: string[] }
+  if (!Array.isArray(d.changedSongs) || !Array.isArray(d.deletedSongIds) || !d.deletedSongIds.every(validId)) throw new Error('Invalid pending delta')
+  validateLibrary({ songs: d.changedSongs, setlists: [] })
+  const songs = new Map((base?.songs ?? []).map(x => [String(x.id), x]))
+  for (const id of d.deletedSongIds) songs.delete(String(id))
+  for (const song of d.changedSongs) songs.set(String(song.id), song)
+  let ordered = [...songs.values()]
+  if (d.songIdsOrder !== undefined) {
+    if (!Array.isArray(d.songIdsOrder) || d.songIdsOrder.length !== songs.size || new Set(d.songIdsOrder.map(String)).size !== songs.size || !d.songIdsOrder.every(id => validId(id) && songs.has(String(id)))) throw new Error('Invalid delta ordering')
+    ordered = d.songIdsOrder.map(id => songs.get(String(id))!)
+  }
+  const result = { songs: ordered, setlists: d.setlists, ...(d.allowedUsers === undefined ? {} : { allowedUsers: d.allowedUsers }) }
+  validateLibrary(result)
+  return result
+}
+
+export function recoveryData(storage: Storage = localStorage): Record<string, string> {
+  const data: Record<string, string> = {}
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k && (k === LIBRARY_KEY || k === ownerKey || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:') || k.startsWith('gtar_sync_recovery:'))) data[k] = storage.getItem(k) ?? ''
+  }
+  return data
 }
 
 export function retireDriveSyncState(storage: Storage = localStorage): boolean {
   try {
-    if (storage.getItem(SYNC_RETIRED_KEY) === 'true') {
-      return true
-    }
-
-    let hasValidCanonical = false
-    try {
-      const saved = readPersistedLibrary(storage)
-      if (saved && Array.isArray(saved.songs) && Array.isArray(saved.setlists)) {
-        hasValidCanonical = true
-      }
-    } catch {
-      hasValidCanonical = false
-    }
-
-    if (!hasValidCanonical) {
-      return false
-    }
-
-    const syncKeys: string[] = []
-    for (let i = 0; i < storage.length; i++) {
-      const k = storage.key(i)
-      if (k?.startsWith('gtar_sync_v1:')) {
-        syncKeys.push(k)
+    let library = readPersistedLibrary(storage)
+    if (!library) return false
+    const superseded: SyncLibrary[] = []
+    const sources = recoveryData(storage)
+    const keys = Object.keys(sources).filter(k => k !== LIBRARY_KEY && k !== ownerKey)
+    for (const k of keys.filter(k => k.startsWith('gtar_sync_v1:'))) {
+      const journal = JSON.parse(sources[k])
+      if (journal.version !== 1) return false
+      if (journal.baseline != null) validateLibrary(journal.baseline)
+      if (journal.pending) {
+        if (journal.pending.acknowledged !== true) return false
+        const before = resolvePending(journal.baseline, journal.pending.beforeDelta ?? journal.pending.before)
+        const merged = resolvePending(journal.baseline, journal.pending.mergedDelta ?? journal.pending.merged)
+        library = reconcile(library, merged, before)
+        superseded.push(before)
+        if (journal.baseline) superseded.push(journal.baseline)
+      } else if (journal.baseline) {
+        library = reconcile(library, journal.baseline)
       }
     }
-    for (const k of syncKeys) {
-      try { storage.removeItem(k) } catch { /* ignore */ }
+    const absorb = (incoming: SyncLibrary) => {
+      validateLibrary(incoming)
+      if (!superseded.some(old => same(old, incoming))) library = reconcile(library!, incoming)
     }
-
-    try { storage.removeItem(ownerKey) } catch { /* ignore */ }
-    pruneAllRecoverySnapshots(storage, 0)
-
-    try {
-      storage.setItem(SYNC_RETIRED_KEY, 'true')
-      return true
-    } catch {
-      return false
+    for (const k of keys.filter(k => k.startsWith('gtar_sync_recovery:'))) {
+      const snapshot = JSON.parse(sources[k])
+      if (!snapshot.local || !Object.hasOwn(snapshot, 'remote')) return false
+      absorb(snapshot.local)
+      if (snapshot.remote !== null) absorb(snapshot.remote)
+      if (snapshot.journal?.baseline) absorb(snapshot.journal.baseline)
+      if (snapshot.journal?.pending) return false
     }
-  } catch {
-    return false
-  }
+    if (legacyKeys.some(k => k in sources)) {
+      const songs = JSON.parse(sources[legacyKeys[0]] ?? '[]')
+      const trash = JSON.parse(sources[legacyKeys[1]] ?? '[]')
+      const setlists = JSON.parse(sources[legacyKeys[2]] ?? '[]')
+      if (!Array.isArray(songs) || !Array.isArray(trash)) return false
+      absorb({ songs: [...songs, ...trash.map(song => ({ ...song, isDeleted: true }))], setlists })
+    }
+    // Commit and read back before deleting anything, including the retirement marker.
+    persistLibrary(library, storage)
+    if (!same(readPersistedLibrary(storage), library)) return false
+    storage.setItem(SYNC_RETIRED_KEY, 'true')
+    for (const k of [...keys, ownerKey]) if (storage.getItem(k) !== null) storage.removeItem(k)
+    return true
+  } catch { return false }
 }
 
 export function performStorageHousekeeping(storage: Storage = localStorage) {
-  try {
-    // Only purge legacy stores if canonical library exists and is valid
-    let hasValidCanonical = false
-    try {
-      const saved = readPersistedLibrary(storage)
-      if (saved && Array.isArray(saved.songs) && Array.isArray(saved.setlists)) {
-        hasValidCanonical = true
-      }
-    } catch {
-      hasValidCanonical = false
-    }
-
-    if (hasValidCanonical) {
-      storage.removeItem('gtar_songs_store')
-      storage.removeItem('gtar_trash_songs_store')
-      storage.removeItem('gtar_setlists_store')
-      retireDriveSyncState(storage)
-    }
-
-    const maxSnapshots = storage.getItem(SYNC_RETIRED_KEY) === 'true' ? 0 : MAX_RECOVERY_SNAPSHOTS
-    pruneAllRecoverySnapshots(storage, maxSnapshots)
-    prunePersistedLogs(storage, 30)
-  } catch {
-    // Storage access might be restricted/unavailable in private modes
-  }
+  const retired = retireDriveSyncState(storage)
+  try { prunePersistedLogs(storage, 30) } catch { /* Storage unavailable */ }
+  return retired
 }
 
 export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
   try {
     storage.setItem(LIBRARY_KEY, JSON.stringify(library))
   } catch (err) {
-    if (isQuotaError(err)) {
-      // Emergency quota recovery:
-      // 1. Purge all recovery snapshots
-      pruneAllRecoverySnapshots(storage, 0)
-      // 2. Trim debug logs down to 10 entries
-      prunePersistedLogs(storage, 10)
-      // 3. Attempt write after purging snapshots and logs
-      try {
-        storage.setItem(LIBRARY_KEY, JSON.stringify(library))
-        // Canonical library is safely written; safe to remove legacy stores if any existed
-        try {
-          storage.removeItem('gtar_songs_store')
-          storage.removeItem('gtar_trash_songs_store')
-          storage.removeItem('gtar_setlists_store')
-        } catch { /* ignore */ }
-        return
-      } catch (retryErr) {
-        // 4. If write still failed, ONLY purge legacy stores if canonical library ALREADY existed
-        // prior to this write (i.e. gtar_songs_store is guaranteed to NOT be the sole migration source!)
-        let hasPriorCanonical = false
-        try {
-          const prior = readPersistedLibrary(storage)
-          if (prior && Array.isArray(prior.songs) && Array.isArray(prior.setlists)) {
-            hasPriorCanonical = true
-          }
-        } catch {
-          hasPriorCanonical = false
-        }
-
-        if (hasPriorCanonical) {
-          try {
-            storage.removeItem('gtar_songs_store')
-            storage.removeItem('gtar_trash_songs_store')
-            storage.removeItem('gtar_setlists_store')
-            storage.setItem(LIBRARY_KEY, JSON.stringify(library))
-            return
-          } catch { /* ignore */ }
-        }
-
-        throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr })
-      }
-    }
-    throw err
+    if (!isQuotaError(err)) throw err
+    // Logs are disposable. Journals, snapshots and legacy stores are not.
+    prunePersistedLogs(storage, 10)
+    try { storage.setItem(LIBRARY_KEY, JSON.stringify(library)) }
+    catch (retryErr) { throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr }) }
   }
 }
 
 export function readPersistedLibrary(storage: Storage = localStorage): SyncLibrary | null {
   const raw = storage.getItem(LIBRARY_KEY)
   if (!raw) return null
-  const library = JSON.parse(raw) as SyncLibrary
-  if (!Array.isArray(library.songs) || !Array.isArray(library.setlists)) throw new Error('Device library is damaged. Export recovery data before restoring.')
+  const library: unknown = JSON.parse(raw)
+  validateLibrary(library)
   return library
 }
 

@@ -232,6 +232,7 @@ class ReleaseTests(unittest.TestCase):
         (self.root / 'web/to_rename.txt').unlink(missing_ok=True)
         self.git('add', '-A', 'web/')
         self.git('commit', '-m', 'dev snapshot with deletions and renames')
+        self.production_web()
         self.git('tag', '-a', 'web-v1.1.62', '-m', 'web v1.1.62')
 
         # Deploy web to main
@@ -284,6 +285,7 @@ class ReleaseTests(unittest.TestCase):
 
         # Create tag on dev and push to origin
         self.git('checkout', 'dev')
+        self.production_web()
         self.git('tag', '-a', 'web-v1.1.62', '-m', 'remote tag version')
         self.git('push', 'origin', 'refs/tags/web-v1.1.62:refs/tags/web-v1.1.62')
 
@@ -297,6 +299,119 @@ class ReleaseTests(unittest.TestCase):
         out = self.run_script('deploy', 'web', '--tag', 'web-v1.1.62', success=False)
         self.assertIn('points to commit', out)
         self.assertIn('Aborting deployment', out)
+
+    def production_web(self):
+        self.write('web/package.json', json.dumps({'version': '1.1.62'}))
+        self.write('web/package-lock.json', json.dumps({'version': '1.1.62', 'packages': {'': {'version': '1.1.62'}}}))
+        self.write('web/src/types/gtar.ts', "export const GTAR_APP_VERSION = '1.1.62'\nexport const GTAR_DEV_VERSION = '1.0.50-dev.12'\n")
+        self.git('add', 'web')
+        self.git('commit', '-m', 'production metadata')
+
+    def test_message_commit_preserves_unrelated_index_worktree_and_untracked(self):
+        self.write('unrelated.txt', 'base')
+        self.git('add', 'unrelated.txt')
+        self.git('commit', '-m', 'unrelated base')
+        self.write('unrelated.txt', 'staged')
+        self.git('add', 'unrelated.txt')
+        self.write('unrelated.txt', 'unstaged')
+        self.write('untracked.txt', 'untracked')
+        index = self.git('show', ':unrelated.txt')
+        self.run_script('web', '--bump-dev', '--message', 'scoped bump')
+        self.assertEqual(self.git('show', ':unrelated.txt'), index)
+        self.assertEqual(self.git('show', 'HEAD:unrelated.txt'), 'base')
+        self.assertEqual((self.root / 'unrelated.txt').read_text(), 'unstaged')
+        self.assertEqual((self.root / 'untracked.txt').read_text(), 'untracked')
+        self.assertNotIn('unrelated.txt', self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'))
+        self.assertIn('?? untracked.txt', self.git('status', '--porcelain'))
+
+    def test_message_failure_restores_files_and_index(self):
+        self.write('untracked.txt', 'keep')
+        self.write('staged.txt', 'keep staged')
+        self.git('add', 'staged.txt')
+        index = (self.root / '.git/index').read_bytes()
+        files = {p: p.read_bytes() for p in (self.root / 'web').rglob('*') if p.is_file()}
+        head = self.git('rev-parse', 'HEAD')
+        self.write('.git/hooks/pre-commit', '#!/bin/sh\nexit 1\n')
+        (self.root / '.git/hooks/pre-commit').chmod(0o755)
+        self.run_script('web', '--bump-dev', '--message', 'rejected bump', success=False)
+        self.assertEqual((self.root / '.git/index').read_bytes(), index)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        for p, content in files.items(): self.assertEqual(p.read_bytes(), content)
+        self.assertEqual((self.root / 'untracked.txt').read_text(), 'keep')
+
+    def test_message_rejects_modified_target_without_mutation(self):
+        for staged in [False, True]:
+            with self.subTest(staged=staged):
+                self.write('web/package.json', json.dumps({'version':'1.0.50-dev.12','extra':'keep'}))
+                if staged: self.git('add','web/package.json')
+                status = self.git('status','--porcelain')
+                index = self.git('diff','--cached')
+                content = (self.root / 'web/package.json').read_bytes()
+                self.run_script('web','--bump-dev','--message','bump',success=False)
+                self.assertEqual(self.git('status','--porcelain'),status)
+                self.assertEqual(self.git('diff','--cached'),index)
+                self.assertEqual((self.root / 'web/package.json').read_bytes(),content)
+
+    def test_prod_shaped_tag_rejects_dev_source_without_mutation(self):
+        for platform, prefix in [('web','web'),('app','app')]:
+            tag = prefix + '-v1.1.62'
+            self.git('tag',tag)
+            head = self.git('rev-parse','HEAD')
+            out = self.run_script('deploy',platform,'--tag',tag,success=False)
+            self.assertIn('dev-versioned source',out)
+            self.assertEqual(self.git('rev-parse','HEAD'),head)
+            self.assertEqual(self.git('branch','--show-current'),'dev')
+
+    def test_tag_metadata_read_uses_tag_and_rejects_each_mismatch(self):
+        self.production_web()
+        self.git('tag','web-v1.1.62')
+        # Valid working-tree metadata must not mask a bad tagged lockfile.
+        for field in ['root','package']:
+            lock = {'version':'1.1.62','packages':{'':{'version':'1.1.62'}}}
+            if field == 'root': lock['version'] = '1.0.50-dev.12'
+            else: lock['packages']['']['version'] = '1.1.99'
+            self.write('web/package-lock.json',json.dumps(lock))
+            self.git('add','web/package-lock.json')
+            self.git('commit','-m','bad lock')
+            self.git('tag','-f','web-v1.1.62')
+            self.write('web/package-lock.json',json.dumps({'version':'1.1.62','packages':{'':{'version':'1.1.62'}}}))
+            out = self.run_script('deploy','web','--tag','web-v1.1.62','--dry-run',success=False)
+            self.assertIn('metadata mismatch',out)
+
+    def test_failed_remote_read_is_hard_error_before_checkout(self):
+        self.production_web()
+        self.git('tag','web-v1.1.62')
+        self.git('remote','add','origin',str(self.root / 'missing.git'))
+        out = self.run_script('deploy','web','--tag','web-v1.1.62',success=False)
+        self.assertIn('ls-remote',out)
+        self.assertIn('failed:',out)
+        self.assertEqual(self.git('branch','--show-current'),'dev')
+
+    def test_failed_remote_main_read_precedes_all_mutation(self):
+        self.production_web()
+        self.git('tag', 'web-v1.1.62')
+        namespace = runpy.run_path(str(self.root / 'deploy.py'))
+        calls = []
+        def checked_git(*args, **kwargs):
+            calls.append(args)
+            if args[0] == 'ls-remote':
+                if '--heads' in args: raise ValueError('remote heads unavailable')
+                return ''
+            return self.git(*args)
+        namespace['deploy_web'].__globals__['git'] = checked_git
+        with self.assertRaisesRegex(ValueError, 'remote heads unavailable'):
+            namespace['deploy_web']('web-v1.1.62')
+        self.assertFalse(any(args[0] in ['checkout','pull','rm','add','commit','push'] for args in calls))
+
+    def test_android_tag_rejects_suffix_and_code_mismatch(self):
+        for name, suffix, code in [('app v1.1.99','',67),('app v1.1.62','-dev.1',67),('app v1.1.62','',0)]:
+            self.write('app/build.gradle.kts', f'android {{\n versionCode = {code}\n versionName = "{name}"\n debug {{\n versionNameSuffix = "{suffix}"\n }}\n}}\n')
+            self.git('add','app/build.gradle.kts')
+            self.git('commit','-m','invalid production metadata')
+            self.git('tag','-f','app-v1.1.62')
+            out = self.run_script('deploy','app','--tag','app-v1.1.62',success=False)
+            self.assertIn('metadata mismatch',out)
+            self.assertEqual(self.git('branch','--show-current'),'dev')
 
 if __name__ == '__main__':
     unittest.main()

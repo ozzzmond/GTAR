@@ -153,12 +153,21 @@ def main(argv=None):
             # Permit unrelated work, but never overwrite staged version changes.
             if git("diff", "--cached", "--name-only", "--", *files):
                 raise ValueError("Version files are staged; commit or unstage them before bumping")
-            write_files(files)
             if args.message:
-                git("add", "-A")
-                git("commit", "-m", args.message)
+                if git("diff", "--name-only", "--", *files):
+                    raise ValueError("Version-bump files have unstaged changes; commit or stash them first")
+                originals = {path: (ROOT / path).read_bytes() for path in files}
+                write_files(files)
+                try:
+                    # --only commits these paths without staging unrelated index entries.
+                    git("commit", "--only", "-m", args.message, "--", *files)
+                except (ValueError, OSError):
+                    for path, content in originals.items():
+                        (ROOT / path).write_bytes(content)
+                    raise
                 print(f"[DONE] {PLATFORM} v{bump}; files updated and committed: {args.message}")
             else:
+                write_files(files)
                 print(f"[DONE] {PLATFORM} v{bump}; files updated, no commit or tag created.")
             return 0
         if git("status", "--porcelain"):
@@ -221,7 +230,8 @@ def versions(metadata, dev, prod, code_delta):
         text = read(path)
         # Keep constants valid semver; the human-readable UI carries the platform prefix.
         text = re.sub(r"(?<!web )v\$\{(GTAR_(?:DEV|APP)_VERSION)\}", r"web v${\1}", text)
-        files[path] = text
+        if text != read(path):
+            files[path] = text
     return files
 
 

@@ -1,3 +1,4 @@
+import { fetchUg } from '../ugFetch.ts'
 import { parseTabSheet, validateTabUrl } from '../../src/utils/ugCore.ts'
 
 interface CloudflarePagesContext {
@@ -37,13 +38,7 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
   }
 
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 8000)
-
-    const ugRes = await fetch(validation.parsedUrl.toString(), {
-      headers: UG_HEADERS,
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId))
+    const ugRes = await fetchUg(validation.parsedUrl.toString(), UG_HEADERS)
 
     if (ugRes.status === 404) {
       return new Response(
@@ -97,7 +92,7 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
       )
     }
 
-    const html = await ugRes.text()
+    const html = ugRes.html
     const parseResult = parseTabSheet(html, validation.parsedUrl.toString())
 
     if (!parseResult.success) {
@@ -123,11 +118,12 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
         headers: JSON_HEADERS,
       }
     )
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : null
     const isTimeout =
-      err?.name === 'AbortError' ||
-      err?.name === 'TimeoutError' ||
-      err?.message?.includes('aborted')
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError' ||
+      error?.message?.includes('aborted')
 
     if (isTimeout) {
       return new Response(
@@ -145,7 +141,7 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
     return new Response(
       JSON.stringify({
         success: false,
-        error: err?.message || 'Internal proxy error',
+        error: error?.message || 'Internal proxy error',
       }),
       {
         status: 502,

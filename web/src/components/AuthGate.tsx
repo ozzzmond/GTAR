@@ -54,13 +54,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
       (typeof window.location?.search === 'string' && window.location.search.includes('view=present')) ||
       (typeof window.location?.hash === 'string' && window.location.hash.includes('present')))
 
+  const canBypass = allowLocalBypass(import.meta.env.DEV, typeof window !== 'undefined' ? (window.location?.hostname || '') : '')
+
   const role: UserRole = useMemo(() => {
     if (bypass && canBypass) return 'SUPER_ADMIN'
     if (!session?.user?.email) return 'NONE'
     return getUserRole(session.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-  }, [session, bypass, configuredEmails])
+  }, [session, bypass, canBypass, configuredEmails])
 
-  const canBypass = allowLocalBypass(import.meta.env.DEV, typeof window !== 'undefined' ? (window.location?.hostname || '') : '')
   const isAuthorized = role !== 'NONE'
   const permitted = !!session && validSession(session) && isAuthorized
   const isSuperAdmin = role === 'SUPER_ADMIN'

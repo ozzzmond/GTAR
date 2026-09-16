@@ -1,4 +1,4 @@
-import { persistLibrary, readPersistedLibrary, isQuotaError, performStorageHousekeeping } from './utils/syncJournal'
+import { persistLibrary, readPersistedLibrary, isQuotaError, performStorageHousekeeping, recoveryData } from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
@@ -207,7 +207,30 @@ function App() {
   if (isPresentationRoute) {
     return <StagePresentationView />
   }
-  return <LibraryApp />
+  return <LibraryStartup />
+}
+
+function LibraryStartup() {
+  const [status] = useState(() => {
+    const retired = performStorageHousekeeping()
+    try { readPersistedLibrary(); return { retired: retired || Object.keys(recoveryData()).length === 0, damaged: false } }
+    catch { return { retired: false, damaged: true } }
+  })
+  const exportRecovery = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryData(), null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'GTAR-storage-recovery.json'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  return <>
+    {!status.retired && <aside role="alert" className="p-4 bg-amber-100 text-black">
+      {status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}
+      <button className="underline ml-3" onClick={exportRecovery}>Export recovery data</button>
+    </aside>}
+    {!status.damaged && <LibraryApp />}
+  </>
 }
 
 function LibraryApp() {
@@ -216,7 +239,6 @@ function LibraryApp() {
 
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
-    performStorageHousekeeping()
     const savedLibrary = readPersistedLibrary()
     if (savedLibrary) return { ...partitionSongs(savedLibrary.songs), setlists: savedLibrary.setlists }
     const readSongs = (key: string, fallback: ActiveSongState[]) => {
@@ -239,7 +261,8 @@ function LibraryApp() {
       persistLibrary(repaired)
       performStorageHousekeeping()
     } catch { /* ignore */ }
-    return { ...partitionSongs(repaired.songs), setlists: repaired.setlists }
+    const migrated = readPersistedLibrary() ?? repaired
+    return { ...partitionSongs(migrated.songs), setlists: migrated.setlists }
   })
   const [songs, setSongs] = useState<ActiveSongState[]>(initialLibrary.active)
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
@@ -455,7 +478,7 @@ function LibraryApp() {
             if (!matched) {
               for (const sl of setlists) {
                 const slIdx = sl.songs.findIndex(
-                  (s: any) =>
+                  (s) =>
                     s.title.trim().toLowerCase() === normTitle &&
                     (!normArtist || (s.artist || '').trim().toLowerCase() === normArtist)
                 )
@@ -527,7 +550,7 @@ function LibraryApp() {
           }
         } else if (msg.type === 'SETLIST_SYNC' && msg.payload) {
           const incomingSetlistName = msg.payload.setlistName || 'Band Setlist'
-          const incomingSongs: any[] = Array.isArray(msg.payload.songs) ? msg.payload.songs : []
+          const incomingSongs: Array<Partial<ActiveSongState>> = Array.isArray(msg.payload.songs) ? msg.payload.songs : []
 
           // Smart Merge: do not overwrite or duplicate existing (match title + artist)
           setSongs((prevSongs) => {
@@ -565,7 +588,7 @@ function LibraryApp() {
           const syncedSetlist: WebSetlist = {
             id: newSetlistId,
             name: incomingSetlistName,
-            songs: incomingSongs.map((s) => ({ title: s.title, artist: s.artist })),
+            songs: incomingSongs.map((s) => ({ title: s.title || 'Untitled Song', artist: s.artist })),
           }
 
           setSetlists((prevSetlists) => {

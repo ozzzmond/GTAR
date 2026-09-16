@@ -106,7 +106,8 @@ class DeployAndPushTests(unittest.TestCase):
     def test_deploy_web_dry_run_and_execution(self):
         # Simulate production release commit on dev before tagging
         self.write("web/package.json", json.dumps({"name": "web", "version": "1.1.50"}))
-        self.git("add", "web/package.json")
+        self.write("web/package-lock.json", json.dumps({"version":"1.1.50","packages":{"":{"version":"1.1.50"}}}))
+        self.git("add", "web/package.json", "web/package-lock.json")
         self.git("commit", "-m", "release(web): web v1.1.50")
         self.git("tag", "-a", "web-v1.1.50", "-m", "web v1.1.50")
         
@@ -133,6 +134,9 @@ class DeployAndPushTests(unittest.TestCase):
         self.assertIn("chore(release): deploy web-v1.1.50 to prod", last_commit)
 
     def test_deploy_app_dry_run_and_execution(self):
+        self.write("app/build.gradle.kts", 'android {\n versionCode = 67\n versionName = "app v1.1.50"\n debug {\n versionNameSuffix = ""\n }\n}\n')
+        self.git("add", "app/build.gradle.kts")
+        self.git("commit", "-m", "production metadata")
         self.git("tag", "-a", "app-v1.1.50", "-m", "app v1.1.50")
 
         out_dry = self.run_cmd("deploy.py", "app", "--dry-run")
