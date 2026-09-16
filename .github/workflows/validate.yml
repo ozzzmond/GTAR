@@ -5,10 +5,33 @@ on:
     branches: [main, dev]
 permissions:
   contents: read
+  pull-requests: read
 concurrency:
   group: validate-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - 'app/**'
+              - 'gradle/**'
+              - '.github/workflows/validate.yml'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - 'gradle.properties'
+              - 'gradlew'
+              - 'gradlew.bat'
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -26,6 +49,8 @@ jobs:
       - run: npm run lint:sync
       - run: npm run build
   android:
+    needs: changes
+    if: ${{ needs.changes.outputs.android == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +58,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
       - run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
