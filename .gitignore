@@ -72,3 +72,7 @@ __pycache__/
 
 .npm-cache/
 lint-results.json
+
+# Offline test evidence, task receipts, and diagnostic dumps
+/outputs/*
+!/outputs/.gitkeep
