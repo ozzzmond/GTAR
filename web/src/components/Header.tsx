@@ -37,6 +37,8 @@ import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
 import devLogo from '../assets/dev-logo.png'
+import prodLogo from '../assets/prod-logo.png'
+import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 
@@ -178,11 +180,7 @@ export const Header: React.FC<HeaderProps> = ({
     // Header rendered outside AuthGate (e.g. isolated test or preview)
   }
 
-  const isDevApp =
-    (import.meta.env.DEV ||
-    import.meta.env.VITE_APP_ENV === 'debug' ||
-    (typeof window !== 'undefined' && window.location.hostname.includes('dev.gtar-web.pages.dev'))) &&
-    isSuperAdmin
+  const isDevApp = isDevEnv && isSuperAdmin
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
@@ -371,17 +369,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-[#2AA198] group-hover:scale-105 transition-all">
               <img
-                src={devLogo}
-                alt="GTAR Dev Logo"
+                src={isDevEnv ? devLogo : prodLogo}
+                alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
                 className="w-full h-full object-contain rounded-lg"
               />
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-mono font-bold text-sm sm:text-base tracking-wider text-[#FDF6E3]">
-                  {import.meta.env.DEV || import.meta.env.VITE_APP_ENV === 'debug' ? 'GTAR-Dev' : 'GTAR'}
+                  {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
                 </span>
-                {(import.meta.env.DEV || import.meta.env.VITE_APP_ENV === 'debug') && (
+                {isDevEnv && (
                   <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/40">
                     DEV
                   </span>
