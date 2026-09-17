@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react'
 import { CloudUpload, CloudDownload, Download, Copy, Check, AlertCircle, X, Database } from 'lucide-react'
-import type { ActiveSongState } from '../types/gtar'
+import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
+import { isDevEnv } from '../utils/env'
 import { exportRecoveryData, createBackupPayload, exportAllDataJson, parseBackupJson } from '../utils/jsonBackup'
 import { restoreBackupSettings } from '../utils/backupSettings'
 
@@ -10,11 +11,11 @@ interface BackupRestoreDialogModalProps {
   onClose: () => void
   currentSong: ActiveSongState
   allSongs: ActiveSongState[]
-  setlists?: any[]
+  setlists?: WebSetlist[]
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
   onFullRestoreSongs?: (songs: Array<Partial<ActiveSongState>>) => void
-  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: any[]) => void
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: any[]) => void
+  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   onOpenAdvancedBridge?: () => void
 }
 
@@ -54,9 +55,10 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     try {
       const fileName = exportAllDataJson(allSongs, setlists)
       showFeedback('success', `Exported backup as ${fileName}`)
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
       exportRecoveryData({ songs: allSongs, setlists })
-      showFeedback('error', `Failed to export backup: ${err.message}. A raw recovery archive was downloaded with every original entry.`)
+      showFeedback('error', `Failed to export backup: ${msg}. A raw recovery archive was downloaded with every original entry.`)
     }
   }
 
@@ -64,7 +66,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
   const handleCopyBackup = async () => {
     try {
       const jsonContent = JSON.stringify(createBackupPayload(allSongs, setlists,
-        import.meta.env.DEV ? GTAR_DEV_VERSION : GTAR_APP_VERSION), null, 2)
+        isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION), null, 2)
       await navigator.clipboard.writeText(jsonContent)
       showFeedback('success', 'Backup JSON copied to clipboard!')
     } catch (error) {
@@ -99,8 +101,9 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
         ...(stageSettings !== undefined ? { stageSettings } : {}),
       })
       showFeedback('success', `Backup restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists`)
-    } catch (err: any) {
-      showFeedback('error', `Failed to parse backup JSON: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showFeedback('error', `Failed to parse backup JSON: ${msg}`)
     }
 
     if (e.target) e.target.value = ''

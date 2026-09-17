@@ -26,7 +26,6 @@ import {
   Cast,
   MoreHorizontal,
   SlidersHorizontal,
-  Sparkles,
 } from 'lucide-react'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
@@ -43,7 +42,7 @@ import {
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
-import type { ActiveSongState } from '../types/gtar'
+import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface StageViewProps {
   song: ActiveSongState
@@ -57,7 +56,7 @@ interface StageViewProps {
   activeSetlistSongIndex?: number
   onSelectSetlistSongIndex?: (index: number) => void
   activeSetlistName?: string
-  setlists?: Array<{ id: string | number; name: string; songs: any[] }>
+  setlists?: WebSetlist[]
   onSelectSetlist?: (setlistId: string | number) => void
   onOpenSetlistDrawer: () => void
   transposeOffset: number
@@ -262,26 +261,6 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [holdStep])
 
-  // 1-Tap Stage Distance (1–2m) Master Preset
-  const isStageDistanceActive =
-    fontSizePx >= 24 &&
-    chordScale === 1.2 &&
-    fontWeight === 'bold' &&
-    lineSpacing === 'relaxed'
-
-  const handleToggleStageDistance = useCallback(() => {
-    if (isStageDistanceActive) {
-      setStageFontSize(STAGE_SIZE_PRESETS.M)
-      setChordScale(1.0)
-      setFontWeight('regular')
-      setLineSpacing('normal')
-    } else {
-      setStageFontSize(STAGE_SIZE_PRESETS.L)
-      setChordScale(1.2)
-      setFontWeight('bold')
-      setLineSpacing('relaxed')
-    }
-  }, [isStageDistanceActive, setStageFontSize, setChordScale, setFontWeight, setLineSpacing])
   const [localFontStyle, setLocalFontStyle] = useState<'mono' | 'sans' | 'serif'>('mono')
   const [localIsTwoColumn, setLocalIsTwoColumn] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -1868,42 +1847,6 @@ export const StageView: React.FC<StageViewProps> = ({
               <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
               </h2>
-              {isStageDistanceActive && (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  1–2m Stage Distance
-                </span>
-              )}
-            </div>
-
-            {/* --- One-Tap Stage Distance (1–2m) Master Preset --- */}
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={handleToggleStageDistance}
-                className={`w-full py-2.5 px-3 rounded-2xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
-                  isStageDistanceActive
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-md ring-1 ring-amber-500/40'
-                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:border-[#2AA198]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                    isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-amber-400'
-                  }`}>
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="font-bold text-xs">Stage Distance (1–2m)</span>
-                    <span className="text-[10px] text-[#93A1A1] font-mono">24px (L) • 120% Bold Chords • Relaxed</span>
-                  </div>
-                </div>
-                <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-lg font-bold ${
-                  isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-[#93A1A1] border border-[#1A4A55]'
-                }`}>
-                  {isStageDistanceActive ? 'ACTIVE' : 'APPLY'}
-                </span>
-              </button>
             </div>
 
             {/* --- Transpose row --- */}

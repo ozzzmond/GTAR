@@ -32,7 +32,8 @@ import type { ActiveSongState } from './types/gtar'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
-import { Check, Sparkles } from 'lucide-react'
+import { isDevEnv } from './utils/env'
+import { Check } from 'lucide-react'
 
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
@@ -1278,13 +1279,10 @@ function LibraryApp() {
       {showUpdateSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#073642] border border-[#2AA198] p-6 shadow-2xl text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-[#2AA198]/20 border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198] mx-auto">
-              <Sparkles className="w-6 h-6" />
-            </div>
             <div className="space-y-1">
               <h3 className="text-base font-extrabold text-[#FDF6E3]">You're Up to Date!</h3>
               <p className="text-xs text-[#2AA198] font-mono font-bold">
-                GTAR Web App {import.meta.env.DEV ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}
+                GTAR Web App {isDevEnv ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-[#002B36] text-left text-[11px] text-[#93A1A1] space-y-1 border border-[#1A4A55]">
