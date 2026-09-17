@@ -1,0 +1,86 @@
+# GTAR deterministic audit contract
+# Discovery only. Read-only. Findings are evidence, not automatic fixes.
+
+[[audit]]
+id = "GIT-001"
+name = "Broad git add usage"
+type = "search"
+paths = ["."]
+exclude = [
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".venv",
+    "outputs",
+    "*.md",
+    "*.txt",
+    "Deploy_And_Sync.bat"
+]
+pattern = 'git\s+add\s+(-A|--all)(?!\s*--\s*\S+)\s*$'
+severity = "HIGH"
+ignore_case = true
+
+[[audit]]
+id = "GIT-002"
+name = "Force push usage"
+type = "search"
+paths = ["."]
+exclude = [
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".venv",
+    "outputs"
+]
+pattern = 'git\s+push[^\r\n]*--force'
+severity = "CRITICAL"
+ignore_case = true
+
+[[audit]]
+id = "DEBT-001"
+name = "Unresolved TODO or FIXME markers"
+type = "search"
+paths = ["web/src", "web/functions", "tests"]
+exclude = [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage"
+]
+pattern = '\b(TODO|FIXME)\b'
+severity = "LOW"
+ignore_case = false
+
+[[audit]]
+id = "DEBUG-001"
+name = "Debugger statements"
+type = "search"
+paths = ["web/src", "web/functions"]
+exclude = [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage"
+]
+pattern = '\bdebugger\s*;'
+severity = "MEDIUM"
+ignore_case = false
+
+[[audit]]
+id = "CODE-001"
+name = "Explicitly disabled tests"
+type = "search"
+paths = ["web", "tests"]
+exclude = [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage"
+]
+pattern = '\b(describe|it|test)\.(skip|todo)\s*\('
+severity = "MEDIUM"
+ignore_case = false
