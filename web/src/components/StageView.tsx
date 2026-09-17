@@ -59,6 +59,9 @@ interface StageViewProps {
   setlists?: WebSetlist[]
   onSelectSetlist?: (setlistId: string | number) => void
   onOpenSetlistDrawer: () => void
+  isSetlistDrawerOpen?: boolean
+  isStageSettingsModalOpen?: boolean
+  isAnyModalOpen?: boolean
   transposeOffset: number
   onTransposeChange: (offset: number) => void
   fontStyle?: 'mono' | 'sans' | 'serif'
@@ -110,6 +113,9 @@ export const StageView: React.FC<StageViewProps> = ({
   activeSetlistSongIndex = 0,
   onSelectSetlistSongIndex,
   onOpenSetlistDrawer,
+  isSetlistDrawerOpen = false,
+  isStageSettingsModalOpen = false,
+  isAnyModalOpen = false,
   transposeOffset,
   onTransposeChange,
   fontStyle: externalFontStyle,
@@ -349,6 +355,18 @@ export const StageView: React.FC<StageViewProps> = ({
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
   // Stage floating options menu (replaces top HUD)
   const [isStageMenuOpen, setIsStageMenuOpen] = useState(false)
+
+  // Track whether any modal, drawer, or dialog overlay is active
+  const isAnyOverlayActive = Boolean(
+    isKeyPickerOpen ||
+    selectedVoicing ||
+    isBandSyncModalOpen ||
+    isStageMenuOpen ||
+    isSpeedPromptOpen ||
+    isSetlistDrawerOpen ||
+    isStageSettingsModalOpen ||
+    isAnyModalOpen
+  )
 
   // Band Sync State
   const [syncState, setSyncState] = useState<BandSyncState>(() => bandSync.getState())
@@ -708,18 +726,78 @@ export const StageView: React.FC<StageViewProps> = ({
   const slideContentRef = useRef<HTMLDivElement>(null)
   const isAnimatingRef = useRef(false)
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastNavigationTimeRef = useRef<number>(0)
+
+  // ACTION_1: Reset stage scroll + pause autoscroll on active song transition
+  const currentSongKey = song.id !== undefined && song.id !== ''
+    ? String(song.id)
+    : `${song.title}__${isInSetlistMode ? activeSetlistSongIndex : activeSongIndex}`
+  const previousSongKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (previousSongKeyRef.current !== null && previousSongKeyRef.current !== currentSongKey) {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0
+      }
+      lastScrollTopRef.current = 0
+      setIsAutoScrolling(false)
+      accumulatedScrollRef.current = 0
+      if (scrollAnimRef.current) {
+        cancelAnimationFrame(scrollAnimRef.current)
+        scrollAnimRef.current = null
+      }
+      if (slideContentRef.current) {
+        slideContentRef.current.style.transform = ''
+        slideContentRef.current.style.transition = ''
+        slideContentRef.current.style.opacity = ''
+      }
+      isAnimatingRef.current = false
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current)
+        transitionTimeoutRef.current = null
+      }
+      stageCast.broadcastScroll(0, 0)
+    }
+    previousSongKeyRef.current = currentSongKey
+  }, [currentSongKey])
 
   const triggerSongSlide = useCallback((direction: 'next' | 'prev') => {
     const slideEl = slideContentRef.current
     const container = scrollContainerRef.current
-    if (!slideEl || isAnimatingRef.current) {
-      if (direction === 'next') executeNextSongRef.current()
-      else executePrevSongRef.current()
+
+    // ACTION_2: Do not bypass animation lock during active transition
+    if (isAnimatingRef.current) {
       return
     }
 
+    // Bounded debounce: ignore rapid repeat navigation until safe (250ms)
+    const now = Date.now()
+    if (now - lastNavigationTimeRef.current < 250) {
+      return
+    }
+    lastNavigationTimeRef.current = now
+
     if (direction === 'next' && !canNextRef.current) return
     if (direction === 'prev' && !canPrevRef.current) return
+
+    // Pause autoscroll immediately on navigation
+    setIsAutoScrolling(false)
+    accumulatedScrollRef.current = 0
+    if (scrollAnimRef.current) {
+      cancelAnimationFrame(scrollAnimRef.current)
+      scrollAnimRef.current = null
+    }
+
+    if (!slideEl) {
+      isAnimatingRef.current = true
+      if (direction === 'next') executeNextSongRef.current()
+      else executePrevSongRef.current()
+      if (container) container.scrollTop = 0
+      setTimeout(() => {
+        isAnimatingRef.current = false
+      }, 250)
+      return
+    }
 
     isAnimatingRef.current = true
     const slideOutDuration = 200
@@ -1006,6 +1084,7 @@ export const StageView: React.FC<StageViewProps> = ({
   // - Spacebar: Toggle Auto-Scroll (Play / Pause)
   // - ArrowRight or 'n': Next song in setlist
   // - ArrowLeft or 'p': Previous song in setlist
+  // - PageDown / PageUp: Standard foot pedal navigation (Next / Previous song)
   // - ArrowUp / ArrowDown: Manually nudge scroll (or Shift + Arrow to adjust scroll speed)
   // - '+' / '-': Adjust font size
   useEffect(() => {
@@ -1015,6 +1094,27 @@ export const StageView: React.FC<StageViewProps> = ({
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement)?.isContentEditable
       ) {
+        return
+      }
+
+      // ACTION_3: Suppress stage global shortcuts while any overlay / modal / drawer is active
+      if (isAnyOverlayActive) {
+        return
+      }
+
+      // ACTION_2: Ignore rapid repeated keydown events caused by holding down navigation keys
+      if (
+        e.repeat &&
+        (e.key === 'ArrowRight' ||
+          e.key === 'n' ||
+          e.key === 'N' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'p' ||
+          e.key === 'P' ||
+          e.key === 'PageDown' ||
+          e.key === 'PageUp')
+      ) {
+        e.preventDefault()
         return
       }
 
@@ -1034,6 +1134,20 @@ export const StageView: React.FC<StageViewProps> = ({
 
       // ArrowLeft or 'p': Previous song in setlist or library
       if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {
+        e.preventDefault()
+        handlePrevSong()
+        return
+      }
+
+      // ACTION_4: Foot pedal PageUp / PageDown support (keyboard emulation)
+      // Mapped to Previous / Next song consistently; prevents browser default scroll
+      if (e.key === 'PageDown') {
+        e.preventDefault()
+        handleNextSong()
+        return
+      }
+
+      if (e.key === 'PageUp') {
         e.preventDefault()
         handlePrevSong()
         return
@@ -1083,6 +1197,7 @@ export const StageView: React.FC<StageViewProps> = ({
     syncState.role,
     handleNextSong,
     handlePrevSong,
+    isAnyOverlayActive,
   ])
 
   // ---------------------------------------------------------------------------

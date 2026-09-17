@@ -26,6 +26,7 @@ import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
 import { ImportDialogModal } from './components/ImportDialogModal'
 import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
 import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
+import { StageErrorBoundary } from './components/StageErrorBoundary'
 import {
   ThemeModal,
   type ThemeMode,
@@ -1159,31 +1160,46 @@ function LibraryApp() {
             onBackToSongbook={() => setActiveView('songbook')}
           />
         ) : (
-          <StageView
-            song={currentSong}
-            songs={filteredSongs.length > 0 ? filteredSongs : songs}
-            activeSongIndex={activeSongIndex}
-            onSelectSongIndex={handleSelectLibrarySong}
-            queueMode={queueMode}
-            onToggleQueueMode={handleToggleQueueMode}
-            isInSetlistMode={isInSetlistMode}
-            activeSetlistSongs={activeSetlistSongs}
-            activeSetlistSongIndex={activeSetlistSongIndex}
-            onSelectSetlistSongIndex={setActiveSetlistSongIndex}
-            activeSetlistName={activeSetlist?.name}
-            setlists={setlists}
-            onSelectSetlist={handleSelectSetlist}
-            onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
-            onBack={() => setActiveView('songbook')}
-            transposeOffset={currentSong.transposeOffset || 0}
-            onTransposeChange={handleTransposeChange}
-            fontStyle={fontStyle}
-            onSelectFontStyle={setFontStyle}
-            isTwoColumn={isTwoColumn}
-            onToggleTwoColumn={setIsTwoColumn}
-            onOpenBandSync={() => setIsStageToolsModalOpen(true)}
-            onPerformanceModeChange={setIsStagePerformanceMode}
-          />
+          <StageErrorBoundary onExitToSongbook={() => setActiveView('songbook')}>
+            <StageView
+              song={currentSong}
+              songs={filteredSongs.length > 0 ? filteredSongs : songs}
+              activeSongIndex={activeSongIndex}
+              onSelectSongIndex={handleSelectLibrarySong}
+              queueMode={queueMode}
+              onToggleQueueMode={handleToggleQueueMode}
+              isInSetlistMode={isInSetlistMode}
+              activeSetlistSongs={activeSetlistSongs}
+              activeSetlistSongIndex={activeSetlistSongIndex}
+              onSelectSetlistSongIndex={setActiveSetlistSongIndex}
+              activeSetlistName={activeSetlist?.name}
+              setlists={setlists}
+              onSelectSetlist={handleSelectSetlist}
+              onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
+              isSetlistDrawerOpen={isSetlistDrawerOpen}
+              isStageSettingsModalOpen={isStageSettingsModalOpen}
+              isAnyModalOpen={
+                isSetlistDrawerOpen ||
+                isStageSettingsModalOpen ||
+                isStageToolsModalOpen ||
+                isThemeModalOpen ||
+                isWebsiteUrlModalOpen ||
+                isImportModalOpen ||
+                isBackupRestoreModalOpen ||
+                isJsonModalOpen ||
+                isHeaderKeyPickerOpen
+              }
+              onBack={() => setActiveView('songbook')}
+              transposeOffset={currentSong.transposeOffset || 0}
+              onTransposeChange={handleTransposeChange}
+              fontStyle={fontStyle}
+              onSelectFontStyle={setFontStyle}
+              isTwoColumn={isTwoColumn}
+              onToggleTwoColumn={setIsTwoColumn}
+              onOpenBandSync={() => setIsStageToolsModalOpen(true)}
+              onPerformanceModeChange={setIsStagePerformanceMode}
+            />
+          </StageErrorBoundary>
         )}
       </main>
 
