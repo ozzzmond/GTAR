@@ -29,11 +29,8 @@ import { BandSyncModal } from './components/BandSyncModal'
 import { bandSync } from './utils/bandSync'
 import { extractDirectives } from './utils/chordSheetParser'
 import type { ActiveSongState } from './types/gtar'
-import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
-import { isDevEnv } from './utils/env'
-import { Check } from 'lucide-react'
 
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
@@ -429,11 +426,18 @@ function LibraryApp() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
-  const [showUpdateSuccessModal, setShowUpdateSuccessModal] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
+
+  // Guard: sync active stage presence to window to protect active performance from unprompted SW reloads
+  useEffect(() => {
+    const isStageActive = activeView === 'stage' || isStagePerformanceMode
+    ;(window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__ = isStageActive
+    return () => {
+      ;(window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__ = false
+    }
+  }, [activeView, isStagePerformanceMode])
 
   // Band Sync: listen to leader song sync events when client
   useEffect(() => {
@@ -1017,15 +1021,6 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 4000)
   }
 
-  // Check for updates simulation
-  const handleCheckForUpdates = () => {
-    setIsCheckingUpdates(true)
-    setTimeout(() => {
-      setIsCheckingUpdates(false)
-      setShowUpdateSuccessModal(true)
-    }, 850)
-  }
-
   // Filter songs if searchQuery is active
   const filteredSongs = searchQuery.trim()
     ? songs.filter(
@@ -1067,8 +1062,6 @@ function LibraryApp() {
           onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
           onOpenImportModal={() => setIsImportModalOpen(true)}
           onOpenBackupRestoreModal={() => setIsBackupRestoreModalOpen(true)}
-          onCheckForUpdates={handleCheckForUpdates}
-          isCheckingUpdates={isCheckingUpdates}
           onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
@@ -1235,7 +1228,6 @@ function LibraryApp() {
           setIsStageSettingsModalOpen(false)
           setIsThemeModalOpen(true)
         }}
-        onCheckForUpdates={handleCheckForUpdates}
         onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
         onOpenBackupRestoreModal={() => {
           setIsStageSettingsModalOpen(false)
@@ -1274,38 +1266,6 @@ function LibraryApp() {
         onSelectOffset={handleTransposeChange}
         onReset={() => handleTransposeChange(0)}
       />
-
-      {/* Check for Updates Confirmation Modal */}
-      {showUpdateSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-sm rounded-2xl bg-[#073642] border border-[#2AA198] p-6 shadow-2xl text-center space-y-4">
-            <div className="space-y-1">
-              <h3 className="text-base font-extrabold text-[#FDF6E3]">You're Up to Date!</h3>
-              <p className="text-xs text-[#2AA198] font-mono font-bold">
-                GTAR Web App {isDevEnv ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}
-              </p>
-            </div>
-            <div className="p-3 rounded-xl bg-[#002B36] text-left text-[11px] text-[#93A1A1] space-y-1 border border-[#1A4A55]">
-              <div className="font-bold text-[#EEE8D5] flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-[#2AA198]" />
-                <span>1:1 Parity with Android v{GTAR_APP_VERSION}</span>
-              </div>
-              <p>• Unified TopAppBar with 4-Action 3-Dot Menu</p>
-              <p>• Band Sync multi-screen stage sync (Leader / Member)</p>
-              <p>• Classic chord-over-lyric layout (no inline brackets)</p>
-              <p>• Clean floating intro chords without keypad boxes</p>
-              <p>• Monospace, Sans, Serif font selector & shortcuts</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowUpdateSuccessModal(false)}
-              className="w-full py-2.5 rounded-xl bg-[#2AA198] text-[#002B36] font-bold text-xs hover:bg-[#35B8AD] transition-colors cursor-pointer"
-            >
-              Great!
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Global Toast Notification */}
       {toastMessage && (

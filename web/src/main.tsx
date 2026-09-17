@@ -89,6 +89,22 @@ applyEnvironmentBranding(isDevEnv)
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   registerSW({
     immediate: true,
+    onNeedReload() {
+      // Protect active stage session: never force reload while user is on stage
+      const isStageActive =
+        window.location.pathname.includes('/stage') ||
+        window.location.search.includes('view=present') ||
+        window.location.hash.includes('present') ||
+        Boolean((window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__)
+
+      if (isStageActive) {
+        return
+      }
+
+      // Do not force an unprompted window reload during an active session.
+      // The updated service worker is already installed and activated in the background;
+      // subsequent normal app starts or manual navigations will use the updated build.
+    },
     onRegisteredSW(_swScriptUrl, registration) {
       if (registration) {
         // Periodically check for updates (every hour)

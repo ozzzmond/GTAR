@@ -7,7 +7,6 @@ import {
   Square,
   SlidersHorizontal,
   Palette,
-  RefreshCw,
   Check,
   X,
   Radio,
@@ -29,7 +28,6 @@ interface StageSettingsModalProps {
   onToggleTwoColumn: (enabled: boolean) => void
   onOpenStageTools: () => void
   onToggleTheme: () => void
-  onCheckForUpdates: () => void
   onExportAllData?: () => void
   onOpenBackupRestoreModal?: () => void
   onInstallApp?: () => void
@@ -44,7 +42,6 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
   onToggleTwoColumn,
   onOpenStageTools,
   onToggleTheme,
-  onCheckForUpdates,
   onExportAllData,
   onOpenBackupRestoreModal,
   onInstallApp,
@@ -402,17 +399,6 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                onCheckForUpdates()
-                showToast('Checking for updates...')
-              }}
-              className="mt-1 w-full py-2 rounded-lg border border-[#2AA198]/50 text-[#2AA198] text-xs font-bold hover:bg-[#2AA198]/10 transition-colors cursor-pointer flex items-center justify-center gap-2"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Check for Updates</span>
-            </button>
           </div>
         </div>
 

@@ -8,7 +8,6 @@ import {
   Settings,
   FolderOpen,
   CloudUpload,
-  RefreshCw,
   Eye,
   FileEdit,
   ListMusic,
@@ -69,8 +68,6 @@ interface HeaderProps {
   onOpenStageSettings: () => void
   onOpenImportModal: () => void
   onOpenBackupRestoreModal: () => void
-  onCheckForUpdates?: () => void
-  isCheckingUpdates?: boolean
   onOpenSetlistDrawer?: () => void
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
@@ -131,8 +128,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStageSettings,
   onOpenImportModal,
   onOpenBackupRestoreModal,
-  onCheckForUpdates,
-  isCheckingUpdates = false,
   onOpenSetlistDrawer,
   setlists = [],
   activeSetlistId,
@@ -402,20 +397,6 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onCheckForUpdates?.()
-            }}
-            title={isDevEnv ? `Click to check for updates (web v${GTAR_DEV_VERSION})` : `Click to check for updates (web v${GTAR_APP_VERSION})`}
-            className="text-[10px] sm:text-xs font-mono px-2 py-0.5 rounded-full bg-[#002B36] text-[#93A1A1] border border-[#1A4A55] hover:border-[#2AA198] font-semibold hidden md:inline-flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            {isCheckingUpdates && (
-              <RefreshCw className="w-2.5 h-2.5 animate-spin text-[#B58900]" />
-            )}
-            <span>{isDevEnv ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}</span>
-          </button>
         </div>
 
         {/* Right Action Icons & User Avatar */}
