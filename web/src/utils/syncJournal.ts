@@ -1,14 +1,17 @@
 import type { SyncLibrary } from './syncMerge'
 import { prunePersistedLogs } from './logger'
+import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 
 const ownerKey = 'gtar_sync_library_owner'
 
 export const LIBRARY_KEY = 'gtar_library_v1'
 export const SYNC_RETIRED_KEY = 'gtar_sync_retired_v1'
+export { RESTORE_SNAPSHOT_KEY }
 
 export const CANONICAL_STORAGE_PREFIXES = [
   LIBRARY_KEY,
   SYNC_RETIRED_KEY,
+  RESTORE_SNAPSHOT_KEY,
   ownerKey,
   'gtar_sync_v1:',
   'gtar_songs_store',

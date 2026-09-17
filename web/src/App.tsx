@@ -1030,6 +1030,8 @@ function LibraryApp() {
     const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }))
     if (!parsed.isValid) throw new Error(parsed.error)
     const partition = partitionSongs(parsed.songs)
+    // Synchronously commit to canonical storage; throws if quota/write fails
+    persistLibrary({ songs: parsed.songs, setlists: parsed.setlists })
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(parsed.setlists)
@@ -1051,6 +1053,8 @@ function LibraryApp() {
       if (index >= 0) nextSetlists[index] = setlist
       else nextSetlists.push(setlist)
     }
+    // Synchronously commit to canonical storage; throws if quota/write fails
+    persistLibrary({ songs: merged.songs, setlists: nextSetlists })
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(nextSetlists)

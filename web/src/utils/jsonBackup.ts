@@ -2,13 +2,29 @@ import { generateUUID } from './uuid'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION } from '../types/gtar'
 import { readBackupSettings, validateBackupSettings, type BackupSettings } from './backupSettings'
-import { bindLegacySetlists, ensureSongIds, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
+import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
+
+export const GTAR_BACKUP_SCHEMA_VERSION = 1
+export const RESTORE_SNAPSHOT_KEY = 'gtar_restore_safety_snapshot_v1'
+
+export interface BackupMetadata {
+  schemaVersion?: number
+  version?: string
+  exportedAt?: string
+  songCount: number
+  setlistCount: number
+  trashCount: number
+}
 
 export interface FullBackupPayload extends BackupSettings {
   app: 'GTAR'
+  schemaVersion: number
   version: string
   exportedAt: string
   exportType: 'FULL_BACKUP'
+  songCount: number
+  setlistCount: number
+  trashCount: number
   songs: ActiveSongState[]
   setlists: WebSetlist[]
   allowedUsers?: string[]
@@ -20,6 +36,7 @@ export interface ParsedBackupResult extends BackupSettings {
   songs: ActiveSongState[]
   setlists: WebSetlist[]
   allowedUsers?: string[]
+  metadata?: BackupMetadata
   error?: string
 }
 
@@ -43,9 +60,21 @@ export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetli
   const exportedSetlists = bindLegacySetlists(setlists, normalized)
   const errors = validateSetlistReferences(exportedSetlists, normalized)
   if (errors.length) throw new Error(`Backup blocked: ${errors.join('; ')}. Restore the missing songs or repair the setlist entries before exporting. Original data is unchanged.`)
-  return { app: 'GTAR', version, exportedAt: new Date().toISOString(), exportType: 'FULL_BACKUP',
-    ...readBackupSettings(), songs: normalized, setlists: exportedSetlists,
-    ...(allowedUsers && Array.isArray(allowedUsers) ? { allowedUsers } : {}) }
+  const partition = partitionSongs(normalized)
+  return {
+    app: 'GTAR',
+    schemaVersion: GTAR_BACKUP_SCHEMA_VERSION,
+    version,
+    exportedAt: new Date().toISOString(),
+    exportType: 'FULL_BACKUP',
+    songCount: partition.active.length,
+    setlistCount: exportedSetlists.length,
+    trashCount: partition.deleted.length,
+    ...readBackupSettings(),
+    songs: normalized,
+    setlists: exportedSetlists,
+    ...(allowedUsers && Array.isArray(allowedUsers) ? { allowedUsers } : {})
+  }
 }
 
 export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[]): string {
@@ -125,6 +154,20 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       if (field in data) Object.assign(settings, { [field]: data[field] })
     }
     const errors = validateBackupSettings(settings as Record<string, unknown>)
+    if ('schemaVersion' in data && data.schemaVersion !== undefined && data.schemaVersion !== null) {
+      if (typeof data.schemaVersion !== 'number' || !Number.isSafeInteger(data.schemaVersion) || data.schemaVersion < 1) {
+        errors.push('schemaVersion: must be a positive integer')
+      } else if (data.schemaVersion > GTAR_BACKUP_SCHEMA_VERSION) {
+        errors.push(`schemaVersion: unsupported future schema version ${data.schemaVersion}`)
+      }
+    }
+    for (const countField of ['songCount', 'setlistCount', 'trashCount'] as const) {
+      if (countField in data && data[countField] !== undefined && data[countField] !== null) {
+        if (typeof data[countField] !== 'number' || !Number.isSafeInteger(data[countField]) || data[countField] < 0) {
+          errors.push(`${countField}: must be a non-negative integer`)
+        }
+      }
+    }
     let sourceSongs: Partial<ActiveSongState>[] = []
     let sourceSetlists: WebSetlist[] = []
     if (single) {
@@ -138,6 +181,16 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       sourceSetlists = Array.isArray(data.setlists) ? data.setlists : []
       errors.push(...validateBackupEntries(sourceSongs, sourceSetlists))
     }
+    const setlistIds = new Set<string>()
+    sourceSetlists.forEach((sl, i) => {
+      if (sl && typeof sl === 'object' && 'id' in sl && sl.id !== undefined && sl.id !== null) {
+        const idStr = String(sl.id)
+        if (setlistIds.has(idStr)) {
+          errors.push(`setlists[${i}].id: duplicate setlist ID`)
+        }
+        setlistIds.add(idStr)
+      }
+    })
     if (errors.length) return invalid(errors, single)
     const songs = sourceSongs.map(normalizeBackupSong)
     const ids = new Set<string>()
@@ -158,10 +211,72 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     const allowedUsers = Array.isArray(data.allowedUsers)
       ? data.allowedUsers.filter((u: unknown) => typeof u === 'string' && (u as string).trim().length > 0)
       : undefined
+    const partition = partitionSongs(songs)
+    const metadata: BackupMetadata = {
+      schemaVersion: typeof data.schemaVersion === 'number' ? data.schemaVersion : undefined,
+      version: typeof data.version === 'string' ? data.version : (typeof data.metadata?.appVersion === 'string' ? data.metadata.appVersion : undefined),
+      exportedAt: typeof data.exportedAt === 'string' ? data.exportedAt : undefined,
+      songCount: partition.active.length,
+      setlistCount: setlists.length,
+      trashCount: partition.deleted.length,
+    }
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
       ...settings, songs, setlists: bindLegacySetlists(boundIncoming, combined),
+      metadata,
       ...(allowedUsers ? { allowedUsers } : {}) }
   } catch (err) { return invalid([err instanceof Error ? err.message : 'Invalid JSON']) }
+}
+
+export interface RestoreSafetySnapshot {
+  createdAt: string
+  library: {
+    songs: ActiveSongState[]
+    setlists: WebSetlist[]
+  }
+}
+
+export function createRestoreSafetySnapshot(
+  library: { songs: ActiveSongState[]; setlists: WebSetlist[] },
+  storage: Storage = localStorage
+): void {
+  const snapshot: RestoreSafetySnapshot = {
+    createdAt: new Date().toISOString(),
+    library: {
+      songs: library.songs.map(s => ({ ...s })),
+      setlists: library.setlists.map(sl => ({ ...sl, songs: sl.songs.map(ref => ({ ...ref })) })),
+    },
+  }
+  try {
+    storage.setItem(RESTORE_SNAPSHOT_KEY, JSON.stringify(snapshot))
+  } catch (err) {
+    throw new Error('Pre-restore safety snapshot creation failed', { cause: err })
+  }
+}
+
+export function getRestoreSafetySnapshot(storage: Storage = localStorage): RestoreSafetySnapshot | null {
+  try {
+    const raw = storage.getItem(RESTORE_SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || !parsed.library) return null
+    return parsed as RestoreSafetySnapshot
+  } catch {
+    return null
+  }
+}
+
+export function clearRestoreSafetySnapshot(storage: Storage = localStorage): void {
+  try {
+    storage.removeItem(RESTORE_SNAPSHOT_KEY)
+  } catch {
+    // Non-throwing cleanup
+  }
+}
+
+export function restoreFromSafetySnapshot(storage: Storage = localStorage): { songs: ActiveSongState[]; setlists: WebSetlist[] } | null {
+  const snapshot = getRestoreSafetySnapshot(storage)
+  if (!snapshot) return null
+  return snapshot.library
 }
 
 function triggerDownload(content: string, fileName: string) {
