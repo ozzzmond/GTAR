@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { stageCast, type StageCastState } from '../utils/stageCast'
+import {
+  stageCast,
+  type StageCastState,
+  type PresentationConnection,
+  type PresentationConnectionList,
+  type NavigatorWithPresentation,
+  isPresentationConnectionAvailableEvent,
+} from '../utils/stageCast'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
 import { applyCustomThemeStyles } from './ThemeModal'
@@ -38,6 +45,15 @@ export const StagePresentationView: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null)
   const isSyncingScrollRef = useRef(false)
 
+  const sessionId = React.useMemo(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      return new URLSearchParams(window.location.search).get('session')
+    } catch {
+      return null
+    }
+  }, [])
+
   // Listen to real-time Stage Cast updates and Presentation API receiver connections
   useEffect(() => {
     // Set clean secondary window title so presentation banner doesn't show duplicate lines
@@ -64,8 +80,8 @@ export const StagePresentationView: React.FC = () => {
       }, 100)
     }
 
-    const applyIncomingData = (rawData: any) => {
-      let data = rawData
+    const applyIncomingData = (rawData: unknown) => {
+      let data: unknown = rawData
       if (typeof rawData === 'string') {
         try {
           data = JSON.parse(rawData)
@@ -75,13 +91,15 @@ export const StagePresentationView: React.FC = () => {
       }
       if (!data || typeof data !== 'object') return
 
-      if (data.source === 'GTAR_CAST' && data.message) {
-        data = data.message
-      }
+      const obj = data as Record<string, unknown>
+      const inner =
+        obj.source === 'GTAR_CAST' && obj.message && typeof obj.message === 'object'
+          ? (obj.message as Record<string, unknown>)
+          : obj
 
       // 1. STATE_UPDATE
-      if (data.type === 'STATE_UPDATE' && data.payload) {
-        const payload: StageCastState = data.payload
+      if (inner.type === 'STATE_UPDATE' && inner.payload && typeof inner.payload === 'object') {
+        const payload = inner.payload as StageCastState
         setCastState((prev) => ({ ...prev, ...payload }))
         if (payload.customThemeColors) {
           applyCustomThemeStyles(payload.customThemeColors)
@@ -90,41 +108,46 @@ export const StagePresentationView: React.FC = () => {
       }
 
       // 2. SCROLL_UPDATE
-      if (data.type === 'SCROLL_UPDATE' && data.payload) {
-        applyScroll(data.payload.scrollTop, data.payload.scrollFraction)
+      if (inner.type === 'SCROLL_UPDATE' && inner.payload && typeof inner.payload === 'object') {
+        const scrollPayload = inner.payload as { scrollTop?: number; scrollFraction?: number }
+        applyScroll(scrollPayload.scrollTop || 0, scrollPayload.scrollFraction || 0)
         return
       }
 
       // 3. Direct stage state payload (e.g. currentStageState)
-      if (data.song && (data.song.rawContent || data.song.title)) {
-        const newState: StageCastState = {
-          song: data.song,
-          effectiveKey: data.effectiveKey || data.song.key || 'C',
-          transposeOffset: data.transposeOffset ?? 0,
-          fontSizePx: data.fontSizePx ?? 28,
-          fontStyle: data.fontStyle ?? 'mono',
-          isTwoColumn: Boolean(data.isTwoColumn),
-          themeMode: data.themeMode,
-          customThemeColors: data.customThemeColors,
-        }
-        setCastState((prev) => ({ ...prev, ...newState }))
-        if (newState.customThemeColors) {
-          applyCustomThemeStyles(newState.customThemeColors)
-        }
-        if (typeof data.scrollFraction === 'number') {
-          applyScroll(data.scrollTop || 0, data.scrollFraction)
+      if (inner.song && typeof inner.song === 'object') {
+        const song = inner.song as ActiveSongState
+        if (song.rawContent || song.title) {
+          const newState: StageCastState = {
+            song,
+            effectiveKey: typeof inner.effectiveKey === 'string' ? inner.effectiveKey : (song.key || 'C'),
+            transposeOffset: typeof inner.transposeOffset === 'number' ? inner.transposeOffset : 0,
+            fontSizePx: typeof inner.fontSizePx === 'number' ? inner.fontSizePx : 28,
+            fontStyle: inner.fontStyle === 'sans' ? 'sans' : 'mono',
+            isTwoColumn: Boolean(inner.isTwoColumn),
+            themeMode: typeof inner.themeMode === 'string' ? (inner.themeMode as StageCastState['themeMode']) : undefined,
+            customThemeColors: inner.customThemeColors as StageCastState['customThemeColors'],
+          }
+          setCastState((prev) => ({ ...prev, ...newState }))
+          if (newState.customThemeColors) {
+            applyCustomThemeStyles(newState.customThemeColors)
+          }
+          if (typeof inner.scrollFraction === 'number') {
+            applyScroll(typeof inner.scrollTop === 'number' ? inner.scrollTop : 0, inner.scrollFraction)
+          }
         }
       }
     }
 
     // Direct listener on browser Presentation API receiver connections for instant display
     let receiverCleanup: (() => void) | null = null
-    if (typeof navigator !== 'undefined' && 'presentation' in navigator && (navigator as any).presentation?.receiver) {
-      const receiver = (navigator as any).presentation.receiver
+    const navWithPresentation = typeof navigator !== 'undefined' ? (navigator as NavigatorWithPresentation) : null
+    if (navWithPresentation?.presentation?.receiver) {
+      const receiver = navWithPresentation.presentation.receiver
       if (receiver.connectionList) {
         receiver.connectionList
-          .then((list: any) => {
-            const handlePresentationConn = (conn: any) => {
+          .then((list: PresentationConnectionList) => {
+            const handlePresentationConn = (conn: PresentationConnection) => {
               conn.onmessage = (event: MessageEvent) => {
                 applyIncomingData(event.data)
               }
@@ -135,8 +158,10 @@ export const StagePresentationView: React.FC = () => {
             }
 
             list.connections.forEach(handlePresentationConn)
-            const onAvail = (evt: any) => {
-              handlePresentationConn(evt.connection)
+            const onAvail = (evt: Event) => {
+              if (isPresentationConnectionAvailableEvent(evt)) {
+                handlePresentationConn(evt.connection)
+              }
             }
             list.addEventListener('connectionavailable', onAvail)
             receiverCleanup = () => {
@@ -243,7 +268,9 @@ export const StagePresentationView: React.FC = () => {
             </h1>
             {song.artist && (
               <p className="text-base sm:text-lg text-[#2AA198] font-medium truncate mt-0.5">
-                {song.artist}
+                {song.id === 0 && sessionId
+                  ? `Session: ${sessionId} • Connect from GTAR Stage View`
+                  : song.artist}
               </p>
             )}
           </div>

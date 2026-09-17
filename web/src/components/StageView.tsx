@@ -24,6 +24,7 @@ import {
   Wifi,
   ArrowLeft,
   Cast,
+  Tv,
   MoreHorizontal,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -42,6 +43,7 @@ import {
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
+import { TvPresentationModal } from './TvPresentationModal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface StageViewProps {
@@ -353,6 +355,7 @@ export const StageView: React.FC<StageViewProps> = ({
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
+  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(false)
   // Stage floating options menu (replaces top HUD)
   const [isStageMenuOpen, setIsStageMenuOpen] = useState(false)
 
@@ -361,6 +364,7 @@ export const StageView: React.FC<StageViewProps> = ({
     isKeyPickerOpen ||
     selectedVoicing ||
     isBandSyncModalOpen ||
+    isTvPresentationModalOpen ||
     isStageMenuOpen ||
     isSpeedPromptOpen ||
     isSetlistDrawerOpen ||
@@ -1279,6 +1283,51 @@ export const StageView: React.FC<StageViewProps> = ({
     )
   }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
 
+  const handleTogglePresentation = useCallback(async () => {
+    if (isCastActive) {
+      stageCast.stopPresentation()
+    } else {
+      const container = scrollContainerRef.current
+      if (container) {
+        const maxScroll = container.scrollHeight - container.clientHeight
+        const fraction = maxScroll > 0 ? container.scrollTop / maxScroll : 0
+        stageCast.broadcastScroll(container.scrollTop, fraction)
+      }
+      stageCast.broadcastState({
+        song,
+        effectiveKey,
+        transposeOffset,
+        fontSizePx,
+        fontStyle,
+        isTwoColumn,
+        chordScale,
+        fontWeight,
+        lineSpacing,
+      })
+
+      const caps = stageCast.getPresentationCapabilities()
+      if (caps.recommendedMode === 'tv_pairing' || !caps.canDirectPresent) {
+        setIsTvPresentationModalOpen(true)
+      } else {
+        const res = await stageCast.requestPresentation()
+        if (res.mode === 'tv_pairing') {
+          setIsTvPresentationModalOpen(true)
+        }
+      }
+    }
+  }, [
+    isCastActive,
+    song,
+    effectiveKey,
+    transposeOffset,
+    fontSizePx,
+    fontStyle,
+    isTwoColumn,
+    chordScale,
+    fontWeight,
+    lineSpacing,
+  ])
+
   const handleChordClick = (chordName: string) => {
     const voicing = getChordVoicing(chordName)
     if (voicing) {
@@ -1618,27 +1667,7 @@ export const StageView: React.FC<StageViewProps> = ({
           {/* Cast / Pop-out Screen (Mirror distraction-free stage teleprompter to external display) */}
           <button
             type="button"
-            onClick={() => {
-              if (isCastActive) {
-                stageCast.stopPresentation()
-              } else {
-                const container = scrollContainerRef.current
-                if (container) {
-                  const maxScroll = container.scrollHeight - container.clientHeight
-                  const fraction = maxScroll > 0 ? container.scrollTop / maxScroll : 0
-                  stageCast.broadcastScroll(container.scrollTop, fraction)
-                }
-                stageCast.broadcastState({
-                  song,
-                  effectiveKey,
-                  transposeOffset,
-                  fontSizePx,
-                  fontStyle,
-                  isTwoColumn,
-                })
-                stageCast.openPresentationWindow()
-              }
-            }}
+            onClick={handleTogglePresentation}
             className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
               isCastActive
                 ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-[#DC6E67] hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
@@ -2157,6 +2186,32 @@ export const StageView: React.FC<StageViewProps> = ({
               </div>
             </div>
 
+            {/* --- Sync to TV / Stage Cast Action --- */}
+            <div className="flex items-center gap-2 mb-5">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">TV Sync</span>
+              <button
+                type="button"
+                data-testid="stage-options-sync-tv-btn"
+                onClick={async () => {
+                  setIsStageMenuOpen(false)
+                  await handleTogglePresentation()
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer flex-1 ${
+                  isCastActive
+                    ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-[#DC6E67] hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
+                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] hover:border-[#2AA198]'
+                }`}
+                title={
+                  isCastActive
+                    ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
+                    : 'Sync to TV / Secondary Display (AirPlay, Smart TV, or Teleprompter pairing)'
+                }
+              >
+                <Tv className="w-4 h-4" />
+                <span>{isCastActive ? 'Disconnect TV Sync' : 'Sync to TV'}</span>
+              </button>
+            </div>
+
             {/* --- Exit performance mode --- */}
             {inPerformanceMode && (
               <button
@@ -2200,6 +2255,13 @@ export const StageView: React.FC<StageViewProps> = ({
         isOpen={isBandSyncModalOpen}
         onClose={() => setIsBandSyncModalOpen(false)}
         initialTab="sync"
+      />
+
+      {/* Secondary TV Browser Pairing & AirPlay Modal */}
+      <TvPresentationModal
+        isOpen={isTvPresentationModalOpen}
+        onClose={() => setIsTvPresentationModalOpen(false)}
+        detectedLanIp={syncState.detectedLanIp || syncState.customHostIp}
       />
     </div>
   )
