@@ -24,9 +24,9 @@ import {
   Wifi,
   ArrowLeft,
   Cast,
+  Tv,
   MoreHorizontal,
   SlidersHorizontal,
-  Sparkles,
 } from 'lucide-react'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
@@ -43,7 +43,8 @@ import {
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { BandSyncModal } from './BandSyncModal'
-import type { ActiveSongState } from '../types/gtar'
+import { TvPresentationModal } from './TvPresentationModal'
+import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface StageViewProps {
   song: ActiveSongState
@@ -57,9 +58,12 @@ interface StageViewProps {
   activeSetlistSongIndex?: number
   onSelectSetlistSongIndex?: (index: number) => void
   activeSetlistName?: string
-  setlists?: Array<{ id: string | number; name: string; songs: any[] }>
+  setlists?: WebSetlist[]
   onSelectSetlist?: (setlistId: string | number) => void
   onOpenSetlistDrawer: () => void
+  isSetlistDrawerOpen?: boolean
+  isStageSettingsModalOpen?: boolean
+  isAnyModalOpen?: boolean
   transposeOffset: number
   onTransposeChange: (offset: number) => void
   fontStyle?: 'mono' | 'sans' | 'serif'
@@ -111,6 +115,9 @@ export const StageView: React.FC<StageViewProps> = ({
   activeSetlistSongIndex = 0,
   onSelectSetlistSongIndex,
   onOpenSetlistDrawer,
+  isSetlistDrawerOpen = false,
+  isStageSettingsModalOpen = false,
+  isAnyModalOpen = false,
   transposeOffset,
   onTransposeChange,
   fontStyle: externalFontStyle,
@@ -262,26 +269,6 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [holdStep])
 
-  // 1-Tap Stage Distance (1–2m) Master Preset
-  const isStageDistanceActive =
-    fontSizePx >= 24 &&
-    chordScale === 1.2 &&
-    fontWeight === 'bold' &&
-    lineSpacing === 'relaxed'
-
-  const handleToggleStageDistance = useCallback(() => {
-    if (isStageDistanceActive) {
-      setStageFontSize(STAGE_SIZE_PRESETS.M)
-      setChordScale(1.0)
-      setFontWeight('regular')
-      setLineSpacing('normal')
-    } else {
-      setStageFontSize(STAGE_SIZE_PRESETS.L)
-      setChordScale(1.2)
-      setFontWeight('bold')
-      setLineSpacing('relaxed')
-    }
-  }, [isStageDistanceActive, setStageFontSize, setChordScale, setFontWeight, setLineSpacing])
   const [localFontStyle, setLocalFontStyle] = useState<'mono' | 'sans' | 'serif'>('mono')
   const [localIsTwoColumn, setLocalIsTwoColumn] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -368,8 +355,22 @@ export const StageView: React.FC<StageViewProps> = ({
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
+  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(false)
   // Stage floating options menu (replaces top HUD)
   const [isStageMenuOpen, setIsStageMenuOpen] = useState(false)
+
+  // Track whether any modal, drawer, or dialog overlay is active
+  const isAnyOverlayActive = Boolean(
+    isKeyPickerOpen ||
+    selectedVoicing ||
+    isBandSyncModalOpen ||
+    isTvPresentationModalOpen ||
+    isStageMenuOpen ||
+    isSpeedPromptOpen ||
+    isSetlistDrawerOpen ||
+    isStageSettingsModalOpen ||
+    isAnyModalOpen
+  )
 
   // Band Sync State
   const [syncState, setSyncState] = useState<BandSyncState>(() => bandSync.getState())
@@ -729,18 +730,78 @@ export const StageView: React.FC<StageViewProps> = ({
   const slideContentRef = useRef<HTMLDivElement>(null)
   const isAnimatingRef = useRef(false)
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastNavigationTimeRef = useRef<number>(0)
+
+  // ACTION_1: Reset stage scroll + pause autoscroll on active song transition
+  const currentSongKey = song.id !== undefined && song.id !== ''
+    ? String(song.id)
+    : `${song.title}__${isInSetlistMode ? activeSetlistSongIndex : activeSongIndex}`
+  const previousSongKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (previousSongKeyRef.current !== null && previousSongKeyRef.current !== currentSongKey) {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0
+      }
+      lastScrollTopRef.current = 0
+      setIsAutoScrolling(false)
+      accumulatedScrollRef.current = 0
+      if (scrollAnimRef.current) {
+        cancelAnimationFrame(scrollAnimRef.current)
+        scrollAnimRef.current = null
+      }
+      if (slideContentRef.current) {
+        slideContentRef.current.style.transform = ''
+        slideContentRef.current.style.transition = ''
+        slideContentRef.current.style.opacity = ''
+      }
+      isAnimatingRef.current = false
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current)
+        transitionTimeoutRef.current = null
+      }
+      stageCast.broadcastScroll(0, 0)
+    }
+    previousSongKeyRef.current = currentSongKey
+  }, [currentSongKey])
 
   const triggerSongSlide = useCallback((direction: 'next' | 'prev') => {
     const slideEl = slideContentRef.current
     const container = scrollContainerRef.current
-    if (!slideEl || isAnimatingRef.current) {
-      if (direction === 'next') executeNextSongRef.current()
-      else executePrevSongRef.current()
+
+    // ACTION_2: Do not bypass animation lock during active transition
+    if (isAnimatingRef.current) {
       return
     }
 
+    // Bounded debounce: ignore rapid repeat navigation until safe (250ms)
+    const now = Date.now()
+    if (now - lastNavigationTimeRef.current < 250) {
+      return
+    }
+    lastNavigationTimeRef.current = now
+
     if (direction === 'next' && !canNextRef.current) return
     if (direction === 'prev' && !canPrevRef.current) return
+
+    // Pause autoscroll immediately on navigation
+    setIsAutoScrolling(false)
+    accumulatedScrollRef.current = 0
+    if (scrollAnimRef.current) {
+      cancelAnimationFrame(scrollAnimRef.current)
+      scrollAnimRef.current = null
+    }
+
+    if (!slideEl) {
+      isAnimatingRef.current = true
+      if (direction === 'next') executeNextSongRef.current()
+      else executePrevSongRef.current()
+      if (container) container.scrollTop = 0
+      setTimeout(() => {
+        isAnimatingRef.current = false
+      }, 250)
+      return
+    }
 
     isAnimatingRef.current = true
     const slideOutDuration = 200
@@ -1027,6 +1088,7 @@ export const StageView: React.FC<StageViewProps> = ({
   // - Spacebar: Toggle Auto-Scroll (Play / Pause)
   // - ArrowRight or 'n': Next song in setlist
   // - ArrowLeft or 'p': Previous song in setlist
+  // - PageDown / PageUp: Standard foot pedal navigation (Next / Previous song)
   // - ArrowUp / ArrowDown: Manually nudge scroll (or Shift + Arrow to adjust scroll speed)
   // - '+' / '-': Adjust font size
   useEffect(() => {
@@ -1036,6 +1098,27 @@ export const StageView: React.FC<StageViewProps> = ({
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement)?.isContentEditable
       ) {
+        return
+      }
+
+      // ACTION_3: Suppress stage global shortcuts while any overlay / modal / drawer is active
+      if (isAnyOverlayActive) {
+        return
+      }
+
+      // ACTION_2: Ignore rapid repeated keydown events caused by holding down navigation keys
+      if (
+        e.repeat &&
+        (e.key === 'ArrowRight' ||
+          e.key === 'n' ||
+          e.key === 'N' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'p' ||
+          e.key === 'P' ||
+          e.key === 'PageDown' ||
+          e.key === 'PageUp')
+      ) {
+        e.preventDefault()
         return
       }
 
@@ -1055,6 +1138,20 @@ export const StageView: React.FC<StageViewProps> = ({
 
       // ArrowLeft or 'p': Previous song in setlist or library
       if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {
+        e.preventDefault()
+        handlePrevSong()
+        return
+      }
+
+      // ACTION_4: Foot pedal PageUp / PageDown support (keyboard emulation)
+      // Mapped to Previous / Next song consistently; prevents browser default scroll
+      if (e.key === 'PageDown') {
+        e.preventDefault()
+        handleNextSong()
+        return
+      }
+
+      if (e.key === 'PageUp') {
         e.preventDefault()
         handlePrevSong()
         return
@@ -1104,6 +1201,7 @@ export const StageView: React.FC<StageViewProps> = ({
     syncState.role,
     handleNextSong,
     handlePrevSong,
+    isAnyOverlayActive,
   ])
 
   // ---------------------------------------------------------------------------
@@ -1184,6 +1282,51 @@ export const StageView: React.FC<StageViewProps> = ({
       }
     )
   }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
+
+  const handleTogglePresentation = useCallback(async () => {
+    if (isCastActive) {
+      stageCast.stopPresentation()
+    } else {
+      const container = scrollContainerRef.current
+      if (container) {
+        const maxScroll = container.scrollHeight - container.clientHeight
+        const fraction = maxScroll > 0 ? container.scrollTop / maxScroll : 0
+        stageCast.broadcastScroll(container.scrollTop, fraction)
+      }
+      stageCast.broadcastState({
+        song,
+        effectiveKey,
+        transposeOffset,
+        fontSizePx,
+        fontStyle,
+        isTwoColumn,
+        chordScale,
+        fontWeight,
+        lineSpacing,
+      })
+
+      const caps = stageCast.getPresentationCapabilities()
+      if (caps.recommendedMode === 'tv_pairing' || !caps.canDirectPresent) {
+        setIsTvPresentationModalOpen(true)
+      } else {
+        const res = await stageCast.requestPresentation()
+        if (res.mode === 'tv_pairing') {
+          setIsTvPresentationModalOpen(true)
+        }
+      }
+    }
+  }, [
+    isCastActive,
+    song,
+    effectiveKey,
+    transposeOffset,
+    fontSizePx,
+    fontStyle,
+    isTwoColumn,
+    chordScale,
+    fontWeight,
+    lineSpacing,
+  ])
 
   const handleChordClick = (chordName: string) => {
     const voicing = getChordVoicing(chordName)
@@ -1524,27 +1667,7 @@ export const StageView: React.FC<StageViewProps> = ({
           {/* Cast / Pop-out Screen (Mirror distraction-free stage teleprompter to external display) */}
           <button
             type="button"
-            onClick={() => {
-              if (isCastActive) {
-                stageCast.stopPresentation()
-              } else {
-                const container = scrollContainerRef.current
-                if (container) {
-                  const maxScroll = container.scrollHeight - container.clientHeight
-                  const fraction = maxScroll > 0 ? container.scrollTop / maxScroll : 0
-                  stageCast.broadcastScroll(container.scrollTop, fraction)
-                }
-                stageCast.broadcastState({
-                  song,
-                  effectiveKey,
-                  transposeOffset,
-                  fontSizePx,
-                  fontStyle,
-                  isTwoColumn,
-                })
-                stageCast.openPresentationWindow()
-              }
-            }}
+            onClick={handleTogglePresentation}
             className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
               isCastActive
                 ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-[#DC6E67] hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
@@ -1868,42 +1991,6 @@ export const StageView: React.FC<StageViewProps> = ({
               <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
               </h2>
-              {isStageDistanceActive && (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  1–2m Stage Distance
-                </span>
-              )}
-            </div>
-
-            {/* --- One-Tap Stage Distance (1–2m) Master Preset --- */}
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={handleToggleStageDistance}
-                className={`w-full py-2.5 px-3 rounded-2xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
-                  isStageDistanceActive
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-md ring-1 ring-amber-500/40'
-                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:border-[#2AA198]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                    isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-amber-400'
-                  }`}>
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="font-bold text-xs">Stage Distance (1–2m)</span>
-                    <span className="text-[10px] text-[#93A1A1] font-mono">24px (L) • 120% Bold Chords • Relaxed</span>
-                  </div>
-                </div>
-                <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-lg font-bold ${
-                  isStageDistanceActive ? 'bg-amber-500 text-black' : 'bg-[#073642] text-[#93A1A1] border border-[#1A4A55]'
-                }`}>
-                  {isStageDistanceActive ? 'ACTIVE' : 'APPLY'}
-                </span>
-              </button>
             </div>
 
             {/* --- Transpose row --- */}
@@ -2099,6 +2186,32 @@ export const StageView: React.FC<StageViewProps> = ({
               </div>
             </div>
 
+            {/* --- Sync to TV / Stage Cast Action --- */}
+            <div className="flex items-center gap-2 mb-5">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">TV Sync</span>
+              <button
+                type="button"
+                data-testid="stage-options-sync-tv-btn"
+                onClick={async () => {
+                  setIsStageMenuOpen(false)
+                  await handleTogglePresentation()
+                }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer flex-1 ${
+                  isCastActive
+                    ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-[#DC6E67] hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
+                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] hover:border-[#2AA198]'
+                }`}
+                title={
+                  isCastActive
+                    ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
+                    : 'Sync to TV / Secondary Display (AirPlay, Smart TV, or Teleprompter pairing)'
+                }
+              >
+                <Tv className="w-4 h-4" />
+                <span>{isCastActive ? 'Disconnect TV Sync' : 'Sync to TV'}</span>
+              </button>
+            </div>
+
             {/* --- Exit performance mode --- */}
             {inPerformanceMode && (
               <button
@@ -2142,6 +2255,13 @@ export const StageView: React.FC<StageViewProps> = ({
         isOpen={isBandSyncModalOpen}
         onClose={() => setIsBandSyncModalOpen(false)}
         initialTab="sync"
+      />
+
+      {/* Secondary TV Browser Pairing & AirPlay Modal */}
+      <TvPresentationModal
+        isOpen={isTvPresentationModalOpen}
+        onClose={() => setIsTvPresentationModalOpen(false)}
+        detectedLanIp={syncState.detectedLanIp || syncState.customHostIp}
       />
     </div>
   )

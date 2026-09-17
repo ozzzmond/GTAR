@@ -7,7 +7,6 @@ import {
   Square,
   SlidersHorizontal,
   Palette,
-  RefreshCw,
   Check,
   X,
   Radio,
@@ -15,6 +14,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
+import { isDevEnv } from '../utils/env'
 
 import type { SongFontStyleOption } from '../utils/backupSettings'
 export type { SongFontStyleOption } from '../utils/backupSettings'
@@ -28,7 +28,6 @@ interface StageSettingsModalProps {
   onToggleTwoColumn: (enabled: boolean) => void
   onOpenStageTools: () => void
   onToggleTheme: () => void
-  onCheckForUpdates: () => void
   onExportAllData?: () => void
   onOpenBackupRestoreModal?: () => void
   onInstallApp?: () => void
@@ -43,13 +42,12 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
   onToggleTwoColumn,
   onOpenStageTools,
   onToggleTheme,
-  onCheckForUpdates,
   onExportAllData,
   onOpenBackupRestoreModal,
   onInstallApp,
 }) => {
   const [keepScreenAwake, setKeepScreenAwake] = useState(false)
-  const [wakeLockSentinel, setWakeLockSentinel] = useState<any>(null)
+  const [wakeLockSentinel, setWakeLockSentinel] = useState<WakeLockSentinel | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -62,10 +60,9 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
     }
 
     if ('wakeLock' in navigator) {
-      // @ts-ignore
       navigator.wakeLock
         .request('screen')
-        .then((sentinel: any) => {
+        .then((sentinel: WakeLockSentinel) => {
           setWakeLockSentinel(sentinel)
           showToast('Stage Wake Lock active: screen will remain awake')
         })
@@ -383,7 +380,7 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
           <div className="p-4 rounded-xl bg-[#002B36]/60 border border-[#1A4A55]/70 text-center space-y-2">
             <div className="text-xs font-extrabold text-[#FDF6E3]">GTAR Live Stage Companion</div>
             <div className="text-[11px] font-mono font-bold text-[#2AA198]">
-              {import.meta.env.DEV ? `Version ${GTAR_DEV_VERSION}` : `Version ${GTAR_APP_VERSION}`}
+              {isDevEnv ? `Version ${GTAR_DEV_VERSION}` : `Version ${GTAR_APP_VERSION}`}
             </div>
             <div className="text-[10px] text-[#93A1A1]">
               Offline-First Stage Teleprompter & Chord Companion for Live Musicians
@@ -402,17 +399,6 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                onCheckForUpdates()
-                showToast('Checking for updates...')
-              }}
-              className="mt-1 w-full py-2 rounded-lg border border-[#2AA198]/50 text-[#2AA198] text-xs font-bold hover:bg-[#2AA198]/10 transition-colors cursor-pointer flex items-center justify-center gap-2"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Check for Updates</span>
-            </button>
           </div>
         </div>
 

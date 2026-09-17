@@ -34,12 +34,31 @@ type VendorElement = HTMLElement & {
  *     identifies iOS without sniffing the UA string.
  */
 export function isIosDevice(): boolean {
-  if (typeof window === 'undefined') return false
-  // iPads on iOS 13+ report 'MacIntel' so we rely on touch points
-  const hasTouch = navigator.maxTouchPoints > 1
-  // Quick heuristic: iOS Safari sets navigator.standalone (boolean | undefined)
-  const standaloneApi = 'standalone' in navigator
-  return hasTouch && standaloneApi
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
+
+  const ua = navigator.userAgent || ''
+  const platform = (navigator as unknown as { platform?: string }).platform || ''
+
+  // 1. Direct UA string match (standard iPhone / iPad / iPod)
+  if (/iPhone|iPad|iPod/i.test(ua)) return true
+
+  // 2. Direct navigator.platform match
+  if (/iPhone|iPad|iPod/i.test(platform)) return true
+
+  // 3. iPadOS 13+ or desktop-mode iPhone/iPad:
+  // Apple masks UA as Macintosh/MacIntel, but device has touch capability
+  const touchPoints = typeof navigator.maxTouchPoints === 'number' ? navigator.maxTouchPoints : 0
+  const hasTouch =
+    touchPoints > 0 ||
+    (typeof window !== 'undefined' && 'ontouchstart' in window) ||
+    (typeof document !== 'undefined' && 'ontouchend' in document)
+  if (/Macintosh|MacIntel/i.test(platform) && hasTouch) return true
+  if (/Macintosh/i.test(ua) && hasTouch) return true
+
+  // 4. iOS Safari standalone API heuristic (WebKit on iOS)
+  if ('standalone' in navigator) return true
+
+  return false
 }
 
 /**

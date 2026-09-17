@@ -47,7 +47,7 @@ test('isQuotaError detects DOMException and quota error messages correctly', () 
   assert.equal(isQuotaError(null), false)
 })
 
-test('pruneAllRecoverySnapshots archive prunes older recovery snapshots and bounds snapshots gracefully', () => {
+test('pruneAllRecoverySnapshots retains unrecognized recovery snapshots', () => {
   const { pruneAllRecoverySnapshots } = require('../src/utils/syncJournal.ts')
   const store = storage()
   store.setItem('gtar_sync_recovery:account:1', 'snap1')
@@ -55,13 +55,13 @@ test('pruneAllRecoverySnapshots archive prunes older recovery snapshots and boun
   store.setItem('gtar_sync_recovery:account:3', 'snap3')
   pruneAllRecoverySnapshots(store, 2)
   const remaining = [...store.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
-  assert.equal(remaining.length, 2)
+  assert.equal(remaining.length, 3)
   pruneAllRecoverySnapshots(store, 0)
   const empty = [...store.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
-  assert.equal(empty.length, 0)
+  assert.equal(empty.length, 3)
 })
 
-test('persistLibrary auto-prunes recovery snapshots to save primary library on quota hit', () => {
+test('persistLibrary retains recovery snapshots while retrying primary library on quota hit', () => {
   const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
   const store = storage()
   store.setItem('gtar_sync_recovery:account:1', 'snapshot-data')
@@ -80,9 +80,9 @@ test('persistLibrary auto-prunes recovery snapshots to save primary library on q
   }
   persistLibrary(edited, quotaStore)
   assert.deepEqual(readPersistedLibrary(quotaStore), edited)
-  // Recovery snapshots were pruned to allow saving primary library
+  // Recovery snapshots remain available after retry
   const remaining = [...quotaStore.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
-  assert.equal(remaining.length, 0)
+  assert.equal(remaining.length, 1)
 })
 
 test('isQuotaError detects DOMException and rejects non-quota DOMExceptions correctly', () => {
@@ -144,18 +144,18 @@ test('canonical user data keys are never selected for recovery snapshot pruning'
 
   // Prune all recovery snapshots down to 0
   pruneAllRecoverySnapshots(store, 0)
-  assert.equal(store.getItem('gtar_sync_recovery:account:1001_snap1'), null)
-  assert.equal(store.getItem('gtar_sync_recovery:account:1002_snap2'), null)
-  assert.equal(store.getItem('gtar_sync_recovery:other:2001_snap3'), null)
+  assert.equal(store.getItem('gtar_sync_recovery:account:1001_snap1'), 'snapshot-1')
+  assert.equal(store.getItem('gtar_sync_recovery:account:1002_snap2'), 'snapshot-2')
+  assert.equal(store.getItem('gtar_sync_recovery:other:2001_snap3'), 'snapshot-3')
 
   // Verify ALL canonical keys remain completely intact
   for (const [k, v] of canonicalEntries) {
     assert.equal(store.getItem(k), v, `Canonical key ${k} was unexpectedly modified or pruned!`)
   }
-  assert.equal(store.length, canonicalEntries.length)
+  assert.equal(store.length, canonicalEntries.length + 3)
 })
 
-test('performStorageHousekeeping purges legacy duplicate stores and bounds recovery snapshots', () => {
+test('performStorageHousekeeping preserves all sources when recovery snapshots are ambiguous', () => {
   const { performStorageHousekeeping } = require('../src/utils/syncJournal.ts')
   const store = storage()
 
@@ -178,19 +178,19 @@ test('performStorageHousekeeping purges legacy duplicate stores and bounds recov
   // Canonical library must remain
   assert.deepEqual(JSON.parse(store.getItem('gtar_library_v1')), base)
 
-  // Legacy duplicates must be purged
-  assert.equal(store.getItem('gtar_songs_store'), null)
-  assert.equal(store.getItem('gtar_trash_songs_store'), null)
-  assert.equal(store.getItem('gtar_setlists_store'), null)
-  assert.equal(store.getItem('gtar_sync_v1:acc1'), null)
-  assert.equal(store.getItem('gtar_sync_library_owner'), null)
+  // Ambiguity preserves all sources
+  assert.ok(store.getItem('gtar_songs_store'))
+  assert.ok(store.getItem('gtar_trash_songs_store'))
+  assert.ok(store.getItem('gtar_setlists_store'))
+  assert.ok(store.getItem('gtar_sync_v1:acc1'))
+  assert.ok(store.getItem('gtar_sync_library_owner'))
 
-  // Recovery snapshots must be bounded to <= 2
+  // Every unresolved snapshot is retained
   const remainingSnaps = [...store.values.keys()].filter(k => k.startsWith('gtar_sync_recovery:'))
-  assert.ok(remainingSnaps.length <= 2, `Expected at most 2 snapshots, found ${remainingSnaps.length}`)
+  assert.equal(remainingSnaps.length, 5)
 })
 
-test('persistLibrary purges legacy duplicate stores on quota hit to reclaim maximum storage space', () => {
+test('persistLibrary preserves legacy stores on quota hit', () => {
   const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
   const store = storage()
 
@@ -213,13 +213,13 @@ test('persistLibrary purges legacy duplicate stores on quota hit to reclaim maxi
     }
   }
 
-  // Persisting new library hits quota -> auto-purges legacy stores + snapshots -> retries and succeeds
+  // Persisting retries after pruning only disposable logs
   persistLibrary(edited, quotaStore)
 
   assert.deepEqual(readPersistedLibrary(quotaStore), edited)
-  assert.equal(quotaStore.getItem('gtar_songs_store'), null)
-  assert.equal(quotaStore.getItem('gtar_trash_songs_store'), null)
-  assert.equal(quotaStore.getItem('gtar_setlists_store'), null)
+  assert.ok(quotaStore.getItem('gtar_songs_store'))
+  assert.ok(quotaStore.getItem('gtar_trash_songs_store'))
+  assert.ok(quotaStore.getItem('gtar_setlists_store'))
 })
 
 test('SAFETY REQUIREMENT 1: performStorageHousekeeping preserves gtar_songs_store when canonical library is absent or damaged', () => {

@@ -1,10 +1,18 @@
-import { persistLibrary, readPersistedLibrary, isQuotaError, performStorageHousekeeping } from './utils/syncJournal'
+import {
+  persistLibrary,
+  readPersistedLibrary,
+  isQuotaError,
+  performStorageHousekeeping,
+  recoveryData,
+  requestDurableStorage,
+  setupCrossTabLibraryConflictGuard,
+} from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
 import { setSongMembership, ensureSongIds, resolveSetlistSong, mergeBackupLibrary, partitionSongs } from './utils/setlistSongs'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
 import { StageView } from './components/StageView'
@@ -18,6 +26,7 @@ import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
 import { ImportDialogModal } from './components/ImportDialogModal'
 import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
 import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
+import { StageErrorBoundary } from './components/StageErrorBoundary'
 import {
   ThemeModal,
   type ThemeMode,
@@ -29,10 +38,8 @@ import { BandSyncModal } from './components/BandSyncModal'
 import { bandSync } from './utils/bandSync'
 import { extractDirectives } from './utils/chordSheetParser'
 import type { ActiveSongState } from './types/gtar'
-import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
-import { Check, Sparkles } from 'lucide-react'
 
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
@@ -207,7 +214,30 @@ function App() {
   if (isPresentationRoute) {
     return <StagePresentationView />
   }
-  return <LibraryApp />
+  return <LibraryStartup />
+}
+
+function LibraryStartup() {
+  const [status] = useState(() => {
+    const retired = performStorageHousekeeping()
+    try { readPersistedLibrary(); return { retired: retired || Object.keys(recoveryData()).length === 0, damaged: false } }
+    catch { return { retired: false, damaged: true } }
+  })
+  const exportRecovery = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryData(), null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'GTAR-storage-recovery.json'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  return <>
+    {!status.retired && <aside role="alert" className="p-4 bg-amber-100 text-black">
+      {status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}
+      <button className="underline ml-3" onClick={exportRecovery}>Export recovery data</button>
+    </aside>}
+    {!status.damaged && <LibraryApp />}
+  </>
 }
 
 function LibraryApp() {
@@ -216,7 +246,6 @@ function LibraryApp() {
 
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
-    performStorageHousekeeping()
     const savedLibrary = readPersistedLibrary()
     if (savedLibrary) return { ...partitionSongs(savedLibrary.songs), setlists: savedLibrary.setlists }
     const readSongs = (key: string, fallback: ActiveSongState[]) => {
@@ -239,7 +268,8 @@ function LibraryApp() {
       persistLibrary(repaired)
       performStorageHousekeeping()
     } catch { /* ignore */ }
-    return { ...partitionSongs(repaired.songs), setlists: repaired.setlists }
+    const migrated = readPersistedLibrary() ?? repaired
+    return { ...partitionSongs(migrated.songs), setlists: migrated.setlists }
   })
   const [songs, setSongs] = useState<ActiveSongState[]>(initialLibrary.active)
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
@@ -311,18 +341,52 @@ function LibraryApp() {
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
   }, [])
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const lastStorageWarningTimeRef = useRef<number>(0)
+
+  const handleStorageWriteFailure = useCallback((err: unknown) => {
+    const isQuota = isQuotaError(err)
+    const warnMsg = isQuota
+      ? 'Storage quota reached: changes may not be saved to device storage.'
+      : 'Storage write failed: changes may not be saved to device storage.'
+    console.warn(`[Storage] ${warnMsg} State preserved in memory.`, err)
+
+    const now = Date.now()
+    if (now - lastStorageWarningTimeRef.current > 10000) {
+      lastStorageWarningTimeRef.current = now
+      setToastMessage(warnMsg)
+      setTimeout(() => setToastMessage(null), 5000)
+    }
+  }, [])
+
+  // Best-effort non-blocking durable storage request (Gap 2)
+  useEffect(() => {
+    requestDurableStorage().catch(() => {})
+  }, [])
+
+  // Cross-tab storage conflict protection for gtar_library_v1 (Gap 3)
+  useEffect(() => {
+    let lastConflictWarning = 0
+    const cleanup = setupCrossTabLibraryConflictGuard(() => {
+      console.warn('[Storage] gtar_library_v1 was updated in another tab. In-memory state preserved.')
+      const now = Date.now()
+      if (now - lastConflictWarning > 10000) {
+        lastConflictWarning = now
+        setToastMessage('Songbook library updated in another tab. Current active edits are preserved.')
+        setTimeout(() => setToastMessage(null), 5000)
+      }
+    })
+    return cleanup
+  }, [])
+
   // Persist canonical library on any songs, trash, or setlists change (with quota relief)
   useEffect(() => {
     try {
       persistLibrary({ songs: [...songs, ...deletedSongs], setlists })
     } catch (err) {
-      if (isQuotaError(err)) {
-        console.warn('[Storage] Local storage quota reached while persisting library. State preserved in memory.', err)
-      } else {
-        console.warn('[Storage] Failed to persist library to localStorage. State preserved in memory.', err)
-      }
+      handleStorageWriteFailure(err)
     }
-  }, [songs, deletedSongs, setlists])
+  }, [songs, deletedSongs, setlists, handleStorageWriteFailure])
 
   // Save active setlist ID
   useEffect(() => {
@@ -405,11 +469,17 @@ function LibraryApp() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
-  const [showUpdateSuccessModal, setShowUpdateSuccessModal] = useState(false)
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
+
+  // Guard: sync active stage presence to window to protect active performance from unprompted SW reloads
+  useEffect(() => {
+    const isStageActive = activeView === 'stage' || isStagePerformanceMode
+    ;(window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__ = isStageActive
+    return () => {
+      ;(window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__ = false
+    }
+  }, [activeView, isStagePerformanceMode])
 
   // Band Sync: listen to leader song sync events when client
   useEffect(() => {
@@ -455,7 +525,7 @@ function LibraryApp() {
             if (!matched) {
               for (const sl of setlists) {
                 const slIdx = sl.songs.findIndex(
-                  (s: any) =>
+                  (s) =>
                     s.title.trim().toLowerCase() === normTitle &&
                     (!normArtist || (s.artist || '').trim().toLowerCase() === normArtist)
                 )
@@ -527,7 +597,7 @@ function LibraryApp() {
           }
         } else if (msg.type === 'SETLIST_SYNC' && msg.payload) {
           const incomingSetlistName = msg.payload.setlistName || 'Band Setlist'
-          const incomingSongs: any[] = Array.isArray(msg.payload.songs) ? msg.payload.songs : []
+          const incomingSongs: Array<Partial<ActiveSongState>> = Array.isArray(msg.payload.songs) ? msg.payload.songs : []
 
           // Smart Merge: do not overwrite or duplicate existing (match title + artist)
           setSongs((prevSongs) => {
@@ -565,7 +635,7 @@ function LibraryApp() {
           const syncedSetlist: WebSetlist = {
             id: newSetlistId,
             name: incomingSetlistName,
-            songs: incomingSongs.map((s) => ({ title: s.title, artist: s.artist })),
+            songs: incomingSongs.map((s) => ({ title: s.title || 'Untitled Song', artist: s.artist })),
           }
 
           setSetlists((prevSetlists) => {
@@ -927,19 +997,19 @@ function LibraryApp() {
 
   // Explicit save action from DesktopEditor
   const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => {
-    setSongs((prev) => {
-      const nextSongs = prev.map((s) => (s.id === currentSong.id ? { ...s, ...updatedSong, id: s.id } : s))
-      try {
-        persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
-      } catch (err) {
-        if (isQuotaError(err)) {
-          console.warn('[Storage] Local storage quota reached on song save. State preserved in memory.', err)
-        }
-      }
-      return nextSongs
-    })
-    setToastMessage('Song saved successfully')
-    setTimeout(() => setToastMessage(null), 3500)
+    let saveFailed = false
+    const nextSongs = songs.map((s) => (s.id === currentSong.id ? { ...s, ...updatedSong, id: s.id } : s))
+    try {
+      persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
+    } catch (err) {
+      saveFailed = true
+      handleStorageWriteFailure(err)
+    }
+    setSongs(nextSongs)
+    if (!saveFailed) {
+      setToastMessage('Song saved successfully')
+      setTimeout(() => setToastMessage(null), 3500)
+    }
   }
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
@@ -961,6 +1031,8 @@ function LibraryApp() {
     const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }))
     if (!parsed.isValid) throw new Error(parsed.error)
     const partition = partitionSongs(parsed.songs)
+    // Synchronously commit to canonical storage; throws if quota/write fails
+    persistLibrary({ songs: parsed.songs, setlists: parsed.setlists })
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(parsed.setlists)
@@ -982,6 +1054,8 @@ function LibraryApp() {
       if (index >= 0) nextSetlists[index] = setlist
       else nextSetlists.push(setlist)
     }
+    // Synchronously commit to canonical storage; throws if quota/write fails
+    persistLibrary({ songs: merged.songs, setlists: nextSetlists })
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(nextSetlists)
@@ -991,15 +1065,6 @@ function LibraryApp() {
     handleSmartMerge(newSongs, [setlist])
     setToastMessage(`Imported setlist "${setlist.name}" (${setlist.songs.length} songs)`)
     setTimeout(() => setToastMessage(null), 4000)
-  }
-
-  // Check for updates simulation
-  const handleCheckForUpdates = () => {
-    setIsCheckingUpdates(true)
-    setTimeout(() => {
-      setIsCheckingUpdates(false)
-      setShowUpdateSuccessModal(true)
-    }, 850)
   }
 
   // Filter songs if searchQuery is active
@@ -1043,8 +1108,6 @@ function LibraryApp() {
           onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
           onOpenImportModal={() => setIsImportModalOpen(true)}
           onOpenBackupRestoreModal={() => setIsBackupRestoreModalOpen(true)}
-          onCheckForUpdates={handleCheckForUpdates}
-          isCheckingUpdates={isCheckingUpdates}
           onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
@@ -1097,31 +1160,46 @@ function LibraryApp() {
             onBackToSongbook={() => setActiveView('songbook')}
           />
         ) : (
-          <StageView
-            song={currentSong}
-            songs={filteredSongs.length > 0 ? filteredSongs : songs}
-            activeSongIndex={activeSongIndex}
-            onSelectSongIndex={handleSelectLibrarySong}
-            queueMode={queueMode}
-            onToggleQueueMode={handleToggleQueueMode}
-            isInSetlistMode={isInSetlistMode}
-            activeSetlistSongs={activeSetlistSongs}
-            activeSetlistSongIndex={activeSetlistSongIndex}
-            onSelectSetlistSongIndex={setActiveSetlistSongIndex}
-            activeSetlistName={activeSetlist?.name}
-            setlists={setlists}
-            onSelectSetlist={handleSelectSetlist}
-            onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
-            onBack={() => setActiveView('songbook')}
-            transposeOffset={currentSong.transposeOffset || 0}
-            onTransposeChange={handleTransposeChange}
-            fontStyle={fontStyle}
-            onSelectFontStyle={setFontStyle}
-            isTwoColumn={isTwoColumn}
-            onToggleTwoColumn={setIsTwoColumn}
-            onOpenBandSync={() => setIsStageToolsModalOpen(true)}
-            onPerformanceModeChange={setIsStagePerformanceMode}
-          />
+          <StageErrorBoundary onExitToSongbook={() => setActiveView('songbook')}>
+            <StageView
+              song={currentSong}
+              songs={filteredSongs.length > 0 ? filteredSongs : songs}
+              activeSongIndex={activeSongIndex}
+              onSelectSongIndex={handleSelectLibrarySong}
+              queueMode={queueMode}
+              onToggleQueueMode={handleToggleQueueMode}
+              isInSetlistMode={isInSetlistMode}
+              activeSetlistSongs={activeSetlistSongs}
+              activeSetlistSongIndex={activeSetlistSongIndex}
+              onSelectSetlistSongIndex={setActiveSetlistSongIndex}
+              activeSetlistName={activeSetlist?.name}
+              setlists={setlists}
+              onSelectSetlist={handleSelectSetlist}
+              onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
+              isSetlistDrawerOpen={isSetlistDrawerOpen}
+              isStageSettingsModalOpen={isStageSettingsModalOpen}
+              isAnyModalOpen={
+                isSetlistDrawerOpen ||
+                isStageSettingsModalOpen ||
+                isStageToolsModalOpen ||
+                isThemeModalOpen ||
+                isWebsiteUrlModalOpen ||
+                isImportModalOpen ||
+                isBackupRestoreModalOpen ||
+                isJsonModalOpen ||
+                isHeaderKeyPickerOpen
+              }
+              onBack={() => setActiveView('songbook')}
+              transposeOffset={currentSong.transposeOffset || 0}
+              onTransposeChange={handleTransposeChange}
+              fontStyle={fontStyle}
+              onSelectFontStyle={setFontStyle}
+              isTwoColumn={isTwoColumn}
+              onToggleTwoColumn={setIsTwoColumn}
+              onOpenBandSync={() => setIsStageToolsModalOpen(true)}
+              onPerformanceModeChange={setIsStagePerformanceMode}
+            />
+          </StageErrorBoundary>
         )}
       </main>
 
@@ -1211,7 +1289,6 @@ function LibraryApp() {
           setIsStageSettingsModalOpen(false)
           setIsThemeModalOpen(true)
         }}
-        onCheckForUpdates={handleCheckForUpdates}
         onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
         onOpenBackupRestoreModal={() => {
           setIsStageSettingsModalOpen(false)
@@ -1251,46 +1328,19 @@ function LibraryApp() {
         onReset={() => handleTransposeChange(0)}
       />
 
-      {/* Check for Updates Confirmation Modal */}
-      {showUpdateSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-sm rounded-2xl bg-[#073642] border border-[#2AA198] p-6 shadow-2xl text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-[#2AA198]/20 border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198] mx-auto">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-extrabold text-[#FDF6E3]">You're Up to Date!</h3>
-              <p className="text-xs text-[#2AA198] font-mono font-bold">
-                GTAR Web App {import.meta.env.DEV ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}
-              </p>
-            </div>
-            <div className="p-3 rounded-xl bg-[#002B36] text-left text-[11px] text-[#93A1A1] space-y-1 border border-[#1A4A55]">
-              <div className="font-bold text-[#EEE8D5] flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-[#2AA198]" />
-                <span>1:1 Parity with Android v{GTAR_APP_VERSION}</span>
-              </div>
-              <p>• Unified TopAppBar with 4-Action 3-Dot Menu</p>
-              <p>• Band Sync multi-screen stage sync (Leader / Member)</p>
-              <p>• Classic chord-over-lyric layout (no inline brackets)</p>
-              <p>• Clean floating intro chords without keypad boxes</p>
-              <p>• Monospace, Sans, Serif font selector & shortcuts</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowUpdateSuccessModal(false)}
-              className="w-full py-2.5 rounded-xl bg-[#2AA198] text-[#002B36] font-bold text-xs hover:bg-[#35B8AD] transition-colors cursor-pointer"
-            >
-              Great!
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Global Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <div className="px-4 py-2.5 rounded-xl bg-[#002B36] border border-[#2AA198] text-[#FDF6E3] text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center">
-            <span className="w-2 h-2 rounded-full bg-[#10B981] shrink-0 animate-pulse" />
+          <div className={`px-4 py-2.5 rounded-xl bg-[#002B36] border text-[#FDF6E3] text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center ${
+            /fail|quota|warn|error|conflict|cannot|may not/i.test(toastMessage)
+              ? 'border-[#CB4B16]'
+              : 'border-[#2AA198]'
+          }`}>
+            <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${
+              /fail|quota|warn|error|conflict|cannot|may not/i.test(toastMessage)
+                ? 'bg-[#CB4B16]'
+                : 'bg-[#10B981]'
+            }`} />
             <span>{toastMessage}</span>
           </div>
         </div>

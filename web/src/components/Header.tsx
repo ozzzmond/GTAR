@@ -8,7 +8,6 @@ import {
   Settings,
   FolderOpen,
   CloudUpload,
-  RefreshCw,
   Eye,
   FileEdit,
   ListMusic,
@@ -42,6 +41,11 @@ import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
+}
+
 interface HeaderProps {
   activeView: 'songbook' | 'editor' | 'stage' | 'trash'
   onViewChange: (view: 'songbook' | 'editor' | 'stage' | 'trash') => void
@@ -64,8 +68,6 @@ interface HeaderProps {
   onOpenStageSettings: () => void
   onOpenImportModal: () => void
   onOpenBackupRestoreModal: () => void
-  onCheckForUpdates?: () => void
-  isCheckingUpdates?: boolean
   onOpenSetlistDrawer?: () => void
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
@@ -126,8 +128,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStageSettings,
   onOpenImportModal,
   onOpenBackupRestoreModal,
-  onCheckForUpdates,
-  isCheckingUpdates = false,
   onOpenSetlistDrawer,
   setlists = [],
   activeSetlistId,
@@ -135,6 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeSetlistSongs = [],
   onSelectSetlistSong,
   onSelectSetlist,
+  onPushSetlistToBandSync: _onPushSetlistToBandSync,
   onDirectImportOnlineSong,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
@@ -145,7 +146,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
   const [previewResult, setPreviewResult] = useState<OnlineChordResult | null>(null)
   const [importingId, setImportingId] = useState<string | number | null>(null)
-  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null)
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isAppInstalled, setIsAppInstalled] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
@@ -184,7 +185,9 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
-      setDeferredInstallPrompt(e)
+      if ('prompt' in e) {
+        setDeferredInstallPrompt(e as BeforeInstallPromptEvent)
+      }
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
@@ -236,12 +239,10 @@ export const Header: React.FC<HeaderProps> = ({
     }, 200)
   }
 
-  // Active Setlist context with fallback to first setlist
+  // Active setlist detection
   const currentActiveSetlist = useMemo(() => {
-    if (!setlists.length) return null
     return (
-      setlists.find((s) => String(s.id) === String(activeSetlistId)) ||
-      setlists[0] ||
+      (setlists || []).find((sl) => String(sl.id) === String(activeSetlistId)) ||
       null
     )
   }, [setlists, activeSetlistId])
@@ -257,7 +258,7 @@ export const Header: React.FC<HeaderProps> = ({
         return {
           title: ref.title,
           artist: ref.artist || match?.artist || '',
-          key: match?.key || (ref as any).key || '',
+          key: match?.key || ('key' in ref && typeof ref.key === 'string' ? ref.key : ''),
         }
       })
     }
@@ -390,26 +391,12 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
                 <span className="text-[10px] font-mono text-[#93A1A1] font-semibold tracking-tight">
-                  v{isDevApp ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
+                  v{isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
                 </span>
               </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onCheckForUpdates?.()
-            }}
-            title={isDevApp ? `Click to check for updates (web v${GTAR_DEV_VERSION})` : `Click to check for updates (web v${GTAR_APP_VERSION})`}
-            className="text-[10px] sm:text-xs font-mono px-2 py-0.5 rounded-full bg-[#002B36] text-[#93A1A1] border border-[#1A4A55] hover:border-[#2AA198] font-semibold hidden md:inline-flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            {isCheckingUpdates && (
-              <RefreshCw className="w-2.5 h-2.5 animate-spin text-[#B58900]" />
-            )}
-            <span>{isDevApp ? `web v${GTAR_DEV_VERSION}` : `web v${GTAR_APP_VERSION}`}</span>
-          </button>
         </div>
 
         {/* Right Action Icons & User Avatar */}

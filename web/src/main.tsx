@@ -6,6 +6,13 @@ import { AuthGate } from './components/AuthGate'
 const App = lazy(() => import('./App.tsx'))
 
 import { isDevEnv } from './utils/env'
+import { requestDurableStorage } from './utils/syncJournal'
+
+// Best-effort request for durable browser storage (non-blocking, non-failing)
+if (typeof window !== 'undefined') {
+  requestDurableStorage().catch(() => {})
+}
+
 
 function applyEnvironmentBranding(isDev: boolean) {
   if (typeof document === 'undefined') return
@@ -89,6 +96,22 @@ applyEnvironmentBranding(isDevEnv)
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   registerSW({
     immediate: true,
+    onNeedReload() {
+      // Protect active stage session: never force reload while user is on stage
+      const isStageActive =
+        window.location.pathname.includes('/stage') ||
+        window.location.search.includes('view=present') ||
+        window.location.hash.includes('present') ||
+        Boolean((window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__)
+
+      if (isStageActive) {
+        return
+      }
+
+      // Do not force an unprompted window reload during an active session.
+      // The updated service worker is already installed and activated in the background;
+      // subsequent normal app starts or manual navigations will use the updated build.
+    },
     onRegisteredSW(_swScriptUrl, registration) {
       if (registration) {
         // Periodically check for updates (every hour)

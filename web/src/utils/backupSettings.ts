@@ -77,5 +77,8 @@ export function restoreBackupSettings(settings: BackupSettings, storage: Pick<St
   for (const [key, value] of Object.entries(settings.stageSettings ?? {})) {
     storage.setItem(SETTINGS_KEYS[key as keyof typeof settings.stageSettings], String(value))
   }
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SETTINGS_CHANGED))
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    const Evt = typeof window.Event === 'function' ? window.Event : Event
+    window.dispatchEvent(new Evt(SETTINGS_CHANGED))
+  }
 }
