@@ -6,6 +6,13 @@ import { AuthGate } from './components/AuthGate'
 const App = lazy(() => import('./App.tsx'))
 
 import { isDevEnv } from './utils/env'
+import { requestDurableStorage } from './utils/syncJournal'
+
+// Best-effort request for durable browser storage (non-blocking, non-failing)
+if (typeof window !== 'undefined') {
+  requestDurableStorage().catch(() => {})
+}
+
 
 function applyEnvironmentBranding(isDev: boolean) {
   if (typeof document === 'undefined') return

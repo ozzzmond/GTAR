@@ -15,10 +15,15 @@ export const CANONICAL_STORAGE_PREFIXES = [
   'gtar_trash_songs_store',
   'gtar_setlists_store',
   'gtar_active_setlist_id',
+  'gtar_theme_store',
   'gtar_theme_mode',
   'gtar_custom_theme_colors',
+  'gtar_font_style_store',
   'gtar_font_style',
+  'gtar_twocolumn_store',
   'gtar_is_two_column',
+  'gtar_stage_font_size',
+  'gtar_stage_scroll_speed',
 ]
 
 export function isCanonicalKey(k: string): boolean {
@@ -274,5 +279,40 @@ export function estimateStorageFootprint(storage: Storage = localStorage): Stora
     totalMB: Number((totalBytes / (1024 * 1024)).toFixed(2)),
     keyCount: Object.keys(keys).length,
     keys,
+  }
+}
+
+export async function requestDurableStorage(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.storage || typeof navigator.storage.persist !== 'function') {
+    return false
+  }
+  try {
+    if (typeof navigator.storage.persisted === 'function') {
+      const alreadyPersisted = await navigator.storage.persisted()
+      if (alreadyPersisted) return true
+    }
+    return await navigator.storage.persist()
+  } catch {
+    return false
+  }
+}
+
+export function setupCrossTabLibraryConflictGuard(
+  onConflict: (externalRaw: string | null) => void,
+  targetWindow: Window | EventTarget = typeof window !== 'undefined' ? window : ({} as unknown as EventTarget)
+): () => void {
+  if (!targetWindow || typeof (targetWindow as EventTarget).addEventListener !== 'function') {
+    return () => {}
+  }
+  const handler = (event: Event) => {
+    const storageEvent = event as StorageEvent
+    if (storageEvent.key !== LIBRARY_KEY) return
+    onConflict(storageEvent.newValue ?? null)
+  }
+  ;(targetWindow as EventTarget).addEventListener('storage', handler as EventListener)
+  return () => {
+    if (typeof (targetWindow as EventTarget).removeEventListener === 'function') {
+      ;(targetWindow as EventTarget).removeEventListener('storage', handler as EventListener)
+    }
   }
 }

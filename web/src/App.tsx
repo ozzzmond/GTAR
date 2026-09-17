@@ -1,10 +1,18 @@
-import { persistLibrary, readPersistedLibrary, isQuotaError, performStorageHousekeeping, recoveryData } from './utils/syncJournal'
+import {
+  persistLibrary,
+  readPersistedLibrary,
+  isQuotaError,
+  performStorageHousekeeping,
+  recoveryData,
+  requestDurableStorage,
+  setupCrossTabLibraryConflictGuard,
+} from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
 import { setSongMembership, ensureSongIds, resolveSetlistSong, mergeBackupLibrary, partitionSongs } from './utils/setlistSongs'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
 import { StageView } from './components/StageView'
@@ -332,18 +340,52 @@ function LibraryApp() {
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
   }, [])
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const lastStorageWarningTimeRef = useRef<number>(0)
+
+  const handleStorageWriteFailure = useCallback((err: unknown) => {
+    const isQuota = isQuotaError(err)
+    const warnMsg = isQuota
+      ? 'Storage quota reached: changes may not be saved to device storage.'
+      : 'Storage write failed: changes may not be saved to device storage.'
+    console.warn(`[Storage] ${warnMsg} State preserved in memory.`, err)
+
+    const now = Date.now()
+    if (now - lastStorageWarningTimeRef.current > 10000) {
+      lastStorageWarningTimeRef.current = now
+      setToastMessage(warnMsg)
+      setTimeout(() => setToastMessage(null), 5000)
+    }
+  }, [])
+
+  // Best-effort non-blocking durable storage request (Gap 2)
+  useEffect(() => {
+    requestDurableStorage().catch(() => {})
+  }, [])
+
+  // Cross-tab storage conflict protection for gtar_library_v1 (Gap 3)
+  useEffect(() => {
+    let lastConflictWarning = 0
+    const cleanup = setupCrossTabLibraryConflictGuard(() => {
+      console.warn('[Storage] gtar_library_v1 was updated in another tab. In-memory state preserved.')
+      const now = Date.now()
+      if (now - lastConflictWarning > 10000) {
+        lastConflictWarning = now
+        setToastMessage('Songbook library updated in another tab. Current active edits are preserved.')
+        setTimeout(() => setToastMessage(null), 5000)
+      }
+    })
+    return cleanup
+  }, [])
+
   // Persist canonical library on any songs, trash, or setlists change (with quota relief)
   useEffect(() => {
     try {
       persistLibrary({ songs: [...songs, ...deletedSongs], setlists })
     } catch (err) {
-      if (isQuotaError(err)) {
-        console.warn('[Storage] Local storage quota reached while persisting library. State preserved in memory.', err)
-      } else {
-        console.warn('[Storage] Failed to persist library to localStorage. State preserved in memory.', err)
-      }
+      handleStorageWriteFailure(err)
     }
-  }, [songs, deletedSongs, setlists])
+  }, [songs, deletedSongs, setlists, handleStorageWriteFailure])
 
   // Save active setlist ID
   useEffect(() => {
@@ -426,7 +468,6 @@ function LibraryApp() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
 
@@ -955,19 +996,19 @@ function LibraryApp() {
 
   // Explicit save action from DesktopEditor
   const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => {
-    setSongs((prev) => {
-      const nextSongs = prev.map((s) => (s.id === currentSong.id ? { ...s, ...updatedSong, id: s.id } : s))
-      try {
-        persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
-      } catch (err) {
-        if (isQuotaError(err)) {
-          console.warn('[Storage] Local storage quota reached on song save. State preserved in memory.', err)
-        }
-      }
-      return nextSongs
-    })
-    setToastMessage('Song saved successfully')
-    setTimeout(() => setToastMessage(null), 3500)
+    let saveFailed = false
+    const nextSongs = songs.map((s) => (s.id === currentSong.id ? { ...s, ...updatedSong, id: s.id } : s))
+    try {
+      persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
+    } catch (err) {
+      saveFailed = true
+      handleStorageWriteFailure(err)
+    }
+    setSongs(nextSongs)
+    if (!saveFailed) {
+      setToastMessage('Song saved successfully')
+      setTimeout(() => setToastMessage(null), 3500)
+    }
   }
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
@@ -1270,8 +1311,16 @@ function LibraryApp() {
       {/* Global Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <div className="px-4 py-2.5 rounded-xl bg-[#002B36] border border-[#2AA198] text-[#FDF6E3] text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center">
-            <span className="w-2 h-2 rounded-full bg-[#10B981] shrink-0 animate-pulse" />
+          <div className={`px-4 py-2.5 rounded-xl bg-[#002B36] border text-[#FDF6E3] text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center ${
+            /fail|quota|warn|error|conflict|cannot|may not/i.test(toastMessage)
+              ? 'border-[#CB4B16]'
+              : 'border-[#2AA198]'
+          }`}>
+            <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${
+              /fail|quota|warn|error|conflict|cannot|may not/i.test(toastMessage)
+                ? 'bg-[#CB4B16]'
+                : 'bg-[#10B981]'
+            }`} />
             <span>{toastMessage}</span>
           </div>
         </div>
