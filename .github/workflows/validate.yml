@@ -33,6 +33,7 @@ jobs:
               - 'gradle.properties'
               - 'gradlew'
               - 'gradlew.bat'
+              - 'tests/fixtures/**'
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -51,7 +52,7 @@ jobs:
       - run: npm run build
   android:
     needs: changes
-    if: ${{ needs.changes.outputs.android == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.android != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
