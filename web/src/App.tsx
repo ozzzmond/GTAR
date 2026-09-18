@@ -247,9 +247,6 @@ function LibraryStartup() {
 }
 
 function LibraryApp() {
-  // View state: Songbook Library Home vs Desktop Editor vs Stage View vs Trash Bin
-  const [activeView, setActiveView] = useState<'songbook' | 'editor' | 'stage' | 'trash'>('songbook')
-
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
     const savedLibrary = readPersistedLibrary()
