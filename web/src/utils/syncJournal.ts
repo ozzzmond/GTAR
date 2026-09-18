@@ -8,10 +8,13 @@ export const LIBRARY_KEY = 'gtar_library_v1'
 export const SYNC_RETIRED_KEY = 'gtar_sync_retired_v1'
 export { RESTORE_SNAPSHOT_KEY }
 
+import { STAGE_SESSION_KEY } from './stageSession'
+
 export const CANONICAL_STORAGE_PREFIXES = [
   LIBRARY_KEY,
   SYNC_RETIRED_KEY,
   RESTORE_SNAPSHOT_KEY,
+  STAGE_SESSION_KEY,
   ownerKey,
   'gtar_sync_v1:',
   'gtar_songs_store',

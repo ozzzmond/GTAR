@@ -385,11 +385,6 @@ export const Header: React.FC<HeaderProps> = ({
                     DEV
                   </span>
                 )}
-                {import.meta.env.VITE_APP_ENV === 'debug' && (
-                  <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-red-600 text-white shadow-sm animate-pulse">
-                    DEV PORT 5174
-                  </span>
-                )}
                 <span className="text-[10px] font-mono text-[#93A1A1] font-semibold tracking-tight">
                   v{isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
                 </span>
