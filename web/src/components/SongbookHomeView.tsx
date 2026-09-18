@@ -1,6 +1,6 @@
 import { SongSetlistDialog } from './SongSetlistDialog'
 import { resolveSetlistSong } from '../utils/setlistSongs'
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   ListPlus,
   Music,
@@ -13,6 +13,9 @@ import {
   Search,
   X,
   Upload,
+  Pencil,
+  Share2,
+  MoreHorizontal,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -27,9 +30,11 @@ interface SongbookHomeViewProps {
   onNewSetlist?: () => void
   onOpenSetlists: () => void
   onDeleteSong: (index: number) => void
+  onDeleteSetlist?: (setlistId: string | number) => void
+  onRenameSetlist?: (setlistId: string | number, newName: string) => void
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
-  onImportSingleSetlist?: (setlist: any, songs: ActiveSongState[]) => void
+  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -42,6 +47,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onNewSetlist,
   onOpenSetlists,
   onDeleteSong,
+  onDeleteSetlist,
+  onRenameSetlist,
   setlists = [],
   onSelectSetlistSong,
   onImportSingleSetlist,
@@ -49,8 +56,19 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null)
+  const [confirmDeleteSetlistId, setConfirmDeleteSetlistId] = useState<string | number | null>(null)
+  const [activeMenuSetlistId, setActiveMenuSetlistId] = useState<string | number | null>(null)
+  const [renamingSetlist, setRenamingSetlist] = useState<WebSetlist | null>(null)
+  const [renameInputValue, setRenameInputValue] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const setlistFileInputRef = React.useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (activeMenuSetlistId === null) return
+    const handleClickOutside = () => setActiveMenuSetlistId(null)
+    window.addEventListener('click', handleClickOutside)
+    return () => window.removeEventListener('click', handleClickOutside)
+  }, [activeMenuSetlistId])
 
   const handleSetlistImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -199,6 +217,74 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         onClose={() => setMembershipSongId(null)}
       />}
 
+      {/* Rename Setlist Modal Dialog */}
+      {renamingSetlist && (
+        <dialog
+          open
+          onCancel={() => setRenamingSetlist(null)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#1A4A55] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-bold text-sm flex items-center gap-2 text-[#FDF6E3]">
+                <Pencil className="w-4 h-4 text-[#2AA198]" />
+                Rename Setlist
+              </h2>
+              <button
+                type="button"
+                onClick={() => setRenamingSetlist(null)}
+                className="p-1 rounded-lg hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form
+              className="mt-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const trimmed = renameInputValue.trim()
+                if (trimmed) {
+                  onRenameSetlist?.(renamingSetlist.id, trimmed)
+                  setRenamingSetlist(null)
+                }
+              }}
+            >
+              <label htmlFor="rename-setlist-input" className="text-xs text-[#93A1A1] font-mono block mb-1.5">
+                Setlist Name
+              </label>
+              <input
+                id="rename-setlist-input"
+                data-testid="rename-setlist-input"
+                type="text"
+                value={renameInputValue}
+                onChange={(e) => setRenameInputValue(e.target.value)}
+                maxLength={120}
+                autoFocus
+                className="w-full rounded-lg border border-[#1A4A55] bg-[#002B36] p-2 text-sm text-[#FDF6E3] focus:border-[#2AA198] focus:outline-none"
+              />
+              <div className="flex justify-end gap-2 mt-4 font-mono text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setRenamingSetlist(null)}
+                  className="px-3 py-1.5 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  data-testid="save-rename-setlist"
+                  disabled={!renameInputValue.trim()}
+                  className="px-4 py-1.5 rounded-lg bg-[#2AA198] text-[#002B36] hover:bg-[#2AA198]/90 transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </dialog>
+      )}
+
       {/* 1. Compact Panel Header — title + New Setlist button, no hero */}
       <div className="flex items-center justify-between mb-5 px-1">
         <div className="flex items-center gap-2.5">
@@ -261,48 +347,155 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {setlists.map((sl) => (
-              <div
-                key={sl.id}
-                onClick={() => {
-                  if (onSelectSetlistSong && sl.songs.length > 0) {
-                    onSelectSetlistSong(sl.id, 0)
-                  } else {
-                    onOpenSetlists()
-                  }
-                }}
-                className="px-4 py-3 rounded-2xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
-                    {sl.name}
-                  </div>
-                  <div className="text-[11px] font-mono text-[#93A1A1] mt-0.5">
-                    {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
-                  </div>
-                </div>
+            {setlists.map((sl) => {
+              const isDeletingSetlist = confirmDeleteSetlistId === sl.id
+              const isMenuOpen = activeMenuSetlistId === sl.id
 
-                <div className="flex items-center gap-2 shrink-0">
-                  {/* Circular play button */}
-                  <div className="w-9 h-9 rounded-full bg-[#2AA198]/15 text-[#2AA198] flex items-center justify-center group-hover:bg-[#2AA198] group-hover:text-[#002B36] transition-colors">
-                    <Play className="w-4 h-4 fill-current ml-0.5" />
+              return (
+                <div
+                  key={sl.id}
+                  onClick={() => {
+                    if (onSelectSetlistSong && sl.songs.length > 0) {
+                      onSelectSetlistSong(sl.id, 0)
+                    } else {
+                      onOpenSetlists()
+                    }
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-3 relative"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
+                      {sl.name}
+                    </div>
+                    <div className="text-[11px] font-mono text-[#93A1A1] mt-0.5">
+                      {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
+                    </div>
                   </div>
-                  {/* Three-dot overflow */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      // Export as JSON on overflow click
-                      exportSingleSetlistJson(sl, songs)
-                    }}
-                    className="w-7 h-7 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
-                    title="Export setlist as .json"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
-                  </button>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Circular play button */}
+                    <div className="w-9 h-9 rounded-full bg-[#2AA198]/15 text-[#2AA198] flex items-center justify-center group-hover:bg-[#2AA198] group-hover:text-[#002B36] transition-colors">
+                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                    </div>
+
+                    {/* Visible Trash / Delete Action */}
+                    {onDeleteSetlist && (
+                      <button
+                        type="button"
+                        aria-label="Delete setlist"
+                        data-testid={`delete-setlist-${sl.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setActiveMenuSetlistId(null)
+                          setConfirmDeleteSetlistId(sl.id)
+                        }}
+                        className="w-7 h-7 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#DC6E67] flex items-center justify-center transition-colors cursor-pointer"
+                        title="Delete setlist"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* Three-dot overflow button */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        aria-label="Setlist actions"
+                        aria-haspopup="true"
+                        aria-expanded={isMenuOpen}
+                        data-testid={`setlist-menu-${sl.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setActiveMenuSetlistId(isMenuOpen ? null : sl.id)
+                        }}
+                        className="w-7 h-7 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
+                        title="Setlist actions"
+                      >
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+
+                      {/* Three-dot Action Menu: Rename Setlist | Share Setlist */}
+                      {isMenuOpen && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute right-0 top-8 w-40 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl z-30 py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                        >
+                          {onRenameSetlist && (
+                            <button
+                              type="button"
+                              data-testid={`menu-rename-${sl.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveMenuSetlistId(null)
+                                setRenamingSetlist(sl)
+                                setRenameInputValue(sl.name)
+                              }}
+                              className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-[#2AA198]" />
+                              <span>Rename Setlist</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            data-testid={`menu-share-${sl.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveMenuSetlistId(null)
+                              exportSingleSetlistJson(sl, songs)
+                            }}
+                            className={`w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors ${
+                              onRenameSetlist ? 'border-t border-[#1A4A55]/50' : ''
+                            }`}
+                          >
+                            <Share2 className="w-3.5 h-3.5 text-[#B58900]" />
+                            <span>Share Setlist</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Inline Delete Confirmation Popover */}
+                  {isDeletingSetlist && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute inset-0 bg-[#073642] border border-[#DC6E67] rounded-2xl p-4 flex items-center justify-between z-20 animate-in fade-in zoom-in-95 duration-150"
+                    >
+                      <div className="flex items-center gap-2 text-xs text-[#DC6E67] font-semibold">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span>Delete setlist?</span>
+                      </div>
+                      <div className="flex items-center gap-2 font-mono text-xs font-bold">
+                        <button
+                          type="button"
+                          data-testid={`confirm-delete-${sl.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onDeleteSetlist?.(sl.id)
+                            setConfirmDeleteSetlistId(null)
+                          }}
+                          className="px-3 py-1 rounded-lg bg-[#DC6E67] text-white hover:bg-[#DC6E67]/90 transition-colors cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`cancel-delete-${sl.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConfirmDeleteSetlistId(null)
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

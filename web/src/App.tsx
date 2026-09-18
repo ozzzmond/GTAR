@@ -12,6 +12,12 @@ import { generateUUID } from './utils/uuid'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
 import { setSongMembership, ensureSongIds, resolveSetlistSong, mergeBackupLibrary, partitionSongs } from './utils/setlistSongs'
+import {
+  readStageSession,
+  saveStageSession,
+  clearStageSession,
+  validateAndResolveStageSession,
+} from './utils/stageSession'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
@@ -271,6 +277,38 @@ function LibraryApp() {
     const migrated = readPersistedLibrary() ?? repaired
     return { ...partitionSongs(migrated.songs), setlists: migrated.setlists }
   })
+
+  // Recover active stage session if valid session existed prior to browser/OS restart
+  const [initialStageSession] = useState(() => {
+    try {
+      const rawSession = readStageSession()
+      const validated = validateAndResolveStageSession(
+        rawSession,
+        initialLibrary.active,
+        initialLibrary.setlists
+      )
+      if (rawSession && !validated.isValid) {
+        clearStageSession()
+      }
+      return validated
+    } catch {
+      clearStageSession()
+      return {
+        isValid: false,
+        view: 'songbook' as const,
+        queueMode: 'library' as const,
+        activeSongIndex: 0,
+        activeSetlistId: null,
+        activeSetlistSongIndex: 0,
+        resolvedSong: null,
+      }
+    }
+  })
+
+  // View state: Songbook Library Home vs Desktop Editor vs Stage View vs Trash Bin
+  const [activeView, setActiveView] = useState<'songbook' | 'editor' | 'stage' | 'trash'>(
+    initialStageSession.isValid ? initialStageSession.view : 'songbook'
+  )
   const [songs, setSongs] = useState<ActiveSongState[]>(initialLibrary.active)
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
 
@@ -302,15 +340,24 @@ function LibraryApp() {
   })
 
   const [activeSetlistId, setActiveSetlistId] = useState<string | number | null>(() => {
+    if (initialStageSession.isValid && initialStageSession.activeSetlistId) {
+      return initialStageSession.activeSetlistId
+    }
     try {
       const saved = localStorage.getItem('gtar_active_setlist_id')
       if (saved) return JSON.parse(saved)
     } catch (_) {}
     return 'gig-set-1'
   })
-  const [activeSongIndex, setActiveSongIndex] = useState<number>(0)
-  const [activeSetlistSongIndex, setActiveSetlistSongIndex] = useState<number>(0)
-  const [queueMode, setQueueMode] = useState<'library' | 'setlist'>('library')
+  const [activeSongIndex, setActiveSongIndex] = useState<number>(
+    initialStageSession.isValid ? initialStageSession.activeSongIndex : 0
+  )
+  const [activeSetlistSongIndex, setActiveSetlistSongIndex] = useState<number>(
+    initialStageSession.isValid ? initialStageSession.activeSetlistSongIndex : 0
+  )
+  const [queueMode, setQueueMode] = useState<'library' | 'setlist'>(
+    initialStageSession.isValid ? initialStageSession.queueMode : 'library'
+  )
   const [searchQuery, setSearchQuery] = useState<string>('')
 
   // Display Settings (persisted in localStorage)
@@ -480,6 +527,31 @@ function LibraryApp() {
       ;(window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__ = false
     }
   }, [activeView, isStagePerformanceMode])
+
+  // Persist active stage session across browser/OS termination; clear on exit
+  useEffect(() => {
+    if (activeView === 'stage') {
+      saveStageSession({
+        isActive: true,
+        queueMode,
+        activeSongIndex,
+        activeSetlistId,
+        activeSetlistSongIndex,
+        songId: currentSong?.id,
+        songTitle: currentSong?.title,
+      })
+    } else {
+      clearStageSession()
+    }
+  }, [
+    activeView,
+    queueMode,
+    activeSongIndex,
+    activeSetlistId,
+    activeSetlistSongIndex,
+    currentSong?.id,
+    currentSong?.title,
+  ])
 
   // Band Sync: listen to leader song sync events when client
   useEffect(() => {
@@ -760,6 +832,17 @@ function LibraryApp() {
       setActiveSetlistId(null)
       setQueueMode('library')
     }
+  }
+
+  // Rename setlist
+  const handleRenameSetlist = (setlistId: string | number, newName: string) => {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    setSetlists((prev) =>
+      prev.map((sl) => (String(sl.id) === String(setlistId) ? { ...sl, name: trimmed } : sl))
+    )
+    setToastMessage(`Renamed setlist to "${trimmed}"`)
+    setTimeout(() => setToastMessage(null), 3000)
   }
 
   // Band Leader Action: Push Setlist to Members
@@ -1136,6 +1219,8 @@ function LibraryApp() {
             onNewSetlist={handleNewSetlist}
             onOpenSetlists={() => setIsSetlistDrawerOpen(true)}
             onDeleteSong={handleDeleteSong}
+            onDeleteSetlist={handleDeleteSetlist}
+            onRenameSetlist={handleRenameSetlist}
             setlists={setlists}
             onSelectSetlistSong={(setlistId, songIdx) => {
               handleSelectSetlistSong(setlistId, songIdx)
