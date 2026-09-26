@@ -62,3 +62,36 @@ Looking for light`
   const detected = detectSongKey(twoLineSongInAm)
   assert.equal(detected, 'Am', 'detectSongKey must detect Am from 2-line chord row')
 })
+
+test('108-dev.1g: Relative semitone transpose control defaults to 0 and does not mutate chords at 0', () => {
+  const { formatTransposeOffset, transposeChordProText } = require('../src/utils/chordTransposer.ts')
+
+  // Default offset 0
+  const defaultOffset = 0
+  assert.equal(formatTransposeOffset(defaultOffset), '0', 'Default offset 0 formats as "0"')
+  assert.equal(`Transpose: ${formatTransposeOffset(defaultOffset)}`, 'Transpose: 0', 'Primary display at default is Transpose: 0')
+
+  // Positive semitone transpose
+  const posOffset = 2
+  assert.equal(formatTransposeOffset(posOffset), '+2', 'Positive offset 2 formats as "+2"')
+  assert.equal(`Transpose: ${formatTransposeOffset(posOffset)}`, 'Transpose: +2', 'Primary display at +2 is Transpose: +2')
+
+  // Negative semitone transpose
+  const negOffset = -1
+  assert.equal(formatTransposeOffset(negOffset), '-1', 'Negative offset -1 formats as "-1"')
+  assert.equal(`Transpose: ${formatTransposeOffset(negOffset)}`, 'Transpose: -1', 'Primary display at -1 is Transpose: -1')
+
+  // Zero semitone offset does not mutate original chord positions
+  const rawChords = '[C] [Am] [F] [G]\nWhen I [C]wake up in the [F]morning'
+  const renderedAtZero = transposeChordProText(rawChords, 0)
+  assert.equal(renderedAtZero, rawChords, 'Offset 0 must return identical text without mutating chord tokens')
+
+  // Transposed at +2 shifts chords relative to original chords, without needing original key label
+  const renderedAtPlusTwo = transposeChordProText(rawChords, 2)
+  assert.equal(renderedAtPlusTwo, '[D] [Bm] [G] [A]\nWhen I [D]wake up in the [G]morning')
+
+  // Transposed at -2 shifts chords downwards
+  const renderedAtMinusTwo = transposeChordProText(rawChords, -2)
+  assert.equal(renderedAtMinusTwo, '[A#] [Gm] [Eb] [F]\nWhen I [A#]wake up in the [Eb]morning')
+})
+

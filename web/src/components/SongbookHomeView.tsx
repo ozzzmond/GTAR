@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Layers,
   ArrowRight,
-  Search,
   X,
   Upload,
   Pencil,
@@ -542,27 +541,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
         {/* Sort & Filter Toolbar */}
         {songs.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 rounded-2xl bg-[#073642]/70 border border-[#1A4A55] shadow-sm">
-            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-              <Search className="w-3.5 h-3.5 text-[#93A1A1] shrink-0" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Filter songs & setlists by title or artist..."
-                className="bg-transparent border-none outline-none text-xs text-[#FDF6E3] placeholder-[#93A1A1] w-full font-mono"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => handleSearchChange('')}
-                  className="text-[#93A1A1] hover:text-[#FDF6E3] p-1 cursor-pointer"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-
+          <div className="flex flex-wrap items-center justify-end gap-3 mb-4 p-3 rounded-2xl bg-[#073642]/70 border border-[#1A4A55] shadow-sm">
             <div className="flex items-center gap-2.5 flex-wrap">
               {/* Sort Dropdown */}
               <div className="flex items-center gap-1.5 text-xs font-mono">

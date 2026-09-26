@@ -1411,14 +1411,9 @@ export const StageView: React.FC<StageViewProps> = ({
                   transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
                 }`}
                 title="Choose Target Key"
-                aria-label={`Current Key: ${effectiveKey || 'Orig'}, Tap to choose key`}
+                aria-label={`Transpose: ${offsetStr}, Tap to choose key`}
               >
-                <span>{effectiveKey || 'Orig'}</span>
-                {transposeOffset !== 0 && (
-                  <span className="text-[10px] font-bold text-[#B58900]/90">
-                    {offsetStr}
-                  </span>
-                )}
+                <span>Transpose: {offsetStr}</span>
                 <ChevronDown className="w-2.5 h-2.5 opacity-60" />
               </button>
 
@@ -1598,9 +1593,7 @@ export const StageView: React.FC<StageViewProps> = ({
               title="Select Target Key"
             >
               <span>
-                {transposeOffset !== 0
-                  ? `Key: ${effectiveKey} (${offsetStr})`
-                  : `Key: ${effectiveKey || 'Orig'}`}
+                Transpose: {offsetStr}
               </span>
               <ChevronDown className="w-3 h-3 opacity-75" />
             </button>
@@ -2027,7 +2020,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   className={`flex-1 text-center text-sm font-mono font-extrabold cursor-pointer ${
                     transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
                   }`}>
-                  {transposeOffset !== 0 ? `${effectiveKey} (${offsetStr})` : `Key: ${effectiveKey || 'Orig'}`}
+                  Transpose: {offsetStr}
                 </button>
                 {transposeOffset !== 0 && (
                   <button type="button" onClick={() => onTransposeChange(0)}
