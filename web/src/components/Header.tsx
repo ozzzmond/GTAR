@@ -278,6 +278,21 @@ export const Header: React.FC<HeaderProps> = ({
       )
   }, [allSongs, searchQuery])
 
+  // Matching setlists based on setlist name or track names within setlist
+  const matchingSearchSetlists = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q || !setlists) return []
+    return setlists.filter((sl) => {
+      const matchName = sl.name.toLowerCase().includes(q)
+      const matchSong = (sl.songs || []).some(
+        (ref) =>
+          ref.title?.toLowerCase().includes(q) ||
+          (ref.artist && ref.artist.toLowerCase().includes(q))
+      )
+      return matchName || matchSong
+    })
+  }, [setlists, searchQuery])
+
   // Real Online Chord Search (debounced 350ms)
   useEffect(() => {
     const trimmed = searchQuery.trim()
@@ -760,7 +775,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onSearchQueryChange(e.target.value)
                   setIsSearchFocused(true)
                 }}
-                placeholder="Search local songbook & online chords..."
+                placeholder="Search songs, artists, setlists & online chords..."
                 className="min-w-0 flex-1 w-full"
               />
               <span className="kbd-hint hidden sm:inline shrink-0">Ctrl K</span>
@@ -779,12 +794,12 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* Real-time search results dropdown overlay: Local + Online Results */}
+            {/* Real-time search results dropdown overlay: Local + Setlists + Online Results */}
             {isSearchFocused && searchQuery.trim().length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl py-2 z-50 animate-scale-in max-h-96 overflow-y-auto">
                 {/* A. LOCAL SONGBOOK SECTION */}
                 <div className="px-3 py-1 text-[10px] font-mono font-bold text-[#93A1A1] uppercase tracking-wider flex items-center justify-between border-b border-[#1A4A55]/60 mb-1">
-                  <span>Local Songbook ({matchingSearchSongs.length})</span>
+                  <span>Local Songs ({matchingSearchSongs.length})</span>
                   <span className="text-[#2AA198]">Click to View on Stage</span>
                 </div>
 
@@ -838,8 +853,55 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
 
-                {/* B. ONLINE RESULTS SECTION (Parity with Android) */}
-                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-[#B58900] uppercase tracking-wider flex items-center justify-between border-t border-b border-[#1A4A55]/60 mt-2 mb-1 bg-[#002B36]/60">
+                {/* B. GIG SETLISTS SECTION */}
+                {matchingSearchSetlists.length > 0 && (
+                  <>
+                    <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-[#B58900] uppercase tracking-wider flex items-center justify-between border-t border-b border-[#1A4A55]/60 mt-2 mb-1 bg-[#002B36]/60">
+                      <div className="flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-[#B58900]" />
+                        <span>Gig Setlists ({matchingSearchSetlists.length})</span>
+                      </div>
+                      <span className="text-[#B58900]">Click to Open Setlist</span>
+                    </div>
+
+                    {matchingSearchSetlists.map((sl) => (
+                      <button
+                        key={`setlist-${sl.id}`}
+                        type="button"
+                        onClick={() => {
+                          if (onSelectSetlistSong && (sl.songs || []).length > 0) {
+                            onSelectSetlistSong(sl.id, 0)
+                            onViewChange('stage')
+                          } else if (onSelectSetlist) {
+                            onSelectSetlist(sl.id)
+                          }
+                          setIsSearchFocused(false)
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] text-[#EEE8D5]"
+                      >
+                        <div className="min-w-0 flex items-center gap-2.5">
+                          <div className="w-6 h-6 rounded-lg bg-[#002B36] text-[#B58900] flex items-center justify-center text-xs font-mono font-bold group-hover:bg-[#B58900] group-hover:text-[#002B36] transition-colors shrink-0">
+                            <Layers className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="truncate">
+                            <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#B58900] transition-colors truncate">
+                              {sl.name}
+                            </div>
+                            <div className="text-[10px] text-[#93A1A1] truncate">
+                              {(sl.songs || []).length} {sl.songs?.length === 1 ? 'song' : 'songs'}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#B58900]/15 text-[#B58900] border border-[#B58900]/30 shrink-0">
+                          START GIG
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* C. ONLINE RESULTS SECTION (Parity with Android) */}
+                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-[#2AA198] uppercase tracking-wider flex items-center justify-between border-t border-b border-[#1A4A55]/60 mt-2 mb-1 bg-[#002B36]/60">
                   <div className="flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-[#2AA198]" />
                     <span>Online Results ({onlineResults.length})</span>
@@ -1034,7 +1096,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
           >
             <FolderOpen className="w-4 h-4 text-[#2AA198]" />
-            <span className="font-semibold">Import...</span>
+            <span className="font-semibold">Import Songs &amp; Setlists...</span>
           </button>
 
           <div className="h-[1px] bg-[#1A4A55]/60 my-1" />

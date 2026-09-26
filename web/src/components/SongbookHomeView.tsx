@@ -35,6 +35,8 @@ interface SongbookHomeViewProps {
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
+  searchQuery?: string
+  onSearchQueryChange?: (query: string) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -52,6 +54,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   setlists = [],
   onSelectSetlistSong,
   onImportSingleSetlist,
+  searchQuery: externalSearchQuery,
+  onSearchQueryChange,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -60,7 +64,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [activeMenuSetlistId, setActiveMenuSetlistId] = useState<string | number | null>(null)
   const [renamingSetlist, setRenamingSetlist] = useState<WebSetlist | null>(null)
   const [renameInputValue, setRenameInputValue] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [internalSearchQuery, setInternalSearchQuery] = useState('')
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery
+  const handleSearchChange = (val: string) => {
+    if (onSearchQueryChange) onSearchQueryChange(val)
+    else setInternalSearchQuery(val)
+  }
   const setlistFileInputRef = React.useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -82,8 +91,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       } else {
         alert(parsed.error || 'Failed to parse setlist file.')
       }
-    } catch (err: any) {
-      alert(`Import error: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      alert(`Import error: ${msg}`)
     }
 
     if (e.target) e.target.value = ''
@@ -207,8 +217,24 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return list
   }, [filteredIndexedSongs, sortBy])
 
+  // Filter setlists by search query (matching setlist name or tracks inside setlist)
+  const filteredSetlists = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim()
+    if (!q) return setlists
+    return setlists.filter((sl) => {
+      const matchName = sl.name.toLowerCase().includes(q)
+      const matchSong = (sl.songs || []).some((ref) => {
+        const resolved = resolveSetlistSong(ref, songs)
+        const t = resolved?.title || ref.title || ''
+        const a = resolved?.artist || ref.artist || ''
+        return t.toLowerCase().includes(q) || a.toLowerCase().includes(q)
+      })
+      return matchName || matchSong
+    })
+  }, [setlists, searchQuery, songs])
+
   return (
-    <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 max-w-7xl mx-auto w-full select-none">
+    <div className="flex-1 overflow-y-auto px-2 sm:px-8 py-3 sm:py-6 max-w-7xl mx-auto w-full select-none">
       {membershipSong && <SongSetlistDialog
         song={membershipSong}
         setlists={setlists}
@@ -322,7 +348,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-[#B58900]" />
               <h2 className="text-xs font-bold text-[#FDF6E3] uppercase tracking-wider font-mono">
-                Gig Setlists ({setlists.length})
+                Gig Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
               </h2>
             </div>
             <div className="flex items-center gap-2">
@@ -347,7 +373,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {setlists.map((sl) => {
+            {filteredSetlists.map((sl) => {
               const isDeletingSetlist = confirmDeleteSetlistId === sl.id
               const isMenuOpen = activeMenuSetlistId === sl.id
 
@@ -361,21 +387,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       onOpenSetlists()
                     }
                   }}
-                  className="px-4 py-3 rounded-2xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-3 relative"
+                  className="px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-2.5 sm:gap-3 relative"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
+                    <div className="text-xs sm:text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
                       {sl.name}
                     </div>
-                    <div className="text-[11px] font-mono text-[#93A1A1] mt-0.5">
+                    <div className="text-[10px] sm:text-[11px] font-mono text-[#93A1A1] mt-0.5">
                       {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     {/* Circular play button */}
-                    <div className="w-9 h-9 rounded-full bg-[#2AA198]/15 text-[#2AA198] flex items-center justify-center group-hover:bg-[#2AA198] group-hover:text-[#002B36] transition-colors">
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                    <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-[#2AA198]/15 text-[#2AA198] flex items-center justify-center group-hover:bg-[#2AA198] group-hover:text-[#002B36] transition-colors">
+                      <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" />
                     </div>
 
                     {/* Visible Trash / Delete Action */}
@@ -522,14 +548,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter by title or artist..."
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Filter songs & setlists by title or artist..."
                 className="bg-transparent border-none outline-none text-xs text-[#FDF6E3] placeholder-[#93A1A1] w-full font-mono"
               />
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => handleSearchChange('')}
                   className="text-[#93A1A1] hover:text-[#FDF6E3] p-1 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
@@ -616,7 +642,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                setSearchQuery('')
+                handleSearchChange('')
                 handleFilterKeyChange('ALL')
                 handleFilterSetlistChange('ALL')
               }}
@@ -636,16 +662,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <div
                   key={song.id || originalIdx}
                   onClick={() => onSelectSong(originalIdx)}
-                  className={`relative p-4 rounded-2xl border transition-all cursor-pointer select-none group flex flex-col justify-between min-h-[115px] ${
+                  className={`relative p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all cursor-pointer select-none group flex flex-col justify-between min-h-[90px] sm:min-h-[115px] ${
                     isSelected
                       ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198] shadow-lg shadow-[#2AA198]/10'
                       : 'border-[#1A4A55] bg-[#073642]/70 hover:border-[#2AA198] hover:bg-[#073642]'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                       <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-mono text-xs font-bold shrink-0 transition-colors shadow-inner ${
+                        className={`w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center font-mono text-[11px] sm:text-xs font-bold shrink-0 transition-colors shadow-inner ${
                           isSelected
                             ? 'bg-[#2AA198] text-[#002B36]'
                             : 'bg-[#002B36] text-[#93A1A1] group-hover:text-[#2AA198]'
@@ -654,10 +680,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         {String(displayIdx + 1).padStart(2, '0')}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-bold text-sm text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
+                        <h3 className="font-bold text-xs sm:text-sm text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
                           {song.title || 'Untitled Song'}
                         </h3>
-                        <p className="text-xs text-[#93A1A1] truncate mt-0.5">
+                        <p className="text-[11px] sm:text-xs text-[#93A1A1] truncate mt-0.5">
                           {song.artist || 'Unknown Artist'}
                         </p>
                       </div>
@@ -667,11 +693,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       type="button"
                       onClick={event => { event.stopPropagation(); setMembershipSongId(song.id ?? null) }}
                       disabled={song.id === undefined}
-                      className="p-2 rounded-lg text-[#2AA198] hover:bg-[#2AA198]/15 transition-colors cursor-pointer disabled:opacity-50"
+                      className="p-1 sm:p-2 rounded-lg text-[#2AA198] hover:bg-[#2AA198]/15 transition-colors cursor-pointer disabled:opacity-50"
                       title="Add to Setlist"
                       aria-label={`Add ${song.title} to setlist`}
                     >
-                      <ListPlus className="w-4 h-4" />
+                      <ListPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                     <button
                       type="button"
@@ -679,7 +705,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         e.stopPropagation()
                         setConfirmDeleteIdx(originalIdx)
                       }}
-                      className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#DC6E67] hover:bg-[#DC6E67]/15 transition-colors cursor-pointer"
+                      className="p-1 sm:p-1.5 rounded-lg text-[#93A1A1] hover:text-[#DC6E67] hover:bg-[#DC6E67]/15 transition-colors cursor-pointer"
                       title="Delete song"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -687,10 +713,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   </div>
 
                   {/* Metadata & Setlist Badges */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-[#1A4A55]/60 text-[10px] font-mono">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-[#1A4A55]/60 text-[9px] sm:text-[10px] font-mono">
+                    <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
                       {song.key && (
-                        <span className="px-2 py-0.5 rounded-md bg-[#002B36] text-[#B58900] font-bold border border-[#1A4A55]">
+                        <span className="px-1.5 sm:px-2 py-0.5 rounded-md bg-[#002B36] text-[#B58900] font-bold border border-[#1A4A55]">
                           KEY: {song.key}
                         </span>
                       )}

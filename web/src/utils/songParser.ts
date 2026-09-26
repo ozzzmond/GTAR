@@ -679,10 +679,13 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
   const format: SongFormat =
     chordProCount > twoLineCount ? 'CHORD_PRO' : twoLineCount > 0 ? 'TWO_LINE' : 'PLAIN'
 
+  // If no explicit {key: ...} directive was provided, detect key from chords rather than defaulting to empty or G
+  const effectiveKey = key || detectSongKey(rawText)
+
   return {
     title,
     artist,
-    key,
+    key: effectiveKey,
     capo,
     bpm,
     tags,
@@ -731,3 +734,83 @@ export function splitSongLinesForColumns(lines: SongLine[]): [SongLine[], SongLi
   if (lines[splitIndex]?.type === 'LYRIC' && lines[splitIndex - 1]?.type === 'CHORD_ROW') splitIndex--
   return [lines.slice(0, splitIndex), lines.slice(splitIndex)]
 }
+
+/**
+ * Robustly detects song key from raw song content:
+ * 1. Explicit ChordPro directive {key: ...} or {k: ...}
+ * 2. Leading metadata lines e.g. "Key: C" or "Key of C"
+ * 3. Most prominent or tonic starting chord from chord charts
+ * 4. Fallback to 'C' (natural diatonic root) rather than arbitrary 'G'
+ */
+export function detectSongKey(rawContent: string): string {
+  if (!rawContent || !rawContent.trim()) return 'C'
+
+  // 1. Explicit ChordPro directive {key: X} or {k: X}
+  const directiveMatch = /\{(?:key|k):\s*([A-Ga-g][#b]?(?:m|maj|min)?(?:\b|[^\s}]))\s*\}/i.exec(rawContent)
+  if (directiveMatch && directiveMatch[1]) {
+    const rawKey = directiveMatch[1].trim()
+    const parsedKey = parseChordRootAndQuality(rawKey)
+    if (parsedKey) return parsedKey
+  }
+
+  // 2. Metadata line at start of chart: "Key: C" or "Key of C" or "Original Key: C"
+  const metaMatch = /^\s*(?:original\s+)?key(?:\s+of)?\s*:\s*([A-Ga-g][#b]?(?:m|maj|min)?(?:\b|[^\s\n\r]))/im.exec(rawContent)
+  if (metaMatch && metaMatch[1]) {
+    const parsedKey = parseChordRootAndQuality(metaMatch[1].trim())
+    if (parsedKey) return parsedKey
+  }
+
+  // 3. Scan lines for chords and extract the first prominent tonic chord
+  const lines = rawContent.split(/\r?\n/)
+  const allChords: string[] = []
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('{') || isTabChartLine(line)) continue
+
+    // A. Bracketed chords
+    const bracketed = findBracketedChords(line)
+    if (bracketed.length > 0) {
+      for (const b of bracketed) {
+        const root = parseChordRootAndQuality(b.chord)
+        if (root) allChords.push(root)
+      }
+      if (allChords.length >= 8) break
+      continue
+    }
+
+    // B. Chord row line
+    if (isChordLine(line)) {
+      const tokens = extractChordTokensFromLine(line)
+      for (const t of tokens) {
+        const root = parseChordRootAndQuality(t)
+        if (root) allChords.push(root)
+      }
+      if (allChords.length >= 8) break
+    }
+  }
+
+  if (allChords.length > 0) {
+    // Return first prominent root chord as original tonic
+    return allChords[0]
+  }
+
+  return 'C'
+}
+
+/**
+ * Normalizes a chord token into standard Key format (e.g. "C", "G", "Am", "F#m", "Bb")
+ */
+function parseChordRootAndQuality(chord: string): string | null {
+  if (!chord) return null
+  const clean = chord.trim().replace(/^\[|\]$/g, '')
+  const match = /^([A-Ga-g][#b]?)(m|min|maj)?/i.exec(clean)
+  if (!match) return null
+
+  const root = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
+  const quality = (match[2] || '').toLowerCase()
+  const isMinor = quality === 'm' || quality === 'min'
+
+  return isMinor ? `${root}m` : root
+}
+

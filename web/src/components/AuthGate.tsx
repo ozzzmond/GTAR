@@ -4,7 +4,6 @@ import {
   loadGoogleIdentity,
   getStoredSessionStatus,
   requestGoogleSession,
-  refreshGoogleSession,
   renewDurableSession,
   saveGoogleSession,
   validSession,
@@ -113,32 +112,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
             })
             return
           }
-        }
-      }
-
-      if (typeof window !== 'undefined' && window.google && clientId) {
-        try {
-          const renewed = await refreshGoogleSession(clientId, current)
-          if (generation !== epoch.current) return
-          if (renewed.user.email.toLowerCase() !== current.user.email.toLowerCase()) {
-            signOut()
-            setError('Session identity mismatch. Please sign in again.')
-            return
-          }
-          const durable = renewDurableSession(renewed)
-          saveGoogleSession(durable)
-          setSession(durable)
-        } catch (err) {
-          if (generation !== epoch.current) return
+          // Token expired or invalid: retire ephemeral token cleanly while keeping 30-day durable session
           void import('../utils/logger').then(({ appLogger }) => {
-            appLogger.warn('AuthGate', 'Silent GIS background refresh deferred; local durable session remains active.', String(err))
+            appLogger.info('AuthGate', 'OAuth access token expired after idle; retiring token while retaining 30-day local durable session.')
           })
+          const sessionWithoutToken: GoogleSession = {
+            ...current,
+            token: undefined,
+          }
+          saveGoogleSession(sessionWithoutToken)
+          setSession(sessionWithoutToken)
         }
       }
+      // Note: Never call GIS requestAccessToken / refreshGoogleSession in background recheck!
+      // GIS token acquisition requires an explicit user gesture; calling it non-interactively
+      // on wake/focus after long idle causes Android OS/Chrome to display an external browser open prompt.
     } finally {
       refreshing.current = false
     }
-  }, [clientId, configuredEmails, signOut])
+  }, [configuredEmails, signOut])
 
   // Mount session initialization
   useEffect(() => {
@@ -219,11 +211,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [clientId])
 
+  const lastRecheckRef = useRef<number>(0)
+
   // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
     if (!session || !clientId) return
 
     const onRecheck = () => {
+      const now = Date.now()
+      if (now - lastRecheckRef.current < 60_000) return
+      lastRecheckRef.current = now
+
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
       if (!validSession(session)) {
         if (isOffline) {

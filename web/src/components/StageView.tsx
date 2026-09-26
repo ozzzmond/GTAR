@@ -29,7 +29,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
-import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
+import { parseGtarSong, splitSongLinesForColumns, detectSongKey } from '../utils/songParser'
 import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
@@ -1239,7 +1239,8 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [])
 
-  const effectiveKey = song.key ? transposeKey(song.key, transposeOffset) : ''
+  const originalSongKey = song.key || parsedSong.key || detectSongKey(song.rawContent || '')
+  const effectiveKey = originalSongKey ? transposeKey(originalSongKey, transposeOffset) : ''
   const offsetStr = formatTransposeOffset(transposeOffset)
 
   // Two-column split calculation matching splitSongLinesForColumns in Android SongViewerScreen.kt
@@ -1625,6 +1626,25 @@ export const StageView: React.FC<StageViewProps> = ({
             </button>
           </div>
 
+          {/* Stage Top Bar Quick Autoscroll Action Button */}
+          <button
+            type="button"
+            onClick={handleToggleAutoScroll}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer shadow-sm ${
+              isAutoScrolling
+                ? 'bg-[#EF4444]/20 border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/30 animate-pulse'
+                : 'bg-[#B58900]/15 border-[#B58900]/40 text-[#B58900] hover:bg-[#B58900]/25 hover:border-[#B58900]'
+            }`}
+            title={isAutoScrolling ? 'Pause autoscroll (Space)' : 'Start autoscroll (Space)'}
+            aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
+          >
+            {isAutoScrolling ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+            <span className="hidden sm:inline">{isAutoScrolling ? 'SCROLLING' : 'SCROLL'}</span>
+            <span className="text-[10px] px-1 py-0.2 rounded bg-black/20 font-mono">
+              {scrollSpeed}
+            </span>
+          </button>
+
           {/* Band Sync Status Indicator & Modal Trigger */}
           <button
             type="button"
@@ -1881,7 +1901,7 @@ export const StageView: React.FC<StageViewProps> = ({
                        : 'opacity-100 translate-y-0'
                    }`}
         style={{
-          paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
+          paddingBottom: 'max(88px, calc(env(safe-area-inset-bottom, 24px) + 64px))',
           paddingRight: 'max(16px, env(safe-area-inset-right, 16px))',
         }}
       >
@@ -2243,7 +2263,7 @@ export const StageView: React.FC<StageViewProps> = ({
       <KeyPickerModal
         isOpen={isKeyPickerOpen}
         onClose={() => setIsKeyPickerOpen(false)}
-        originalKey={song.key}
+        originalKey={originalSongKey}
         currentOffset={transposeOffset}
         capoText={song.capo}
         onSelectOffset={onTransposeChange}

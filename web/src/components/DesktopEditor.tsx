@@ -17,7 +17,7 @@ import {
   SlidersHorizontal,
   X,
 } from 'lucide-react'
-import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
+import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
 import type { ActiveSongState } from '../types/gtar'
 
@@ -82,11 +82,12 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Handle saving changes
   const handleSave = () => {
     const standardized = standardizeChordProBrackets(localRawContent)
+    const effectiveKey = localKey.trim() || detectSongKey(standardized)
     const updatedSong: ActiveSongState = {
       ...song,
       title: localTitle.trim() || 'Untitled Song',
       artist: localArtist.trim(),
-      key: localKey.trim(),
+      key: effectiveKey,
       capo: localCapo.trim(),
       bpm: localBpm.trim(),
       tags: localTags.trim(),

@@ -43,6 +43,7 @@ import {
 import { BandSyncModal } from './components/BandSyncModal'
 import { bandSync } from './utils/bandSync'
 import { extractDirectives } from './utils/chordSheetParser'
+import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
@@ -622,7 +623,7 @@ function LibraryApp() {
                   id: Date.now(),
                   title: title || 'Synced Song',
                   artist: artist || '',
-                  key: msg.payload.key || 'G',
+                  key: msg.payload.key || detectSongKey(effectiveContent),
                   capo: msg.payload.capo || 'No Capo',
                   bpm: msg.payload.bpm || '120',
                   format: msg.payload.format || 'CHORD_PRO',
@@ -649,7 +650,7 @@ function LibraryApp() {
                 id: Date.now(),
                 title: title || 'Synced Song',
                 artist: artist || '',
-                key: msg.payload.key || 'G',
+                key: msg.payload.key || detectSongKey(effectiveContent),
                 capo: msg.payload.capo || 'No Capo',
                 bpm: msg.payload.bpm || '120',
                 format: msg.payload.format || 'CHORD_PRO',
@@ -685,7 +686,7 @@ function LibraryApp() {
                   id: Date.now() + Math.floor(Math.random() * 10000) + newSongsToAppend.length,
                   title: item.title || 'Untitled Song',
                   artist: item.artist || '',
-                  key: item.key || 'G',
+                  key: item.key || detectSongKey(item.rawContent || ''),
                   capo: item.capo || 'No Capo',
                   bpm: item.bpm || '120',
                   format: item.format || 'CHORD_PRO',
@@ -905,7 +906,7 @@ function LibraryApp() {
       id: Date.now(),
       title: sheet.title,
       artist: sheet.artist,
-      key: sheet.key || 'G',
+      key: sheet.key || detectSongKey(sheet.rawContent || ''),
       capo: sheet.capo || 'No Capo',
       bpm: sheet.bpm || '120',
       format: sheet.format,
@@ -1204,7 +1205,9 @@ function LibraryApp() {
       <main className="flex-1 flex overflow-hidden">
         {activeView === 'songbook' ? (
           <SongbookHomeView
-            songs={filteredSongs.length > 0 ? filteredSongs : songs}
+            songs={songs}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             activeSongIndex={activeSongIndex}
             onSelectSong={(songIdx) => {
               handleSelectLibrarySong(songIdx)
@@ -1340,6 +1343,9 @@ function LibraryApp() {
         onClose={() => setIsImportModalOpen(false)}
         onImportSong={handleImportSong}
         onImportAllSongs={handleImportAllSongs}
+        onImportSingleSetlist={handleImportSingleSetlist}
+        onSmartMerge={handleSmartMerge}
+        existingSongs={[...songs, ...deletedSongs]}
       />
 
       {/* Backup & Restore Modal Dialog (Export Backup & Restore Backup Smart Merge) */}

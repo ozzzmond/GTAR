@@ -1,14 +1,18 @@
 import React, { useRef, useState } from 'react'
 import { FolderOpen, FileText, FolderUp, X, Check, AlertCircle } from 'lucide-react'
-import type { ActiveSongState } from '../types/gtar'
-import { parseGtarSong } from '../utils/songParser'
+import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import { parseGtarSong, detectSongKey } from '../utils/songParser'
 import { extractDirectives } from '../utils/chordSheetParser'
+import { parseBackupJson } from '../utils/jsonBackup'
 
 interface ImportDialogModalProps {
   isOpen: boolean
   onClose: () => void
   onImportSong: (song: Partial<ActiveSongState>) => void
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
+  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
+  existingSongs?: ActiveSongState[]
 }
 
 export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
@@ -16,6 +20,9 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
   onClose,
   onImportSong,
   onImportAllSongs,
+  onImportSingleSetlist,
+  onSmartMerge,
+  existingSongs = [],
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -35,7 +42,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
     }, 1800)
   }
 
-  // Parse a text or json file content into song state
+  // Parse a text or loose json file content into song state
   const parseFileContent = (filename: string, content: string): Partial<ActiveSongState> | null => {
     const trimmed = content.trim()
     if (!trimmed) return null
@@ -44,18 +51,19 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
       try {
         const parsed = JSON.parse(trimmed)
         // Under no circumstances should raw backup JSON be parsed as a song!
-        if (parsed.metadata?.appName === 'GTAR' || Array.isArray(parsed.songs)) {
+        if (parsed.metadata?.appName === 'GTAR' || parsed.app === 'GTAR' || Array.isArray(parsed.songs) || parsed.exportType === 'SINGLE_SETLIST') {
           return null
         }
 
         if (parsed.title || parsed.rawContent) {
+          const rawContent = parsed.rawContent || parsed.content || ''
           return {
             title: parsed.title || filename.replace(/\.[^/.]+$/, ''),
             artist: parsed.artist || '',
-            key: parsed.key || 'G',
+            key: parsed.key || detectSongKey(rawContent),
             capo: parsed.capo || '',
             bpm: parsed.bpm || '120',
-            rawContent: parsed.rawContent || parsed.content || '',
+            rawContent,
             format: parsed.format || 'CHORD_PRO',
             transposeOffset: parsed.transposeOffset || 0,
           }
@@ -73,7 +81,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
     return {
       title: baseTitle,
       artist: directives.artist || parsedSong.artist || '',
-      key: directives.key || parsedSong.key || 'G',
+      key: directives.key || parsedSong.key || detectSongKey(content),
       capo: directives.capo || parsedSong.capo || 'No Capo',
       bpm: directives.bpm || parsedSong.bpm || '120',
       rawContent: content,
@@ -89,39 +97,63 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
     try {
       const text = await file.text()
-      // Check if it's a full backup payload or setlist with multiple songs
-      if (file.name.endsWith('.json')) {
+      // 1. First check if it's a valid GTAR JSON file (single setlist, backup package, or song list)
+      if (file.name.toLowerCase().endsWith('.json')) {
         try {
-          const parsed = JSON.parse(text)
-          if (Array.isArray(parsed.songs) && parsed.songs.length > 0) {
-            const songsToImport = parsed.songs.map((s: any) => ({
-              title: s.title || 'Untitled',
-              artist: s.artist || '',
-              key: s.key || 'G',
-              capo: s.capo || '',
-              bpm: s.bpm || '120',
-              rawContent: s.rawContent || '',
-              format: s.format || 'CHORD_PRO',
-              transposeOffset: s.transposeOffset || 0,
-            }))
-            onImportAllSongs(songsToImport)
-            showFeedback('success', `Imported ${songsToImport.length} songs from backup package!`)
-            return
+          const parsed = parseBackupJson(text, { mode: 'merge', existingSongs })
+          if (parsed.isValid) {
+            // A. Single Setlist package (.json)
+            if (parsed.isSingleSetlist && parsed.setlists.length > 0) {
+              if (onImportSingleSetlist) {
+                onImportSingleSetlist(parsed.setlists[0], parsed.songs as ActiveSongState[])
+              } else if (onSmartMerge) {
+                onSmartMerge(parsed.songs, parsed.setlists)
+              } else {
+                onImportAllSongs(parsed.songs)
+              }
+              showFeedback('success', `Imported setlist "${parsed.singleSetlistName || parsed.setlists[0].name}" (${parsed.songs.length} tracks)!`)
+              return
+            }
+
+            // B. Multi-setlist backup / song package (.json)
+            if (parsed.setlists.length > 0) {
+              if (onSmartMerge) {
+                onSmartMerge(parsed.songs, parsed.setlists)
+                showFeedback('success', `Imported ${parsed.songs.length} songs and ${parsed.setlists.length} setlists!`)
+                return
+              }
+            }
+
+            // C. Multi-song list (.json)
+            if (parsed.songs.length > 1) {
+              onImportAllSongs(parsed.songs)
+              showFeedback('success', `Imported ${parsed.songs.length} songs from song package!`)
+              return
+            }
+
+            // D. Single song (.json)
+            if (parsed.songs.length === 1) {
+              onImportSong(parsed.songs[0])
+              showFeedback('success', `Successfully imported "${parsed.songs[0].title}"!`)
+              return
+            }
           }
         } catch {
-          // ignore
+          // Fall through to loose file content parsing
         }
       }
 
+      // 2. Loose song file content (.txt, .chordpro, loose JSON)
       const song = parseFileContent(file.name, text)
       if (song) {
         onImportSong(song)
         showFeedback('success', `Successfully imported "${song.title}"!`)
       } else {
-        showFeedback('error', 'Could not read valid song content from file.')
+        showFeedback('error', 'Could not read valid song content or setlist from file.')
       }
-    } catch (err: any) {
-      showFeedback('error', `Failed to read file: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showFeedback('error', `Failed to read file: ${msg}`)
     }
 
     if (e.target) e.target.value = ''
@@ -191,8 +223,8 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               <FolderOpen className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">Import</h2>
-              <p className="text-xs text-[#93A1A1]">Import songs and chord charts</p>
+              <h2 className="text-base font-bold text-[#FDF6E3]">Import Songs &amp; Setlists</h2>
+              <p className="text-xs text-[#93A1A1]">Import chord charts, songs, or exported setlists</p>
             </div>
           </div>
           <button
@@ -207,7 +239,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
         {/* Body */}
         <div className="p-6 space-y-4">
           <p className="text-xs text-[#93A1A1] leading-relaxed">
-            Choose an import method for your songs and chord charts:
+            Choose an import method for your songs, chord charts, or setlists:
           </p>
 
           {feedback && (
@@ -241,7 +273,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
                 Import File (.txt, .chordpro, .json)
               </div>
               <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
-                Select single song or chord sheet from your device
+                Select single song, chord sheet, or exported setlist JSON
               </div>
             </div>
           </button>
@@ -264,6 +296,10 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               </div>
             </div>
           </button>
+
+          <div className="p-3 rounded-xl bg-[#002B36]/50 border border-[#1A4A55]/60 text-[11px] text-[#93A1A1] leading-relaxed">
+            <span className="font-semibold text-[#859900]">Looking for Full Library Backup / Restore?</span> Use the profile menu (<span className="text-[#FDF6E3] font-medium">Backup &amp; Restore</span>) to export or restore complete app settings, themes, and full library snapshots.
+          </div>
         </div>
 
         {/* Footer */}

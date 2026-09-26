@@ -323,3 +323,76 @@ test('8. Existing dev loopback bypass remains strictly intact on loopback hosts 
   assert.equal(allowLocalBypass(true, 'dev.gtar-web.pages.dev'), false)
   assert.equal(allowLocalBypass(true, '192.168.1.50'), false)
 })
+
+test('9. Long idle background recheck with expired OAuth token retires token without GIS prompt', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
+  const prevWindow = global.window
+  const prevDoc = global.document
+  const prevLocal = global.localStorage
+  const prevSession = global.sessionStorage
+  const prevAct = global.IS_REACT_ACT_ENVIRONMENT
+  const prevFetch = global.fetch
+
+  let gisPromptInvoked = false
+
+  try {
+    // Mock GIS client that would trigger popup/intent
+    dom.window.google = {
+      accounts: {
+        oauth2: {
+          initTokenClient() {
+            return {
+              requestAccessToken() {
+                gisPromptInvoked = true
+              }
+            }
+          }
+        }
+      }
+    }
+
+    Object.assign(global, {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      sessionStorage: dom.window.sessionStorage,
+      IS_REACT_ACT_ENVIRONMENT: true,
+      fetch: async () => new Response('', { status: 401 }), // Expired Google OAuth token returns 401
+    })
+
+    // Valid 30-day durable session with an expired OAuth access token (idle for > 1 hour)
+    const validDurable = createDurableSession({ sub: 'user-sub', email: 'jlopez3rd@gmail.com' }, 'expired-token-123')
+    dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(validDurable))
+
+    function SongbookApp() {
+      return React.createElement('div', { id: 'songbook' }, 'Stage Ready')
+    }
+
+    const root = createRoot(dom.window.document.getElementById('root'))
+    await act(async () => {
+      root.render(React.createElement(AuthGate, null, React.createElement(SongbookApp)))
+    })
+
+    // App remains unlocked and functional
+    assert.match(dom.window.document.body.textContent, /Stage Ready/)
+    // Must NOT call GIS requestAccessToken
+    assert.equal(gisPromptInvoked, false)
+
+    // Token was cleanly retired, durable session is preserved
+    const stored = JSON.parse(dom.window.localStorage.getItem(SESSION_STORAGE_KEY))
+    assert.equal(stored.user.email, 'jlopez3rd@gmail.com')
+    assert.equal(stored.token, undefined)
+    assert.equal(validSession(stored), true)
+
+    await act(async () => root.unmount())
+  } finally {
+    dom.window.close()
+    global.window = prevWindow
+    global.document = prevDoc
+    global.localStorage = prevLocal
+    global.sessionStorage = prevSession
+    global.IS_REACT_ACT_ENVIRONMENT = prevAct
+    global.fetch = prevFetch
+  }
+})
+

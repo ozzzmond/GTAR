@@ -3,6 +3,7 @@ import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION } from '../types/gtar'
 import { readBackupSettings, validateBackupSettings, type BackupSettings } from './backupSettings'
 import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
+import { detectSongKey } from './songParser'
 
 export const GTAR_BACKUP_SCHEMA_VERSION = 1
 export const RESTORE_SNAPSHOT_KEY = 'gtar_restore_safety_snapshot_v1'
@@ -41,11 +42,12 @@ export interface ParsedBackupResult extends BackupSettings {
 }
 
 export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: string }): ActiveSongState {
+  const rawContent = s.rawContent ?? s.content ?? ''
   return {
     id: s.id ?? generateUUID(), title: s.title!, artist: s.artist ?? '',
-    key: s.key ?? 'G', capo: s.capo ?? '', bpm: s.bpm ?? '120',
+    key: s.key ?? detectSongKey(rawContent), capo: s.capo ?? '', bpm: s.bpm ?? '120',
     format: s.format ?? 'CHORD_PRO', transposeOffset: s.transposeOffset ?? 0,
-    rawContent: s.rawContent ?? s.content ?? '',
+    rawContent,
     ...(s.tags !== undefined ? { tags: s.tags } : {}),
     ...(s.isFavorite !== undefined ? { isFavorite: s.isFavorite } : {}),
     ...(s.isDeleted !== undefined ? { isDeleted: s.isDeleted } : {}),

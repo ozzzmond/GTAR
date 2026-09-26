@@ -17,7 +17,7 @@ import {
   Download,
   Upload,
 } from 'lucide-react'
-import type { ActiveSongState } from '../types/gtar'
+import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 
 interface SetlistDrawerProps {
@@ -26,7 +26,7 @@ interface SetlistDrawerProps {
   songs: ActiveSongState[]
   activeSongIndex: number
   onSelectSongIndex: (index: number) => void
-  setlists?: any[]
+  setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
   activeSetlistSongIndex?: number
   onSelectSetlistSong?: (setlistId: string | number, songIndex: number) => void
@@ -36,8 +36,8 @@ interface SetlistDrawerProps {
   onDeleteSong: (index: number) => void
   onNewSong: () => void
   onNewSetlist?: () => void
-  onImportSingleSetlist?: (setlist: any, songs: ActiveSongState[]) => void
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: any[]) => void
+  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   onExportAllData?: () => void
 }
 
@@ -73,12 +73,13 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
     setTimeout(() => setDrawerToast(null), 3500)
   }
 
-  const handleExportSingle = (sl: any) => {
+  const handleExportSingle = (sl: WebSetlist) => {
     try {
       const fileName = exportSingleSetlistJson(sl, songs)
       showDrawerToast(`Exported "${sl.name}" as ${fileName}`)
-    } catch (err: any) {
-      showDrawerToast(`Export failed: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showDrawerToast(`Export failed: ${msg}`)
     }
   }
 
@@ -90,8 +91,9 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         const fileName = exportAllDataJson(songs, setlists)
         showDrawerToast(`Exported backup as ${fileName}`)
       }
-    } catch (err: any) {
-      showDrawerToast(`Export failed: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showDrawerToast(`Export failed: ${msg}`)
     }
   }
 
@@ -121,8 +123,9 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         }
         showDrawerToast(`Imported ${parsed.songs.length} songs and ${parsed.setlists.length} setlists!`)
       }
-    } catch (err: any) {
-      showDrawerToast(`Import error: ${err.message}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showDrawerToast(`Import error: ${msg}`)
     }
 
     if (e.target) e.target.value = ''
@@ -138,6 +141,20 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
       s.title.toLowerCase().includes(q) ||
       s.artist.toLowerCase().includes(q)
     )
+  })
+
+  // Real-time search filter for setlists (matching setlist name or tracks)
+  const filteredSetlists = setlists.filter((sl) => {
+    const q = searchQuery.toLowerCase().trim()
+    if (!q) return true
+    const matchName = sl.name.toLowerCase().includes(q)
+    const matchSong = (sl.songs || []).some((sRef) => {
+      const resolved = resolveSetlistSong(sRef, songs)
+      const t = resolved?.title || sRef.title || ''
+      const a = resolved?.artist || sRef.artist || ''
+      return t.toLowerCase().includes(q) || a.toLowerCase().includes(q)
+    })
+    return matchName || matchSong
   })
 
   const handleDeleteClick = (e: React.MouseEvent, index: number) => {
@@ -235,7 +252,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by title or artist..."
+              placeholder={drawerTab === 'setlists' ? 'Search setlists by name or track...' : 'Search by title or artist...'}
               className="w-full bg-transparent text-[#FDF6E3] focus:outline-none placeholder-[#93A1A1]/60 text-xs font-mono"
             />
             {searchQuery && (
@@ -312,10 +329,22 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     Setlists stay completely separate from your full library.
                   </div>
                 </div>
+              ) : filteredSetlists.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono text-[#93A1A1] space-y-2">
+                  <div className="text-sm font-bold text-[#EEE8D5]">No Matching Setlists</div>
+                  <div>No setlists match &quot;{searchQuery}&quot;</div>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="mt-2 px-3 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-xs text-[#2AA198] font-bold cursor-pointer hover:border-[#2AA198]"
+                  >
+                    Clear Search
+                  </button>
+                </div>
               ) : (
-                setlists.map((sl: any) => {
+                filteredSetlists.map((sl) => {
                   const isExpanded = expandedSetlistId === sl.id
-                  const slSongs: any[] = sl.songs || []
+                  const slSongs = sl.songs || []
                   return (
                     <div
                       key={sl.id || sl.name}
@@ -395,7 +424,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             No songs in this setlist. Add songs from your songbook!
                           </div>
                         ) : (
-                          slSongs.map((sRef: any, sIdx: number) => {
+                          slSongs.map((sRef, sIdx: number) => {
                             const resolvedSong = resolveSetlistSong(sRef, songs)
                             const isCurrentSetlistSong =
                               activeSetlistId === sl.id && activeSetlistSongIndex === sIdx
@@ -645,7 +674,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               </>
             ) : (
               <>
-                <span>Active Setlist: {setlists.find((s: any) => s.id === activeSetlistId)?.name || 'None'}</span>
+                <span>Active Setlist: {setlists.find((s) => s.id === activeSetlistId)?.name || 'None'}</span>
                 <span className="text-[#B58900]">{setlists.length} setlists</span>
               </>
             )}
