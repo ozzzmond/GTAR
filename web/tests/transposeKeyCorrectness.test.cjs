@@ -95,3 +95,52 @@ test('108-dev.1g: Relative semitone transpose control defaults to 0 and does not
   assert.equal(renderedAtMinusTwo, '[A#] [Gm] [Eb] [F]\nWhen I [A#]wake up in the [Eb]morning')
 })
 
+
+test('108-dev.3a: KeyPickerModal contains ZERO obsolete branding and zero redundant tutorial copy', () => {
+  const modalSrc = fs.readFileSync(path.join(__dirname, '../src/components/KeyPickerModal.tsx'), 'utf8')
+
+  // Obsolete branding and outdated copy removed
+  assert.equal(modalSrc.includes('v1.0.42'), false, 'KeyPickerModal must not contain obsolete v1.0.42 branding')
+  assert.equal(modalSrc.toLowerCase().includes('pitch pitcher'), false, 'KeyPickerModal must not contain Pitch Pitcher text')
+  assert.equal(modalSrc.includes('Tip: Click any target key to apply instantly'), false, 'KeyPickerModal must not contain tutorial footer')
+  assert.equal(modalSrc.includes('Sparkles'), false, 'KeyPickerModal must not import or render Sparkles icon')
+})
+
+test('108-dev.3a: KeyPickerModal contains ZERO capo guidance, suggestions, or calculations', () => {
+  const modalSrc = fs.readFileSync(path.join(__dirname, '../src/components/KeyPickerModal.tsx'), 'utf8')
+
+  // Capo math block and calculations removed
+  assert.equal(modalSrc.includes('Capo Math'), false, 'KeyPickerModal must not contain Capo Math block')
+  assert.equal(modalSrc.includes('recommendedCapoFret'), false, 'KeyPickerModal must not calculate recommendedCapoFret')
+  assert.equal(modalSrc.includes('Song default capo'), false, 'KeyPickerModal must not display song default capo')
+  assert.equal(modalSrc.includes('Standard concert pitch'), false, 'KeyPickerModal must not contain concert pitch text')
+
+  // Zero capo fret suggestions in target key rows (e.g. Capo 1 .. Capo 11)
+  const capoFretRegex = /Capo\s+\d+/i
+  assert.equal(capoFretRegex.test(modalSrc), false, 'KeyPickerModal must not contain any Capo fret suggestions')
+  for (let fret = 1; fret <= 11; fret++) {
+    assert.equal(modalSrc.includes(`Capo ${fret}`), false, `KeyPickerModal must not contain Capo ${fret}`)
+  }
+})
+
+test('108-dev.3a: KeyPickerModal preserves musician-focused transpose tools and single-state binding', () => {
+  const modalSrc = fs.readFileSync(path.join(__dirname, '../src/components/KeyPickerModal.tsx'), 'utf8')
+  const stageSrc = fs.readFileSync(path.join(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  const appSrc = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
+
+  // Core header and key status cards intact
+  assert.ok(modalSrc.includes('Stage Key & Transpose Engine'), 'KeyPickerModal must keep title')
+  assert.ok(modalSrc.includes('Original Key'), 'KeyPickerModal must display Original Key')
+  assert.ok(modalSrc.includes('Transposed Key'), 'KeyPickerModal must display Transposed Key')
+  assert.ok(modalSrc.includes('Reset (0)'), 'KeyPickerModal must provide Reset (0) button')
+  assert.ok(modalSrc.includes('Select Target Key or Semitone Shift:'), 'KeyPickerModal must have shift selection label')
+  assert.ok(modalSrc.includes('[-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]'), 'KeyPickerModal must cover -6 to +6 offsets')
+  assert.ok(modalSrc.includes('(Original)'), 'KeyPickerModal must mark offset 0 as (Original)')
+
+  // StageView and App invocations have zero capo binding
+  assert.equal(stageSrc.includes('<KeyPickerModal\n        isOpen={isKeyPickerOpen}\n        onClose={() => setIsKeyPickerOpen(false)}\n        originalKey={effectiveBaseKey || \'C\'}\n        currentOffset={transposeOffset}\n        capoText='), false, 'StageView must not pass capoText to KeyPickerModal')
+  assert.equal(appSrc.includes('capoText={currentSong.capo}'), false, 'App.tsx must not pass capoText to KeyPickerModal')
+
+  // StageView preserves song.capo in stage cast / metadata
+  assert.ok(stageSrc.includes('capo: song.capo'), 'StageView must preserve song.capo for broadcast/metadata')
+})

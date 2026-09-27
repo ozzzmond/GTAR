@@ -2,8 +2,7 @@ import React from 'react'
 import {
   X,
   Music,
-  RotateCcw,
-  Sparkles
+  RotateCcw
 } from 'lucide-react'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 
@@ -12,7 +11,6 @@ interface KeyPickerModalProps {
   onClose: () => void
   originalKey: string
   currentOffset: number
-  capoText?: string
   onSelectOffset: (offset: number) => void
   onReset: () => void
 }
@@ -22,7 +20,6 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
   onClose,
   originalKey,
   currentOffset,
-  capoText,
   onSelectOffset,
   onReset,
 }) => {
@@ -33,11 +30,6 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
 
   // Offsets list matching Android SongViewerScreen (-6 to +6)
   const offsets = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]
-
-  // Capo adjustment calculation:
-  // If performer wants to play chords in baseKey shape but sound in effectiveTransposedKey:
-  // Capo fret = (offset + 12) % 12
-  const recommendedCapoFret = ((currentOffset % 12) + 12) % 12
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 select-none animate-in fade-in duration-150">
@@ -50,7 +42,6 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-[#FDF6E3]">Stage Key & Transpose Engine</h2>
-              <p className="text-[11px] font-mono text-[#93A1A1]">GTAR v1.0.42 Real-time Pitch Pitcher</p>
             </div>
           </div>
           <button
@@ -106,28 +97,6 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
           )}
         </div>
 
-        {/* Capo Calculation Math Alert */}
-        <div className="px-5 py-3 bg-[#073642] border-b border-[#1A4A55] flex items-start gap-2.5 text-xs text-[#EEE8D5]">
-          <Sparkles className="w-4 h-4 text-[#2AA198] shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold text-[#2AA198]">Capo Math: </span>
-            {currentOffset === 0 ? (
-              <span>Standard concert pitch. No capo adjustment required.</span>
-            ) : recommendedCapoFret > 0 ? (
-              <span>
-                To play using <strong className="text-[#FDF6E3]">{baseKey}</strong> chord fingerings in the key of <strong className="text-[#B58900]">{effectiveTransposedKey}</strong>, place Capo on <strong className="text-[#2AA198]">Fret {recommendedCapoFret}</strong>.
-              </span>
-            ) : (
-              <span>Shifted pitch without capo.</span>
-            )}
-            {capoText && (
-              <span className="block text-[11px] text-[#93A1A1] mt-0.5 font-mono">
-                Song default capo: {capoText}
-              </span>
-            )}
-          </div>
-        </div>
-
         {/* Semitone Shift Selector Grid (-6 to +6) */}
         <div className="p-5 overflow-y-auto flex-1">
           <label className="block text-[#93A1A1] font-mono text-[11px] uppercase mb-3">
@@ -172,12 +141,6 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
                       )}
                     </div>
                   </div>
-
-                  {offset !== 0 && (
-                    <span className="text-[10px] font-mono text-[#93A1A1]">
-                      Capo {((offset % 12) + 12) % 12}
-                    </span>
-                  )}
                 </button>
               )
             })}
@@ -185,8 +148,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-5 py-3 bg-[#002B36] border-t border-[#1A4A55] flex items-center justify-between text-xs font-mono text-[#93A1A1]">
-          <span>Tip: Click any target key to apply instantly</span>
+        <div className="px-5 py-3 bg-[#002B36] border-t border-[#1A4A55] flex items-center justify-end text-xs font-mono text-[#93A1A1]">
           <button
             type="button"
             onClick={onClose}

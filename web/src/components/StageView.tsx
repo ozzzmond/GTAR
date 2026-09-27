@@ -2578,7 +2578,6 @@ export const StageView: React.FC<StageViewProps> = ({
         onClose={() => setIsKeyPickerOpen(false)}
         originalKey={effectiveBaseKey || 'C'}
         currentOffset={transposeOffset}
-        capoText={song.capo}
         onSelectOffset={(offset) => onTransposeChange(offset)}
         onReset={() => onTransposeChange(0)}
       />

@@ -1411,7 +1411,6 @@ function LibraryApp() {
         onClose={() => setIsHeaderKeyPickerOpen(false)}
         originalKey={currentSong.key}
         currentOffset={currentSong.transposeOffset || 0}
-        capoText={currentSong.capo}
         onSelectOffset={handleTransposeChange}
         onReset={() => handleTransposeChange(0)}
       />
