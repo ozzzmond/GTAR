@@ -11,6 +11,7 @@ export { RESTORE_SNAPSHOT_KEY }
 import { STAGE_SESSION_KEY } from './stageSession'
 
 export const STAGE_DOCK_POSITION_KEY = 'gtar_stage_dock_pos'
+export const STAGE_CONTROLS_AUTO_HIDE_KEY = 'gtar_stage_controls_auto_hide'
 
 export const CANONICAL_STORAGE_PREFIXES = [
   LIBRARY_KEY,
@@ -18,6 +19,7 @@ export const CANONICAL_STORAGE_PREFIXES = [
   RESTORE_SNAPSHOT_KEY,
   STAGE_SESSION_KEY,
   STAGE_DOCK_POSITION_KEY,
+  STAGE_CONTROLS_AUTO_HIDE_KEY,
   ownerKey,
   'gtar_sync_v1:',
   'gtar_songs_store',

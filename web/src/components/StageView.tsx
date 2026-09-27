@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react'
 import { StageControlDock } from './StageControlDock'
+import { STAGE_CONTROLS_AUTO_HIDE_KEY } from '../utils/syncJournal'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 import { parseGtarSong, splitSongLinesForColumns, detectSongKey } from '../utils/songParser'
 import { metronome } from '../utils/metronome'
@@ -202,6 +203,24 @@ export const StageView: React.FC<StageViewProps> = ({
     setLineSpacingState(spacing)
     if (typeof window !== 'undefined') {
       localStorage.setItem('gtar_stage_line_spacing', spacing)
+    }
+  }, [])
+
+  // Device-level persistent Stage Controls Auto-Hide preference (Default: ON / true)
+  const [controlsAutoHide, setControlsAutoHideState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(STAGE_CONTROLS_AUTO_HIDE_KEY)
+      if (saved !== null) {
+        return saved !== 'false'
+      }
+    }
+    return true
+  })
+
+  const setControlsAutoHide = useCallback((autoHide: boolean) => {
+    setControlsAutoHideState(autoHide)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STAGE_CONTROLS_AUTO_HIDE_KEY, String(autoHide))
     }
   }, [])
 
@@ -1544,14 +1563,18 @@ export const StageView: React.FC<StageViewProps> = ({
       {/* PERFORMANCE MODE — Minimal Title Retention when HUD/Overlays Hide */}
       {inPerformanceMode && !showStageOverlays && (
         <div
+          data-testid="stage-fullscreen-title-container"
           onClick={triggerOverlaysShow}
           className="absolute top-0 left-0 right-0 z-30 flex items-center justify-center px-4 py-1.5 pointer-events-auto cursor-pointer select-none transition-opacity duration-300"
           style={{ paddingTop: 'max(6px, env(safe-area-inset-top, 6px))' }}
           title="Tap to reveal stage controls"
           aria-label={`${song.title || 'Untitled Song'} • Tap to reveal stage controls`}
         >
-          <div className="max-w-[75vw] sm:max-w-md px-3 py-0.5 rounded-full bg-[#073642]/60 backdrop-blur-xs border border-[#1A4A55]/40 shadow-sm flex items-center justify-center">
-            <span className="text-[11px] sm:text-xs font-bold text-[#EEE8D5]/70 truncate tracking-wide text-center">
+          <div className="max-w-[85vw] sm:max-w-lg md:max-w-xl px-4 py-1 rounded-full bg-[#073642]/85 backdrop-blur-md border border-[#1A4A55]/70 shadow-md flex items-center justify-center">
+            <span
+              data-testid="stage-fullscreen-title"
+              className="text-xs sm:text-base md:text-lg font-bold text-[#EEE8D5] truncate tracking-wide text-center"
+            >
               {song.title || 'Untitled Song'}
             </span>
           </div>
@@ -1990,7 +2013,7 @@ export const StageView: React.FC<StageViewProps> = ({
         onNextSection={handleNextSection}
         canPrevSection={sectionHeaders.length > 0}
         canNextSection={sectionHeaders.length > 0}
-        visible={inPerformanceMode ? showStageOverlays : true}
+        visible={inPerformanceMode ? (!controlsAutoHide || showStageOverlays) : true}
         onUserInteraction={triggerOverlaysShow}
       />
 
@@ -2227,7 +2250,7 @@ export const StageView: React.FC<StageViewProps> = ({
             </div>
 
             {/* --- Column toggle + Font style row --- */}
-            <div className="flex items-center gap-2 mb-5">
+            <div className="flex items-center gap-2 mb-4">
               <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Layout</span>
               <div className="flex items-center gap-2 flex-1 flex-wrap">
                 <button type="button"
@@ -2246,6 +2269,39 @@ export const StageView: React.FC<StageViewProps> = ({
                     {fs.charAt(0).toUpperCase() + fs.slice(1)}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* --- Fullscreen Controls Auto-Hide row --- */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Controls</span>
+              <div className="grid grid-cols-2 gap-1.5 flex-1">
+                <button
+                  type="button"
+                  data-testid="stage-controls-auto-hide-on-btn"
+                  onClick={() => setControlsAutoHide(true)}
+                  className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                    controlsAutoHide
+                      ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
+                      : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                  }`}
+                  title="Auto-hide navigation dock with HUD in fullscreen mode"
+                >
+                  Auto-Hide
+                </button>
+                <button
+                  type="button"
+                  data-testid="stage-controls-auto-hide-off-btn"
+                  onClick={() => setControlsAutoHide(false)}
+                  className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                    !controlsAutoHide
+                      ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
+                      : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                  }`}
+                  title="Keep floating navigation dock visible during fullscreen mode"
+                >
+                  Always Visible
+                </button>
               </div>
             </div>
 
