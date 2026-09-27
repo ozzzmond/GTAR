@@ -30,6 +30,11 @@ import {
 import { StageControlDock } from './StageControlDock'
 import { STAGE_CONTROLS_AUTO_HIDE_KEY } from '../utils/syncJournal'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
+import {
+  type StageNotationMode,
+  NOTATION_STORAGE_KEY,
+  isValidMusicalKey,
+} from '../utils/nashvilleNotation'
 import { parseGtarSong, splitSongLinesForColumns, detectSongKey } from '../utils/songParser'
 import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
@@ -198,6 +203,25 @@ export const StageView: React.FC<StageViewProps> = ({
       localStorage.setItem('gtar_stage_font_weight', weight)
     }
   }, [])
+
+  // Device-level persistent Stage Notation preference (Default: 'chords')
+  const [notation, setNotationState] = useState<StageNotationMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(NOTATION_STORAGE_KEY)
+      if (saved === 'numbers' || saved === 'chords') {
+        return saved
+      }
+    }
+    return 'chords'
+  })
+
+  const setNotation = useCallback((val: StageNotationMode) => {
+    setNotationState(val)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(NOTATION_STORAGE_KEY, val)
+    }
+  }, [])
+
 
   const setLineSpacing = useCallback((spacing: StageLineSpacing) => {
     setLineSpacingState(spacing)
@@ -1347,8 +1371,16 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }, [])
 
-  const originalSongKey = song.key || parsedSong.key || detectSongKey(song.rawContent || '')
-  const effectiveKey = originalSongKey ? transposeKey(originalSongKey, transposeOffset) : ''
+  // Single source of truth for base reference key:
+  // Explicit song key, parsed directive, detected tonic chord progression, or manual key override
+  const detectedKey = detectSongKey(song.rawContent || '')
+  const effectiveBaseKey =
+    (isValidMusicalKey(song.key) ? song.key : null) ||
+    (isValidMusicalKey(parsedSong.key) ? parsedSong.key : null) ||
+    (isValidMusicalKey(detectedKey) ? detectedKey : null) ||
+    ''
+  const effectivePerformanceKey = effectiveBaseKey ? transposeKey(effectiveBaseKey, transposeOffset) : ''
+  const effectiveKey = effectivePerformanceKey
   const offsetStr = formatTransposeOffset(transposeOffset)
 
   // Two-column split calculation matching splitSongLinesForColumns in Android SongViewerScreen.kt
@@ -1368,8 +1400,9 @@ export const StageView: React.FC<StageViewProps> = ({
       chordScale,
       fontWeight,
       lineSpacing,
+      notation,
     })
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing, notation])
 
   useEffect(() => {
     // Listen for REQUEST_STATE from external teleprompter window
@@ -1387,10 +1420,11 @@ export const StageView: React.FC<StageViewProps> = ({
           chordScale,
           fontWeight,
           lineSpacing,
+          notation,
         })
       }
     )
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing, notation])
 
   const handleTogglePresentation = useCallback(async () => {
     if (isCastActive) {
@@ -1489,56 +1523,111 @@ export const StageView: React.FC<StageViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Transpose [- Key +] Control */}
-            <div
-              className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onTransposeChange(transposeOffset - 1)
-                  triggerOverlaysShow()
-                }}
-                className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
-                title="Transpose Down (-1)"
-                aria-label="Transpose Down (-1 semitone)"
+            {notation === 'numbers' ? (
+              /* Quick Key Control [- Key +] for Numbers Mode */
+              <div
+                className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  type="button"
+                  disabled={!effectivePerformanceKey}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTransposeChange(transposeOffset - 1)
+                    triggerOverlaysShow()
+                  }}
+                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  title="Step Key Down (-1 semitone)"
+                  aria-label="Step Key Down (-1 semitone)"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsKeyPickerOpen(true)
-                  triggerOverlaysShow()
-                }}
-                className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
-                  transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
-                }`}
-                title="Choose Target Key"
-                aria-label={`Transpose: ${offsetStr}, Tap to choose key`}
-              >
-                <span>Transpose: {offsetStr}</span>
-                <ChevronDown className="w-2.5 h-2.5 opacity-60" />
-              </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsKeyPickerOpen(true)
+                    triggerOverlaysShow()
+                  }}
+                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
+                    effectivePerformanceKey ? 'text-[#B58900]' : 'text-[#DC6E67]'
+                  }`}
+                  title="Choose Performance Key"
+                  aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}, Tap to choose key`}
+                >
+                  <span>Key: {effectivePerformanceKey || 'Not Set'}</span>
+                  <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                </button>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onTransposeChange(transposeOffset + 1)
-                  triggerOverlaysShow()
-                }}
-                className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
-                title="Transpose Up (+1)"
-                aria-label="Transpose Up (+1 semitone)"
+                <button
+                  type="button"
+                  disabled={!effectivePerformanceKey}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTransposeChange(transposeOffset + 1)
+                    triggerOverlaysShow()
+                  }}
+                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  title="Step Key Up (+1 semitone)"
+                  aria-label="Step Key Up (+1 semitone)"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              /* Quick Transpose [- Key +] Control */
+              <div
+                className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTransposeChange(transposeOffset - 1)
+                    triggerOverlaysShow()
+                  }}
+                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                  title="Transpose Down (-1)"
+                  aria-label="Transpose Down (-1 semitone)"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsKeyPickerOpen(true)
+                    triggerOverlaysShow()
+                  }}
+                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
+                    transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
+                  }`}
+                  title="Choose Target Key"
+                  aria-label={`Transpose: ${offsetStr}, Tap to choose key`}
+                >
+                  <span>Transpose: {offsetStr}</span>
+                  <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTransposeChange(transposeOffset + 1)
+                    triggerOverlaysShow()
+                  }}
+                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                  title="Transpose Up (+1)"
+                  aria-label="Transpose Up (+1 semitone)"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Exit Focus Mode Button */}
             <button
@@ -1685,57 +1774,109 @@ export const StageView: React.FC<StageViewProps> = ({
             <span className="hidden sm:inline">{isTwoColumn ? '2-Col' : '1-Col'}</span>
           </button>
 
-          {/* Standard Transpose Stepper: [ - ] Key: G (+1) [ + ] (Compose lines 523-589) */}
-          <div
-            className={`flex items-center rounded-lg border transition-colors p-0.5 ${
-              transposeOffset !== 0
-                ? 'bg-[#B58900]/15 border-[#B58900]'
-                : 'bg-[#002B36] border-[#1A4A55]'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onTransposeChange(transposeOffset - 1)}
-              className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer"
-              title="Transpose Down (-1)"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsKeyPickerOpen(true)}
-              className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
-                transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5] hover:bg-[#073642]'
-              }`}
-              title="Select Target Key"
-            >
-              <span>
-                Transpose: {offsetStr}
-              </span>
-              <ChevronDown className="w-3 h-3 opacity-75" />
-            </button>
-
-            {transposeOffset !== 0 && (
+          {notation === 'numbers' ? (
+            /* Key Stepper for Numbers Mode: [ - ] Key: G [ + ] */
+            <div className="flex items-center rounded-lg border bg-[#002B36] border-[#1A4A55] p-0.5">
               <button
                 type="button"
-                onClick={() => onTransposeChange(0)}
-                className="p-1 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
-                title="Reset Transposition to Original Key"
+                disabled={!effectivePerformanceKey}
+                onClick={() => onTransposeChange(transposeOffset - 1)}
+                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                title="Step Key Down (-1 semitone)"
+                aria-label="Step Key Down (-1 semitone)"
               >
-                <RotateCcw className="w-3 h-3" />
+                <Minus className="w-3.5 h-3.5" />
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={() => onTransposeChange(transposeOffset + 1)}
-              className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer"
-              title="Transpose Up (+1)"
+              <button
+                type="button"
+                onClick={() => setIsKeyPickerOpen(true)}
+                className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
+                  effectivePerformanceKey ? 'text-[#B58900] hover:bg-[#073642]' : 'text-[#DC6E67] hover:bg-[#073642]'
+                }`}
+                title="Select Performance Key"
+                aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}`}
+              >
+                <span>Key: {effectivePerformanceKey || 'Not Set'}</span>
+                <ChevronDown className="w-3 h-3 opacity-75" />
+              </button>
+
+              {transposeOffset !== 0 && effectivePerformanceKey && (
+                <button
+                  type="button"
+                  onClick={() => onTransposeChange(0)}
+                  className="p-1 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
+                  title="Reset Key to Original Key"
+                  aria-label="Reset Key to Original Key"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={!effectivePerformanceKey}
+                onClick={() => onTransposeChange(transposeOffset + 1)}
+                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                title="Step Key Up (+1 semitone)"
+                aria-label="Step Key Up (+1 semitone)"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            /* Standard Transpose Stepper: [ - ] Key: G (+1) [ + ] (Compose lines 523-589) */
+            <div
+              className={`flex items-center rounded-lg border transition-colors p-0.5 ${
+                transposeOffset !== 0
+                  ? 'bg-[#B58900]/15 border-[#B58900]'
+                  : 'bg-[#002B36] border-[#1A4A55]'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => onTransposeChange(transposeOffset - 1)}
+                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer"
+                title="Transpose Down (-1)"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsKeyPickerOpen(true)}
+                className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
+                  transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5] hover:bg-[#073642]'
+                }`}
+                title="Select Target Key"
+              >
+                <span>
+                  Transpose: {offsetStr}
+                </span>
+                <ChevronDown className="w-3 h-3 opacity-75" />
+              </button>
+
+              {transposeOffset !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => onTransposeChange(0)}
+                  className="p-1 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
+                  title="Reset Transposition to Original Key"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => onTransposeChange(transposeOffset + 1)}
+                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer"
+                title="Transpose Up (+1)"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Stage Top Bar Quick Autoscroll Action Button */}
           <button
@@ -1871,6 +2012,26 @@ export const StageView: React.FC<StageViewProps> = ({
           style={{ willChange: 'transform' }}
         >
 
+          {/* Missing / Invalid Key fail-safe notification for Numbers Mode */}
+          {notation === 'numbers' && !effectivePerformanceKey && !song.isMissing && (
+            <div
+              data-testid="stage-numbers-key-missing"
+              className="mb-4 mx-auto max-w-xl p-3.5 rounded-xl bg-[#073642] border border-[#B58900]/40 flex items-center justify-between gap-3 text-xs shadow-md select-none"
+            >
+              <div className="flex items-center gap-2 text-[#EEE8D5]">
+                <span className="font-extrabold text-[#B58900]">Numbers Mode:</span>
+                <span>Reference key required to display numbers notation.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsKeyPickerOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-[#2AA198] text-[#002B36] font-extrabold text-xs hover:bg-[#35B8AD] cursor-pointer shrink-0 transition-colors shadow-sm"
+              >
+                Choose Key
+              </button>
+            </div>
+          )}
+
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
           {song.isMissing ? (
             <div role="alert" className="rounded-xl border border-amber-500 p-6 text-center">
@@ -1888,6 +2049,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   chordScale={chordScale}
                   fontWeight={fontWeight}
                   lineSpacing={lineSpacing}
+                  notation={notation}
+                  referenceKey={notation === 'numbers' ? effectivePerformanceKey : undefined}
                 />
               </div>
 
@@ -1900,6 +2063,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   chordScale={chordScale}
                   fontWeight={fontWeight}
                   lineSpacing={lineSpacing}
+                  notation={notation}
+                  referenceKey={notation === 'numbers' ? effectivePerformanceKey : undefined}
                 />
               </div>
             </div>
@@ -1912,6 +2077,8 @@ export const StageView: React.FC<StageViewProps> = ({
               chordScale={chordScale}
               fontWeight={fontWeight}
               lineSpacing={lineSpacing}
+              notation={notation}
+              referenceKey={notation === 'numbers' ? effectivePerformanceKey : undefined}
             />
           )}
 
@@ -2079,30 +2246,77 @@ export const StageView: React.FC<StageViewProps> = ({
               </h2>
             </div>
 
-            {/* --- Transpose row --- */}
+            {/* --- Notation selector row --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Transpose</span>
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Notation</span>
+              <div className="grid grid-cols-2 gap-1.5 flex-1">
+                {(['chords', 'numbers'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    data-testid={`stage-notation-${mode}-btn`}
+                    onClick={() => setNotation(mode)}
+                    className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                      notation === mode
+                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
+                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {mode === 'chords' ? 'Chords' : 'Numbers'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* --- Transpose / Key row --- */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">
+                {notation === 'numbers' ? 'Key' : 'Transpose'}
+              </span>
               <div className={`flex items-center rounded-xl border p-0.5 flex-1 ${
-                transposeOffset !== 0 ? 'bg-[#B58900]/10 border-[#B58900]' : 'bg-[#002B36] border-[#1A4A55]'
+                notation === 'numbers'
+                  ? effectivePerformanceKey ? 'bg-[#002B36] border-[#1A4A55]' : 'bg-[#DC6E67]/10 border-[#DC6E67]/50'
+                  : transposeOffset !== 0 ? 'bg-[#B58900]/10 border-[#B58900]' : 'bg-[#002B36] border-[#1A4A55]'
               }`}>
-                <button type="button" onClick={() => onTransposeChange(transposeOffset - 1)}
-                  className="p-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
+                <button
+                  type="button"
+                  disabled={notation === 'numbers' && !effectivePerformanceKey}
+                  onClick={() => onTransposeChange(transposeOffset - 1)}
+                  className="p-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  title={notation === 'numbers' ? 'Step Key Down (-1)' : 'Transpose Down (-1)'}
+                >
                   <Minus className="w-4 h-4" />
                 </button>
-                <button type="button" onClick={() => setIsKeyPickerOpen(true)}
+                <button
+                  type="button"
+                  onClick={() => setIsKeyPickerOpen(true)}
                   className={`flex-1 text-center text-sm font-mono font-extrabold cursor-pointer ${
-                    transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
-                  }`}>
-                  Transpose: {offsetStr}
+                    notation === 'numbers'
+                      ? effectivePerformanceKey ? 'text-[#B58900]' : 'text-[#DC6E67]'
+                      : transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
+                  }`}
+                >
+                  {notation === 'numbers'
+                    ? `Key: ${effectivePerformanceKey || 'Not Set'}`
+                    : `Transpose: ${offsetStr}`}
                 </button>
                 {transposeOffset !== 0 && (
-                  <button type="button" onClick={() => onTransposeChange(0)}
-                    className="p-2 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => onTransposeChange(0)}
+                    className="p-2 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
+                    title={notation === 'numbers' ? 'Reset Key to Original' : 'Reset Transposition'}
+                  >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
                 )}
-                <button type="button" onClick={() => onTransposeChange(transposeOffset + 1)}
-                  className="p-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
+                <button
+                  type="button"
+                  disabled={notation === 'numbers' && !effectivePerformanceKey}
+                  onClick={() => onTransposeChange(transposeOffset + 1)}
+                  className="p-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  title={notation === 'numbers' ? 'Step Key Up (+1)' : 'Transpose Up (+1)'}
+                >
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
@@ -2362,10 +2576,10 @@ export const StageView: React.FC<StageViewProps> = ({
       <KeyPickerModal
         isOpen={isKeyPickerOpen}
         onClose={() => setIsKeyPickerOpen(false)}
-        originalKey={originalSongKey}
+        originalKey={effectiveBaseKey || 'C'}
         currentOffset={transposeOffset}
         capoText={song.capo}
-        onSelectOffset={onTransposeChange}
+        onSelectOffset={(offset) => onTransposeChange(offset)}
         onReset={() => onTransposeChange(0)}
       />
 

@@ -108,6 +108,7 @@ export interface StageCastState {
   chordScale?: number
   fontWeight?: 'regular' | 'medium' | 'bold'
   lineSpacing?: 'compact' | 'normal' | 'relaxed'
+  notation?: 'chords' | 'numbers'
   themeMode?: string
   customThemeColors?: {
     bgHex: string
@@ -702,6 +703,7 @@ class StageCastEngine {
             chordScale: typeof inner.chordScale === 'number' ? inner.chordScale : undefined,
             fontWeight: inner.fontWeight as StageCastState['fontWeight'],
             lineSpacing: inner.lineSpacing as StageCastState['lineSpacing'],
+            notation: inner.notation as StageCastState['notation'],
             themeMode: typeof inner.themeMode === 'string' ? inner.themeMode : undefined,
             customThemeColors: inner.customThemeColors as StageCastState['customThemeColors'],
           })

@@ -1,6 +1,11 @@
 import React from 'react'
 import type { SongLine } from '../types/gtar'
 import { CHORD_TOKEN_REGEX, convertChordProToTwoLine } from '../utils/songParser'
+import {
+  chordTokenToNashville,
+  isValidMusicalKey,
+  type StageNotationMode,
+} from '../utils/nashvilleNotation'
 
 export type StageChordScale = 1.0 | 1.1 | 1.2 | 1.3
 export type StageFontWeight = 'regular' | 'medium' | 'bold'
@@ -14,6 +19,8 @@ export interface SongLineRendererProps {
   chordScale?: number
   fontWeight?: StageFontWeight
   lineSpacing?: StageLineSpacing
+  notation?: StageNotationMode
+  referenceKey?: string | null
 }
 
 interface LineSpacingConfig {
@@ -86,15 +93,21 @@ const FONT_WEIGHT_CONFIGS: Record<StageFontWeight, { lyricClass: string; chordCl
 /**
  * Splits a chord line text (preserving whitespace) so chord tokens are individually clickable,
  * matching Android detectTapGestures + extractChordAtOffset.
+ * When notation === 'numbers', tokens are converted to relative scale degrees (Nashville Number System)
+ * and interactions (clicks, chord diagrams) are suppressed.
  */
 function renderInteractiveChordLine(
   text: string,
   onChordClick?: (chord: string) => void,
   chordScale: number = 1.0,
-  isHighContrast: boolean = false
+  isHighContrast: boolean = false,
+  notation: StageNotationMode = 'chords',
+  referenceKey?: string | null
 ): React.ReactNode[] {
   const elements: React.ReactNode[] = []
   let i = 0
+  let pendingSpacingCompensation = 0
+  const isNumbersMode = notation === 'numbers' && isValidMusicalKey(referenceKey)
 
   while (i < text.length) {
     if (text[i] === ' ' || text[i] === '\t') {
@@ -103,6 +116,16 @@ function renderInteractiveChordLine(
         spaceStr += text[i]
         i++
       }
+
+      if (pendingSpacingCompensation > 0) {
+        spaceStr += ' '.repeat(pendingSpacingCompensation)
+        pendingSpacingCompensation = 0
+      } else if (pendingSpacingCompensation < 0) {
+        const canAbsorb = Math.min(-pendingSpacingCompensation, Math.max(0, spaceStr.length - 1))
+        spaceStr = spaceStr.slice(canAbsorb)
+        pendingSpacingCompensation += canAbsorb
+      }
+
       elements.push(<span key={`sp-${i}`}>{spaceStr}</span>)
     } else {
       const start = i
@@ -113,20 +136,24 @@ function renderInteractiveChordLine(
 
       // Handle hyphenated compound chords like "<C#m>-<B>" or "C#m-B"
       if (rawToken.includes('-') || rawToken.includes('–') || rawToken.includes('—')) {
-        const subParts = rawToken.split(/([-–—])/)
+        const subParts = rawToken.split(/([–—-]|--)/)
         for (let sIdx = 0; sIdx < subParts.length; sIdx++) {
           const sub = subParts[sIdx]
-          if (sub === '-' || sub === '–' || sub === '—') {
+          if (sub === '-' || sub === '–' || sub === '—' || sub === '--') {
             elements.push(<span key={`sep-${start}-${sIdx}`}>{sub}</span>)
             continue
           }
-          const cleanSub = sub.replace(/^[[<({|,–—:;~]+|[\]>)}|,–—:;~]+$/g, '').trim()
+          const cleanSub = sub.replace(/^[[<({|,--:;~]+|[\]>)}|,--:;~]+$/g, '').trim()
           if (cleanSub && CHORD_TOKEN_REGEX.test(cleanSub)) {
+            const displayToken = isNumbersMode ? chordTokenToNashville(cleanSub, referenceKey!) : cleanSub
+            if (isNumbersMode) {
+              pendingSpacingCompensation += (cleanSub.length - displayToken.length)
+            }
             elements.push(
               <span
                 key={`chord-${start}-${sIdx}`}
-                onClick={() => onChordClick?.(cleanSub)}
-                className="stage-chord-token cursor-pointer select-none"
+                onClick={isNumbersMode ? undefined : () => onChordClick?.(cleanSub)}
+                className={`stage-chord-token ${isNumbersMode ? 'stage-number-token cursor-default' : 'cursor-pointer'} select-none`}
                 style={{
                   ...(chordScale !== 1.0
                     ? {
@@ -138,9 +165,9 @@ function renderInteractiveChordLine(
                     : undefined),
                   ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
                 }}
-                title={`View ${cleanSub} fretboard diagram`}
+                title={isNumbersMode ? undefined : `View ${cleanSub} fretboard diagram`}
               >
-                {cleanSub}
+                {displayToken}
               </span>
             )
           } else {
@@ -148,13 +175,17 @@ function renderInteractiveChordLine(
           }
         }
       } else {
-        const cleanToken = rawToken.replace(/^[[<({|,–—:;~]+|[\]>)}|,–—:;~]+$/g, '').trim()
+        const cleanToken = rawToken.replace(/^[[<({|,--:;~]+|[\]>)}|,--:;~]+$/g, '').trim()
         if (cleanToken && CHORD_TOKEN_REGEX.test(cleanToken)) {
+          const displayToken = isNumbersMode ? chordTokenToNashville(cleanToken, referenceKey!) : cleanToken
+          if (isNumbersMode) {
+            pendingSpacingCompensation += (cleanToken.length - displayToken.length)
+          }
           elements.push(
             <span
               key={`chord-${start}`}
-              onClick={() => onChordClick?.(cleanToken)}
-              className="stage-chord-token cursor-pointer select-none"
+              onClick={isNumbersMode ? undefined : () => onChordClick?.(cleanToken)}
+              className={`stage-chord-token ${isNumbersMode ? 'stage-number-token cursor-default' : 'cursor-pointer'} select-none`}
               style={{
                 ...(chordScale !== 1.0
                   ? {
@@ -166,9 +197,9 @@ function renderInteractiveChordLine(
                   : undefined),
                 ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
               }}
-              title={`View ${cleanToken} fretboard diagram`}
+              title={isNumbersMode ? undefined : `View ${cleanToken} fretboard diagram`}
             >
-              {cleanToken}
+              {displayToken}
             </span>
           )
         } else {
@@ -176,6 +207,10 @@ function renderInteractiveChordLine(
         }
       }
     }
+  }
+
+  if (pendingSpacingCompensation > 0) {
+    elements.push(<span key={`sp-end`}>{' '.repeat(pendingSpacingCompensation)}</span>)
   }
 
   return elements
@@ -198,6 +233,8 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   chordScale = 1.0,
   fontWeight = 'regular',
   lineSpacing = 'normal',
+  notation = 'chords',
+  referenceKey,
 }) => {
   const fontClass =
     fontFamily === 'serif'
@@ -255,7 +292,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                 }}
                 className={`stage-mono stage-chord-text ${weightConfig.chordClass} whitespace-pre-wrap select-text`}
               >
-                {renderInteractiveChordLine(line.raw, onChordClick, chordScale, isHighContrast)}
+                {renderInteractiveChordLine(line.raw, onChordClick, chordScale, isHighContrast, notation, referenceKey)}
               </div>
             )
 
@@ -279,7 +316,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                       }}
                       className={`stage-mono stage-chord-text ${weightConfig.chordClass} whitespace-pre-wrap`}
                     >
-                      {renderInteractiveChordLine(chordLine, onChordClick, chordScale, isHighContrast)}
+                      {renderInteractiveChordLine(chordLine, onChordClick, chordScale, isHighContrast, notation, referenceKey)}
                     </div>
                   )}
                   {lyricLine && (
@@ -358,7 +395,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                         ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
                       }}
                     >
-                      {segment.chord ? renderInteractiveChordLine(segment.chord, onChordClick, 1.0, isHighContrast) : '\u00a0'}
+                      {segment.chord ? renderInteractiveChordLine(segment.chord, onChordClick, 1.0, isHighContrast, notation, referenceKey) : '\u00a0'}
                     </span>
                     <span className={`stage-lyric-text ${weightConfig.lyricClass}`} style={{ lineHeight: spacing.lineHeightMultiplier }}>
                       {segment.text || '\u00a0'}

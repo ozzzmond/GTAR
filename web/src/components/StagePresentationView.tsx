@@ -302,6 +302,8 @@ export const StagePresentationView: React.FC = () => {
                 chordScale={castState.chordScale}
                 fontWeight={castState.fontWeight}
                 lineSpacing={castState.lineSpacing}
+                notation={castState.notation}
+                referenceKey={castState.notation === 'numbers' ? castState.effectiveKey : undefined}
               />
             </div>
             <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-8 lg:pl-14">
@@ -312,6 +314,8 @@ export const StagePresentationView: React.FC = () => {
                 chordScale={castState.chordScale}
                 fontWeight={castState.fontWeight}
                 lineSpacing={castState.lineSpacing}
+                notation={castState.notation}
+                referenceKey={castState.notation === 'numbers' ? castState.effectiveKey : undefined}
               />
             </div>
           </div>
@@ -323,7 +327,9 @@ export const StagePresentationView: React.FC = () => {
             chordScale={castState.chordScale}
             fontWeight={castState.fontWeight}
             lineSpacing={castState.lineSpacing}
-          />
+                notation={castState.notation}
+                referenceKey={castState.notation === 'numbers' ? castState.effectiveKey : undefined}
+              />
         )}
 
         {/* Bottom breathing room for smooth autoscrolling to end of song */}
