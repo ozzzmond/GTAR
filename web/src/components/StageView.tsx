@@ -25,9 +25,9 @@ import {
   ArrowLeft,
   Cast,
   Tv,
-  MoreHorizontal,
   SlidersHorizontal,
 } from 'lucide-react'
+import { StageControlDock } from './StageControlDock'
 import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
 import { parseGtarSong, splitSongLinesForColumns, detectSongKey } from '../utils/songParser'
 import { metronome } from '../utils/metronome'
@@ -682,6 +682,94 @@ export const StageView: React.FC<StageViewProps> = ({
     }
   }
 
+  // Structural sections in document order matching Android SongParser.kt
+  const sectionHeaders = useMemo(() => {
+    return parsedSong.lines.filter((l) => l.type === 'SECTION_HEADER')
+  }, [parsedSong.lines])
+
+  const handlePrevSection = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const sectionEls = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-stage-section="true"]')
+    )
+    if (sectionEls.length === 0) return
+
+    const containerRect = container.getBoundingClientRect()
+    const currentScrollTop = container.scrollTop
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    const headerOffset = inPerformanceMode ? (showStageOverlays ? 56 : 24) : 16
+
+    const targets = sectionEls.map((el) => {
+      const elRect = el.getBoundingClientRect()
+      const distanceFromTop = elRect.top - containerRect.top
+      const targetScrollTop = Math.max(
+        0,
+        Math.min(maxScroll, Math.round(currentScrollTop + distanceFromTop - headerOffset))
+      )
+      return { el, targetScrollTop }
+    })
+
+    const pastSections = targets.filter((s) => s.targetScrollTop <= currentScrollTop + 12)
+
+    let targetTop = 0
+    if (pastSections.length > 0) {
+      const currentSection = pastSections[pastSections.length - 1]
+      // If viewport has scrolled past current section start, jump back to section start
+      if (currentScrollTop > currentSection.targetScrollTop + 24) {
+        targetTop = currentSection.targetScrollTop
+      } else if (pastSections.length >= 2) {
+        // Already at section start: jump to preceding section in document order
+        targetTop = pastSections[pastSections.length - 2].targetScrollTop
+      } else {
+        // At first section: jump to top of song
+        targetTop = 0
+      }
+    } else {
+      targetTop = 0
+    }
+
+    accumulatedScrollRef.current = targetTop
+    setIsAutoScrolling(false)
+    container.scrollTo({ top: targetTop, behavior: 'smooth' })
+    triggerOverlaysShow()
+  }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow])
+
+  const handleNextSection = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const sectionEls = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-stage-section="true"]')
+    )
+    if (sectionEls.length === 0) return
+
+    const containerRect = container.getBoundingClientRect()
+    const currentScrollTop = container.scrollTop
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    const headerOffset = inPerformanceMode ? (showStageOverlays ? 56 : 24) : 16
+
+    const targets = sectionEls.map((el) => {
+      const elRect = el.getBoundingClientRect()
+      const distanceFromTop = elRect.top - containerRect.top
+      const targetScrollTop = Math.max(
+        0,
+        Math.min(maxScroll, Math.round(currentScrollTop + distanceFromTop - headerOffset))
+      )
+      return { el, targetScrollTop }
+    })
+
+    const nextSection = targets.find((s) => s.targetScrollTop > currentScrollTop + 12)
+    if (!nextSection) return
+
+    const targetTop = nextSection.targetScrollTop
+    accumulatedScrollRef.current = targetTop
+    setIsAutoScrolling(false)
+    container.scrollTo({ top: targetTop, behavior: 'smooth' })
+    triggerOverlaysShow()
+  }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow])
+
   const executePrevSong = useCallback(() => {
     if (isInSetlistMode && onSelectSetlistSongIndex) {
       if (activeSetlistSongIndex > 0) {
@@ -1088,7 +1176,7 @@ export const StageView: React.FC<StageViewProps> = ({
   // - Spacebar: Toggle Auto-Scroll (Play / Pause)
   // - ArrowRight or 'n': Next song in setlist
   // - ArrowLeft or 'p': Previous song in setlist
-  // - PageDown / PageUp: Standard foot pedal navigation (Next / Previous song)
+  // - PageUp / PageDown: Section navigation (Previous / Next section)
   // - ArrowUp / ArrowDown: Manually nudge scroll (or Shift + Arrow to adjust scroll speed)
   // - '+' / '-': Adjust font size
   useEffect(() => {
@@ -1143,17 +1231,16 @@ export const StageView: React.FC<StageViewProps> = ({
         return
       }
 
-      // ACTION_4: Foot pedal PageUp / PageDown support (keyboard emulation)
-      // Mapped to Previous / Next song consistently; prevents browser default scroll
+      // PageUp / PageDown: Navigate structural sections; prevents browser default scroll
       if (e.key === 'PageDown') {
         e.preventDefault()
-        handleNextSong()
+        handleNextSection()
         return
       }
 
       if (e.key === 'PageUp') {
         e.preventDefault()
-        handlePrevSong()
+        handlePrevSection()
         return
       }
 
@@ -1201,6 +1288,8 @@ export const StageView: React.FC<StageViewProps> = ({
     syncState.role,
     handleNextSong,
     handlePrevSong,
+    handleNextSection,
+    handlePrevSection,
     isAnyOverlayActive,
   ])
 
@@ -1452,15 +1541,21 @@ export const StageView: React.FC<StageViewProps> = ({
         </div>
       )}
 
-      {/* Top area tap zone to reveal overlays when hidden */}
+      {/* PERFORMANCE MODE — Minimal Title Retention when HUD/Overlays Hide */}
       {inPerformanceMode && !showStageOverlays && (
         <div
           onClick={triggerOverlaysShow}
-          className="absolute top-0 left-0 right-0 h-14 z-30 cursor-pointer pointer-events-auto"
-          style={{ top: 'env(safe-area-inset-top, 0px)' }}
-          aria-label="Reveal stage controls"
-          title="Tap to show stage controls"
-        />
+          className="absolute top-0 left-0 right-0 z-30 flex items-center justify-center px-4 py-1.5 pointer-events-auto cursor-pointer select-none transition-opacity duration-300"
+          style={{ paddingTop: 'max(6px, env(safe-area-inset-top, 6px))' }}
+          title="Tap to reveal stage controls"
+          aria-label={`${song.title || 'Untitled Song'} • Tap to reveal stage controls`}
+        >
+          <div className="max-w-[75vw] sm:max-w-md px-3 py-0.5 rounded-full bg-[#073642]/60 backdrop-blur-xs border border-[#1A4A55]/40 shadow-sm flex items-center justify-center">
+            <span className="text-[11px] sm:text-xs font-bold text-[#EEE8D5]/70 truncate tracking-wide text-center">
+              {song.title || 'Untitled Song'}
+            </span>
+          </div>
+        </div>
       )}
 
       {/* =================================================================== */}
@@ -1883,66 +1978,21 @@ export const StageView: React.FC<StageViewProps> = ({
         </div>
       )}
 
-      {/* --- Bottom-right FAB stack (autoscroll + options) --- */}
-      <div
-        className={`absolute bottom-0 right-0 z-30 flex flex-col items-end gap-3 pointer-events-none
-                   transition-all duration-300 ease-in-out transform ${
-                     inPerformanceMode
-                       ? showStageOverlays
-                         ? 'opacity-100 translate-y-0'
-                         : 'opacity-0 translate-y-20'
-                       : 'opacity-100 translate-y-0'
-                   }`}
-        style={{
-          paddingBottom: 'max(88px, calc(env(safe-area-inset-bottom, 24px) + 64px))',
-          paddingRight: 'max(16px, env(safe-area-inset-right, 16px))',
+      {/* Draggable Minimal Stage Control Dock (Prev Section • Autoscroll FAB • Next Section) */}
+      <StageControlDock
+        isAutoScrolling={isAutoScrolling}
+        onToggleAutoScroll={handleToggleAutoScroll}
+        onOpenStageOptions={() => {
+          setIsStageMenuOpen(true)
+          triggerOverlaysShow()
         }}
-      >
-        {/* ··· Stage Options FAB */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsStageMenuOpen(true)
-            triggerOverlaysShow()
-          }}
-          className={`w-11 h-11 rounded-full flex items-center justify-center
-                     bg-[#073642]/90 backdrop-blur-md border border-[#1A4A55] shadow-xl
-                     text-[#93A1A1] hover:text-[#EEE8D5] hover:border-[#2AA198]
-                     transition-all active:scale-90 cursor-pointer ${
-                       inPerformanceMode && !showStageOverlays ? 'pointer-events-none' : 'pointer-events-auto'
-                     }`}
-          title="Stage options (transpose, font, speed, exit)"
-          aria-label="Open stage options"
-        >
-          <MoreHorizontal className="w-5 h-5" />
-        </button>
-
-        {/* Autoscroll FAB — circular, Android yellow/red */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            handleToggleAutoScroll()
-            triggerOverlaysShow()
-          }}
-          className={`w-14 h-14 rounded-full flex items-center justify-center
-                     shadow-2xl transition-all active:scale-90 cursor-pointer select-none
-                     border-2 ${
-                       inPerformanceMode && !showStageOverlays ? 'pointer-events-none' : 'pointer-events-auto'
-                     } ${
-            isAutoScrolling
-              ? 'bg-[#EF4444] border-[#EF4444]/60 text-white hover:bg-[#DC2626] shadow-red-900/50'
-              : 'bg-[#B58900] border-[#B58900]/60 text-black hover:bg-[#C89600] shadow-amber-900/40'
-          }`}
-          title={isAutoScrolling ? 'Pause autoscroll (Space)' : 'Start autoscroll (Space)'}
-          aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
-        >
-          {isAutoScrolling
-            ? <Pause className="w-6 h-6 fill-current" />
-            : <Play className="w-6 h-6 fill-current" />}
-        </button>
-      </div>
+        onPrevSection={handlePrevSection}
+        onNextSection={handleNextSection}
+        canPrevSection={sectionHeaders.length > 0}
+        canNextSection={sectionHeaders.length > 0}
+        visible={inPerformanceMode ? showStageOverlays : true}
+        onUserInteraction={triggerOverlaysShow}
+      />
 
       {/* Speed input popup */}
       {isSpeedPromptOpen && (

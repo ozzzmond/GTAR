@@ -72,11 +72,15 @@ test('StageView source contracts: song change resets scroll + pauses autoscroll,
   assert.ok(code.includes('if (isAnyOverlayActive) {\n        return\n      }'), 'StageView must suppress shortcuts when an overlay is active')
   assert.ok(code.includes('e.target instanceof HTMLInputElement'), 'Input/textarea exclusion must remain intact')
 
-  // ACTION 4: Foot pedal PageUp / PageDown support
+  // Repurposed PageUp / PageDown for structural section navigation; song navigation retained on Arrow/Letter keys
   assert.ok(code.includes("e.key === 'PageDown'"), 'StageView must handle PageDown key')
   assert.ok(code.includes("e.key === 'PageUp'"), 'StageView must handle PageUp key')
-  assert.ok(code.includes('handleNextSong()'), 'PageDown must route to handleNextSong')
-  assert.ok(code.includes('handlePrevSong()'), 'PageUp must route to handlePrevSong')
+  assert.ok(code.includes('handleNextSection()'), 'PageDown must route to handleNextSection')
+  assert.ok(code.includes('handlePrevSection()'), 'PageUp must route to handlePrevSection')
+  assert.ok(code.includes("e.key === 'ArrowRight'"), 'ArrowRight must remain for song navigation')
+  assert.ok(code.includes("e.key === 'ArrowLeft'"), 'ArrowLeft must remain for song navigation')
+  assert.ok(code.includes('handleNextSong()'), 'ArrowRight must route to handleNextSong')
+  assert.ok(code.includes('handlePrevSong()'), 'ArrowLeft must route to handlePrevSong')
 })
 
 test('App source contracts: StageErrorBoundary wraps StageView and passes overlay states', () => {
@@ -272,3 +276,117 @@ test('Overlay shortcut suppression logic: all stage shortcuts suppressed when an
     assert.equal(simulateKeyDown(sc, false, true), 'SUPPRESSED_TEXT_INPUT')
   }
 })
+
+// =========================================================================
+// ACTION 6: PageUp/PageDown Section Shortcuts & Arrow Key Song Continuity
+// =========================================================================
+test('PAGEUP_PAGEDOWN_SECTION_NAVIGATION: Repurposed PageUp/PageDown navigates sections while song navigation remains on Arrow/Letter keys', () => {
+  const stageViewPath = path.resolve(__dirname, '../src/components/StageView.tsx')
+  const code = fs.readFileSync(stageViewPath, 'utf8').replace(/\r\n/g, '\n')
+
+  // Verify PageUp/PageDown section routing
+  assert.ok(code.includes("if (e.key === 'PageDown') {\n        e.preventDefault()\n        handleNextSection()\n        return\n      }"), 'PageDown must call handleNextSection with preventDefault')
+  assert.ok(code.includes("if (e.key === 'PageUp') {\n        e.preventDefault()\n        handlePrevSection()\n        return\n      }"), 'PageUp must call handlePrevSection with preventDefault')
+
+  // Verify no PageUp/PageDown song navigation remains
+  const songNavBlock = code.match(/\/\/ ArrowRight or 'n':[\s\S]*?handlePrevSong\(\)\s*return\s*\}/)?.[0] || ''
+  assert.ok(!songNavBlock.includes('PageDown'), 'Song navigation block must not bind PageDown')
+  assert.ok(!songNavBlock.includes('PageUp'), 'Song navigation block must not bind PageUp')
+
+  // Verify ArrowRight / n and ArrowLeft / p remain mapped to songs
+  assert.ok(code.includes("if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {\n        e.preventDefault()\n        handleNextSong()\n        return\n      }"), 'ArrowRight/n/N must advance song')
+  assert.ok(code.includes("if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {\n        e.preventDefault()\n        handlePrevSong()\n        return\n      }"), 'ArrowLeft/p/P must retreat song')
+
+  // Verify Space remains autoscroll toggle
+  assert.ok(code.includes("if (e.code === 'Space' || e.key === ' ') {\n        e.preventDefault()\n        handleToggleAutoScroll()\n        return\n      }"), 'Space must toggle autoscroll')
+
+  // Verify ArrowUp / ArrowDown remain normal vertical scroll
+  assert.ok(code.includes("if (e.key === 'ArrowUp') {\n        e.preventDefault()"), 'ArrowUp must prevent default and handle vertical scroll/speed')
+  assert.ok(code.includes("if (e.key === 'ArrowDown') {\n        e.preventDefault()"), 'ArrowDown must prevent default and handle vertical scroll/speed')
+
+  // Verify input guards suppress PageUp / PageDown
+  assert.ok(code.includes('e.target instanceof HTMLInputElement'), 'Input target guard active')
+  assert.ok(code.includes('e.target instanceof HTMLTextAreaElement'), 'TextArea target guard active')
+  assert.ok(code.includes('(e.target as HTMLElement)?.isContentEditable'), 'ContentEditable target guard active')
+  assert.ok(code.includes('if (isAnyOverlayActive) {\n        return\n      }'), 'Overlay active guard active')
+
+  // Verify dependency array includes handlers
+  assert.ok(code.includes('handleNextSection,\n    handlePrevSection,'), 'handleNextSection and handlePrevSection must be in handleKeyDown dependency array')
+
+  // Simulated dispatcher testing state transitions for keyboard routing
+  let nextSectionCalled = 0
+  let prevSectionCalled = 0
+  let nextSongCalled = 0
+  let prevSongCalled = 0
+  let autoScrollToggled = 0
+  let defaultPrevented = false
+
+  function dispatchStageKey(event, isOverlayActive = false, isInputTarget = false) {
+    defaultPrevented = false
+    if (isInputTarget) return 'INPUT_IGNORED'
+    if (isOverlayActive) return 'OVERLAY_IGNORED'
+    if (event.repeat) {
+      if (['ArrowRight', 'n', 'N', 'ArrowLeft', 'p', 'P', 'PageDown', 'PageUp'].includes(event.key)) {
+        defaultPrevented = true
+        return 'REPEAT_IGNORED'
+      }
+    }
+    if (event.code === 'Space' || event.key === ' ') {
+      defaultPrevented = true
+      autoScrollToggled++
+      return 'AUTOSCROLL_TOGGLED'
+    }
+    if (event.key === 'ArrowRight' || event.key === 'n' || event.key === 'N') {
+      defaultPrevented = true
+      nextSongCalled++
+      return 'NEXT_SONG'
+    }
+    if (event.key === 'ArrowLeft' || event.key === 'p' || event.key === 'P') {
+      defaultPrevented = true
+      prevSongCalled++
+      return 'PREV_SONG'
+    }
+    if (event.key === 'PageDown') {
+      defaultPrevented = true
+      nextSectionCalled++
+      return 'NEXT_SECTION'
+    }
+    if (event.key === 'PageUp') {
+      defaultPrevented = true
+      prevSectionCalled++
+      return 'PREV_SECTION'
+    }
+    return 'UNHANDLED'
+  }
+
+  // 1. Normal PageDown -> NEXT_SECTION
+  assert.equal(dispatchStageKey({ key: 'PageDown', repeat: false }), 'NEXT_SECTION')
+  assert.equal(nextSectionCalled, 1)
+  assert.equal(defaultPrevented, true)
+
+  // 2. Normal PageUp -> PREV_SECTION
+  assert.equal(dispatchStageKey({ key: 'PageUp', repeat: false }), 'PREV_SECTION')
+  assert.equal(prevSectionCalled, 1)
+  assert.equal(defaultPrevented, true)
+
+  // 3. Arrow keys -> Song navigation
+  assert.equal(dispatchStageKey({ key: 'ArrowRight', repeat: false }), 'NEXT_SONG')
+  assert.equal(nextSongCalled, 1)
+  assert.equal(dispatchStageKey({ key: 'ArrowLeft', repeat: false }), 'PREV_SONG')
+  assert.equal(prevSongCalled, 1)
+
+  // 4. Space -> Auto scroll toggle
+  assert.equal(dispatchStageKey({ code: 'Space', key: ' ', repeat: false }), 'AUTOSCROLL_TOGGLED')
+  assert.equal(autoScrollToggled, 1)
+
+  // 5. Input guard suppression
+  assert.equal(dispatchStageKey({ key: 'PageDown', repeat: false }, false, true), 'INPUT_IGNORED')
+  assert.equal(dispatchStageKey({ key: 'PageUp', repeat: false }, false, true), 'INPUT_IGNORED')
+  assert.equal(nextSectionCalled, 1, 'No section change during text input')
+
+  // 6. Overlay guard suppression
+  assert.equal(dispatchStageKey({ key: 'PageDown', repeat: false }, true, false), 'OVERLAY_IGNORED')
+  assert.equal(dispatchStageKey({ key: 'PageUp', repeat: false }, true, false), 'OVERLAY_IGNORED')
+  assert.equal(nextSectionCalled, 1, 'No section change when overlay active')
+})
+

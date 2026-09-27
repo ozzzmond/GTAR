@@ -223,6 +223,9 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
           case 'SECTION_HEADER':
             return (
               <div key={idx} role="heading" aria-level={3}
+                data-stage-section="true"
+                data-section-title={line.title}
+                data-section-index={idx}
                 className={`${fontClass} stage-section-header select-none`}
                 style={{
                   fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
