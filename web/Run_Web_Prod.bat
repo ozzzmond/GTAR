@@ -1,12 +1,12 @@
 @echo off
-title GTA WebApp [PROD PREVIEW]
+title GTAR WebApp [PROD PREVIEW]
 color 0A
 
 :: Lumipat sa mismong folder kung nasaan ang script na ito
 cd /d "%~dp0"
 
 :: Kung nasa desktop ang script, ilagay ang full exact path:
-:: cd /d "E:\AntiGravity Codes\GTA\web"
+:: cd /d "E:\AntiGravity Codes\GTAR\web"
 
 echo [1/2] Building production bundle (npm run build)...
 call npm run build

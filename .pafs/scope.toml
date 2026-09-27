@@ -1,0 +1,73 @@
+[A.N1]
+paths = [
+    "web/src/utils/syncJournal.ts",
+    "web/src/App.tsx",
+    "web/tests/syncJournal.test.cjs",
+    "web/tests/storageRetirement.test.cjs",
+    "web/tests/storageRecoveryUi.test.cjs",
+    "web/tests/adversarialDev13.test.cjs",
+]
+
+[A.N2]
+paths = [
+    "web/src/components/AuthGate.tsx",
+    "web/tests/authBypassInteraction.test.cjs",
+]
+
+[A.N3]
+paths = [
+    "release_web.py",
+    "tests/test_release_scripts.py",
+]
+
+[A.C1]
+paths = [
+    "deploy.py",
+    "tests/test_deploy_and_push.py",
+]
+
+[A.UG]
+paths = [
+    "web/functions/api/ug-search.ts",
+    "web/functions/api/ug-tab.ts",
+    "web/functions/ugFetch.ts",
+    "web/tests/ugBodyLimits.test.cjs",
+]
+
+[A.DOCS]
+paths = [
+    "web/README.md",
+]
+
+[preserve]
+paths = [
+    ".continue/**",
+    "AGENTS.md",
+    "GTAR_ACTIVE_TODO_KEYNOTES.md",
+    "GTAR_DEPLOYMENT_PROTOCOL.md",
+    "gtar_standing_protocol_v1.md",
+    "RELEASE_WORKFLOW_README.md",
+    ".gitignore",
+    ".pafs/**",
+    "audit_report.md",
+    "web/src/components/BackupRestoreDialogModal.tsx",
+    "web/src/components/BandSyncModal.tsx",
+    "web/src/components/Header.tsx",
+    "web/src/components/ImportDialogModal.tsx",
+    "web/src/components/JsonBridgeModal.tsx",
+    "web/src/components/SetlistDrawer.tsx",
+    "web/src/components/SongbookHomeView.tsx",
+    "web/src/components/StagePresentationView.tsx",
+    "web/src/components/StageSettingsModal.tsx",
+    "web/src/components/StageView.tsx",
+    "web/src/utils/logger.ts",
+    "web/src/utils/stageCast.ts",
+    "web/src/utils/ugCore.ts",
+    "web/vite.config.ts",
+    "skills-lock.json",
+]
+
+[evidence]
+paths = [
+    "outputs/**",
+]

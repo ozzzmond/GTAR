@@ -5,7 +5,7 @@ echo ===================================================
 echo       GTA WEBAPP - DEVELOPMENT ENVIRONMENT
 echo ===================================================
 echo.
-cd /d "%~dp0web"
+cd /d "%~dp0"
 
 if not exist node_modules (
     echo [INFO] node_modules not found. Running npm install...
