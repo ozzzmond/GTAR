@@ -24,11 +24,9 @@ class DeployAndPushTests(unittest.TestCase):
 
         for script in [
             "release_web.py",
-            "release_android.py",
             "push_release.py",
             "deploy.py",
             "deploy_web.py",
-            "deploy_app.py",
         ]:
             shutil.copy2(SOURCE / script, self.root / script)
 
@@ -51,10 +49,6 @@ class DeployAndPushTests(unittest.TestCase):
         )
         for file in ["web/src/App.tsx", "web/src/components/Header.tsx"]:
             self.write(file, "const label = `web v${GTAR_DEV_VERSION}`\nconst prod = `web v${GTAR_APP_VERSION}`\n")
-        self.write(
-            "app/build.gradle.kts",
-            'android {\n    versionCode = 66\n    versionName = "app v1.0.50"\n    debug {\n        versionNameSuffix = "-dev.12"\n    }\n}\n',
-        )
         self.write(".gitignore", "__pycache__/\n*.py[cod]\n")
 
         self.git("init", "-b", "main")
@@ -132,26 +126,6 @@ class DeployAndPushTests(unittest.TestCase):
         self.git("checkout", "main")
         last_commit = self.git("log", "-n", "1", "--oneline")
         self.assertIn("chore(release): deploy web-v1.1.50 to prod", last_commit)
-
-    def test_deploy_app_dry_run_and_execution(self):
-        self.write("app/build.gradle.kts", 'android {\n versionCode = 67\n versionName = "app v1.1.50"\n debug {\n versionNameSuffix = ""\n }\n}\n')
-        self.git("add", "app/build.gradle.kts")
-        self.git("commit", "-m", "production metadata")
-        self.git("tag", "-a", "app-v1.1.50", "-m", "app v1.1.50")
-
-        out_dry = self.run_cmd("deploy.py", "app", "--dry-run")
-        self.assertIn("[DRY RUN]", out_dry)
-        self.assertIn("app-v1.1.50", out_dry)
-
-        out_wrapper = self.run_cmd("deploy_app.py", "--dry-run")
-        self.assertIn("[DRY RUN]", out_wrapper)
-
-        out_deploy = self.run_cmd("deploy.py", "app")
-        self.assertIn("Android production deployment for 'app-v1.1.50' initiated successfully", out_deploy)
-
-        # Verify tag on origin
-        origin_tags = self.git_origin("tag", "-l")
-        self.assertIn("app-v1.1.50", origin_tags)
 
 
 if __name__ == "__main__":

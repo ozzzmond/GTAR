@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
-"""Automated Production Deployment Tool for GTAR Web and Android.
+"""Automated Production Deployment Tool for GTAR Web.
 
-Deploys Web to production on 'main' branch cleanly from production release tags,
-and deploys Android by pushing production tags to trigger GitHub Actions release.yml.
+Deploys Web to production on 'main' branch cleanly from production release tags.
 """
 import argparse
 import json
@@ -14,7 +12,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-import release_android
 import release_web
 
 
@@ -39,63 +36,57 @@ def check_clean_working_tree(dry_run: bool = False):
             )
 
 
-def find_latest_prod_tag(platform: str) -> str:
+def find_latest_prod_tag(platform: str = "web") -> str:
     """Find the latest production tag for platform using release metadata and git tags."""
-    if platform == "web":
-        try:
-            prod_ver = release_web.inspect()[1]["prod"]
-            tag_candidate = release_web.release_metadata(prod_ver)["tag"]
-            if tag_candidate in git("tag", "-l", tag_candidate).split():
-                return tag_candidate
-        except Exception:
-            pass
+    if platform != "web":
+        raise ValueError(f"Unknown platform: '{platform}'. Supported platform: 'web'.")
+    try:
+        prod_ver = release_web.inspect()[1]["prod"]
+        tag_candidate = release_web.release_metadata(prod_ver)["tag"]
+        if tag_candidate in git("tag", "-l", tag_candidate).split():
+            return tag_candidate
+    except Exception:
+        pass
 
-    pattern = rf"^{platform}-v1\.1\.(\d+)$"
-    tags = git("tag", "-l", f"{platform}-v1.1.*").split()
+    pattern = rf"^web-v1\.1\.(\d+)$"
+    tags = git("tag", "-l", "web-v1.1.*").split()
     matched = []
     for t in tags:
         m = re.fullmatch(pattern, t)
         if m:
             matched.append((int(m.group(1)), t))
     if not matched:
-        raise ValueError(f"No production release tags found matching '{platform}-v1.1.*'.")
+        raise ValueError(f"No production release tags found matching 'web-v1.1.*'.")
     matched.sort(key=lambda x: x[0])
     return matched[-1][1]
 
 
-def validate_prod_tag(tag: str, platform: str) -> str:
+def validate_prod_tag(tag: str, platform: str = "web") -> str:
     """Strictly validate that tag matches target production format and exists locally."""
-    expected_platform = "app" if platform in ("app", "android") else "web"
-    pattern = rf"^{expected_platform}-v1\.1\.(\d+)$"
+    if platform != "web":
+        raise ValueError(f"Unknown platform: '{platform}'. Supported platform: 'web'.")
+    pattern = rf"^web-v1\.1\.(\d+)$"
     if not re.fullmatch(pattern, tag):
         raise ValueError(
             f"Invalid production release tag '{tag}' for platform '{platform}'. "
-            f"Must strictly match format '{expected_platform}-v1.1.<patch>' (dev tags and cross-platform tags are rejected)."
+            f"Must strictly match format 'web-v1.1.<patch>' (dev tags and cross-platform tags are rejected)."
         )
     local_tags = git("tag", "-l", tag).split()
     if tag not in local_tags:
         raise ValueError(f"Production release tag '{tag}' does not exist locally.")
-    validate_tag_metadata(tag, expected_platform)
+    validate_tag_metadata(tag, "web")
     return tag
 
 
-def validate_tag_metadata(tag: str, platform: str):
+def validate_tag_metadata(tag: str, platform: str = "web"):
     """Read frozen metadata from the tag, never the current working tree."""
     ref = f"refs/tags/{tag}"
     version = tag.split("-v", 1)[1]
-    if platform == "web":
-        package = json.loads(git("show", f"{ref}:web/package.json"))
-        lock = json.loads(git("show", f"{ref}:web/package-lock.json"))
-        constants = git("show", f"{ref}:web/src/types/gtar.ts")
-        if any(value != version for value in (package.get("version"), lock.get("version"), lock.get("packages", {}).get("", {}).get("version"), release_web.constant(constants, "GTAR_APP_VERSION"))):
-            raise ValueError("Tagged web production metadata mismatch or dev-versioned source")
-    else:
-        gradle = git("show", f"{ref}:app/build.gradle.kts")
-        name = release_android.field(gradle, release_android.NAME)
-        suffix = release_android.field(gradle, release_android.SUFFIX)
-        code = int(release_android.field(gradle, release_android.CODE))
-        if name != f"app v{version}" or suffix or not 1 <= code <= 2100000000:
-            raise ValueError("Tagged Android production metadata mismatch or dev-versioned source")
+    package = json.loads(git("show", f"{ref}:web/package.json"))
+    lock = json.loads(git("show", f"{ref}:web/package-lock.json"))
+    constants = git("show", f"{ref}:web/src/types/gtar.ts")
+    if any(value != version for value in (package.get("version"), lock.get("version"), lock.get("packages", {}).get("", {}).get("version"), release_web.constant(constants, "GTAR_APP_VERSION"))):
+        raise ValueError("Tagged web production metadata mismatch or dev-versioned source")
 
 
 def verify_remote_tag_peeled_sha(tag: str, remote: str) -> bool:
@@ -217,83 +208,36 @@ def deploy_web(tag: str = None, remote: str = "origin", dry_run: bool = False):
     return 0
 
 
-def deploy_app(tag: str = None, remote: str = "origin", dry_run: bool = False):
-    print("\n=======================================================")
-    print("         GTAR Android App Production Deployment        ")
-    print("=======================================================")
-
-    if not tag:
-        tag = find_latest_prod_tag("app")
-    tag = validate_prod_tag(tag, "app")
-
-    print(f"[TARGET] Production release tag: {tag}")
-    print(f"[TARGET] Remote repository:       {remote}")
-
-    remote_tag_exists = verify_remote_tag_peeled_sha(tag, remote)
-    print(f"[STATUS] Tag on remote {remote}:   {'YES (verified peeled SHA)' if remote_tag_exists else 'NO (will be pushed)'}")
-
-    if dry_run:
-        print("\n[DRY RUN] Android Production Deployment Plan:")
-        print(f"  1. Verify working tree is clean.")
-        print(f"  2. Target production tag: {tag}")
-        if remote_tag_exists:
-            print(f"  3. Tag {tag} is already on {remote}. GitHub Actions APK release workflow runs on tag creation.")
-        else:
-            print(f"  3. Push production tag: git push {remote} refs/tags/{tag}:refs/tags/{tag}")
-            print(f"  4. GitHub Actions workflow (release.yml) will trigger on tag push to build & release APK.")
-        print("\n[DRY RUN] No changes were made to repository or remote.")
-        return 0
-
-    if remote_tag_exists:
-        print(f"[INFO] Production tag '{tag}' is already present on {remote}.")
-        print(f"[INFO] GitHub Actions APK Build & Release workflow triggers upon tag creation.")
-    else:
-        print(f"[DEPLOY] Pushing production tag '{tag}' to {remote}...")
-        git("push", remote, f"refs/tags/{tag}:refs/tags/{tag}")
-        print(f"[DEPLOY] Pushed tag '{tag}' to {remote}.")
-        print(f"[TRIGGER] GitHub Actions workflow 'release.yml' triggered to build and release APK.")
-
-    print(f"\n[SUCCESS] Android production deployment for '{tag}' initiated successfully!")
-    return 0
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Automated Production Deployment Tool for GTAR Web and Android.",
+        description="Automated Production Deployment Tool for GTAR Web.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   python deploy.py web --dry-run
-  python deploy.py app --dry-run
   python deploy.py web
-  python deploy.py app
   python deploy_web.py --dry-run
-  python deploy_app.py --dry-run
+  python deploy_web.py
 """,
     )
     parser.add_argument(
         "target",
         nargs="?",
-        choices=["web", "app", "android"],
-        default=None,
-        help="Target platform to deploy ('web' or 'app')",
+        choices=["web"],
+        default="web",
+        help="Target platform to deploy (default: 'web')",
     )
     parser.add_argument(
         "--platform",
-        choices=["web", "app", "android"],
+        choices=["web"],
         dest="platform_flag",
-        help="Explicit platform flag ('web' or 'app')",
+        help="Explicit platform flag ('web')",
     )
-    parser.add_argument("--tag", help="Override with explicit production tag (e.g. web-v1.1.83 or app-v1.1.72)")
+    parser.add_argument("--tag", help="Override with explicit production tag (e.g. web-v1.1.83)")
     parser.add_argument("--remote", default="origin", help="Git remote name (default: origin)")
     parser.add_argument("--dry-run", action="store_true", help="Inspect planned deployment actions without modifying Git refs or branches")
 
     args = parser.parse_args(argv)
-    platform = args.target or args.platform_flag
-
-    if not platform:
-        parser.print_help()
-        print("\n[ERROR] Please specify a platform target: 'web' or 'app'.", file=sys.stderr)
-        return 1
+    platform = args.platform_flag or args.target or "web"
 
     try:
         check_clean_working_tree(dry_run=args.dry_run)
@@ -302,10 +246,7 @@ def main(argv=None):
         return 1
 
     try:
-        if platform == "web":
-            return deploy_web(tag=args.tag, remote=args.remote, dry_run=args.dry_run)
-        else:
-            return deploy_app(tag=args.tag, remote=args.remote, dry_run=args.dry_run)
+        return deploy_web(tag=args.tag, remote=args.remote, dry_run=args.dry_run)
     except Exception as err:
         print(f"\n[ERROR] Deployment failed: {err}", file=sys.stderr)
         return 1

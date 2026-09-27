@@ -16,7 +16,7 @@ class ReleaseTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for script in ['release_web.py', 'release_android.py', 'deploy.py']:
+        for script in ['release_web.py', 'deploy.py']:
             shutil.copy2(SOURCE / script, self.root / script)
         self.write('.github/release_metadata.py', (SOURCE / '.github/release_metadata.py').read_text(encoding='utf-8'))
         self.write('web/package.json', json.dumps({'name': 'web', 'version': '1.0.50-dev.12'}))
@@ -24,7 +24,6 @@ class ReleaseTests(unittest.TestCase):
         self.write('web/src/types/gtar.ts', "export const GTAR_DEV_VERSION = '1.0.50-dev.12'\nexport const GTAR_APP_VERSION = '1.1.50'\n")
         for file in ['web/src/App.tsx', 'web/src/components/Header.tsx']:
             self.write(file, 'const label = `v${GTAR_DEV_VERSION}`\nconst prod = `v${GTAR_APP_VERSION}`\n')
-        self.write('app/build.gradle.kts', 'android {\n    versionCode = 66\n    versionName = "v1.0.50"\n    debug {\n        versionNameSuffix = "-dev.12"\n    }\n}\n')
         self.write('.gitignore', '__pycache__/\n*.py[cod]\n')
         self.git('init', '-b', 'dev')
         self.git('config', 'user.name', 'Release Test')
@@ -38,13 +37,13 @@ class ReleaseTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.check_output(['git', *args], cwd=self.root, text=True, stderr=subprocess.STDOUT).strip()
     def run_script(self, platform, *args, success=True):
-        script_name = f'release_{platform}.py' if platform in ('web', 'android') else f'{platform}.py'
+        script_name = f'release_{platform}.py' if platform == 'web' else f'{platform}.py'
         result = subprocess.run([sys.executable, str(self.root / script_name), *args], cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0 if success else 1, result.stdout + result.stderr)
         return result.stdout + result.stderr
     def test_inspection_and_dry_runs_never_mutate(self):
         head = self.git('rev-parse', 'HEAD')
-        for platform in ['web', 'android']:
+        for platform in ['web']:
             self.run_script(platform)
             for action in ['--bump-dev', '--promote-to-prod']:
                 self.assertIn('[DRY RUN]', self.run_script(platform, action, '--dry-run'))
@@ -69,25 +68,12 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.git('branch', '--show-current'), 'dev')
         self.assertEqual(self.git('status', '--porcelain'), '')
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
-    def test_android_promotion_has_correct_tag_suffix_and_monotonic_codes(self):
-        self.run_script('android', '--promote-to-prod')
-        # Additive: base 50 + dev.12 = 62 -> app-v1.1.62, dev reset to 1.0.62-dev.1
-        tagged = self.git('show', 'app-v1.1.62:app/build.gradle.kts')
-        self.assertIn('versionCode = 67', tagged)
-        self.assertIn('versionName = "app v1.1.62"', tagged)
-        self.assertIn('versionNameSuffix = ""', tagged)
-        current = (self.root / 'app/build.gradle.kts').read_text()
-        self.assertIn('versionCode = 68', current)
-        self.assertIn('versionName = "app v1.0.62"', current)
-        self.assertIn('versionNameSuffix = "-dev.1"', current)
-        self.run_script('android', '--bump-dev')
-        self.assertIn('versionCode = 69', (self.root / 'app/build.gradle.kts').read_text())
     def test_dirty_wrong_branch_and_existing_tags_are_rejected(self):
         self.write('unrelated.txt', 'Keep this')
         self.assertIn('clean', self.run_script('web', '--promote-to-prod', success=False))
         (self.root / 'unrelated.txt').unlink()
         self.git('checkout', '-b', 'main')
-        self.assertIn('dev branch', self.run_script('android', '--bump-dev', success=False))
+        self.assertIn('dev branch', self.run_script('web', '--bump-dev', success=False))
         self.git('checkout', 'dev')
         self.git('tag', 'web-v1.1.62')
         self.assertIn('already exists', self.run_script('web', '--promote-to-prod', success=False))
@@ -103,7 +89,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn('web v1.1.72', output)
     def test_integer_standard_and_platform_prefixes(self):
         import runpy
-        for script, prefix in [('release_web.py', 'web'), ('release_android.py', 'app')]:
+        for script, prefix in [('release_web.py', 'web')]:
             parse = runpy.run_path(str(self.root / script))['parse_dev']
             self.assertEqual(parse(f'{prefix} v1.0.62-dev.9', None), (62, 9))
             for version in ['1.0.62-dev.8a', '1.0.62-dev.8b', '1.0.62-DEV.8']:
@@ -114,12 +100,12 @@ class ReleaseTests(unittest.TestCase):
                     parse(f'1.0.62-dev.{suffix}', None)
             with self.assertRaises(ValueError):
                 parse('1.0.62-dev.9', 10)
-            wrong = 'app' if prefix == 'web' else 'web'
+            wrong = 'app'
             with self.assertRaises(ValueError):
                 parse(f'{wrong} v1.0.62-dev.9', None)
 
     def test_release_metadata_validates_universal_tags(self):
-        for script, prefix in [('release_web.py', 'web'), ('release_android.py', 'app')]:
+        for script, prefix in [('release_web.py', 'web')]:
             metadata = runpy.run_path(str(self.root / script))['release_metadata']
             for version in ['1.0.62-dev.9', '1.1.62']:
                 for value in [version, 'v' + version, f'{prefix} v{version}', f'{prefix}-v{version}']:
@@ -136,41 +122,39 @@ class ReleaseTests(unittest.TestCase):
                     metadata(value)
 
     def test_ci_metadata_from_display_versions_and_tag_events(self):
-        gradle = self.root / 'app/build.gradle.kts'
-        gradle.write_text(gradle.read_text(encoding='utf-8').replace('v1.0.50', 'app v1.0.50'), encoding='utf-8')
-        for platform in ['app', 'web']:
-            for ref_type, ref_name, success in [('branch', 'dev', True),
-                    ('tag', f'{platform}-v1.0.50-dev.12', True),
-                    ('tag', f'{platform}-v1.0.50-dev.13', False),
-                    ('tag', f'{platform} v1.0.50-dev.12', False)]:
-                envfile = self.root / 'ci-env.txt'
-                envfile.write_text('', encoding='utf-8')
-                result = subprocess.run([sys.executable, str(self.root / '.github/release_metadata.py'),
-                    '--platform', platform, '--dev-only'], cwd=self.root, capture_output=True, text=True,
-                    env={**os.environ, 'GITHUB_REF_TYPE': ref_type, 'GITHUB_REF_NAME': ref_name,
-                         'GITHUB_ENV': str(envfile)})
-                self.assertEqual(result.returncode, 0 if success else 1, result.stderr)
-                output = envfile.read_text(encoding='utf-8')
-                if success:
-                    self.assertIn(f'RELEASE_TAG={platform}-v1.0.50-dev.12\n', output)
-                    self.assertIn(f'RELEASE_TITLE={platform} v1.0.50-dev.12\n', output)
-                    self.assertIn('IS_PRERELEASE=true', output)
-                else:
-                    self.assertEqual(output, '')
+        platform = 'web'
+        for ref_type, ref_name, success in [('branch', 'dev', True),
+                ('tag', f'{platform}-v1.0.50-dev.12', True),
+                ('tag', f'{platform}-v1.0.50-dev.13', False),
+                ('tag', f'{platform} v1.0.50-dev.12', False)]:
+            envfile = self.root / 'ci-env.txt'
+            envfile.write_text('', encoding='utf-8')
+            result = subprocess.run([sys.executable, str(self.root / '.github/release_metadata.py'),
+                '--platform', platform, '--dev-only'], cwd=self.root, capture_output=True, text=True,
+                env={**os.environ, 'GITHUB_REF_TYPE': ref_type, 'GITHUB_REF_NAME': ref_name,
+                     'GITHUB_ENV': str(envfile)})
+            self.assertEqual(result.returncode, 0 if success else 1, result.stderr)
+            output = envfile.read_text(encoding='utf-8')
+            if success:
+                self.assertIn(f'RELEASE_TAG={platform}-v1.0.50-dev.12\n', output)
+                self.assertIn(f'RELEASE_TITLE={platform} v1.0.50-dev.12\n', output)
+                self.assertIn('IS_PRERELEASE=true', output)
+            else:
+                self.assertEqual(output, '')
 
     def test_ci_production_metadata_and_dev_workflow_guard(self):
-        self.run_script('android', '--promote-to-prod')
-        self.git('checkout', 'app-v1.1.62')
+        self.run_script('web', '--promote-to-prod')
+        self.git('checkout', 'web-v1.1.62')
         for dev_only in [False, True]:
             result = subprocess.run([sys.executable, str(self.root / '.github/release_metadata.py'),
-                '--platform', 'app'] + (['--dev-only'] if dev_only else []),
+                '--platform', 'web'] + (['--dev-only'] if dev_only else []),
                 cwd=self.root, capture_output=True, text=True,
-                env={**os.environ, 'GITHUB_REF_TYPE': 'tag', 'GITHUB_REF_NAME': 'app-v1.1.62', 'GITHUB_ENV': ''})
+                env={**os.environ, 'GITHUB_REF_TYPE': 'tag', 'GITHUB_REF_NAME': 'web-v1.1.62', 'GITHUB_ENV': ''})
             self.assertEqual(result.returncode, 1 if dev_only else 0, result.stderr)
             if not dev_only:
-                self.assertIn('RELEASE_TAG=app-v1.1.62', result.stdout)
+                self.assertIn('RELEASE_TAG=web-v1.1.62', result.stdout)
                 self.assertIn('IS_PRERELEASE=false', result.stdout)
-        self.git('check-ref-format', 'refs/tags/app-v1.1.62')
+        self.git('check-ref-format', 'refs/tags/web-v1.1.62')
 
     def test_push_dev_release_to_local_origin(self):
         remote = self.root / 'origin.git'
@@ -179,7 +163,7 @@ class ReleaseTests(unittest.TestCase):
         # Keep the disposable bare origin out of working-tree cleanliness checks.
         (self.root / '.git/info/exclude').write_text('origin.git/\n', encoding='utf-8')
         self.git('tag', 'unrelated-local-tag')
-        for platform, prefix in [('android', 'app'), ('web', 'web')]:
+        for platform, prefix in [('web', 'web')]:
             self.run_script(platform, '--bump-dev', '--push')
             tag = f'{prefix}-v1.0.50-dev.13'
             self.assertEqual(self.git('cat-file', '-t', tag), 'tag')
@@ -192,7 +176,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_push_dry_run_and_preflight_do_not_mutate(self):
-        for platform in ['android', 'web']:
+        for platform in ['web']:
             before = self.git('rev-parse', 'HEAD')
             self.assertIn('[DRY RUN]', self.run_script(platform, '--bump-dev', '--push', '--dry-run'))
             self.run_script(platform, '--push', success=False)
@@ -353,7 +337,7 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual((self.root / 'web/package.json').read_bytes(),content)
 
     def test_prod_shaped_tag_rejects_dev_source_without_mutation(self):
-        for platform, prefix in [('web','web'),('app','app')]:
+        for platform, prefix in [('web','web')]:
             tag = prefix + '-v1.1.62'
             self.git('tag',tag)
             head = self.git('rev-parse','HEAD')
@@ -402,16 +386,6 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'remote heads unavailable'):
             namespace['deploy_web']('web-v1.1.62')
         self.assertFalse(any(args[0] in ['checkout','pull','rm','add','commit','push'] for args in calls))
-
-    def test_android_tag_rejects_suffix_and_code_mismatch(self):
-        for name, suffix, code in [('app v1.1.99','',67),('app v1.1.62','-dev.1',67),('app v1.1.62','',0)]:
-            self.write('app/build.gradle.kts', f'android {{\n versionCode = {code}\n versionName = "{name}"\n debug {{\n versionNameSuffix = "{suffix}"\n }}\n}}\n')
-            self.git('add','app/build.gradle.kts')
-            self.git('commit','-m','invalid production metadata')
-            self.git('tag','-f','app-v1.1.62')
-            out = self.run_script('deploy','app','--tag','app-v1.1.62',success=False)
-            self.assertIn('metadata mismatch',out)
-            self.assertEqual(self.git('branch','--show-current'),'dev')
 
 if __name__ == '__main__':
     unittest.main()

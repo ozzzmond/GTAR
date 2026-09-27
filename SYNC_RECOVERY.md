@@ -30,6 +30,6 @@ If a full backup has a missing setlist song, normal export fails with a referenc
 
 The hosted web owner gate is unchanged: token expiry (30-second safety margin), sign-out, or failed cached-token verification locks the app and unmounts presentation. Local data remains saved; offline reload does not bypass owner verification. Android permits local editing/presentation after sign-out or token errors. These behaviors differ intentionally. The web presentation expiry/offline-reload test mounts the real presentation component in jsdom; it is not a long performance or physical-display test.
 
-PR validation runs web tests, production build, strict sync/backup/auth/URL/wake-lock lint, Android unit tests/debug build, and Python release-script tests. Existing release signing, tag/version validation, and exact APK selection are unchanged. No remote branch protection was modified.
+PR validation runs web tests, production build, strict sync/backup/auth/URL/wake-lock lint, and Python release-script tests. No remote branch protection was modified.
 
 `npm run lint:sync` uses all existing ESLint rules and zero allowed warnings on the critical modules. `npm run lint` remains the whole-project diagnostic; existing UI/casting lint debt is not suppressed or baselined away. Generated dev-dist files are excluded as build outputs. Extend the lint gate as remaining modules are repaired; this is not a claim that the whole tree is lint-clean.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Git Push & Release Sync Tool.
 
-Handles pushing dev tags (web-v1.0.*-dev.* / app-v1.0.*-dev.*) and dev branches
+Handles pushing dev tags (web-v1.0.*-dev.*) and dev branches
 atomically to remote origin, ensuring working tree safety and zero hardcoded versions.
 """
 import argparse
@@ -13,7 +13,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-import release_android
 import release_web
 
 
@@ -37,24 +36,20 @@ def check_clean_working_tree(dry_run: bool = False):
             )
 
 
-def get_dev_release_info(platform: str):
+def get_dev_release_info(platform: str = "web"):
     """Retrieve dev version and validated metadata tag using platform release module."""
-    if platform == "web":
-        dev_version = release_web.inspect()[0]
-        meta = release_web.release_metadata(dev_version)
-    elif platform in ("app", "android"):
-        dev_version = release_android.inspect()[0]
-        meta = release_android.release_metadata(dev_version)
-    else:
-        raise ValueError(f"Unknown platform: {platform}. Supported platforms: 'web', 'app'.")
-    return meta
+    if platform != "web":
+        raise ValueError(f"Unknown platform: {platform}. Supported platform: 'web'.")
+    dev_version = release_web.inspect()[0]
+    return release_web.release_metadata(dev_version)
 
 
-def sync_platform_release(platform: str, remote: str = "origin", dry_run: bool = False, custom_tag: str = None):
+def sync_platform_release(platform: str = "web", remote: str = "origin", dry_run: bool = False, custom_tag: str = None):
+    if platform != "web":
+        raise ValueError(f"Unknown platform: {platform}. Supported platform: 'web'.")
     print(f"\n[{platform.upper()}] Resolving release metadata...")
     if custom_tag:
-        module = release_web if platform == "web" else release_android
-        meta = module.release_metadata(custom_tag)
+        meta = release_web.release_metadata(custom_tag)
     else:
         meta = get_dev_release_info(platform)
 
@@ -108,40 +103,32 @@ def sync_platform_release(platform: str, remote: str = "origin", dry_run: bool =
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="QoL Tool: Git Push & Release Sync for GTAR Web and Android.",
+        description="QoL Tool: Git Push & Release Sync for GTAR Web.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
   python push_release.py web --dry-run
-  python push_release.py app --dry-run
   python push_release.py web
-  python push_release.py app
-  python push_release.py all
 """,
     )
     parser.add_argument(
         "target",
         nargs="?",
-        choices=["web", "app", "android", "all"],
-        default=None,
-        help="Target platform to sync ('web', 'app', or 'all')",
+        choices=["web"],
+        default="web",
+        help="Target platform to sync (default: 'web')",
     )
     parser.add_argument(
         "--platform",
-        choices=["web", "app", "android", "all"],
+        choices=["web"],
         dest="platform_flag",
-        help="Explicit platform flag ('web', 'app', or 'all')",
+        help="Explicit platform flag ('web')",
     )
     parser.add_argument("--tag", help="Override with explicit dev tag (e.g. web-v1.0.83-dev.1)")
     parser.add_argument("--remote", default="origin", help="Git remote name (default: origin)")
     parser.add_argument("--dry-run", action="store_true", help="Inspect planned actions without executing git push or creating tags")
 
     args = parser.parse_args(argv)
-    platform = args.target or args.platform_flag
-
-    if not platform:
-        parser.print_help()
-        print("\n[ERROR] Please specify a platform target: 'web', 'app', or 'all'.", file=sys.stderr)
-        return 1
+    platform = args.platform_flag or args.target or "web"
 
     try:
         check_clean_working_tree(dry_run=args.dry_run)
@@ -149,11 +136,8 @@ def main(argv=None):
         print(f"[ERROR] {err}", file=sys.stderr)
         return 1
 
-    platforms = ["web", "app"] if platform == "all" else [platform]
-
     try:
-        for p in platforms:
-            sync_platform_release(p, remote=args.remote, dry_run=args.dry_run, custom_tag=args.tag)
+        sync_platform_release(platform, remote=args.remote, dry_run=args.dry_run, custom_tag=args.tag)
         print("\n[DONE] Release sync operation completed successfully.")
         return 0
     except Exception as err:

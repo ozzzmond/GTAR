@@ -5,25 +5,24 @@ The **OFFICIAL STANDARD** uses strictly positive whole-integer dev iterations, i
 | Platform | Dev display name | Production display name |
 | --- | --- | --- |
 | Web | `web v1.0.<base>-dev.<integer>` | `web v1.1.<base>` |
-| Android | `app v1.0.<base>-dev.<integer>` | `app v1.1.<base>` |
 
-Examples: `web v1.0.62-dev.9`, `app v1.0.62-dev.5`. The 1:1 lifecycle scheme directly mirrors the active patch: `1.0.<X>-dev.*` promotes to production `1.1.<X>`. The next dev cycle baseline increments the patch by 1 and resets iteration to 1: `1.0.<X+1>-dev.1`. Historical tags are retained unchanged as legacy records.
+*(Note: Legacy native Android `app v*` line was sunset and archived).*
 
-Both scripts are standalone Python 3.9+ programs using only the standard library. Git must be installed for tag validation and version mutations. Run them from any directory; paths resolve relative to the scripts.
+Example: `web v1.0.62-dev.9`. The 1:1 lifecycle scheme directly mirrors the active patch: `1.0.<X>-dev.*` promotes to production `1.1.<X>`. The next dev cycle baseline increments the patch by 1 and resets iteration to 1: `1.0.<X+1>-dev.1`. Historical tags are retained unchanged as legacy records.
+
+The release tooling is a standalone Python 3.9+ program (`release_web.py`) using only the standard library. Git must be installed for tag validation and version mutations. Run from any directory; paths resolve relative to the script.
 
 Default invocation is read-only dev inspection:
 
 ```text
 python release_web.py
-python release_android.py
 ```
 
 Preview or apply a dev bump (no commit, tag, remote push or deployment):
 
 ```text
 python release_web.py --bump-dev --dry-run
-python release_android.py --bump-dev --dry-run
-python release_android.py --bump-dev
+python release_web.py --bump-dev
 ```
 
 For a checkout still using the **DEPRECATED / LEGACY** version `1.0.62-DEV.8b`. The specification does not define alphabetic iterations. Supply `--legacy-iteration N` with the intended total numeric iteration when converting it. For example, **only if the intended iteration is 10**:
@@ -38,17 +37,16 @@ Promotion requires the `dev` branch, a completely clean working tree/index, a co
 
 ```text
 python release_web.py --promote-to-prod --dry-run
-python release_android.py --promote-to-prod --dry-run
-python release_android.py --promote-to-prod
+python release_web.py --promote-to-prod
 ```
 
-Promotion uses a direct 1:1 mapping (`prod = 1.1.<base>`), commits production version files, creates an annotated `web-v1.1.<base>` or `app-v1.1.<base>` tag, then commits the next dev configuration `1.0.<base+1>-dev.1`. The current branch remains `dev`; the production tag references the preceding production commit. Production promotion does not push, deploy, dispatch CI or build artifacts. Tests/builds should be verified before committing the source to promote. Existing repository hooks still run normally.
+Promotion uses a direct 1:1 mapping (`prod = 1.1.<base>`), commits production version files, creates an annotated `web-v1.1.<base>` tag, then commits the next dev configuration `1.0.<base+1>-dev.1`. The current branch remains `dev`; the production tag references the preceding production commit. Production promotion does not push, deploy, dispatch CI or build artifacts. Tests/builds should be verified before committing the source to promote. Existing repository hooks still run normally.
 
-Web package and lockfile versions remain valid numeric semver without a display prefix. UI labels gain `web v`, while dev/prod constants remain numeric. Android versionName uses `app v`, with a separate debug suffix. The production snapshot has an empty dev suffix. Each dev bump increments Android versionCode once. Promotion increments it once for production, then once again for the next dev reset so both configurations have increasing codes.
+Web package and lockfile versions remain valid numeric semver without a display prefix. UI labels gain `web v`, while dev/prod constants remain numeric.
 
 If Git fails partway through promotion, the tool stops and retains completed commits/tags for inspection. It never force-resets history or removes release tags automatically. Review `git status` and `git log` before recovering; rerunning against an existing production tag is rejected.
 
-Git tags always use `web-v<version>` or `app-v<version>` with zero whitespace; human-readable titles use `web v<version>` or `app v<version>`. Both scripts validate generated tags with `git check-ref-format`. Android workflows listen for `app-v1.0.*-dev.*` (dev) and `app-v1.1.*` (production); Web tags do not trigger Android releases. The CI metadata helper validates the checked-out version and rejects mismatched triggering tags before building. Preview workflows run on platform-specific dev tags, not dev branch pushes, avoiding duplicate runs when both refs are pushed. Manual dispatch remains supported. Production publication remains a separate, explicitly controlled operation.
+Git tags always use `web-v<version>` with zero whitespace; human-readable titles use `web v<version>`. Generated tags are validated with `git check-ref-format`. The CI metadata helper validates the checked-out version and rejects mismatched triggering tags before building. Preview workflows run on `web-v1.0.*-dev.*` dev tags. Manual dispatch remains supported. Production publication remains a separate, explicitly controlled operation.
 
 Regression tests (disposable local repositories only):
 
@@ -56,25 +54,20 @@ Regression tests (disposable local repositories only):
 python -m unittest discover -s tests -p test_release_scripts.py -v
 ```
 
-
 Publish a dev bump with an annotated version tag:
 
 ```text
-python release_android.py --bump-dev --push --dry-run
-python release_android.py --bump-dev --push
+python release_web.py --bump-dev --push --dry-run
 python release_web.py --bump-dev --push
 ```
 
 `--push` requires `--bump-dev`, a clean `dev` branch, Git identity, an origin remote,
-and an unused local/remote tag. It commits with `chore(app): bump dev version (app v1.0.62-dev.8)`
-(or the Web equivalent), annotates the official tag, and atomically pushes only
-`dev` and that tag to origin. Unrelated tags are never pushed. An atomic push
-rejection leaves the local commit and tag intact; retry the exact command printed
-by the script after resolving the remote issue, instead of bumping again.
-Without `--push`, existing local-only behavior is unchanged. Dry runs never contact
-origin or modify refs. Production promotion remains local-only.
-Android dev tags trigger the APK preview release; Web dev tags trigger Web tests,
-build, and an artifact upload, without deploying to Cloudflare.
+and an unused local/remote tag. It commits with `chore(web): bump dev version (web v1.0.62-dev.8)`,
+annotates the official tag, and atomically pushes only `dev` and that tag to origin.
+Unrelated tags are never pushed. An atomic push rejection leaves the local commit and tag intact;
+retry the exact command printed by the script after resolving the remote issue, instead of bumping again.
+Without `--push`, existing local-only behavior is unchanged. Dry runs never contact origin or modify refs.
+Production promotion remains local-only.
 
 ---
 
@@ -87,21 +80,17 @@ Atomically pushes dev release tags and the `dev` branch to `origin` without hard
 ```text
 # Preview push commands without mutating Git or contacting remote
 python push_release.py web --dry-run
-python push_release.py app --dry-run
-python push_release.py all --dry-run
 
 # Execute atomic release push to origin
 python push_release.py web
-python push_release.py app
-python push_release.py all
 ```
 
-- Dynamically resolves dev versions and tags from `release_web.py` and `release_android.py`.
+- Dynamically resolves dev versions and tags from `release_web.py`.
 - Validates that the working tree and index are clean before pushing.
-- Creates annotated local tags (`web-v1.0.*-dev.*` / `app-v1.0.*-dev.*`) if not already present.
+- Creates annotated local tags (`web-v1.0.*-dev.*`) if not already present.
 - Executes `git push --atomic origin refs/heads/dev:refs/heads/dev refs/tags/<tag>:refs/tags/<tag>`.
 
-### 2. Automated Production Deployment Tool (`deploy.py`, `deploy_web.py`, `deploy_app.py`)
+### 2. Automated Production Deployment Tool (`deploy.py`, `deploy_web.py`)
 
 Handles safe, conflict-free production deployments:
 
@@ -109,10 +98,6 @@ Handles safe, conflict-free production deployments:
 # Web Production Deployment
 python deploy.py web --dry-run     # or: python deploy_web.py --dry-run
 python deploy.py web               # or: python deploy_web.py
-
-# Android Production Deployment
-python deploy.py app --dry-run     # or: python deploy_app.py --dry-run
-python deploy.py app               # or: python deploy_app.py
 ```
 
 **Web Deployment Workflow:**
@@ -124,9 +109,4 @@ python deploy.py app               # or: python deploy_app.py
 6. Commits: `chore(release): deploy <tag> to prod`.
 7. Pushes `main` and the production tag to `origin`.
 8. Automatically returns the developer to their initial branch (`dev`).
-
-**Android Deployment Workflow:**
-1. Identifies the latest `app-v1.1.*` production release tag (e.g. `app-v1.1.72`).
-2. Validates working tree cleanliness.
-3. Pushes the production tag to `origin` (`git push origin refs/tags/<tag>:refs/tags/<tag>`), triggering the GitHub Actions build and release workflow (`release.yml`).
 

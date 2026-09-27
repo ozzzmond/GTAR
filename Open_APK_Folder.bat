@@ -1,3 +1,0 @@
-@echo off
-echo Opening APK folder in Windows Explorer...
-explorer.exe "%~dp0app\build\outputs\apk\debug"

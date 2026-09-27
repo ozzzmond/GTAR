@@ -12,15 +12,12 @@ sys.path.insert(0, str(ROOT))
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--platform', choices=['app', 'web'], required=True)
+    parser.add_argument('--platform', choices=['web'], default='web')
     parser.add_argument('--dev-only', action='store_true')
     args = parser.parse_args()
-    module = importlib.import_module('release_android' if args.platform == 'app' else 'release_web')
+    import release_web as module
     try:
-        if args.platform == 'app':
-            version, _ = module.inspect()
-        else:
-            version = json.loads(module.read('web/package.json'))['version']
+        version = json.loads(module.read('web/package.json'))['version']
         info = module.release_metadata(version)
         if args.dev_only and not info['prerelease']:
             raise ValueError('Dev workflow requires a dev version')
