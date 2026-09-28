@@ -1,5 +1,5 @@
 import { resolveSetlistSong } from '../utils/setlistSongs'
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   X,
   ListMusic,
@@ -67,6 +67,13 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   const [expandedSetlistId, setExpandedSetlistId] = useState<string | number | null>(activeSetlistId)
   const [drawerToast, setDrawerToast] = useState<string | null>(null)
   const setlistFileInputRef = React.useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isOpen && activeSetlistId !== null && activeSetlistId !== undefined) {
+      setDrawerTab('setlists')
+      setExpandedSetlistId(activeSetlistId)
+    }
+  }, [isOpen, activeSetlistId])
 
   const showDrawerToast = (msg: string) => {
     setDrawerToast(msg)

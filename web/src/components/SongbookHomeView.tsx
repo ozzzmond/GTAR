@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
+import { SwipeableActionCard } from './SwipeableActionCard'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface SongbookHomeViewProps {
@@ -28,6 +29,7 @@ interface SongbookHomeViewProps {
   onNewSong: () => void
   onNewSetlist?: () => void
   onOpenSetlists: () => void
+  onManageSetlist?: (setlist: WebSetlist) => void
   onDeleteSong: (index: number) => void
   onDeleteSetlist?: (setlistId: string | number) => void
   onRenameSetlist?: (setlistId: string | number, newName: string) => void
@@ -47,6 +49,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onNewSong,
   onNewSetlist,
   onOpenSetlists,
+  onManageSetlist,
   onDeleteSong,
   onDeleteSetlist,
   onRenameSetlist,
@@ -381,9 +384,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               const isMenuOpen = activeMenuSetlistId === sl.id
 
               return (
-                <div
+                <SwipeableActionCard
                   key={sl.id}
-                  data-testid={`setlist-card-${sl.id}`}
+                  id={sl.id}
+                  dataTestId={`setlist-card-${sl.id}`}
+                  className="rounded-xl"
+                  cardClassName="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-2.5 sm:gap-3 relative"
                   onClick={() => {
                     if (onSelectSetlistSong && sl.songs.length > 0) {
                       onSelectSetlistSong(sl.id, 0)
@@ -391,7 +397,28 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       onOpenSetlists()
                     }
                   }}
-                  className="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-2.5 sm:gap-3 relative"
+                  disabled={isDeletingSetlist || isMenuOpen}
+                  leftAction={{
+                    icon: <Layers className="w-4 h-4 text-current" />,
+                    label: 'Manage',
+                    testId: `swipe-action-manage-${sl.id}`,
+                    onAction: () => {
+                      if (onManageSetlist) {
+                        onManageSetlist(sl)
+                      } else {
+                        onOpenSetlists()
+                      }
+                    },
+                  }}
+                  rightAction={{
+                    icon: <Trash2 className="w-4 h-4 text-current" />,
+                    label: 'Delete',
+                    isDestructive: true,
+                    testId: `swipe-action-delete-${sl.id}`,
+                    onAction: () => {
+                      setConfirmDeleteSetlistId(sl.id)
+                    },
+                  }}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-xs sm:text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
@@ -537,7 +564,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       </div>
                     </div>
                   )}
-                </div>
+                </SwipeableActionCard>
               )
             })}
           </div>
@@ -658,15 +685,36 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               const songSetlists = getSongSetlists(song)
 
               return (
-                <div
+                <SwipeableActionCard
                   key={song.id || originalIdx}
-                  data-testid={`song-card-${originalIdx}`}
-                  onClick={() => onSelectSong(originalIdx)}
-                  className={`relative px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border transition-all cursor-pointer select-none group flex items-center justify-between gap-2 sm:gap-2.5 ${
+                  id={song.id || originalIdx}
+                  dataTestId={`song-card-${originalIdx}`}
+                  className="rounded-xl"
+                  cardClassName={`relative px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border transition-all cursor-pointer select-none group flex items-center justify-between gap-2 sm:gap-2.5 ${
                     isSelected
                       ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198] shadow-lg shadow-[#2AA198]/10'
                       : 'border-[#1A4A55] bg-[#073642]/70 hover:border-[#2AA198] hover:bg-[#073642]'
                   }`}
+                  onClick={() => onSelectSong(originalIdx)}
+                  disabled={isDeleting || isMenuOpen}
+                  leftAction={{
+                    icon: <ListPlus className="w-4 h-4 text-current" />,
+                    label: 'Add to Setlist',
+                    testId: `swipe-action-add-${originalIdx}`,
+                    disabled: song.id === undefined,
+                    onAction: () => {
+                      setMembershipSongId(song.id ?? null)
+                    },
+                  }}
+                  rightAction={{
+                    icon: <Trash2 className="w-4 h-4 text-current" />,
+                    label: 'Delete',
+                    isDestructive: true,
+                    testId: `swipe-action-delete-${originalIdx}`,
+                    onAction: () => {
+                      setConfirmDeleteIdx(originalIdx)
+                    },
+                  }}
                 >
                   <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
                     <div
@@ -796,7 +844,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       </div>
                     </div>
                   )}
-                </div>
+                </SwipeableActionCard>
               )
             })}
           </div>

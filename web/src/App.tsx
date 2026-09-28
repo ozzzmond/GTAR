@@ -843,6 +843,12 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
+  // Manage setlist in slide-over drawer
+  const handleManageSetlist = (setlist: WebSetlist) => {
+    setActiveSetlistId(setlist.id)
+    setIsSetlistDrawerOpen(true)
+  }
+
   // Band Leader Action: Push Setlist to Members
   const handlePushSetlistToMembers = (
     targetSetlistId?: string | number
@@ -1218,6 +1224,7 @@ function LibraryApp() {
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}
             onOpenSetlists={() => setIsSetlistDrawerOpen(true)}
+            onManageSetlist={handleManageSetlist}
             onDeleteSong={handleDeleteSong}
             onDeleteSetlist={handleDeleteSetlist}
             onRenameSetlist={handleRenameSetlist}
