@@ -8,10 +8,11 @@ import {
   setupCrossTabLibraryConflictGuard,
 } from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
-import { generateUUID } from './utils/uuid'
+import { generateUUID, isValidUUID } from './utils/uuid'
+import { normalizeSongbookIds } from './utils/songbookFoundation'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
-import { setSongMembership, ensureSongIds, resolveSetlistSong, mergeBackupLibrary, partitionSongs } from './utils/setlistSongs'
+import { setSongMembership, resolveSetlistSong, mergeBackupLibrary, partitionSongs } from './utils/setlistSongs'
 import {
   readStageSession,
   saveStageSession,
@@ -51,7 +52,7 @@ import { exportAllDataJson } from './utils/jsonBackup'
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
   {
-    id: 1,
+    id: 'd1080001-0001-4000-8000-000000000001',
     title: 'Stand By Me',
     artist: 'Ben E. King',
     key: 'A',
@@ -91,7 +92,7 @@ Just as [D]long as you [E]stand, stand by [A]me
 Oh [D]stand by me, [E]oh stand by [A]me`,
   },
   {
-    id: 2,
+    id: 'd1080001-0001-4000-8000-000000000002',
     title: 'Ang Huling El Bimbo',
     artist: 'Eraserheads',
     key: 'G',
@@ -132,7 +133,7 @@ Naiwan ang kahapon
 La la la la la la la la la`,
   },
   {
-    id: 3,
+    id: 'd1080001-0001-4000-8000-000000000003',
     title: 'Hotel California',
     artist: 'Eagles',
     key: 'Bm',
@@ -161,7 +162,7 @@ Plenty of [G]room at the Hotel Cali[D]fornia
 Any [Em]time of year, you can [F#7]find it here`,
   },
   {
-    id: 4,
+    id: 'd1080001-0001-4000-8000-000000000004',
     title: 'Hallelujah',
     artist: 'Leonard Cohen',
     key: 'C',
@@ -193,13 +194,13 @@ Halle[F]lujah, Halle[C]lu---[G]--[C]jah`,
 
 const DEFAULT_SAMPLE_SETLISTS: WebSetlist[] = [
   {
-    id: 'gig-set-1',
+    id: 'd1080002-0001-4000-8000-000000000001',
     name: 'Acoustic Gig Set',
     songs: [
-      { title: 'Stand By Me', artist: 'Ben E. King' },
-      { title: 'Ang Huling El Bimbo', artist: 'Eraserheads' },
-      { title: 'Hotel California', artist: 'Eagles' },
-      { title: 'Hallelujah', artist: 'Leonard Cohen' },
+      { id: 'd1080001-0001-4000-8000-000000000001', title: 'Stand By Me', artist: 'Ben E. King' },
+      { id: 'd1080001-0001-4000-8000-000000000002', title: 'Ang Huling El Bimbo', artist: 'Eraserheads' },
+      { id: 'd1080001-0001-4000-8000-000000000003', title: 'Hotel California', artist: 'Eagles' },
+      { id: 'd1080001-0001-4000-8000-000000000004', title: 'Hallelujah', artist: 'Leonard Cohen' },
     ],
   },
 ]
@@ -250,8 +251,17 @@ function LibraryStartup() {
 function LibraryApp() {
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
-    const savedLibrary = readPersistedLibrary()
-    if (savedLibrary) return { ...partitionSongs(savedLibrary.songs), setlists: savedLibrary.setlists }
+    let savedLibrary = readPersistedLibrary()
+    if (savedLibrary) {
+      const normalized = normalizeSongbookIds(savedLibrary.songs, savedLibrary.setlists)
+      if (normalized.migrated) {
+        savedLibrary = { ...savedLibrary, songs: normalized.songs, setlists: normalized.setlists }
+        try {
+          persistLibrary(savedLibrary)
+        } catch { /* storage quota or error */ }
+      }
+      return { ...partitionSongs(savedLibrary.songs), setlists: savedLibrary.setlists }
+    }
     const readSongs = (key: string, fallback: ActiveSongState[]) => {
       try {
         const raw = localStorage.getItem(key)
@@ -261,13 +271,14 @@ function LibraryApp() {
     }
     const storedSongs = readSongs('gtar_songs_store', DEFAULT_SETLIST)
     const storedTrash = readSongs('gtar_trash_songs_store', []).map(song => ({ ...song, isDeleted: true }))
-    const combined = ensureSongIds([...storedSongs, ...storedTrash])
     let storedSetlists = DEFAULT_SAMPLE_SETLISTS
     try {
       const saved = localStorage.getItem('gtar_setlists_store')
       if (saved && Array.isArray(JSON.parse(saved))) storedSetlists = JSON.parse(saved)
     } catch { /* Keep the existing fallback. */ }
-    const repaired = deduplicateLibrary({ songs: combined, setlists: storedSetlists })
+    const combined = [...storedSongs, ...storedTrash]
+    const normalized = normalizeSongbookIds(combined, storedSetlists)
+    const repaired = deduplicateLibrary({ songs: normalized.songs, setlists: normalized.setlists })
     try {
       persistLibrary(repaired)
       performStorageHousekeeping()
@@ -620,7 +631,7 @@ function LibraryApp() {
               } else {
                 const effectiveContent = rawContent || `{title: ${title || 'Synced Song'}}\n{artist: ${artist || ''}}\n\n[Verse]\n`
                 const newSong: ActiveSongState = {
-                  id: Date.now(),
+                  id: generateUUID(),
                   title: title || 'Synced Song',
                   artist: artist || '',
                   key: msg.payload.key || detectSongKey(effectiveContent),
@@ -647,7 +658,7 @@ function LibraryApp() {
             } else {
               const effectiveContent = rawContent || `{title: ${title || 'Synced Song'}}\n{artist: ${artist || ''}}\n\n[Verse]\n`
               const newSong: ActiveSongState = {
-                id: Date.now(),
+                id: generateUUID(),
                 title: title || 'Synced Song',
                 artist: artist || '',
                 key: msg.payload.key || detectSongKey(effectiveContent),
@@ -670,42 +681,49 @@ function LibraryApp() {
           const incomingSongs: Array<Partial<ActiveSongState>> = Array.isArray(msg.payload.songs) ? msg.payload.songs : []
 
           // Smart Merge: do not overwrite or duplicate existing (match title + artist)
-          setSongs((prevSongs) => {
-            const songMap = new Map(
-              prevSongs.map((s) => [
-                `${s.title.trim().toLowerCase()}::${(s.artist || '').trim().toLowerCase()}`,
-                s,
-              ])
-            )
+          const songMap = new Map(
+            songs.map((s) => [
+              `${s.title.trim().toLowerCase()}::${(s.artist || '').trim().toLowerCase()}`,
+              s,
+            ])
+          )
 
-            const newSongsToAppend: ActiveSongState[] = []
-            for (const item of incomingSongs) {
-              const key = `${(item.title || '').trim().toLowerCase()}::${(item.artist || '').trim().toLowerCase()}`
-              if (!songMap.has(key)) {
-                const newSong: ActiveSongState = {
-                  id: Date.now() + Math.floor(Math.random() * 10000) + newSongsToAppend.length,
-                  title: item.title || 'Untitled Song',
-                  artist: item.artist || '',
-                  key: item.key || detectSongKey(item.rawContent || ''),
-                  capo: item.capo || 'No Capo',
-                  bpm: item.bpm || '120',
-                  format: item.format || 'CHORD_PRO',
-                  transposeOffset: 0,
-                  rawContent: item.rawContent || '',
-                }
-                songMap.set(key, newSong)
-                newSongsToAppend.push(newSong)
+          const newSongsToAppend: ActiveSongState[] = []
+          for (const item of incomingSongs) {
+            const key = `${(item.title || '').trim().toLowerCase()}::${(item.artist || '').trim().toLowerCase()}`
+            if (!songMap.has(key)) {
+              const newSong: ActiveSongState = {
+                id: generateUUID(),
+                title: item.title || 'Untitled Song',
+                artist: item.artist || '',
+                key: item.key || detectSongKey(item.rawContent || ''),
+                capo: item.capo || 'No Capo',
+                bpm: item.bpm || '120',
+                format: item.format || 'CHORD_PRO',
+                transposeOffset: 0,
+                rawContent: item.rawContent || '',
               }
+              songMap.set(key, newSong)
+              newSongsToAppend.push(newSong)
             }
-            return [...prevSongs, ...newSongsToAppend]
-          })
+          }
+          if (newSongsToAppend.length > 0) {
+            setSongs((prev) => [...prev, ...newSongsToAppend])
+          }
 
           // Reconstruct/activate received setlist on Member device immediately
-          const newSetlistId = `synced-set-${Date.now()}`
+          const newSetlistId = generateUUID()
           const syncedSetlist: WebSetlist = {
             id: newSetlistId,
             name: incomingSetlistName,
-            songs: incomingSongs.map((s) => ({ title: s.title || 'Untitled Song', artist: s.artist })),
+            songs: incomingSongs.map((s) => {
+              const matchedSong = songMap.get(`${(s.title || '').trim().toLowerCase()}::${(s.artist || '').trim().toLowerCase()}`)
+              return {
+                id: matchedSong?.id || (s.id && isValidUUID(s.id) ? s.id : undefined),
+                title: s.title || 'Untitled Song',
+                artist: s.artist,
+              }
+            }),
           }
 
           setSetlists((prevSetlists) => {
@@ -909,7 +927,7 @@ function LibraryApp() {
     }
 
     const newSong: ActiveSongState = {
-      id: Date.now(),
+      id: generateUUID(),
       title: sheet.title,
       artist: sheet.artist,
       key: sheet.key || detectSongKey(sheet.rawContent || ''),
@@ -942,7 +960,7 @@ function LibraryApp() {
     if (songs.length <= 1) {
       // If last remaining song is deleted, create blank song template
       const blankSong: ActiveSongState = {
-        id: Date.now(),
+        id: generateUUID(),
         title: 'New Song',
         artist: '',
         key: 'G',
@@ -1000,7 +1018,7 @@ function LibraryApp() {
   // Create new blank song template and switch to Desktop Editor
   const handleNewSong = () => {
     const blankSong: ActiveSongState = {
-      id: Date.now(),
+      id: generateUUID(),
       title: 'New Song',
       artist: '',
       key: 'G',
@@ -1038,7 +1056,7 @@ function LibraryApp() {
 
   // Create a new setlist
   const handleNewSetlist = () => {
-    const newId = `setlist-${Date.now()}`
+    const newId = generateUUID()
     const newSetlistName = `Setlist ${setlists.length + 1}`
     const created: WebSetlist = {
       id: newId,
