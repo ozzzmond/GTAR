@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "gtar",
   "pages_build_output_dir": "dist",
+  "compatibility_date": "2026-09-10",
   "compatibility_flags": [
     "nodejs_compat"
   ],
