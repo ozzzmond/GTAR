@@ -151,6 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
   const [showAvatarPopover, setShowAvatarPopover] = useState(false)
+  const [pendingCount, setPendingCount] = useState<number>(0)
   const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   )
@@ -182,6 +183,43 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   const isDevApp = isDevEnv && isSuperAdmin
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setPendingCount(0)
+      return
+    }
+    const token = currentSession?.sessionToken || currentSession?.idToken || currentSession?.token
+    if (!token) return
+
+    let active = true
+    const fetchPendingCount = async () => {
+      try {
+        const res = await fetch('/api/admin/pending-count', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok) {
+          const data = (await res.json()) as { count?: number }
+          if (active && typeof data.count === 'number') {
+            setPendingCount(data.count)
+          }
+        }
+      } catch {
+        // Network or offline: ignore
+      }
+    }
+
+    void fetchPendingCount()
+    const handleUpdate = () => { void fetchPendingCount() }
+    window.addEventListener('gtar:auth_updated', handleUpdate)
+    window.addEventListener('focus', handleUpdate)
+    return () => {
+      active = false
+      window.removeEventListener('gtar:auth_updated', handleUpdate)
+      window.removeEventListener('focus', handleUpdate)
+    }
+  }, [isSuperAdmin, currentSession])
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
@@ -443,6 +481,14 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
             <span className={`auth-dot ${userDotClass}`} />
+            {isSuperAdmin && pendingCount > 0 && (
+              <span
+                className="pending-badge"
+                title={`${pendingCount} pending account approval${pendingCount > 1 ? 's' : ''}`}
+              >
+                {pendingCount > 99 ? '99+' : pendingCount}
+              </span>
+            )}
 
             {/* Avatar Popover */}
             {showAvatarPopover && (
@@ -1168,6 +1214,11 @@ export const Header: React.FC<HeaderProps> = ({
       <UserManagementModal
         isOpen={showUserManagementModal}
         onClose={() => setShowUserManagementModal(false)}
+        onUpdateUsers={() => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('gtar:auth_updated'))
+          }
+        }}
       />
     </>
   )

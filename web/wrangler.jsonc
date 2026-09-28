@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gtar",
+  "pages_build_output_dir": "dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gtar-db-dev",
+      "database_id": "455b9901-9018-4e73-9ac1-a684f7335def",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

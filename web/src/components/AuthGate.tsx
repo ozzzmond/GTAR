@@ -4,17 +4,21 @@ import {
   loadGoogleIdentity,
   getStoredSessionStatus,
   requestGoogleSession,
+  requestGoogleCredential,
+  authenticateWithServer,
+  recheckServerSession,
   renewDurableSession,
   saveGoogleSession,
   validSession,
   verifyGoogleSession,
   type GoogleSession,
+  type AccessStatus,
 } from '../utils/googleAuth'
 import devLogo from '../assets/dev-logo.png'
 import prodLogo from '../assets/prod-logo.png'
 import { isDevEnv } from '../utils/env'
 import { DebugLogsModal } from './DebugLogsModal'
-import { Terminal } from 'lucide-react'
+import { Terminal, Clock, ShieldX, RefreshCw } from 'lucide-react'
 
 const isDevLogsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
@@ -22,24 +26,31 @@ interface AuthState {
   session: GoogleSession | null
   signOut: () => void
   signIn: () => Promise<void>
+  checkStatus: () => Promise<void>
   ready: boolean
   bypass: boolean
   role: UserRole
   isSuperAdmin: boolean
+  accessStatus: AccessStatus
 }
+
 const AuthContext = createContext<AuthState | null>(null)
+
 export function useGoogleAuth() {
   const auth = useContext(AuthContext)
   if (!auth) throw new Error('Authentication boundary is required.')
   return auth
 }
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<GoogleSession | null>(null)
   const [checking, setChecking] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [checkingStatus, setCheckingStatus] = useState(false)
   const [ready, setReady] = useState(false)
   const [bypass, setBypass] = useState(false)
   const [error, setError] = useState('')
+  const [statusMessage, setStatusMessage] = useState('')
   const [isExpiredOffline, setIsExpiredOffline] = useState(false)
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
   const epoch = useRef(0)
@@ -55,15 +66,26 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const canBypass = allowLocalBypass(import.meta.env.DEV, typeof window !== 'undefined' ? (window.location?.hostname || '') : '')
 
+  const accessStatus: AccessStatus = useMemo(() => {
+    if (bypass && canBypass) return 'active'
+    if (!session) return 'pending'
+    return session.access_status || session.user.access_status || 'active'
+  }, [bypass, canBypass, session])
+
   const role: UserRole = useMemo(() => {
     if (bypass && canBypass) return 'SUPER_ADMIN'
     if (!session?.user?.email) return 'NONE'
+    // Server D1 authoritative role has precedence
+    if (session.role === 'admin') return 'SUPER_ADMIN'
+    if (session.role === 'member') return 'USER'
+    if (session.user.role === 'admin') return 'SUPER_ADMIN'
+    if (session.user.role === 'member') return 'USER'
+    // Non-authoritative legacy helper fallback
     return getUserRole(session.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
   }, [session, bypass, canBypass, configuredEmails])
 
-  const isAuthorized = role !== 'NONE'
-  const permitted = !!session && validSession(session) && isAuthorized
   const isSuperAdmin = role === 'SUPER_ADMIN'
+  const permitted = !!session && validSession(session) && accessStatus === 'active'
 
   const signOut = useCallback(() => {
     epoch.current++
@@ -73,23 +95,63 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setChecking(false)
     setBusy(false)
     setError('')
+    setStatusMessage('')
     setIsExpiredOffline(false)
   }, [])
 
-  // Asynchronous non-blocking background recheck
+  // Asynchronous non-blocking background recheck with authoritative server D1
   const backgroundRecheck = useCallback(async (current: GoogleSession, generation: number) => {
     if (refreshing.current) return
     refreshing.current = true
     try {
-      const currentRole = getUserRole(current.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-      if (currentRole === 'NONE') {
-        if (generation === epoch.current) {
-          signOut()
-          setError('Access revoked. Your account is not on the authorized whitelist.')
+      const token = current.sessionToken || current.idToken
+      if (token) {
+        try {
+          const serverUser = await recheckServerSession(token)
+          if (generation !== epoch.current) return
+
+          const updated: GoogleSession = {
+            ...current,
+            user: {
+              ...current.user,
+              id: serverUser.id,
+              role: serverUser.role,
+              access_status: serverUser.access_status,
+              name: serverUser.display_name || current.user.name,
+              picture: serverUser.picture_url || current.user.picture,
+            },
+            role: serverUser.role,
+            access_status: serverUser.access_status,
+            lastVerifiedAt: Date.now(),
+          }
+
+          saveGoogleSession(updated)
+          setSession(updated)
+          return
+        } catch (err) {
+          if (generation !== epoch.current) return
+          const msg = err instanceof Error ? err.message : String(err)
+          if (/network|failed to fetch|load failed|timeout/i.test(msg)) {
+            void import('../utils/logger').then(({ appLogger }) => {
+              appLogger.warn('AuthGate', 'Background server recheck deferred due to transient network error.', msg)
+            })
+            return
+          }
         }
-        return
       }
 
+      if (current.access_status !== 'denied' && current.access_status !== 'pending') {
+        const currentRole = getUserRole(current.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+        if (currentRole === 'NONE' && configuredEmails !== undefined) {
+          if (generation === epoch.current) {
+            signOut()
+            setError('Access revoked. Your account is not on the authorized whitelist.')
+          }
+          return
+        }
+      }
+
+      // Fallback: verify Google session if token exists
       if (current.token) {
         try {
           const verified = await verifyGoogleSession(current)
@@ -107,15 +169,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
           if (generation !== epoch.current) return
           const msg = err instanceof Error ? err.message : String(err)
           if (/network|failed to fetch|load failed|timeout/i.test(msg)) {
-            void import('../utils/logger').then(({ appLogger }) => {
-              appLogger.warn('AuthGate', 'Background session recheck deferred due to transient network error.', msg)
-            })
             return
           }
-          // Token expired or invalid: retire ephemeral token cleanly while keeping 30-day durable session
-          void import('../utils/logger').then(({ appLogger }) => {
-            appLogger.info('AuthGate', 'OAuth access token expired after idle; retiring token while retaining 30-day local durable session.')
-          })
           const sessionWithoutToken: GoogleSession = {
             ...current,
             token: undefined,
@@ -124,13 +179,54 @@ export function AuthGate({ children }: { children: ReactNode }) {
           setSession(sessionWithoutToken)
         }
       }
-      // Note: Never call GIS requestAccessToken / refreshGoogleSession in background recheck!
-      // GIS token acquisition requires an explicit user gesture; calling it non-interactively
-      // on wake/focus after long idle causes Android OS/Chrome to display an external browser open prompt.
     } finally {
       refreshing.current = false
     }
-  }, [configuredEmails, signOut])
+  }, [signOut])
+
+  // Explicit check status for pending users
+  const checkStatus = useCallback(async () => {
+    if (!session || checkingStatus) return
+    setCheckingStatus(true)
+    setStatusMessage('Checking approval status...')
+    setError('')
+    try {
+      const token = session.sessionToken || session.idToken
+      if (token) {
+        const serverUser = await recheckServerSession(token)
+        const updated: GoogleSession = {
+          ...session,
+          user: {
+            ...session.user,
+            id: serverUser.id,
+            role: serverUser.role,
+            access_status: serverUser.access_status,
+          },
+          role: serverUser.role,
+          access_status: serverUser.access_status,
+          lastVerifiedAt: Date.now(),
+        }
+        saveGoogleSession(updated)
+        setSession(updated)
+        if (serverUser.access_status === 'active') {
+          setStatusMessage('Access granted! Unlocking...')
+        } else if (serverUser.access_status === 'denied') {
+          setStatusMessage('')
+          setError('Access has been denied by an administrator.')
+        } else {
+          setStatusMessage('Your account is still awaiting approval.')
+        }
+      } else {
+        setStatusMessage('No active server token. Please sign in again to verify.')
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to check status. Network unavailable.'
+      setError(msg)
+      setStatusMessage('')
+    } finally {
+      setCheckingStatus(false)
+    }
+  }, [session, checkingStatus])
 
   // Mount session initialization
   useEffect(() => {
@@ -172,14 +268,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
 
     const candidate = status.session
-    const candidateRole = getUserRole(candidate.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-    if (candidateRole === 'NONE') {
-      saveGoogleSession(null)
-      if (generation === epoch.current) {
-        setError('Access revoked. Your account is not on the authorized whitelist.')
-        setChecking(false)
+    if (candidate.access_status !== 'denied' && candidate.access_status !== 'pending') {
+      const candidateRole = getUserRole(candidate.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+      if (candidateRole === 'NONE' && configuredEmails !== undefined) {
+        saveGoogleSession(null)
+        if (generation === epoch.current) {
+          setError('Access revoked. Your account is not on the authorized whitelist.')
+          setChecking(false)
+        }
+        return
       }
-      return
     }
 
     // Unlock immediately from local durable session
@@ -189,12 +287,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
 
     const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
-    if (!isOffline && clientId) {
+    if (!isOffline) {
       void backgroundRecheck(candidate, generation)
     }
 
     return () => { epoch.current++ }
-  }, [configuredEmails, clientId, backgroundRecheck])
+  }, [backgroundRecheck])
 
   // Load Google Identity Services SDK
   useEffect(() => {
@@ -225,7 +323,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
       if (!validSession(session)) {
         if (isOffline) {
-          // Live stage performance offline resilience: preserve active session while offline
           return
         }
         if (isPresentationRoute) {
@@ -261,19 +358,31 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const signIn = async () => {
     if (!clientId || busy) return
     const generation = ++epoch.current
-    setBusy(true); setError(''); setIsExpiredOffline(false)
+    setBusy(true)
+    setError('')
+    setStatusMessage('')
+    setIsExpiredOffline(false)
+
     try {
-      const next = await requestGoogleSession(clientId)
-      if (generation !== epoch.current) return
-      const nextRole = getUserRole(next.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-      if (nextRole === 'NONE') {
-        saveGoogleSession(null)
-        setError(`Access denied. Account ${next.user.email} is not authorized.`)
-        return
+      let serverSession: GoogleSession | null = null
+
+      // Prefer GIS ID Token flow for server verification
+      try {
+        const idToken = await requestGoogleCredential(clientId)
+        if (generation !== epoch.current) return
+        serverSession = await authenticateWithServer(idToken)
+      } catch (idErr) {
+        // Fallback to GIS oauth2 flow if idToken prompt was dismissed or unhandled
+        const legacySession = await requestGoogleSession(clientId)
+        if (generation !== epoch.current) return
+        serverSession = legacySession
       }
-      saveGoogleSession(next)
+
+      if (generation !== epoch.current || !serverSession) return
+
+      saveGoogleSession(serverSession)
       setBypass(false)
-      setSession(next)
+      setSession(serverSession)
     } catch (failure) {
       if (generation === epoch.current) {
         const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
@@ -290,56 +399,168 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
   }
 
-  if (permitted || (bypass && canBypass)) return <AuthContext.Provider value={{ session: permitted ? session : null, signOut, signIn, ready, bypass, role, isSuperAdmin }}>
-    {bypass && <div className="bg-amber-500 text-black px-4 py-2 text-sm">Local development bypass · Cloud auth bypassed <button className="underline ml-3" onClick={signOut}>Exit bypass</button></div>}
-    {children}
-  </AuthContext.Provider>
+  // Active / Approved access OR Local Dev Bypass: render application
+  if (permitted || (bypass && canBypass)) {
+    return (
+      <AuthContext.Provider
+        value={{
+          session: permitted ? session : null,
+          signOut,
+          signIn,
+          checkStatus,
+          ready,
+          bypass,
+          role,
+          isSuperAdmin,
+          accessStatus,
+        }}
+      >
+        {bypass && (
+          <div className="bg-amber-500 text-black px-4 py-2 text-sm">
+            Local development bypass · Cloud auth bypassed{' '}
+            <button className="underline ml-3 cursor-pointer" onClick={signOut}>
+              Exit bypass
+            </button>
+          </div>
+        )}
+        {children}
+      </AuthContext.Provider>
+    )
+  }
 
-  return <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
-    <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
-      <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-[#002B36] border border-[#1A4A55] p-1 shadow-inner flex items-center justify-center">
-        <img
-          src={isDevEnv ? devLogo : prodLogo}
-          alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
-          className="w-full h-full object-contain rounded-xl"
-        />
-      </div>
-      <h1 className="text-3xl font-bold">GTAR</h1>
-      <p className="text-[#93A1A1] mt-2">Songbook &amp; Live Stage Companion</p>
-      <h2 className="text-lg font-semibold mt-8">Owner Access</h2>
-      <p className="text-sm text-[#93A1A1] mt-2 mb-6">
-        Access is restricted to authorized owners. Sign in with your approved Google account.
-      </p>
-      {isExpiredOffline && (
-        <div className="p-3 mb-4 rounded-xl bg-[#B58900]/15 border border-[#B58900]/40 text-[#EEE8D5] text-xs text-left">
-          <p className="font-bold text-[#B58900] mb-1">Offline Session Expired</p>
-          <p>Your 30-day offline stage session has expired. Reconnect to the internet once to renew.</p>
-        </div>
-      )}
-      {checking ? <p role="status">Verifying your session...</p> : (
-        <button disabled={!ready || busy} className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50 cursor-pointer" onClick={() => void signIn()}>
-          {busy ? 'Signing in...' : 'Sign In with Google'}
-        </button>
-      )}
-      <p role="status" className="text-sm text-amber-200 mt-4">{error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}</p>
-      {canBypass && !checking && <button className="mt-6 text-sm underline text-[#93A1A1] cursor-pointer" onClick={() => { signOut(); setBypass(true) }}>Continue offline (local development)</button>}
-      {isDevLogsEnabled && (
-        <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+  // Pending Access Approval Screen
+  if (session && accessStatus === 'pending') {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
+        <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#B58900]/15 border border-[#B58900]/40 flex items-center justify-center text-[#B58900]">
+            <Clock className="w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-bold">Access Approval Pending</h1>
+          <p className="text-xs text-[#93A1A1] mt-2 mb-4 font-mono truncate">{session.user.email}</p>
+          <div className="p-4 mb-6 rounded-2xl bg-[#002B36] border border-[#1A4A55] text-xs text-[#93A1A1] text-left leading-relaxed">
+            Your account has been registered successfully. An administrator must approve your account before you can access GTAR songbook and cloud features.
+          </div>
+          {statusMessage && (
+            <p className="text-xs text-[#2AA198] mb-4 font-semibold">{statusMessage}</p>
+          )}
+          {error && (
+            <p className="text-xs text-[#DC6E67] mb-4 font-semibold">{error}</p>
+          )}
+          <div className="space-y-3">
+            <button
+              type="button"
+              disabled={checkingStatus}
+              onClick={() => void checkStatus()}
+              className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${checkingStatus ? 'animate-spin' : ''}`} />
+              <span>{checkingStatus ? 'Checking...' : 'Check Status'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={signOut}
+              className="w-full rounded-xl bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] border border-[#1A4A55] py-2.5 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  // Denied Access Screen
+  if (session && accessStatus === 'denied') {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
+        <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 flex items-center justify-center text-[#DC6E67]">
+            <ShieldX className="w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-bold">Access Denied</h1>
+          <p className="text-xs text-[#93A1A1] mt-2 mb-4 font-mono truncate">{session.user.email}</p>
+          <div className="p-4 mb-6 rounded-2xl bg-[#002B36] border border-[#1A4A55] text-xs text-[#93A1A1] text-left leading-relaxed">
+            Access for this Google account has been denied by an administrator. Contact the application owner if you believe this is in error.
+          </div>
           <button
             type="button"
-            title="View Debug Logs"
-            aria-label="View Debug Logs"
-            className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
-            onClick={() => setIsDebugLogsOpen(true)}
+            onClick={signOut}
+            className="w-full rounded-xl bg-[#002B36] hover:bg-[#002B36]/80 text-[#FDF6E3] border border-[#1A4A55] font-bold py-3 transition-colors cursor-pointer"
           >
-            <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
-            <span>View Debug Logs</span>
+            Sign Out
           </button>
+        </section>
+      </main>
+    )
+  }
+
+  // Standard Login Screen
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
+      <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
+        <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-[#002B36] border border-[#1A4A55] p-1 shadow-inner flex items-center justify-center">
+          <img
+            src={isDevEnv ? devLogo : prodLogo}
+            alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
+            className="w-full h-full object-contain rounded-xl"
+          />
         </div>
-      )}
-      {isDevLogsEnabled && isDebugLogsOpen && (
-        <DebugLogsModal isOpen={isDebugLogsOpen} onClose={() => setIsDebugLogsOpen(false)} />
-      )}
-    </section>
-  </main>
+        <h1 className="text-3xl font-bold">GTAR</h1>
+        <p className="text-[#93A1A1] mt-2">Songbook &amp; Live Stage Companion</p>
+        <h2 className="text-lg font-semibold mt-8">Owner Access</h2>
+        <p className="text-sm text-[#93A1A1] mt-2 mb-6">
+          Access is restricted to authorized owners. Sign in with your approved Google account.
+        </p>
+        {isExpiredOffline && (
+          <div className="p-3 mb-4 rounded-xl bg-[#B58900]/15 border border-[#B58900]/40 text-[#EEE8D5] text-xs text-left">
+            <p className="font-bold text-[#B58900] mb-1">Offline Session Expired</p>
+            <p>Your 30-day offline stage session has expired. Reconnect to the internet once to renew.</p>
+          </div>
+        )}
+        {checking ? (
+          <p role="status">Verifying your session...</p>
+        ) : (
+          <button
+            disabled={!ready || busy}
+            className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50 cursor-pointer"
+            onClick={() => void signIn()}
+          >
+            {busy ? 'Signing in...' : 'Sign In with Google'}
+          </button>
+        )}
+        <p role="status" className="text-sm text-amber-200 mt-4">
+          {error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}
+        </p>
+        {canBypass && !checking && (
+          <button
+            className="mt-6 text-sm underline text-[#93A1A1] cursor-pointer"
+            onClick={() => {
+              signOut()
+              setBypass(true)
+            }}
+          >
+            Continue offline (local development)
+          </button>
+        )}
+        {isDevLogsEnabled && (
+          <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+            <button
+              type="button"
+              title="View Debug Logs"
+              aria-label="View Debug Logs"
+              className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+              onClick={() => setIsDebugLogsOpen(true)}
+            >
+              <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
+              <span>View Debug Logs</span>
+            </button>
+          </div>
+        )}
+        {isDevLogsEnabled && isDebugLogsOpen && (
+          <DebugLogsModal isOpen={isDebugLogsOpen} onClose={() => setIsDebugLogsOpen(false)} />
+        )}
+      </section>
+    </main>
+  )
 }

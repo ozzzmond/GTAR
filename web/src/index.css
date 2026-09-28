@@ -372,6 +372,27 @@ body.theme-custom .chord-sheet-container .comment {
 .auth-dot.syncing   { background-color: #F59E0B; }
 .auth-dot.error     { background-color: #EF4444; }
 
+/* Admin pending approval notification badge */
+.avatar-wrapper .pending-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background-color: #DC322F;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  border: 1.5px solid #002B36;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
 /* Avatar popover */
 .avatar-popover {
   position: absolute;
