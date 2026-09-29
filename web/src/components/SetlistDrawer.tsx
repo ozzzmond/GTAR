@@ -152,6 +152,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
   // Real-time search filter for setlists (matching setlist name or tracks)
   const filteredSetlists = setlists.filter((sl) => {
+    if (sl.isDeleted) return false
     const q = searchQuery.toLowerCase().trim()
     if (!q) return true
     const matchName = sl.name.toLowerCase().includes(q)

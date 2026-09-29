@@ -73,7 +73,10 @@ export function normalizeSongbookIds(
   // Phase 2: Normalize setlist IDs and rebind song references
   const normalizedSetlists: WebSetlist[] = setlists.map((setlist) => {
     let setlistId = setlist.id
-    if (setlistId === undefined || setlistId === null || String(setlistId).trim() === '') {
+    if (typeof setlistId === 'string' && setlistId.trim().length > 0) {
+      // Preserve valid existing UUID or non-empty string ID
+      setlistId = setlistId.trim()
+    } else {
       setlistId = generateUUID()
       migrated = true
     }
@@ -110,6 +113,7 @@ export function normalizeSongbookIds(
       ...setlist,
       id: setlistId,
       songs: updatedRefs,
+      ...(setlist.isDeleted !== undefined ? { isDeleted: Boolean(setlist.isDeleted) } : {}),
     }
   })
 

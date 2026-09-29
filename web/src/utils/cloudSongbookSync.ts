@@ -5,6 +5,7 @@ import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFound
 import { generateUUID } from './uuid'
 
 export const CLOUD_SYNC_META_KEY = 'gtar_cloud_sync_meta'
+export const CLOUD_SYNC_BASE_KEY = 'gtar_cloud_sync_base'
 
 export type CloudSyncStatus =
   | 'IDLE'
@@ -101,6 +102,7 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
     .map((sl) => ({
       id: String(sl.id || ''),
       name: (sl.name || '').trim(),
+      isDeleted: Boolean(sl.isDeleted),
       songs: (sl.songs || []).map((ref) => ({
         id: ref.id !== undefined ? String(ref.id) : '',
         title: (ref.title || '').trim(),
@@ -166,6 +168,41 @@ export function saveCloudSyncMeta(meta: CloudSyncMeta, storage?: Storage): void 
   if (!targetStorage) return
   try {
     targetStorage.setItem(CLOUD_SYNC_META_KEY, JSON.stringify(meta))
+  } catch {
+    // Storage quota or unavailable: continue in-memory
+  }
+}
+
+/**
+ * Reads persisted base snapshot library from localStorage for 3-way reconciliation
+ */
+export function readCloudSyncBase(storage?: Storage): SyncLibrary | null {
+  const targetStorage = getStorage(storage)
+  if (!targetStorage) return null
+  try {
+    const raw = targetStorage.getItem(CLOUD_SYNC_BASE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<SyncLibrary>
+    if (!parsed || !Array.isArray(parsed.songs) || !Array.isArray(parsed.setlists)) {
+      return null
+    }
+    return {
+      songs: parsed.songs,
+      setlists: parsed.setlists,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Saves base snapshot library to localStorage
+ */
+export function saveCloudSyncBase(library: SyncLibrary, storage?: Storage): void {
+  const targetStorage = getStorage(storage)
+  if (!targetStorage) return
+  try {
+    targetStorage.setItem(CLOUD_SYNC_BASE_KEY, JSON.stringify(library))
   } catch {
     // Storage quota or unavailable: continue in-memory
   }
@@ -299,12 +336,14 @@ function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
 
 function setlistEquals(a: WebSetlist, b: WebSetlist): boolean {
   if (a.name !== b.name) return false
+  if (Boolean(a.isDeleted) !== Boolean(b.isDeleted)) return false
   if (a.songs.length !== b.songs.length) return false
   for (let i = 0; i < a.songs.length; i++) {
     const sA = a.songs[i]
     const sB = b.songs[i]
     if (String(sA.id || '') !== String(sB.id || '')) return false
     if (sA.title !== sB.title) return false
+    if ((sA.artist || '') !== (sB.artist || '')) return false
   }
   return true
 }
@@ -398,6 +437,15 @@ export function reconcileSongbook(
   }
 
   // Reconcile Setlists
+  const baseSetlistsMap = new Map<string, WebSetlist>()
+  if (base) {
+    for (const sl of base.setlists) {
+      if (sl.id !== undefined && sl.id !== null) {
+        baseSetlistsMap.set(String(sl.id), sl)
+      }
+    }
+  }
+
   const localSetlistsMap = new Map<string, WebSetlist>()
   for (const sl of local.setlists) {
     if (sl.id !== undefined && sl.id !== null) {
@@ -418,27 +466,102 @@ export function reconcileSongbook(
   for (const id of allSetlistIds) {
     const localSl = localSetlistsMap.get(id)
     const remoteSl = remoteSetlistsMap.get(id)
+    const baseSl = baseSetlistsMap.get(id)
 
     if (localSl && !remoteSl) {
-      mergedSetlists.push(localSl)
+      // Exists only locally
+      if (baseSl && setlistEquals(localSl, baseSl)) {
+        // Was deleted remotely, unchanged locally -> accept remote deletion
+      } else {
+        // Added locally or modified locally -> keep local
+        mergedSetlists.push(localSl)
+      }
     } else if (!localSl && remoteSl) {
-      mergedSetlists.push(remoteSl)
+      // Exists only remotely
+      if (baseSl && setlistEquals(remoteSl, baseSl)) {
+        // Was deleted locally, unchanged remotely -> accept local deletion
+      } else {
+        // Added remotely or modified remotely -> keep remote
+        mergedSetlists.push(remoteSl)
+      }
     } else if (localSl && remoteSl) {
+      // Exists in both
       if (setlistEquals(localSl, remoteSl)) {
         mergedSetlists.push(localSl)
+      } else if (baseSl && setlistEquals(localSl, baseSl)) {
+        // Local unchanged from base, remote modified -> accept remote
+        mergedSetlists.push(remoteSl)
+      } else if (baseSl && setlistEquals(remoteSl, baseSl)) {
+        // Remote unchanged from base, local modified -> accept local
+        mergedSetlists.push(localSl)
+      } else if (!baseSl) {
+        // No common base and different: concurrent addition under same ID!
+        conflicts.push({
+          id,
+          type: 'setlist',
+          title: localSl.name,
+          reason: 'Both local and cloud setlists were added independently with the same ID',
+        })
+        mergedSetlists.push(localSl)
+        const conflictCopyId = generateUUID()
+        const conflictCopy: WebSetlist = {
+          ...remoteSl,
+          id: conflictCopyId,
+          name: `${remoteSl.name} (Cloud Copy)`,
+          songs: remoteSl.songs.map((ref) => ({ ...ref })),
+        }
+        mergedSetlists.push(conflictCopy)
       } else {
-        // Merge setlist song references without duplicates
-        const seenRefs = new Set<string>()
-        const combinedRefs = [...localSl.songs, ...remoteSl.songs].filter((ref) => {
-          const key = ref.id ? String(ref.id) : ref.title
-          if (seenRefs.has(key)) return false
-          seenRefs.add(key)
-          return true
-        })
-        mergedSetlists.push({
-          ...localSl,
-          songs: combinedRefs,
-        })
+        // Both modified from base! Check if one side was tombstoned vs edited, or both edited
+        const localTombstone = Boolean(localSl.isDeleted)
+        const remoteTombstone = Boolean(remoteSl.isDeleted)
+
+        if (localTombstone && !remoteTombstone) {
+          // Local deleted it, remote edited it -> Conflict! Keep tombstone locally or conflict copy of remote
+          conflicts.push({
+            id,
+            type: 'setlist',
+            title: remoteSl.name,
+            reason: 'Setlist was deleted locally while modified in the cloud',
+          })
+          mergedSetlists.push(localSl)
+          const conflictCopyId = generateUUID()
+          const conflictCopy: WebSetlist = {
+            ...remoteSl,
+            id: conflictCopyId,
+            name: `${remoteSl.name} (Cloud Copy)`,
+            isDeleted: false,
+            songs: remoteSl.songs.map((ref) => ({ ...ref })),
+          }
+          mergedSetlists.push(conflictCopy)
+        } else if (!localTombstone && remoteTombstone) {
+          // Remote deleted it, local edited it -> Conflict! Keep edited local, tombstone copy
+          conflicts.push({
+            id,
+            type: 'setlist',
+            title: localSl.name,
+            reason: 'Setlist was modified locally while deleted in the cloud',
+          })
+          mergedSetlists.push(localSl)
+        } else {
+          // True concurrent divergence: both edited name, order, or songs
+          conflicts.push({
+            id,
+            type: 'setlist',
+            title: localSl.name,
+            reason: 'Both local and cloud setlists were edited independently',
+          })
+          // Deterministic non-destructive rule: keep local setlist, duplicate remote with (Cloud Copy)
+          mergedSetlists.push(localSl)
+          const conflictCopyId = generateUUID()
+          const conflictCopy: WebSetlist = {
+            ...remoteSl,
+            id: conflictCopyId,
+            name: `${remoteSl.name} (Cloud Copy)`,
+            songs: remoteSl.songs.map((ref) => ({ ...ref })),
+          }
+          mergedSetlists.push(conflictCopy)
+        }
       }
     }
   }
@@ -556,6 +679,7 @@ export async function performCloudSongbookSync(
       },
       targetStorage
     )
+    saveCloudSyncBase(localLibrary, targetStorage)
     return {
       success: true,
       status: 'IN_SYNC',
@@ -613,6 +737,7 @@ export async function performCloudSongbookSync(
         },
         targetStorage
       )
+      saveCloudSyncBase(localLibrary, targetStorage)
 
       return {
         success: true,
@@ -663,6 +788,7 @@ export async function performCloudSongbookSync(
         },
         targetStorage
       )
+      saveCloudSyncBase(downloadedLibrary, targetStorage)
 
       return {
         success: true,
@@ -684,9 +810,11 @@ export async function performCloudSongbookSync(
     }
   }
 
+  const baseSnapshot = readCloudSyncBase(targetStorage)
+
   if (actionToExecute === 'MERGE' && cloudRecord) {
     try {
-      const reconciliation = reconcileSongbook(localLibrary, cloudRecord.data)
+      const reconciliation = reconcileSongbook(localLibrary, cloudRecord.data, baseSnapshot)
       const mergedLib = reconciliation.merged
 
       // Persist merged locally
@@ -723,6 +851,7 @@ export async function performCloudSongbookSync(
         },
         targetStorage
       )
+      saveCloudSyncBase(mergedLib, targetStorage)
 
       return {
         success: true,
@@ -746,7 +875,7 @@ export async function performCloudSongbookSync(
   }
 
   // Conflict without explicit resolution command: report conflict details safely
-  const reconciliation = cloudRecord ? reconcileSongbook(localLibrary, cloudRecord.data) : { conflicts: [] }
+  const reconciliation = cloudRecord ? reconcileSongbook(localLibrary, cloudRecord.data, baseSnapshot) : { conflicts: [] }
   return {
     success: false,
     status: 'CONFLICT',

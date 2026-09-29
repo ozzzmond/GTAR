@@ -201,8 +201,12 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       ids.add(String(song.id))
     })
     const setlists: WebSetlist[] = single ? [{ ...data.setlist, id: data.setlist.id ?? generateUUID(),
+      ...(data.setlist.isDeleted !== undefined ? { isDeleted: Boolean(data.setlist.isDeleted) } : {}),
       songs: songs.map(song => ({ id: song.id, title: song.title, artist: song.artist })) }] : sourceSetlists.map(setlist => ({
-        ...setlist, id: setlist.id ?? generateUUID(), songs: setlist.songs.map(ref => ({ ...ref })) }))
+        ...setlist,
+        id: setlist.id ?? generateUUID(),
+        ...(setlist.isDeleted !== undefined ? { isDeleted: Boolean(setlist.isDeleted) } : {}),
+        songs: setlist.songs.map(ref => ({ ...ref })) }))
     const combined = options.mode === 'merge'
       ? [...songs, ...(options.existingSongs ?? []).filter(song => !ids.has(String(song.id)))] : songs
     // Resolve title-only legacy references within the incoming backup first, so

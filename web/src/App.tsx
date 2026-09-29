@@ -209,6 +209,7 @@ export interface WebSetlist {
   id: string | number
   name: string
   createdAt?: number
+  isDeleted?: boolean
   songs: Array<{ title: string; artist?: string; id?: string | number }>
 }
 
@@ -487,10 +488,11 @@ function LibraryApp() {
 
   // Active Setlist context
   const activeSetlist = useMemo(() => {
-    if (!setlists.length) return null
+    const activeList = setlists.filter((sl) => !sl.isDeleted)
+    if (!activeList.length) return null
     return (
-      setlists.find((sl) => String(sl.id) === String(activeSetlistId)) ||
-      setlists[0] ||
+      activeList.find((sl) => String(sl.id) === String(activeSetlistId)) ||
+      activeList[0] ||
       null
     )
   }, [setlists, activeSetlistId])
@@ -841,9 +843,11 @@ function LibraryApp() {
     }
   }
 
-  // Delete setlist
+  // Delete setlist (tombstone for cloud sync propagation)
   const handleDeleteSetlist = (setlistId: string | number) => {
-    setSetlists((prev) => prev.filter((sl) => sl.id !== setlistId))
+    setSetlists((prev) =>
+      prev.map((sl) => (String(sl.id) === String(setlistId) ? { ...sl, isDeleted: true } : sl))
+    )
     if (activeSetlistId === setlistId) {
       setActiveSetlistId(null)
       setQueueMode('library')

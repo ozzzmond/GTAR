@@ -50,6 +50,39 @@ function validateSongbookPayload(data: unknown): { isValid: boolean; error?: str
     }
   }
 
+  // Verify setlist objects have valid id, name, songs array, and optional tombstone
+  for (let i = 0; i < obj.setlists.length; i++) {
+    const sl = obj.setlists[i]
+    if (!sl || typeof sl !== 'object') {
+      return { isValid: false, error: `Invalid setlist at index ${i}` }
+    }
+    const setlist = sl as Record<string, unknown>
+    if (typeof setlist.name !== 'string' || !setlist.name.trim()) {
+      return { isValid: false, error: `Setlist at index ${i} is missing a valid name` }
+    }
+    if (setlist.id !== undefined && setlist.id !== null) {
+      if (typeof setlist.id !== 'string' && typeof setlist.id !== 'number') {
+        return { isValid: false, error: `Setlist at index ${i} has invalid id type` }
+      }
+    }
+    if (!Array.isArray(setlist.songs)) {
+      return { isValid: false, error: `Setlist "${setlist.name}" is missing songs array` }
+    }
+    for (let j = 0; j < setlist.songs.length; j++) {
+      const ref = setlist.songs[j]
+      if (!ref || typeof ref !== 'object') {
+        return { isValid: false, error: `Setlist "${setlist.name}" has invalid song reference at index ${j}` }
+      }
+      const refObj = ref as Record<string, unknown>
+      if (typeof refObj.title !== 'string') {
+        return { isValid: false, error: `Setlist "${setlist.name}" song ref at index ${j} missing title` }
+      }
+    }
+    if (setlist.isDeleted !== undefined && typeof setlist.isDeleted !== 'boolean') {
+      return { isValid: false, error: `Setlist "${setlist.name}" has non-boolean isDeleted flag` }
+    }
+  }
+
   return { isValid: true }
 }
 

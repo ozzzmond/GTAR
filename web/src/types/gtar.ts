@@ -29,6 +29,7 @@ export interface WebSetlist {
   id: string | number
   name: string
   createdAt?: number
+  isDeleted?: boolean
   songs: Array<{ title: string; artist?: string; id?: string | number }>
 }
 

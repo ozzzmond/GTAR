@@ -154,6 +154,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   // Find setlists containing a song
   const getSongSetlists = (song: ActiveSongState) => {
     return setlists.filter((sl) =>
+      !sl.isDeleted &&
       sl.songs.some(
         (ref) => resolveSetlistSong(ref, songs)?.id === song.id
       )
@@ -192,7 +193,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       }
 
       if (filterSetlistId !== 'ALL') {
-        const sl = setlists.find((s) => String(s.id) === String(filterSetlistId))
+        const sl = setlists.find((s) => !s.isDeleted && String(s.id) === String(filterSetlistId))
         if (!sl) return false
         const inSetlist = sl.songs.some(
           (ref) => resolveSetlistSong(ref, songs)?.id === song.id
@@ -225,9 +226,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Filter setlists by search query (matching setlist name or tracks inside setlist)
   const filteredSetlists = useMemo(() => {
+    const activeSetlists = setlists.filter((sl) => !sl.isDeleted)
     const q = searchQuery.toLowerCase().trim()
-    if (!q) return setlists
-    return setlists.filter((sl) => {
+    if (!q) return activeSetlists
+    return activeSetlists.filter((sl) => {
       const matchName = sl.name.toLowerCase().includes(q)
       const matchSong = (sl.songs || []).some((ref) => {
         const resolved = resolveSetlistSong(ref, songs)
