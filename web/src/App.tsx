@@ -1222,6 +1222,14 @@ function LibraryApp() {
           onSelectSetlist={handleSelectSetlist}
           onPushSetlistToBandSync={handlePushSetlistToMembers}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
+          onCloudSyncApplied={(updated) => {
+            const partition = partitionSongs(updated.songs)
+            setSongs(partition.active)
+            setDeletedSongs(partition.deleted)
+            setSetlists(updated.setlists)
+            setToastMessage('Songbook synced with Cloud')
+            setTimeout(() => setToastMessage(null), 3500)
+          }}
         />
       )}
 

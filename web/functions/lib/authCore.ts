@@ -534,3 +534,99 @@ export async function authenticateAdminRequest(
 
   return { user }
 }
+
+/**
+ * Cloud Songbook Sync Types & Operations
+ */
+export interface UserSongbookRecord {
+  user_id: string
+  version: number
+  data_json: string
+  checksum: string
+  updated_at: string
+}
+
+/**
+ * Authenticates request and enforces active member/admin access against authoritative D1 record
+ */
+export async function authenticateUserRequest(
+  request: Request,
+  env: AuthEnv
+): Promise<{ user: UserRecord } | { error: string; status: number }> {
+  if (!env.DB) {
+    return { error: 'Database binding DB is missing', status: 500 }
+  }
+
+  const authHeader = request.headers.get('Authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: 'Missing or malformed Authorization header', status: 401 }
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim()
+  if (!token) {
+    return { error: 'Empty bearer token', status: 401 }
+  }
+
+  let callerId: string | null = null
+
+  // 1. Try session token first
+  const sessionData = await verifySessionToken(token, env.AUTH_SECRET || DEFAULT_AUTH_SECRET)
+  if (sessionData) {
+    callerId = sessionData.uid
+  } else {
+    // 2. Try Google ID token
+    try {
+      const verified = await verifyGoogleIdToken(token, env)
+      const user = await findUserByGoogleSub(env.DB, verified.sub)
+      if (user) {
+        callerId = user.id
+      }
+    } catch {
+      // Invalid token
+    }
+  }
+
+  if (!callerId) {
+    return { error: 'Invalid or expired session token', status: 401 }
+  }
+
+  // 3. Query authoritative D1 user record
+  const user = await findUserById(env.DB, callerId)
+  if (!user) {
+    return { error: 'User record not found in authoritative database', status: 401 }
+  }
+
+  if (user.access_status !== 'active') {
+    return { error: 'Forbidden: Active account approval required', status: 403 }
+  }
+
+  return { user }
+}
+
+export async function findUserSongbook(db: D1Database, userId: string): Promise<UserSongbookRecord | null> {
+  const stmt = db.prepare('SELECT user_id, version, data_json, checksum, updated_at FROM user_songbooks WHERE user_id = ? LIMIT 1').bind(userId)
+  return (await stmt.first<UserSongbookRecord>()) || null
+}
+
+export async function upsertUserSongbook(
+  db: D1Database,
+  userId: string,
+  dataJson: string,
+  checksum: string,
+  updatedAt: string
+): Promise<{ version: number; checksum: string; updated_at: string }> {
+  const existing = await findUserSongbook(db, userId)
+  const nextVersion = (existing?.version || 0) + 1
+  const stmt = db.prepare(
+    `INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       version = ?,
+       data_json = excluded.data_json,
+       checksum = excluded.checksum,
+       updated_at = excluded.updated_at`
+  ).bind(userId, nextVersion, dataJson, checksum, updatedAt, nextVersion)
+  await stmt.run()
+  return { version: nextVersion, checksum, updated_at: updatedAt }
+}
+

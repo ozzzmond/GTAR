@@ -8,6 +8,7 @@ import {
   Settings,
   FolderOpen,
   CloudUpload,
+  Cloud,
   Eye,
   FileEdit,
   ListMusic,
@@ -35,11 +36,13 @@ import {
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
+import { CloudSyncModal } from './CloudSyncModal'
 import devLogo from '../assets/dev-logo.png'
 import prodLogo from '../assets/prod-logo.png'
 import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
+import type { SyncLibrary } from '../utils/syncMerge'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -77,6 +80,7 @@ interface HeaderProps {
   onSelectSetlist?: (setlistId: string | number) => void
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
+  onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
 }
 
 /**
@@ -137,8 +141,10 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSetlist,
   onPushSetlistToBandSync: _onPushSetlistToBandSync,
   onDirectImportOnlineSong,
+  onCloudSyncApplied,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
+  const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [isSetlistDropdownOpen, setIsSetlistDropdownOpen] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
@@ -449,6 +455,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action Icons & User Avatar */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Cloud Sync Button */}
+          <button
+            type="button"
+            onClick={() => setShowCloudSyncModal(true)}
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#002B36] hover:bg-[#073642] text-[#2AA198] border border-[#1A4A55] hover:border-[#2AA198] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
+            title="Cloud Songbook Sync"
+          >
+            <Cloud className="w-4 h-4 text-[#2AA198]" />
+            <span className="hidden md:inline font-mono text-[11px]">Cloud Sync</span>
+          </button>
+
           {/* PWA Install Button */}
           {deferredInstallPrompt && !isAppInstalled && (
             <button
@@ -539,6 +556,19 @@ export const Header: React.FC<HeaderProps> = ({
                         <span>Manage Users &amp; Whitelist</span>
                       </button>
                     )}
+
+                    {/* Cloud Songbook Sync */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAvatarPopover(false)
+                        setShowCloudSyncModal(true)
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#094352]/50 text-[#FDF6E3] hover:text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#1A4A55] transition-all cursor-pointer mb-2"
+                    >
+                      <Cloud className="w-3.5 h-3.5 text-[#2AA198]" />
+                      <span>Cloud Songbook Sync</span>
+                    </button>
 
                     {/* Backup & Restore (JSON) */}
                     <button
@@ -1132,6 +1162,21 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
 
+          {/* 1.5. Cloud Songbook Sync */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOverflowMenu(false)
+              setShowCloudSyncModal(true)
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Cloud className="w-4 h-4 text-[#2AA198]" />
+            <span className="font-semibold">Cloud Songbook Sync</span>
+          </button>
+
+          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
+
           {/* 2. Import... */}
           <button
             type="button"
@@ -1219,6 +1264,12 @@ export const Header: React.FC<HeaderProps> = ({
             window.dispatchEvent(new CustomEvent('gtar:auth_updated'))
           }
         }}
+      />
+      {/* Cloud Songbook Sync Modal */}
+      <CloudSyncModal
+        isOpen={showCloudSyncModal}
+        onClose={() => setShowCloudSyncModal(false)}
+        onSyncApplied={onCloudSyncApplied}
       />
     </>
   )
