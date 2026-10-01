@@ -48,6 +48,7 @@ import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
+import { isDevEnv } from './utils/env'
 
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
@@ -240,8 +241,9 @@ function LibraryStartup() {
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+  const showBanner = status.damaged || (isDevEnv && !status.retired)
   return <>
-    {!status.retired && <aside role="alert" className="p-4 bg-amber-100 text-black">
+    {showBanner && <aside role="alert" className="p-4 bg-amber-100 text-black">
       {status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}
       <button className="underline ml-3" onClick={exportRecovery}>Export recovery data</button>
     </aside>}

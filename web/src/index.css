@@ -162,37 +162,136 @@ body.theme-oled-black .border-\[\#1A4A55\] {
 
 body.theme-paper-light {
   background-color: #f4ecd8 !important;
-  color: #111827 !important;
-}
-body.theme-paper-light header,
-body.theme-paper-light .bg-\[\#073642\] {
-  background-color: #ebe0c7 !important;
-  color: #111827 !important;
-}
-body.theme-paper-light .bg-\[\#002B36\] {
-  background-color: #dfd2b5 !important;
-  color: #111827 !important;
-}
-body.theme-paper-light .text-\[\#FDF6E3\],
-body.theme-paper-light .text-\[\#EEE8D5\] {
-  color: #0f172a !important;
-}
-body.theme-paper-light .text-\[\#93A1A1\] {
-  color: #334155 !important;
-  font-weight: 600 !important;
-}
-body.theme-paper-light .border-\[\#1A4A55\] {
-  border-color: #cbd5e1 !important;
+  color: #172033 !important;
 }
 
-/* Lyrics & Text in Paper Theme: deep dark charcoal/black */
+body.theme-paper-light header {
+  background-color: #ede4ce !important;
+  border-bottom-color: #ded3ba !important;
+  color: #172033 !important;
+}
+
+/* Card surfaces: warm near-white / very light cream (#FFFDF7) */
+body.theme-paper-light .bg-\[\#073642\],
+body.theme-paper-light [class*="bg-[#073642]"] {
+  background-color: #FFFDF7 !important;
+  color: #172033 !important;
+}
+
+/* Secondary surfaces, wells, and inputs (#002B36) */
+body.theme-paper-light .bg-\[\#002B36\],
+body.theme-paper-light [class*="bg-[#002B36]"] {
+  background-color: #f7f1e1 !important;
+  color: #172033 !important;
+}
+
+/* Subtle light warm/slate borders */
+body.theme-paper-light .border-\[\#1A4A55\],
+body.theme-paper-light [class*="border-[#1A4A55]"] {
+  border-color: #ded3ba !important;
+}
+
+/* Primary text: deep slate (#172033) */
+body.theme-paper-light .text-\[\#FDF6E3\],
+body.theme-paper-light .text-\[\#EEE8D5\],
+body.theme-paper-light [class*="text-[#FDF6E3]"],
+body.theme-paper-light [class*="text-[#EEE8D5]"] {
+  color: #172033 !important;
+}
+
+/* Secondary text: muted readable slate (#64748B) */
+body.theme-paper-light .text-\[\#93A1A1\],
+body.theme-paper-light [class*="text-[#93A1A1]"] {
+  color: #64748B !important;
+  font-weight: 500;
+}
+
+/* Selected active card state: restrained soft teal tint + teal border */
+body.theme-paper-light .border-\[\#2AA198\].bg-\[\#073642\],
+body.theme-paper-light [class*="border-[#2AA198]"][class*="bg-[#073642]"],
+body.theme-paper-light [class*="ring-[#2AA198]"] {
+  background-color: #eef7f6 !important;
+  border-color: #2AA198 !important;
+}
+
+/* Number badges */
+body.theme-paper-light .bg-\[\#2AA198\] {
+  background-color: #2AA198 !important;
+  color: #ffffff !important;
+}
+
+body.theme-paper-light .shadow-inner.bg-\[\#002B36\] {
+  background-color: #eee4ce !important;
+  color: #475569 !important;
+}
+
+/* Filter / Sort toolbar */
+body.theme-paper-light .shadow-sm.bg-\[\#073642\]\/70,
+body.theme-paper-light [class*="rounded-2xl"][class*="bg-[#073642]"] {
+  background-color: #ede4cf !important;
+  border-color: #ded3ba !important;
+}
+
+body.theme-paper-light select.bg-\[\#002B36\],
+body.theme-paper-light select {
+  background-color: #FFFDF7 !important;
+  color: #172033 !important;
+  border-color: #ded3ba !important;
+}
+
+/* Pill search bar */
+body.theme-paper-light .pill-search {
+  background-color: #FFFDF7 !important;
+  border-color: #ded3ba !important;
+}
+body.theme-paper-light .pill-search input {
+  color: #172033 !important;
+}
+body.theme-paper-light .pill-search input::placeholder {
+  color: #94a3b8 !important;
+}
+body.theme-paper-light .pill-search .kbd-hint {
+  background: rgba(42, 161, 152, 0.12) !important;
+  border-color: rgba(42, 161, 152, 0.3) !important;
+  color: #0f766e !important;
+}
+
+/* View toggle buttons */
+body.theme-paper-light .view-toggle-btn {
+  background-color: #FFFDF7 !important;
+  border-color: #ded3ba !important;
+  color: #64748B !important;
+}
+body.theme-paper-light .view-toggle-btn.active {
+  background-color: #2AA198 !important;
+  border-color: #2AA198 !important;
+  color: #ffffff !important;
+}
+
+/* Popover & tooltips */
+body.theme-paper-light .avatar-popover,
+body.theme-paper-light .toolbar-tooltip {
+  background-color: #FFFDF7 !important;
+  border-color: #ded3ba !important;
+  color: #172033 !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12) !important;
+}
+body.theme-paper-light .toolbar-icon-btn {
+  color: #64748B !important;
+}
+body.theme-paper-light .toolbar-icon-btn:hover {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  color: #172033 !important;
+}
+
+/* Lyrics & Text in Paper Theme: deep dark slate / charcoal (#172033) */
 body.theme-paper-light div[style*="color: rgb(238, 232, 213)"],
 body.theme-paper-light div[style*="color: #EEE8D5"],
 body.theme-paper-light span[style*="color: rgb(238, 232, 213)"],
 body.theme-paper-light span[style*="color: #EEE8D5"],
 body.theme-paper-light .stage-lyric-text,
 body.theme-paper-light .chord-sheet-container .lyrics {
-  color: #111827 !important;
+  color: #172033 !important;
 }
 
 /* Chords in Paper Theme: rich readable burnt amber / brown (#b45309) */
@@ -218,12 +317,29 @@ body.theme-paper-light .chord-sheet-container .comment {
   font-weight: 800 !important;
 }
 
-/* Tab lines in Paper Theme: clear teal/navy */
+/* Tab lines in Paper Theme: clear teal/navy (#0f766e) */
 body.theme-paper-light div[style*="color: rgb(53, 184, 173)"],
 body.theme-paper-light div[style*="color: #35B8AD"],
 body.theme-paper-light .stage-tab-text {
   color: #0f766e !important;
   font-weight: 700 !important;
+}
+
+/* Header sync spin indicator with prefers-reduced-motion respect */
+@keyframes spin-sync {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.header-sync-spin {
+  animation: spin-sync 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-sync-spin {
+    animation: none !important;
+    transform: none !important;
+  }
 }
 
 /* ========================================================================== */

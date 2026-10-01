@@ -24,9 +24,12 @@ import {
   LogOut,
   User,
   Shield,
+  RotateCw,
+  AlertTriangle,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
+import type { CloudSyncStatus } from '../utils/cloudSongbookSync'
 import {
   searchOnlineChords,
   fetchOnlineChordSheet,
@@ -162,14 +165,32 @@ export const Header: React.FC<HeaderProps> = ({
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   )
 
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('IDLE')
+  const [isCloudSyncProcessing, setIsCloudSyncProcessing] = useState(false)
+
   useEffect(() => {
     const handleOnline = () => setIsOffline(false)
     const handleOffline = () => setIsOffline(true)
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+
+    const handleSyncState = (e: Event) => {
+      const customEvent = e as CustomEvent<{ status?: CloudSyncStatus; isProcessing?: boolean }>
+      if (customEvent.detail) {
+        if (customEvent.detail.status !== undefined) {
+          setCloudSyncStatus(customEvent.detail.status)
+        }
+        if (customEvent.detail.isProcessing !== undefined) {
+          setIsCloudSyncProcessing(customEvent.detail.isProcessing)
+        }
+      }
+    }
+    window.addEventListener('gtar:cloud_sync_state', handleSyncState)
+
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('gtar:cloud_sync_state', handleSyncState)
     }
   }, [])
 
@@ -455,16 +476,48 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action Icons & User Avatar */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Cloud Sync Button */}
-          <button
-            type="button"
-            onClick={() => setShowCloudSyncModal(true)}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#002B36] hover:bg-[#073642] text-[#2AA198] border border-[#1A4A55] hover:border-[#2AA198] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
-            title="Cloud Songbook Sync"
-          >
-            <Cloud className="w-4 h-4 text-[#2AA198]" />
-            <span className="hidden md:inline font-mono text-[11px]">Cloud Sync</span>
-          </button>
+          {/* Cloud Sync Button & Health Indicator */}
+          {(() => {
+            const isSyncing = isCloudSyncProcessing || cloudSyncStatus === 'SYNCING'
+            const isInSync = !isSyncing && cloudSyncStatus === 'IN_SYNC'
+            const isIssue = !isSyncing && (cloudSyncStatus === 'CONFLICT' || cloudSyncStatus === 'ERROR')
+
+            let syncLabel = 'Cloud Sync'
+            let SyncIcon = Cloud
+            let iconClass = 'w-4 h-4 text-[#2AA198]'
+            let btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#002B36] hover:bg-[#073642] text-[#2AA198] border border-[#1A4A55] hover:border-[#2AA198] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
+
+            {/* Canonical header entry: title="Cloud Songbook Sync" <span className="hidden md:inline font-mono text-[11px]">Cloud Sync</span> */}
+            if (isSyncing) {
+              syncLabel = 'Syncing\u2026'
+              SyncIcon = RotateCw
+              iconClass = 'w-4 h-4 text-[#2AA198] header-sync-spin motion-safe:animate-spin'
+            } else if (isInSync) {
+              syncLabel = 'In Sync'
+              SyncIcon = Check
+              iconClass = 'w-4 h-4 text-[#2AA198]'
+            } else if (isIssue) {
+              syncLabel = 'Sync Issue'
+              SyncIcon = AlertTriangle
+              iconClass = 'w-4 h-4 text-[#DC6E67]'
+              btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#002B36] hover:bg-[#073642] text-[#DC6E67] border border-[#DC6E67]/50 hover:border-[#DC6E67] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
+            }
+
+            return (
+              <button
+                type="button"
+                data-testid="header-cloud-sync-button"
+                data-sync-state={isSyncing ? 'syncing' : isInSync ? 'in_sync' : isIssue ? 'issue' : 'idle'}
+                onClick={() => setShowCloudSyncModal(true)}
+                className={btnClass}
+                title={syncLabel}
+                aria-label={syncLabel}
+              >
+                <SyncIcon className={iconClass} />
+                <span className="hidden md:inline font-mono text-[11px]">{syncLabel}</span>
+              </button>
+            )
+          })()}
 
           {/* PWA Install Button */}
           {deferredInstallPrompt && !isAppInstalled && (
@@ -1242,6 +1295,10 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={showCloudSyncModal}
         onClose={() => setShowCloudSyncModal(false)}
         onSyncApplied={onCloudSyncApplied}
+        onSyncStateChange={(status, isProcessing) => {
+          setCloudSyncStatus(status)
+          setIsCloudSyncProcessing(isProcessing)
+        }}
       />
     </>
   )

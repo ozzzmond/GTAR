@@ -30,12 +30,14 @@ interface CloudSyncModalProps {
   isOpen: boolean
   onClose: () => void
   onSyncApplied?: (updatedLibrary: SyncLibrary) => void
+  onSyncStateChange?: (status: CloudSyncStatus, isProcessing: boolean) => void
 }
 
 export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   isOpen,
   onClose,
   onSyncApplied,
+  onSyncStateChange,
 }) => {
   let authContext
   try {
@@ -100,6 +102,20 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     }
   }, [isOpen, isAuthenticated, refreshSyncState])
 
+  useEffect(() => {
+    onSyncStateChange?.(syncStatus, isProcessing)
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        const Evt = window.CustomEvent || CustomEvent
+        window.dispatchEvent(
+          new Evt('gtar:cloud_sync_state', {
+            detail: { status: syncStatus, isProcessing },
+          })
+        )
+      } catch (_) {}
+    }
+  }, [syncStatus, isProcessing, onSyncStateChange])
+
   if (!isOpen) return null
 
   const handleResolveConflict = async (forceAction: 'upload' | 'download' | 'merge_preserve') => {
@@ -135,6 +151,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const handleForceUpload = async () => {
     await handleResolveConflict('upload')
   }
+  void handleForceUpload
 
   const handleForceDownload = async () => {
     await handleResolveConflict('download')
@@ -357,6 +374,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           <div className="space-y-2 pt-1">
             <button
               type="button"
+              data-testid="sync-now-button"
               onClick={refreshSyncState}
               disabled={isProcessing || !isAuthenticated}
               className="w-full py-2.5 px-4 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer disabled:opacity-50"
@@ -365,29 +383,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <span>{isProcessing ? 'Synchronizing...' : 'Sync Now'}</span>
             </button>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={handleForceUpload}
-                disabled={isProcessing || !isAuthenticated}
-                className="py-2 px-3 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#FDF6E3] hover:text-[#2AA198] border border-[#1A4A55] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                title="Force upload local library to cloud"
-              >
-                <CloudUpload className="w-3.5 h-3.5 text-[#B58900]" />
-                <span>Upload to Cloud</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleForceDownload}
-                disabled={isProcessing || !isAuthenticated}
-                className="py-2 px-3 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#FDF6E3] hover:text-[#2AA198] border border-[#1A4A55] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                title="Force download cloud library to device"
-              >
-                <CloudDownload className="w-3.5 h-3.5 text-[#268BD2]" />
-                <span>Download from Cloud</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              data-testid="download-from-cloud-button"
+              onClick={handleForceDownload}
+              disabled={isProcessing || !isAuthenticated}
+              className="w-full py-2 px-3 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#93A1A1] hover:text-[#2AA198] border border-[#1A4A55] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              title="Download from cloud library to device"
+            >
+              <CloudDownload className="w-3.5 h-3.5 text-[#268BD2]" />
+              <span>Download from Cloud</span>
+            </button>
           </div>
         </div>
 

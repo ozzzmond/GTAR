@@ -95,9 +95,9 @@ export const THEME_OPTIONS: ThemeOption[] = [
     name: 'Paper Cream Light',
     subtitle: 'Warm soft paper with high-contrast dark text & burnt amber chords',
     bgHex: '#f4ecd8',
-    surfaceHex: '#ebe0c7',
+    surfaceHex: '#FFFDF7',
     accentHex: '#b45309',
-    textHex: '#111827',
+    textHex: '#172033',
     tag: 'DAYLIGHT',
   },
 ]
