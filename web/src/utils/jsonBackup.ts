@@ -4,6 +4,7 @@ import { GTAR_APP_VERSION } from '../types/gtar'
 import { readBackupSettings, validateBackupSettings, type BackupSettings } from './backupSettings'
 import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
 import { detectSongKey } from './songParser'
+import { canonicalSongKey } from './musicalKey'
 
 export const GTAR_BACKUP_SCHEMA_VERSION = 1
 export const RESTORE_SNAPSHOT_KEY = 'gtar_restore_safety_snapshot_v1'
@@ -45,7 +46,7 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
   const rawContent = s.rawContent ?? s.content ?? ''
   return {
     id: s.id ?? generateUUID(), title: s.title!, artist: s.artist ?? '',
-    key: s.key ?? detectSongKey(rawContent), capo: s.capo ?? '', bpm: s.bpm ?? '120',
+    key: canonicalSongKey(s.key ?? detectSongKey(rawContent)), capo: s.capo ?? '', bpm: s.bpm ?? '120',
     format: s.format ?? 'CHORD_PRO', transposeOffset: s.transposeOffset ?? 0,
     rawContent,
     ...(s.tags !== undefined ? { tags: s.tags } : {}),

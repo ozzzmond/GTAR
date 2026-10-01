@@ -4,6 +4,7 @@ import {
   isQuotaError,
   performStorageHousekeeping,
   recoveryData,
+  hasActionableRecovery,
   requestDurableStorage,
   setupCrossTabLibraryConflictGuard,
 } from './utils/syncJournal'
@@ -43,7 +44,6 @@ import {
 } from './components/ThemeModal'
 import { BandSyncModal } from './components/BandSyncModal'
 import { bandSync } from './utils/bandSync'
-import { extractDirectives } from './utils/chordSheetParser'
 import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
@@ -228,11 +228,17 @@ function App() {
 }
 
 function LibraryStartup() {
-  const [status] = useState(() => {
-    const retired = performStorageHousekeeping()
-    try { readPersistedLibrary(); return { retired: retired || Object.keys(recoveryData()).length === 0, damaged: false } }
+  const checkRecovery = () => {
+    try { readPersistedLibrary(); return { retired: !hasActionableRecovery(), damaged: false } }
     catch { return { retired: false, damaged: true } }
-  })
+  }
+  const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
+  useEffect(() => {
+    const refresh = () => setStatus(checkRecovery())
+    window.addEventListener('gtar-library-persisted', refresh)
+    window.addEventListener('storage', refresh)
+    return () => { window.removeEventListener('gtar-library-persisted', refresh); window.removeEventListener('storage', refresh) }
+  }, [])
   const exportRecovery = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryData(), null, 2)], { type: 'application/json' }))
     const link = document.createElement('a')
@@ -252,6 +258,11 @@ function LibraryStartup() {
 }
 
 function LibraryApp() {
+  const editorNavigationGuard = useRef<((next: () => void) => void) | null>(null)
+  const navigateSafely = (next: () => void) => {
+    if (editorNavigationGuard.current) editorNavigationGuard.current(next)
+    else next()
+  }
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
     let savedLibrary = readPersistedLibrary()
@@ -1088,40 +1099,15 @@ function LibraryApp() {
 
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
-    setSongs((prev) =>
-      prev.map((s) => {
-        if (s.id !== currentSong.id) return s
-        const next = { ...s, ...updated, id: s.id }
-        if (updated.rawContent !== undefined) {
-          const meta = extractDirectives(updated.rawContent)
-          if (meta.title) next.title = meta.title
-          if (meta.artist) next.artist = meta.artist
-          if (meta.key) next.key = meta.key
-          if (meta.capo) next.capo = meta.capo
-          if (meta.bpm) next.bpm = meta.bpm
-          if (meta.tags) next.tags = meta.tags
-        }
-        return next
-      })
-    )
+    const nextSongs = songs.map(s => s.id === currentSong.id ? { ...s, ...updated, id: s.id } : s)
+    try { persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists }) }
+    catch (err) { handleStorageWriteFailure(err); return false }
+    setSongs(nextSongs)
+    return true
   }
 
-  // Explicit save action from DesktopEditor
-  const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => {
-    let saveFailed = false
-    const nextSongs = songs.map((s) => (s.id === currentSong.id ? { ...s, ...updatedSong, id: s.id } : s))
-    try {
-      persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
-    } catch (err) {
-      saveFailed = true
-      handleStorageWriteFailure(err)
-    }
-    setSongs(nextSongs)
-    if (!saveFailed) {
-      setToastMessage('Song saved successfully')
-      setTimeout(() => setToastMessage(null), 3500)
-    }
-  }
+  // Explicit save also reports persistence failure to the editor.
+  const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => handleUpdateSong(updatedSong)
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
@@ -1193,7 +1179,7 @@ function LibraryApp() {
       {!isStagePerformanceMode && (
         <Header
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={(view) => navigateSafely(() => setActiveView(view))}
           song={currentSong}
           allSongs={songs}
           songsCount={filteredSongs.length > 0 ? filteredSongs.length : songs.length}
@@ -1205,27 +1191,26 @@ function LibraryApp() {
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectSearchSong={(songIdx) => {
-            handleSelectLibrarySong(songIdx)
-            setActiveView('stage')
+            navigateSafely(() => { handleSelectLibrarySong(songIdx); setActiveView('stage') })
           }}
           onSearchWebExternal={(query) => {
             setSearchQuery(query)
             setIsWebsiteUrlModalOpen(true)
           }}
-          onNavigateHome={handleNavigateHome}
+          onNavigateHome={() => navigateSafely(handleNavigateHome)}
           onOpenWebsiteUrlSource={() => setIsWebsiteUrlModalOpen(true)}
           onOpenStageTools={() => setIsStageToolsModalOpen(true)}
           onToggleTheme={() => setIsThemeModalOpen(true)}
           onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
-          onOpenImportModal={() => setIsImportModalOpen(true)}
-          onOpenBackupRestoreModal={() => setIsBackupRestoreModalOpen(true)}
-          onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
+          onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
+          onOpenBackupRestoreModal={() => navigateSafely(() => setIsBackupRestoreModalOpen(true))}
+          onOpenSetlistDrawer={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
           activeSetlistName={activeSetlist?.name}
           activeSetlistSongs={activeSetlistSongs}
-          onSelectSetlistSong={handleSelectSetlistSong}
-          onSelectSetlist={handleSelectSetlist}
+          onSelectSetlistSong={(id, index) => navigateSafely(() => handleSelectSetlistSong(id, index))}
+          onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
           onPushSetlistToBandSync={handlePushSetlistToMembers}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
           onCloudSyncApplied={(updated) => {
@@ -1255,7 +1240,7 @@ function LibraryApp() {
             onCreateSetlistForSong={handleCreateSetlistForSong}
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}
-            onOpenSetlists={() => setIsSetlistDrawerOpen(true)}
+            onOpenSetlists={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
             onManageSetlist={handleManageSetlist}
             onDeleteSong={handleDeleteSong}
             onDeleteSetlist={handleDeleteSetlist}
@@ -1273,6 +1258,7 @@ function LibraryApp() {
             onUpdateSong={handleUpdateSong}
             onSaveSong={handleSaveSongFromEditor}
             onClose={() => setActiveView('stage')}
+            navigationGuardRef={editorNavigationGuard}
             transposeOffset={currentSong.transposeOffset || 0}
           />
         ) : activeView === 'trash' ? (
@@ -1298,8 +1284,8 @@ function LibraryApp() {
               onSelectSetlistSongIndex={setActiveSetlistSongIndex}
               activeSetlistName={activeSetlist?.name}
               setlists={setlists}
-              onSelectSetlist={handleSelectSetlist}
-              onOpenSetlistDrawer={() => setIsSetlistDrawerOpen(true)}
+              onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
+              onOpenSetlistDrawer={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
               isSetlistDrawerOpen={isSetlistDrawerOpen}
               isStageSettingsModalOpen={isStageSettingsModalOpen}
               isAnyModalOpen={

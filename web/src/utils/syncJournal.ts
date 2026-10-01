@@ -1,6 +1,7 @@
 import type { SyncLibrary } from './syncMerge'
 import { prunePersistedLogs } from './logger'
 import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
+import { canonicalSongKey } from './musicalKey'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -187,6 +188,40 @@ export function recoveryData(storage: Storage = localStorage): Record<string, st
   return data
 }
 
+// Canonical library and ownership markers are export sources, not recovery incidents.
+// Archives remain untouched; only provably represented data is non-actionable.
+export function hasActionableRecovery(storage: Storage = localStorage): boolean {
+  try {
+    const library = readPersistedLibrary(storage)
+    const sources = recoveryData(storage)
+    for (const [key, raw] of Object.entries(sources)) {
+      if (key === LIBRARY_KEY || key === ownerKey || legacyKeys.includes(key)) continue
+      const snapshot = JSON.parse(raw)
+      if (!library) return true
+      if (key.startsWith('gtar_sync_v1:')) {
+        if (snapshot.version !== 1 || snapshot.pending) return true
+        if (snapshot.baseline && !same(library, reconcile(library, snapshot.baseline))) return true
+      } else {
+        if (snapshot.journal?.pending) return true
+        const candidates = 'songs' in snapshot ? [snapshot] : [snapshot.local, snapshot.remote, snapshot.journal?.baseline]
+        if (!candidates[0]) return true
+        for (const candidate of candidates) {
+          if (candidate && !same(library, reconcile(library, candidate))) return true
+        }
+      }
+    }
+    if (legacyKeys.some(key => key in sources)) {
+      if (!library) return true
+      const songs = JSON.parse(sources[legacyKeys[0]] ?? '[]')
+      const trash = JSON.parse(sources[legacyKeys[1]] ?? '[]')
+      const setlists = JSON.parse(sources[legacyKeys[2]] ?? '[]')
+      const legacy = { songs: [...songs, ...trash.map((song: SyncLibrary['songs'][number]) => ({ ...song, isDeleted: true }))], setlists }
+      if (!same(library, reconcile(library, legacy))) return true
+    }
+    return false
+  } catch { return true }
+}
+
 export function retireDriveSyncState(storage: Storage = localStorage): boolean {
   try {
     let library = readPersistedLibrary(storage)
@@ -237,13 +272,35 @@ export function retireDriveSyncState(storage: Storage = localStorage): boolean {
   } catch { return false }
 }
 
+// Cloud download/merge saves plain-library snapshots, unlike legacy Drive envelopes.
+// Retire only archives whose records are already covered by durable canonical storage.
+// Conflicts, unknown formats and pre-restore safety snapshots remain untouched.
+export function retireRepresentedCloudSnapshots(storage: Storage = localStorage): void {
+  try {
+    const library = readPersistedLibrary(storage)
+    if (!library) return
+    const sources = recoveryData(storage)
+    for (const [key, raw] of Object.entries(sources)) {
+      if (!key.startsWith('gtar_sync_recovery:')) continue
+      try {
+        const snapshot = JSON.parse(raw)
+        if (!snapshot || !Object.hasOwn(snapshot, 'songs')) continue
+        validateLibrary(snapshot)
+        if (same(library, reconcile(library, snapshot))) storage.removeItem(key)
+      } catch { /* Ambiguous or conflicting archives remain exportable. */ }
+    }
+  } catch { /* Canonical storage must be readable before retirement. */ }
+}
+
 export function performStorageHousekeeping(storage: Storage = localStorage) {
+  retireRepresentedCloudSnapshots(storage)
   const retired = retireDriveSyncState(storage)
   try { prunePersistedLogs(storage, 30) } catch { /* Storage unavailable */ }
   return retired
 }
 
 export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
+  library = { ...library, songs: library.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) })) }
   try {
     storage.setItem(LIBRARY_KEY, JSON.stringify(library))
   } catch (err) {
@@ -253,6 +310,8 @@ export function persistLibrary(library: SyncLibrary, storage: Storage = localSto
     try { storage.setItem(LIBRARY_KEY, JSON.stringify(library)) }
     catch (retryErr) { throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr }) }
   }
+  retireRepresentedCloudSnapshots(storage)
+  if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
 }
 
 export function readPersistedLibrary(storage: Storage = localStorage): SyncLibrary | null {
@@ -260,7 +319,7 @@ export function readPersistedLibrary(storage: Storage = localStorage): SyncLibra
   if (!raw) return null
   const library: unknown = JSON.parse(raw)
   validateLibrary(library)
-  return library
+  return { ...library, songs: library.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) })) }
 }
 
 export interface StorageFootprint {

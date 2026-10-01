@@ -106,6 +106,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     if (e.target) e.target.value = ''
   }
 
+  const [setlistsCollapsed, setSetlistsCollapsed] = useState(() => {
+    try { return localStorage.getItem('gtar_songbook_setlists_collapsed') === 'true' } catch { return false }
+  })
+  const toggleSetlists = () => {
+    const next = !setlistsCollapsed
+    setSetlistsCollapsed(next)
+    try { localStorage.setItem('gtar_songbook_setlists_collapsed', String(next)) } catch { /* Session preference remains usable. */ }
+  }
+
   type SortOption = 'title' | 'artist' | 'key' | 'date'
   const [sortBy, setSortBy] = useState<SortOption>(() => {
     if (typeof window !== 'undefined') {
@@ -361,6 +370,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </h2>
             </div>
             <div className="flex items-center gap-2">
+              <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198]">
+                {setlistsCollapsed ? 'Show' : 'Hide'}
+              </button>
               <button
                 type="button"
                 onClick={() => setlistFileInputRef.current?.click()}
@@ -381,6 +393,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             </div>
           </div>
 
+          <div id="gig-setlist-cards" hidden={setlistsCollapsed}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
             {filteredSetlists.map((sl) => {
               const isDeletingSetlist = confirmDeleteSetlistId === sl.id
@@ -575,6 +588,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 </SwipeableActionCard>
               )
             })}
+          </div>
           </div>
         </div>
       )}

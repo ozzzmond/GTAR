@@ -19,13 +19,16 @@ import {
 } from 'lucide-react'
 import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
+import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
+import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
 import type { ActiveSongState } from '../types/gtar'
 
 interface DesktopEditorProps {
   song: ActiveSongState
-  onUpdateSong: (updated: Partial<ActiveSongState>) => void
-  onSaveSong?: (updated: ActiveSongState) => void
+  onUpdateSong: (updated: Partial<ActiveSongState>) => boolean | void
+  onSaveSong?: (updated: ActiveSongState) => boolean | void
   onClose?: () => void
+  navigationGuardRef?: React.RefObject<((next: () => void) => void) | null>
   transposeOffset: number
 }
 
@@ -38,13 +41,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   onSaveSong,
   onClose,
   transposeOffset,
+  navigationGuardRef,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Local editor state initialized from active song
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
-  const [localKey, setLocalKey] = useState(song.key || '')
+  const [localKey, setLocalKey] = useState(canonicalSongKey(song.key || ''))
   const [localCapo, setLocalCapo] = useState(song.capo || '')
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTags, setLocalTags] = useState(song.tags || '')
@@ -54,20 +58,47 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
-  const [isSaved, setIsSaved] = useState(true)
+  const fields = (value: ActiveSongState) => ({ title: value.title || '', artist: value.artist || '', key: value.key || '', capo: value.capo || '', bpm: value.bpm || '', tags: value.tags || '', rawContent: value.rawContent || '' })
+  const [persisted, setPersisted] = useState(() => fields(song))
+  const history = useRef(new TextHistory())
+  const selection = useRef({ start: 0, end: 0 })
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
+  const draft = { title: localTitle, artist: localArtist, key: localKey, capo: localCapo, bpm: localBpm, tags: localTags, rawContent: localRawContent }
+  const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
+  const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
+  const autosave = (updated: Partial<ActiveSongState>) => {
+    try {
+      if (onUpdateSong(updated) === true) setPersisted(previous => ({ ...previous, ...updated }))
+    } catch { showToast('Changes are not saved. Retry saving before leaving.') }
+  }
+  const requestNavigation = (next: () => void) => {
+    if (isSaved) next()
+    else setPendingNavigation(previous => previous ? () => { previous(); next() } : next)
+  }
+  useEffect(() => {
+    if (navigationGuardRef) navigationGuardRef.current = requestNavigation
+    return () => { if (navigationGuardRef) navigationGuardRef.current = null }
+  })
+  useEffect(() => {
+    if (isSaved) return
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [isSaved])
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
 
   // Reset local state when active song changes
   useEffect(() => {
     setLocalTitle(song.title || '')
     setLocalArtist(song.artist || '')
-    setLocalKey(song.key || '')
+    setLocalKey(canonicalSongKey(song.key || ''))
     setLocalCapo(song.capo || '')
     setLocalBpm(song.bpm || '')
     setLocalTags(song.tags || '')
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
-    setIsSaved(true)
-  }, [song.id, song.title])
+    setPersisted(fields(song))
+    history.current = new TextHistory()
+  }, [song.id])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -82,7 +113,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Handle saving changes
   const handleSave = () => {
     const standardized = standardizeChordProBrackets(localRawContent)
-    const effectiveKey = localKey.trim() || detectSongKey(standardized)
+    const effectiveKey = normalizeMusicalKey(localKey.trim() || detectSongKey(standardized))
+    if (effectiveKey === null) { showToast('Enter a valid key, such as G, F#m or Bb.'); return false }
     const updatedSong: ActiveSongState = {
       ...song,
       title: localTitle.trim() || 'Untitled Song',
@@ -96,19 +128,24 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       transposeOffset: song.transposeOffset || 0,
     }
 
-    if (onSaveSong) {
-      onSaveSong(updatedSong)
-    } else {
-      onUpdateSong(updatedSong)
-    }
-
-    setIsSaved(true)
-    showToast('Songbook saved!')
+    try {
+      const saved = onSaveSong ? onSaveSong(updatedSong) : onUpdateSong(updatedSong)
+      if (saved !== true) { showToast('Changes are not saved. Retry saving before leaving.'); return false }
+      setLocalTitle(updatedSong.title)
+      setLocalArtist(updatedSong.artist || '')
+      setLocalKey(effectiveKey)
+      setLocalCapo(updatedSong.capo || '')
+      setLocalBpm(updatedSong.bpm || '')
+      setLocalTags(updatedSong.tags || '')
+      setLocalRawContent(standardized)
+      setPersisted(fields(updatedSong))
+      showToast('Songbook saved!')
+      return true
+    } catch { showToast('Changes are not saved. Retry saving before leaving.'); return false }
   }
 
   // Toggle quick genre tag chip
   const handleToggleTag = (tag: string) => {
-    setIsSaved(false)
     const currentTags = localTags
       .split(',')
       .map((t) => t.trim())
@@ -127,13 +164,12 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }
 
   // Raw text change handler (eliminates erratic angle brackets on the fly)
-  const handleRawContentChange = (newText: string) => {
-    setIsSaved(false)
+  const handleRawContentChange = (newText: string, remember = true) => {
     // Automatically sanitize angle bracket chords <C> -> [C]
     const cleaned = standardizeChordProBrackets(newText)
+    if (remember) history.current.record({ text: localRawContent, ...selection.current }, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
     setLocalRawContent(cleaned)
-    // Synchronize to parent for auto-save redundancy
-    onUpdateSong({ rawContent: cleaned })
+    autosave({ rawContent: cleaned })
   }
 
   // Helper 1: Mark Selection / Word as Chord [Chords] (matching Android PreSaveSongReviewDialog)
@@ -332,6 +368,19 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-[#002B36]">
+      {pendingNavigation && <div role="dialog" aria-modal="true" aria-label="Unsaved changes" className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4">
+        <div className="bg-[#073642] border border-[#1A4A55] rounded-xl p-5 text-[#FDF6E3]">
+          <p>Save unsaved changes before leaving?</p>
+          <div className="flex gap-4 mt-4">
+            <button type="button" autoFocus onClick={() => { if (handleSave()) { setPendingNavigation(null); pendingNavigation() } }}>Save</button>
+            <button type="button" onClick={() => { setLocalTitle(persisted.title); setLocalArtist(persisted.artist); setLocalKey(persisted.key)
+              setLocalCapo(persisted.capo); setLocalBpm(persisted.bpm); setLocalTags(persisted.tags); setLocalRawContent(persisted.rawContent)
+              history.current = new TextHistory()
+              setPendingNavigation(null); pendingNavigation() }}>Discard</button>
+            <button type="button" onClick={() => setPendingNavigation(null)}>Cancel</button>
+          </div>
+        </div>
+      </div>}
       {/* =================================================================== */}
       {/* 1. TOP BAR: Compact Header & Save Icon Action                       */}
       {/* =================================================================== */}
@@ -340,7 +389,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           {onClose && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => requestNavigation(onClose)}
               className="p-1 sm:p-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#93A1A1] hover:text-[#FDF6E3] hover:border-[#2AA198] transition-colors cursor-pointer shrink-0"
               title="Return to Stage View"
             >
@@ -398,9 +447,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             type="text"
             value={localTitle}
             onChange={(e) => {
-              setIsSaved(false)
               setLocalTitle(e.target.value)
-              onUpdateSong({ title: e.target.value })
+              autosave({ title: e.target.value })
             }}
             placeholder="Song Title *"
             className="w-full bg-transparent text-[#FDF6E3] font-semibold focus:outline-none placeholder-[#93A1A1]/60 text-xs sm:text-sm"
@@ -414,9 +462,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             type="text"
             value={localArtist}
             onChange={(e) => {
-              setIsSaved(false)
               setLocalArtist(e.target.value)
-              onUpdateSong({ artist: e.target.value })
+              autosave({ artist: e.target.value })
             }}
             placeholder="Artist / Band"
             className="w-full bg-transparent text-[#EEE8D5] focus:outline-none placeholder-[#93A1A1]/60 text-xs"
@@ -433,9 +480,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         >
           <SlidersHorizontal className="w-3.5 h-3.5 text-[#2AA198]" />
           <span className="hidden sm:inline">Details</span>
-          {(localKey || localCapo || localBpm) ? (
+          {(displayKey || localCapo || localBpm) ? (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 max-w-[120px] truncate">
-              {[localKey && `Key: ${localKey}`, localCapo && `Capo: ${localCapo}`, localBpm && `${localBpm} BPM`].filter(Boolean).join(' • ')}
+              {[displayKey && `Key: ${displayKey}`, localCapo && `Capo: ${localCapo}`, localBpm && `${localBpm} BPM`].filter(Boolean).join(' • ')}
             </span>
           ) : null}
         </button>
@@ -529,6 +576,28 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               value={localRawContent}
               onChange={(e) => handleRawContentChange(e.target.value)}
               placeholder="Enter ChordPro lyrics with [G] chords (e.g. When the [A]night has come) or standalone chord progressions..."
+              onBeforeInput={(e) => { selection.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd } }}
+              onSelect={(e) => { selection.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd } }}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return
+                const textarea = e.currentTarget
+                const current: TextEdit = { text: localRawContent, start: textarea.selectionStart, end: textarea.selectionEnd }
+                selection.current = { start: current.start, end: current.end }
+                let next: TextEdit | undefined
+                if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
+                  e.preventDefault()
+                  next = e.key.toLowerCase() === 'y' || e.shiftKey ? history.current.redo(current) : history.current.undo(current)
+                  if (next) handleRawContentChange(next.text, false)
+                } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                  e.preventDefault()
+                  next = indentText(current.text, current.start, current.end, e.shiftKey)
+                  handleRawContentChange(next.text)
+                }
+                if (next) {
+                  const edit = next
+                  requestAnimationFrame(() => { textarea.setSelectionRange(edit.start, edit.end); selection.current = { start: edit.start, end: edit.end } })
+                }
+              }}
               spellCheck={false}
               className="w-full h-full p-4 bg-[#002B36] text-[#FDF6E3] font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-[#2AA198]/30 selection:text-[#FDF6E3] overflow-y-auto"
             />
@@ -553,9 +622,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     {localArtist || parsedSong.artist}
                   </span>
                 )}
-                {(localKey || parsedSong.key) && (
+                {(displayKey || parsedSong.key) && (
                   <span className="px-2 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#B58900] font-bold">
-                    Key: {localKey || parsedSong.key}
+                    Key: {displayKey || canonicalSongKey(parsedSong.key)}
                   </span>
                 )}
                 {(localCapo || parsedSong.capo) && (
@@ -629,12 +698,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     type="text"
                     value={localKey}
                     onChange={(e) => {
-                      setIsSaved(false)
                       setLocalKey(e.target.value)
-                      onUpdateSong({ key: e.target.value })
+                      const canonical = normalizeMusicalKey(e.target.value)
+                      if (canonical !== null) {
+                        setLocalKey(canonical)
+                        autosave({ key: canonical })
+                      }
                     }}
                     placeholder="e.g. G"
-                    className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center uppercase text-xs"
+                    className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center text-xs"
                   />
                 </div>
               </div>
@@ -650,9 +722,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     type="text"
                     value={localCapo}
                     onChange={(e) => {
-                      setIsSaved(false)
                       setLocalCapo(e.target.value)
-                      onUpdateSong({ capo: e.target.value })
+                      autosave({ capo: e.target.value })
                     }}
                     placeholder="e.g. 2"
                     className="w-full bg-transparent text-[#EEE8D5] font-mono focus:outline-none text-center text-xs"
@@ -671,9 +742,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     type="text"
                     value={localBpm}
                     onChange={(e) => {
-                      setIsSaved(false)
                       setLocalBpm(e.target.value)
-                      onUpdateSong({ bpm: e.target.value })
+                      autosave({ bpm: e.target.value })
                     }}
                     placeholder="120"
                     className="w-full bg-transparent text-[#CB4B16] font-mono focus:outline-none text-center text-xs"
@@ -693,9 +763,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   type="text"
                   value={localTags}
                   onChange={(e) => {
-                    setIsSaved(false)
                     setLocalTags(e.target.value)
-                    onUpdateSong({ tags: e.target.value })
+                    autosave({ tags: e.target.value })
                   }}
                   placeholder="Tags (e.g. Worship, OPM, Acoustic)"
                   className="w-full bg-transparent text-[#EEE8D5] font-mono text-xs focus:outline-none placeholder-[#93A1A1]/60"
