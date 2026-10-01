@@ -997,6 +997,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                           Year: <strong>{lookupCandidates[candidateIndex].year}</strong>
                         </span>
                       )}
+                      {lookupCandidates[candidateIndex].artist && metadataFields.artist && (
+                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#6C71C4]">
+                          Artist: <strong>{lookupCandidates[candidateIndex].artist}</strong>
+                        </span>
+                      )}
                     </div>
                   </div>
 

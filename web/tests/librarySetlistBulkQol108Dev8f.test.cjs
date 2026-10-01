@@ -6,13 +6,13 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION CHECK
-test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8g', () => {
+test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8i', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8g';"), 'gtar.ts dev version must be 1.0.108-dev.8g')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8i';"), 'gtar.ts dev version must be 1.0.108-dev.8i')
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.108-dev.8g', 'package.json version must be 1.0.108-dev.8g')
+  assert.equal(pkgJson.version, '1.0.108-dev.8i', 'package.json version must be 1.0.108-dev.8i')
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.108-dev.8g'), 'authCore.ts must reference v1.0.108-dev.8g')
+  assert.ok(authCore.includes('v1.0.108-dev.8i'), 'authCore.ts must reference v1.0.108-dev.8i')
 })
 
 // 2. RECOVERY BANNER DISMISS QOL
