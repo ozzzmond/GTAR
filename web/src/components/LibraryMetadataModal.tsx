@@ -12,8 +12,12 @@ import {
 } from 'lucide-react'
 import type { ActiveSongState } from '../types/gtar'
 import { normalizeMusicalKey } from '../utils/musicalKey'
+import { trustworthyChartKey } from '../utils/chartKeyAlignment'
 import {
   fetchSongMetadataFromProvider,
+  artistConflict,
+  classifyMatchStatus,
+  type MetadataUpdate,
   type MetadataMatchStatus,
   type SongMetadataReviewItem,
 } from '../utils/songMetadata'
@@ -23,7 +27,7 @@ interface LibraryMetadataModalProps {
   onClose: () => void
   songs: ActiveSongState[]
   preselectedSongIds?: Set<string | number>
-  onApplyUpdates: (updates: Array<{ id: string | number; changes: Partial<ActiveSongState> }>) => void
+  onApplyUpdates: (updates: MetadataUpdate[]) => boolean | void
 }
 
 export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
@@ -61,7 +65,7 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
         selectedCandidateIndex: 0,
         selectedFields: {
           title: false,
-          artist: false,
+          artist: !s.artist?.trim(),
           originalKey: true,
           bpm: true,
           year: true,
@@ -102,19 +106,19 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
         const res = await fetchSongMetadataFromProvider(item.storedTitle, item.storedArtist)
         if (res.success) {
           item.candidates = res.candidates
-          item.status = res.status
+          item.status = classifyMatchStatus(res.candidates, item.storedTitle, item.storedArtist)
           item.selectedCandidateIndex = 0
           item.error = undefined
           // Auto-select songs that have a confident match
-          if (res.status === 'MATCH' && res.candidates.length > 0) {
-            item.isSelected = true
-          }
+          item.isSelected = item.status === 'MATCH' && res.candidates.length > 0
         } else {
+          item.isSelected = false
           item.status = res.status
           item.candidates = []
           item.error = res.error
         }
       } catch (err: unknown) {
+        item.isSelected = false
         item.status = 'ERROR'
         item.candidates = []
         item.error = err instanceof Error ? err.message : 'Lookup failed'
@@ -185,13 +189,14 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
 
   // Apply updates handler
   const handleConfirmApply = () => {
-    const changesToApply: Array<{ id: string | number; changes: Partial<ActiveSongState> }> = []
+    const changesToApply: MetadataUpdate[] = []
 
     for (const item of items) {
       if (!item.isSelected || item.candidates.length === 0 || item.songId === undefined) continue
       const cand = item.candidates[item.selectedCandidateIndex]
       if (!cand) continue
 
+      if (artistConflict(item.storedArtist, cand.artist) && !window.confirm('Artist differs for ' + item.storedTitle + ': ' + item.storedArtist + ' / ' + cand.artist + '. Confirm this recording before applying selected fields.')) return
       const changes: Partial<ActiveSongState> = {}
 
       if (item.selectedFields.title && cand.title && cand.title.trim()) {
@@ -212,12 +217,21 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
       }
 
       if (Object.keys(changes).length > 0) {
-        changesToApply.push({ id: item.songId, changes })
+        let confirmedSource: string | undefined
+        const song = songs.find(s => String(s.id) === String(item.songId))
+        if (changes.originalKey && song && !trustworthyChartKey(song)) {
+          const entered = window.prompt('Confirm the actual key of the current chords for ' + song.title + '. The chords will align to ' + changes.originalKey + '.', song.key || '')
+          confirmedSource = normalizeMusicalKey(entered || '') || undefined
+          if (!confirmedSource) return
+        }
+        changesToApply.push({ id: item.songId, changes, ...(confirmedSource ? { confirmedSource } : {}) })
       }
     }
 
     if (changesToApply.length > 0) {
-      onApplyUpdates(changesToApply)
+      try {
+        if (onApplyUpdates(changesToApply) === false) return
+      } catch { return }
     }
 
     setShowConfirmModal(false)
@@ -420,6 +434,8 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
                   {/* Candidate selection & Field level toggles */}
                   {cand && (
                     <div className="mt-3 pt-2.5 border-t border-[#1A4A55]/60 bg-[#073642]/50 p-2.5 rounded-lg text-xs">
+                      <p className="mb-2 text-[#93A1A1]">Recording: {cand.title} — {cand.artist}</p>
+                      {artistConflict(item.storedArtist, cand.artist) && <p role="alert" className="mb-2 text-amber-400">Artist conflict: explicit recording confirmation required.</p>}
                       {/* Candidate selector if multiple candidates exist */}
                       {item.candidates.length > 1 && (
                         <div className="mb-2 flex items-center gap-2">
@@ -567,11 +583,11 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
             </div>
 
             <div className="bg-[#002B36] p-3 rounded-xl border border-[#1A4A55] space-y-2 text-[#EEE8D5] text-[11px] leading-relaxed">
-              <p>• Only your selected metadata fields (Original Key, BPM, Release Year) will be updated.</p>
+              <p>• Only your selected metadata fields (Original Key, BPM, Release Year, Artist) will be updated.</p>
               <p className="text-[#2AA198] font-bold">
                 • Accepting Original Key aligns chords and Chart Key when an explicit chart key agrees with the stored key. Stage Transpose is preserved.
               </p>
-              <p>• Unknown source key: chords are preserved. Open the editor, choose Establish source key, then accept Original Key again.</p>
+              <p>• Unknown source key: confirm the actual current chord key when prompted to complete alignment. Cancel preserves all songs.</p>
               <p className="text-[#93A1A1]">• These updates apply directly to your local songbook.</p>
             </div>
 

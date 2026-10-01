@@ -26,7 +26,7 @@ import { SongLineRenderer } from './SongLineRenderer'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
 import { acceptOriginalKey, alignChartKey, establishChartKey, trustworthyChartKey } from '../utils/chartKeyAlignment'
-import { fetchSongMetadataFromProvider, type MetadataCandidate } from '../utils/songMetadata'
+import { fetchSongMetadataFromProvider, artistConflict, selectedMetadata, type MetadataFields, type MetadataCandidate } from '../utils/songMetadata'
 import type { ActiveSongState } from '../types/gtar'
 
 interface DesktopEditorProps {
@@ -87,6 +87,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [isLookingUpMetadata, setIsLookingUpMetadata] = useState(false)
   const [lookupCandidates, setLookupCandidates] = useState<MetadataCandidate[]>([])
   const [lookupFeedback, setLookupFeedback] = useState<string | null>(null)
+  const [candidateIndex, setCandidateIndex] = useState(0)
+  const [metadataFields, setMetadataFields] = useState<MetadataFields>({ originalKey: true, bpm: true, year: true, artist: !song.artist?.trim() })
   const lookupGeneration = useRef(0)
 
   const draft = {
@@ -138,6 +140,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setPersisted(fields(song))
     history.current = new TextHistory()
     setLookupCandidates([])
+    setCandidateIndex(0)
+    setMetadataFields({ originalKey: true, bpm: true, year: true, artist: !song.artist?.trim() })
     setLookupFeedback(null)
     lookupGeneration.current++
     setIsLookingUpMetadata(false)
@@ -216,13 +220,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     autosave(result.changes)
   }
   const handleEstablishSourceKey = () => {
-    const entered = window.prompt('Confirm the actual key of the current chords. This establishes the source key without transposing chords.', chartKeyRef.current)
+    const entered = window.prompt('Confirm the actual key of the current chords. If an Original Key is set, this aligns the chords to it in one operation.', chartKeyRef.current)
     const key = normalizeMusicalKey(entered || '')
     if (!key) return
-    const changes = { key, rawContent: establishChartKey(localRawContent, key) }
+    const changes = normalizeMusicalKey(localOriginalKey)
+      ? acceptOriginalKey({ key: chartKeyRef.current, rawContent: localRawContent }, localOriginalKey, key).changes
+      : { key, rawContent: establishChartKey(localRawContent, key) }
     applyChartChanges(changes)
     autosave(changes)
-    setLookupFeedback('Source key established. Accept the Original Key again to align the chords.')
+    setLookupFeedback('Current chords confirmed and alignment completed.')
   }
   // Single-song GetSongBPM lookup
   const handleLookupMetadata = async () => {
@@ -235,7 +241,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       if (generation !== lookupGeneration.current) return
       if (res.success && res.candidates.length > 0) {
         setLookupCandidates(res.candidates)
-        setLookupFeedback(null)
+        setCandidateIndex(0)
+        setMetadataFields({ originalKey: true, bpm: true, year: true, artist: !localArtist.trim() })
+        setLookupFeedback('Review the recording and selected fields before applying.')
       } else if (res.success && res.candidates.length === 0) {
         setLookupCandidates([])
         setLookupFeedback('No matching songs found on GetSongBPM.')
@@ -253,23 +261,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }
 
   const handleApplyCandidateMetadata = (cand: MetadataCandidate) => {
-    const updates: Partial<ActiveSongState> = {}
-    const alignment = acceptOriginalKey({ key: chartKeyRef.current, rawContent: localRawContent }, cand.originalKey)
+    if (artistConflict(localArtist, cand.artist) && !window.confirm('Artist differs: ' + localArtist + ' / ' + cand.artist + '. Confirm this recording before applying selected fields.')) return
+    const updates: Partial<ActiveSongState> = selectedMetadata(cand, metadataFields)
+    const alignment = updates.originalKey
+      ? acceptOriginalKey({ key: chartKeyRef.current, rawContent: localRawContent }, updates.originalKey)
+      : { changes: {}, needsSource: false }
     Object.assign(updates, alignment.changes)
-    if ('originalKey' in alignment.changes) setLocalOriginalKey(alignment.changes.originalKey)
+    if (updates.originalKey !== undefined) setLocalOriginalKey(updates.originalKey)
     applyChartChanges(alignment.changes)
-    setLookupFeedback(alignment.needsSource ? 'Original Key accepted; chords preserved. Establish source key, then accept again to align.' : null)
-    if (cand.bpm) {
-      setLocalBpm(cand.bpm)
-      updates.bpm = cand.bpm
-    }
-    if (cand.year) {
-      setLocalYear(cand.year)
-      updates.year = cand.year
-    }
+    setLookupFeedback(alignment.needsSource ? 'Original Key accepted; chords preserved. Choose Confirm current chords & align to finish.' : null)
+    if (updates.artist !== undefined) setLocalArtist(updates.artist)
+    if (updates.bpm !== undefined) setLocalBpm(updates.bpm)
+    if (updates.year !== undefined) setLocalYear(updates.year)
     if (Object.keys(updates).length > 0) {
       autosave(updates)
-      showToast('Applied metadata from GetSongBPM!')
+      showToast('Applied selected metadata from GetSongBPM!')
     }
   }
 
@@ -833,7 +839,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     title="Base key represented by stored chart chords"
                   />
                 </div>
-                <button type="button" onClick={handleEstablishSourceKey} className="text-[11px] text-[#93A1A1] underline">Establish source key</button>
+                <button type="button" onClick={handleEstablishSourceKey} className="text-[11px] text-[#93A1A1] underline">{localOriginalKey ? 'Confirm current chords & align' : 'Establish source key'}</button>
               </div>
 
               {/* Original Recording Key (Reference) */}
@@ -947,9 +953,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               {lookupCandidates.length > 0 && (
                 <div className="bg-[#002B36] p-2.5 rounded-xl border border-[#2AA198]/30 space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-mono text-[#2AA198] font-bold">
-                    <span>Found Match:</span>
+                    <span>Review recording:</span>
                     <a
-                      href={lookupCandidates[0].sourceUrl || 'https://getsongbpm.com'}
+                      href={lookupCandidates[candidateIndex].sourceUrl || 'https://getsongbpm.com'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[#93A1A1] hover:text-[#2AA198] flex items-center gap-0.5 font-normal"
@@ -958,22 +964,37 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     </a>
                   </div>
 
+                  {lookupCandidates.length > 1 && (
+                    <select aria-label="Provider recording" value={candidateIndex} onChange={e => setCandidateIndex(Number(e.target.value))}>
+                      {lookupCandidates.map((c, index) => <option key={c.id} value={index}>{c.title} — {c.artist}</option>)}
+                    </select>
+                  )}
+                  {artistConflict(localArtist, lookupCandidates[candidateIndex].artist) && <p role="alert">Artist conflict: explicit recording confirmation required.</p>}
+                  <div className="flex flex-wrap gap-2">
+                    {(['originalKey', 'bpm', 'year', 'artist'] as const).map(field => lookupCandidates[candidateIndex][field] && (
+                      <label key={field}>
+                        <input type="checkbox" aria-label={'Apply ' + field} checked={metadataFields[field]}
+                          onChange={() => setMetadataFields(previous => ({ ...previous, [field]: !previous[field] }))} />
+                        {field === 'originalKey' ? 'Original Key' : field === 'bpm' ? 'BPM' : field === 'year' ? 'Year' : 'Artist'}
+                      </label>
+                    ))}
+                  </div>
                   <div className="text-xs text-[#FDF6E3] font-mono space-y-1">
-                    <div>{lookupCandidates[0].title} — <span className="text-[#93A1A1]">{lookupCandidates[0].artist}</span></div>
+                    <div>{lookupCandidates[candidateIndex].title} — <span className="text-[#93A1A1]">{lookupCandidates[candidateIndex].artist}</span></div>
                     <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                      {lookupCandidates[0].originalKey && (
+                      {lookupCandidates[candidateIndex].originalKey && (
                         <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#2AA198]">
-                          Orig Key: <strong>{lookupCandidates[0].originalKey}</strong>
+                          Orig Key: <strong>{lookupCandidates[candidateIndex].originalKey}</strong>
                         </span>
                       )}
-                      {lookupCandidates[0].bpm && (
+                      {lookupCandidates[candidateIndex].bpm && (
                         <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#CB4B16]">
-                          BPM: <strong>{lookupCandidates[0].bpm}</strong>
+                          BPM: <strong>{lookupCandidates[candidateIndex].bpm}</strong>
                         </span>
                       )}
-                      {lookupCandidates[0].year && (
+                      {lookupCandidates[candidateIndex].year && (
                         <span className="px-1.5 py-0.5 rounded bg-[#073642] text-cyan-400">
-                          Year: <strong>{lookupCandidates[0].year}</strong>
+                          Year: <strong>{lookupCandidates[candidateIndex].year}</strong>
                         </span>
                       )}
                     </div>
@@ -982,10 +1003,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   <button
                     type="button"
                     data-testid="editor-apply-metadata-btn"
-                    onClick={() => handleApplyCandidateMetadata(lookupCandidates[0])}
+                    onClick={() => handleApplyCandidateMetadata(lookupCandidates[candidateIndex])}
                     className="w-full mt-1 py-1 rounded-lg bg-[#2AA198] hover:bg-[#2AA198]/90 text-[#002B36] font-bold text-[11px] font-mono cursor-pointer transition-colors"
                   >
-                    Apply Found Metadata (Original Key, BPM, Year)
+                    Apply selected metadata
                   </button>
                 </div>
               )}

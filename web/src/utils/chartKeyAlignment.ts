@@ -61,9 +61,9 @@ export function alignChartKey(chart: Chart, targetValue: string, confirmedSource
   return { changes: { key: target, rawContent }, needsSource: false }
 }
 
-export function acceptOriginalKey(chart: Chart, value?: string) {
+export function acceptOriginalKey(chart: Chart, value?: string, confirmedSource?: string) {
   const originalKey = normalizeMusicalKey(value || '')
   if (!originalKey) return { changes: {}, needsSource: false }
-  const aligned = alignChartKey(chart, originalKey)
+  const aligned = alignChartKey(chart, originalKey, confirmedSource)
   return { ...aligned, changes: { ...aligned.changes, originalKey } }
 }

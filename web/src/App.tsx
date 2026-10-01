@@ -34,6 +34,7 @@ import { SetlistDrawer } from './components/SetlistDrawer'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
 import { ImportDialogModal } from './components/ImportDialogModal'
 import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
+import type { MetadataUpdate } from './utils/songMetadata'
 import { LibraryMetadataModal } from './components/LibraryMetadataModal'
 import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
 import { StageErrorBoundary } from './components/StageErrorBoundary'
@@ -1205,24 +1206,26 @@ function LibraryApp() {
     setIsMetadataReviewModalOpen(true)
   }
 
-  const handleApplyMetadataUpdates = (updates: Array<{ id: string | number; changes: Partial<ActiveSongState> }>) => {
+  const handleApplyMetadataUpdates = (updates: MetadataUpdate[]) => {
     if (updates.length === 0) return
-    const updateMap = new Map(updates.map(u => [String(u.id), u.changes]))
+    const updateMap = new Map(updates.map(u => [String(u.id), u]))
     const nextSongs = songs.map(song => {
-      const changes = updateMap.get(String(song.id))
-      if (!changes) return song
-      const alignment = changes.originalKey ? acceptOriginalKey(song, changes.originalKey).changes : {}
+      const update = updateMap.get(String(song.id))
+      if (!update) return song
+      const { changes, confirmedSource } = update
+      const alignment = changes.originalKey ? acceptOriginalKey(song, changes.originalKey, confirmedSource).changes : {}
       return { ...song, ...changes, ...alignment, id: song.id }
     })
     try {
       persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
     } catch (err) {
       handleStorageWriteFailure(err)
-      return
+      return false
     }
     setSongs(nextSongs)
     setToastMessage(`Updated metadata for ${updates.length} song${updates.length === 1 ? '' : 's'}`)
     setTimeout(() => setToastMessage(null), 3500)
+    return true
   }
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {

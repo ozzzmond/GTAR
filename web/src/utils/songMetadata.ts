@@ -5,6 +5,35 @@
  */
 
 import { canonicalSongKey } from './musicalKey'
+import type { ActiveSongState } from '../types/gtar'
+
+export function normalizeMetadataText(value: string): string {
+  return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/&/g, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+}
+
+export function artistConflict(existing: string, candidate: string): boolean {
+  return Boolean(existing.trim() && normalizeMetadataText(existing) !== normalizeMetadataText(candidate))
+}
+
+export type MetadataUpdate = { id: string | number; changes: Partial<ActiveSongState>; confirmedSource?: string }
+
+export type MetadataFields = { originalKey: boolean; bpm: boolean; year: boolean; artist: boolean }
+
+export function selectedMetadata(candidate: MetadataCandidate, fields: MetadataFields) {
+  const changes: { originalKey?: string; bpm?: string; year?: string; artist?: string } = {}
+  for (const field of ['originalKey', 'bpm', 'year', 'artist'] as const) {
+    if (!fields[field] || !candidate[field]?.trim()) continue
+    const value = field === 'originalKey' ? canonicalSongKey(candidate[field]) : candidate[field].trim()
+    if (value && (field !== 'originalKey' || /^[A-G][#b]?m?$/.test(value))) changes[field] = value
+  }
+  return changes
+}
+
+function discoveryTitle(title: string): string {
+  return cleanSearchTitle(title).replace(/\([^)]*\)|\[[^\]]*\]/g, '')
+    .split(/\s+[—–:-]\s+/)[0].replace(/\s+/g, ' ').trim()
+}
 
 export type MetadataMatchStatus = 'MATCH' | 'REVIEW' | 'NO_MATCH' | 'ERROR'
 
@@ -149,19 +178,17 @@ export function computeMatchConfidence(
   queryTitle: string,
   queryArtist?: string
 ): 'HIGH' | 'MEDIUM' | 'LOW' {
-  const normCandTitle = cleanSearchTitle(candidate.title).toLowerCase()
-  const normQueryTitle = cleanSearchTitle(queryTitle).toLowerCase()
-  const normCandArtist = (candidate.artist || '').trim().toLowerCase()
-  const normQueryArtist = cleanSearchArtist(queryArtist).toLowerCase()
+  const normCandTitle = normalizeMetadataText(cleanSearchTitle(candidate.title))
+  const normQueryTitle = normalizeMetadataText(cleanSearchTitle(queryTitle))
 
-  const titleExact = normCandTitle === normQueryTitle
-  const titlePartial = normCandTitle.includes(normQueryTitle) || normQueryTitle.includes(normCandTitle)
+  const titleExact = Boolean(normQueryTitle && normCandTitle === normQueryTitle)
+  const titlePartial = Boolean(discoveryTitle(queryTitle) && normalizeMetadataText(discoveryTitle(candidate.title)) === normalizeMetadataText(discoveryTitle(queryTitle)))
 
-  const artistExact = Boolean(normQueryArtist && normCandArtist && (normCandArtist === normQueryArtist || normCandArtist.includes(normQueryArtist) || normQueryArtist.includes(normCandArtist)))
-  const artistEmpty = !normQueryArtist
+  const artistExact = Boolean(queryArtist?.trim() && !artistConflict(queryArtist, candidate.artist))
+  const artistEmpty = !queryArtist?.trim()
 
   if (titleExact && artistExact) return 'HIGH'
-  if (titleExact && artistEmpty) return 'HIGH'
+  if (titleExact && artistEmpty) return 'MEDIUM'
   if (titleExact && !artistExact) return 'MEDIUM'
   if (titlePartial && (artistExact || artistEmpty)) return 'MEDIUM'
   return 'LOW'
@@ -176,10 +203,9 @@ export function classifyMatchStatus(
   _queryArtist?: string
 ): MetadataMatchStatus {
   if (candidates.length === 0) return 'NO_MATCH'
-  if (candidates.length === 1 && candidates[0].confidence === 'HIGH') return 'MATCH'
-  if (candidates[0].confidence === 'HIGH' && (candidates.length < 2 || candidates[1].confidence !== 'HIGH')) {
-    return 'MATCH'
-  }
+  const high = candidates.filter(c => c.confidence === 'HIGH' &&
+    (_queryTitle === undefined || computeMatchConfidence(c, _queryTitle, _queryArtist) === 'HIGH'))
+  if (high.length === 1) return 'MATCH'
   return 'REVIEW'
 }
 
@@ -191,7 +217,7 @@ export async function fetchSongMetadataFromProvider(
   title: string,
   artist?: string
 ): Promise<{ success: boolean; candidates: MetadataCandidate[]; status: MetadataMatchStatus; error?: string }> {
-  const cleanTitle = cleanSearchTitle(title)
+  const cleanTitle = discoveryTitle(title)
   const cleanArtist = cleanSearchArtist(artist)
 
   if (!cleanTitle) {
@@ -234,7 +260,7 @@ export async function fetchSongMetadataFromProvider(
 
     const results = data.results || []
     const candidates: MetadataCandidate[] = results.map((r) => {
-      const confidence = computeMatchConfidence(r, cleanTitle, cleanArtist)
+      const confidence = computeMatchConfidence(r, title, cleanArtist)
       return {
         id: r.id,
         title: r.title,
@@ -247,7 +273,8 @@ export async function fetchSongMetadataFromProvider(
       }
     })
 
-    const status = classifyMatchStatus(candidates, cleanTitle, cleanArtist)
+    candidates.sort((a, b) => ['HIGH', 'MEDIUM', 'LOW'].indexOf(a.confidence) - ['HIGH', 'MEDIUM', 'LOW'].indexOf(b.confidence))
+    const status = classifyMatchStatus(candidates, title, cleanArtist)
 
     return {
       success: true,

@@ -87,7 +87,7 @@ async function editor(s, run) {
   await run(()=>stored,writes)
  } finally { await act(async()=>root.unmount()) }
 }
-const found = {success:true,candidates:[{id:'candidate',title:'Song',artist:'Band',originalKey:'D'}]}
+const found = {success:true,candidates:[{id:'candidate',title:'Song',artist:'Band',originalKey:'D',confidence:'HIGH'}]}
 test('8h real editor acceptance, second acceptance, manual key change and rendered draft agree with persisted chords', async()=>{
  metadata.fetchSongMetadataFromProvider = async()=>found
  await editor(song,async(get,writes)=>{
@@ -107,9 +107,9 @@ test('8h editor unknown source preserves chords; establish-source cancel is iner
   await click('[data-testid="editor-lookup-metadata-btn"]');await click('[data-testid="editor-apply-metadata-btn"]')
   assert.equal(get().key,'G');assert.equal(get().rawContent,'[G]One [C]two');assert.match(document.body.textContent,/chords preserved/)
   window.prompt=()=>null
-  const button=[...document.querySelectorAll('button')].find(b=>b.textContent==='Establish source key')
+  const button=[...document.querySelectorAll('button')].find(b=>b.textContent==='Confirm current chords & align')
   const count=writes.length;await act(async()=>button.click());assert.equal(writes.length,count)
-  window.prompt=()=> 'G';await act(async()=>button.click());await click('[data-testid="editor-apply-metadata-btn"]')
+  window.prompt=()=> 'G';await act(async()=>button.click())
   assert.equal(get().key,'D');assert.equal(get().rawContent,'{key: D}\n[D]One [G]two')
  })
 })
@@ -128,10 +128,10 @@ test('8h editor failed lookup, missing result/key and canceling manual source co
 })
 test('8h library applies alignment against current song content and presents unknown-source resolution',()=>{
  const app=fs.readFileSync(require.resolve('../src/App.tsx'),'utf8')
- assert.match(app,/acceptOriginalKey\(song, changes\.originalKey\)/)
+ assert.match(app,/acceptOriginalKey\(song, changes\.originalKey, confirmedSource\)/)
  const modal=fs.readFileSync(require.resolve('../src/components/LibraryMetadataModal.tsx'),'utf8')
- assert.match(modal,/Unknown source key: chords are preserved/)
- assert.match(modal,/Establish source key/)
+ assert.match(modal,/Unknown source key: confirm the actual current chord key/)
+ assert.match(modal,/Cancel preserves all songs/)
 })
 
 test('8h embedded directives never cause adjacent lyric words to transpose',()=>{
