@@ -7,6 +7,7 @@ const {JSDOM}=require('jsdom')
 const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost:5173/'})
 Object.assign(global,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,sessionStorage:dom.window.sessionStorage,IS_REACT_ACT_ENVIRONMENT:true,requestAnimationFrame:fn=>fn()})
 window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
+window.prompt=(_message,source)=>source
 const React=require('react'),{act}=React,{createRoot}=require('react-dom/client')
 const {DesktopEditor}=require('../src/components/DesktopEditor.tsx')
 const {SongbookHomeView}=require('../src/components/SongbookHomeView.tsx')

@@ -25,6 +25,7 @@ import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../ut
 import { SongLineRenderer } from './SongLineRenderer'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
+import { acceptOriginalKey, alignChartKey, establishChartKey, trustworthyChartKey } from '../utils/chartKeyAlignment'
 import { fetchSongMetadataFromProvider, type MetadataCandidate } from '../utils/songMetadata'
 import type { ActiveSongState } from '../types/gtar'
 
@@ -54,6 +55,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
   const [localKey, setLocalKey] = useState(canonicalSongKey(song.key || ''))
+  const chartKeyRef = useRef(song.key || '')
   const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey ? canonicalSongKey(song.originalKey) : '')
   const [localCapo, setLocalCapo] = useState(song.capo || '')
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
@@ -85,6 +87,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [isLookingUpMetadata, setIsLookingUpMetadata] = useState(false)
   const [lookupCandidates, setLookupCandidates] = useState<MetadataCandidate[]>([])
   const [lookupFeedback, setLookupFeedback] = useState<string | null>(null)
+  const lookupGeneration = useRef(0)
 
   const draft = {
     title: localTitle,
@@ -125,6 +128,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalTitle(song.title || '')
     setLocalArtist(song.artist || '')
     setLocalKey(canonicalSongKey(song.key || ''))
+    chartKeyRef.current = song.key || ''
     setLocalOriginalKey(song.originalKey ? canonicalSongKey(song.originalKey) : '')
     setLocalCapo(song.capo || '')
     setLocalBpm(song.bpm || '')
@@ -135,6 +139,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     history.current = new TextHistory()
     setLookupCandidates([])
     setLookupFeedback(null)
+    lookupGeneration.current++
+    setIsLookingUpMetadata(false)
   }, [song.id])
 
   const showToast = (msg: string) => {
@@ -173,6 +179,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalTitle(updatedSong.title)
       setLocalArtist(updatedSong.artist || '')
       setLocalKey(effectiveKey)
+      chartKeyRef.current = effectiveKey
       setLocalOriginalKey(updatedSong.originalKey || '')
       setLocalCapo(updatedSong.capo || '')
       setLocalBpm(updatedSong.bpm || '')
@@ -185,14 +192,47 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     } catch { showToast('Changes are not saved. Retry saving before leaving.'); return false }
   }
 
-  // Helper to calculate semitone distance between roots of two keys
+  const applyChartChanges = (changes: { key?: string; rawContent?: string }) => {
+    if (changes.key !== undefined) { chartKeyRef.current = changes.key; setLocalKey(changes.key) }
+    if (changes.rawContent !== undefined && changes.rawContent !== localRawContent) {
+      setLocalRawContent(changes.rawContent)
+      // Text-only undo cannot restore the corresponding key; start a new text history.
+      history.current = new TextHistory()
+    }
+  }
+  const handleChartKeyChange = (value: string) => {
+    setLocalKey(value)
+    const target = normalizeMusicalKey(value)
+    if (!target) return
+    const chart = { key: chartKeyRef.current, rawContent: localRawContent }
+    let source: string | undefined
+    if (!trustworthyChartKey(chart)) {
+      const entered = window.prompt('Enter the actual source key of the current chords. Enter the target key only if the chords are already aligned.', chart.key)
+      source = normalizeMusicalKey(entered || '') || undefined
+      if (!source) { setLocalKey(chart.key); return }
+    }
+    const result = alignChartKey(chart, target, source)
+    applyChartChanges(result.changes)
+    autosave(result.changes)
+  }
+  const handleEstablishSourceKey = () => {
+    const entered = window.prompt('Confirm the actual key of the current chords. This establishes the source key without transposing chords.', chartKeyRef.current)
+    const key = normalizeMusicalKey(entered || '')
+    if (!key) return
+    const changes = { key, rawContent: establishChartKey(localRawContent, key) }
+    applyChartChanges(changes)
+    autosave(changes)
+    setLookupFeedback('Source key established. Accept the Original Key again to align the chords.')
+  }
   // Single-song GetSongBPM lookup
   const handleLookupMetadata = async () => {
     if (!localTitle.trim() || isLookingUpMetadata) return
     setIsLookingUpMetadata(true)
+    const generation = ++lookupGeneration.current
     setLookupFeedback(null)
     try {
       const res = await fetchSongMetadataFromProvider(localTitle, localArtist)
+      if (generation !== lookupGeneration.current) return
       if (res.success && res.candidates.length > 0) {
         setLookupCandidates(res.candidates)
         setLookupFeedback(null)
@@ -204,20 +244,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         setLookupFeedback(res.error || 'Failed to lookup metadata.')
       }
     } catch (err: unknown) {
+      if (generation !== lookupGeneration.current) return
       setLookupCandidates([])
       setLookupFeedback(err instanceof Error ? err.message : 'Lookup failed.')
     } finally {
-      setIsLookingUpMetadata(false)
+      if (generation === lookupGeneration.current) setIsLookingUpMetadata(false)
     }
   }
 
   const handleApplyCandidateMetadata = (cand: MetadataCandidate) => {
     const updates: Partial<ActiveSongState> = {}
-    if (cand.originalKey) {
-      const normKey = canonicalSongKey(cand.originalKey)
-      setLocalOriginalKey(normKey)
-      updates.originalKey = normKey
-    }
+    const alignment = acceptOriginalKey({ key: chartKeyRef.current, rawContent: localRawContent }, cand.originalKey)
+    Object.assign(updates, alignment.changes)
+    if ('originalKey' in alignment.changes) setLocalOriginalKey(alignment.changes.originalKey)
+    applyChartChanges(alignment.changes)
+    setLookupFeedback(alignment.needsSource ? 'Original Key accepted; chords preserved. Establish source key, then accept again to align.' : null)
     if (cand.bpm) {
       setLocalBpm(cand.bpm)
       updates.bpm = cand.bpm
@@ -461,7 +502,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           <p>Save unsaved changes before leaving?</p>
           <div className="flex gap-4 mt-4">
             <button type="button" autoFocus onClick={() => { if (handleSave()) { setPendingNavigation(null); pendingNavigation() } }}>Save</button>
-            <button type="button" onClick={() => { setLocalTitle(persisted.title); setLocalArtist(persisted.artist); setLocalKey(persisted.key)
+            <button type="button" onClick={() => { setLocalTitle(persisted.title); setLocalArtist(persisted.artist); setLocalKey(persisted.key); chartKeyRef.current = persisted.key
+              setLocalOriginalKey(persisted.originalKey); setLocalYear(persisted.year)
               setLocalCapo(persisted.capo); setLocalBpm(persisted.bpm); setLocalTags(persisted.tags); setLocalRawContent(persisted.rawContent)
               history.current = new TextHistory()
               setPendingNavigation(null); pendingNavigation() }}>Discard</button>
@@ -785,19 +827,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   <input
                     type="text"
                     value={localKey}
-                    onChange={(e) => {
-                      setLocalKey(e.target.value)
-                      const canonical = normalizeMusicalKey(e.target.value)
-                      if (canonical !== null) {
-                        setLocalKey(canonical)
-                        autosave({ key: canonical })
-                      }
-                    }}
+                    onChange={(e) => handleChartKeyChange(e.target.value)}
                     placeholder="e.g. G"
                     className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center text-xs"
                     title="Base key represented by stored chart chords"
                   />
                 </div>
+                <button type="button" onClick={handleEstablishSourceKey} className="text-[11px] text-[#93A1A1] underline">Establish source key</button>
               </div>
 
               {/* Original Recording Key (Reference) */}

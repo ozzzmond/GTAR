@@ -1,3 +1,4 @@
+import { acceptOriginalKey } from './utils/chartKeyAlignment'
 import {
   persistLibrary,
   readPersistedLibrary,
@@ -1210,7 +1211,8 @@ function LibraryApp() {
     const nextSongs = songs.map(song => {
       const changes = updateMap.get(String(song.id))
       if (!changes) return song
-      return { ...song, ...changes, id: song.id }
+      const alignment = changes.originalKey ? acceptOriginalKey(song, changes.originalKey).changes : {}
+      return { ...song, ...changes, ...alignment, id: song.id }
     })
     try {
       persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
