@@ -55,6 +55,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
   const epoch = useRef(0)
   const refreshing = useRef(false)
+  const lastRecheckTimestamp = useRef<number>(0)
+  const lastManualCheckRef = useRef<number>(0)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
   const configuredEmails = import.meta.env.VITE_AUTHORIZED_EMAILS as string | undefined
 
@@ -93,6 +95,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setSession(null)
     setBypass(false)
     setChecking(false)
+    setCheckingStatus(false)
     setBusy(false)
     setError('')
     setStatusMessage('')
@@ -101,14 +104,35 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   // Asynchronous non-blocking background recheck with authoritative server D1
   const backgroundRecheck = useCallback(async (current: GoogleSession, generation: number) => {
+    // Pending or denied users must not be polled in background
+    if (
+      current.access_status === 'pending' ||
+      current.access_status === 'denied' ||
+      current.user?.access_status === 'pending' ||
+      current.user?.access_status === 'denied'
+    ) {
+      return
+    }
+
+    const now = Date.now()
+    if (now - lastRecheckTimestamp.current < 30_000) return
     if (refreshing.current) return
     refreshing.current = true
+    lastRecheckTimestamp.current = now
+
     try {
       const token = current.sessionToken || current.idToken
       if (token) {
         try {
           const serverUser = await recheckServerSession(token)
           if (generation !== epoch.current) return
+
+          const isIdentical =
+            current.access_status === serverUser.access_status &&
+            current.role === serverUser.role &&
+            current.user.id === serverUser.id &&
+            current.user.name === (serverUser.display_name || current.user.name) &&
+            current.user.picture === (serverUser.picture_url || current.user.picture)
 
           const updated: GoogleSession = {
             ...current,
@@ -126,7 +150,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
           }
 
           saveGoogleSession(updated)
-          setSession(updated)
+          if (!isIdentical) {
+            setSession(updated)
+          }
           return
         } catch (err) {
           if (generation !== epoch.current) return
@@ -140,15 +166,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
         }
       }
 
-      if (current.access_status !== 'denied' && current.access_status !== 'pending') {
-        const currentRole = getUserRole(current.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-        if (currentRole === 'NONE' && configuredEmails !== undefined) {
-          if (generation === epoch.current) {
-            signOut()
-            setError('Access revoked. Your account is not on the authorized whitelist.')
-          }
-          return
+      const currentRole = getUserRole(current.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
+      if (currentRole === 'NONE' && configuredEmails !== undefined) {
+        if (generation === epoch.current) {
+          signOut()
+          setError('Access revoked. Your account is not on the authorized whitelist.')
         }
+        return
       }
 
       // Fallback: verify Google session if token exists
@@ -182,11 +206,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
     } finally {
       refreshing.current = false
     }
-  }, [signOut])
+  }, [signOut, configuredEmails])
 
   // Explicit check status for pending users
   const checkStatus = useCallback(async () => {
-    if (!session || checkingStatus) return
+    if (!session || checkingStatus || refreshing.current) return
+    const now = Date.now()
+    if (now - lastManualCheckRef.current < 3000) {
+      return
+    }
+    lastManualCheckRef.current = now
+    const generation = epoch.current
+    refreshing.current = true
     setCheckingStatus(true)
     setStatusMessage('Checking approval status...')
     setError('')
@@ -194,6 +225,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const token = session.sessionToken || session.idToken
       if (token) {
         const serverUser = await recheckServerSession(token)
+        if (generation !== epoch.current) return
         const updated: GoogleSession = {
           ...session,
           user: {
@@ -220,11 +252,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setStatusMessage('No active server token. Please sign in again to verify.')
       }
     } catch (err) {
+      if (generation !== epoch.current) return
       const msg = err instanceof Error ? err.message : 'Unable to check status. Network unavailable.'
       setError(msg)
       setStatusMessage('')
     } finally {
-      setCheckingStatus(false)
+      refreshing.current = false
+      if (generation === epoch.current) setCheckingStatus(false)
     }
   }, [session, checkingStatus])
 
@@ -287,12 +321,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
 
     const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
-    if (!isOffline) {
-      void backgroundRecheck(candidate, generation)
+    if (
+      !isOffline &&
+      candidate.access_status !== 'pending' &&
+      candidate.access_status !== 'denied' &&
+      candidate.user?.access_status !== 'pending' &&
+      candidate.user?.access_status !== 'denied'
+    ) {
+      // StrictMode replays mount effects before this microtask. Only the live
+      // generation may start a request; otherwise its result would be discarded.
+      void Promise.resolve().then(() => {
+        if (generation === epoch.current) void backgroundRecheck(candidate, generation)
+      })
     }
 
     return () => { epoch.current++ }
-  }, [backgroundRecheck])
+  }, [backgroundRecheck, configuredEmails])
 
   // Load Google Identity Services SDK
   useEffect(() => {
@@ -309,16 +353,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [clientId])
 
-  const lastRecheckRef = useRef<number>(0)
-
   // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
     if (!session || !clientId) return
+    if (
+      session.access_status === 'pending' ||
+      session.access_status === 'denied' ||
+      session.user?.access_status === 'pending' ||
+      session.user?.access_status === 'denied'
+    ) {
+      return
+    }
 
     const onRecheck = () => {
       const now = Date.now()
-      if (now - lastRecheckRef.current < 60_000) return
-      lastRecheckRef.current = now
+      if (now - lastRecheckTimestamp.current < 60_000) return
 
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
       if (!validSession(session)) {
@@ -465,6 +514,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
               Sign Out
             </button>
           </div>
+          {isDevLogsEnabled && (
+            <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+              <button
+                type="button"
+                title="View Debug Logs"
+                aria-label="View Debug Logs"
+                className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+                onClick={() => setIsDebugLogsOpen(true)}
+              >
+                <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
+                <span>View Debug Logs</span>
+              </button>
+            </div>
+          )}
+          {isDevLogsEnabled && isDebugLogsOpen && (
+            <DebugLogsModal isOpen={isDebugLogsOpen} onClose={() => setIsDebugLogsOpen(false)} />
+          )}
         </section>
       </main>
     )
@@ -490,6 +556,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
           >
             Sign Out
           </button>
+          {isDevLogsEnabled && (
+            <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+              <button
+                type="button"
+                title="View Debug Logs"
+                aria-label="View Debug Logs"
+                className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+                onClick={() => setIsDebugLogsOpen(true)}
+              >
+                <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
+                <span>View Debug Logs</span>
+              </button>
+            </div>
+          )}
+          {isDevLogsEnabled && isDebugLogsOpen && (
+            <DebugLogsModal isOpen={isDebugLogsOpen} onClose={() => setIsDebugLogsOpen(false)} />
+          )}
         </section>
       </main>
     )

@@ -98,12 +98,13 @@ function ugScraperPlugin(): Plugin {
           const results = parseSearchResults(data)
           res.writeHead(200)
           res.end(JSON.stringify({ success: true, results }))
-        } catch (err: any) {
-          const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('timed out')
+        } catch (err: unknown) {
+          const error = err instanceof Error ? (err as Error & { code?: string }) : null
+          const isTimeout = error?.code === 'ETIMEDOUT' || error?.message?.includes('timed out')
           const statusCode = isTimeout ? 504 : 502
           const errorMsg = isTimeout
             ? 'Gateway timeout contacting Ultimate Guitar'
-            : (err?.message || 'Internal proxy error')
+            : (error?.message || 'Internal proxy error')
           res.writeHead(statusCode)
           res.end(JSON.stringify({ success: false, error: errorMsg }))
         }
@@ -160,12 +161,13 @@ function ugScraperPlugin(): Plugin {
 
           res.writeHead(200)
           res.end(JSON.stringify({ success: true, sheet: parseResult.sheet }))
-        } catch (err: any) {
-          const isTimeout = err?.code === 'ETIMEDOUT' || err?.message?.includes('timed out')
+        } catch (err: unknown) {
+          const error = err instanceof Error ? (err as Error & { code?: string }) : null
+          const isTimeout = error?.code === 'ETIMEDOUT' || error?.message?.includes('timed out')
           const statusCode = isTimeout ? 504 : 502
           const errorMsg = isTimeout
             ? 'Gateway timeout contacting Ultimate Guitar'
-            : (err?.message || 'Internal proxy error')
+            : (error?.message || 'Internal proxy error')
           res.writeHead(statusCode)
           res.end(JSON.stringify({ success: false, error: errorMsg }))
         }
@@ -188,11 +190,39 @@ function ugScraperPlugin(): Plugin {
           }
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ success: true, lanIp }))
-        } catch (err: any) {
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err)
           res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: err.message }))
+          res.end(JSON.stringify({ success: false, error: message }))
         }
       })
+    },
+  }
+}
+
+function apiRoutingGuardPlugin(): Plugin {
+  return {
+    name: 'api-routing-guard-plugin',
+    configureServer(server) {
+      return () => {
+        // Intercept any /api/ requests that reached post-middleware without being handled
+        // to strictly guarantee they never fall through to Vite SPA index.html
+        server.middlewares.use((req, res, next) => {
+          const parsed = url.parse(req.url || '', true)
+          if (parsed.pathname && parsed.pathname.startsWith('/api/')) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8')
+            res.writeHead(404)
+            res.end(
+              JSON.stringify({
+                success: false,
+                error: `API route not found: ${parsed.pathname}`,
+              })
+            )
+            return
+          }
+          next()
+        })
+      }
     },
   }
 }
@@ -254,6 +284,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       react(),
       ugScraperPlugin(),
+      apiRoutingGuardPlugin(),
       {
         name: 'html-branding-transform',
         transformIndexHtml(html: string) {
@@ -275,7 +306,10 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         devOptions: {
-          enabled: true,
+          // Disable dev SW: the fake workbox SW (skipWaiting+clientsClaim) was
+          // claiming clients mid-session during Vite HMR, causing remounts,
+          // duplicate React root errors, and rapid /api/auth/session loops.
+          enabled: false,
         },
         includeAssets: [
           'favicon.ico',
@@ -346,7 +380,16 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       port: isDebug ? 5174 : 5173,
+      strictPort: true,
       host: isDebug ? '0.0.0.0' : false,
+      watch: {
+        // Exclude Wrangler/Miniflare runtime state from Vite's file watcher.
+        // Without this, D1 read/write activity mutates .wrangler/state/v3/d1/**
+        // sqlite-wal/sqlite-shm files; Vite detects those changes and issues a
+        // full page reload, which reinitializes AuthGate, triggers another
+        // /api/auth/session → more D1 activity → more WAL/SHM mutations → loop.
+        ignored: ['**/.wrangler/**'],
+      },
       proxy: {
         '/api/ug': {
           target: 'https://www.ultimate-guitar.com',
@@ -359,6 +402,24 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/ug-tabs/, ''),
           headers: UG_HEADERS,
+        },
+        '/api': {
+          target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8788',
+          changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on('error', (_err, _req, res) => {
+              if ('writeHead' in res && !res.headersSent) {
+                res.setHeader('Content-Type', 'application/json; charset=utf-8')
+                res.writeHead(503)
+                res.end(
+                  JSON.stringify({
+                    success: false,
+                    error: 'Local API backend unavailable. Ensure wrangler pages dev is running on port 8788 (npm run dev:api).',
+                  })
+                )
+              }
+            })
+          },
         },
       },
     },

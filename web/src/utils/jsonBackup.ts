@@ -252,11 +252,54 @@ export function createRestoreSafetySnapshot(
       setlists: library.setlists.map(sl => ({ ...sl, songs: sl.songs.map(ref => ({ ...ref })) })),
     },
   }
+  const serialized = JSON.stringify(snapshot)
   try {
-    storage.setItem(RESTORE_SNAPSHOT_KEY, JSON.stringify(snapshot))
-  } catch (err) {
-    throw new Error('Pre-restore safety snapshot creation failed', { cause: err })
+    storage.setItem(RESTORE_SNAPSHOT_KEY, serialized)
+    return
+  } catch (firstErr) {
+    if (!isSnapshotQuotaError(firstErr)) {
+      throw new Error('Pre-restore safety snapshot creation failed', { cause: firstErr })
+    }
   }
+  // Quota relief: evict stale GTAR-owned snapshot keys to make room for the new one.
+  // 1. Remove the previous safety snapshot (being replaced; no data loss).
+  try { storage.removeItem(RESTORE_SNAPSHOT_KEY) } catch { /* ignore */ }
+  // 2. Evict oldest gtar_sync_recovery: entries (GTAR-owned, non-canonical, prunable).
+  evictOldestRecoverySnapshots(storage)
+  // Retry write after eviction; fail closed if still over quota.
+  try {
+    storage.setItem(RESTORE_SNAPSHOT_KEY, serialized)
+  } catch (retryErr) {
+    throw new Error('Pre-restore safety snapshot creation failed', { cause: retryErr })
+  }
+}
+
+/** Evict oldest gtar_sync_recovery: entries to recover storage quota. */
+function evictOldestRecoverySnapshots(storage: Storage): void {
+  const RECOVERY_PREFIX = 'gtar_sync_recovery:'
+  const keys: string[] = []
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i)
+      if (k?.startsWith(RECOVERY_PREFIX)) keys.push(k)
+    }
+  } catch { return }
+  // Oldest first (keys are ISO-timestamp-keyed; lexicographic sort = chronological).
+  keys.sort()
+  for (const k of keys) {
+    try { storage.removeItem(k) } catch { /* ignore */ }
+  }
+}
+
+function isSnapshotQuotaError(err: unknown): boolean {
+  if (!err) return false
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException) {
+    return err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED' || err.code === 22 || err.code === 1014 || /quota/i.test(err.message)
+  }
+  if (err instanceof Error) {
+    return err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED' || /quota/i.test(err.message)
+  }
+  return false
 }
 
 export function getRestoreSafetySnapshot(storage: Storage = localStorage): RestoreSafetySnapshot | null {

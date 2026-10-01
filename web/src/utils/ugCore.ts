@@ -103,7 +103,54 @@ export function validateTabUrl(raw: unknown): {
   return { valid: true, parsedUrl: parsed, status: 200 }
 }
 
-export function extractJsStore(html: string): Record<string, any> | null {
+export interface UgTabMeta {
+  tonality?: string
+  capo?: number
+  [key: string]: unknown
+}
+
+export interface UgTabDetails {
+  song_name?: string
+  artist_name?: string
+  tonality_name?: string
+  capo?: number
+  content?: string
+  [key: string]: unknown
+}
+
+export interface UgTabView {
+  wiki_tab?: {
+    content?: string
+    [key: string]: unknown
+  }
+  meta?: UgTabMeta
+  [key: string]: unknown
+}
+
+export interface UgPageData {
+  results?: unknown
+  tab_view?: UgTabView
+  tab?: UgTabDetails
+  [key: string]: unknown
+}
+
+export interface UgStoreData {
+  store?: {
+    page?: {
+      data?: UgPageData
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
+  page?: {
+    data?: UgPageData
+    [key: string]: unknown
+  }
+  data?: UgPageData
+  [key: string]: unknown
+}
+
+export function extractJsStore(html: string): UgStoreData | null {
   if (!html || typeof html !== 'string') return null
 
   // 1. Check data-content="..." or data-content='...' in js-store

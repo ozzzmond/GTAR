@@ -1,25 +1,17 @@
 @echo off
-title GTA WebApp [DEV SERVER]
-color 0B
+title GTAR [FULL STACK DEV]
+color 0A
 echo ===================================================
-echo       GTA WEBAPP - DEVELOPMENT ENVIRONMENT
+echo       GTAR - FULL STACK DEV (VITE + CLOUDFLARE)
 echo ===================================================
 echo.
 cd /d "%~dp0"
 
-if not exist node_modules (
-    echo [INFO] node_modules not found. Running npm install...
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] npm install failed.
-        pause
-        exit /b 1
-    )
-)
-
-echo [INFO] Applying/verifying local D1 database migrations...
+echo [INFO] Applying/verifying local D1 migrations...
 echo y | call npx wrangler d1 migrations apply DB --local
-
+echo.
+echo [INFO] Launching Local Cloudflare API Backend in companion window...
+start "GTAR API Backend [8788]" cmd /k call Run_API_Dev.bat
 echo [INFO] Verifying canonical Vite port 5173 availability...
 netstat -ano | findstr /R /C:":5173 .*LISTENING" >nul 2>&1
 if not errorlevel 1 (
@@ -33,10 +25,7 @@ if not errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] Starting Vite Development Server on http://localhost:5173 ...
-echo [INFO] API proxy targeting http://127.0.0.1:8788 (Cloudflare Pages Functions).
-echo [INFO] Run Run_API_Dev.bat in a separate terminal for live local Cloudflare backend.
-echo [INFO] Press Ctrl+C to stop the dev server.
+echo [INFO] Launching Vite Development Server on http://localhost:5173 ...
 echo.
 call npm run dev
 if errorlevel 1 (

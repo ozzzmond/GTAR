@@ -548,3 +548,311 @@ export function computePlaybackKey(canonicalReferenceKey: string, transposeOffse
   }
   return transposeKey(canonicalReferenceKey, transposeOffset)
 }
+
+// ---------------------------------------------------------------------------
+// 5. SEMANTIC SONG FINGERPRINT (UUID-AGNOSTIC, REPAIR USE ONLY)
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes a canonical semantic fingerprint for a song for REPAIR purposes only.
+ *
+ * Invariants:
+ * - UUID / id is EXCLUDED: two songs with different UUIDs but identical semantic
+ *   content and metadata produce the same fingerprint (exact duplicate detection).
+ * - Normalized title is included (trimmed, lowercased): distinct titles NEVER deduped.
+ * - Normalized artist is included (trimmed, lowercased): distinct artists mean distinct songs.
+ * - Key is included (trimmed, uppercase): distinct keys are behaviorally meaningful.
+ * - Capo is included: default-equivalent missing values ('', 'no capo', '0', 'none') normalized to ''.
+ * - BPM is included: default-equivalent missing values ('', '0') normalized to '120'.
+ * - Format is included (trimmed, uppercase, default 'PLAIN').
+ * - transposeOffset is included: songs at different transposition are semantically distinct.
+ * - CRLF is normalized to LF, trailing whitespace per line trimmed.
+ * - isDeleted is included: tombstone vs live record are distinct states.
+ * - tags / isFavorite are preserved/reconciled on the survivor during repair rather than silently discarded.
+ *
+ * DO NOT use this fingerprint for anything other than repair dry-run grouping.
+ * DO NOT commit or persist the fingerprint; it is ephemeral.
+ */
+export function computeSemanticSongFingerprint(song: SongEntity | ActiveSongState): string {
+  const title = (song.title || '').trim().toLowerCase()
+  const artist = (song.artist || '').trim().toLowerCase()
+  const key = (song.key || '').trim().toUpperCase()
+
+  // Normalize default-equivalent missing capo values ('', 'no capo', '0', 'none')
+  const rawCapo = (song.capo || '').trim().toLowerCase()
+  const capo = (!rawCapo || rawCapo === 'no capo' || rawCapo === '0' || rawCapo === 'none') ? '' : rawCapo
+
+  // Normalize default-equivalent missing bpm values ('', '0' -> default '120')
+  const rawBpm = (song as ActiveSongState).bpm !== undefined && (song as ActiveSongState).bpm !== null ? String((song as ActiveSongState).bpm).trim() : ''
+  const bpm = (!rawBpm || rawBpm === '0') ? '120' : rawBpm
+
+  const format = String(song.format || 'PLAIN').trim().toUpperCase()
+  const transposeOffset = Number((song as ActiveSongState).transposeOffset || 0)
+
+  const normalizedContent = (song.rawContent || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .join('\n')
+    .trim()
+
+  const isDeleted = Boolean(song.isDeleted)
+
+  // FNV-1a over canonical JSON string of all identity-bearing fields
+  const canonical = JSON.stringify({
+    title,
+    artist,
+    key,
+    capo,
+    bpm,
+    format,
+    transposeOffset,
+    content: normalizedContent,
+    isDeleted,
+  })
+
+  let h = 0x811c9dc5
+  for (let i = 0; i < canonical.length; i++) {
+    h ^= canonical.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return `sfp_${(h >>> 0).toString(16).padStart(8, '0')}_${canonical.length}`
+}
+
+// ---------------------------------------------------------------------------
+// 6. READ-ONLY DRY-RUN REPAIR ANALYZER
+// ---------------------------------------------------------------------------
+
+export interface SemanticDuplicateGroup {
+  fingerprint: string
+  songIds: (string | number)[]
+  titles: string[]
+  survivorId: string | number
+  survivorSelectionReason: string
+  removedIds: (string | number)[]
+  reconciledTags?: string
+  reconciledIsFavorite?: boolean
+}
+
+export interface DivergentSameTitleGroup {
+  normalizedTitle: string
+  fingerprints: string[]
+  songIds: (string | number)[][]
+}
+
+export interface RepairDryRunReport {
+  totalSongs: number
+  semanticGroupCount: number
+  exactDuplicateGroupCount: number
+  exactDuplicateRecordCount: number
+  divergentSameTitleGroupCount: number
+  survivorMap: Map<string, string | number>   // removedId -> survivorId
+  plannedUuidRemaps: Array<{ removedId: string | number; survivorId: string | number; titles: string[] }>
+  setlistRefsAffected: number
+  orphanRefsBeforeRepair: number
+  orphanRefsAfterRepair: number
+  projectedSongCountAfterExactDedupe: number
+  exactDuplicateGroups: SemanticDuplicateGroup[]
+  divergentSameTitleGroups: DivergentSameTitleGroup[]
+  isMutationSafe: boolean
+  warnings: string[]
+}
+
+/**
+ * Read-only dry-run repair analyzer.
+ *
+ * Identifies exact semantic duplicates (same fingerprint, different UUID), computes
+ * a deterministic survivor for each group, and projects all setlist reference remaps
+ * WITHOUT performing any mutation.
+ *
+ * Survivor selection order (deterministic):
+ *  1. UUID referenced by the most setlists
+ *  2. Lexically smallest UUID among tied candidates (deterministic tie-break)
+ *
+ * Returns a complete RepairDryRunReport. Caller must verify isMutationSafe === true
+ * and orphanRefsAfterRepair === 0 before considering live repair.
+ *
+ * NO MUTATION is performed. This function is safe to call on production data.
+ */
+export function analyzeRepairDryRun(
+  songs: (SongEntity | ActiveSongState)[],
+  setlists: WebSetlist[]
+): RepairDryRunReport {
+  const warnings: string[] = []
+
+  // --- Step 1: Build setlist ref-count map per song ID ---
+  const setlistRefCount = new Map<string, number>()
+  for (const sl of setlists) {
+    for (const ref of sl.songs) {
+      if (ref.id !== undefined && ref.id !== null) {
+        const k = String(ref.id)
+        setlistRefCount.set(k, (setlistRefCount.get(k) ?? 0) + 1)
+      }
+    }
+  }
+
+  // --- Step 2: Compute fingerprint per song, group by fingerprint ---
+  const fingerprintGroups = new Map<string, (SongEntity | ActiveSongState)[]>()
+  for (const song of songs) {
+    if (song.id === undefined || song.id === null) {
+      warnings.push(`Song "${song.title}" has no ID and was skipped in fingerprint grouping`)
+      continue
+    }
+    const fp = computeSemanticSongFingerprint(song)
+    const group = fingerprintGroups.get(fp) ?? []
+    group.push(song)
+    fingerprintGroups.set(fp, group)
+  }
+
+  // --- Step 3: Identify exact duplicate groups (>1 member) ---
+  const exactDuplicateGroups: SemanticDuplicateGroup[] = []
+  const survivorMap = new Map<string, string | number>() // removedId -> survivorId
+
+  for (const [fp, group] of fingerprintGroups) {
+    if (group.length <= 1) continue
+
+    // Pick survivor: most setlist refs, then favorite flag, then has tags, then lexical UUID tie-break
+    const scored = group.map((s) => ({
+      song: s,
+      refCount: setlistRefCount.get(String(s.id)) ?? 0,
+      isFavorite: Boolean(s.isFavorite),
+      hasTags: Boolean(s.tags && s.tags.trim()),
+    }))
+    scored.sort((a, b) => {
+      if (b.refCount !== a.refCount) return b.refCount - a.refCount
+      if (b.isFavorite !== a.isFavorite) return (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)
+      if (b.hasTags !== a.hasTags) return (b.hasTags ? 1 : 0) - (a.hasTags ? 1 : 0)
+      return String(a.song.id).localeCompare(String(b.song.id))
+    })
+
+    const survivor = scored[0].song
+    const survivorId = survivor.id!
+    const survivorRefCount = scored[0].refCount
+    const removedIds = scored.slice(1).map((x) => x.song.id!)
+
+    const reconciledIsFavorite = group.some((s) => Boolean(s.isFavorite))
+    const allTags = Array.from(
+      new Set(
+        group
+          .map((s) => (s.tags || '').trim())
+          .filter(Boolean)
+      )
+    ).join(', ')
+
+    const selectionReason =
+      survivorRefCount > 0
+        ? `referenced by ${survivorRefCount} setlist(s); most refs among group`
+        : scored[0].isFavorite
+          ? `marked favorite among duplicate group`
+          : scored[0].hasTags
+            ? `has tags among duplicate group`
+            : `lexically smallest UUID among group (no setlist refs in group)`
+
+    for (const removedId of removedIds) {
+      survivorMap.set(String(removedId), survivorId)
+    }
+
+    exactDuplicateGroups.push({
+      fingerprint: fp,
+      songIds: group.map((s) => s.id!),
+      titles: group.map((s) => s.title),
+      survivorId,
+      survivorSelectionReason: selectionReason,
+      removedIds,
+      reconciledTags: allTags || undefined,
+      reconciledIsFavorite,
+    })
+  }
+
+  // --- Step 4: Identify divergent same-title groups ---
+  const titleToFingerprintMap = new Map<string, Map<string, (string | number)[]>>()
+  for (const [fp, group] of fingerprintGroups) {
+    for (const song of group) {
+      const normTitle = song.title.trim().toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim()
+      const fpMap = titleToFingerprintMap.get(normTitle) ?? new Map()
+      const ids = fpMap.get(fp) ?? []
+      ids.push(song.id!)
+      fpMap.set(fp, ids)
+      titleToFingerprintMap.set(normTitle, fpMap)
+    }
+  }
+
+  const divergentSameTitleGroups: DivergentSameTitleGroup[] = []
+  for (const [normTitle, fpMap] of titleToFingerprintMap) {
+    if (fpMap.size <= 1) continue // only one fingerprint -> not divergent
+    divergentSameTitleGroups.push({
+      normalizedTitle: normTitle,
+      fingerprints: [...fpMap.keys()],
+      songIds: [...fpMap.values()],
+    })
+  }
+
+  // --- Step 5: Project setlist reference impact ---
+  let setlistRefsAffected = 0
+  let orphanRefsBeforeRepair = 0
+  let orphanRefsAfterRepair = 0
+
+  const survivorSongIds = new Set<string>(
+    songs
+      .filter((s) => s.id !== undefined && s.id !== null && !survivorMap.has(String(s.id)))
+      .map((s) => String(s.id))
+  )
+
+  for (const sl of setlists) {
+    for (const ref of sl.songs) {
+      const refId = ref.id !== undefined && ref.id !== null ? String(ref.id) : undefined
+
+      // Before repair: check if ref is already dangling
+      if (refId === undefined || !survivorSongIds.has(refId) && !survivorMap.has(refId)) {
+        // Could be title-only ref or genuinely dangling
+        const resolvedByTitle = songs.find(
+          (s) =>
+            s.title.trim().toLowerCase() === ref.title.trim().toLowerCase() &&
+            (!ref.artist?.trim() || (s.artist || '').trim().toLowerCase() === ref.artist.trim().toLowerCase())
+        )
+        if (!resolvedByTitle) orphanRefsBeforeRepair++
+        continue
+      }
+
+      if (refId && survivorMap.has(refId)) {
+        setlistRefsAffected++
+        // After repair: remap to survivor — survivor must exist
+        const newId = String(survivorMap.get(refId)!)
+        if (!survivorSongIds.has(newId)) {
+          orphanRefsAfterRepair++
+          warnings.push(`Post-remap survivor ${newId} not found in surviving song set for ref "${ref.title}"`)
+        }
+      }
+    }
+  }
+
+  const exactDuplicateRecordCount = exactDuplicateGroups.reduce((sum, g) => sum + g.removedIds.length, 0)
+  const projectedSongCountAfterExactDedupe = songs.length - exactDuplicateRecordCount
+  const plannedUuidRemaps = exactDuplicateGroups.flatMap((g) =>
+    g.removedIds.map((rid) => ({ removedId: rid, survivorId: g.survivorId, titles: g.titles }))
+  )
+
+  const isMutationSafe =
+    orphanRefsAfterRepair === 0 &&
+    exactDuplicateRecordCount > 0 &&
+    projectedSongCountAfterExactDedupe > 0 &&
+    warnings.length === 0
+
+  return {
+    totalSongs: songs.length,
+    semanticGroupCount: fingerprintGroups.size,
+    exactDuplicateGroupCount: exactDuplicateGroups.length,
+    exactDuplicateRecordCount,
+    divergentSameTitleGroupCount: divergentSameTitleGroups.length,
+    survivorMap,
+    plannedUuidRemaps,
+    setlistRefsAffected,
+    orphanRefsBeforeRepair,
+    orphanRefsAfterRepair,
+    projectedSongCountAfterExactDedupe,
+    exactDuplicateGroups,
+    divergentSameTitleGroups,
+    isMutationSafe,
+    warnings,
+  }
+}

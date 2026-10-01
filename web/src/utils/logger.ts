@@ -120,13 +120,13 @@ class WebLoggerEngine {
     this.isInitialized = true
 
     // Intercept console.error
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
       this.originalConsole.error.apply(console, args)
       this.captureConsoleEntry('ERROR', args)
     }
 
     // Intercept console.warn
-    console.warn = (...args: any[]) => {
+    console.warn = (...args: unknown[]) => {
       this.originalConsole.warn.apply(console, args)
       this.captureConsoleEntry('WARN', args)
     }
@@ -171,7 +171,7 @@ class WebLoggerEngine {
     this.info('WebLogger', `Logger initialized. Environment: ${import.meta.env.DEV ? 'development' : 'production'}`)
   }
 
-  private captureConsoleEntry(level: LogLevel, args: any[]) {
+  private captureConsoleEntry(level: LogLevel, args: unknown[]) {
     try {
       const messageParts: string[] = []
       let stack: string | undefined

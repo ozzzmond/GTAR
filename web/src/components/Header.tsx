@@ -188,7 +188,7 @@ export const Header: React.FC<HeaderProps> = ({
     // Header rendered outside AuthGate (e.g. isolated test or preview)
   }
 
-  const isDevApp = isDevEnv && isSuperAdmin
+  const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -556,19 +556,6 @@ export const Header: React.FC<HeaderProps> = ({
                         <span>Manage Users &amp; Whitelist</span>
                       </button>
                     )}
-
-                    {/* Cloud Songbook Sync */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAvatarPopover(false)
-                        setShowCloudSyncModal(true)
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#094352]/50 text-[#FDF6E3] hover:text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#1A4A55] transition-all cursor-pointer mb-2"
-                    >
-                      <Cloud className="w-3.5 h-3.5 text-[#2AA198]" />
-                      <span>Cloud Songbook Sync</span>
-                    </button>
 
                     {/* Backup & Restore (JSON) */}
                     <button
@@ -1162,21 +1149,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
 
-          {/* 1.5. Cloud Songbook Sync */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              setShowCloudSyncModal(true)
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <Cloud className="w-4 h-4 text-[#2AA198]" />
-            <span className="font-semibold">Cloud Songbook Sync</span>
-          </button>
-
-          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
-
           {/* 2. Import... */}
           <button
             type="button"
@@ -1229,7 +1201,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className="font-semibold">Debug Logs</span>
                 </div>
                 <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600/25 text-red-400 border border-red-500/30">
-                  DEV:5174
+                  {isDevEnv ? 'DEV' : 'DIAG'}
                 </span>
               </button>
             </>

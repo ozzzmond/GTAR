@@ -126,7 +126,16 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   })
 }
 
-createRoot(document.getElementById('root')!).render(
+// Singleton guard: createRoot must only be called once per page lifecycle.
+// If Vite HMR re-evaluates this module without a full page navigation,
+// reuse the existing root to prevent the duplicate-root React error and
+// the resulting Node.removeChild DOMException.
+const rootEl = document.getElementById('root')!
+const _win = window as typeof window & { __GTAR_REACT_ROOT__?: ReturnType<typeof createRoot> }
+if (!_win.__GTAR_REACT_ROOT__) {
+  _win.__GTAR_REACT_ROOT__ = createRoot(rootEl)
+}
+_win.__GTAR_REACT_ROOT__.render(
   <StrictMode>
     <AuthGate><Suspense fallback={<p role="status">Loading GTAR...</p>}><App /></Suspense></AuthGate>
   </StrictMode>,

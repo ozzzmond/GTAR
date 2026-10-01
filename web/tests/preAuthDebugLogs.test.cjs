@@ -255,3 +255,41 @@ test('pre-auth errors (popup blocked, offline) are recorded in appLogger', () =>
   assert.ok(offlineEntry, 'Offline GIS script load warning must be logged')
   assert.equal(offlineEntry.level, 'WARN')
 })
+
+// =========================================================================
+// 6. HEADER CLOUD SYNC CANONICAL ENTRY & DEBUG LOGS VISIBILITY
+// =========================================================================
+test('Header simplifies Cloud Sync to canonical header button and removes duplicate menu entries', () => {
+  const headerSource = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
+
+  // Canonical primary Cloud Sync button beside avatar exists
+  assert.match(headerSource, /title="Cloud Songbook Sync"/)
+  assert.match(headerSource, /<span className="hidden md:inline font-mono text-\[11px\]">Cloud Sync<\/span>/)
+
+  // Verify Cloud Songbook Sync is NOT in overflow menu
+  const overflowMenuIdx = headerSource.indexOf('showOverflowMenu &&')
+  assert.ok(overflowMenuIdx > -1, 'Overflow menu must exist')
+  const overflowMenuChunk = headerSource.slice(overflowMenuIdx, overflowMenuIdx + 2000)
+  assert.doesNotMatch(overflowMenuChunk, /Cloud Songbook Sync/)
+
+  // Verify Cloud Songbook Sync is NOT in avatar popover
+  const avatarPopoverIdx = headerSource.indexOf('showAvatarPopover &&')
+  assert.ok(avatarPopoverIdx > -1, 'Avatar popover must exist')
+  const avatarPopoverChunk = headerSource.slice(avatarPopoverIdx, avatarPopoverIdx + 2500)
+  assert.doesNotMatch(avatarPopoverChunk, /Cloud Songbook Sync/)
+
+  // Backup & Restore (JSON) is preserved in avatar popover
+  assert.match(headerSource, /Backup &amp; Restore \(JSON\)/)
+})
+
+test('Header Debug Logs access is enabled in dev environment or when dev logs enabled', () => {
+  const headerSource = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
+
+  // isDevApp condition includes isDevEnv, isSuperAdmin, or VITE_ENABLE_DEV_LOGS
+  assert.match(headerSource, /const isDevApp = isDevEnv \|\| isSuperAdmin \|\| import\.meta\.env\.VITE_ENABLE_DEV_LOGS === 'true'/)
+
+  // Debug Logs item in overflow menu renders trigger
+  assert.match(headerSource, /<span className="font-semibold">Debug Logs<\/span>/)
+  assert.match(headerSource, /setShowDebugLogsModal\(true\)/)
+})
+

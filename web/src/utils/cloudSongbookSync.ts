@@ -416,22 +416,63 @@ export function reconcileSongbook(
         // Remote unchanged, local modified -> accept local
         mergedSongs.push(localSong)
       } else {
-        // BOTH sides modified differently! True record conflict!
-        conflicts.push({
-          id,
-          type: 'song',
-          title: localSong.title,
-          reason: 'Both local and cloud versions were edited independently',
-        })
-        // Safe non-destructive preservation: keep local, duplicate remote as conflict copy
-        mergedSongs.push(localSong)
-        const conflictCopyId = generateUUID()
-        const conflictCopy: ActiveSongState = {
-          ...remoteSong,
-          id: conflictCopyId,
-          title: `${remoteSong.title} (Cloud Copy)`,
+        // True concurrent divergence or deletion asymmetry
+        const localTombstone = Boolean(localSong.isDeleted)
+        const remoteTombstone = Boolean(remoteSong.isDeleted)
+
+        if (localTombstone && remoteTombstone) {
+          // Both sides marked it deleted -> keep tombstone without creating conflict copy
+          mergedSongs.push({ ...localSong, isDeleted: true })
+        } else if (localTombstone && !remoteTombstone) {
+          // Local deleted it, remote edited it -> Conflict! Keep tombstone, preserve remote edit as active conflict copy
+          conflicts.push({
+            id,
+            type: 'song',
+            title: remoteSong.title,
+            reason: 'Song was deleted locally while modified in the cloud',
+          })
+          mergedSongs.push(localSong)
+          const conflictCopyId = generateUUID()
+          const conflictCopy: ActiveSongState = {
+            ...remoteSong,
+            id: conflictCopyId,
+            title: `${remoteSong.title} (Cloud Copy)`,
+            isDeleted: false,
+          }
+          mergedSongs.push(conflictCopy)
+        } else if (!localTombstone && remoteTombstone) {
+          // Remote deleted it, local modified it -> Conflict! Keep edited local
+          conflicts.push({
+            id,
+            type: 'song',
+            title: localSong.title,
+            reason: 'Song was modified locally while deleted in the cloud',
+          })
+          mergedSongs.push(localSong)
+        } else if (baseSong) {
+          // BOTH sides modified differently from a known common base: true concurrent conflict.
+          // A conflict copy is safe to create because baseSong confirms independent divergence.
+          conflicts.push({
+            id,
+            type: 'song',
+            title: localSong.title,
+            reason: 'Both local and cloud versions were edited independently',
+          })
+          // Safe non-destructive preservation: keep local, duplicate remote as conflict copy
+          mergedSongs.push(localSong)
+          const conflictCopyId = generateUUID()
+          const conflictCopy: ActiveSongState = {
+            ...remoteSong,
+            id: conflictCopyId,
+            title: `${remoteSong.title} (Cloud Copy)`,
+          }
+          mergedSongs.push(conflictCopy)
+        } else {
+          // No common base snapshot available: cannot confirm independent concurrent modification.
+          // Prefer remote (last uploaded canonical state) to avoid spurious library duplication.
+          // Local edits without a base are superseded by the remote authoritative version.
+          mergedSongs.push(remoteSong)
         }
-        mergedSongs.push(conflictCopy)
       }
     }
   }
@@ -516,7 +557,10 @@ export function reconcileSongbook(
         const localTombstone = Boolean(localSl.isDeleted)
         const remoteTombstone = Boolean(remoteSl.isDeleted)
 
-        if (localTombstone && !remoteTombstone) {
+        if (localTombstone && remoteTombstone) {
+          // Both sides marked it deleted -> keep tombstone without creating conflict copy
+          mergedSetlists.push({ ...localSl, isDeleted: true })
+        } else if (localTombstone && !remoteTombstone) {
           // Local deleted it, remote edited it -> Conflict! Keep tombstone locally or conflict copy of remote
           conflicts.push({
             id,
@@ -577,6 +621,48 @@ export function reconcileSongbook(
 }
 
 /**
+ * Safely parses response JSON, returning null if body is empty or non-JSON (e.g. HTML 404/500/SPA fallback)
+ */
+async function safeParseJsonResponse<T>(res: Response | { ok?: boolean; status?: number; headers?: Headers | { get?: (h: string) => string | null }; json?: () => Promise<unknown>; text?: () => Promise<string> }): Promise<{ parsed: T | null; rawText: string; isJson: boolean }> {
+  // If response object provides text(), read it to inspect raw body
+  if (typeof res.text === 'function') {
+    let rawText: string
+    try {
+      rawText = await res.text()
+    } catch {
+      return { parsed: null, rawText: '', isJson: false }
+    }
+
+    const contentType = (res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-type') : null) || ''
+    const trimmed = rawText.trim()
+    const looksLikeJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))
+
+    if (!looksLikeJson && !contentType.includes('application/json')) {
+      return { parsed: null, rawText, isJson: false }
+    }
+
+    try {
+      const parsed = JSON.parse(rawText) as T
+      return { parsed, rawText, isJson: true }
+    } catch {
+      return { parsed: null, rawText, isJson: false }
+    }
+  }
+
+  // Fallback for mocked test environments where only .json() is defined on the response object
+  if (typeof res.json === 'function') {
+    try {
+      const parsed = (await res.json()) as T
+      return { parsed, rawText: JSON.stringify(parsed), isJson: true }
+    } catch {
+      return { parsed: null, rawText: '', isJson: false }
+    }
+  }
+
+  return { parsed: null, rawText: '', isJson: false }
+}
+
+/**
  * Executes Cloud Songbook Sync against the server API
  */
 export async function performCloudSongbookSync(
@@ -609,6 +695,7 @@ export async function performCloudSongbookSync(
 
   // 2. Fetch remote cloud songbook record
   let cloudRecord: CloudSongbookRecord | null
+  let currentUserId: string | null
   try {
     const res = await fetch('/api/songbook/sync', {
       method: 'GET',
@@ -619,28 +706,42 @@ export async function performCloudSongbookSync(
       cache: 'no-store',
     })
 
+    const { parsed, rawText, isJson } = await safeParseJsonResponse<{
+      success: boolean
+      cloudRecord: CloudSongbookRecord | null
+      userId?: string
+      error?: string
+    }>(res)
+
     if (!res.ok) {
       let errMsg = `Cloud server error (${res.status})`
-      try {
-        const errJson = (await res.json()) as { error?: string }
-        if (errJson?.error) errMsg = errJson.error
-      } catch {
-        // ignore
+      if (parsed?.error) {
+        errMsg = parsed.error
+      } else if (!isJson) {
+        errMsg = `Cloud sync endpoint returned non-JSON (${res.status}): ${rawText.slice(0, 100).trim() || 'Empty response'}`
       }
+      const isAuthError = res.status === 401 || res.status === 403
       return {
         success: false,
-        status: res.status === 403 ? 'ERROR' : 'OFFLINE',
+        status: isAuthError ? 'ERROR' : 'OFFLINE',
         state: 'OFFLINE_OR_CLOUD_FAILURE',
         actionTaken: 'NONE',
-        error: errMsg,
+        error: res.status === 401 ? 'Session expired or unauthorized. Please sign in again.' : errMsg,
       }
     }
 
-    const data = (await res.json()) as {
-      success: boolean
-      cloudRecord: CloudSongbookRecord | null
+    if (!isJson || !parsed) {
+      return {
+        success: false,
+        status: 'ERROR',
+        state: 'OFFLINE_OR_CLOUD_FAILURE',
+        actionTaken: 'NONE',
+        error: `Cloud sync endpoint returned invalid non-JSON response (${res.status}): ${rawText.slice(0, 100).trim() || 'Empty body'}`,
+      }
     }
-    cloudRecord = data.cloudRecord
+
+    cloudRecord = parsed.cloudRecord
+    currentUserId = parsed.userId || cloudRecord?.userId || null
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err)
     return {
@@ -653,7 +754,17 @@ export async function performCloudSongbookSync(
   }
 
   // 3. Evaluate Decision
-  const baseMeta = readCloudSyncMeta(targetStorage)
+  let baseMeta = readCloudSyncMeta(targetStorage)
+  // Strict multi-user isolation: if baseMeta belonged to a different user, clear it from decision
+  if (currentUserId && baseMeta.lastSyncedUserId && baseMeta.lastSyncedUserId !== currentUserId) {
+    baseMeta = {
+      lastSyncedChecksum: null,
+      lastSyncedAt: null,
+      cloudVersion: null,
+      lastSyncedUserId: currentUserId,
+    }
+  }
+
   const decisionResult = evaluateSyncDecision({
     localData: localLibrary,
     cloudRecord,
@@ -676,6 +787,7 @@ export async function performCloudSongbookSync(
         lastSyncedChecksum: decisionResult.localChecksum,
         lastSyncedAt: Date.now(),
         cloudVersion: cloudRecord?.version ?? baseMeta.cloudVersion,
+        lastSyncedUserId: currentUserId || baseMeta.lastSyncedUserId,
       },
       targetStorage
     )
@@ -707,33 +819,48 @@ export async function performCloudSongbookSync(
         signal: AbortSignal.timeout(15000),
       })
 
+      const { parsed: uploadParsed, rawText: uploadRaw, isJson: uploadIsJson } = await safeParseJsonResponse<{
+        success: boolean
+        cloudRecord: { version: number; checksum: string; updatedAt: string }
+        userId?: string
+        error?: string
+      }>(uploadRes)
+
       if (!uploadRes.ok) {
         let errStr = `Upload failed (${uploadRes.status})`
-        try {
-          const errData = (await uploadRes.json()) as { error?: string }
-          if (errData?.error) errStr = errData.error
-        } catch {
-          // ignore
+        if (uploadParsed?.error) {
+          errStr = uploadParsed.error
+        } else if (!uploadIsJson) {
+          errStr = `Upload returned non-JSON (${uploadRes.status}): ${uploadRaw.slice(0, 100).trim() || 'Empty response'}`
         }
+        const isAuthError = uploadRes.status === 401 || uploadRes.status === 403
+        return {
+          success: false,
+          status: isAuthError ? 'ERROR' : 'OFFLINE',
+          state: decisionResult.state,
+          actionTaken: 'NONE',
+          error: uploadRes.status === 401 ? 'Session expired or unauthorized. Please sign in again.' : errStr,
+        }
+      }
+
+      if (!uploadIsJson || !uploadParsed) {
         return {
           success: false,
           status: 'ERROR',
           state: decisionResult.state,
           actionTaken: 'NONE',
-          error: errStr,
+          error: `Upload returned invalid non-JSON response (${uploadRes.status}): ${uploadRaw.slice(0, 100).trim() || 'Empty body'}`,
         }
       }
 
-      const uploadData = (await uploadRes.json()) as {
-        success: boolean
-        cloudRecord: { version: number; checksum: string; updatedAt: string }
-      }
+      const uploadData = uploadParsed
 
       saveCloudSyncMeta(
         {
           lastSyncedChecksum: uploadData.cloudRecord.checksum,
           lastSyncedAt: Date.now(),
           cloudVersion: uploadData.cloudRecord.version,
+          lastSyncedUserId: uploadData.userId || currentUserId || baseMeta.lastSyncedUserId,
         },
         targetStorage
       )
@@ -762,14 +889,33 @@ export async function performCloudSongbookSync(
   if (actionToExecute === 'DOWNLOAD' && cloudRecord) {
     try {
       const incoming = cloudRecord.data
+      if (!incoming || !Array.isArray(incoming.songs) || !Array.isArray(incoming.setlists)) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: decisionResult.state,
+          actionTaken: 'NONE',
+          error: 'Cloud songbook payload is malformed or missing songs/setlists arrays',
+        }
+      }
+
       const normalizedIncoming = normalizeSongbookIds(incoming.songs, incoming.setlists)
       const downloadedLibrary: SyncLibrary = {
         songs: normalizedIncoming.songs,
         setlists: normalizedIncoming.setlists,
       }
 
-      // Safety check referential integrity
-      validateSongbookIntegrity(downloadedLibrary.songs, downloadedLibrary.setlists)
+      // Safety check referential integrity before committing downloaded library
+      const integrity = validateSongbookIntegrity(downloadedLibrary.songs, downloadedLibrary.setlists)
+      if (!integrity.isValid) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: decisionResult.state,
+          actionTaken: 'NONE',
+          error: `Downloaded cloud songbook failed referential integrity check: ${integrity.errors.join('; ')}`,
+        }
+      }
 
       // Save safety snapshot of local data before replacing
       try {
@@ -785,6 +931,7 @@ export async function performCloudSongbookSync(
           lastSyncedChecksum: cloudRecord.checksum,
           lastSyncedAt: Date.now(),
           cloudVersion: cloudRecord.version,
+          lastSyncedUserId: currentUserId || baseMeta.lastSyncedUserId,
         },
         targetStorage
       )
@@ -814,8 +961,38 @@ export async function performCloudSongbookSync(
 
   if (actionToExecute === 'MERGE' && cloudRecord) {
     try {
-      const reconciliation = reconcileSongbook(localLibrary, cloudRecord.data, baseSnapshot)
+      const incoming = cloudRecord.data
+      if (!incoming || !Array.isArray(incoming.songs) || !Array.isArray(incoming.setlists)) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'CONFLICT',
+          actionTaken: 'NONE',
+          error: 'Cloud songbook payload is malformed or missing songs/setlists arrays',
+        }
+      }
+
+      const reconciliation = reconcileSongbook(localLibrary, incoming, baseSnapshot)
       const mergedLib = reconciliation.merged
+
+      // Referential check on merged library before persisting or uploading
+      const integrity = validateSongbookIntegrity(mergedLib.songs, mergedLib.setlists)
+      if (!integrity.isValid) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'CONFLICT',
+          actionTaken: 'NONE',
+          error: `Merged songbook failed referential integrity check: ${integrity.errors.join('; ')}`,
+        }
+      }
+
+      // Save safety snapshot before overwriting
+      try {
+        targetStorage.setItem(`gtar_sync_recovery:${Date.now()}`, JSON.stringify(localLibrary))
+      } catch {
+        // quota
+      }
 
       // Persist merged locally
       persistLibrary(mergedLib, targetStorage)
@@ -830,24 +1007,53 @@ export async function performCloudSongbookSync(
         body: JSON.stringify({
           action: 'resolve',
           data: mergedLib,
+          clientChecksum: computeSongbookChecksum(mergedLib),
         }),
         signal: AbortSignal.timeout(15000),
       })
 
-      if (!uploadRes.ok) {
-        throw new Error(`Upload of merged songbook failed (${uploadRes.status})`)
-      }
-
-      const uploadData = (await uploadRes.json()) as {
+      const { parsed: uploadParsed, rawText: uploadRaw, isJson: uploadIsJson } = await safeParseJsonResponse<{
         success: boolean
         cloudRecord: { version: number; checksum: string; updatedAt: string }
+        userId?: string
+        error?: string
+      }>(uploadRes)
+
+      if (!uploadRes.ok) {
+        let errStr = `Upload of merged songbook failed (${uploadRes.status})`
+        if (uploadParsed?.error) {
+          errStr = uploadParsed.error
+        } else if (!uploadIsJson) {
+          errStr = `Upload of merged songbook returned non-JSON (${uploadRes.status}): ${uploadRaw.slice(0, 100).trim() || 'Empty response'}`
+        }
+        const isAuthError = uploadRes.status === 401 || uploadRes.status === 403
+        return {
+          success: false,
+          status: isAuthError ? 'ERROR' : 'OFFLINE',
+          state: 'CONFLICT',
+          actionTaken: 'NONE',
+          error: uploadRes.status === 401 ? 'Session expired or unauthorized. Please sign in again.' : errStr,
+        }
       }
+
+      if (!uploadIsJson || !uploadParsed) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'CONFLICT',
+          actionTaken: 'NONE',
+          error: `Upload of merged songbook returned invalid non-JSON response (${uploadRes.status}): ${uploadRaw.slice(0, 100).trim() || 'Empty body'}`,
+        }
+      }
+
+      const uploadData = uploadParsed
 
       saveCloudSyncMeta(
         {
           lastSyncedChecksum: uploadData.cloudRecord.checksum,
           lastSyncedAt: Date.now(),
           cloudVersion: uploadData.cloudRecord.version,
+          lastSyncedUserId: uploadData.userId || currentUserId || baseMeta.lastSyncedUserId,
         },
         targetStorage
       )

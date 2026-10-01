@@ -7,6 +7,8 @@ import {
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
+import { computeSongbookChecksum } from '../../../src/utils/cloudSongbookSync.ts'
+import type { SyncLibrary } from '../../../src/utils/syncMerge.ts'
 
 interface PagesContext {
   request: Request
@@ -86,27 +88,6 @@ function validateSongbookPayload(data: unknown): { isValid: boolean; error?: str
   return { isValid: true }
 }
 
-/**
- * Deterministic checksum computation
- */
-function computeChecksum(content: string): string {
-  // 32-bit FNV-1a hash formatted as 8-character hex string
-  let h1 = 0x811c9dc5
-  for (let i = 0; i < content.length; i++) {
-    h1 ^= content.charCodeAt(i)
-    h1 = Math.imul(h1, 0x01000193)
-  }
-  const part1 = (h1 >>> 0).toString(16).padStart(8, '0')
-
-  // Second pass with djb2 for 16-character combined collision-resistant fingerprint
-  let h2 = 5381
-  for (let i = 0; i < content.length; i++) {
-    h2 = ((h2 << 5) + h2 + content.charCodeAt(i)) | 0
-  }
-  const part2 = (h2 >>> 0).toString(16).padStart(8, '0')
-
-  return `ck_${part1}${part2}`
-}
 
 /**
  * GET /api/songbook/sync
@@ -127,6 +108,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       return jsonResponse({
         success: true,
         cloudRecord: null,
+        userId: auth.user.id,
       })
     }
 
@@ -146,6 +128,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         updatedAt: record.updated_at,
         data: parsedData,
       },
+      userId: auth.user.id,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -189,8 +172,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   try {
+    const libraryData = body.data as SyncLibrary
+    const checksum = computeSongbookChecksum(libraryData)
     const serialized = JSON.stringify(body.data)
-    const checksum = computeChecksum(serialized)
     const nowIso = new Date().toISOString()
 
     const result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso)
@@ -203,6 +187,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         checksum: result.checksum,
         updatedAt: result.updated_at,
       },
+      userId: auth.user.id,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

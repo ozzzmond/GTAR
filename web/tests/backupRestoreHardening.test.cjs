@@ -175,11 +175,87 @@ test('snapshot write failure aborts restore and preserves current state', () => 
     getItem: () => null,
     setItem: () => { throw new Error('Storage write error (disk full)') },
     removeItem: () => {},
+    key: () => null,
+    length: 0,
   }
 
   assert.throws(() => {
     createRestoreSafetySnapshot({ songs: [mockSong1], setlists: [] }, failingStorage)
   }, /Pre-restore safety snapshot creation failed/)
+})
+
+// REGRESSION: GTAR_108_DEV_8B_PRE_RESTORE_SAFETY_SNAPSHOT_FIX
+// Root cause: QuotaExceededError on first setItem when localStorage near-full with ~1182 songs.
+// Fix: evict stale RESTORE_SNAPSHOT_KEY + gtar_sync_recovery: keys, then retry.
+test('snapshot creation succeeds after quota eviction of stale snapshot and recovery keys', () => {
+  const map = new Map()
+  // Pre-populate: stale previous safety snapshot + 3 recovery entries + unrelated key
+  map.set(RESTORE_SNAPSHOT_KEY, JSON.stringify({ createdAt: '2026-01-01T00:00:00Z', library: { songs: [], setlists: [] } }))
+  map.set('gtar_sync_recovery:2026-01-01T01:00:00Z', JSON.stringify({ local: {}, remote: {} }))
+  map.set('gtar_sync_recovery:2026-01-01T02:00:00Z', JSON.stringify({ local: {}, remote: {} }))
+  map.set('gtar_sync_recovery:2026-01-01T03:00:00Z', JSON.stringify({ local: {}, remote: {} }))
+  map.set('unrelated_user_key', 'user data that must not be deleted')
+
+  let writeCount = 0
+  const quotaStorage = {
+    getItem: k => map.get(k) ?? null,
+    setItem: (k, v) => {
+      writeCount++
+      // First write throws QuotaExceededError (simulates near-full storage)
+      if (writeCount === 1) {
+        const err = new Error('QuotaExceededError: storage quota exceeded')
+        err.name = 'QuotaExceededError'
+        throw err
+      }
+      map.set(k, String(v))
+    },
+    removeItem: k => map.delete(k),
+    key: i => [...map.keys()][i] ?? null,
+    get length() { return map.size },
+  }
+
+  // Build a library comparable to 1182-song real state
+  const bigSong = { id: 'x', title: 'X', artist: 'A', rawContent: 'a'.repeat(4096), isDeleted: false }
+  const largeSongs = Array.from({ length: 200 }, (_, i) => ({ ...bigSong, id: `song-${i}` }))
+  const library = { songs: largeSongs, setlists: [mockSetlist] }
+
+  // Must NOT throw — quota relief path succeeds on retry
+  assert.doesNotThrow(() => createRestoreSafetySnapshot(library, quotaStorage))
+
+  // Snapshot was written
+  const raw = quotaStorage.getItem(RESTORE_SNAPSHOT_KEY)
+  assert.ok(raw, 'Snapshot must be persisted after eviction')
+  const parsed = JSON.parse(raw)
+  assert.equal(parsed.library.songs.length, 200)
+
+  // Recovery keys evicted (stale GTAR-owned non-canonical keys)
+  assert.equal(quotaStorage.getItem('gtar_sync_recovery:2026-01-01T01:00:00Z'), null, 'oldest recovery key must be evicted')
+  assert.equal(quotaStorage.getItem('gtar_sync_recovery:2026-01-01T02:00:00Z'), null, 'recovery key must be evicted')
+  assert.equal(quotaStorage.getItem('gtar_sync_recovery:2026-01-01T03:00:00Z'), null, 'recovery key must be evicted')
+
+  // Unrelated user key MUST NOT be removed
+  assert.equal(quotaStorage.getItem('unrelated_user_key'), 'user data that must not be deleted',
+    'unrelated storage keys must never be deleted by snapshot eviction')
+})
+
+test('snapshot creation fails closed when quota persists after eviction', () => {
+  // Simulates: even after clearing stale keys, storage is still full
+  let removeCount = 0
+  const alwaysQuotaStorage = {
+    getItem: () => null,
+    setItem: () => {
+      const err = new Error('QuotaExceededError: storage quota exceeded')
+      err.name = 'QuotaExceededError'
+      throw err
+    },
+    removeItem: () => { removeCount++ },
+    key: () => null,
+    length: 0,
+  }
+
+  assert.throws(() => {
+    createRestoreSafetySnapshot({ songs: [mockSong1], setlists: [] }, alwaysQuotaStorage)
+  }, /Pre-restore safety snapshot creation failed/, 'Must fail closed when retry still exceeds quota')
 })
 
 function withJsdom(fn) {

@@ -168,7 +168,12 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
       } catch {}
     }
 
-    const ctx = audioCtx || new (window.AudioContext || (window as any).webkitAudioContext)()
+    type AudioContextConstructor = typeof AudioContext
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext
+    if (!AudioContextClass) return
+    const ctx = audioCtx || new AudioContextClass()
     if (!audioCtx) setAudioCtx(ctx)
 
     if (ctx.state === 'suspended') {

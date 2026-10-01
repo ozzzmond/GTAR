@@ -1,6 +1,7 @@
 import { SongSetlistDialog } from './SongSetlistDialog'
 import { resolveSetlistSong } from '../utils/setlistSongs'
-import React, { useState, useMemo, useEffect } from 'react'
+import { DropdownPortal } from './DropdownPortal'
+import React, { useState, useMemo, useRef, useCallback } from 'react'
 import {
   ListPlus,
   Music,
@@ -65,6 +66,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [confirmDeleteSetlistId, setConfirmDeleteSetlistId] = useState<string | number | null>(null)
   const [activeMenuSetlistId, setActiveMenuSetlistId] = useState<string | number | null>(null)
   const [activeMenuSongIdx, setActiveMenuSongIdx] = useState<number | null>(null)
+  // Anchor elements for portal-positioned kebab menus (set on click, not read in render)
+  const [setlistMenuAnchor, setSetlistMenuAnchor] = useState<HTMLElement | null>(null)
+  const [songMenuAnchor, setSongMenuAnchor] = useState<HTMLElement | null>(null)
   const [renamingSetlist, setRenamingSetlist] = useState<WebSetlist | null>(null)
   const [renameInputValue, setRenameInputValue] = useState('')
   const [internalSearchQuery, setInternalSearchQuery] = useState('')
@@ -73,17 +77,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     if (onSearchQueryChange) onSearchQueryChange(val)
     else setInternalSearchQuery(val)
   }
-  const setlistFileInputRef = React.useRef<HTMLInputElement>(null)
+  const setlistFileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (activeMenuSetlistId === null && activeMenuSongIdx === null) return
-    const handleClickOutside = () => {
-      setActiveMenuSetlistId(null)
-      setActiveMenuSongIdx(null)
-    }
-    window.addEventListener('click', handleClickOutside)
-    return () => window.removeEventListener('click', handleClickOutside)
-  }, [activeMenuSetlistId, activeMenuSongIdx])
+  const closeAllMenus = useCallback(() => {
+    setActiveMenuSetlistId(null)
+    setActiveMenuSongIdx(null)
+    setSetlistMenuAnchor(null)
+    setSongMenuAnchor(null)
+  }, [])
 
   const handleSetlistImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -452,81 +453,86 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     </button>
 
                     {/* Three-dot overflow button */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        aria-label="Setlist actions"
-                        aria-haspopup="true"
-                        aria-expanded={isMenuOpen}
-                        data-testid={`setlist-menu-${sl.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setActiveMenuSetlistId(isMenuOpen ? null : sl.id)
-                          setActiveMenuSongIdx(null)
-                        }}
-                        className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
-                        title="Setlist actions"
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
+                    <button
+                      type="button"
+                      aria-label="Setlist actions"
+                      aria-haspopup="true"
+                      aria-expanded={isMenuOpen}
+                      data-testid={`setlist-menu-${sl.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setActiveMenuSetlistId(isMenuOpen ? null : sl.id)
+                        setActiveMenuSongIdx(null)
+                        setSetlistMenuAnchor(isMenuOpen ? null : e.currentTarget)
+                        setSongMenuAnchor(null)
+                      }}
+                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
+                      title="Setlist actions"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
 
-                      {/* Three-dot Action Menu: Rename Setlist | Share Setlist | Delete Setlist */}
-                      {isMenuOpen && (
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute right-0 top-8 w-40 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl z-30 py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
-                        >
-                          {onRenameSetlist && (
-                            <button
-                              type="button"
-                              data-testid={`menu-rename-${sl.id}`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActiveMenuSetlistId(null)
-                                setRenamingSetlist(sl)
-                                setRenameInputValue(sl.name)
-                              }}
-                              className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors"
-                            >
-                              <Pencil className="w-3.5 h-3.5 text-[#2AA198]" />
-                              <span>Rename Setlist</span>
-                            </button>
-                          )}
+                    {/* Three-dot Action Menu via portal — escapes overflow:hidden */}
+                    <DropdownPortal
+                      anchorEl={isMenuOpen ? setlistMenuAnchor : null}
+                      open={isMenuOpen}
+                      onClose={closeAllMenus}
+                      align="right"
+                    >
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-40 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                      >
+                        {onRenameSetlist && (
                           <button
                             type="button"
-                            data-testid={`menu-share-${sl.id}`}
+                            data-testid={`menu-rename-${sl.id}`}
                             onClick={(e) => {
                               e.stopPropagation()
                               setActiveMenuSetlistId(null)
-                              exportSingleSetlistJson(sl, songs)
+                              setRenamingSetlist(sl)
+                              setRenameInputValue(sl.name)
                             }}
-                            className={`w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors ${
-                              onRenameSetlist ? 'border-t border-[#1A4A55]/50' : ''
-                            }`}
+                            className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors"
                           >
-                            <Share2 className="w-3.5 h-3.5 text-[#B58900]" />
-                            <span>Share Setlist</span>
+                            <Pencil className="w-3.5 h-3.5 text-[#2AA198]" />
+                            <span>Rename Setlist</span>
                           </button>
-                          {onDeleteSetlist && (
-                            <button
-                              type="button"
-                              data-testid={`menu-delete-${sl.id}`}
-                              aria-label="Delete setlist"
-                              title="Delete setlist"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActiveMenuSetlistId(null)
-                                setConfirmDeleteSetlistId(sl.id)
-                              }}
-                              className="w-full text-left px-3 py-2 text-[#DC6E67] hover:bg-[#073642] hover:text-[#DC6E67] flex items-center gap-2 cursor-pointer transition-colors border-t border-[#1A4A55]/50"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-[#DC6E67]" />
-                              <span>Delete Setlist</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                        )}
+                        <button
+                          type="button"
+                          data-testid={`menu-share-${sl.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setActiveMenuSetlistId(null)
+                            exportSingleSetlistJson(sl, songs)
+                          }}
+                          className={`w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors ${
+                            onRenameSetlist ? 'border-t border-[#1A4A55]/50' : ''
+                          }`}
+                        >
+                          <Share2 className="w-3.5 h-3.5 text-[#B58900]" />
+                          <span>Share Setlist</span>
+                        </button>
+                        {onDeleteSetlist && (
+                          <button
+                            type="button"
+                            data-testid={`menu-delete-${sl.id}`}
+                            aria-label="Delete setlist"
+                            title="Delete setlist"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveMenuSetlistId(null)
+                              setConfirmDeleteSetlistId(sl.id)
+                            }}
+                            className="w-full text-left px-3 py-2 text-[#DC6E67] hover:bg-[#073642] hover:text-[#DC6E67] flex items-center gap-2 cursor-pointer transition-colors border-t border-[#1A4A55]/50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-[#DC6E67]" />
+                            <span>Delete Setlist</span>
+                          </button>
+                        )}
+                      </div>
+                    </DropdownPortal>
                   </div>
 
                   {/* Inline Delete Confirmation Popover */}
@@ -750,7 +756,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="relative shrink-0">
+                  <div className="shrink-0">
                     <button
                       type="button"
                       aria-label={`Song options for ${song.title || 'song'}`}
@@ -761,6 +767,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         e.stopPropagation()
                         setActiveMenuSongIdx(isMenuOpen ? null : originalIdx)
                         setActiveMenuSetlistId(null)
+                        setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
+                        setSetlistMenuAnchor(null)
                       }}
                       className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
                       title="Song options"
@@ -768,11 +776,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
 
-                    {/* Song Options Menu: Add to Setlist | Delete Song */}
-                    {isMenuOpen && (
+                    {/* Song Options Menu via portal — escapes overflow:hidden */}
+                    <DropdownPortal
+                      anchorEl={isMenuOpen ? songMenuAnchor : null}
+                      open={isMenuOpen}
+                      onClose={closeAllMenus}
+                      align="right"
+                    >
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute right-0 top-8 w-44 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl z-30 py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                        className="w-44 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
                       >
                         <button
                           type="button"
@@ -806,7 +819,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           <span>Delete Song</span>
                         </button>
                       </div>
-                    )}
+                    </DropdownPortal>
                   </div>
 
                   {/* Inline Delete Confirmation Popover */}

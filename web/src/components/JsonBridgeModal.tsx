@@ -189,8 +189,14 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
       const data = JSON.parse(trimmed)
 
       // Adapt the native setlist content field, then use the shared strict parser.
-      const adaptSong = (item: any) => item && typeof item === 'object'
-        ? { ...item, rawContent: item.rawContent ?? item.chordsContent ?? item.content } : item
+      const adaptSong = (item: unknown) => {
+        if (!item || typeof item !== 'object') return item
+        const obj = item as { rawContent?: unknown; chordsContent?: unknown; content?: unknown }
+        return {
+          ...obj,
+          rawContent: obj.rawContent ?? obj.chordsContent ?? obj.content,
+        }
+      }
       const payload = data?.type === 'GTAR_SETLIST' && Array.isArray(data.songs)
         ? { songs: data.songs.map(adaptSong) }
         : Array.isArray(data) ? data.map(adaptSong)
