@@ -16,6 +16,7 @@ import {
   Pencil,
   Share2,
   MoreHorizontal,
+  Check,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { SwipeableActionCard } from './SwipeableActionCard'
@@ -39,6 +40,9 @@ interface SongbookHomeViewProps {
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
   searchQuery?: string
   onSearchQueryChange?: (query: string) => void
+  onBulkDeleteSongs?: (songIds: Array<string | number>) => void
+  onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
+  onBulkDeleteSetlists?: (setlistIds: Array<string | number>) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -59,6 +63,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onImportSingleSetlist,
   searchQuery: externalSearchQuery,
   onSearchQueryChange,
+  onBulkDeleteSongs,
+  onBulkAddSongsToSetlist,
+  onBulkDeleteSetlists,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -79,11 +86,88 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
   const setlistFileInputRef = useRef<HTMLInputElement>(null)
 
+  // Setlist multi-selection state
+  const [isSetlistSelectionMode, setIsSetlistSelectionMode] = useState(false)
+  const [selectedSetlistIds, setSelectedSetlistIds] = useState<Set<string | number>>(() => new Set())
+  const [isBulkDeleteSetlistsConfirmOpen, setIsBulkDeleteSetlistsConfirmOpen] = useState(false)
+
+  // Song multi-selection state
+  const [isSongSelectionMode, setIsSongSelectionMode] = useState(false)
+  const [selectedSongIds, setSelectedSongIds] = useState<Set<string | number>>(() => new Set())
+  const [isBulkDeleteSongsConfirmOpen, setIsBulkDeleteSongsConfirmOpen] = useState(false)
+  const [isBulkAddToSetlistModalOpen, setIsBulkAddToSetlistModalOpen] = useState(false)
+
+  // Membership popover state
+  const [membershipPopoverSongId, setMembershipPopoverSongId] = useState<string | number | null>(null)
+  const [membershipPopoverAnchor, setMembershipPopoverAnchor] = useState<HTMLElement | null>(null)
+
+  const toggleSongSelection = (id: string | number) => {
+    setSelectedSongIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSetlistSelection = (id: string | number) => {
+    setSelectedSetlistIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleConfirmBulkDeleteSongs = () => {
+    const ids = Array.from(selectedSongIds)
+    if (onBulkDeleteSongs) {
+      onBulkDeleteSongs(ids)
+    } else {
+      const idSet = new Set(ids.map(String))
+      const indicesToDelete = songs
+        .map((s, idx) => ({ id: s.id, idx }))
+        .filter(item => item.id !== undefined && idSet.has(String(item.id)))
+        .map(item => item.idx)
+        .sort((a, b) => b - a)
+      indicesToDelete.forEach(idx => onDeleteSong(idx))
+    }
+    setSelectedSongIds(new Set())
+    setIsSongSelectionMode(false)
+    setIsBulkDeleteSongsConfirmOpen(false)
+  }
+
+  const handleConfirmBulkAddToSetlist = (destSetlistId: string | number) => {
+    const ids = Array.from(selectedSongIds)
+    if (onBulkAddSongsToSetlist) {
+      onBulkAddSongsToSetlist(ids, destSetlistId)
+    } else {
+      ids.forEach(id => onSongMembershipChange(id, destSetlistId, true))
+    }
+    setSelectedSongIds(new Set())
+    setIsSongSelectionMode(false)
+    setIsBulkAddToSetlistModalOpen(false)
+  }
+
+  const handleConfirmBulkDeleteSetlists = () => {
+    const ids = Array.from(selectedSetlistIds)
+    if (onBulkDeleteSetlists) {
+      onBulkDeleteSetlists(ids)
+    } else if (onDeleteSetlist) {
+      ids.forEach(id => onDeleteSetlist(id))
+    }
+    setSelectedSetlistIds(new Set())
+    setIsSetlistSelectionMode(false)
+    setIsBulkDeleteSetlistsConfirmOpen(false)
+  }
+
   const closeAllMenus = useCallback(() => {
     setActiveMenuSetlistId(null)
     setActiveMenuSongIdx(null)
     setSetlistMenuAnchor(null)
     setSongMenuAnchor(null)
+    setMembershipPopoverSongId(null)
+    setMembershipPopoverAnchor(null)
   }, [])
 
   const handleSetlistImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,6 +413,148 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </dialog>
       )}
 
+      {/* Bulk Add To Setlist Modal */}
+      {isBulkAddToSetlistModalOpen && (
+        <dialog
+          open
+          data-testid="bulk-add-to-setlist-dialog"
+          onCancel={() => setIsBulkAddToSetlistModalOpen(false)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#1A4A55] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="font-bold text-sm flex items-center gap-2 text-[#FDF6E3]">
+                <ListPlus className="w-4 h-4 text-[#2AA198]" />
+                Add {selectedSongIds.size} {selectedSongIds.size === 1 ? 'Song' : 'Songs'} to Setlist
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsBulkAddToSetlistModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-[#93A1A1] mb-3">
+              Choose an existing setlist to add selected songs:
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-1 mb-4">
+              {setlists.filter(sl => !sl.isDeleted).length === 0 ? (
+                <div className="text-xs text-[#93A1A1] italic p-3 text-center bg-[#002B36]/60 rounded-xl">
+                  No setlists available.
+                </div>
+              ) : (
+                setlists.filter(sl => !sl.isDeleted).map(sl => (
+                  <button
+                    key={sl.id}
+                    type="button"
+                    data-testid={`bulk-add-target-${sl.id}`}
+                    onClick={() => handleConfirmBulkAddToSetlist(sl.id)}
+                    className="w-full text-left px-3 py-2.5 rounded-xl bg-[#002B36] hover:bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198] text-sm text-[#EEE8D5] flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span className="font-bold truncate">{sl.name}</span>
+                    <span className="text-xs font-mono text-[#93A1A1]">{sl.songs.length} songs</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                data-testid="cancel-bulk-add-to-setlist"
+                onClick={() => setIsBulkAddToSetlistModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] font-mono text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
+      {/* Bulk Delete Songs Confirmation Modal */}
+      {isBulkDeleteSongsConfirmOpen && (
+        <dialog
+          open
+          data-testid="bulk-delete-songs-confirm-dialog"
+          onCancel={() => setIsBulkDeleteSongsConfirmOpen(false)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 text-[#DC6E67] mb-3">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h2 className="text-base font-bold text-[#FDF6E3]">
+                Delete {selectedSongIds.size} {selectedSongIds.size === 1 ? 'song' : 'songs'}?
+              </h2>
+            </div>
+            <p className="text-xs text-[#93A1A1] leading-relaxed mb-4">
+              Selected songs will be removed from your songbook and references to them will be removed from setlists.
+            </p>
+            <div className="flex justify-end gap-2 font-mono text-xs font-bold">
+              <button
+                type="button"
+                autoFocus
+                data-testid="cancel-bulk-delete-songs"
+                onClick={() => setIsBulkDeleteSongsConfirmOpen(false)}
+                className="px-3.5 py-2 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-bulk-delete-songs"
+                onClick={handleConfirmBulkDeleteSongs}
+                className="px-4 py-2 rounded-lg bg-[#DC6E67] text-white hover:bg-[#DC6E67]/90 transition-colors cursor-pointer"
+              >
+                Delete {selectedSongIds.size} {selectedSongIds.size === 1 ? 'Song' : 'Songs'}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
+      {/* Bulk Delete Setlists Confirmation Modal */}
+      {isBulkDeleteSetlistsConfirmOpen && (
+        <dialog
+          open
+          data-testid="bulk-delete-setlists-confirm-dialog"
+          onCancel={() => setIsBulkDeleteSetlistsConfirmOpen(false)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 text-[#DC6E67] mb-3">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h2 className="text-base font-bold text-[#FDF6E3]">
+                Delete {selectedSetlistIds.size} {selectedSetlistIds.size === 1 ? 'setlist' : 'setlists'}?
+              </h2>
+            </div>
+            <p className="text-xs text-[#93A1A1] leading-relaxed mb-4">
+              Songs in these setlists will remain in your songbook.
+            </p>
+            <div className="flex justify-end gap-2 font-mono text-xs font-bold">
+              <button
+                type="button"
+                autoFocus
+                data-testid="cancel-bulk-delete-setlists"
+                onClick={() => setIsBulkDeleteSetlistsConfirmOpen(false)}
+                className="px-3.5 py-2 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-bulk-delete-setlists"
+                onClick={handleConfirmBulkDeleteSetlists}
+                className="px-4 py-2 rounded-lg bg-[#DC6E67] text-white hover:bg-[#DC6E67]/90 transition-colors cursor-pointer"
+              >
+                Delete {selectedSetlistIds.size} {selectedSetlistIds.size === 1 ? 'Setlist' : 'Setlists'}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
       {/* 1. Compact Panel Header — title + New Setlist button, no hero */}
       <div className="flex items-center justify-between mb-5 px-1">
         <div className="flex items-center gap-2.5">
@@ -370,26 +596,69 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198]">
-                {setlistsCollapsed ? 'Show' : 'Hide'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setlistFileInputRef.current?.click()}
-                className="text-[10px] font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer"
-                title="Import single setlist (.json) into your library"
-              >
-                <Upload className="w-3 h-3" />
-                <span>Import</span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenSetlists}
-                className="text-[10px] font-bold text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1 cursor-pointer"
-              >
-                <span>Manage</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
+              {isSetlistSelectionMode ? (
+                <div data-testid="setlist-selection-bar" className="flex items-center gap-2">
+                  <span data-testid="setlist-selection-count" className="text-xs font-mono font-bold text-[#2AA198]">
+                    {selectedSetlistIds.size} selected
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="bulk-delete-setlists"
+                    disabled={selectedSetlistIds.size === 0}
+                    onClick={() => setIsBulkDeleteSetlistsConfirmOpen(true)}
+                    className="text-xs font-bold text-[#DC6E67] hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Delete selected setlists"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="cancel-setlist-selection"
+                    onClick={() => {
+                      setIsSetlistSelectionMode(false)
+                      setSelectedSetlistIds(new Set())
+                    }}
+                    className="text-xs font-mono text-[#93A1A1] hover:text-[#FDF6E3] px-2 py-1 rounded cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    data-testid="toggle-setlist-selection-mode"
+                    onClick={() => {
+                      setIsSetlistSelectionMode(true)
+                      setSelectedSetlistIds(new Set())
+                    }}
+                    className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198] hover:bg-[#2AA198]/10 cursor-pointer"
+                  >
+                    Select
+                  </button>
+                  <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198]">
+                    {setlistsCollapsed ? 'Show' : 'Hide'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setlistFileInputRef.current?.click()}
+                    className="text-[10px] font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Import single setlist (.json) into your library"
+                  >
+                    <Upload className="w-3 h-3" />
+                    <span>Import</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onOpenSetlists}
+                    className="text-[10px] font-bold text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Manage</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -398,6 +667,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             {filteredSetlists.map((sl) => {
               const isDeletingSetlist = confirmDeleteSetlistId === sl.id
               const isMenuOpen = activeMenuSetlistId === sl.id
+              const isSetlistChosen = selectedSetlistIds.has(sl.id)
 
               return (
                 <SwipeableActionCard
@@ -405,15 +675,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   id={sl.id}
                   dataTestId={`setlist-card-${sl.id}`}
                   className="rounded-xl"
-                  cardClassName="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198]/50 transition-all cursor-pointer group flex items-center justify-between gap-2.5 sm:gap-3 relative"
+                  cardClassName={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border transition-all cursor-pointer group flex items-center justify-between gap-2.5 sm:gap-3 relative ${
+                    isSetlistChosen
+                      ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198]'
+                      : 'bg-[#073642] border-[#1A4A55] hover:border-[#2AA198]/50'
+                  }`}
                   onClick={() => {
-                    if (onSelectSetlistSong && sl.songs.length > 0) {
+                    if (isSetlistSelectionMode) {
+                      toggleSetlistSelection(sl.id)
+                    } else if (onSelectSetlistSong && sl.songs.length > 0) {
                       onSelectSetlistSong(sl.id, 0)
                     } else {
                       onOpenSetlists()
                     }
                   }}
-                  disabled={isDeletingSetlist || isMenuOpen}
+                  disabled={isDeletingSetlist || isMenuOpen || isSetlistSelectionMode}
                   leftAction={{
                     icon: <Layers className="w-4 h-4 text-current" />,
                     label: 'Manage',
@@ -436,16 +712,31 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     },
                   }}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs sm:text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
-                      {sl.name}
-                    </div>
-                    <div className="text-[10px] sm:text-[11px] font-mono text-[#93A1A1] mt-0.5">
-                      {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {isSetlistSelectionMode && (
+                      <div
+                        data-testid={`select-setlist-${sl.id}`}
+                        className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors mr-1 ${
+                          isSetlistChosen
+                            ? 'bg-[#2AA198] border-[#2AA198] text-[#002B36]'
+                            : 'border-[#1A4A55] bg-[#002B36]'
+                        }`}
+                      >
+                        {isSetlistChosen && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs sm:text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
+                        {sl.name}
+                      </div>
+                      <div className="text-[10px] sm:text-[11px] font-mono text-[#93A1A1] mt-0.5">
+                        {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  {!isSetlistSelectionMode && (
+                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     {/* Compact direct play quick action */}
                     <button
                       type="button"
@@ -547,6 +838,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       </div>
                     </DropdownPortal>
                   </div>
+                  )}
 
                   {/* Inline Delete Confirmation Popover */}
                   {isDeletingSetlist && (
@@ -602,6 +894,62 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               Songs Library ({filteredIndexedSongs.length} of {songs.length})
             </h2>
           </div>
+          {songs.length > 0 && (
+            <div className="flex items-center gap-2">
+              {isSongSelectionMode ? (
+                <div data-testid="song-selection-bar" className="flex items-center gap-2">
+                  <span data-testid="song-selection-count" className="text-xs font-mono font-bold text-[#2AA198]">
+                    {selectedSongIds.size} selected
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="bulk-add-to-setlist"
+                    disabled={selectedSongIds.size === 0}
+                    onClick={() => setIsBulkAddToSetlistModalOpen(true)}
+                    className="text-xs font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2.5 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Add selected songs to setlist"
+                  >
+                    <ListPlus className="w-3.5 h-3.5" />
+                    <span>Add to Setlist</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="bulk-delete-songs"
+                    disabled={selectedSongIds.size === 0}
+                    onClick={() => setIsBulkDeleteSongsConfirmOpen(true)}
+                    className="text-xs font-bold text-[#DC6E67] hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Delete selected songs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="cancel-song-selection"
+                    onClick={() => {
+                      setIsSongSelectionMode(false)
+                      setSelectedSongIds(new Set())
+                    }}
+                    className="text-xs font-mono text-[#93A1A1] hover:text-[#FDF6E3] px-2 py-1 rounded cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="toggle-song-selection-mode"
+                  onClick={() => {
+                    setIsSongSelectionMode(true)
+                    setSelectedSongIds(new Set())
+                  }}
+                  className="text-xs px-2.5 py-1 border border-[#2AA198]/40 rounded-lg text-[#2AA198] hover:bg-[#2AA198]/10 font-mono font-semibold cursor-pointer"
+                >
+                  Select
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Sort & Filter Toolbar */}
@@ -701,6 +1049,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               const isSelected = originalIdx === activeSongIndex
               const isDeleting = confirmDeleteIdx === originalIdx
               const isMenuOpen = activeMenuSongIdx === originalIdx
+              const isSongChosen = selectedSongIds.has(song.id ?? originalIdx)
               const songSetlists = getSongSetlists(song)
 
               return (
@@ -710,12 +1059,20 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   dataTestId={`song-card-${originalIdx}`}
                   className="rounded-xl"
                   cardClassName={`relative px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border transition-all cursor-pointer select-none group flex items-center justify-between gap-2 sm:gap-2.5 ${
-                    isSelected
+                    isSongChosen
+                      ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198]'
+                      : isSelected
                       ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198] shadow-lg shadow-[#2AA198]/10'
                       : 'border-[#1A4A55] bg-[#073642]/70 hover:border-[#2AA198] hover:bg-[#073642]'
                   }`}
-                  onClick={() => onSelectSong(originalIdx)}
-                  disabled={isDeleting || isMenuOpen}
+                  onClick={() => {
+                    if (isSongSelectionMode) {
+                      toggleSongSelection(song.id ?? originalIdx)
+                    } else {
+                      onSelectSong(originalIdx)
+                    }
+                  }}
+                  disabled={isDeleting || isMenuOpen || isSongSelectionMode}
                   leftAction={{
                     icon: <ListPlus className="w-4 h-4 text-current" />,
                     label: 'Add to Setlist',
@@ -736,29 +1093,103 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   }}
                 >
                   <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
-                    <div
-                      className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors shadow-inner ${
-                        isSelected
-                          ? 'bg-[#2AA198] text-[#002B36]'
-                          : 'bg-[#002B36] text-[#93A1A1] group-hover:text-[#2AA198]'
-                      }`}
-                    >
-                      {String(displayIdx + 1).padStart(2, '0')}
-                    </div>
+                    {isSongSelectionMode ? (
+                      <div
+                        data-testid={`select-song-${originalIdx}`}
+                        className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors border ${
+                          isSongChosen
+                            ? 'bg-[#2AA198] border-[#2AA198] text-[#002B36]'
+                            : 'bg-[#002B36] border-[#1A4A55] text-[#93A1A1]'
+                        }`}
+                      >
+                        {isSongChosen ? <Check className="w-4 h-4 stroke-[3]" /> : String(displayIdx + 1).padStart(2, '0')}
+                      </div>
+                    ) : (
+                      <div
+                        className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors shadow-inner ${
+                          isSelected
+                            ? 'bg-[#2AA198] text-[#002B36]'
+                            : 'bg-[#002B36] text-[#93A1A1] group-hover:text-[#2AA198]'
+                        }`}
+                      >
+                        {String(displayIdx + 1).padStart(2, '0')}
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <h3 className="font-bold text-xs sm:text-sm text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
                           {song.title || 'Untitled Song'}
                         </h3>
                         {songSetlists.length > 0 && (
-                          <span
-                            className="hidden sm:inline-flex items-center gap-0.5 px-1 py-0.2 rounded bg-[#B58900]/15 text-[#B58900] border border-[#B58900]/30 text-[9px] font-mono font-bold shrink-0"
-                            title={`In Setlist: ${songSetlists.map(s => s.name).join(', ')}`}
-                          >
-                            <Layers className="w-2.5 h-2.5" />
-                            <span className="truncate max-w-[65px]">{songSetlists[0].name}</span>
-                            {songSetlists.length > 1 && <span>+{songSetlists.length - 1}</span>}
-                          </span>
+                          <>
+                            <button
+                              type="button"
+                              aria-label={`Used in ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
+                              aria-haspopup="dialog"
+                              aria-expanded={membershipPopoverSongId === (song.id ?? originalIdx)}
+                              aria-controls={membershipPopoverSongId === (song.id ?? originalIdx) ? `membership-popover-${originalIdx}` : undefined}
+                              title={`Used in ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
+                              data-testid={`song-setlist-indicator-${originalIdx}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const isThisOpen = membershipPopoverSongId === (song.id ?? originalIdx)
+                                closeAllMenus()
+                                setMembershipPopoverSongId(isThisOpen ? null : (song.id ?? originalIdx))
+                                setMembershipPopoverAnchor(isThisOpen ? null : e.currentTarget)
+                              }}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#B58900]/15 text-[#B58900] hover:bg-[#B58900]/25 border border-[#B58900]/30 text-[10px] font-mono font-bold shrink-0 transition-colors cursor-pointer"
+                            >
+                              <Layers className="w-2.5 h-2.5" />
+                              <span data-testid={`song-setlist-count-${originalIdx}`}>{songSetlists.length}</span>
+                            </button>
+                            <DropdownPortal
+                              anchorEl={membershipPopoverSongId === (song.id ?? originalIdx) ? membershipPopoverAnchor : null}
+                              open={membershipPopoverSongId === (song.id ?? originalIdx)}
+                              onClose={() => {
+                                setMembershipPopoverSongId(null)
+                                setMembershipPopoverAnchor(null)
+                              }}
+                              align="left"
+                            >
+                              <div
+                                id={`membership-popover-${originalIdx}`}
+                                role="dialog"
+                                aria-label={`Setlists containing ${song.title || 'Untitled Song'}`}
+                                data-testid={`membership-popover-${originalIdx}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-48 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl py-1.5 px-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100 z-50"
+                              >
+                                <div className="px-2 py-1 text-[10px] text-[#93A1A1] uppercase tracking-wider font-bold border-b border-[#1A4A55]/40 mb-1">
+                                  In Setlists ({songSetlists.length})
+                                </div>
+                                <div className="max-h-48 overflow-y-auto space-y-0.5">
+                                  {songSetlists.map((sl, index) => (
+                                    <button
+                                      key={sl.id}
+                                      type="button"
+                                      autoFocus={index === 0}
+                                      data-testid={`jump-setlist-${sl.id}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setMembershipPopoverSongId(null)
+                                        setMembershipPopoverAnchor(null)
+                                        if (onManageSetlist) {
+                                          onManageSetlist(sl)
+                                        } else {
+                                          onOpenSetlists()
+                                        }
+                                      }}
+                                      className="w-full text-left px-2 py-1.5 rounded-lg text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
+                                      title={`Manage ${sl.name}`}
+                                    >
+                                      <span className="truncate flex-1">{sl.name}</span>
+                                      <ArrowRight className="w-3 h-3 text-[#2AA198] shrink-0" />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </DropdownPortal>
+                          </>
                         )}
                       </div>
                       <p className="text-[11px] sm:text-xs text-[#93A1A1] truncate mt-0.5">
@@ -767,71 +1198,73 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="shrink-0">
-                    <button
-                      type="button"
-                      aria-label={`Song options for ${song.title || 'song'}`}
-                      aria-haspopup="true"
-                      aria-expanded={isMenuOpen}
-                      data-testid={`song-menu-${originalIdx}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setActiveMenuSongIdx(isMenuOpen ? null : originalIdx)
-                        setActiveMenuSetlistId(null)
-                        setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
-                        setSetlistMenuAnchor(null)
-                      }}
-                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
-                      title="Song options"
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </button>
-
-                    {/* Song Options Menu via portal — escapes overflow:hidden */}
-                    <DropdownPortal
-                      anchorEl={isMenuOpen ? songMenuAnchor : null}
-                      open={isMenuOpen}
-                      onClose={closeAllMenus}
-                      align="right"
-                    >
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-44 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                  {!isSongSelectionMode && (
+                    <div className="shrink-0">
+                      <button
+                        type="button"
+                        aria-label={`Song options for ${song.title || 'song'}`}
+                        aria-haspopup="true"
+                        aria-expanded={isMenuOpen}
+                        data-testid={`song-menu-${originalIdx}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setActiveMenuSongIdx(isMenuOpen ? null : originalIdx)
+                          setActiveMenuSetlistId(null)
+                          setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
+                          setSetlistMenuAnchor(null)
+                        }}
+                        className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
+                        title="Song options"
                       >
-                        <button
-                          type="button"
-                          data-testid={`menu-add-to-setlist-${originalIdx}`}
-                          aria-label={`Add ${song.title} to setlist`}
-                          disabled={song.id === undefined}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setActiveMenuSongIdx(null)
-                            setMembershipSongId(song.id ?? null)
-                          }}
-                          className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
-                          title="Add to Setlist"
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+
+                      {/* Song Options Menu via portal — escapes overflow:hidden */}
+                      <DropdownPortal
+                        anchorEl={isMenuOpen ? songMenuAnchor : null}
+                        open={isMenuOpen}
+                        onClose={closeAllMenus}
+                        align="right"
+                      >
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-44 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
                         >
-                          <ListPlus className="w-3.5 h-3.5 text-[#2AA198]" />
-                          <span>Add to Setlist</span>
-                        </button>
-                        <button
-                          type="button"
-                          data-testid={`menu-delete-song-${originalIdx}`}
-                          aria-label={`Delete ${song.title}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setActiveMenuSongIdx(null)
-                            setConfirmDeleteIdx(originalIdx)
-                          }}
-                          className="w-full text-left px-3 py-2 text-[#DC6E67] hover:bg-[#073642] hover:text-[#DC6E67] flex items-center gap-2 cursor-pointer transition-colors border-t border-[#1A4A55]/50"
-                          title="Delete song"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-[#DC6E67]" />
-                          <span>Delete Song</span>
-                        </button>
-                      </div>
-                    </DropdownPortal>
-                  </div>
+                          <button
+                            type="button"
+                            data-testid={`menu-add-to-setlist-${originalIdx}`}
+                            aria-label={`Add ${song.title} to setlist`}
+                            disabled={song.id === undefined}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveMenuSongIdx(null)
+                              setMembershipSongId(song.id ?? null)
+                            }}
+                            className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                            title="Add to Setlist"
+                          >
+                            <ListPlus className="w-3.5 h-3.5 text-[#2AA198]" />
+                            <span>Add to Setlist</span>
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`menu-delete-song-${originalIdx}`}
+                            aria-label={`Delete ${song.title}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveMenuSongIdx(null)
+                              setConfirmDeleteIdx(originalIdx)
+                            }}
+                            className="w-full text-left px-3 py-2 text-[#DC6E67] hover:bg-[#073642] hover:text-[#DC6E67] flex items-center gap-2 cursor-pointer transition-colors border-t border-[#1A4A55]/50"
+                            title="Delete song"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-[#DC6E67]" />
+                            <span>Delete Song</span>
+                          </button>
+                        </div>
+                      </DropdownPortal>
+                    </div>
+                  )}
 
                   {/* Inline Delete Confirmation Popover */}
                   {isDeleting && (

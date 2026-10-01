@@ -27,7 +27,7 @@ test('VERSION_CONTRACT: Canonical web version contract matches dev or prod confi
   )
 
   // Dev version constant in gtar.ts must match expected dev iteration
-  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.8e', 'GTAR_DEV_VERSION constant in gtar.ts must be 1.0.108-dev.8e')
+  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.8f', 'GTAR_DEV_VERSION constant in gtar.ts must be 1.0.108-dev.8f')
 
   // In dev trees, package.json equals GTAR_DEV_VERSION; in promoted prod trees, package.json equals GTAR_APP_VERSION
   const validVersions = [GTAR_DEV_VERSION, GTAR_APP_VERSION]

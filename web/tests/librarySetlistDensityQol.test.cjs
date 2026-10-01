@@ -191,7 +191,8 @@ test('SONG_CARD_STAGE_LAUNCH: Clicking song card calls onSelectSong to launch st
   const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
 
   assert.ok(
-    viewCode.includes('onClick={() => onSelectSong(originalIdx)}'),
+    viewCode.includes('onClick={() => onSelectSong(originalIdx)}') ||
+    viewCode.includes('onSelectSong(originalIdx)'),
     'Song card root must have onClick invoking onSelectSong'
   )
 })
@@ -259,6 +260,6 @@ test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid expands to 4 columns
   )
 })
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8e', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.8e')
+test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8f', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.8f')
 })

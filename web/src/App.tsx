@@ -247,11 +247,24 @@ function LibraryStartup() {
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+  const [dismissed, setDismissed] = useState(false)
   const showBanner = status.damaged || (isDevEnv && !status.retired)
   return <>
-    {showBanner && <aside role="alert" className="p-4 bg-amber-100 text-black">
-      {status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}
-      <button className="underline ml-3" onClick={exportRecovery}>Export recovery data</button>
+    {!dismissed && showBanner && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
+      <div className="flex-1 min-w-0">
+        <span>{status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}</span>
+        <button className="underline ml-3 cursor-pointer" onClick={exportRecovery}>Export recovery data</button>
+      </div>
+      <button
+        type="button"
+        aria-label="Dismiss recovery notice"
+        title="Dismiss recovery notice"
+        data-testid="dismiss-recovery-banner"
+        onClick={() => setDismissed(true)}
+        className="p-1.5 rounded hover:bg-amber-200 text-black/70 hover:text-black focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shrink-0"
+      >
+        <span aria-hidden="true" className="text-lg leading-none font-bold">×</span>
+      </button>
     </aside>}
     {!status.damaged && <LibraryApp />}
   </>
@@ -867,6 +880,18 @@ function LibraryApp() {
     }
   }
 
+  // Bulk delete setlists
+  const handleBulkDeleteSetlists = (ids: Array<string | number>) => {
+    const idSet = new Set(ids.map(String))
+    setSetlists((prev) => prev.map((sl) => (idSet.has(String(sl.id)) ? { ...sl, isDeleted: true } : sl)))
+    if (activeSetlistId && idSet.has(String(activeSetlistId))) {
+      setActiveSetlistId(null)
+      setQueueMode('library')
+    }
+    setToastMessage(`Deleted ${ids.length} ${ids.length === 1 ? 'setlist' : 'setlists'}.`)
+    setTimeout(() => setToastMessage(null), 3000)
+  }
+
   // Rename setlist
   const handleRenameSetlist = (setlistId: string | number, newName: string) => {
     const trimmed = newName.trim()
@@ -1001,6 +1026,68 @@ function LibraryApp() {
 
     setToastMessage(`Moved "${songToDelete.title}" to Trash.`)
     setTimeout(() => setToastMessage(null), 3500)
+  }
+
+  // Bulk delete songs from library (moves to Trash) and reconciles setlist references
+  const handleBulkDeleteSongs = (ids: Array<string | number>) => {
+    const idSet = new Set(ids.map(String))
+    const songsToDelete = songs.filter((s) => s.id !== undefined && idSet.has(String(s.id)))
+    if (songsToDelete.length === 0) return
+
+    setDeletedSongs((prev) => [...songsToDelete.map((s) => ({ ...s, isDeleted: true })), ...prev])
+
+    // Reconcile setlist references: remove deleted songs from all setlists
+    setSetlists((prev) =>
+      prev.map((sl) => ({
+        ...sl,
+        songs: sl.songs.filter((ref) => ref.id === undefined || !idSet.has(String(ref.id))),
+      }))
+    )
+
+    const remainingSongs = songs.filter((s) => s.id === undefined || !idSet.has(String(s.id)))
+    if (remainingSongs.length === 0) {
+      const blankSong: ActiveSongState = {
+        id: generateUUID(),
+        title: 'New Song',
+        artist: '',
+        key: 'G',
+        capo: 'No Capo',
+        bpm: '120',
+        format: 'CHORD_PRO',
+        transposeOffset: 0,
+        rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{capo: No Capo}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
+      }
+      setSongs([blankSong])
+      setActiveSongIndex(0)
+    } else {
+      setSongs(remainingSongs)
+      setActiveSongIndex((prev) => Math.min(prev, remainingSongs.length - 1))
+    }
+
+    setToastMessage(`Moved ${songsToDelete.length} ${songsToDelete.length === 1 ? 'song' : 'songs'} to Trash.`)
+    setTimeout(() => setToastMessage(null), 3500)
+  }
+
+  // Bulk add songs to destination setlist
+  const handleBulkAddSongsToSetlist = (ids: Array<string | number>, setlistId: string | number) => {
+    const idSet = new Set(ids.map(String))
+    const selectedSongs = songs.filter((s) => s.id !== undefined && idSet.has(String(s.id)))
+    const targetSetlist = setlists.find((sl) => String(sl.id) === String(setlistId))
+    if (!targetSetlist || selectedSongs.length === 0) return
+
+    setSetlists((prev) =>
+      prev.map((sl) => {
+        if (String(sl.id) !== String(setlistId)) return sl
+        let updated = sl
+        for (const song of selectedSongs) {
+          updated = setSongMembership(updated, song, true)
+        }
+        return updated
+      })
+    )
+
+    setToastMessage(`Added ${selectedSongs.length} ${selectedSongs.length === 1 ? 'song' : 'songs'} to ${targetSetlist.name}`)
+    setTimeout(() => setToastMessage(null), 3000)
   }
 
   // Restore song from Trash back to library
@@ -1251,6 +1338,9 @@ function LibraryApp() {
               setActiveView('stage')
             }}
             onImportSingleSetlist={handleImportSingleSetlist}
+            onBulkDeleteSongs={handleBulkDeleteSongs}
+            onBulkAddSongsToSetlist={handleBulkAddSongsToSetlist}
+            onBulkDeleteSetlists={handleBulkDeleteSetlists}
           />
         ) : activeView === 'editor' ? (
           <DesktopEditor
