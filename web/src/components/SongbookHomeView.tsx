@@ -588,9 +588,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               Songs Library ({filteredIndexedSongs.length} of {songs.length})
             </h2>
           </div>
-          <span className="text-xs text-[#93A1A1] font-mono">
-            Click any song to launch Stage View
-          </span>
         </div>
 
         {/* Sort & Filter Toolbar */}

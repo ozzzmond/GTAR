@@ -66,7 +66,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
       if (result.success) {
         if (result.actionTaken === 'NONE') {
-          setStatusMessage('Songbook is in sync with cloud.')
+          setStatusMessage('')
         } else if (result.actionTaken === 'UPLOADED') {
           setStatusMessage('Local songbook uploaded to cloud successfully.')
         } else if (result.actionTaken === 'DOWNLOADED') {
@@ -156,13 +156,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <Cloud className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-extrabold text-sm sm:text-base tracking-wide flex items-center gap-2">
+              <h2 className="font-extrabold text-sm sm:text-base tracking-wide">
                 Cloud Songbook Sync
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30">
-                  D1 SQLite
-                </span>
               </h2>
-              <p className="text-[11px] text-[#93A1A1]">Server-authoritative cloud sync &amp; multi-device backup</p>
             </div>
           </div>
           <button
@@ -290,14 +286,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </span>
               </div>
               <div>
-                <span className="text-[#93A1A1] block">Cloud Revision</span>
-                <span className="text-[#FDF6E3] font-semibold">
-                  {lastMeta.cloudVersion !== null ? `v${lastMeta.cloudVersion}` : 'None'}
-                </span>
-              </div>
-              <div className="col-span-2">
-                <span className="text-[#93A1A1] block">Active Fingerprint</span>
-                <span className="text-[#2AA198] truncate block text-[10px]">
+                <span className="text-[#93A1A1] block">Fingerprint</span>
+                <span className="text-[#2AA198] truncate block text-[10px]" title={localChecksum || undefined}>
                   {localChecksum || 'None'}
                 </span>
               </div>
