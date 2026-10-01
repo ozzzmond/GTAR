@@ -11,6 +11,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import type { ActiveSongState } from '../types/gtar'
+import { normalizeMusicalKey } from '../utils/musicalKey'
 import {
   fetchSongMetadataFromProvider,
   type MetadataMatchStatus,
@@ -74,6 +75,11 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
       setShowConfirmModal(false)
     }
   }, [isOpen, songs, preselectedSongIds])
+
+  const filteredItems = useMemo(() => {
+    if (filterStatus === 'ALL') return items
+    return items.filter((i) => i.status === filterStatus)
+  }, [items, filterStatus])
 
   if (!isOpen) return null
 
@@ -195,7 +201,8 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
         changes.artist = cand.artist.trim()
       }
       if (item.selectedFields.originalKey && cand.originalKey && cand.originalKey.trim()) {
-        changes.originalKey = cand.originalKey.trim()
+        const key = normalizeMusicalKey(cand.originalKey)
+        if (key) changes.originalKey = key
       }
       if (item.selectedFields.bpm && cand.bpm && cand.bpm.trim()) {
         changes.bpm = cand.bpm.trim()
@@ -216,11 +223,6 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
     setShowConfirmModal(false)
     onClose()
   }
-
-  const filteredItems = useMemo(() => {
-    if (filterStatus === 'ALL') return items
-    return items.filter((i) => i.status === filterStatus)
-  }, [items, filterStatus])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -567,8 +569,9 @@ export const LibraryMetadataModal: React.FC<LibraryMetadataModalProps> = ({
             <div className="bg-[#002B36] p-3 rounded-xl border border-[#1A4A55] space-y-2 text-[#EEE8D5] text-[11px] leading-relaxed">
               <p>• Only your selected metadata fields (Original Key, BPM, Release Year) will be updated.</p>
               <p className="text-[#2AA198] font-bold">
-                • Chord content, Chart Key, and Stage Transpose are NOT changed.
+                • Accepting Original Key aligns chords and Chart Key when an explicit chart key agrees with the stored key. Stage Transpose is preserved.
               </p>
+              <p>• Unknown source key: chords are preserved. Open the editor, choose Establish source key, then accept Original Key again.</p>
               <p className="text-[#93A1A1]">• These updates apply directly to your local songbook.</p>
             </div>
 
