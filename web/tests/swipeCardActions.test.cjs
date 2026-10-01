@@ -31,8 +31,8 @@ const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 const { evaluateSwipeIntent, computeSwipeOffset, SwipeableActionCard } = require('../src/components/SwipeableActionCard.tsx')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8f', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.8f')
+test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8g', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.8g')
 })
 
 test('GESTURE_GUARD: Vertical scroll remains primary when vertical intent is detected', () => {

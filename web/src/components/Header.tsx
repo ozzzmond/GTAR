@@ -74,6 +74,7 @@ interface HeaderProps {
   onOpenStageSettings: () => void
   onOpenImportModal: () => void
   onOpenBackupRestoreModal: () => void
+  onOpenMetadataReviewModal?: () => void
   onOpenSetlistDrawer?: () => void
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
@@ -135,6 +136,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStageSettings,
   onOpenImportModal,
   onOpenBackupRestoreModal,
+  onOpenMetadataReviewModal,
   onOpenSetlistDrawer,
   setlists = [],
   activeSetlistId,
@@ -1214,6 +1216,21 @@ export const Header: React.FC<HeaderProps> = ({
             <FolderOpen className="w-4 h-4 text-[#2AA198]" />
             <span className="font-semibold">Import Songs &amp; Setlists...</span>
           </button>
+
+          {onOpenMetadataReviewModal && (
+            <button
+              type="button"
+              data-testid="header-open-metadata-review-btn"
+              onClick={() => {
+                setShowOverflowMenu(false)
+                onOpenMetadataReviewModal()
+              }}
+              className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            >
+              <Search className="w-4 h-4 text-[#2AA198]" />
+              <span className="font-semibold">Review Song Metadata...</span>
+            </button>
+          )}
 
           <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
 

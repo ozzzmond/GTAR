@@ -16,11 +16,16 @@ import {
   ArrowLeft,
   SlidersHorizontal,
   X,
+  Calendar,
+  Search,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react'
 import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
+import { fetchSongMetadataFromProvider, type MetadataCandidate } from '../utils/songMetadata'
 import type { ActiveSongState } from '../types/gtar'
 
 interface DesktopEditorProps {
@@ -49,8 +54,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
   const [localKey, setLocalKey] = useState(canonicalSongKey(song.key || ''))
+  const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey ? canonicalSongKey(song.originalKey) : '')
   const [localCapo, setLocalCapo] = useState(song.capo || '')
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
+  const [localYear, setLocalYear] = useState(song.year || '')
   const [localTags, setLocalTags] = useState(song.tags || '')
   const [localRawContent, setLocalRawContent] = useState(() =>
     standardizeChordProBrackets(song.rawContent || '')
@@ -58,12 +65,38 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
-  const fields = (value: ActiveSongState) => ({ title: value.title || '', artist: value.artist || '', key: value.key || '', capo: value.capo || '', bpm: value.bpm || '', tags: value.tags || '', rawContent: value.rawContent || '' })
+  const fields = (value: ActiveSongState) => ({
+    title: value.title || '',
+    artist: value.artist || '',
+    key: value.key || '',
+    originalKey: value.originalKey || '',
+    capo: value.capo || '',
+    bpm: value.bpm || '',
+    year: value.year || '',
+    tags: value.tags || '',
+    rawContent: value.rawContent || '',
+  })
   const [persisted, setPersisted] = useState(() => fields(song))
   const history = useRef(new TextHistory())
   const selection = useRef({ start: 0, end: 0 })
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
-  const draft = { title: localTitle, artist: localArtist, key: localKey, capo: localCapo, bpm: localBpm, tags: localTags, rawContent: localRawContent }
+
+  // Single-song GetSongBPM lookup state
+  const [isLookingUpMetadata, setIsLookingUpMetadata] = useState(false)
+  const [lookupCandidates, setLookupCandidates] = useState<MetadataCandidate[]>([])
+  const [lookupFeedback, setLookupFeedback] = useState<string | null>(null)
+
+  const draft = {
+    title: localTitle,
+    artist: localArtist,
+    key: localKey,
+    originalKey: localOriginalKey,
+    capo: localCapo,
+    bpm: localBpm,
+    year: localYear,
+    tags: localTags,
+    rawContent: localRawContent,
+  }
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
   const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
   const autosave = (updated: Partial<ActiveSongState>) => {
@@ -92,12 +125,16 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalTitle(song.title || '')
     setLocalArtist(song.artist || '')
     setLocalKey(canonicalSongKey(song.key || ''))
+    setLocalOriginalKey(song.originalKey ? canonicalSongKey(song.originalKey) : '')
     setLocalCapo(song.capo || '')
     setLocalBpm(song.bpm || '')
+    setLocalYear(song.year || '')
     setLocalTags(song.tags || '')
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
     history.current = new TextHistory()
+    setLookupCandidates([])
+    setLookupFeedback(null)
   }, [song.id])
 
   const showToast = (msg: string) => {
@@ -120,8 +157,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       title: localTitle.trim() || 'Untitled Song',
       artist: localArtist.trim(),
       key: effectiveKey,
+      ...(localOriginalKey.trim() ? { originalKey: canonicalSongKey(localOriginalKey.trim()) } : { originalKey: undefined }),
       capo: localCapo.trim(),
       bpm: localBpm.trim(),
+      ...(localYear.trim() ? { year: localYear.trim() } : { year: undefined }),
       tags: localTags.trim(),
       rawContent: standardized,
       format: 'CHORD_PRO',
@@ -134,14 +173,63 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalTitle(updatedSong.title)
       setLocalArtist(updatedSong.artist || '')
       setLocalKey(effectiveKey)
+      setLocalOriginalKey(updatedSong.originalKey || '')
       setLocalCapo(updatedSong.capo || '')
       setLocalBpm(updatedSong.bpm || '')
+      setLocalYear(updatedSong.year || '')
       setLocalTags(updatedSong.tags || '')
       setLocalRawContent(standardized)
       setPersisted(fields(updatedSong))
       showToast('Songbook saved!')
       return true
     } catch { showToast('Changes are not saved. Retry saving before leaving.'); return false }
+  }
+
+  // Helper to calculate semitone distance between roots of two keys
+  // Single-song GetSongBPM lookup
+  const handleLookupMetadata = async () => {
+    if (!localTitle.trim() || isLookingUpMetadata) return
+    setIsLookingUpMetadata(true)
+    setLookupFeedback(null)
+    try {
+      const res = await fetchSongMetadataFromProvider(localTitle, localArtist)
+      if (res.success && res.candidates.length > 0) {
+        setLookupCandidates(res.candidates)
+        setLookupFeedback(null)
+      } else if (res.success && res.candidates.length === 0) {
+        setLookupCandidates([])
+        setLookupFeedback('No matching songs found on GetSongBPM.')
+      } else {
+        setLookupCandidates([])
+        setLookupFeedback(res.error || 'Failed to lookup metadata.')
+      }
+    } catch (err: unknown) {
+      setLookupCandidates([])
+      setLookupFeedback(err instanceof Error ? err.message : 'Lookup failed.')
+    } finally {
+      setIsLookingUpMetadata(false)
+    }
+  }
+
+  const handleApplyCandidateMetadata = (cand: MetadataCandidate) => {
+    const updates: Partial<ActiveSongState> = {}
+    if (cand.originalKey) {
+      const normKey = canonicalSongKey(cand.originalKey)
+      setLocalOriginalKey(normKey)
+      updates.originalKey = normKey
+    }
+    if (cand.bpm) {
+      setLocalBpm(cand.bpm)
+      updates.bpm = cand.bpm
+    }
+    if (cand.year) {
+      setLocalYear(cand.year)
+      updates.year = cand.year
+    }
+    if (Object.keys(updates).length > 0) {
+      autosave(updates)
+      showToast('Applied metadata from GetSongBPM!')
+    }
   }
 
   // Toggle quick genre tag chip
@@ -685,13 +773,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </button>
             </div>
 
-            {/* Inputs: Key, Capo, BPM */}
-            <div className="grid grid-cols-3 gap-2.5">
-              {/* Key */}
+            {/* Inputs: Chart Key, Original Key, Capo, BPM, Year */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {/* Chart Key */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
                   <Music className="w-3 h-3 text-[#B58900]" />
-                  <span>Key</span>
+                  <span>Chart Key</span>
                 </label>
                 <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#B58900] transition-colors">
                   <input
@@ -707,6 +795,29 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     }}
                     placeholder="e.g. G"
                     className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center text-xs"
+                    title="Base key represented by stored chart chords"
+                  />
+                </div>
+              </div>
+
+              {/* Original Recording Key (Reference) */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Music className="w-3 h-3 text-[#2AA198]" />
+                  <span>Original Key</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+                  <input
+                    type="text"
+                    value={localOriginalKey}
+                    onChange={(e) => {
+                      setLocalOriginalKey(e.target.value)
+                      const canonical = normalizeMusicalKey(e.target.value)
+                      autosave({ originalKey: canonical || e.target.value.trim() })
+                    }}
+                    placeholder="e.g. E"
+                    className="w-full bg-transparent text-[#2AA198] font-bold font-mono focus:outline-none text-center text-xs"
+                    title="Reference original recording key from provider or artist"
                   />
                 </div>
               </div>
@@ -750,6 +861,98 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Release Year */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-cyan-400" />
+                  <span>Release Year</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-cyan-400 transition-colors">
+                  <input
+                    type="text"
+                    value={localYear}
+                    onChange={(e) => {
+                      setLocalYear(e.target.value)
+                      autosave({ year: e.target.value.trim() })
+                    }}
+                    placeholder="e.g. 1979"
+                    className="w-full bg-transparent text-cyan-400 font-mono focus:outline-none text-center text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* On-Demand Metadata Lookup (GetSongBPM) */}
+            <div className="pt-2.5 border-t border-[#1A4A55]/80 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#93A1A1]">
+                  <Search className="w-3.5 h-3.5 text-[#2AA198]" />
+                  <span>Metadata Lookup (GetSongBPM)</span>
+                </div>
+                <button
+                  type="button"
+                  data-testid="editor-lookup-metadata-btn"
+                  disabled={isLookingUpMetadata || !localTitle.trim()}
+                  onClick={handleLookupMetadata}
+                  className="px-2.5 py-1 rounded-lg bg-[#2AA198]/20 hover:bg-[#2AA198]/30 text-[#2AA198] text-[11px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isLookingUpMetadata ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                  <span>{isLookingUpMetadata ? 'Looking up...' : 'Lookup Online'}</span>
+                </button>
+              </div>
+
+              {lookupFeedback && (
+                <div className="text-[11px] font-mono text-[#93A1A1] bg-[#002B36] p-2 rounded border border-[#1A4A55]">
+                  {lookupFeedback}
+                </div>
+              )}
+
+              {lookupCandidates.length > 0 && (
+                <div className="bg-[#002B36] p-2.5 rounded-xl border border-[#2AA198]/30 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-[#2AA198] font-bold">
+                    <span>Found Match:</span>
+                    <a
+                      href={lookupCandidates[0].sourceUrl || 'https://getsongbpm.com'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#93A1A1] hover:text-[#2AA198] flex items-center gap-0.5 font-normal"
+                    >
+                      GetSongBPM <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+
+                  <div className="text-xs text-[#FDF6E3] font-mono space-y-1">
+                    <div>{lookupCandidates[0].title} — <span className="text-[#93A1A1]">{lookupCandidates[0].artist}</span></div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      {lookupCandidates[0].originalKey && (
+                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#2AA198]">
+                          Orig Key: <strong>{lookupCandidates[0].originalKey}</strong>
+                        </span>
+                      )}
+                      {lookupCandidates[0].bpm && (
+                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#CB4B16]">
+                          BPM: <strong>{lookupCandidates[0].bpm}</strong>
+                        </span>
+                      )}
+                      {lookupCandidates[0].year && (
+                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-cyan-400">
+                          Year: <strong>{lookupCandidates[0].year}</strong>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="editor-apply-metadata-btn"
+                    onClick={() => handleApplyCandidateMetadata(lookupCandidates[0])}
+                    className="w-full mt-1 py-1 rounded-lg bg-[#2AA198] hover:bg-[#2AA198]/90 text-[#002B36] font-bold text-[11px] font-mono cursor-pointer transition-colors"
+                  >
+                    Apply Found Metadata (Original Key, BPM, Year)
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Tags Input */}

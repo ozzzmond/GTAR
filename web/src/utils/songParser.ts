@@ -438,8 +438,10 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
   let title = 'Untitled Song'
   let artist = ''
   let key = ''
+  let originalKey = ''
   let capo = ''
   let bpm = ''
+  let year = ''
   let tags = ''
 
   const parsedLines: SongLine[] = []
@@ -497,12 +499,19 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
         case 'key':
           key = value
           break
+        case 'original_key':
+        case 'originalkey':
+          originalKey = value
+          break
         case 'capo':
           capo = value
           break
         case 'tempo':
         case 'bpm':
           bpm = value
+          break
+        case 'year':
+          year = value
           break
         case 'tags':
         case 'tag':
@@ -686,8 +695,10 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
     title,
     artist,
     key: effectiveKey,
+    originalKey,
     capo,
     bpm,
+    year,
     tags,
     format,
     lines: deduplicatedLines,

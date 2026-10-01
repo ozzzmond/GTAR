@@ -88,8 +88,10 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       title: (s.title || '').trim(),
       artist: (s.artist || '').trim(),
       key: (s.key || '').trim(),
+      originalKey: (s.originalKey || '').trim(),
       capo: (s.capo || '').trim(),
       bpm: (s.bpm || '').trim(),
+      year: (s.year || '').trim(),
       format: String(s.format || 'PLAIN'),
       transposeOffset: Number(s.transposeOffset || 0),
       rawContent: (s.rawContent || '').replace(/\r\n/g, '\n'),
@@ -325,8 +327,10 @@ function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
     a.title === b.title &&
     (a.artist || '') === (b.artist || '') &&
     (a.key || '') === (b.key || '') &&
+    (a.originalKey || '') === (b.originalKey || '') &&
     (a.capo || '') === (b.capo || '') &&
     (a.bpm || '') === (b.bpm || '') &&
+    (a.year || '') === (b.year || '') &&
     (a.format || 'PLAIN') === (b.format || 'PLAIN') &&
     Number(a.transposeOffset || 0) === Number(b.transposeOffset || 0) &&
     (a.rawContent || '').replace(/\r\n/g, '\n') === (b.rawContent || '').replace(/\r\n/g, '\n') &&

@@ -46,7 +46,10 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
   const rawContent = s.rawContent ?? s.content ?? ''
   return {
     id: s.id ?? generateUUID(), title: s.title!, artist: s.artist ?? '',
-    key: canonicalSongKey(s.key ?? detectSongKey(rawContent)), capo: s.capo ?? '', bpm: s.bpm ?? '120',
+    key: canonicalSongKey(s.key ?? detectSongKey(rawContent)),
+    ...(s.originalKey !== undefined && s.originalKey !== null ? { originalKey: canonicalSongKey(s.originalKey) } : {}),
+    capo: s.capo ?? '', bpm: s.bpm ?? '120',
+    ...(s.year !== undefined && s.year !== null ? { year: String(s.year).trim() } : {}),
     format: s.format ?? 'CHORD_PRO', transposeOffset: s.transposeOffset ?? 0,
     rawContent,
     ...(s.tags !== undefined ? { tags: s.tags } : {}),
@@ -111,7 +114,7 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
     if (!object(value)) { errors.push(`${path}: must be an object`); return }
     const required = song ? 'title' : 'name'
     if (typeof value[required] !== 'string' || !value[required].trim()) errors.push(`${path}.${required}: must be a non-empty string`)
-    for (const field of ['artist', 'key', 'capo', 'bpm', 'format', 'tags', 'rawContent', 'content']) {
+    for (const field of ['artist', 'key', 'originalKey', 'capo', 'bpm', 'year', 'format', 'tags', 'rawContent', 'content']) {
       if (field in value && typeof value[field] !== 'string') errors.push(`${path}.${field}: must be a string`)
     }
     if (song && !('rawContent' in value) && !('content' in value)) errors.push(`${path}.rawContent: provide rawContent or content as a string`)

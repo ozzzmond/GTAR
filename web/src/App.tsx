@@ -33,6 +33,7 @@ import { SetlistDrawer } from './components/SetlistDrawer'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
 import { ImportDialogModal } from './components/ImportDialogModal'
 import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
+import { LibraryMetadataModal } from './components/LibraryMetadataModal'
 import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
 import { StageErrorBoundary } from './components/StageErrorBoundary'
 import {
@@ -553,6 +554,8 @@ function LibraryApp() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
+  const [isMetadataReviewModalOpen, setIsMetadataReviewModalOpen] = useState(false)
+  const [metadataReviewPreselectedIds, setMetadataReviewPreselectedIds] = useState<Set<string | number> | undefined>(undefined)
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
 
@@ -1196,6 +1199,30 @@ function LibraryApp() {
   // Explicit save also reports persistence failure to the editor.
   const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => handleUpdateSong(updatedSong)
 
+  const handleOpenMetadataReviewModal = (preselected?: Set<string | number>) => {
+    setMetadataReviewPreselectedIds(preselected)
+    setIsMetadataReviewModalOpen(true)
+  }
+
+  const handleApplyMetadataUpdates = (updates: Array<{ id: string | number; changes: Partial<ActiveSongState> }>) => {
+    if (updates.length === 0) return
+    const updateMap = new Map(updates.map(u => [String(u.id), u.changes]))
+    const nextSongs = songs.map(song => {
+      const changes = updateMap.get(String(song.id))
+      if (!changes) return song
+      return { ...song, ...changes, id: song.id }
+    })
+    try {
+      persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists })
+    } catch (err) {
+      handleStorageWriteFailure(err)
+      return
+    }
+    setSongs(nextSongs)
+    setToastMessage(`Updated metadata for ${updates.length} song${updates.length === 1 ? '' : 's'}`)
+    setTimeout(() => setToastMessage(null), 3500)
+  }
+
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
     if (song.isDeleted) setDeletedSongs(prev => [song, ...prev])
@@ -1291,6 +1318,7 @@ function LibraryApp() {
           onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           onOpenBackupRestoreModal={() => navigateSafely(() => setIsBackupRestoreModalOpen(true))}
+          onOpenMetadataReviewModal={() => navigateSafely(() => handleOpenMetadataReviewModal())}
           onOpenSetlistDrawer={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
@@ -1328,6 +1356,7 @@ function LibraryApp() {
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}
             onOpenSetlists={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
+            onOpenMetadataReview={(preselected) => handleOpenMetadataReviewModal(preselected)}
             onManageSetlist={handleManageSetlist}
             onDeleteSong={handleDeleteSong}
             onDeleteSetlist={handleDeleteSetlist}
@@ -1386,6 +1415,7 @@ function LibraryApp() {
                 isWebsiteUrlModalOpen ||
                 isImportModalOpen ||
                 isBackupRestoreModalOpen ||
+                isMetadataReviewModalOpen ||
                 isJsonModalOpen ||
                 isHeaderKeyPickerOpen
               }
@@ -1461,6 +1491,10 @@ function LibraryApp() {
         onImportSingleSetlist={handleImportSingleSetlist}
         onSmartMerge={handleSmartMerge}
         existingSongs={[...songs, ...deletedSongs]}
+        onOpenMetadataReviewModal={() => {
+          setIsImportModalOpen(false)
+          handleOpenMetadataReviewModal()
+        }}
       />
 
       {/* Backup & Restore Modal Dialog (Export Backup & Restore Backup Smart Merge) */}
@@ -1528,6 +1562,18 @@ function LibraryApp() {
         currentOffset={currentSong.transposeOffset || 0}
         onSelectOffset={handleTransposeChange}
         onReset={() => handleTransposeChange(0)}
+      />
+
+      {/* Library Metadata Review & Selective Update Modal (GetSongBPM) */}
+      <LibraryMetadataModal
+        isOpen={isMetadataReviewModalOpen}
+        onClose={() => {
+          setIsMetadataReviewModalOpen(false)
+          setMetadataReviewPreselectedIds(undefined)
+        }}
+        songs={songs}
+        preselectedSongIds={metadataReviewPreselectedIds}
+        onApplyUpdates={handleApplyMetadataUpdates}
       />
 
       {/* Global Toast Notification */}

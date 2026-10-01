@@ -17,6 +17,7 @@ import {
   Share2,
   MoreHorizontal,
   Check,
+  Search,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { SwipeableActionCard } from './SwipeableActionCard'
@@ -43,6 +44,7 @@ interface SongbookHomeViewProps {
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
   onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
   onBulkDeleteSetlists?: (setlistIds: Array<string | number>) => void
+  onOpenMetadataReview?: (selectedIds?: Set<string | number>) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -66,6 +68,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onBulkDeleteSongs,
   onBulkAddSongsToSetlist,
   onBulkDeleteSetlists,
+  onOpenMetadataReview,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -912,6 +915,19 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     <ListPlus className="w-3.5 h-3.5" />
                     <span>Add to Setlist</span>
                   </button>
+                  {onOpenMetadataReview && (
+                    <button
+                      type="button"
+                      data-testid="bulk-check-metadata"
+                      disabled={selectedSongIds.size === 0}
+                      onClick={() => onOpenMetadataReview(selectedSongIds)}
+                      className="text-xs font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2.5 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Check metadata for selected songs"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>Check Metadata</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     data-testid="bulk-delete-songs"

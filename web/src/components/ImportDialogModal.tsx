@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { FolderOpen, FileText, FolderUp, X, Check, AlertCircle } from 'lucide-react'
+import { FolderOpen, FileText, FolderUp, X, Check, AlertCircle, Search } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { parseGtarSong, detectSongKey } from '../utils/songParser'
 import { extractDirectives } from '../utils/chordSheetParser'
@@ -12,6 +12,7 @@ interface ImportDialogModalProps {
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
+  onOpenMetadataReviewModal?: () => void
   existingSongs?: ActiveSongState[]
 }
 
@@ -22,6 +23,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
   onImportAllSongs,
   onImportSingleSetlist,
   onSmartMerge,
+  onOpenMetadataReviewModal,
   existingSongs = [],
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -296,6 +298,31 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               </div>
             </div>
           </button>
+
+          {/* Option 3: Review & Update Metadata (GetSongBPM) */}
+          {onOpenMetadataReviewModal && (
+            <button
+              type="button"
+              data-testid="import-dialog-open-metadata-btn"
+              onClick={() => {
+                onClose()
+                onOpenMetadataReviewModal()
+              }}
+              className="w-full text-left p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] hover:bg-[#094352]/30 transition-all flex items-center gap-3.5 group cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#073642] flex items-center justify-center text-[#2AA198] group-hover:scale-105 transition-transform">
+                <Search className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors">
+                  Check &amp; Update Song Metadata (GetSongBPM)
+                </div>
+                <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+                  Look up and selectively update Original Keys, BPM, and Release Years
+                </div>
+              </div>
+            </button>
+          )}
 
           <div className="p-3 rounded-xl bg-[#002B36]/50 border border-[#1A4A55]/60 text-[11px] text-[#93A1A1] leading-relaxed">
             <span className="font-semibold text-[#859900]">Looking for Full Library Backup / Restore?</span> Use the profile menu (<span className="text-[#FDF6E3] font-medium">Backup &amp; Restore</span>) to export or restore complete app settings, themes, and full library snapshots.

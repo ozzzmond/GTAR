@@ -3,7 +3,7 @@
  */
 
 export const GTAR_APP_VERSION = '1.1.108';
-export const GTAR_DEV_VERSION = '1.0.108-dev.8f';
+export const GTAR_DEV_VERSION = '1.0.108-dev.8g';
 export const GTAR_SETLIST_VERSION = 1
 export const GTAR_SETLIST_TYPE = 'GTAR_SETLIST'
 
@@ -14,7 +14,10 @@ export interface SongEntity {
   title: string
   artist?: string | null
   key?: string | null
+  originalKey?: string | null
   capo?: string | null
+  bpm?: string | null
+  year?: string | null
   rawContent: string
   format: SongFormat | string
   isFavorite?: boolean
@@ -74,8 +77,10 @@ export interface ActiveSongState {
   title: string
   artist: string
   key: string
+  originalKey?: string
   capo: string
   bpm: string
+  year?: string
   rawContent: string
   format: SongFormat
   transposeOffset: number
@@ -146,8 +151,10 @@ export interface ParsedGtarSong {
   title: string
   artist: string
   key: string
+  originalKey?: string
   capo: string
   bpm: string
+  year?: string
   tags?: string
   format: SongFormat
   lines: SongLine[]

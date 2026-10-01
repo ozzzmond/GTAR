@@ -102,7 +102,7 @@ E|---3---------------3---|`,
  * Extracts metadata directives from raw ChordPro text
  */
 export function extractDirectives(rawText: string) {
-  const meta: { title?: string; artist?: string; key?: string; capo?: string; bpm?: string; tags?: string } = {}
+  const meta: { title?: string; artist?: string; key?: string; originalKey?: string; capo?: string; bpm?: string; year?: string; tags?: string } = {}
   const lines = rawText.split('\n')
 
   for (const line of lines) {
@@ -113,8 +113,10 @@ export function extractDirectives(rawText: string) {
       if (tag === 't' || tag === 'title') meta.title = val
       else if (tag === 'a' || tag === 'artist' || tag === 'st' || tag === 'subtitle') meta.artist = val
       else if (tag === 'key') meta.key = val
+      else if (tag === 'original_key' || tag === 'originalkey') meta.originalKey = val
       else if (tag === 'capo') meta.capo = val
       else if (tag === 'tempo' || tag === 'bpm') meta.bpm = val
+      else if (tag === 'year') meta.year = val
       else if (tag === 'tags' || tag === 'tag' || tag === 'genre') meta.tags = val
     }
   }

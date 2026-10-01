@@ -36,14 +36,14 @@ test('UI_COPY_CLEANUP: SongbookHomeView removes redundant Stage View instruction
   assert.ok(homeViewContent.includes('filteredIndexedSongs.length'), 'SongbookHomeView must retain song count')
 })
 
-test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.108-dev.8f and prod untouched', () => {
+test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.108-dev.8g and prod untouched', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8f';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.8f')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8g';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.8g')
   assert.ok(gtarTypes.includes("export const GTAR_APP_VERSION = '1.1.108';"), 'gtar.ts must preserve GTAR_APP_VERSION as 1.1.108')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.108-dev.8f', 'package.json must be 1.0.108-dev.8f')
+  assert.equal(pkgJson.version, '1.0.108-dev.8g', 'package.json must be 1.0.108-dev.8g')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.108-dev.8f'), 'authCore.ts must reference v1.0.108-dev.8f')
+  assert.ok(authCore.includes('v1.0.108-dev.8g'), 'authCore.ts must reference v1.0.108-dev.8g')
 })
