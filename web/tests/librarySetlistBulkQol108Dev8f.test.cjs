@@ -6,27 +6,29 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION CHECK
-test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8i', () => {
+test('VERSION_STAMP: Target iteration rolled to v1.0.108-dev.8j', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8i';"), 'gtar.ts dev version must be 1.0.108-dev.8i')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8j';"), 'gtar.ts dev version must be 1.0.108-dev.8j')
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.108-dev.8i', 'package.json version must be 1.0.108-dev.8i')
+  assert.equal(pkgJson.version, '1.0.108-dev.8j', 'package.json version must be 1.0.108-dev.8j')
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.108-dev.8i'), 'authCore.ts must reference v1.0.108-dev.8i')
+  assert.ok(authCore.includes('v1.0.108-dev.8j'), 'authCore.ts must reference v1.0.108-dev.8j')
 })
 
 // 2. RECOVERY BANNER DISMISS QOL
-test('RECOVERY_DISMISS_BEHAVIOR: App.tsx has non-destructive session dismiss button and re-evaluates on reload', () => {
+test('RECOVERY_DISMISS_BEHAVIOR: App.tsx has non-destructive archive-scoped dismiss button and re-evaluates on reload', () => {
   const appTsx = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
 
   // Must have dismiss-recovery-banner button with proper aria-label
   assert.ok(appTsx.includes('data-testid="dismiss-recovery-banner"'), 'App.tsx must render dismiss recovery button')
   assert.ok(appTsx.includes('aria-label="Dismiss recovery notice"'), 'Dismiss button must have accessible aria-label')
   
-  // Must be in-memory dismiss state only, not writing to localStorage
-  assert.ok(appTsx.includes('const [dismissed, setDismissed] = useState(false)'), 'Must use state to track banner dismissal')
-  assert.ok(appTsx.includes('setDismissed(true)'), 'Must update dismissal state on click')
-  assert.ok(!appTsx.includes("localStorage.setItem('recovery_banner_dismissed'"), 'Must not persist dismissal to localStorage')
+  // 8j persists acknowledgement separately; new archives and damage re-alert.
+  assert.ok(appTsx.includes('dismissedNotice === status.noticeId'), 'Dismissal must match current recovery sources')
+  assert.ok(appTsx.includes('localStorage.setItem(RECOVERY_NOTICE_ACK_KEY, status.noticeId)'), 'Persist only notice acknowledgement')
+  const handler = appTsx.slice(appTsx.indexOf('const dismissRecovery ='), appTsx.indexOf('const showBanner ='))
+  assert.ok(handler.includes('if (status.damaged || status.noticeId === null) return'), 'Damage cannot be dismissed')
+  assert.doesNotMatch(handler, /removeItem|persistLibrary|retireDriveSyncState|pruneAllRecoverySnapshots/, 'Dismissal must not destroy recovery or mutate library')
 
   // Must preserve export action
   assert.ok(appTsx.includes('Export recovery data'), 'Export action text must remain intact')

@@ -6,11 +6,11 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION ALIGNMENT
-test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.108-dev.8i and prod untouched', () => {
+test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.108-dev.8j and prod untouched', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
   assert.ok(
-    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8i';"),
-    'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.8i'
+    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.8j';"),
+    'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.8j'
   )
   assert.ok(
     gtarTypes.includes("export const GTAR_APP_VERSION = '1.1.108';"),
@@ -18,14 +18,14 @@ test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.108-dev.8i and prod untou
   )
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.108-dev.8i', 'package.json must be 1.0.108-dev.8i')
+  assert.equal(pkgJson.version, '1.0.108-dev.8j', 'package.json must be 1.0.108-dev.8j')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.108-dev.8i', 'package-lock.json root must be 1.0.108-dev.8i')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.108-dev.8i', 'package-lock.json packages[""] must be 1.0.108-dev.8i')
+  assert.equal(pkgLockJson.version, '1.0.108-dev.8j', 'package-lock.json root must be 1.0.108-dev.8j')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.108-dev.8j', 'package-lock.json packages[""] must be 1.0.108-dev.8j')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.108-dev.8i'), 'authCore.ts must reference v1.0.108-dev.8i')
+  assert.ok(authCore.includes('v1.0.108-dev.8j'), 'authCore.ts must reference v1.0.108-dev.8j')
 })
 
 // 2. PAPER CREAM LIGHT READABILITY & CONTRAST
