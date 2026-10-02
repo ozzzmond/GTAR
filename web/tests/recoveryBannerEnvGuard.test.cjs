@@ -152,3 +152,53 @@ test('RECOVERY_BANNER_CONTRACT: App source code gates banner rendering with isDe
   assert.match(appSrc, /import\s+\{[^}]*isDevEnv[^}]*\}\s+from\s+['"]\.\/utils\/env['"]/)
   assert.match(appSrc, /showBanner\s*=\s*status\.damaged\s*\|\|\s*\(\s*isDevEnv\s*&&\s*!status\.retired\s*\)/)
 })
+
+test('8j startup recovery is refreshed after child migration and stays resolved on reload', async () => {
+  clearAppRequireCache()
+  const { dom, prior } = setupDom('http://localhost/')
+  localStorage.setItem('gtar_songs_store', JSON.stringify([{id:'550e8400-e29b-41d4-a716-446655440000',title:'Recovered',rawContent:'C'}]))
+  localStorage.setItem('gtar_setlists_store', '[]')
+  let root = createRoot(document.getElementById('root'))
+  try {
+    const App = require('../src/App.tsx').default
+    await act(async () => root.render(React.createElement(App)))
+    assert.equal(require('../src/utils/syncJournal.ts').hasActionableRecovery(), false)
+    assert.equal(document.querySelector('aside[role="alert"]'), null)
+    await act(async () => root.unmount())
+    root = createRoot(document.getElementById('root'))
+    await act(async () => root.render(React.createElement(App)))
+    assert.equal(document.querySelector('aside[role="alert"]'), null)
+  } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
+})
+
+test('8j dismiss preserves sources across reload/auth remount; changed sources and damage re-alert', async () => {
+  clearAppRequireCache()
+  const { dom, prior } = setupDom('http://localhost/')
+  const library = JSON.stringify({songs:[{id:'550e8400-e29b-41d4-a716-446655440000',title:'Song',rawContent:'C'}],setlists:[]})
+  localStorage.setItem('gtar_library_v1', library)
+  localStorage.setItem('gtar_sync_recovery:unknown', 'original archive')
+  const App = require('../src/App.tsx').default
+  let root = createRoot(document.getElementById('root'))
+  try {
+    await act(async () => root.render(React.createElement(App)))
+    assert.match(document.querySelector('aside[role="alert"]').textContent, /Export recovery data/)
+    await act(async () => document.querySelector('[data-testid="dismiss-recovery-banner"]').click())
+    assert.equal(document.querySelector('aside[role="alert"]'), null)
+    assert.equal(localStorage.getItem('gtar_library_v1'), library)
+    assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'original archive')
+    // AuthGate unmounts/remounts App; signOut clears auth session keys only.
+    await act(async () => root.unmount())
+    root = createRoot(document.getElementById('root'))
+    await act(async () => root.render(React.createElement(App)))
+    assert.equal(document.querySelector('aside[role="alert"]'), null)
+    localStorage.setItem('gtar_sync_recovery:unknown', 'new archive')
+    await act(async () => window.dispatchEvent(new window.StorageEvent('storage')))
+    assert.ok(document.querySelector('aside[role="alert"]'))
+    await act(async () => document.querySelector('[data-testid="dismiss-recovery-banner"]').click())
+    localStorage.setItem('gtar_library_v1', '{broken')
+    await act(async () => window.dispatchEvent(new window.StorageEvent('storage')))
+    assert.match(document.querySelector('aside[role="alert"]').textContent, /Device library needs recovery/)
+    assert.equal(document.querySelector('[data-testid="dismiss-recovery-banner"]'), null)
+    assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'new archive')
+  } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
+})

@@ -230,16 +230,24 @@ function App() {
   return <LibraryStartup />
 }
 
+const RECOVERY_NOTICE_ACK_KEY = 'gtar_recovery_notice_ack_v1'
+
 function LibraryStartup() {
+  // Acknowledge this exact archive set only. New/changed sources need attention.
+  const recoveryNoticeId = () => JSON.stringify(Object.entries(recoveryData())
+    .filter(([key]) => key !== 'gtar_library_v1' && key !== 'gtar_sync_library_owner')
+    .sort(([a], [b]) => a.localeCompare(b)))
   const checkRecovery = () => {
-    try { readPersistedLibrary(); return { retired: !hasActionableRecovery(), damaged: false } }
-    catch { return { retired: false, damaged: true } }
+    try { readPersistedLibrary(); return { retired: !hasActionableRecovery(), damaged: false, noticeId: recoveryNoticeId() } }
+    catch { return { retired: false, damaged: true, noticeId: null } }
   }
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
   useEffect(() => {
     const refresh = () => setStatus(checkRecovery())
     window.addEventListener('gtar-library-persisted', refresh)
     window.addEventListener('storage', refresh)
+    // Child startup migration can persist before this listener is installed.
+    refresh()
     return () => { window.removeEventListener('gtar-library-persisted', refresh); window.removeEventListener('storage', refresh) }
   }, [])
   const exportRecovery = () => {
@@ -250,7 +258,15 @@ function LibraryStartup() {
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  const [dismissed, setDismissed] = useState(false)
+  const [dismissedNotice, setDismissedNotice] = useState<string | null>(() => {
+    try { return localStorage.getItem(RECOVERY_NOTICE_ACK_KEY) } catch { return null }
+  })
+  const dismissed = !status.damaged && status.noticeId !== null && dismissedNotice === status.noticeId
+  const dismissRecovery = () => {
+    if (status.damaged || status.noticeId === null) return
+    setDismissedNotice(status.noticeId)
+    try { localStorage.setItem(RECOVERY_NOTICE_ACK_KEY, status.noticeId) } catch { /* Session acknowledgement still works. */ }
+  }
   const showBanner = status.damaged || (isDevEnv && !status.retired)
   return <>
     {!dismissed && showBanner && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
@@ -258,16 +274,16 @@ function LibraryStartup() {
         <span>{status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}</span>
         <button className="underline ml-3 cursor-pointer" onClick={exportRecovery}>Export recovery data</button>
       </div>
-      <button
+      {!status.damaged && <button
         type="button"
         aria-label="Dismiss recovery notice"
         title="Dismiss recovery notice"
         data-testid="dismiss-recovery-banner"
-        onClick={() => setDismissed(true)}
+        onClick={dismissRecovery}
         className="p-1.5 rounded hover:bg-amber-200 text-black/70 hover:text-black focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shrink-0"
       >
         <span aria-hidden="true" className="text-lg leading-none font-bold">×</span>
-      </button>
+      </button>}
     </aside>}
     {!status.damaged && <LibraryApp />}
   </>
