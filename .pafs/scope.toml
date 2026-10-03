@@ -14,16 +14,12 @@ paths = [
     "web/tests/authBypassInteraction.test.cjs",
 ]
 
-[A.N3]
+[A.CI]
 paths = [
-    "release_web.py",
-    "tests/test_release_scripts.py",
-]
-
-[A.C1]
-paths = [
-    "deploy.py",
-    "tests/test_deploy_and_push.py",
+    ".github/release_metadata.cjs",
+    ".github/workflows/**",
+    "web/tests/githubTagMetadata.test.cjs",
+    "web/tests/webOnlyRepositoryBoundary.test.cjs",
 ]
 
 [A.UG]

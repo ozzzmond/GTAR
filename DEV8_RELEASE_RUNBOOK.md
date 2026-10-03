@@ -5,7 +5,7 @@
 ---
 
 ## 1. Scope & Baseline
-- **Target Iteration**: GTAR 108-dev.8 checkpoint (target release: v1.1.108 on Saturday 2026-10-03).
+- **Target Iteration**: GTAR 108-dev.8 checkpoint (historical checkpoint; no production target is authorized here).
 - **Hardened Subsystems**:
   - Account Access Lifecycle & D1 Authoritative Session Validation
   - Server-Authoritative Cloud Songbook Sync (D1 SQLite + Cloudflare Pages Functions)
@@ -31,8 +31,8 @@ npm --prefix web run lint:sync
 # 4. Web production build (TypeScript strict check + Vite bundle)
 npm --prefix web run build
 
-# 5. Core Python test suite (25 tests covering deployment/push scripts)
-python -m unittest discover tests
+# 5. GitHub tag metadata and repository boundary checks
+node --test web/tests/githubTagMetadata.test.cjs web/tests/webOnlyRepositoryBoundary.test.cjs
 ```
 
 All 5 commands must return exit code 0 before proceeding.
