@@ -1,0 +1,134 @@
+# Adapted v3: unresolved production contracts deliberately prevent all writes.
+# Run from a reviewed controller ref; checkpoint files are read by git show.
+name: GTAR PROD Promotion
+on:
+  workflow_dispatch:
+    inputs:
+      dev_tag:
+        description: Exact canonical clean numeric DEV checkpoint
+        required: true
+        type: string
+      expected_sha:
+        description: Optional matching SHA (7–40 lowercase hex characters)
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: Read-only plan, including all blockers
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: gtar-prod-promotion
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+      sha: ${{ steps.plan.outputs.sha }}
+      prod_tag: ${{ steps.plan.outputs.prod_tag }}
+      next_dev_tag: ${{ steps.plan.outputs.next_dev_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only exact checkpoint plan
+        id: plan
+        env:
+          DEV_TAG: ${{ inputs.dev_tag }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node .github/release_plan.cjs
+  validate:
+    needs: plan
+    if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint:sync
+      - run: npm run build
+  # The actual approval environment is unverified: never auto-create an unprotected one.
+  # Replace this stop with a verified required-reviewer environment in a reviewed PR.
+  approval:
+    needs: [plan, validate]
+    if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Human approval boundary
+        run: |
+          echo 'Required-reviewer environment contract is not implemented.' >&2
+          exit 1
+  promote:
+    needs: [plan, approval]
+    if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recheck complete plan after approval
+        env:
+          DEV_TAG: ${{ inputs.dev_tag }}
+          EXPECTED_SHA: ${{ needs.plan.outputs.sha }}
+          DRY_RUN: 'false'
+        run: node .github/release_plan.cjs
+      - name: Promote exact checkpoint atomically
+        env:
+          SHA: ${{ needs.plan.outputs.sha }}
+          PROD_TAG: ${{ needs.plan.outputs.prod_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$PROD_TAG" "$SHA" -m "GTAR PROD $PROD_TAG"
+          git push --atomic origin "$SHA:refs/heads/main" "refs/tags/$PROD_TAG"
+  verify-cloudflare:
+    needs: [plan, promote]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Production deployment verification boundary
+        run: |
+          echo 'No verified production-only Cloudflare exact-SHA signal. Release cannot be declared successful.' >&2
+          exit 1
+  report:
+    needs: [plan, validate, approval, promote, verify-cloudflare]
+    if: ${{ always() && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report release status
+        env:
+          PROMOTE: ${{ needs.promote.result }}
+          VERIFY: ${{ needs.verify-cloudflare.result }}
+          NEXT_DEV: ${{ needs.plan.outputs.next_dev_tag }}
+        run: |
+          if [ "$PROMOTE" = success ] && [ "$VERIFY" = success ]; then
+            echo "Release verified. Next baseline $NEXT_DEV requires a reviewed metadata PR then a later manual tag." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Release blocked/unverified: promotion=$PROMOTE; verification=$VERIFY. No automatic rollback or next DEV tag." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
