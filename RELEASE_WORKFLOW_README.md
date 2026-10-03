@@ -37,13 +37,16 @@ Canonical final fields: STATUS/TASK|CHANGE|PROOF|TESTS|FILES|READY|BLOCKERS|PERS
 
 ## PROD promotion v3 (safe implementation boundary)
 
-`.github/workflows/release.yml` is dispatch-only: required exact `dev_tag`, optional
-matching lowercase SHA (7–40 characters), and `dry_run=true` by default. Dry run
+`.github/workflows/release.yml` is dispatch-only: required exact `dev_tag`, required
+full lowercase checkpoint SHA (40 characters), and `dry_run=true` by default. Dry run
 reads tags, remote branch refs and committed checkpoint files, reports all gates,
 and changes no branch, tag or runtime metadata. A blocked real run exits nonzero.
-Workflow summary/output files are the only plan writes.
+Workflow summary/output files are the only plan writes. Dry run performs planning
+only; Web tests, lint and build are not claimed as run.
 
-The controller helper is taken from the reviewed workflow ref, **not** executed
+The controller checks out the exact dispatch `github.sha` and requires
+`github.ref=refs/heads/main`; default-branch rollout is separate. The helper is
+taken from that reviewed controller SHA, **not** executed
 from the selected checkpoint. `release_metadata.cjs` remains the sole DEV parser:
 `parseDevTag(tag)` returns base, iteration, suffix, promotability, PROD tag and
 report-only next DEV tag with safe-integer arithmetic. `inspectCheckpoint(root,
@@ -55,15 +58,24 @@ Checkpoint metadata consistency is supported by the current regression tests:
 package version; lockfile root and root-package versions; `GTAR_DEV_VERSION`;
 and the authCore source header. The header is a source stamp, not a server runtime
 release mechanism. `GTAR_APP_VERSION` is inspected separately, never rewritten.
-The release workflow contains no DEV regex or duplicate DEV policy.
+The release workflow contains no DEV regex or duplicate DEV policy. The planner
+is inline in `release.yml`; the obsolete `release_plan.cjs` is removed. It checks
+the latest canonical DEV version including lettered work, exact DEV tip, full
+expected SHA, main ancestry and a new main-push trigger. Baseline checks read
+both the PROD tag's own committed package and main metadata; legacy tags are ignored.
+The reported next DEV tag and its existence remain advisory.
 
 When production contracts are implemented in a reviewed follow-up, the architecture
 is plan → one exact-SHA Web validation job → human approval → full plan recheck →
 atomic non-force main/PROD-tag push → exact-SHA Cloudflare production verification.
 Node 22, `web`, `npm ci`, `npm test`, `npm run lint:sync`, `npm run build` match
 `validate.yml`. No deploy artifact, Cloudflare API, Wrangler deployment or GitHub
-Pages deployment exists. The current approval and verification jobs explicitly
-exit 1, and unresolved plan gates cannot be unlocked by a readiness variable.
+Pages deployment exists. Current jobs are `plan`, `validate`,
+`production-boundary` and `report`. There is no write permission, push code,
+approval environment reference or production verifier. Unconditional blockers
+keep readiness false; the production boundary explicitly exits 1. The report
+runs for dry and real attempts, and a real attempt always exits nonzero.
+No repository variable can unlock production execution.
 This is a useful read-only planner, **not an enabled production release system**.
 
 ### Audited GitHub state (2026-10-03 UTC)
