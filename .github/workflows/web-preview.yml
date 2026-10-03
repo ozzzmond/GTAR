@@ -21,7 +21,7 @@ jobs:
         env:
           REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
-          if [[ ! "$REQUESTED_TAG" =~ ^v1\.0\.[1-9][0-9]*-dev\.[1-9][0-9]*[a-z]?$ ]]; then
+          if [ -z "$REQUESTED_TAG" ] || ! git check-ref-format "refs/tags/$REQUESTED_TAG"; then
             echo "Invalid or missing canonical DEV tag" >&2
             exit 1
           fi
