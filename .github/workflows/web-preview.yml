@@ -2,8 +2,13 @@ name: Build GTAR Web Preview
 
 on:
   push:
-    tags: ['web-v1.0.*-dev.*']
+    tags: ['v1.0.*-dev.*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Canonical DEV tag to validate and build
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,17 +17,31 @@ jobs:
   web-preview:
     runs-on: ubuntu-latest
     steps:
+      - name: Require canonical requested tag
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$REQUESTED_TAG" =~ ^v1\.0\.[1-9][0-9]*-dev\.[1-9][0-9]*[a-z]?$ ]]; then
+            echo "Invalid or missing canonical DEV tag" >&2
+            exit 1
+          fi
+          echo "REQUESTED_TAG=$REQUESTED_TAG" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
-      - name: Validate preview version
-        run: python .github/release_metadata.py --platform web --dev-only
+        with:
+          ref: refs/tags/${{ env.REQUESTED_TAG }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Validate preview tag metadata
+        run: node .github/release_metadata.cjs --tag "$REQUESTED_TAG"
       - run: npm ci
         working-directory: web
       - run: npm test
+        working-directory: web
+      - run: npm run lint:sync
         working-directory: web
       - run: npm run build
         working-directory: web

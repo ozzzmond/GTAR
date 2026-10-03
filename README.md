@@ -38,3 +38,9 @@ For production builds:
 ```bash
 npm run build --prefix web
 ```
+
+## Repository boundary
+
+This repository contains only the Web/PWA app and its GitHub validation tooling. Native Android is frozen in a separate repository. Android browser support and legacy backup import remain part of the PWA. Do not add native Android/Gradle projects or local Python release/deploy scripts.
+
+See [GitHub preview contract](RELEASE_WORKFLOW_README.md) for canonical DEV tag validation.
