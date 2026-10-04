@@ -5,6 +5,9 @@ import { defineConfig, type Plugin } from 'vite'
 import https from 'node:https'
 import url from 'node:url'
 import os from 'node:os'
+import path from 'node:path'
+import { createRequire } from 'node:module'
+const { resolveReleaseIdentity } = createRequire(import.meta.url)('../.github/release_identity.cjs')
 
 import {
   parseSearchResults,
@@ -233,6 +236,7 @@ export default defineConfig(({ mode }) => {
   // isDev covers both standard dev server (mode='development') and the debug variant
   const isDev = mode === 'development' || isDebug
   const appEnv = isDebug ? 'debug' : 'production'
+  const releaseIdentity = resolveReleaseIdentity(path.resolve(import.meta.dirname, '..'))
 
   // PWA manifest icon sets
   const devIcons = [
@@ -279,8 +283,15 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),
+      __GTAR_PROD_VERSION__: JSON.stringify(releaseIdentity?.version ?? null),
     },
     plugins: [
+      {
+        name: 'gtar-release-identity',
+        generateBundle() {
+          if (releaseIdentity) this.emitFile({ type: 'asset', fileName: 'release.json', source: JSON.stringify(releaseIdentity) })
+        },
+      },
       tailwindcss(),
       react(),
       ugScraperPlugin(),

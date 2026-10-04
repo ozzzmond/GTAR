@@ -5,156 +5,214 @@ const os = require('node:os')
 const path = require('node:path')
 const { execFileSync, spawnSync } = require('node:child_process')
 const root = path.resolve(__dirname, '../..')
+const C = require('../../.github/prod_controller.cjs')
 const { parseDevTag, inspectCheckpoint } = require('../../.github/release_metadata.cjs')
+const { resolveReleaseIdentity } = require('../../.github/release_identity.cjs')
 const yaml = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8')
-// Execute the approved workflow's actual inline planner in disposable repositories.
-const planner = /          node <<'NODE'\n([\s\S]*?)          NODE/.exec(yaml)?.[1]
-assert.ok(planner, 'inline planner is present')
-function createPlan(dir, tag, expectedSha = '', controllerRef = 'refs/heads/main') {
-  const summary = path.join(dir, 'summary.txt'), output = path.join(dir, 'output.txt')
-  const r = spawnSync(process.execPath, ['-e', planner], { cwd: dir, encoding: 'utf8', env: {
-    ...process.env, DEV_TAG: tag, EXPECTED_SHA: expectedSha, CONTROLLER_REF: controllerRef,
-    CONTROLLER_SHA: 'a'.repeat(40), GITHUB_STEP_SUMMARY: summary, GITHUB_OUTPUT: output
-  } })
-  assert.equal(r.status, 0, r.stderr)
-  const plan = JSON.parse(r.stdout)
-  assert.match(fs.readFileSync(output, 'utf8'), /^ready=false\n/)
-  assert.match(fs.readFileSync(summary, 'utf8'), /Web tests\/lint\/build are not claimed as run/)
-  fs.rmSync(summary); fs.rmSync(output)
-  return plan
-}
-function fixture(t, tag = 'v1.0.108-dev.9') {
+function fixture(t, tag = 'v1.0.108-dev.11') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-prod-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
-  const files = {
-    '.github/release_metadata.cjs': fs.readFileSync(path.join(root, '.github/release_metadata.cjs'), 'utf8'),
-    'web/package.json': JSON.stringify({ version: tag.slice(1) }),
-    'web/package-lock.json': JSON.stringify({ version: tag.slice(1), packages: { '': { version: tag.slice(1) } } }),
-    'web/src/types/gtar.ts': `export const GTAR_DEV_VERSION = '${tag.slice(1)}';\nexport const GTAR_APP_VERSION = '1.1.117';`,
-    'web/functions/lib/authCore.ts': `// GTAR Server-Authoritative Account & Access Control (${tag})`
-  }
-  for (const [file, body] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true }); fs.writeFileSync(path.join(dir, file), body) }
-  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim()
+  const repo = path.join(dir, 'work'); fs.mkdirSync(repo)
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim()
+  const put = (file, data) => { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), data) }
   git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
-  git('add', '.'); git('commit', '-m', 'fixture'); git('tag', tag)
+  for (const file of ['release_metadata.cjs', 'release_identity.cjs']) put(`.github/${file}`, fs.readFileSync(path.join(root, '.github', file)))
+  put('web/package.json', '{"version":"1.1.62"}')
+  put('web/vite.config.ts', 'resolveReleaseIdentity')
+  put('web/src/types/gtar.ts', 'typeof __GTAR_PROD_VERSION__')
+  git('add', '.'); git('commit', '-m', 'baseline controller'); git('tag', 'v1.1.62')
+  const mainSha = git('rev-parse', 'HEAD')
+  git('branch', 'main', mainSha)
+  put('web/package.json', JSON.stringify({ version: tag.slice(1) }))
+  put('web/package-lock.json', JSON.stringify({ version: tag.slice(1), packages: { '': { version: tag.slice(1) } } }))
+  put('web/src/types/gtar.ts', `export const GTAR_DEV_VERSION = '${tag.slice(1)}';\ntypeof __GTAR_PROD_VERSION__`)
+  put('web/functions/lib/authCore.ts', `// GTAR Server-Authoritative Account & Access Control (${tag})`)
+  git('add', '.'); git('commit', '-m', 'checkpoint'); git('tag', tag)
   const sha = git('rev-parse', 'HEAD')
-  git('update-ref', 'refs/remotes/origin/dev', sha); git('update-ref', 'refs/remotes/origin/main', sha)
-  return { dir, git, sha }
+  git('branch', 'dev', sha)
+  const remote = path.join(dir, 'remote.git'); git('init', '--bare', remote)
+  git('remote', 'add', 'origin', remote); git('push', 'origin', 'main', 'dev', '--tags')
+  const plan = () => C.plan(repo, tag, sha, 'refs/heads/main', mainSha)
+  return { repo, git, put, tag, sha, mainSha, plan, remote }
 }
-test('one DEV parser computes safe numeric arithmetic and suffix promotability', () => {
-  assert.deepEqual(parseDevTag('v1.0.108-dev.9'), { tag: 'v1.0.108-dev.9', base: 108, iteration: 9, suffix: '', promotable: true, prodTag: 'v1.1.117', nextDevTag: 'v1.0.117-dev.1' })
-  assert.equal(parseDevTag('v1.0.108-dev.9a').promotable, false)
-  for (const tag of ['v1.0.0108-dev.9', 'web-v1.0.108-dev.9', 'v1.0.108-dev.0', 'v1.0.9007199254740991-dev.1', 'v1.0.108-dev.9\n']) assert.throws(() => parseDevTag(tag))
+const frozen = () => [
+  { name: 'gtar-release-freeze-dev', target: 'branch', enforcement: 'active', bypass_actors: [], conditions: { ref_name: { include: ['refs/heads/dev'], exclude: [] } }, rules: [{ type: 'update' }, { type: 'deletion' }] },
+  { name: 'gtar-release-freeze-dev-tags', target: 'tag', enforcement: 'active', bypass_actors: [], conditions: { ref_name: { include: ['refs/tags/v1.0.*'], exclude: [] } }, rules: ['creation', 'update', 'deletion'].map(type => ({ type })) }
+]
+const protectedEnv = () => ({ name: 'gtar-production', can_admins_bypass: false, protection_rules: [{ type: 'required_reviewers', prevent_self_review: true, reviewers: [{ type: 'User', reviewer: { id: 1 } }] }], deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } })
+const policies = { branch_policies: [{ name: 'main', type: 'branch' }] }
+const project = () => ({ id: 'project-id', name: 'gtar-web', production_branch: 'main', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR', production_branch: 'main', production_deployments_enabled: true } }, canonical_deployment: { id: 'deployment-id' } })
+const deployment = sha => ({ id: 'deployment-id', project_id: 'project-id', project_name: 'gtar-web', environment: 'production', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR' } }, deployment_trigger: { type: 'github:push', metadata: { branch: 'main', commit_hash: sha, commit_dirty: false } }, created_on: '2026-10-04T01:01:00Z', is_skipped: false, latest_stage: { name: 'deploy', status: 'success' } })
+test('shared parser retains version policy, safe arithmetic, suffix rejection', () => {
+  assert.equal(parseDevTag('v1.0.108-dev.10').prodTag, 'v1.1.118')
+  assert.equal(parseDevTag('v1.0.108-dev.10a').promotable, false)
+  for (const t of ['v1.0.0108-dev.1', 'v1.0.108-dev.0', 'v1.0.9007199254740991-dev.1', 'v1.0.108-dev.1\n']) assert.throws(() => parseDevTag(t))
 })
-test('checkpoint inspection uses committed metadata, ignoring worktree edits', t => {
-  const f = fixture(t)
-  fs.writeFileSync(path.join(f.dir, 'web/package.json'), '{}')
-  assert.equal(inspectCheckpoint(f.dir, 'v1.0.108-dev.9').sha, f.sha)
-  assert.throws(() => inspectCheckpoint(f.dir, 'v1.0.108-dev.8'))
+test('valid exact-source plan is read-only and ignores legacy tags', t => {
+  const f = fixture(t); f.git('tag', 'app-v1.1.999'); f.git('tag', 'web-v1.1.999')
+  const before = f.git('show-ref'); const p = f.plan()
+  assert.equal(p.prodTag, 'v1.1.119'); assert.equal(p.baseline, 'v1.1.62')
+  assert.equal(before, f.git('show-ref')); assert.equal(f.git('status', '--porcelain'), '')
+  f.put('web/package.json', '{}'); assert.equal(inspectCheckpoint(f.repo, f.tag).sha, f.sha)
 })
-test('each supported checkpoint metadata field fails closed when inconsistent', t => {
+test('each checkpoint metadata field fails closed', t => {
   for (const file of ['web/package.json', 'web/package-lock.json', 'web/src/types/gtar.ts', 'web/functions/lib/authCore.ts']) {
-    const f = fixture(t)
-    const p = path.join(f.dir, file)
-    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replaceAll('1.0.108-dev.9', '1.0.108-dev.8j'))
-    f.git('add', '.'); f.git('commit', '-m', 'bad metadata'); f.git('tag', '-f', 'v1.0.108-dev.9')
-    assert.throws(() => inspectCheckpoint(f.dir, 'v1.0.108-dev.9'), /metadata mismatch/)
+    const f = fixture(t); const body = fs.readFileSync(path.join(f.repo, file), 'utf8').replaceAll(f.tag.slice(1), '1.0.108-dev.10')
+    f.put(file, body); f.git('add', '.'); f.git('commit', '-m', 'mismatch'); const bad = f.git('rev-parse', 'HEAD')
+    // Disposable test tag only; no production refs ever involved.
+    f.git('tag', 'v1.0.108-dev.12', bad)
+    assert.throws(() => inspectCheckpoint(f.repo, 'v1.0.108-dev.12'), /metadata mismatch/)
   }
 })
-test('dry plan remains read-only and reports missing baseline and unresolved gates', t => {
+test('exact tag, full SHA, dispatch context, dev drift, suffix/latest and collisions fail closed', t => {
   const f = fixture(t)
-  const before = f.git('show-ref')
-  const plan = createPlan(f.dir, 'v1.0.108-dev.9', f.sha)
-  assert.equal(plan.ready, false); assert.equal(plan.prodTag, 'v1.1.117'); assert.equal(plan.prodBaseline, null)
-  for (const message of ['Canonical PROD baseline missing', 'Cloudflare', 'human approval', 'runtime release identity']) assert.ok(plan.blockers.some(b => b.includes(message)))
-  assert.equal(f.git('show-ref'), before); assert.equal(f.git('status', '--porcelain'), '')
+  for (const sha of ['', 'deadbee', 'A'.repeat(40), 'a'.repeat(40)]) assert.throws(() => C.plan(f.repo, f.tag, sha, 'refs/heads/main', f.mainSha))
+  assert.throws(() => C.plan(f.repo, 'missing', f.sha, 'refs/heads/main', f.mainSha))
+  assert.throws(() => C.plan(f.repo, f.tag, f.sha, 'refs/heads/dev', f.mainSha))
+  assert.throws(() => C.plan(f.repo, f.tag, f.sha, 'refs/heads/main', f.sha), /Controller\/main/)
+  f.git('tag', `${f.tag}a`); assert.throws(f.plan, /latest canonical/)
+  assert.throws(() => C.plan(f.repo, `${f.tag}a`, f.sha, 'refs/heads/main', f.mainSha), /Lettered/)
+  f.git('tag', 'v1.1.119'); assert.throws(f.plan)
+  f.git('update-ref', 'refs/remotes/origin/dev', f.mainSha); assert.throws(f.plan, /dev tip/)
 })
-test('canonical baseline ignores legacy tags; equal/newer targets block; letters block', t => {
+test('divergent main, baseline discrepancy/missing, higher baseline and missing runtime block', t => {
   const f = fixture(t)
-  f.git('tag', 'web-v1.1.999'); f.git('tag', 'app-v1.1.999'); f.git('tag', 'v1.1.117')
-  const plan = createPlan(f.dir, 'v1.0.108-dev.9', 'deadbee')
-  assert.equal(plan.prodBaseline, 'v1.1.117')
-  for (const message of ['expected_sha', 'must exceed', 'already exists']) assert.ok(plan.blockers.some(b => b.includes(message)))
-  const letter = fixture(t, 'v1.0.108-dev.9a')
-  assert.ok(createPlan(letter.dir, 'v1.0.108-dev.9a').blockers.some(b => b.includes('Lettered')))
+  f.git('update-ref', 'refs/remotes/origin/main', f.sha)
+  assert.throws(() => C.plan(f.repo, f.tag, f.sha, 'refs/heads/main', f.sha), /already equals/)
+  f.git('checkout', 'main'); f.put('different', 'main-only'); f.git('add', '.'); f.git('commit', '-m', 'diverge')
+  const divergent = f.git('rev-parse', 'HEAD'); f.git('update-ref', 'refs/remotes/origin/main', divergent)
+  assert.throws(() => C.plan(f.repo, f.tag, f.sha, 'refs/heads/main', divergent))
+  const g = fixture(t); g.git('tag', 'v1.1.999'); assert.throws(g.plan, /exceed/)
+  const h = fixture(t); h.git('tag', '-d', 'v1.1.62'); assert.throws(h.plan, /baseline missing/)
+  const j = fixture(t); j.git('checkout', 'main'); j.put('web/package.json', '{"version":"1.1.108"}'); j.git('add', '.'); j.git('commit', '-m', 'discrepancy')
+  const tip = j.git('rev-parse', 'HEAD'); j.git('checkout', 'dev'); j.git('merge', 'main', '-s', 'ours', '-m', 'reviewed ancestry fixture')
+  const next = j.git('rev-parse', 'HEAD'); j.git('tag', 'v1.0.108-dev.12'); j.git('update-ref', 'refs/remotes/origin/main', tip); j.git('update-ref', 'refs/remotes/origin/dev', next)
+  assert.throws(() => C.plan(j.repo, 'v1.0.108-dev.12', next, 'refs/heads/main', tip))
+  assert.equal(C.runtimeContract(f.repo, 'a'.repeat(40)), false)
 })
-test('later dev commits and divergent main are reported without reconciliation', t => {
-  const f = fixture(t)
-  fs.writeFileSync(path.join(f.dir, 'later'), 'later'); f.git('add', '.'); f.git('commit', '-m', 'later')
-  f.git('update-ref', 'refs/remotes/origin/dev', f.git('rev-parse', 'HEAD'))
-  f.git('update-ref', 'refs/remotes/origin/main', f.git('rev-parse', 'HEAD'))
-  const plan = createPlan(f.dir, 'v1.0.108-dev.9')
-  assert.ok(plan.blockers.some(b => b.includes('dev tip is not exactly')))
-  assert.ok(plan.blockers.some(b => b.includes('main must be an ancestor')))
-})
-test('required full SHA, exact equality and reviewed main controller fail closed', t => {
-  const f = fixture(t)
-  for (const sha of ['', f.sha.slice(0, 8), 'A'.repeat(40), 'a'.repeat(40)]) {
-    assert.ok(createPlan(f.dir, 'v1.0.108-dev.9', sha).blockers.some(b => b.includes('expected_sha')))
+test('approval requires real reviewers, self-review prevention, no bypass and main only', () => {
+  C.approvalContract(protectedEnv(), policies)
+  for (const change of [e => { e.can_admins_bypass = true }, e => { e.protection_rules[0].prevent_self_review = false }, e => { e.protection_rules[0].reviewers = [] }, e => { e.deployment_branch_policy.custom_branch_policies = false }]) {
+    const e = protectedEnv(); change(e); assert.throws(() => C.approvalContract(e, policies))
   }
-  const plan = createPlan(f.dir, 'v1.0.108-dev.9', f.sha, 'refs/heads/dev')
-  assert.ok(plan.blockers.some(b => b.includes('Controller must be dispatched from reviewed main')))
-  assert.ok(plan.blockers.some(b => b.includes('main already equals checkpoint')))
-  assert.equal(createPlan(f.dir, 'invalid', f.sha).ready, false)
-  fs.writeFileSync(path.join(f.dir, '.github/release_metadata.cjs'), 'module.exports = {}')
-  assert.ok(createPlan(f.dir, 'v1.0.108-dev.9', f.sha).blockers.some(b => b.includes('helper exports are unavailable')))
+  assert.throws(() => C.approvalContract(protectedEnv(), { branch_policies: [{ name: '*' }] }))
 })
-test('latest canonical DEV includes letters; next DEV existence is advisory', t => {
-  const f = fixture(t)
-  f.git('tag', 'v1.0.108-dev.9a')
-  const plan = createPlan(f.dir, 'v1.0.108-dev.9', f.sha)
-  assert.equal(plan.latestCanonicalDev, 'v1.0.108-dev.9a')
-  assert.ok(plan.blockers.some(b => b.includes('not the latest canonical DEV')))
-  f.git('tag', 'v1.0.117-dev.1')
-  assert.equal(createPlan(f.dir, 'v1.0.108-dev.9', f.sha).nextDevTagExists, true)
-})
-test('baseline checks its own tagged package separately from main metadata', t => {
-  const f = fixture(t)
-  fs.writeFileSync(path.join(f.dir, 'web/package.json'), JSON.stringify({ version: '1.1.62' }))
-  f.git('add', '.'); f.git('commit', '-m', 'baseline'); f.git('tag', 'v1.1.62')
-  f.git('update-ref', 'refs/remotes/origin/main', f.git('rev-parse', 'HEAD'))
-  let plan = createPlan(f.dir, 'v1.0.108-dev.9', f.sha)
-  assert.equal(plan.baselinePackage, '1.1.62')
-  assert.equal(plan.mainPackage, '1.1.62')
-  assert.ok(!plan.blockers.some(b => b.includes('own committed package disagree')))
-  fs.writeFileSync(path.join(f.dir, 'web/package.json'), JSON.stringify({ version: '1.1.108' }))
-  f.git('add', '.'); f.git('commit', '-m', 'main discrepancy')
-  f.git('update-ref', 'refs/remotes/origin/main', f.git('rev-parse', 'HEAD'))
-  plan = createPlan(f.dir, 'v1.0.108-dev.9', f.sha)
-  assert.ok(plan.blockers.some(b => b.includes('conflicts with main package 1.1.108')))
-  f.git('tag', 'v1.1.63')
-  assert.ok(createPlan(f.dir, 'v1.0.108-dev.9', f.sha).blockers.some(b => b.includes('own committed package disagree')))
-})
-test('report succeeds only for completed dry planning; real attempt always fails', t => {
-  const f = fixture(t)
-  const report = /      - name: Report reviewed candidate outcome[\s\S]*?        run: \|\n([\s\S]*)/.exec(yaml)?.[1]
-  assert.ok(report)
-  for (const [dry, result, status] of [['true', 'success', 0], ['false', 'success', 1], ['true', 'failure', 1]]) {
-    const summary = path.join(f.dir, 'summary.txt')
-    const r = spawnSync('bash', ['-c', report], { encoding: 'utf8', env: {
-      ...process.env, DRY_RUN: dry, PLAN_RESULT: result, READY: 'false',
-      VALIDATE_RESULT: 'skipped', GITHUB_STEP_SUMMARY: summary
-    } })
-    assert.equal(r.status, status, r.stderr)
-    assert.match(fs.readFileSync(summary, 'utf8'), /REMOTE_MUTATION:NONE\|PRODUCTION_EXECUTION:DISABLED/)
+test('server freeze requires active exact refs, all restriction rules and zero bypass', () => {
+  C.freezeContract(frozen())
+  for (const mutate of [r => { r[0].enforcement = 'evaluate' }, r => { r[0].bypass_actors = [{ actor_id: 1 }] }, r => { r[1].rules.pop() }, r => { r[0].conditions.ref_name.exclude.push('refs/heads/dev') }, r => { r[1].conditions.ref_name.include = ['refs/tags/other*'] }]) {
+    const r = frozen(); mutate(r); assert.throws(() => C.freezeContract(r))
   }
 })
-test('release static contract preserves exact source, validation and disabled production', () => {
-  assert.match(yaml, /workflow_dispatch:/); assert.doesNotMatch(yaml, /^  (push|pull_request|schedule):/m)
-  assert.match(yaml, /expected_sha:\s+description:[^\n]+\s+required: true/)
-  assert.match(yaml, /type: boolean\s+default: true/)
-  assert.match(yaml, /node-version: '22'/)
-  for (const cmd of ['npm ci', 'npm test', 'npm run lint:sync', 'npm run build']) assert.equal(yaml.split(`run: ${cmd}\n`).length - 1, 1)
+test('Cloudflare proof rejects preview, generic success, old/short SHA, wrong producer/project and old time', () => {
+  const sha = 'a'.repeat(40), after = '2026-10-04T01:00:00Z'
+  assert.equal(C.deploymentProof(project(), deployment(sha), sha, after).project, 'gtar-web')
+  for (const mutate of [d => { d.environment = 'preview' }, d => { d.deployment_trigger.metadata.commit_hash = sha.slice(0, 7) }, d => { d.deployment_trigger.type = 'ad_hoc' }, d => { d.project_id = 'other' }, d => { d.project_name = 'other' }, d => { d.created_on = after }, d => { d.created_on = 'invalid' }, d => { d.latest_stage.name = 'build' }, d => { d.latest_stage.status = 'failure' }, d => { d.source.type = 'gitlab' }, d => { d.deployment_trigger.metadata.branch = 'dev' }, d => { d.is_skipped = true }, d => { d.deployment_trigger.metadata.commit_dirty = true }]) {
+    const d = deployment(sha); mutate(d); assert.throws(() => C.deploymentProof(project(), d, sha, after))
+  }
+  assert.throws(() => C.deploymentProof(project(), { conclusion: 'success', head_sha: sha }, sha, after))
+  const p = project(); p.canonical_deployment.id = 'other'; assert.throws(() => C.deploymentProof(p, deployment(sha), sha, after))
+  const q = project(); q.source.config.production_deployments_enabled = false; assert.throws(() => C.projectContract(q))
+})
+test('atomic non-force promotion preserves exact source tree and never changes dev', t => {
+  const f = fixture(t), p = f.plan(), tree = f.git('rev-parse', `${f.sha}^{tree}`)
+  const result = C.promote(f.repo, p)
+  assert.equal(result.state, 'PROD_PROMOTED_BUT_UNVERIFIED'); assert.equal(result.pushExit, 0)
+  const refs = f.git('ls-remote', '--refs', 'origin'); assert.ok(refs.includes(`${f.sha}\trefs/tags/${p.prodTag}`)); assert.ok(refs.includes(`${f.sha}\trefs/heads/main`)); assert.ok(refs.includes(`${f.sha}\trefs/heads/dev`))
+  assert.equal(f.git('rev-parse', `${f.sha}^{tree}`), tree)
+  assert.throws(() => C.promote(f.repo, p), /stale/)
+})
+test('lost push response recovers by refs; rejection does not retry; partial/unknown refs require review', t => {
+  const f = fixture(t), p = f.plan(); let calls = 0
+  const result = C.promote(f.repo, p, (...args) => { calls++; spawnSync(...args); return { status: 1 } })
+  assert.equal(calls, 1); assert.equal(result.state, 'PROD_PROMOTED_BUT_UNVERIFIED')
+  const g = fixture(t), q = g.plan(); let rejected = 0
+  assert.equal(C.promote(g.repo, q, () => { rejected++; return { status: 1 } }).state, 'NOT_PROMOTED'); assert.equal(rejected, 1)
+  assert.equal(C.classify({ 'refs/heads/main': q.sha }, q), 'AMBIGUOUS_REFS_MANUAL_REVIEW')
+  let reads = 0
+  assert.equal(C.promote(g.repo, q, () => ({ status: 1 }), () => { if (++reads === 1) return { 'refs/heads/main': q.mainSha, 'refs/heads/dev': q.sha }; throw new Error('offline') }).state, 'AMBIGUOUS_REFS_MANUAL_REVIEW')
+})
+test('advertised main race rejects before mutation; unsupported atomic push fails closed', t => {
+  const f = fixture(t), p = f.plan()
+  const result = C.promote(f.repo, p, (cmd, args, opts) => {
+    f.git('--git-dir', f.remote, 'update-ref', 'refs/heads/main', f.sha)
+    return spawnSync(cmd, args, opts)
+  })
+  assert.notEqual(result.pushExit, 0); assert.equal(result.state, 'AMBIGUOUS_REFS_MANUAL_REVIEW')
+  assert.ok(!f.git('ls-remote', '--refs', 'origin').includes(`refs/tags/${p.prodTag}`))
+  const g = fixture(t); g.git('--git-dir', g.remote, 'config', 'receive.advertiseAtomic', 'false')
+  assert.equal(C.promote(g.repo, g.plan()).state, 'NOT_PROMOTED')
+})
+test('main build identity derives exact DEV and PROD tags without source rewrites', t => {
+  const f = fixture(t), env = { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.sha }
+  const adapter = (...args) => args.join(' ') === 'remote get-url origin' ? 'https://github.com/ozzzmond/GTAR.git' : f.git(...args)
+  assert.equal(resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'dev' }), null)
+  assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /PROD tag missing/)
+  C.promote(f.repo, f.plan())
+  const before = f.git('status', '--porcelain')
+  assert.deepEqual(resolveReleaseIdentity(f.repo, env, adapter), { version: '1.1.119', sourceTag: f.tag, sha: f.sha })
+  assert.equal(f.git('status', '--porcelain'), before)
+  assert.throws(() => resolveReleaseIdentity(f.repo, { ...env, CF_PAGES_COMMIT_SHA: 'bad' }, adapter), /full commit/)
+  assert.throws(() => resolveReleaseIdentity(f.repo, { ...env, VITE_APP_ENV: 'debug' }, adapter), /debug/)
+  assert.throws(() => resolveReleaseIdentity(f.repo, env), /Noncanonical/)
+  f.git('tag', 'v1.0.108-dev.12'); assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /one exact clean/)
+})
+test('external configuration gap is fail closed; all APIs are read-only', async () => {
+  const e = { GITHUB_REPOSITORY: 'ozzzmond/GTAR', APPROVAL_READ_TOKEN: 'test', CF_ACCOUNT_ID: 'a'.repeat(32), CF_PAGES_READ_TOKEN: 'test' }
+  const fetcher = async url => {
+    if (url.endsWith('/gtar-production')) return protectedEnv()
+    if (url.endsWith('/deployment-branch-policies')) return policies
+    if (url.includes('?includes_parents')) return frozen().map((r, id) => ({ ...r, id }))
+    if (url.includes('/rulesets/')) return frozen()[Number(url.split('/').pop())]
+    return project()
+  }
+  assert.equal((await C.externalGate(e, fetcher)).project.name, 'gtar-web')
+  await assert.rejects(C.externalGate(e, async () => { throw new Error('403') }), /403/)
+})
+test('workflow isolates tested source and protected mutation; fresh recheck, one validation, terminal report', () => {
+  assert.match(yaml, /environment: gtar-production/)
   assert.match(yaml, /ref: \$\{\{ github.sha \}\}/)
   assert.match(yaml, /ref: \$\{\{ needs.plan.outputs.sha \}\}/)
-  assert.match(yaml, /needs: \[plan, validate\]/)
-  assert.match(yaml, /Fail closed at the production execution boundary[\s\S]+exit 1/)
-  assert.match(yaml, /needs: \[plan, validate, production-boundary\]\s+if: \$\{\{ always\(\) \}\}/)
-  const active = yaml.split('\n').filter(line => !line.trimStart().startsWith('#')).join('\n')
-  assert.doesNotMatch(active, /contents: write|environment:|git (push|tag|merge|rebase|reset)|--force|upload-artifact|wrangler|release_plan\.cjs|vars\./)
-  assert.doesNotMatch(yaml, /v1\\\.0/)
-  assert.equal(fs.existsSync(path.join(root, '.github/release_plan.cjs')), false)
-  const preview = fs.readFileSync(path.join(root, '.github/workflows/web-preview.yml'), 'utf8')
-  assert.doesNotMatch(preview, /\[1-9\]/)
-  assert.match(preview, /git check-ref-format/)
+  assert.match(yaml, /VALIDATED_SHA:[\s\S]+PLANNED_REFS:/)
+  assert.match(yaml, /token: \$\{\{ secrets.PROD_PUSH_TOKEN \}\}/)
+  for (const cmd of ['npm ci', 'npm test', 'npm run lint:sync', 'npm run build']) assert.equal(yaml.split(`run: ${cmd}\n`).length - 1, 1)
+  assert.match(yaml, /needs: \[plan, validate, promote, verify\]/)
+  assert.doesNotMatch(yaml, /contents: write|wrangler|gradle|\.apk|setup-java|release_metadata\.py/)
+  assert.doesNotMatch(yaml, /^  (push|schedule|pull_request):/m)
+  const source = fs.readFileSync(path.join(root, '.github/prod_controller.cjs'), 'utf8')
+  assert.match(source, /Post-approval state differs/); assert.match(source, /'push', '--atomic'/)
+  assert.doesNotMatch(source, /--force|force-with-lease/)
+  assert.match(source, /PROD_PROMOTED_BUT_UNVERIFIED/)
+})
+test('post approval rejects any validated SHA/main/tag/ref/protection drift', () => {
+  const p = { sha: 'a'.repeat(40), mainSha: 'b'.repeat(40), prodTag: 'v1.1.119' }, refs = { 'refs/heads/dev': p.sha }
+  const e = { VALIDATED_SHA: p.sha, PLANNED_MAIN: p.mainSha, PLANNED_PROD: p.prodTag, PLANNED_REFS: JSON.stringify(refs), PLANNED_PROTECTION: 'protected' }
+  C.freshContract(p, e, refs, 'protected')
+  for (const key of Object.keys(e)) assert.throws(() => C.freshContract(p, { ...e, [key]: 'changed' }, refs, 'protected'), /Post-approval/)
+})
+test('tag inventory rejects deletion/movement without rewriting historical tags', t => {
+  const f = fixture(t)
+  const refs = Object.fromEntries(f.git('ls-remote', '--refs', 'origin').split('\n').map(line => { const [sha, ref] = line.split(/\s+/); return [ref, sha] }))
+  C.inventoryContract(f.repo, refs)
+  const missing = { ...refs }; delete missing['refs/tags/v1.1.62']; assert.throws(() => C.inventoryContract(f.repo, missing))
+  assert.throws(() => C.inventoryContract(f.repo, { ...refs, 'refs/tags/v1.1.62': f.sha }))
+})
+test('runtime proof binds deployed artifact version and source tag to exact promoted SHA', () => {
+  const sha = 'a'.repeat(40), identity = { sha, version: '1.1.119', sourceTag: 'v1.0.108-dev.11' }
+  C.runtimeProof(identity, sha, 'v1.1.119')
+  for (const changed of [{ sha: 'b'.repeat(40) }, { version: '1.1.108' }, { sourceTag: 'v1.0.108-dev.11a' }, { sourceTag: 'v1.0.108-dev.10' }]) assert.throws(() => C.runtimeProof({ ...identity, ...changed }, sha, 'v1.1.119'))
+})
+test('terminal report keeps dry, verified, unverified and ambiguous outcomes distinct', () => {
+  const report = yaml.split('      - name: Report actual terminal state')[1].split('        run: |\n')[1]
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-report-'))
+  try {
+    for (const [dry, planResult, promotion, verify, exit, text] of [
+      ['true', 'success', '', '', 0, 'DRY_RUN_READY'], ['false', 'success', 'PROD_PROMOTED_BUT_UNVERIFIED', 'VERIFIED_PROD', 0, 'VERIFIED_PROD'],
+      ['false', 'success', 'PROD_PROMOTED_BUT_UNVERIFIED', '', 1, 'PROD_PROMOTED_BUT_UNVERIFIED'], ['false', 'success', 'AMBIGUOUS_REFS_MANUAL_REVIEW', '', 1, 'AMBIGUOUS_REFS_MANUAL_REVIEW'],
+      ['false', 'failure', '', '', 1, 'BLOCKED_NOT_PROMOTED']
+    ]) {
+      const summary = path.join(dir, 'summary'); fs.writeFileSync(summary, '')
+      const r = spawnSync('bash', ['-c', report], { env: { ...process.env, GITHUB_STEP_SUMMARY: summary, DRY_RUN: dry, PLAN_RESULT: planResult, PROMOTE_STATE: promotion, VERIFY_STATE: verify } })
+      assert.equal(r.status, exit); assert.ok(fs.readFileSync(summary, 'utf8').includes(text))
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })

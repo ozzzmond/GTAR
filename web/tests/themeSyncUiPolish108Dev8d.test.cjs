@@ -13,7 +13,7 @@ test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.108-dev.10 and prod untou
     'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.10'
   )
   assert.ok(
-    gtarTypes.includes("export const GTAR_APP_VERSION = '1.1.108';"),
+    gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"),
     'gtar.ts must preserve GTAR_APP_VERSION as 1.1.108'
   )
 
