@@ -39,7 +39,7 @@ const frozen = () => [
   { name: 'gtar-release-freeze-dev', target: 'branch', enforcement: 'active', bypass_actors: [], conditions: { ref_name: { include: ['refs/heads/dev'], exclude: [] } }, rules: [{ type: 'update' }, { type: 'deletion' }] },
   { name: 'gtar-release-freeze-dev-tags', target: 'tag', enforcement: 'active', bypass_actors: [], conditions: { ref_name: { include: ['refs/tags/v1.0.*'], exclude: [] } }, rules: ['creation', 'update', 'deletion'].map(type => ({ type })) }
 ]
-const protectedEnv = () => ({ name: 'gtar-production', can_admins_bypass: false, protection_rules: [{ type: 'required_reviewers', prevent_self_review: true, reviewers: [{ type: 'User', reviewer: { id: 1 } }] }], deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } })
+const protectedEnv = () => ({ name: 'gtar-production', can_admins_bypass: false, protection_rules: [{ type: 'required_reviewers', prevent_self_review: false, reviewers: [{ type: 'User', reviewer: { type: 'User', login: 'ozzzmond', id: 17817198 } }] }], deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } })
 const policies = { branch_policies: [{ name: 'main', type: 'branch' }] }
 const project = () => ({ id: 'project-id', name: 'gtar-web', production_branch: 'main', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR', production_branch: 'main', production_deployments_enabled: true } }, canonical_deployment: { id: 'deployment-id' } })
 const deployment = sha => ({ id: 'deployment-id', project_id: 'project-id', project_name: 'gtar-web', environment: 'production', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR' } }, deployment_trigger: { type: 'github:push', metadata: { branch: 'main', commit_hash: sha, commit_dirty: false } }, created_on: '2026-10-04T01:01:00Z', is_skipped: false, latest_stage: { name: 'deploy', status: 'success' } })
@@ -90,12 +90,34 @@ test('divergent main, baseline discrepancy/missing, higher baseline and missing 
   assert.throws(() => C.plan(j.repo, 'v1.0.108-dev.12', next, 'refs/heads/main', tip))
   assert.equal(C.runtimeContract(f.repo, 'a'.repeat(40)), false)
 })
-test('approval requires real reviewers, self-review prevention, no bypass and main only', () => {
-  C.approvalContract(protectedEnv(), policies)
-  for (const change of [e => { e.can_admins_bypass = true }, e => { e.protection_rules[0].prevent_self_review = false }, e => { e.protection_rules[0].reviewers = [] }, e => { e.deployment_branch_policy.custom_branch_policies = false }]) {
-    const e = protectedEnv(); change(e); assert.throws(() => C.approvalContract(e, policies))
+test('solo maintainer can separately approve their own protected run', () => {
+  const env = protectedEnv()
+  assert.equal(env.protection_rules[0].prevent_self_review, false)
+  assert.equal(env.protection_rules[0].reviewers.length, 1)
+  C.approvalContract(env, policies)
+})
+test('solo approval fails closed without the human maintainer, no bypass or exact main policy', () => {
+  for (const change of [
+    e => { e.name = 'production' },
+    e => { e.can_admins_bypass = true },
+    e => { delete e.can_admins_bypass },
+    e => { e.protection_rules[0].prevent_self_review = true },
+    e => { delete e.protection_rules[0].prevent_self_review },
+    e => { e.protection_rules = [] },
+    e => { e.protection_rules[0].reviewers = [] },
+    e => { e.protection_rules[0].reviewers[0].type = 'Team' },
+    e => { e.protection_rules[0].reviewers[0].reviewer.type = 'Bot' },
+    e => { e.protection_rules[0].reviewers[0].reviewer.login = 'other' },
+    e => { e.protection_rules[0].reviewers[0].reviewer.id = 1 },
+    e => { e.deployment_branch_policy.custom_branch_policies = false },
+    e => { e.deployment_branch_policy.protected_branches = true }
+  ]) {
+    const env = protectedEnv(); change(env); assert.throws(() => C.approvalContract(env, policies))
   }
-  assert.throws(() => C.approvalContract(protectedEnv(), { branch_policies: [{ name: '*' }] }))
+  for (const branch_policies of [[], [{ name: '*', type: 'branch' }], [{ name: 'main', type: 'tag' }],
+    [{ name: 'dev', type: 'branch' }], [...policies.branch_policies, { name: 'dev', type: 'branch' }]]) {
+    assert.throws(() => C.approvalContract(protectedEnv(), { branch_policies }))
+  }
 })
 test('server freeze requires active exact refs, all restriction rules and zero bypass', () => {
   C.freezeContract(frozen())
@@ -169,6 +191,18 @@ test('external configuration gap is fail closed; all APIs are read-only', async 
   await assert.rejects(C.externalGate(e, async () => { throw new Error('403') }), /403/)
 })
 test('workflow isolates tested source and protected mutation; fresh recheck, one validation, terminal report', () => {
+  const promoteJob = yaml.split('  promote:\n')[1].split('  verify:\n')[0]
+  assert.match(promoteJob, /needs: \[plan, validate\]/)
+  assert.match(promoteJob, /environment: gtar-production/)
+  assert.match(promoteJob, /name: Authorize \$\{\{ needs.plan.outputs.prod_tag \}\} from \$\{\{ needs.plan.outputs.sha \}\}/)
+  assert.equal(yaml.split('environment: gtar-production').length - 1, 1)
+  assert.equal(yaml.split('secrets.PROD_PUSH_TOKEN').length - 1, 1)
+  assert.match(promoteJob, /secrets.PROD_PUSH_TOKEN/)
+  assert.doesNotMatch(yaml, /review_pending_deployments|pending_deployments|environment:.*inputs/)
+  const readme = fs.readFileSync(path.join(root, 'RELEASE_WORKFLOW_README.md'), 'utf8')
+  assert.match(readme, /self-review\*\* unchecked \(`false`\)/)
+  assert.match(readme, /Approve and deploy/)
+  assert.match(readme, /Dispatch,[\s\S]*are not\napproval/)
   assert.match(yaml, /environment: gtar-production/)
   assert.match(yaml, /ref: \$\{\{ github.sha \}\}/)
   assert.match(yaml, /ref: \$\{\{ needs.plan.outputs.sha \}\}/)
