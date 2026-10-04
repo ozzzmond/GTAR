@@ -79,6 +79,8 @@ test('failed immutable baseline permits reviewed ancestry without deployed recov
   assert.equal(C.abandonedBaseline(root, 'v1.1.999', 'a'.repeat(40), 'b'.repeat(40)), false)
   assert.throws(() => C.plan(root, ABANDONED_PROD.sourceTag, ABANDONED_PROD.sha, 'refs/heads/main', git('rev-parse', 'HEAD')), /new identity required/)
   assert.throws(() => resolveReleaseIdentity(root, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: ABANDONED_PROD.sha }, (...args) => {
+    if (args.join(' ') === 'rev-parse HEAD') return ABANDONED_PROD.sha
+    if (args.join(' ') === 'tag --points-at HEAD') return git('tag', '--points-at', ABANDONED_PROD.sha)
     if (args[0] === 'fetch') return ''
     if (args[0] === 'ls-remote') return [ABANDONED_PROD.sourceTag, ABANDONED_PROD.tag].map(t => `${git('rev-parse', 'refs/tags/' + t)}\trefs/tags/${t}`).join('\n')
     return git(...args)
