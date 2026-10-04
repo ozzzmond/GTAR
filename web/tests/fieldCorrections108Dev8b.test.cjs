@@ -46,13 +46,13 @@ test('canonical_5173_strict_port: Vite config and batch runners enforce port 517
 })
 
 // ---------------------------------------------------------------------------
-// 2. VERSION ALIGNMENT: 1.0.108-dev.12
+// 2. VERSION ALIGNMENT: 1.0.108-dev.13
 // ---------------------------------------------------------------------------
-test('current_version_108_dev_8b: DEV checkpoint is consistently aligned to v1.0.108-dev.12', () => {
+test('current_version_108_dev_8b: DEV checkpoint is consistently aligned to v1.0.108-dev.13', () => {
   const gtarTypesContent = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
   assert.ok(
-    gtarTypesContent.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.12'"),
-    'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.12'
+    gtarTypesContent.includes("export const GTAR_DEV_VERSION = '1.0.108-dev.13'"),
+    'gtar.ts must define GTAR_DEV_VERSION as 1.0.108-dev.13'
   )
   assert.ok(
     gtarTypesContent.includes("? __GTAR_PROD_VERSION__ : '1.1.108'"),
@@ -60,12 +60,12 @@ test('current_version_108_dev_8b: DEV checkpoint is consistently aligned to v1.0
   )
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(packageJson.version, '1.0.108-dev.12', 'package.json version must be 1.0.108-dev.12')
+  assert.equal(packageJson.version, '1.0.108-dev.13', 'package.json version must be 1.0.108-dev.13')
 
   const authCoreContent = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
   assert.ok(
-    authCoreContent.includes('v1.0.108-dev.12'),
-    'authCore.ts must reference v1.0.108-dev.12'
+    authCoreContent.includes('v1.0.108-dev.13'),
+    'authCore.ts must reference v1.0.108-dev.13'
   )
 })
 
