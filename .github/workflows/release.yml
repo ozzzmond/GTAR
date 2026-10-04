@@ -1,40 +1,36 @@
-# REVIEW CANDIDATE: read-only planner; production execution is deliberately blocked.
-# Controller: reviewed dispatch SHA. Source: exact DEV tag/commit, never rewritten.
-# Requires PR #5's reviewed parseDevTag/inspectCheckpoint exports in the controller.
-# Canonical dev currently has only the --tag CLI; missing exports are blockers.
-# No repository variable can enable promotion in this candidate.
-# Future enabled order: plan -> exact-SHA validation -> protected human approval
-# -> fresh full gate recheck -> atomic main/PROD-tag push -> existing Pages Git build
-# -> trusted exact-SHA production verification -> report. See prerequisite review.
-name: GTAR PROD Release Review
-
+# Reviewed main controller; exact DEV source is validated separately and never rewritten.
+name: GTAR Web PWA PROD Promotion
 on:
   workflow_dispatch:
     inputs:
       dev_tag:
-        description: Exact canonical DEV checkpoint tag to inspect
+        description: Exact clean numeric canonical DEV checkpoint
         required: true
         type: string
       expected_sha:
-        description: Required full lowercase 40-character checkpoint commit SHA
+        description: Full lowercase 40-character checkpoint SHA
         required: true
         type: string
       dry_run:
-        description: Read-only readiness report; false currently fails closed
+        description: Read-only readiness gates; no validation or mutation
         type: boolean
         default: true
-
 permissions:
   contents: read
-
 concurrency:
   group: gtar-prod-promotion
   cancel-in-progress: false
-
 defaults:
   run:
     shell: bash
-
+env:
+  DEV_TAG: ${{ inputs.dev_tag }}
+  EXPECTED_SHA: ${{ inputs.expected_sha }}
+  CONTROLLER_REF: ${{ github.ref }}
+  CONTROLLER_SHA: ${{ github.sha }}
+  APPROVAL_READ_TOKEN: ${{ secrets.APPROVAL_READ_TOKEN }}
+  CF_PAGES_READ_TOKEN: ${{ secrets.CF_PAGES_READ_TOKEN }}
+  CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -43,6 +39,9 @@ jobs:
       ready: ${{ steps.plan.outputs.ready }}
       sha: ${{ steps.plan.outputs.sha }}
       prod_tag: ${{ steps.plan.outputs.prod_tag }}
+      main_sha: ${{ steps.plan.outputs.main_sha }}
+      refs: ${{ steps.plan.outputs.refs }}
+      protection: ${{ steps.plan.outputs.protection }}
       next_dev_tag: ${{ steps.plan.outputs.next_dev_tag }}
     steps:
       - uses: actions/checkout@v4
@@ -53,140 +52,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Inspect exact checkpoint and production blockers
-        id: plan
-        env:
-          DEV_TAG: ${{ inputs.dev_tag }}
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
-          CONTROLLER_REF: ${{ github.ref }}
-          CONTROLLER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const { execFileSync } = require('node:child_process');
-          const { appendFileSync } = require('node:fs');
-          const root = process.cwd();
-          const git = (...args) => execFileSync('git', args, {
-            cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
-          }).trim();
-          const blockers = [];
-          const attempt = (label, fn) => {
-            try { return fn(); }
-            catch (e) { blockers.push(`${label}: ${e.message}`); }
-          };
-          const p = {
-            controllerRef: process.env.CONTROLLER_REF,
-            controllerSha: process.env.CONTROLLER_SHA,
-            requestedTag: process.env.DEV_TAG,
-            expectedSha: process.env.EXPECTED_SHA,
-            ready: false, blockers
-          };
-          // No DEV grammar or version arithmetic lives in this workflow.
-          const helper = attempt('Controller helper', () => {
-            const h = require('./.github/release_metadata.cjs');
-            if (typeof h.parseDevTag !== 'function' ||
-                typeof h.inspectCheckpoint !== 'function') {
-              throw new Error('Reviewed PR #5 helper exports are unavailable; --tag CLI alone is insufficient');
-            }
-            return h;
-          });
-          if (p.controllerRef !== 'refs/heads/main') {
-            blockers.push('Controller must be dispatched from reviewed main; default-branch rollout is separate');
-          }
-          const expectedValid = /^[0-9a-f]{40}$/.test(p.expectedSha || '');
-          if (!expectedValid) blockers.push('expected_sha must be a full lowercase commit SHA');
-          const tags = attempt('Complete tag inventory', () => git('tag', '--list').split('\n').filter(Boolean)) || [];
-          p.devSha = attempt('dev ref', () => git('rev-parse', '--verify', 'refs/remotes/origin/dev^{commit}'));
-          p.mainSha = attempt('main ref', () => git('rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'));
-          const parsed = helper && attempt('Selected DEV policy', () => {
-            git('check-ref-format', `refs/tags/${p.requestedTag}`);
-            return helper.parseDevTag(p.requestedTag);
-          });
-          if (parsed) {
-            p.prodTag = parsed.prodTag;
-            p.nextDevTag = parsed.nextDevTag;
-            if (!parsed.promotable) blockers.push('Lettered DEV checkpoint is not promotable');
-            p.sha = attempt('Exact tag', () => {
-              git('show-ref', '--verify', `refs/tags/${p.requestedTag}`);
-              return git('rev-parse', '--verify', `refs/tags/${p.requestedTag}^{commit}`);
-            });
-            const checkpoint = attempt('Committed metadata contract', () => helper.inspectCheckpoint(root, p.requestedTag));
-            if (checkpoint) {
-              if (checkpoint.sha !== p.sha) blockers.push('Helper and exact tag disagree');
-              p.runtimeProd = checkpoint.runtimeProd;
-              if (p.runtimeProd !== p.prodTag.slice(1)) {
-                blockers.push(`Runtime PROD constant ${p.runtimeProd || 'unknown'} differs from ${p.prodTag}; no source mutation permitted`);
-              }
-            }
-            const devTags = tags.flatMap(tag => {
-              try { return [helper.parseDevTag(tag)]; } catch { return []; }
-            }).sort((a, b) => b.base - a.base || b.iteration - a.iteration || b.suffix.localeCompare(a.suffix));
-            p.latestCanonicalDev = devTags[0]?.tag || null;
-            if (p.latestCanonicalDev !== p.requestedTag) {
-              blockers.push('Selected tag is not the latest canonical DEV version, including lettered work');
-            }
-            if (tags.includes(p.prodTag)) blockers.push('Computed PROD tag already exists; never overwrite or resume a fresh release');
-            // Next DEV is advisory only; its existence is reported, not changed.
-            p.nextDevTagExists = tags.includes(p.nextDevTag);
-          }
-          if (p.sha) {
-            if (!expectedValid || p.sha !== p.expectedSha) blockers.push('Selected tag does not equal expected_sha');
-            if (p.devSha !== p.sha) blockers.push('dev tip is not exactly the selected checkpoint');
-            if (p.mainSha === p.sha) blockers.push('main already equals checkpoint; there would be no new main-push trigger');
-            if (p.mainSha) attempt('main must be an ancestor; reconciliation is excluded', () =>
-              git('merge-base', '--is-ancestor', p.mainSha, p.sha));
-          }
-          // PROD grammar is separate from canonical DEV parsing. Ignore legacy tags.
-          const prodTags = tags.filter(tag => /^v1\.1\.[1-9]\d*$/.test(tag))
-            .map(tag => ({ tag, patch: Number(tag.slice(5)) }));
-          if (prodTags.some(t => !Number.isSafeInteger(t.patch))) blockers.push('Unsafe PROD baseline arithmetic');
-          prodTags.sort((a, b) => b.patch - a.patch);
-          p.prodBaseline = prodTags[0]?.tag || null;
-          if (!p.prodBaseline) blockers.push('Canonical PROD baseline missing; establish history separately');
-          else {
-            p.baselineSha = attempt('Baseline exact tag', () => git('rev-parse', '--verify', `refs/tags/${p.prodBaseline}^{commit}`));
-            const packageVersion = sha => JSON.parse(git('show', `${sha}:web/package.json`)).version;
-            if (p.baselineSha) {
-              p.baselinePackage = attempt('Baseline tagged metadata', () => packageVersion(p.baselineSha));
-              if (p.baselinePackage !== p.prodBaseline.slice(1)) blockers.push('PROD baseline tag and its own committed package disagree');
-            }
-            if (p.mainSha && p.baselineSha) {
-              attempt('Baseline ancestry on main', () => git('merge-base', '--is-ancestor', p.baselineSha, p.mainSha));
-              p.mainPackage = attempt('main committed metadata', () => packageVersion(p.mainSha));
-              if (p.mainPackage !== p.prodBaseline.slice(1)) {
-                blockers.push(`Baseline ${p.prodBaseline} conflicts with main package ${p.mainPackage || 'unknown'}; deployed identity remains unverified`);
-              }
-            }
-            if (parsed && Number(parsed.prodTag.slice(5)) <= prodTags[0].patch) {
-              blockers.push('Computed PROD patch must exceed canonical PROD baseline');
-            }
-          }
-          // Hard boundaries: not configurable readiness flags or assumed API fields.
-          blockers.push('PROD baseline/deployed identity reconciliation contract is not implemented');
-          blockers.push('Protected human approval environment and protection verification are not implemented');
-          blockers.push('gtar-web production branch/main-push credential contract is not verified');
-          blockers.push('Trusted post-promotion exact-SHA production-only Cloudflare verifier is not implemented');
-          blockers.push('Tag-derived runtime release identity contract is not implemented');
-          blockers.push('Production execution remains disabled in this reviewed candidate');
-          p.ready = blockers.length === 0;
-          const json = JSON.stringify(p, null, 2);
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-            `### Read-only GTAR release plan\n\n\x60\x60\x60json\n${json}\n\x60\x60\x60\n\n` +
-            'Dry run performs planning only; Web tests/lint/build are not claimed as run.\n' +
-            'Next DEV is advisory. No branches, tags, environments or deployments are changed.\n');
-          appendFileSync(process.env.GITHUB_OUTPUT,
-            `ready=${p.ready}\nsha=${p.sha || ''}\nprod_tag=${p.prodTag || ''}\nnext_dev_tag=${p.nextDevTag || ''}\n`);
-          process.stdout.write(json + '\n');
-          NODE
-
+      - id: plan
+        run: node .github/prod_controller.cjs plan
   validate:
     needs: plan
     if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Checkpoint code receives no release credentials, including during npm lifecycle scripts.
+    env:
+      APPROVAL_READ_TOKEN: ''
+      CF_PAGES_READ_TOKEN: ''
     defaults:
       run:
-        shell: bash
         working-directory: web
     steps:
       - uses: actions/checkout@v4
@@ -202,48 +80,80 @@ jobs:
       - run: npm test
       - run: npm run lint:sync
       - run: npm run build
-
-  production-boundary:
+  promote:
     needs: [plan, validate]
     if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
+    environment: gtar-production
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # Deliberately no environment reference: never auto-create an unprotected one.
-    # No write token or push code until approval, runtime, baseline and verifier
-    # contracts are implemented and reviewed together. No readiness flag enables it.
+    timeout-minutes: 10
+    outputs:
+      state: ${{ steps.promote.outputs.state }}
+      started: ${{ steps.promote.outputs.started }}
     steps:
-      - name: Fail closed at the production execution boundary
-        run: |
-          echo 'Protected approval, fresh gate recheck, atomic promotion and production verification require separate reviewed implementation.' >&2
-          exit 1
-
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          # Protected environment credential; no force or rules bypass is used.
+          token: ${{ secrets.PROD_PUSH_TOKEN }}
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fresh post-approval gates and one atomic non-force transaction
+        id: promote
+        env:
+          VALIDATED_SHA: ${{ needs.plan.outputs.sha }}
+          PLANNED_MAIN: ${{ needs.plan.outputs.main_sha }}
+          PLANNED_PROD: ${{ needs.plan.outputs.prod_tag }}
+          PLANNED_REFS: ${{ needs.plan.outputs.refs }}
+          PLANNED_PROTECTION: ${{ needs.plan.outputs.protection }}
+        run: node .github/prod_controller.cjs promote
+  verify:
+    needs: [plan, promote]
+    if: ${{ always() && needs.promote.outputs.state == 'PROD_PROMOTED_BUT_UNVERIFIED' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      state: ${{ steps.verify.outputs.state }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only Cloudflare API exact-SHA production proof
+        id: verify
+        env:
+          PROD_TAG: ${{ needs.plan.outputs.prod_tag }}
+          PROMOTION_STARTED: ${{ needs.promote.outputs.started }}
+        run: node .github/prod_controller.cjs verify
   report:
-    needs: [plan, validate, production-boundary]
+    needs: [plan, validate, promote, verify]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      APPROVAL_READ_TOKEN: ''
+      CF_PAGES_READ_TOKEN: ''
     steps:
-      - name: Report reviewed candidate outcome
+      - name: Report actual terminal state
         env:
           DRY_RUN: ${{ inputs.dry_run }}
           PLAN_RESULT: ${{ needs.plan.result }}
-          READY: ${{ needs.plan.outputs.ready }}
-          VALIDATE_RESULT: ${{ needs.validate.result }}
+          PROMOTE_STATE: ${{ needs.promote.outputs.state }}
+          VERIFY_STATE: ${{ needs.verify.outputs.state }}
           PROD_TAG: ${{ needs.plan.outputs.prod_tag }}
           NEXT_DEV: ${{ needs.plan.outputs.next_dev_tag }}
         run: |
           set -euo pipefail
-          {
-            echo "PLAN:$PLAN_RESULT|READY_FOR_PROD:${READY:-false}"
-            echo "VALIDATION:$VALIDATE_RESULT|COMPUTED_PROD:${PROD_TAG:-unavailable}"
-            echo "NEXT_DEV_ADVISORY:${NEXT_DEV:-unavailable}"
-            echo 'REMOTE_MUTATION:NONE|PRODUCTION_EXECUTION:DISABLED'
-            echo 'After VERIFIED_PROD only: reviewed DEV metadata PR, merge, verify, human manual next DEV tag, verify tag.'
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$PLAN_RESULT" != success ]; then exit 1; fi
-          if [ "$DRY_RUN" = true ]; then
-            echo 'DRY_RUN_COMPLETE: planning succeeded; inspect blockers before any production work.'
-          else
-            echo 'BLOCKED_NOT_PROMOTED: production contracts are unresolved.' >&2
-            exit 1
+          if [ "$DRY_RUN" = true ] && [ "$PLAN_RESULT" = success ]; then
+            echo 'DRY_RUN_READY: gates only; tests/lint/build not run; no mutation.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          STATE="${VERIFY_STATE:-${PROMOTE_STATE:-BLOCKED_NOT_PROMOTED}}"
+          echo "STATE:$STATE|PROD:${PROD_TAG:-unknown}|NEXT_DEV_ADVISORY:${NEXT_DEV:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          echo 'No automatic rollback, retry, source rewrite or DEV baseline change.' >> "$GITHUB_STEP_SUMMARY"
+          [ "$STATE" = VERIFIED_PROD ]
