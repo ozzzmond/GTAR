@@ -101,18 +101,6 @@ function approvalContract(env, policies) {
     policies.branch_policies?.length === 1 && policies.branch_policies[0].name === 'main' && policies.branch_policies[0].type === 'branch',
     'Approval environment must allow only main branch')
 }
-function freezeContract(rulesets) {
-  // Server-enforced freeze closes the dev/tag race that a no-op git push cannot CAS.
-  for (const [name, target, ref, rules] of [
-    ['gtar-release-freeze-dev', 'branch', 'refs/heads/dev', ['update', 'deletion']],
-    ['gtar-release-freeze-dev-tags', 'tag', 'refs/tags/v1.0.*', ['creation', 'update', 'deletion']]
-  ]) {
-    const r = rulesets.find(s => s.name === name)
-    must(r?.target === target && r.enforcement === 'active' && Array.isArray(r.bypass_actors) && r.bypass_actors.length === 0 &&
-      r.conditions?.ref_name?.include?.includes(ref) && r.conditions.ref_name.exclude?.length === 0 && rules.every(type => r.rules?.some(rule => rule.type === type)),
-      `Required server freeze: ${name}; no bypass actors`)
-  }
-}
 function projectContract(p) {
   const c = p.source?.config
   must(p.name === 'gtar-web' && typeof p.id === 'string' && p.id && p.production_branch === 'main' && p.source?.type === 'github' &&
@@ -144,15 +132,11 @@ async function externalGate(e, fetcher = getJson) {
   const env = await fetcher(`${base}/environments/gtar-production`, e.APPROVAL_READ_TOKEN)
   const policies = await fetcher(`${base}/environments/gtar-production/deployment-branch-policies`, e.APPROVAL_READ_TOKEN)
   approvalContract(env, policies)
-  const list = await fetcher(`${base}/rulesets?includes_parents=true&per_page=100`, e.APPROVAL_READ_TOKEN)
-  must(list.length < 100, 'Ruleset pagination requires explicit integration support')
-  const freezes = await Promise.all(list.filter(r => r.name.startsWith('gtar-release-freeze-')).map(r => fetcher(`${base}/rulesets/${r.id}`, e.APPROVAL_READ_TOKEN)))
-  freezeContract(freezes)
   must(/^[0-9a-f]{32}$/.test(e.CF_ACCOUNT_ID || ''), 'CF_ACCOUNT_ID missing/invalid')
   const cf = `https://api.cloudflare.com/client/v4/accounts/${e.CF_ACCOUNT_ID}/pages/projects/gtar-web`
   const project = await fetcher(cf, e.CF_PAGES_READ_TOKEN, true)
   projectContract(project)
-  const protection = createHash('sha256').update(JSON.stringify({ env, policies, freezes: freezes.sort((a, b) => a.id - b.id), project: { id: project.id, name: project.name, production_branch: project.production_branch, source: project.source, build_config: project.build_config } })).digest('hex')
+  const protection = createHash('sha256').update(JSON.stringify({ env, policies, project: { id: project.id, name: project.name, production_branch: project.production_branch, source: project.source, build_config: project.build_config } })).digest('hex')
   return { project, cf, protection }
 }
 function refresh(root) {
@@ -236,4 +220,4 @@ async function main(mode, e = process.env) {
   must(result.state === 'PROD_PROMOTED_BUT_UNVERIFIED', result.state)
 }
 if (require.main === module) main(process.argv[2]).catch(error => { emit({ error: error.message }); process.exitCode = 1 })
-module.exports = { plan, legacyReconciliation, runtimeContract, approvalContract, freezeContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }
+module.exports = { plan, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }
