@@ -47,7 +47,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - run: npm test
+      # Keep the historical Web tree pinned; run the reviewed controller tests outside it.
+      - run: node --test $(find tests -maxdepth 1 -name '*.test.cjs' ! -name 'prodPromotionWorkflow.test.cjs' -print) ../tests/prodPromotionWorkflow.test.cjs
       - run: npm run lint:sync
       - run: npm run build
   android:
