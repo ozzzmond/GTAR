@@ -23,6 +23,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # Preserve DEV's complete Web suite and PR16's controller support tests.
+      - run: node --test ../tests/*.test.cjs
       - run: npm test
       - run: npm run lint:sync
       - run: npm run build
