@@ -81,6 +81,8 @@ jobs:
       - run: npm run lint:sync
       - run: npm run build
   promote:
+    # GitHub pauses this job for a separate native environment approval after validation.
+    name: Authorize ${{ needs.plan.outputs.prod_tag }} from ${{ needs.plan.outputs.sha }}
     needs: [plan, validate]
     if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
     environment: gtar-production

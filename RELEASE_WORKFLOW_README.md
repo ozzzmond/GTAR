@@ -65,13 +65,35 @@ The checkpoint must contain the reviewed release identity helper/parser bytes an
 Vite/runtime integration. Next DEV is an advisory output only.
 
 Configure GitHub **Settings → Environments → gtar-production** before execution:
-required human reviewer(s), **Prevent self-review** enabled, administrator bypass
-**disabled**, and deployment branch policies allowing only branch **main** (no
-tag policy). `plan` reads and verifies that existing environment before the job
-can reference it. Missing, inaccessible, incomplete or unprotected configuration
+required human reviewer **ozzzmond** (GitHub User ID `17817198`), **Prevent
+self-review** unchecked (`false`), administrator bypass **disabled**
+(`can_admins_bypass=false`), and deployment branch policies allowing only branch
+**main** (no tag policy). Keep required reviewers enabled; an empty reviewer list,
+team-only/bot reviewer, missing maintainer, or enabled self-review prevention
+blocks. `plan` reads and verifies that existing environment before the job can
+reference it. Missing, inaccessible, incomplete or unprotected configuration
 blocks. The environment job enforces the actual approval; dispatch is not approval.
 Protection is checked again after approval and fingerprinted against the plan.
 Do not remove protection or rotate its policy during an approved run.
+
+The single maintainer can dispatch and then approve the same run, as two distinct
+human actions. After exact-SHA validation passes, GitHub pauses the `promote` job
+at `gtar-production`; its job name shows the candidate PROD tag and full source
+SHA. Review the plan summary and completed validation, then use **Review
+deployments → gtar-production → Approve and deploy** on that run. Include a comment
+identifying the exact DEV tag/full SHA and computed PROD tag for the audit trail.
+Dispatch, a checkbox/input, elapsed time, and a successful test run are not
+approval. Reject/cancel leaves the protected job unstarted and production refs
+untouched. GitHub records the reviewer and deployment approval in the run; the
+protected environment releases `PROD_PUSH_TOKEN` only after approval. No automatic
+approval API, alternate environment, or new credential is introduced. Immediately
+inside the approved job, the controller still reruns and fingerprints all gates
+before its one atomic transaction. This deliberately permits human self-approval,
+not administrator bypass or removal of the required-reviewer boundary.
+
+Native GitHub behavior: [environment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+and [reviewing deployments](https://docs.github.com/en/actions/how-tos/managing-workflow-runs-and-deployments/managing-deployments/reviewing-deployments).
+These settings are operator prerequisites; this PR does not change the live environment.
 
 Repository secrets:
 

@@ -54,8 +54,12 @@ function runtimeContract(root, sha) {
 }
 function approvalContract(env, policies) {
   const reviewers = env.protection_rules?.find(r => r.type === 'required_reviewers')
-  must(env.name === 'gtar-production' && reviewers?.prevent_self_review === true && reviewers.reviewers?.length > 0 && env.can_admins_bypass === false,
-    'gtar-production requires human reviewers, prevent self review, no admin bypass')
+  // Native environment approval is a separate human action after validation.
+  // The sole maintainer may approve their own run; dispatch alone never releases secrets.
+  const maintainer = reviewers?.reviewers?.some(r => r.type === 'User' &&
+    r.reviewer?.type === 'User' && r.reviewer.login === 'ozzzmond' && r.reviewer.id === 17817198)
+  must(env.name === 'gtar-production' && reviewers?.prevent_self_review === false && maintainer && env.can_admins_bypass === false,
+    'gtar-production requires maintainer ozzzmond as human reviewer, self approval allowed, no admin bypass')
   must(env.deployment_branch_policy?.custom_branch_policies === true && env.deployment_branch_policy?.protected_branches === false &&
     policies.branch_policies?.length === 1 && policies.branch_policies[0].name === 'main' && policies.branch_policies[0].type === 'branch',
     'Approval environment must allow only main branch')
