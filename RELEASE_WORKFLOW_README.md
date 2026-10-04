@@ -60,9 +60,53 @@ consistent package/lock/DEV/auth source stamps, computed PROD above the canonica
 baseline, absent PROD tag, baseline ancestry, main ancestry, and unchanged
 controller/main since dispatch. Legacy app-v/web-v tags do not establish baseline.
 Baseline identity accepts a legacy tagged PROD package or the new exact-source
-DEV/tag-derived identity contract; existing legacy discrepancies are not waived.
+DEV/tag-derived identity contract. The only legacy discrepancy exception is the
+exact pinned one-time reconciliation below; all other discrepancies still block.
 The checkpoint must contain the reviewed release identity helper/parser bytes and
 Vite/runtime integration. Next DEV is an advisory output only.
+
+### One-time pinned legacy PROD baseline reconciliation
+
+Canonical PROD identity remains **v1.1.62**, peeled commit
+`b7c51af72e63c9e77c3b8f7ee558d4198dd5fa0e`, version **1.1.62**. Historical
+main package/runtime **1.1.108** is a reviewed source stamp, never canonical PROD
+identity. This migration addresses the discrepancy seen in readiness run
+`37212011420`; it does not establish deployed-production proof.
+
+The controller accepts that discrepancy only while the highest canonical PROD
+tag is exactly `v1.1.62` at the exact SHA above, and every pin below passes:
+
+- Reviewed historical main anchor: `95408a9234f59fe83bb6d2e85a4d38e73d4d1117`.
+  This exact commit must exist; canonical PROD must be its ancestor, and it must
+  be an ancestor of current dispatch/main. Current main still must equal the
+  controller dispatch SHA and be an ancestor of the selected checkpoint.
+- Both the anchor and current main must have Web tree
+  `9558867c347fecbc67d4dfe8b97c549c36d390ef`. Later controller/documentation/test
+  commits outside `web/` can land; any Web change fails reconciliation.
+- At both commits, `web/package.json`, top-level `web/package-lock.json` and its
+  `packages[""]` version must each be exactly `1.1.108`.
+- At both commits, `web/src/types/gtar.ts` must contain the exact unique runtime
+  stamps `GTAR_APP_VERSION = '1.1.108'` and
+  `GTAR_DEV_VERSION = '1.0.106-dev.2'`. The DEV stamp is part of this identity contract.
+
+Missing objects, ancestry, files, stamps, or any altered pin fail closed. Pins
+are hard-coded reviewed controller values, never dispatch inputs. The tagged
+baseline metadata gate still runs first; checkpoint metadata, latest clean DEV,
+exact dev tip, runtime identity, approval/environment, server freeze, Cloudflare,
+fresh recheck and atomic promotion gates all remain enforced. No package/lock,
+runtime constant, application source, branch or tag is rewritten by reconciliation.
+Once canonical PROD advances beyond `v1.1.62`, the exception automatically returns
+false and only normal baseline logic applies. A different tag cannot use it.
+
+Migration tests live outside `web/` to preserve the pinned tree. Run
+`node --test tests/prodBaselineReconciliation.test.cjs web/tests/prodPromotionWorkflow.test.cjs`;
+existing release-scripts CI also runs them through Python unittest discovery.
+
+After this PR is reviewed and merged to main, main advances beyond the current
+DEV checkpoint. Do not reuse `v1.0.108-dev.12` for PROD. Require a fresh main-to-dev
+ancestry sync and a new clean numeric checkpoint, expected `v1.0.108-dev.13`, with
+expected computed PROD candidate `v1.1.121`. Tag creation remains human/manual
+only. These are follow-on actions, not actions performed by this reconciliation PR.
 
 Configure GitHub **Settings → Environments → gtar-production** before execution:
 required human reviewer **ozzzmond** (GitHub User ID `17817198`), **Prevent

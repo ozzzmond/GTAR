@@ -7,6 +7,42 @@ const { parseDevTag, inspectCheckpoint } = require('./release_metadata.cjs')
 const gitAt = root => (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const must = (ok, message) => { if (!ok) throw new Error(message) }
 
+// One reviewed migration state; these pins are never inputs or package-derived PROD identity.
+const LEGACY_PROD = Object.freeze({
+  tag: 'v1.1.62',
+  sha: 'b7c51af72e63c9e77c3b8f7ee558d4198dd5fa0e',
+  anchor: '95408a9234f59fe83bb6d2e85a4d38e73d4d1117',
+  webTree: '9558867c347fecbc67d4dfe8b97c549c36d390ef',
+  packageVersion: '1.1.108',
+  runtimeVersion: '1.1.108',
+  devVersion: '1.0.106-dev.2'
+})
+function legacyReconciliation(root, baseline, baselineSha, mainSha, git = gitAt(root)) {
+  // A newer canonical PROD automatically retires the exception; normal gates still apply.
+  if (baseline !== LEGACY_PROD.tag) return false
+  must(baselineSha === LEGACY_PROD.sha, 'Legacy reconciliation canonical PROD SHA mismatch')
+  const anchor = git('rev-parse', '--verify', `${LEGACY_PROD.anchor}^{commit}`)
+  must(anchor === LEGACY_PROD.anchor, 'Legacy reconciliation reviewed main anchor mismatch')
+  git('merge-base', '--is-ancestor', baselineSha, anchor)
+  // Allow the reviewed controller/docs-only PR to land without changing historical Web identity.
+  git('merge-base', '--is-ancestor', anchor, mainSha)
+  for (const sha of new Set([anchor, mainSha])) {
+    must(git('rev-parse', `${sha}:web`) === LEGACY_PROD.webTree, 'Legacy reconciliation reviewed Web tree mismatch')
+    const pkg = JSON.parse(git('show', `${sha}:web/package.json`))
+    const lock = JSON.parse(git('show', `${sha}:web/package-lock.json`))
+    must([pkg.version, lock.version, lock.packages?.['']?.version].every(v => v === LEGACY_PROD.packageVersion),
+      'Legacy reconciliation package/lock stamps mismatch')
+    const types = git('show', `${sha}:web/src/types/gtar.ts`)
+    const stamp = name => {
+      const matches = [...types.matchAll(new RegExp(`^export const ${name} = '([^']+)';?$`, 'gm'))]
+      return matches.length === 1 ? matches[0][1] : null
+    }
+    must(stamp('GTAR_APP_VERSION') === LEGACY_PROD.runtimeVersion && stamp('GTAR_DEV_VERSION') === LEGACY_PROD.devVersion,
+      'Legacy reconciliation runtime stamps mismatch')
+  }
+  return true
+}
+
 function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   const git = gitAt(root)
   must(controllerRef === 'refs/heads/main', 'Dispatch reviewed main controller only')
@@ -38,7 +74,8 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
     return candidates.length === 1 && runtimeContract(root, sha)
   }
   must(pkg(baselineSha) === baseline.slice(1) || derived(baselineSha), 'Baseline tagged metadata conflicts with release identity')
-  must(pkg(mainSha) === baseline.slice(1) || (runtimeContract(root, mainSha) && derived(baselineSha)), 'main package/baseline discrepancy requires reviewed reconciliation')
+  must(pkg(mainSha) === baseline.slice(1) || (runtimeContract(root, mainSha) && derived(baselineSha)) ||
+    legacyReconciliation(root, baseline, baselineSha, mainSha), 'main package/baseline discrepancy requires reviewed reconciliation')
   must(runtimeContract(root, expectedSha), 'Tag-derived runtime identity contract missing/different from controller')
   return { ...parsed, sha: expectedSha, devSha, mainSha, baseline, baselineSha, controllerSha }
 }
@@ -199,4 +236,4 @@ async function main(mode, e = process.env) {
   must(result.state === 'PROD_PROMOTED_BUT_UNVERIFIED', result.state)
 }
 if (require.main === module) main(process.argv[2]).catch(error => { emit({ error: error.message }); process.exitCode = 1 })
-module.exports = { plan, runtimeContract, approvalContract, freezeContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }
+module.exports = { plan, legacyReconciliation, runtimeContract, approvalContract, freezeContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }
