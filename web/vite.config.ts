@@ -236,7 +236,7 @@ export default defineConfig(({ mode }) => {
   // isDev covers both standard dev server (mode='development') and the debug variant
   const isDev = mode === 'development' || isDebug
   const appEnv = isDebug ? 'debug' : 'production'
-  const releaseIdentity = resolveReleaseIdentity(path.resolve(import.meta.dirname, '..'))
+  const releaseIdentity = resolveReleaseIdentity(path.resolve(import.meta.dirname, '..'), { ...process.env, GTAR_BUILD_MODE: mode })
 
   // PWA manifest icon sets
   const devIcons = [
