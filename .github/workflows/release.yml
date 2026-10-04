@@ -1,135 +1,161 @@
-name: Build & Release GTAR
-
+# Reviewed main controller; exact DEV source is validated separately and never rewritten.
+name: GTAR Web PWA PROD Promotion
 on:
-  push:
-    tags:
-      - 'app-v1.1.*'
   workflow_dispatch:
-
+    inputs:
+      dev_tag:
+        description: Exact clean numeric canonical DEV checkpoint
+        required: true
+        type: string
+      expected_sha:
+        description: Full lowercase 40-character checkpoint SHA
+        required: true
+        type: string
+      dry_run:
+        description: Read-only readiness gates; no validation or mutation
+        type: boolean
+        default: true
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: gtar-prod-promotion
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  DEV_TAG: ${{ inputs.dev_tag }}
+  EXPECTED_SHA: ${{ inputs.expected_sha }}
+  CONTROLLER_REF: ${{ github.ref }}
+  CONTROLLER_SHA: ${{ github.sha }}
+  APPROVAL_READ_TOKEN: ${{ secrets.APPROVAL_READ_TOKEN }}
+  CF_PAGES_READ_TOKEN: ${{ secrets.CF_PAGES_READ_TOKEN }}
+  CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
 jobs:
-  build-and-release:
-    name: Build & Release APK
+  plan:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+      sha: ${{ steps.plan.outputs.sha }}
+      prod_tag: ${{ steps.plan.outputs.prod_tag }}
+      main_sha: ${{ steps.plan.outputs.main_sha }}
+      refs: ${{ steps.plan.outputs.refs }}
+      protection: ${{ steps.plan.outputs.protection }}
+      next_dev_tag: ${{ steps.plan.outputs.next_dev_tag }}
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Grant Execute Permission to Gradle Wrapper
-        run: chmod +x gradlew
-
-      - name: Determine Release Type & Version
-        run: python .github/release_metadata.py --platform app
-
-      - name: Validate and decode production signing credentials
-        if: env.IS_PRERELEASE != 'true'
+          node-version: '22'
+      - id: plan
+        run: node .github/prod_controller.cjs plan
+  validate:
+    needs: plan
+    if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Checkpoint code receives no release credentials, including during npm lifecycle scripts.
+    env:
+      APPROVAL_READ_TOKEN: ''
+      CF_PAGES_READ_TOKEN: ''
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint:sync
+      - run: npm run build
+  promote:
+    # GitHub pauses this job for a separate native environment approval after validation.
+    name: Authorize ${{ needs.plan.outputs.prod_tag }} from ${{ needs.plan.outputs.sha }}
+    needs: [plan, validate]
+    if: ${{ !inputs.dry_run && needs.plan.outputs.ready == 'true' }}
+    environment: gtar-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      state: ${{ steps.promote.outputs.state }}
+      started: ${{ steps.promote.outputs.started }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          # Protected environment credential; no force or rules bypass is used.
+          token: ${{ secrets.PROD_PUSH_TOKEN }}
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fresh post-approval gates and one atomic non-force transaction
+        id: promote
         env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VALIDATED_SHA: ${{ needs.plan.outputs.sha }}
+          PLANNED_MAIN: ${{ needs.plan.outputs.main_sha }}
+          PLANNED_PROD: ${{ needs.plan.outputs.prod_tag }}
+          PLANNED_REFS: ${{ needs.plan.outputs.refs }}
+          PLANNED_PROTECTION: ${{ needs.plan.outputs.protection }}
+        run: node .github/prod_controller.cjs promote
+  verify:
+    needs: [plan, promote]
+    if: ${{ always() && needs.promote.outputs.state == 'PROD_PROMOTED_BUT_UNVERIFIED' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      state: ${{ steps.verify.outputs.state }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only Cloudflare API exact-SHA production proof
+        id: verify
+        env:
+          PROD_TAG: ${{ needs.plan.outputs.prod_tag }}
+          PROMOTION_STARTED: ${{ needs.promote.outputs.started }}
+        run: node .github/prod_controller.cjs verify
+  report:
+    needs: [plan, validate, promote, verify]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      APPROVAL_READ_TOKEN: ''
+      CF_PAGES_READ_TOKEN: ''
+    steps:
+      - name: Report actual terminal state
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          PROMOTE_STATE: ${{ needs.promote.outputs.state }}
+          VERIFY_STATE: ${{ needs.verify.outputs.state }}
+          PROD_TAG: ${{ needs.plan.outputs.prod_tag }}
+          NEXT_DEV: ${{ needs.plan.outputs.next_dev_tag }}
         run: |
           set -euo pipefail
-          for name in SIGNING_KEY KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [[ -z "${!name//[[:space:]]/}" ]]; then
-              echo "::error::Required signing secret $name is missing"
-              exit 1
-            fi
-          done
-          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          test -s "$RUNNER_TEMP/release.jks"
-          echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-
-      - name: Run Unit Tests
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ "${{ env.IS_PRERELEASE }}" = "true" ]; then
-            ./gradlew testDebugUnitTest --no-daemon --stacktrace
-          else
-            ./gradlew testReleaseUnitTest --no-daemon --stacktrace
+          if [ "$DRY_RUN" = true ] && [ "$PLAN_RESULT" = success ]; then
+            echo 'DRY_RUN_READY: gates only; tests/lint/build not run; no mutation.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-
-      - name: Build APK
-        env:
-          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
-          KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ "${{ env.IS_PRERELEASE }}" = "true" ]; then
-            ./gradlew assembleDebug --no-daemon --stacktrace
-          else
-            ./gradlew assembleRelease --no-daemon --stacktrace
-          fi
-
-      - name: Prepare Release Artifacts
-        run: |
-          set -euo pipefail
-          APK_DIR=app/build/outputs/apk/debug
-          if [ "$IS_PRERELEASE" != "true" ]; then APK_DIR=app/build/outputs/apk/release; fi
-          mapfile -t APKS < <(find "$APK_DIR" -maxdepth 1 -type f -name "*.apk")
-          if [ "${#APKS[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one APK in $APK_DIR"
-            exit 1
-          fi
-          mkdir -p release_artifacts
-          cp "${APKS[0]}" "release_artifacts/GTA_${RELEASE_TAG}.apk"
-
-      - name: Upload APK Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.IS_PRERELEASE == 'true' && 'GTA-Dev-APK' || 'GTA-Prod-APK' }}
-          path: release_artifacts/*.apk
-          retention-days: 14
-
-      - name: Create GitHub Pre-Release (Dev Builds)
-        if: env.IS_PRERELEASE == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          name: GTAR Dev Preview ${{ env.RELEASE_TITLE }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ github.sha }}
-          files: release_artifacts/GTA_${{ env.RELEASE_TAG }}.apk
-          generate_release_notes: true
-          draft: false
-          prerelease: true
-          make_latest: false
-          body: |
-            ### 🧪 GTAR Developer Preview (${{ env.RELEASE_TITLE }})
-            - **Application ID:** `com.gtar.app.debug`
-            - **Icon:** Distinctive Red DEV adaptive launcher icon
-            - **Installation:** Installs side-by-side with production GTAR without overwriting existing data.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release (Production Builds)
-        if: env.IS_PRERELEASE != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          name: GTAR Release ${{ env.RELEASE_TITLE }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ github.sha }}
-          files: release_artifacts/GTA_${{ env.RELEASE_TAG }}.apk
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-          make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATE="${VERIFY_STATE:-${PROMOTE_STATE:-BLOCKED_NOT_PROMOTED}}"
+          echo "STATE:$STATE|PROD:${PROD_TAG:-unknown}|NEXT_DEV_ADVISORY:${NEXT_DEV:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          echo 'No automatic rollback, retry, source rewrite or DEV baseline change.' >> "$GITHUB_STEP_SUMMARY"
+          [ "$STATE" = VERIFIED_PROD ]
