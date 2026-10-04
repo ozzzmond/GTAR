@@ -35,10 +35,6 @@ function fixture(t, tag = 'v1.0.108-dev.11') {
   const plan = () => C.plan(repo, tag, sha, 'refs/heads/main', mainSha)
   return { repo, git, put, tag, sha, mainSha, plan, remote }
 }
-const frozen = () => [
-  { name: 'gtar-release-freeze-dev', target: 'branch', enforcement: 'active', bypass_actors: [], conditions: { ref_name: { include: ['refs/heads/dev'], exclude: [] } }, rules: [{ type: 'update' }, { type: 'deletion' }] },
-  { name: 'gtar-release-freeze-dev-tags', target: 'tag', enforcement: 'active', bypass_actors: [], conditions: { ref_name: { include: ['refs/tags/v1.0.*'], exclude: [] } }, rules: ['creation', 'update', 'deletion'].map(type => ({ type })) }
-]
 const protectedEnv = () => ({ name: 'gtar-production', can_admins_bypass: false, protection_rules: [{ type: 'required_reviewers', prevent_self_review: false, reviewers: [{ type: 'User', reviewer: { type: 'User', login: 'ozzzmond', id: 17817198 } }] }], deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } })
 const policies = { branch_policies: [{ name: 'main', type: 'branch' }] }
 const project = () => ({ id: 'project-id', name: 'gtar-web', production_branch: 'main', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR', production_branch: 'main', production_deployments_enabled: true } }, canonical_deployment: { id: 'deployment-id' } })
@@ -119,12 +115,6 @@ test('solo approval fails closed without the human maintainer, no bypass or exac
     assert.throws(() => C.approvalContract(protectedEnv(), { branch_policies }))
   }
 })
-test('server freeze requires active exact refs, all restriction rules and zero bypass', () => {
-  C.freezeContract(frozen())
-  for (const mutate of [r => { r[0].enforcement = 'evaluate' }, r => { r[0].bypass_actors = [{ actor_id: 1 }] }, r => { r[1].rules.pop() }, r => { r[0].conditions.ref_name.exclude.push('refs/heads/dev') }, r => { r[1].conditions.ref_name.include = ['refs/tags/other*'] }]) {
-    const r = frozen(); mutate(r); assert.throws(() => C.freezeContract(r))
-  }
-})
 test('Cloudflare proof rejects preview, generic success, old/short SHA, wrong producer/project and old time', () => {
   const sha = 'a'.repeat(40), after = '2026-10-04T01:00:00Z'
   assert.equal(C.deploymentProof(project(), deployment(sha), sha, after).project, 'gtar-web')
@@ -178,17 +168,39 @@ test('main build identity derives exact DEV and PROD tags without source rewrite
   assert.throws(() => resolveReleaseIdentity(f.repo, env), /Noncanonical/)
   f.git('tag', 'v1.0.108-dev.12'); assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /one exact clean/)
 })
-test('external configuration gap is fail closed; all APIs are read-only', async () => {
+test('readiness needs no retired DEV rulesets; remaining external gates fail closed', async () => {
   const e = { GITHUB_REPOSITORY: 'ozzzmond/GTAR', APPROVAL_READ_TOKEN: 'test', CF_ACCOUNT_ID: 'a'.repeat(32), CF_PAGES_READ_TOKEN: 'test' }
+  const calls = []
   const fetcher = async url => {
+    calls.push(url)
     if (url.endsWith('/gtar-production')) return protectedEnv()
     if (url.endsWith('/deployment-branch-policies')) return policies
-    if (url.includes('?includes_parents')) return frozen().map((r, id) => ({ ...r, id }))
-    if (url.includes('/rulesets/')) return frozen()[Number(url.split('/').pop())]
-    return project()
+    if (url.startsWith('https://api.cloudflare.com/')) return project()
+    throw new Error(`Unexpected API read: ${url}`)
   }
-  assert.equal((await C.externalGate(e, fetcher)).project.name, 'gtar-web')
+  const ready = await C.externalGate(e, fetcher)
+  assert.equal(ready.project.name, 'gtar-web')
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every(url => !url.includes('/rulesets')))
   await assert.rejects(C.externalGate(e, async () => { throw new Error('403') }), /403/)
+  await assert.rejects(C.externalGate({ ...e, CF_ACCOUNT_ID: '' }, fetcher), /CF_ACCOUNT_ID/)
+  for (const endpoint of ['/gtar-production', '/deployment-branch-policies', '/pages/projects/gtar-web']) {
+    await assert.rejects(C.externalGate(e, async url => url.endsWith(endpoint) ? {} : fetcher(url)))
+    await assert.rejects(C.externalGate(e, async url => {
+      if (url.endsWith(endpoint)) throw new Error('read unavailable')
+      return fetcher(url)
+    }), /read unavailable/)
+  }
+  const p = { sha: 'a'.repeat(40), mainSha: 'b'.repeat(40), prodTag: 'v1.1.119' }, refs = { 'refs/heads/dev': p.sha }
+  const validated = { VALIDATED_SHA: p.sha, PLANNED_MAIN: p.mainSha, PLANNED_PROD: p.prodTag, PLANNED_REFS: JSON.stringify(refs), PLANNED_PROTECTION: ready.protection }
+  for (const change of [
+    (url, data) => { if (url.endsWith('/gtar-production')) data.protection_rules.push({ type: 'wait_timer', wait_timer: 1 }) },
+    (url, data) => { if (url.includes('api.cloudflare.com')) data.build_config = { build_command: 'changed' } }
+  ]) {
+    const fresh = await C.externalGate(e, async url => { const data = structuredClone(await fetcher(url)); change(url, data); return data })
+    assert.notEqual(fresh.protection, ready.protection)
+    assert.throws(() => C.freshContract(p, validated, refs, fresh.protection), /Post-approval/)
+  }
 })
 test('workflow isolates tested source and protected mutation; fresh recheck, one validation, terminal report', () => {
   const promoteJob = yaml.split('  promote:\n')[1].split('  verify:\n')[0]
@@ -215,6 +227,8 @@ test('workflow isolates tested source and protected mutation; fresh recheck, one
   const source = fs.readFileSync(path.join(root, '.github/prod_controller.cjs'), 'utf8')
   assert.match(source, /Post-approval state differs/); assert.match(source, /'push', '--atomic'/)
   assert.doesNotMatch(source, /--force|force-with-lease/)
+  assert.doesNotMatch(source, /freezeContract|gtar-release-freeze|\/rulesets/)
+  assert.doesNotMatch(yaml, /gtar-release-freeze|\/rulesets/)
   assert.match(source, /PROD_PROMOTED_BUT_UNVERIFIED/)
 })
 test('post approval rejects any validated SHA/main/tag/ref/protection drift', () => {

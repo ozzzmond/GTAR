@@ -92,7 +92,7 @@ tag is exactly `v1.1.62` at the exact SHA above, and every pin below passes:
 Missing objects, ancestry, files, stamps, or any altered pin fail closed. Pins
 are hard-coded reviewed controller values, never dispatch inputs. The tagged
 baseline metadata gate still runs first; checkpoint metadata, latest clean DEV,
-exact dev tip, runtime identity, approval/environment, server freeze, Cloudflare,
+exact dev tip, runtime identity, approval/environment, Cloudflare,
 fresh recheck and atomic promotion gates all remain enforced. No package/lock,
 runtime constant, application source, branch or tag is rewritten by reconciliation.
 Once canonical PROD advances beyond `v1.1.62`, the exception automatically returns
@@ -141,8 +141,8 @@ These settings are operator prerequisites; this PR does not change the live envi
 
 Repository secrets:
 
-- `APPROVAL_READ_TOKEN`: read-only GitHub credential able to GET environment,
-  environment branch policies and repository ruleset details (appropriate Actions/
+- `APPROVAL_READ_TOKEN`: read-only GitHub credential able to GET environment and
+  environment branch policies (appropriate Actions/
   Administration read permissions for the chosen credential type).
 - `CF_PAGES_READ_TOKEN`: Cloudflare token scoped to the account with **Cloudflare
   Pages Read** only. It performs authenticated GETs, never a deployment request.
@@ -157,21 +157,18 @@ Repository secrets:
 
 ### Race and transaction contract
 
+The DEV branch ruleset `gtar-release-freeze-dev` and DEV tag ruleset
+`gtar-release-freeze-dev-tags` are intentionally retired and are not required.
+The controller does not read, require, recreate, emulate or manage them. No
+replacement permanent DEV branch/tag freeze or bypass actor is introduced.
+Normal solo-maintainer DEV merges and manual canonical DEV tagging remain available.
+
 Concurrency serializes this controller, but cannot serialize other GitHub writers.
-Before planning, the operator must activate two server-enforced repository rulesets
-with **no bypass actors**, no excluded refs, and these exact names/targets:
-
-| Ruleset | Target/include | Required rules |
-| --- | --- | --- |
-| gtar-release-freeze-dev | Branch / refs/heads/dev | Restrict updates; restrict deletions |
-| gtar-release-freeze-dev-tags | Tag / refs/tags/v1.0.* | Restrict creations; restrict updates; restrict deletions |
-
-Keep these active through verification. They close the dev/new-DEV-tag race that
-an ordinary no-op push cannot compare-and-swap. The controller verifies these
-rulesets before and after approval; it never creates them or grants bypass.
-Re-enable normal development only after a terminal outcome is reviewed. Changes
-by repository administrators to protection while a run is executing invalidate
-this operator contract; do not change it mid-run.
+Fresh revalidation and immediate remote-ref reads reject observed DEV/tag drift.
+The atomic transaction compares and updates main and the new PROD tag only;
+it does not lock DEV or compare-and-swap unchanged DEV refs. DEV/tag changes after
+the final read can therefore occur; promotion remains bound to the exact validated
+checkpoint SHA. Keep the protected approval environment unchanged during a run.
 
 The post-approval job fetches branches and complete tags without forcing/replacing
 or deleting tags. A moved/deleted/stale inventory blocks. It recomputes every gate
@@ -235,7 +232,7 @@ untrusted project/source, failed build, or runtime mismatch fails closed.
 
 The connector used for this implementation rejects environment endpoints and has
 no connected Cloudflare account read API. Therefore actual environment protection,
-freeze rulesets, read/push secrets, Pages production-branch settings and API payload
+read/push secrets, Pages production-branch settings and API payload
 availability were **not verified or configured in this task**. Configure the above
 settings and run the reviewed controller's dry run; a failed gate is not permission
 to bypass it. Cloudflare remains the deployment producer; this read API verifier
@@ -272,8 +269,8 @@ and baseline/deployed identity discrepancies remain real release blockers.
    clean numeric DEV checkpoint** under the existing policy. DEV.10 cannot be
    promoted once dev changes; source stamps in this implementation stay unchanged
    until that separately reviewed stabilization. No tags are created by this PR.
-5. Configure protection/secrets/Pages settings, enable Git builds, activate the
-   release freeze, and dry-run from reviewed main with the new exact tag/SHA. After
+5. Configure protection/secrets/Pages settings, enable Git builds, and dry-run
+   from reviewed main with the new exact tag/SHA. After
    all gates succeed, a separate explicitly authorized real dispatch runs tests,
    waits for required human approval, rechecks, and performs the transaction.
 
