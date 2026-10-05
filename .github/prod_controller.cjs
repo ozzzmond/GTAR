@@ -4,6 +4,7 @@ const { readFileSync, writeFileSync, appendFileSync, mkdirSync } = require('node
 const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { parseDevTag, inspectCheckpoint } = require('./release_metadata.cjs')
+const { ABANDONED_PROD } = require('./release_identity.cjs')
 const gitAt = root => (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const must = (ok, message) => { if (!ok) throw new Error(message) }
 
@@ -43,12 +44,24 @@ function legacyReconciliation(root, baseline, baselineSha, mainSha, git = gitAt(
   return true
 }
 
+// Failed historical release is an ancestry anchor, never deployed-production proof.
+function abandonedBaseline(root, baseline, baselineSha, mainSha, git = gitAt(root)) {
+  if (baseline !== ABANDONED_PROD.tag) return false
+  must(baselineSha === ABANDONED_PROD.sha, 'Abandoned PROD tag moved; immutable history required')
+  must(git('rev-parse', `${baselineSha}^{tree}`) === ABANDONED_PROD.tree, 'Abandoned baseline tree mismatch')
+  const checkpoint = inspectCheckpoint(root, ABANDONED_PROD.sourceTag)
+  must(checkpoint.sha === baselineSha && checkpoint.prodTag === baseline, 'Abandoned baseline source identity mismatch')
+  git('merge-base', '--is-ancestor', baselineSha, mainSha)
+  return true
+}
+
 function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   const git = gitAt(root)
   must(controllerRef === 'refs/heads/main', 'Dispatch reviewed main controller only')
   must(/^[0-9a-f]{40}$/.test(expectedSha), 'expected_sha must be full lowercase SHA')
   const parsed = parseDevTag(tag)
   must(parsed.promotable, 'Lettered checkpoint is not promotable')
+  must(parsed.prodTag !== ABANDONED_PROD.tag && expectedSha !== ABANDONED_PROD.sha, 'Abandoned PROD release cannot be reused; new identity required')
   const checkpoint = inspectCheckpoint(root, tag)
   must(checkpoint.sha === expectedSha, 'Exact tag must equal expected_sha')
   const devSha = git('rev-parse', 'refs/remotes/origin/dev^{commit}')
@@ -67,14 +80,15 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   const baseline = prod[0], baselineSha = git('rev-parse', `refs/tags/${baseline}^{commit}`)
   must(Number(parsed.prodTag.slice(5)) > Number(baseline.slice(5)), 'PROD patch must exceed baseline')
   git('merge-base', '--is-ancestor', baselineSha, mainSha)
+  const abandoned = abandonedBaseline(root, baseline, baselineSha, mainSha)
   const pkg = sha => JSON.parse(git('show', `${sha}:web/package.json`)).version
   // Legacy PROD uses committed package. Future exact-source PROD uses tag/build identity.
   const derived = sha => {
     const candidates = tags.flatMap(t => { try { const p = inspectCheckpoint(root, t); return p.sha === sha && p.promotable && p.prodTag === baseline ? [p] : [] } catch { return [] } })
     return candidates.length === 1 && runtimeContract(root, sha)
   }
-  must(pkg(baselineSha) === baseline.slice(1) || derived(baselineSha), 'Baseline tagged metadata conflicts with release identity')
-  must(pkg(mainSha) === baseline.slice(1) || (runtimeContract(root, mainSha) && derived(baselineSha)) ||
+  must(abandoned || pkg(baselineSha) === baseline.slice(1) || derived(baselineSha), 'Baseline tagged metadata conflicts with release identity')
+  must(pkg(mainSha) === baseline.slice(1) || (runtimeContract(root, mainSha) && (abandoned || derived(baselineSha))) ||
     legacyReconciliation(root, baseline, baselineSha, mainSha), 'main package/baseline discrepancy requires reviewed reconciliation')
   must(runtimeContract(root, expectedSha), 'Tag-derived runtime identity contract missing/different from controller')
   return { ...parsed, sha: expectedSha, devSha, mainSha, baseline, baselineSha, controllerSha }
@@ -83,7 +97,8 @@ function runtimeContract(root, sha) {
   const git = gitAt(root)
   try {
     for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs']) {
-      if (git('show', `${sha}:${file}`) !== readFileSync(path.join(__dirname, path.basename(file)), 'utf8').trim()) return false
+      const canonical = text => text.replace(/\r\n/g, '\n').trim()
+      if (canonical(git('show', `${sha}:${file}`)) !== canonical(readFileSync(path.join(__dirname, path.basename(file)), 'utf8'))) return false
     }
     return git('show', `${sha}:web/vite.config.ts`).includes('resolveReleaseIdentity') &&
       git('show', `${sha}:web/src/types/gtar.ts`).includes('typeof __GTAR_PROD_VERSION__')
@@ -220,4 +235,4 @@ async function main(mode, e = process.env) {
   must(result.state === 'PROD_PROMOTED_BUT_UNVERIFIED', result.state)
 }
 if (require.main === module) main(process.argv[2]).catch(error => { emit({ error: error.message }); process.exitCode = 1 })
-module.exports = { plan, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }
+module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }

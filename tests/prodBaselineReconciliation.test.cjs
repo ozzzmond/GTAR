@@ -43,6 +43,7 @@ function fixture(change = {}) {
   }
   const module = { exports: {} }
   const sandbox = { module, __dirname: path.join(root, '.github'), process, console, require: name => {
+    if (name === './release_identity.cjs') return require('../.github/release_identity.cjs')
     if (name === 'node:child_process') return { execFileSync: (_, args) => git(...args) }
     if (name === './release_metadata.cjs') return { ...metadata, inspectCheckpoint: (_, selected) => ({ ...metadata.parseDevTag(selected), sha: selected === devTag ? checkpoint : baseline }) }
     return require(name)

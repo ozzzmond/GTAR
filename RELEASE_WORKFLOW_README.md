@@ -43,8 +43,7 @@ main/PROD-tag transaction → existing Cloudflare Pages Git build → production
 verification → terminal report. Dry run defaults to true, performs gates only,
 and claims no tests/build. There is no stage, APK, Gradle, signing, GitHub Release,
 Wrangler deployment, API deployment, source rewrite, automatic rollback or DEV
-baseline mutation. The legacy main APK controller must be **replaced**, not kept
-alongside this controller, during the separately authorized rollout.
+baseline mutation. The active repository is Web/PWA only. Android stays frozen in its separate repository.
 
 `release_metadata.cjs` remains the sole DEV parser and committed metadata reader;
 its preview CLI/exports remain compatible. `prod_controller.cjs` is trusted code
@@ -65,48 +64,34 @@ exact pinned one-time reconciliation below; all other discrepancies still block.
 The checkpoint must contain the reviewed release identity helper/parser bytes and
 Vite/runtime integration. Next DEV is an advisory output only.
 
-### One-time pinned legacy PROD baseline reconciliation
+### Reviewed clean baseline after abandoned v1.1.122
 
-Canonical PROD identity remains **v1.1.62**, peeled commit
-`b7c51af72e63c9e77c3b8f7ee558d4198dd5fa0e`, version **1.1.62**. Historical
-main package/runtime **1.1.108** is a reviewed source stamp, never canonical PROD
-identity. This migration addresses the discrepancy seen in readiness run
-`37212011420`; it does not establish deployed-production proof.
+GitHub discovery for this rebaseline found both dev and main at
+`c254195e6dfc946138336551e4ce8a87520baf7f`, with identical root tree
+`59ca0769cee12f5d73f03e067c5b54be9a848de0`. Canonical DEV
+`v1.0.108-dev.14` and historical PROD `v1.1.122` point to that commit.
+The DEV application is the source baseline; no application tree transplant or
+legacy application deletion is necessary because main already has that tree.
+Android is absent. Environment bindings and Cloudflare configuration remain unchanged.
 
-The controller accepts that discrepancy only while the highest canonical PROD
-tag is exactly `v1.1.62` at the exact SHA above, and every pin below passes:
+The failed/unverified `v1.1.122` deployment is abandoned. Never rerun run 52,
+recover that deployment, move its tag, or relabel it as verified production.
+The controller accepts this exact immutable tag/SHA/tree and its committed DEV
+metadata only as a historical ancestry anchor. It does not require deployment
+proof for that anchor or equality with its obsolete build helper. Moved tags,
+wrong trees/source metadata, missing ancestry, and old-identity reuse block.
+The exception retires when a higher canonical PROD tag becomes the baseline.
+Historical v1.1.62 reconciliation code remains for its existing tests; it cannot
+activate while the highest canonical PROD tag is v1.1.122.
 
-- Reviewed historical main anchor: `95408a9234f59fe83bb6d2e85a4d38e73d4d1117`.
-  This exact commit must exist; canonical PROD must be its ancestor, and it must
-  be an ancestor of current dispatch/main. Current main still must equal the
-  controller dispatch SHA and be an ancestor of the selected checkpoint.
-- Both the anchor and current main must have Web tree
-  `9558867c347fecbc67d4dfe8b97c549c36d390ef`. Later controller/documentation/test
-  commits outside `web/` can land; any Web change fails reconciliation.
-- At both commits, `web/package.json`, top-level `web/package-lock.json` and its
-  `packages[""]` version must each be exactly `1.1.108`.
-- At both commits, `web/src/types/gtar.ts` must contain the exact unique runtime
-  stamps `GTAR_APP_VERSION = '1.1.108'` and
-  `GTAR_DEV_VERSION = '1.0.106-dev.2'`. The DEV stamp is part of this identity contract.
-
-Missing objects, ancestry, files, stamps, or any altered pin fail closed. Pins
-are hard-coded reviewed controller values, never dispatch inputs. The tagged
-baseline metadata gate still runs first; checkpoint metadata, latest clean DEV,
-exact dev tip, runtime identity, approval/environment, Cloudflare,
-fresh recheck and atomic promotion gates all remain enforced. No package/lock,
-runtime constant, application source, branch or tag is rewritten by reconciliation.
-Once canonical PROD advances beyond `v1.1.62`, the exception automatically returns
-false and only normal baseline logic applies. A different tag cannot use it.
-
-Migration tests live outside `web/` to preserve the pinned tree. Run
-`node --test tests/prodBaselineReconciliation.test.cjs web/tests/prodPromotionWorkflow.test.cjs`;
-existing release-scripts CI also runs them through Python unittest discovery.
-
-After this PR is reviewed and merged to main, main advances beyond the current
-DEV checkpoint. Do not reuse `v1.0.108-dev.12` for PROD. Require a fresh main-to-dev
-ancestry sync and a new clean numeric checkpoint, expected `v1.0.108-dev.13`, with
-expected computed PROD candidate `v1.1.121`. Tag creation remains human/manual
-only. These are follow-on actions, not actions performed by this reconciliation PR.
+After review and acceptance, sync reviewed main into dev and establish a fresh
+clean canonical checkpoint. GitHub tags alone determine versions at that time;
+this PR chooses no next DEV or PROD version and creates no tags. Existing latest
+DEV cannot be reused: it maps to the abandoned identity. Future candidates must
+preserve main ancestry, match exact dev tip and committed metadata, carry the
+reviewed runtime contract, and calculate a new PROD tag above the baseline.
+Human approval, fresh state checks, atomic non-force promotion, and verification
+of the new exact-SHA deployment remain mandatory.
 
 Configure GitHub **Settings → Environments → gtar-production** before execution:
 required human reviewer **ozzzmond** (GitHub User ID `17817198`), **Prevent
@@ -191,21 +176,27 @@ outputs first. Existing tags are never overwritten, moved or deleted.
 
 ### Runtime identity without source rewrite
 
-Package version and `GTAR_DEV_VERSION` stay the tested source identity.
-`release_identity.cjs` is invoked by Vite. On Pages `main`, it requires the full
-`CF_PAGES_COMMIT_SHA` equal build HEAD, canonical GitHub origin, one exact clean
-DEV tag at HEAD, committed metadata consistency, and the computed PROD tag at
-that same commit. It fetches canonical tags without force. Missing tag/history,
-noncanonical origin or debug main builds fail. This is build-time identity
-derivation, not an environment variable supplied by the release controller.
-Pages must allow canonical origin tag reads in its build checkout.
+Package version and GTAR_DEV_VERSION remain tested DEV source stamps. Pages main
+requires its full CF_PAGES_COMMIT_SHA to equal HEAD, one exact clean DEV tag,
+consistent committed metadata, and its computed PROD tag at the same commit.
+The helper fetches tags directly from https://github.com/ozzzmond/GTAR.git and
+checks selected tag objects against canonical remote refs. Checkout origin may
+be a Cloudflare mirror; it is neither consulted nor changed. Fetch never forces,
+deletes, or moves tags. Missing authority/network/history, moved or local-only
+tags, wrong SHA, debug production builds, and abandoned identity reuse fail closed.
+No provider URL allowlist or fallback to guessed/package PROD version exists.
 
-Vite injects the derived PROD version into `GTAR_APP_VERSION` consumers, including
-existing display/backup consumers, and emits immutable deployment `release.json`
-with version/sourceTag/full SHA. Local/preview builds retain the legacy fallback;
-DEV constants and authCore header remain source stamps. Production source is
-never rewritten to bump a version during promotion. CI validates the exact source;
-Pages rebuilds it via Git integration using the atomic tag identity.
+GitHub release validation sets GTAR_VALIDATE_SHA to the planned exact source SHA
+and checks canonical DEV identity before PROD tag creation. It emits no PROD
+release.json or PROD version override. Ordinary PR validation and Pages DEV or
+feature previews use the application source stamps and never claim PROD identity.
+Production rejects validation-mode overrides. Vite passes build mode explicitly
+so --mode debug cannot evade the production guard.
+
+Only the production path injects the tag-derived PROD version and emits
+release.json with version/sourceTag/full SHA. Pages must permit read access to
+canonical GitHub tags. Future post-approval verification proves this new identity
+on the new deployment; historical deployment recovery is unnecessary.
 
 ### Production verification and external integration gap
 
