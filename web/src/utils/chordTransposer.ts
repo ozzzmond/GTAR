@@ -37,7 +37,40 @@ export function transposeNote(note: string, semitones: number, preferFlats = fal
 }
 
 /**
+ * Enharmonic pairs mapping for accidental keys (black-key pitches)
+ */
+const ENHARMONIC_PAIRS: Record<string, [string, string]> = {
+  'C#': ['C#', 'Db'],
+  'Db': ['C#', 'Db'],
+  'D#': ['Eb', 'D#'],
+  'Eb': ['Eb', 'D#'],
+  'F#': ['F#', 'Gb'],
+  'Gb': ['F#', 'Gb'],
+  'G#': ['Ab', 'G#'],
+  'Ab': ['Ab', 'G#'],
+  'A#': ['Bb', 'A#'],
+  'Bb': ['Bb', 'A#'],
+}
+
+/**
+ * Formats a key with enharmonic spelling pair when applicable (e.g. "C# / Db", "Eb / D#", "C#m / Dbm")
+ */
+export function formatEnharmonicKey(key: string | null | undefined): string {
+  if (!key) return ''
+  const trimmed = key.trim()
+  const match = trimmed.match(/^([A-Ga-g][#b]?)(.*)$/)
+  if (!match) return key
+  const root = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
+  const quality = match[2]
+
+  const pair = ENHARMONIC_PAIRS[root]
+  if (!pair) return `${root}${quality}`
+  return `${pair[0]}${quality} / ${pair[1]}${quality}`
+}
+
+/**
  * Transposes a key signature (e.g. "G", "Am", "F#m", "Bb", "C#m")
+ * Prefers conventional flat spellings for musician-facing keys (Bb, Eb, Ab) rather than esoteric sharps (A#, D#, G#).
  */
 export function transposeKey(key: string | null | undefined, semitones: number): string {
   if (!key || semitones === 0) return key || ''
@@ -45,10 +78,26 @@ export function transposeKey(key: string | null | undefined, semitones: number):
   const match = trimmed.match(/^([A-Ga-g][#b]?)(.*)$/)
   if (!match) return key
 
-  const root = match[1].charAt(0).toUpperCase() + match[1].slice(1)
+  const root = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
   const quality = match[2]
-  const preferFlats = root.includes('b') || root === 'F'
-  const newRoot = transposeNote(root, semitones, preferFlats)
+  const currentIdx = NOTE_ALIASES[root]
+  if (currentIdx === undefined) return key
+
+  const newIdx = ((currentIdx + semitones) % 12 + 12) % 12
+  const isMinor = quality.toLowerCase().startsWith('m') && !quality.toLowerCase().startsWith('maj')
+  let preferFlats = root.includes('b') || root === 'F'
+  if (!isMinor) {
+    if (newIdx === 10 || newIdx === 3 || newIdx === 8) {
+      preferFlats = true
+    }
+  } else {
+    if (newIdx === 10 || newIdx === 1) {
+      preferFlats = true
+    }
+  }
+
+  const scale = preferFlats ? CHROMATIC_FLATS : CHROMATIC_SHARPS
+  const newRoot = scale[newIdx]
   return `${newRoot}${quality}`
 }
 

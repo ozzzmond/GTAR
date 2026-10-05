@@ -4,7 +4,7 @@ import type {
   SongLine,
   ParsedGtarSong
 } from '../types/gtar'
-import { CHORD_TOKEN_REGEX, transposeChordToken, transposeChordLine } from './chordTransposer'
+import { CHORD_TOKEN_REGEX, transposeChordToken, transposeChordLine, transposeChordProText } from './chordTransposer'
 
 // Common section header keywords matching Android SongParser.kt
 const SECTION_KEYWORDS = [
@@ -542,7 +542,8 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
       /^(?:(\[[^\]]+\]:?)|((?:Intro|Verse|Chorus|Bridge|Pre-Chorus|Post-Chorus|Outro|Solo|Interlude|Hook|Ending|Riff|Instrumental|Refrain|Transposed|Repeat|Adlib|Breakdown|Coda)(?:\s+[0-9A-Za-z\-_/]+)?:?))\s+(.+)$/i.exec(
         trimmed
       )
-    if (combinedMatch) {
+    const hasLineBrackets = findBracketedChords(trimmed).length > 0
+    if (combinedMatch && (!hasLineBrackets || Boolean(combinedMatch[1]))) {
       const headerRaw = combinedMatch[1] || combinedMatch[2]
       const restPart = combinedMatch[3].trim()
       const headerPart = headerRaw.replace(/[[\]<>:]/g, '').trim()
@@ -567,7 +568,8 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
               isOverLyric: false,
             })
           } else {
-            parsedLines.push({ type: 'CHORD_PRO', raw: restPart, segments: parseChordProLine(restPart, transposeOffset) })
+            const transposedRaw = transposeOffset !== 0 ? transposeChordProText(restPart, transposeOffset) : restPart
+            parsedLines.push({ type: 'CHORD_PRO', raw: transposedRaw, segments: parseChordProLine(restPart, transposeOffset) })
           }
           chordProCount++
           continue
@@ -616,7 +618,8 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
         })
         chordProCount++
       } else {
-        parsedLines.push({ type: 'CHORD_PRO', raw: rawLine, segments: parseChordProLine(rawLine, transposeOffset) })
+        const transposedRaw = transposeOffset !== 0 ? transposeChordProText(rawLine, transposeOffset) : rawLine
+        parsedLines.push({ type: 'CHORD_PRO', raw: transposedRaw, segments: parseChordProLine(rawLine, transposeOffset) })
         chordProCount++
       }
       continue

@@ -133,7 +133,7 @@ test('108-dev.3a: KeyPickerModal preserves musician-focused transpose tools and 
   assert.ok(modalSrc.includes('Original Key'), 'KeyPickerModal must display Original Key')
   assert.ok(modalSrc.includes('Transposed Key'), 'KeyPickerModal must display Transposed Key')
   assert.ok(modalSrc.includes('Reset (0)'), 'KeyPickerModal must provide Reset (0) button')
-  assert.ok(modalSrc.includes('Select Target Key or Semitone Shift:'), 'KeyPickerModal must have shift selection label')
+  assert.ok(modalSrc.includes('Select Transpose Key:'), 'KeyPickerModal must have shift selection label')
   assert.ok(modalSrc.includes('[-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]'), 'KeyPickerModal must cover -6 to +6 offsets')
   assert.ok(modalSrc.includes('(Original)'), 'KeyPickerModal must mark offset 0 as (Original)')
 

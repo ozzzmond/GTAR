@@ -1224,7 +1224,8 @@ function LibraryApp() {
 
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
-    const nextSongs = songs.map(s => s.id === currentSong.id ? { ...s, ...updated, id: s.id } : s)
+    const targetId = updated.id ?? currentSong?.id
+    const nextSongs = songs.map(s => String(s.id) === String(targetId) ? { ...s, ...updated, id: s.id } : s)
     try { persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists }) }
     catch (err) { handleStorageWriteFailure(err); return false }
     setSongs(nextSongs)
