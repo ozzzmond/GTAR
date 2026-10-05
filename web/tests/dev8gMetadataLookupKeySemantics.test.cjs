@@ -45,11 +45,11 @@ const { transposeChordToken } = require('../src/utils/chordTransposer.ts')
 const { GTAR_DEV_VERSION, GTAR_APP_VERSION } = require('../src/types/gtar.ts')
 
 // 1. VERSION CHECK & ENVIRONMENT SECURITY
-test('VERSION_ALIGNMENT: dev checkpoint is 1.0.123-dev.1 and prod untouched', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.1')
+test('VERSION_ALIGNMENT: dev checkpoint is 1.0.123-dev.1a and prod untouched', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.1a')
   assert.equal(GTAR_APP_VERSION, '1.1.108')
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.1')
+  assert.equal(pkgJson.version, '1.0.123-dev.1a')
 })
 
 test('PROVIDER_API_KEY_NOT_PRESENT_IN_CLIENT_BUNDLE/SOURCE: no client secrets or hardcoded keys', () => {

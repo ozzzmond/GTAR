@@ -151,13 +151,92 @@ async function externalGate(e, fetcher = getJson) {
   const cf = `https://api.cloudflare.com/client/v4/accounts/${e.CF_ACCOUNT_ID}/pages/projects/gtar-web`
   const project = await fetcher(cf, e.CF_PAGES_READ_TOKEN, true)
   projectContract(project)
-  const protection = createHash('sha256').update(JSON.stringify({ env, policies, project: { id: project.id, name: project.name, production_branch: project.production_branch, source: project.source, build_config: project.build_config } })).digest('hex')
+  const protection = createHash('sha256').update(JSON.stringify({ env, policies, project: { id: project.id, name: project.name, production_branch: project.production_branch, source: project.source, build_config: project.build_config, d1: project.deployment_configs?.production?.d1_databases } })).digest('hex')
   return { project, cf, protection }
 }
 function refresh(root) {
   const git = gitAt(root)
   // New, complete tag namespace on every job/recheck. Detect moved/deleted tags via snapshot comparison.
   git('fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev', '+refs/heads/main:refs/remotes/origin/main', 'refs/tags/*:refs/tags/*')
+}
+// Read committed configuration and blobs only; never execute checkpoint code or SQL.
+function migrationCheckpoint(root, sha, controllerSha, git = gitAt(root)) {
+  must([sha, controllerSha].every(s => /^[0-9a-f]{40}$/.test(s || '')), 'D1 checkpoint SHA invalid')
+  const config = at => {
+    let c
+    // Current canonical jsonc is strict JSON. Unsupported syntax fails closed.
+    try { c = JSON.parse(git('show', `${at}:web/wrangler.jsonc`)) } catch { throw new Error('D1 committed configuration unreadable/unsupported') }
+    const binding = list => {
+      must(Array.isArray(list) && list.length === 1 && list[0]?.binding === 'DB', 'D1 binding configuration unknown')
+      return list[0]
+    }
+    const top = binding(c.d1_databases), prod = binding(c.env?.production?.d1_databases), dev = binding(c.env?.preview?.d1_databases)
+    const identity = b => ({ name: b.database_name, id: b.database_id, dir: b.migrations_dir || 'migrations', table: b.migrations_table || 'd1_migrations' })
+    const p = identity(prod)
+    must(p.name === 'gtar-db-prod' && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(p.id || '') &&
+      p.dir === 'migrations' && p.table === 'd1_migrations' && !prod.migrations_pattern && !top.migrations_pattern &&
+      JSON.stringify(identity(top)) === JSON.stringify(p) && dev.database_name === 'gtar-db-dev' && dev.database_id !== p.id,
+    'D1 PROD/DEV configuration inconsistent/unsupported')
+    return p
+  }
+  const selected = config(sha), trusted = config(controllerSha)
+  must(JSON.stringify(selected) === JSON.stringify(trusted), 'D1 checkpoint differs from reviewed PROD configuration')
+  let entries
+  try { entries = git('ls-tree', '-r', sha, '--', 'web/migrations').split('\n').filter(Boolean) } catch { throw new Error('D1 checkpoint migrations unreadable') }
+  const numbers = new Set()
+  const names = entries.map(entry => {
+    const match = /^100644 blob [0-9a-f]{40}\tweb\/migrations\/([0-9]{4,}_[A-Za-z0-9_-]+\.sql)$/.exec(entry)
+    must(match, 'D1 canonical migration layout unknown/unsupported')
+    const name = match[1], number = Number(name.split('_')[0])
+    must(Number.isSafeInteger(number) && number > 0 && !numbers.has(number), 'D1 migration IDs inconsistent')
+    numbers.add(number)
+    must(git('show', `${sha}:web/migrations/${name}`).trim(), `D1 canonical migration empty: ${name}`)
+    return name
+  }).sort()
+  must(names.length > 0, 'D1 canonical migration inventory missing')
+  return { ...trusted, names }
+}
+async function readD1Migrations(account, database, token, fetcher = fetch) {
+  must(token, 'D1 readiness unavailable: existing read credential required with D1 Read permission')
+  try {
+    // Wrangler's authoritative ledger, without its CREATE TABLE initialization.
+    const response = await fetcher(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${database}/query`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: 'SELECT id, name FROM "d1_migrations" ORDER BY id' }),
+      redirect: 'error', signal: AbortSignal.timeout(20000)
+    })
+    must(response.ok, 'D1 read rejected')
+    const data = await response.json()
+    must(data.success === true && Array.isArray(data.errors) && data.errors.length === 0 &&
+      Array.isArray(data.result) && data.result.length === 1, 'D1 read envelope invalid')
+    const result = data.result[0]
+    must(result.success === true && Array.isArray(result.results) && result.meta?.rows_written === 0 &&
+      result.meta?.changed_db === false, 'D1 read result unverifiable')
+    return result.results
+  } catch {
+    // API/transport errors can contain account IDs, SQL or credentials. Never echo them.
+    throw new Error('D1 readiness lookup unavailable/unverifiable; verify existing D1 Read access and migration ledger, then rerun')
+  }
+}
+async function d1Readiness(root, p, e, project, reader = readD1Migrations, git = gitAt(root)) {
+  const canonical = migrationCheckpoint(root, p.sha, p.controllerSha, git)
+  must(/^[0-9a-f]{32}$/.test(e.CF_ACCOUNT_ID || ''), 'D1 account configuration missing/invalid')
+  must(project?.deployment_configs?.production?.d1_databases?.DB?.id === canonical.id,
+    'D1 configured Pages PROD binding missing/inconsistent')
+  let rows
+  try { rows = await reader(e.CF_ACCOUNT_ID, canonical.id, e.CF_PAGES_READ_TOKEN) } catch {
+    throw new Error(`D1 readiness HOLD: applied state unverifiable; required migrations: ${canonical.names.join(', ')}; verify existing D1 Read access and ledger, then rerun`)
+  }
+  must(Array.isArray(rows), 'D1 applied migration state invalid')
+  const applied = new Set(); let previous = 0
+  for (const row of rows) {
+    must(Number.isSafeInteger(row?.id) && row.id > previous && typeof row.name === 'string' &&
+      canonical.names.includes(row.name) && !applied.has(row.name), 'D1 applied migration state unknown/inconsistent')
+    previous = row.id; applied.add(row.name)
+  }
+  const pending = canonical.names.filter(name => !applied.has(name))
+  must(!pending.length, `D1 readiness HOLD: pending migrations: ${pending.join(', ')}; human remediation required, then rerun`)
+  return { state: 'PASS', required: canonical.names, pending: [] }
 }
 function inventoryContract(root, refs) {
   const git = gitAt(root)
@@ -224,7 +303,8 @@ async function main(mode, e = process.env) {
   const refs = remoteRefs(root)
   inventoryContract(root, refs)
   const external = await externalGate(e)
-  if (mode === 'plan') { emit({ ready: true, sha: p.sha, prod_tag: p.prodTag, main_sha: p.mainSha, next_dev_tag: p.nextDevTag, protection: external.protection, refs: JSON.stringify(refs) }); return }
+  const d1 = await d1Readiness(root, p, e, external.project)
+  if (mode === 'plan') { emit({ ready: true, d1: JSON.stringify(d1), sha: p.sha, prod_tag: p.prodTag, main_sha: p.mainSha, next_dev_tag: p.nextDevTag, protection: external.protection, refs: JSON.stringify(refs) }); return }
   must(mode === 'promote', 'Unknown controller command')
   freshContract(p, e, refs, external.protection)
   // Re-read refs after external protection/project reads, immediately before mutation.
@@ -235,4 +315,4 @@ async function main(mode, e = process.env) {
   must(result.state === 'PROD_PROMOTED_BUT_UNVERIFIED', result.state)
 }
 if (require.main === module) main(process.argv[2]).catch(error => { emit({ error: error.message }); process.exitCode = 1 })
-module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, main }
+module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, migrationCheckpoint, readD1Migrations, d1Readiness, main }
