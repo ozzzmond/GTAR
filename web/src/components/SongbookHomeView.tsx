@@ -196,6 +196,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const toggleSetlists = () => {
     const next = !setlistsCollapsed
     setSetlistsCollapsed(next)
+    if (next) {
+      setIsSetlistSelectionMode(false)
+      setSelectedSetlistIds(new Set())
+    }
     try { localStorage.setItem('gtar_songbook_setlists_collapsed', String(next)) } catch { /* Session preference remains usable. */ }
   }
 
@@ -626,17 +630,19 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 </div>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    data-testid="toggle-setlist-selection-mode"
-                    onClick={() => {
-                      setIsSetlistSelectionMode(true)
-                      setSelectedSetlistIds(new Set())
-                    }}
-                    className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198] hover:bg-[#2AA198]/10 cursor-pointer"
-                  >
-                    Select
-                  </button>
+                  {!setlistsCollapsed && (
+                    <button
+                      type="button"
+                      data-testid="toggle-setlist-selection-mode"
+                      onClick={() => {
+                        setIsSetlistSelectionMode(true)
+                        setSelectedSetlistIds(new Set())
+                      }}
+                      className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198] hover:bg-[#2AA198]/10 cursor-pointer"
+                    >
+                      Select
+                    </button>
+                  )}
                   <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198]">
                     {setlistsCollapsed ? 'Show' : 'Hide'}
                   </button>

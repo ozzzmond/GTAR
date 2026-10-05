@@ -18,6 +18,7 @@ import {
   SquareCode,
   Check,
   MoreHorizontal,
+  FilePlus,
 } from 'lucide-react'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
@@ -25,7 +26,22 @@ import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../ut
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
 import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
+import { generateUUID } from '../utils/uuid'
 import type { ActiveSongState } from '../types/gtar'
+
+export function createBlankCanonicalSong(): ActiveSongState {
+  return {
+    id: generateUUID(),
+    title: 'New Song',
+    artist: '',
+    key: 'G',
+    capo: 'No Capo',
+    bpm: '120',
+    format: 'CHORD_PRO',
+    transposeOffset: 0,
+    rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
+  }
+}
 
 interface DesktopEditorProps {
   song: ActiveSongState
@@ -34,6 +50,7 @@ interface DesktopEditorProps {
   onClose?: () => void
   navigationGuardRef?: React.RefObject<((next: () => void) => void) | null>
   transposeOffset: number
+  onNewSong?: () => void
 }
 
 const QUICK_GENRE_TAGS = ['Worship', 'OPM', 'Acoustic', 'Rock', 'Slow Rock', 'Encore']
@@ -46,7 +63,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   onClose,
   transposeOffset,
   navigationGuardRef,
+  onNewSong,
 }) => {
+  const [editingSong, setEditingSong] = useState<ActiveSongState>(song)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [insertAnchor, setInsertAnchor] = useState<HTMLButtonElement | null>(null)
   const [insertOpen, setInsertOpen] = useState(false)
@@ -88,7 +107,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     artist: localArtist,
     key: localKey,
     originalKey: localOriginalKey,
-    capo: song.capo || '',
+    capo: editingSong.capo || '',
     bpm: localBpm,
     time: localTime,
     year: localYear,
@@ -132,6 +151,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Reset local state when active song changes
   useEffect(() => {
+    setEditingSong(song)
     const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
     setLocalTitle(song.title || parsedMeta.title || '')
     setLocalArtist(song.artist || parsedMeta.artist || '')
@@ -156,6 +176,28 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const parsedSong = useMemo(() => {
     return parseGtarSong(localRawContent, transposeOffset)
   }, [localRawContent, transposeOffset])
+
+  // Handle new blank song action with unsaved changes protection
+  const handleNewSong = () => {
+    requestNavigation(() => {
+      const blank = createBlankCanonicalSong()
+      setEditingSong(blank)
+      setLocalTitle(blank.title)
+      setLocalArtist(blank.artist)
+      const initKey = canonicalSongKey(blank.key || '')
+      setLocalKey(initKey)
+      setLocalOriginalKey('')
+      setLocalBpm(blank.bpm || '')
+      setLocalTime('')
+      setLocalYear('')
+      setLocalTags('')
+      setLocalRawContent(blank.rawContent || '')
+      setPersisted(fields(blank))
+      history.current = new TextHistory()
+      showToast('New blank song started')
+      onNewSong?.()
+    })
+  }
 
   // Handle saving changes
   const handleSave = () => {
@@ -183,7 +225,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const standardized = standardizeChordProBrackets(syncedContent)
 
     const updatedSong: ActiveSongState = {
-      ...song,
+      ...editingSong,
       title: resolvedTitle,
       artist: resolvedArtist,
       key: effectiveKey,
@@ -194,12 +236,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       tags: localTags.trim(),
       rawContent: standardized,
       format: 'CHORD_PRO',
-      transposeOffset: song.transposeOffset || 0,
+      transposeOffset: editingSong.transposeOffset || 0,
     }
 
     try {
       const saved = onSaveSong ? onSaveSong(updatedSong) : onUpdateSong(updatedSong)
       if (saved !== true) { showToast('Changes are not saved. Retry saving before leaving.'); return false }
+      setEditingSong(updatedSong)
       setLocalTitle(updatedSong.title)
       setLocalArtist(updatedSong.artist || '')
       setLocalKey(effectiveKey)
@@ -551,6 +594,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   ))}
                 </div>
               </DropdownPortal>
+
+              {/* New Blank Song Action with Unsaved Changes Protection */}
+              <button
+                type="button"
+                data-testid="editor-new-song-button"
+                onClick={handleNewSong}
+                className="p-1.5 rounded bg-[#073642] hover:bg-amber-500/20 text-[#B58900] hover:text-amber-300 transition-colors cursor-pointer"
+                title="New Song (blank document)"
+                aria-label="New Song"
+              >
+                <FilePlus className="w-3.5 h-3.5" />
+              </button>
 
               <div className="w-[1px] h-4 bg-[#1A4A55] mx-0.5" />
 
