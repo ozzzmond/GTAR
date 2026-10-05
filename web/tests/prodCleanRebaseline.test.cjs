@@ -97,6 +97,9 @@ test('future checkpoint plans from abandoned baseline without requiring old depl
   const repo = path.join(dir, 'work')
   execFileSync('git', ['clone', '--shared', '--no-checkout', root, repo], { stdio: 'pipe' })
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim()
+  for (const t of git('tag', '--list').split('\n')) {
+    if (/^v1\.1\.[1-9]\d*$/.test(t) && Number(t.slice(5)) > Number(ABANDONED_PROD.tag.slice(5))) git('tag', '-d', t)
+  }
   git('checkout', '-b', 'reviewed-main', ABANDONED_PROD.sha)
   git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
   for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', 'web/vite.config.ts']) fs.copyFileSync(path.join(root, file), path.join(repo, file))
