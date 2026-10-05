@@ -43,6 +43,8 @@ import {
   applyCustomThemeStyles,
 } from './components/ThemeModal'
 import { BandSyncModal } from './components/BandSyncModal'
+import { TvPresentationModal } from './components/TvPresentationModal'
+import { stageCast } from './utils/stageCast'
 import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState } from './types/gtar'
@@ -593,6 +595,53 @@ function LibraryApp() {
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
+
+  // Stage Cast Active Presentation State
+  const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
+  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(false)
+
+  useEffect(() => {
+    const unsubscribe = stageCast.subscribeSessionState((active) => {
+      setIsCastActive(active)
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [])
+
+  const handleTogglePresentation = useCallback(async () => {
+    if (isCastActive) {
+      stageCast.stopPresentation()
+    } else {
+      stageCast.broadcastState({
+        song: currentSong,
+        effectiveKey: currentSong.key || '',
+        transposeOffset: currentSong.transposeOffset || 0,
+        fontSizePx: 22,
+        fontStyle,
+        isTwoColumn,
+        chordScale: 100,
+        fontWeight: 'regular',
+        lineSpacing: 'normal',
+      })
+
+      const caps = stageCast.getPresentationCapabilities()
+      if (caps.recommendedMode === 'tv_pairing' || !caps.canDirectPresent) {
+        setIsTvPresentationModalOpen(true)
+      } else {
+        const res = await stageCast.requestPresentation()
+        if (res.mode === 'tv_pairing') {
+          setIsTvPresentationModalOpen(true)
+        }
+      }
+    }
+  }, [
+    isCastActive,
+    currentSong,
+    fontStyle,
+    isTwoColumn,
+  ])
+
 
   // Guard: sync active stage presence to window to protect active performance from unprompted SW reloads
   useEffect(() => {
@@ -1222,6 +1271,64 @@ function LibraryApp() {
     setIsSetlistDrawerOpen(false)
   }
 
+  // Desktop Global Navigation Shortcuts (Alt+1..6, Alt+0/H)
+  useEffect(() => {
+    const isEditable = (el: EventTarget | null): boolean => {
+      if (!el || !(el instanceof HTMLElement)) return false
+      const tagName = el.tagName.toLowerCase()
+      return (
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        tagName === 'select' ||
+        el.isContentEditable ||
+        el.getAttribute('contenteditable') === 'true'
+      )
+    }
+
+    const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (isEditable(e.target)) return
+
+      switch (e.key) {
+        case '1':
+          e.preventDefault()
+          navigateSafely(() => setActiveView('stage'))
+          break
+        case '2':
+          e.preventDefault()
+          navigateSafely(() => setActiveView('editor'))
+          break
+        case '3':
+          e.preventDefault()
+          setIsStageToolsModalOpen(true)
+          break
+        case '4':
+          e.preventDefault()
+          void handleTogglePresentation()
+          break
+        case '5':
+          e.preventDefault()
+          setIsThemeModalOpen(true)
+          break
+        case '6':
+          e.preventDefault()
+          navigateSafely(() => setActiveView('trash'))
+          break
+        case '0':
+        case 'h':
+        case 'H':
+          e.preventDefault()
+          navigateSafely(handleNavigateHome)
+          break
+        default:
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalNavShortcuts)
+    return () => window.removeEventListener('keydown', handleGlobalNavShortcuts)
+  }, [handleTogglePresentation, handleNavigateHome])
+
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
     const targetId = updated.id ?? currentSong?.id
@@ -1335,10 +1442,15 @@ function LibraryApp() {
           activeSetlistId={activeSetlistId}
           activeSetlistName={activeSetlist?.name}
           activeSetlistSongs={activeSetlistSongs}
-          onSelectSetlistSong={(id, index) => navigateSafely(() => handleSelectSetlistSong(id, index))}
+          onSelectSetlistSong={(id, index) => navigateSafely(() => {
+            handleSelectSetlistSong(id, index)
+            setActiveView('stage')
+          })}
           onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
           onPushSetlistToBandSync={handlePushSetlistToMembers}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
+          onOpenCast={handleTogglePresentation}
+          isCastActive={isCastActive}
           onCloudSyncApplied={(updated) => {
             const partition = partitionSongs(updated.songs)
             setSongs(partition.active)
@@ -1426,7 +1538,8 @@ function LibraryApp() {
                 isImportModalOpen ||
                 isBackupRestoreModalOpen ||
                 isJsonModalOpen ||
-                isHeaderKeyPickerOpen
+                isHeaderKeyPickerOpen ||
+                isTvPresentationModalOpen
               }
               onBack={() => setActiveView('songbook')}
               transposeOffset={currentSong.transposeOffset || 0}
@@ -1449,15 +1562,21 @@ function LibraryApp() {
         songs={filteredSongs.length > 0 ? filteredSongs : songs}
         activeSongIndex={activeSongIndex}
         onSelectSongIndex={(idx) => {
-          handleSelectLibrarySong(idx)
-          setIsSetlistDrawerOpen(false)
+          navigateSafely(() => {
+            handleSelectLibrarySong(idx)
+            setActiveView('stage')
+            setIsSetlistDrawerOpen(false)
+          })
         }}
         setlists={setlists}
         activeSetlistId={activeSetlistId}
         activeSetlistSongIndex={activeSetlistSongIndex}
         onSelectSetlistSong={(setlistId, songIdx) => {
-          handleSelectSetlistSong(setlistId, songIdx)
-          setIsSetlistDrawerOpen(false)
+          navigateSafely(() => {
+            handleSelectSetlistSong(setlistId, songIdx)
+            setActiveView('stage')
+            setIsSetlistDrawerOpen(false)
+          })
         }}
         onReorderSetlistSong={handleReorderSetlistSong}
         onRemoveSetlistSong={handleRemoveSetlistSong}
@@ -1567,6 +1686,12 @@ function LibraryApp() {
         currentOffset={currentSong.transposeOffset || 0}
         onSelectOffset={handleTransposeChange}
         onReset={() => handleTransposeChange(0)}
+      />
+
+      {/* Wireless TV / External Display Presentation Pairing Modal */}
+      <TvPresentationModal
+        isOpen={isTvPresentationModalOpen}
+        onClose={() => setIsTvPresentationModalOpen(false)}
       />
 
       {/* Global Toast Notification */}

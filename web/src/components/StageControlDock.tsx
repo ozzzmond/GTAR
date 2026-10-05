@@ -13,8 +13,8 @@ export interface ViewportSize {
 }
 
 export const DOCK_SIZE = {
-  width: 56,
-  height: 168,
+  width: 64,
+  height: 200,
 }
 
 export const DOCK_DEFAULT_MARGINS = {
@@ -351,7 +351,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
         onPointerDown={(e) => handlePointerStart(e, 'prev')}
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
-        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer select-none active:scale-90 ${
+        className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition-all cursor-pointer select-none active:scale-90 ${
           canPrevSection
             ? 'bg-[#002B36]/90 border border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] hover:border-[#2AA198]/60 shadow-md'
             : 'bg-[#002B36]/40 border border-[#1A4A55]/30 text-[#93A1A1]/30 cursor-not-allowed'
@@ -359,7 +359,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
         title={canPrevSection ? 'Previous Section' : 'No previous section'}
         aria-label="Jump to previous section"
       >
-        <ChevronUp className="w-5 h-5 stroke-[2.5]" />
+        <ChevronUp className="w-6 h-6 stroke-[2.5]" />
       </button>
 
       {/* Center Autoscroll FAB Button with Long-Press Stage Options */}
@@ -368,7 +368,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
         onPointerDown={(e) => handlePointerStart(e, 'autoscroll')}
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
-        className={`w-12 h-12 rounded-full flex items-center justify-center shadow-xl transition-all active:scale-95 cursor-pointer select-none border-2 ${
+        className={`w-13 h-13 min-w-[52px] min-h-[52px] rounded-full flex items-center justify-center shadow-xl transition-all active:scale-95 cursor-pointer select-none border-2 ${
           isAutoScrolling
             ? 'bg-[#EF4444] border-[#EF4444]/70 text-white hover:bg-[#DC2626] shadow-red-900/50'
             : 'bg-[#B58900] border-[#B58900]/70 text-black hover:bg-[#C89600] shadow-amber-900/40'
@@ -398,7 +398,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
         onPointerDown={(e) => handlePointerStart(e, 'next')}
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
-        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer select-none active:scale-90 ${
+        className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-full flex items-center justify-center transition-all cursor-pointer select-none active:scale-90 ${
           canNextSection
             ? 'bg-[#002B36]/90 border border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] hover:border-[#2AA198]/60 shadow-md'
             : 'bg-[#002B36]/40 border border-[#1A4A55]/30 text-[#93A1A1]/30 cursor-not-allowed'
@@ -406,7 +406,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
         title={canNextSection ? 'Next Section' : 'No next section'}
         aria-label="Jump to next section"
       >
-        <ChevronDown className="w-5 h-5 stroke-[2.5]" />
+        <ChevronDown className="w-6 h-6 stroke-[2.5]" />
       </button>
     </div>
   )

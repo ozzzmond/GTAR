@@ -5,13 +5,9 @@ import {
   Type,
   Columns2,
   Square,
-  SlidersHorizontal,
-  Palette,
-  Check,
   X,
-  Radio,
   Download,
-  Upload,
+  Check,
 } from 'lucide-react'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
 import { isDevEnv } from '../utils/env'
@@ -40,10 +36,10 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
   onSelectFontStyle,
   isTwoColumn,
   onToggleTwoColumn,
-  onOpenStageTools,
-  onToggleTheme,
-  onExportAllData,
-  onOpenBackupRestoreModal,
+  onOpenStageTools: _onOpenStageTools,
+  onToggleTheme: _onToggleTheme,
+  onExportAllData: _onExportAllData,
+  onOpenBackupRestoreModal: _onOpenBackupRestoreModal,
   onInstallApp,
 }) => {
   const [keepScreenAwake, setKeepScreenAwake] = useState(false)
@@ -271,119 +267,11 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Quick Shortcuts */}
-          <div className="space-y-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[#B58900]">
-              QUICK SHORTCUTS
-            </div>
-
-            {/* Stage Tools & Band Sync Shortcut */}
-            <button
-              type="button"
-              onClick={() => {
-                onClose()
-                onOpenStageTools()
-              }}
-              className="w-full text-left p-3.5 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] transition-all flex items-center justify-between group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#073642] flex items-center justify-center text-[#2AA198]">
-                  <SlidersHorizontal className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors">
-                    Stage Tools & Band Sync
-                  </div>
-                  <div className="text-[11px] text-[#93A1A1]">
-                    Metronome, Guitar Tuner, & Band Sync Leader/Member
-                  </div>
-                </div>
-              </div>
-              <Radio className="w-4 h-4 text-[#93A1A1] group-hover:text-[#2AA198]" />
-            </button>
-
-            {/* Stage Theme Toggle Shortcut */}
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              className="w-full text-left p-3.5 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#B58900] transition-all flex items-center justify-between group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#073642] flex items-center justify-center text-[#B58900]">
-                  <Palette className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#B58900] transition-colors">
-                    Stage Theme & Colors
-                  </div>
-                  <div className="text-[11px] text-[#93A1A1]">
-                    Solarized Dark, Stage High Contrast, or Light Theme
-                  </div>
-                </div>
-              </div>
-              <Check className="w-4 h-4 text-[#93A1A1] group-hover:text-[#B58900]" />
-            </button>
-          </div>
-
-          {/* Section 3: Local Setlist & Library Backup / Restore (JSON) */}
-          <div className="space-y-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[#B58900]">
-              LOCAL DATA BACKUP & RESTORE
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (onExportAllData) {
-                    onExportAllData()
-                  }
-                  showToast('Exported full library backup JSON')
-                }}
-                className="p-3 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] transition-all flex items-center gap-2.5 cursor-pointer group"
-                title="Export complete songbook, setlists, and stage customizations"
-              >
-                <div className="w-8 h-8 rounded-lg bg-[#073642] flex items-center justify-center text-[#2AA198]">
-                  <Download className="w-4 h-4" />
-                </div>
-                <div className="text-left">
-                  <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198]">
-                    Export All Data (JSON)
-                  </div>
-                  <div className="text-[10px] text-[#93A1A1]">Songs, setlists & themes</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onClose()
-                  onOpenBackupRestoreModal?.()
-                }}
-                className="p-3 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#B58900] transition-all flex items-center gap-2.5 cursor-pointer group"
-                title="Import and restore from backup file"
-              >
-                <div className="w-8 h-8 rounded-lg bg-[#073642] flex items-center justify-center text-[#B58900]">
-                  <Upload className="w-4 h-4" />
-                </div>
-                <div className="text-left">
-                  <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#B58900]">
-                    Import Data (JSON)
-                  </div>
-                  <div className="text-[10px] text-[#93A1A1]">Merge or overwrite backup</div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Section 4: PWA Offline Stage App & Information */}
+          {/* Section 2: PWA Offline Stage App & Information */}
           <div className="p-4 rounded-xl bg-[#002B36]/60 border border-[#1A4A55]/70 text-center space-y-2">
             <div className="text-xs font-extrabold text-[#FDF6E3]">GTAR Live Stage Companion</div>
             <div className="text-[11px] font-mono font-bold text-[#2AA198]">
               {isDevEnv ? `Version ${GTAR_DEV_VERSION}` : `Version ${GTAR_APP_VERSION}`}
-            </div>
-            <div className="text-[10px] text-[#93A1A1]">
-              Offline-First Stage Teleprompter & Chord Companion for Live Musicians
             </div>
 
             {onInstallApp && (
@@ -398,7 +286,6 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
                 <span>Install App as Standalone PWA</span>
               </button>
             )}
-
           </div>
         </div>
 
