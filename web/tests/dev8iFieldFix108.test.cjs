@@ -105,13 +105,13 @@ test('108-dev.8i artist badge absent when provider artist is empty', async () =>
 })
 
 // ISSUE_2: Version consistency
-test('108-dev.8i GTAR_DEV_VERSION is 1.0.108-dev.15', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.108-dev.15')
+test('108-dev.8i GTAR_DEV_VERSION is 1.0.123-dev.1', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.1')
 })
 
 test('108-dev.8i GTAR_APP_VERSION and GTAR_DEV_VERSION share the same major.minor.patch', () => {
-  // Both should embed 108 as the feature milestone
-  assert.match(GTAR_DEV_VERSION, /108/)
+  // Both should embed 123/108 as the milestone versions
+  assert.match(GTAR_DEV_VERSION, /123/)
   assert.match(GTAR_APP_VERSION, /108/)
 })
 
