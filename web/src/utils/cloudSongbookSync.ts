@@ -91,6 +91,7 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       originalKey: (s.originalKey || '').trim(),
       capo: (s.capo || '').trim(),
       bpm: (s.bpm || '').trim(),
+      time: (s.time || '').trim(),
       year: (s.year || '').trim(),
       format: String(s.format || 'PLAIN'),
       transposeOffset: Number(s.transposeOffset || 0),
@@ -322,7 +323,7 @@ export function evaluateSyncDecision({
   }
 }
 
-function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
+export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
   return (
     a.title === b.title &&
     (a.artist || '') === (b.artist || '') &&
@@ -330,6 +331,7 @@ function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
     (a.originalKey || '') === (b.originalKey || '') &&
     (a.capo || '') === (b.capo || '') &&
     (a.bpm || '') === (b.bpm || '') &&
+    (a.time || '') === (b.time || '') &&
     (a.year || '') === (b.year || '') &&
     (a.format || 'PLAIN') === (b.format || 'PLAIN') &&
     Number(a.transposeOffset || 0) === Number(b.transposeOffset || 0) &&
@@ -338,7 +340,7 @@ function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
   )
 }
 
-function setlistEquals(a: WebSetlist, b: WebSetlist): boolean {
+export function setlistEquals(a: WebSetlist, b: WebSetlist): boolean {
   if (a.name !== b.name) return false
   if (Boolean(a.isDeleted) !== Boolean(b.isDeleted)) return false
   if (a.songs.length !== b.songs.length) return false

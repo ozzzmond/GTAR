@@ -587,6 +587,7 @@ export function computeSemanticSongFingerprint(song: SongEntity | ActiveSongStat
   const bpm = (!rawBpm || rawBpm === '0') ? '120' : rawBpm
 
   const originalKey = (song.originalKey || '').trim().toUpperCase()
+  const time = (song.time || '').trim()
   const year = (song.year || '').trim()
 
   const format = String(song.format || 'PLAIN').trim().toUpperCase()
@@ -609,6 +610,7 @@ export function computeSemanticSongFingerprint(song: SongEntity | ActiveSongStat
     originalKey,
     capo,
     bpm,
+    time,
     year,
     format,
     transposeOffset,

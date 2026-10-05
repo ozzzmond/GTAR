@@ -441,6 +441,7 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
   let originalKey = ''
   let capo = ''
   let bpm = ''
+  let time = ''
   let year = ''
   let tags = ''
 
@@ -509,6 +510,9 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
         case 'tempo':
         case 'bpm':
           bpm = value
+          break
+        case 'time':
+          time = value
           break
         case 'year':
           year = value
@@ -698,6 +702,7 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
     originalKey,
     capo,
     bpm,
+    time: time || undefined,
     year,
     tags,
     format,
