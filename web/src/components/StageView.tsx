@@ -2008,9 +2008,24 @@ export const StageView: React.FC<StageViewProps> = ({
       >
         <div
           ref={slideContentRef}
-          className={`mx-auto transition-[max-width] duration-300 ${isTwoColumn ? 'max-w-[95vw]' : 'max-w-4xl'}`}
+          className={`mx-auto transition-[max-width] duration-300 ${inPerformanceMode || isTwoColumn ? 'w-full' : 'max-w-4xl'}`}
           style={{ willChange: 'transform' }}
         >
+
+          {inPerformanceMode && (
+            <header data-testid="stage-expanded-header" className="pt-10 pb-4 mb-5 border-b border-[#1A4A55] flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-[#FDF6E3] break-words">{song.title || 'Untitled Song'}</h1>
+                <p className="text-xs sm:text-sm text-[#93A1A1] mt-1">
+                  {song.artist || 'Unknown Artist'}
+                  {effectivePerformanceKey ? ` • Key: ${effectivePerformanceKey}` : ''}
+                  {song.bpm ? ` • ${song.bpm.replace(/\s*bpm$/i, '')} BPM` : ''}
+                  {song.time ? ` • ${song.time}` : ''}
+                </p>
+              </div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#2AA198] px-2 py-1 rounded bg-[#073642] border border-[#1A4A55]">Stage</span>
+            </header>
+          )}
 
           {/* Missing / Invalid Key fail-safe notification for Numbers Mode */}
           {notation === 'numbers' && !effectivePerformanceKey && !song.isMissing && (

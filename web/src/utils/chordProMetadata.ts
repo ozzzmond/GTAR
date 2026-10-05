@@ -47,8 +47,10 @@ export function parseChordProDirectives(content: string): {
 
     if (name === 'title' || name === 't') {
       if (!metadata.title) metadata.title = value;
-    } else if (name === 'artist' || name === 'subtitle' || name === 'st') {
-      if (!metadata.artist) metadata.artist = value;
+    } else if (name === 'artist') {
+      metadata.artist = value;
+    } else if (name === 'a' || name === 'subtitle' || name === 'st') {
+      if (metadata.artist === undefined) metadata.artist = value;
     } else if (name === 'key') {
       if (!metadata.key) metadata.key = value;
     } else if (name === 'tempo' || name === 'bpm') {
@@ -85,19 +87,6 @@ export function syncCanonicalDirectives(
   const lineEnding = isCrlf ? '\r\n' : '\n';
   const lines = currentContent.split(/\r?\n/);
 
-  const directiveLineMap = new Map<string, number>();
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    const match = trimmed.match(DIRECTIVE_REGEX);
-    if (!match) continue;
-
-    const name = match[1].toLowerCase();
-    if (!directiveLineMap.has(name)) {
-      directiveLineMap.set(name, i);
-    }
-  }
-
   const updatedLines = [...lines];
   const pendingInsertions: { directive: CanonicalDirectiveName; formatted: string }[] = [];
 
@@ -115,7 +104,7 @@ export function syncCanonicalDirectives(
 
   const directiveAliases: Record<CanonicalDirectiveName, string[]> = {
     title: ['title', 't'],
-    artist: ['artist', 'subtitle', 'st'],
+    artist: ['artist', 'a', 'subtitle', 'st'],
     key: ['key'],
     tempo: ['tempo', 'bpm'],
     time: ['time'],
@@ -126,25 +115,17 @@ export function syncCanonicalDirectives(
     const val = canonicalFieldMap[dirName];
     if (val === undefined) continue;
 
-    let existingLineIndex = -1;
-    for (const alias of directiveAliases[dirName]) {
-      if (directiveLineMap.has(alias)) {
-        existingLineIndex = directiveLineMap.get(alias)!;
-        break;
+    const existing = lines.flatMap((line, index) => {
+      const match = line.trim().match(DIRECTIVE_REGEX);
+      return match && directiveAliases[dirName].includes(match[1].toLowerCase()) ? [index] : [];
+    });
+    if (existing.length) {
+      // Update every existing occurrence so no stale alias can override the canonical value.
+      for (const index of existing) {
+        updatedLines[index] = val === '' ? '' : `{${dirName}: ${val}}`;
       }
-    }
-
-    if (val === '') {
-      if (existingLineIndex !== -1) {
-        updatedLines[existingLineIndex] = '';
-      }
-    } else {
-      const newLine = `{${dirName}: ${val}}`;
-      if (existingLineIndex !== -1) {
-        updatedLines[existingLineIndex] = newLine;
-      } else {
-        pendingInsertions.push({ directive: dirName, formatted: newLine });
-      }
+    } else if (val !== '') {
+      pendingInsertions.push({ directive: dirName, formatted: `{${dirName}: ${val}}` });
     }
   }
 
@@ -172,7 +153,7 @@ export function syncCanonicalDirectives(
       const match = trimmed.match(DIRECTIVE_REGEX);
       if (match) {
         const name = match[1].toLowerCase();
-        if (['title', 't', 'artist', 'subtitle', 'st', 'key', 'tempo', 'bpm', 'time', 'year', 'c', 'comment'].includes(name)) {
+        if (['title', 't', 'artist', 'a', 'subtitle', 'st', 'key', 'tempo', 'bpm', 'time', 'year', 'c', 'comment'].includes(name)) {
           insertIndex = i + 1;
           continue;
         }

@@ -170,7 +170,7 @@ test('stage view typography engine supports independent chord scaling, weights a
   assert.match(html, /padding:\s*8px 0 10px/)
   assert.match(html, /line-height:\s*1\.6/)
 
-  // Check two-line mode preserves layout with transform scaling
+  // Two-line mode uses shared anchored layout; chord sizing reserves real layout space.
   const twoLineRaw = '  G   D/F#  Em\nSing along together'
   const twoLineParsed = parseGtarSong(twoLineRaw)
   const twoLineHtml = renderToStaticMarkup(React.createElement(SongLineRenderer, {
@@ -181,8 +181,11 @@ test('stage view typography engine supports independent chord scaling, weights a
     lineSpacing: 'compact',
   }))
 
-  assert.match(twoLineHtml, /scale\(1\.3\)/)
-  assert.match(twoLineHtml, /padding-top:\s*2px/)
-  assert.match(twoLineHtml, /Sing along together/)
+  assert.match(twoLineHtml, /font-size:1\.17/)
+  assert.match(twoLineHtml, /padding:\s*2px 0 3px/)
+  const { JSDOM } = require('jsdom')
+  const document = new JSDOM(twoLineHtml).window.document
+  assert.equal([...document.querySelectorAll('.stage-lyric-text')].map(el => el.textContent).join(''), 'Sing along together')
+  assert.deepEqual([...document.querySelectorAll('[data-chord]')].map(el => el.dataset.chord), ['G', 'D/F#', 'Em'])
 })
 

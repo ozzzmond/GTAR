@@ -33,7 +33,7 @@ test('stage renders transposed tokens in stacked units at multiple font sizes', 
   const song = parseGtarSong('{Cadd9}Sing [G/B]on{D}', 2)
   for (const fontSizePx of [18, 36, 60]) {
     const html = renderToStaticMarkup(React.createElement(SongLineRenderer, { lines: song.lines, fontSizePx }))
-    assert.equal((html.match(/inline-flex flex-col align-bottom/g) || []).length, 3)
+    assert.equal((html.match(/data-chord=/g) || []).length, 3)
     assert.ok(html.includes('Dadd9'))
     assert.ok(html.includes('A/C#'))
     assert.ok(!html.includes('{Cadd9}') && !html.includes('[G/B]'))
