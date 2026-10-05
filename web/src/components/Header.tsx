@@ -1078,27 +1078,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-semibold">Import Songs &amp; Setlists...</span>
           </button>
 
-          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
 
-          {/* 4. Trash Bin (Basurahan) */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onViewChange('trash')
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#DC6E67] transition-colors flex items-center justify-between gap-3 cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <Trash2 className="w-4 h-4 text-[#DC6E67]" />
-              <span className="font-semibold">Trash Bin (Basurahan)</span>
-            </div>
-            {deletedSongsCount > 0 && (
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-[#DC6E67]/20 text-[#DC6E67] font-bold">
-                {deletedSongsCount}
-              </span>
-            )}
-          </button>
 
           {/* 5. Debug Logs (Debug environment only) */}
           {isDevApp && (

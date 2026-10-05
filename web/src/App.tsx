@@ -1332,6 +1332,11 @@ function LibraryApp() {
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
     const targetId = updated.id ?? currentSong?.id
+    const isExisting = songs.some(s => String(s.id) === String(targetId))
+    if (!isExisting) {
+      // Do not auto-save unpersisted new blank song to library
+      return false
+    }
     const nextSongs = songs.map(s => String(s.id) === String(targetId) ? { ...s, ...updated, id: s.id } : s)
     try { persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists }) }
     catch (err) { handleStorageWriteFailure(err); return false }
@@ -1340,7 +1345,20 @@ function LibraryApp() {
   }
 
   // Explicit save also reports persistence failure to the editor.
-  const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => handleUpdateSong(updatedSong)
+  const handleSaveSongFromEditor = (updatedSong: ActiveSongState) => {
+    const targetId = updatedSong.id ?? currentSong?.id
+    const isExisting = songs.some(s => String(s.id) === String(targetId))
+    const nextSongs = isExisting
+      ? songs.map(s => String(s.id) === String(targetId) ? { ...s, ...updatedSong, id: s.id } : s)
+      : [updatedSong, ...songs]
+    try { persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists }) }
+    catch (err) { handleStorageWriteFailure(err); return false }
+    setSongs(nextSongs)
+    if (!isExisting) {
+      setActiveSongIndex(0)
+    }
+    return true
+  }
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
