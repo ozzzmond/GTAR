@@ -140,6 +140,42 @@ Repository secrets:
   approval; rejected pushes fail closed. Do not place it in repository secrets.
   Use a credential whose push is received by the existing Pages Git integration.
 
+### Automatic PROD D1 migration readiness
+
+Plan (including dry run) and the fresh post-approval recheck inspect PROD D1
+before any main/tag transaction. The trusted controller reads regular canonical
+`web/migrations/*.sql` blobs from the exact selected checkpoint SHA, never the
+working tree. It requires the checkpoint's PROD binding to match the reviewed
+controller configuration and the Pages project's production `DB` binding.
+Unsupported configuration/layout, missing inventory or inconsistent PROD/DEV
+bindings fail closed; no checkpoint scripts or migration SQL are executed.
+
+Applied migration names come from Wrangler's authoritative `d1_migrations`
+ledger. The controller sends only a fixed `SELECT id, name ... ORDER BY id` to
+the [D1 query API](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/).
+It does not use Wrangler's migration-list initialization, which can create the
+ledger table. See the [D1 migration contract](https://developers.cloudflare.com/d1/reference/migrations/).
+The existing `CF_PAGES_READ_TOKEN` must already permit **D1 Read** in the configured
+account as well as Pages Read. Pages Read alone cannot establish readiness.
+No new credential, permission change or rotation is performed by the controller.
+If existing credentials cannot safely read this state, readiness remains HOLD;
+an operator must separately resolve the access prerequisite before rerunning.
+
+Missing migrations report their canonical filenames. Failed/denied lookup,
+missing ledger, malformed results, duplicate/unknown applied names or IDs,
+unverifiable no-write metadata, and binding mismatch block promotion. Lookup
+failure reports required filenames as unverified, not as proven pending.
+Raw API errors, credentials and database/account identifiers are never emitted.
+Fully current PROD D1 allows all existing independent release gates to continue.
+
+This is detection only: no automatic PROD migration, ledger creation, SQL repair,
+schema/data mutation, or remediation. Humans review the pending filenames,
+perform any separately authorized remediation, and rerun the complete readiness
+check. The ledger records names, not SQL checksums; applied-file content/schema
+equivalence is not claimed. D1 state can change after the final read; concurrency
+does not lock external database writers. Lettered `1.0.123-dev.1a` remains
+non-promotable; its future tag is manual and is not created by this change.
+
 ### Race and transaction contract
 
 The DEV branch ruleset `gtar-release-freeze-dev` and DEV tag ruleset
