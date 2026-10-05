@@ -19,9 +19,6 @@ import {
   Plus,
   SkipBack,
   SkipForward,
-  Radio,
-  Users,
-  Wifi,
   ArrowLeft,
   Cast,
   Tv,
@@ -130,7 +127,7 @@ export const StageView: React.FC<StageViewProps> = ({
   onSelectFontStyle: externalOnSelectFontStyle,
   isTwoColumn: externalIsTwoColumn,
   onToggleTwoColumn: externalOnToggleTwoColumn,
-  onOpenBandSync,
+  onOpenBandSync: _onOpenBandSync,
   onBack,
   onPerformanceModeChange,
 }) => {
@@ -420,6 +417,8 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
+  const [canPrevSection, setCanPrevSection] = useState(false)
+  const [canNextSection, setCanNextSection] = useState(true)
 
   useEffect(() => {
     const unsubscribe = stageCast.subscribeSessionState((active) => {
@@ -663,6 +662,9 @@ export const StageView: React.FC<StageViewProps> = ({
     const maxScroll = target.scrollHeight - target.clientHeight
     const fraction = maxScroll > 0 ? target.scrollTop / maxScroll : 0
 
+    setCanPrevSection(currentTop > 10)
+    setCanNextSection(currentTop < maxScroll - 10)
+
     // Keep accumulator in sync so the next autoscroll loop starts from the
     // correct position after a manual scroll.
     if (!isAutoScrolling) {
@@ -747,10 +749,7 @@ export const StageView: React.FC<StageViewProps> = ({
     const targets = sectionEls.map((el) => {
       const elRect = el.getBoundingClientRect()
       const distanceFromTop = elRect.top - containerRect.top
-      const targetScrollTop = Math.max(
-        0,
-        Math.min(maxScroll, Math.round(currentScrollTop + distanceFromTop - headerOffset))
-      )
+      const targetScrollTop = Math.round(currentScrollTop + distanceFromTop - headerOffset)
       return { el, targetScrollTop }
     })
 
@@ -759,15 +758,26 @@ export const StageView: React.FC<StageViewProps> = ({
     let targetTop = 0
     if (pastSections.length > 0) {
       const currentSection = pastSections[pastSections.length - 1]
+      const clampedCurrent = Math.max(0, Math.min(maxScroll, currentSection.targetScrollTop))
+
       // If viewport has scrolled past current section start, jump back to section start
-      if (currentScrollTop > currentSection.targetScrollTop + 24) {
-        targetTop = currentSection.targetScrollTop
-      } else if (pastSections.length >= 2) {
-        // Already at section start: jump to preceding section in document order
-        targetTop = pastSections[pastSections.length - 2].targetScrollTop
+      // (ensuring the clamped jump moves upward and avoids collapsing at maxScroll)
+      if (currentScrollTop > currentSection.targetScrollTop + 24 && clampedCurrent < currentScrollTop - 4) {
+        targetTop = clampedCurrent
       } else {
-        // At first section: jump to top of song
-        targetTop = 0
+        // Look backwards through pastSections for closest preceding target that scrolls upward
+        let found = false
+        for (let i = pastSections.length - 2; i >= 0; i--) {
+          const clampedPreceding = Math.max(0, Math.min(maxScroll, pastSections[i].targetScrollTop))
+          if (clampedPreceding < currentScrollTop - 4) {
+            targetTop = clampedPreceding
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          targetTop = 0
+        }
       }
     } else {
       targetTop = 0
@@ -796,17 +806,17 @@ export const StageView: React.FC<StageViewProps> = ({
     const targets = sectionEls.map((el) => {
       const elRect = el.getBoundingClientRect()
       const distanceFromTop = elRect.top - containerRect.top
-      const targetScrollTop = Math.max(
-        0,
-        Math.min(maxScroll, Math.round(currentScrollTop + distanceFromTop - headerOffset))
-      )
+      const targetScrollTop = Math.round(currentScrollTop + distanceFromTop - headerOffset)
       return { el, targetScrollTop }
     })
 
     const nextSection = targets.find((s) => s.targetScrollTop > currentScrollTop + 12)
     if (!nextSection) return
 
-    const targetTop = nextSection.targetScrollTop
+    const clampedNext = Math.max(0, Math.min(maxScroll, nextSection.targetScrollTop))
+    if (clampedNext <= currentScrollTop + 4 && currentScrollTop >= maxScroll - 4) return
+
+    const targetTop = clampedNext
     accumulatedScrollRef.current = targetTop
     setIsAutoScrolling(false)
     container.scrollTo({ top: targetTop, behavior: 'smooth' })
@@ -1896,46 +1906,6 @@ export const StageView: React.FC<StageViewProps> = ({
               {scrollSpeed}
             </span>
           </button>
-
-          {/* Band Sync Status Indicator & Modal Trigger */}
-          <button
-            type="button"
-            onClick={onOpenBandSync || (() => setIsBandSyncModalOpen(true))}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer shadow-sm ${
-              syncState.role === 'HOST'
-                ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
-                : syncState.role === 'CLIENT'
-                ? 'bg-[#2AA198]/20 border-[#2AA198] text-[#2AA198]'
-                : 'bg-[#002B36] border-[#1A4A55] text-[#93A1A1] hover:text-[#EEE8D5]'
-            }`}
-            title={
-              syncState.role === 'HOST'
-                ? `Band Leader (Active) • ${syncState.connectedPeers} member(s) connected`
-                : syncState.role === 'CLIENT'
-                ? 'Band Member (Synced to Leader)'
-                : 'Band Sync (Click to connect devices)'
-            }
-          >
-            {syncState.role === 'HOST' ? (
-              <>
-                <Radio className="w-3.5 h-3.5 animate-pulse text-[#10B981]" />
-                <span className="hidden md:inline">LEADER</span>
-                <span className="text-[10px] px-1 py-0.2 rounded bg-[#10B981]/30">
-                  {syncState.connectedPeers}
-                </span>
-              </>
-            ) : syncState.role === 'CLIENT' ? (
-              <>
-                <Users className="w-3.5 h-3.5 animate-pulse text-[#2AA198]" />
-                <span className="hidden md:inline">SYNCED</span>
-              </>
-            ) : (
-              <>
-                <Wifi className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Sync</span>
-              </>
-            )}
-          </button>
           {/* Cast / Pop-out Screen (Mirror distraction-free stage teleprompter to external display) */}
           <button
             type="button"
@@ -2193,8 +2163,8 @@ export const StageView: React.FC<StageViewProps> = ({
         }}
         onPrevSection={handlePrevSection}
         onNextSection={handleNextSection}
-        canPrevSection={sectionHeaders.length > 0}
-        canNextSection={sectionHeaders.length > 0}
+        canPrevSection={sectionHeaders.length > 0 && canPrevSection}
+        canNextSection={sectionHeaders.length > 0 && canNextSection}
         visible={inPerformanceMode ? (!controlsAutoHide || showStageOverlays) : true}
         onUserInteraction={triggerOverlaysShow}
       />

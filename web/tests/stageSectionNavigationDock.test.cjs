@@ -131,10 +131,12 @@ Without any bracketed section headers
 
   const stageViewSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
   assert.ok(
+    stageViewSource.includes('canPrevSection={sectionHeaders.length > 0 && canPrevSection}') ||
     stageViewSource.includes('canPrevSection={sectionHeaders.length > 0}'),
     'canPrevSection must be disabled when sectionHeaders is empty'
   )
   assert.ok(
+    stageViewSource.includes('canNextSection={sectionHeaders.length > 0 && canNextSection}') ||
     stageViewSource.includes('canNextSection={sectionHeaders.length > 0}'),
     'canNextSection must be disabled when sectionHeaders is empty'
   )

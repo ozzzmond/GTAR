@@ -11,8 +11,8 @@ import {
   Cloud,
   Eye,
   FileEdit,
-  ListMusic,
-  Music,
+  PlaySquare,
+  Cast,
   Check,
   Layers,
   Radio,
@@ -84,6 +84,8 @@ interface HeaderProps {
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
   onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
+  onOpenCast?: () => void
+  isCastActive?: boolean
 }
 
 /**
@@ -95,15 +97,18 @@ function ToolbarIconButton({
   isActive = false,
   onClick,
   className = '',
+  buttonRef,
 }: {
   icon: React.FC<{ className?: string }>
   label: string
   isActive?: boolean
   onClick: () => void
   className?: string
+  buttonRef?: React.Ref<HTMLButtonElement>
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
@@ -119,11 +124,11 @@ export const Header: React.FC<HeaderProps> = ({
   activeView,
   onViewChange,
   allSongs = [],
-  songsCount,
+  songsCount: _songsCount,
   deletedSongsCount = 0,
-  queueMode = 'library',
+  queueMode: _queueMode,
   activeSetlistSongsCount: _activeSetlistSongsCount,
-  activeSetlistSongIndex,
+  activeSetlistSongIndex: _activeSetlistSongIndex,
   searchQuery,
   onSearchQueryChange,
   onSelectSearchSong,
@@ -135,20 +140,21 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStageSettings,
   onOpenImportModal,
   onOpenBackupRestoreModal,
-  onOpenSetlistDrawer,
+  onOpenSetlistDrawer: _onOpenSetlistDrawer,
   setlists = [],
-  activeSetlistId,
-  activeSetlistName,
-  activeSetlistSongs = [],
+  activeSetlistId: _activeSetlistId,
+  activeSetlistName: _activeSetlistName,
+  activeSetlistSongs: _activeSetlistSongs = [],
   onSelectSetlistSong,
   onSelectSetlist,
   onPushSetlistToBandSync: _onPushSetlistToBandSync,
   onDirectImportOnlineSong,
   onCloudSyncApplied,
+  onOpenCast,
+  isCastActive = false,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
-  const [isSetlistDropdownOpen, setIsSetlistDropdownOpen] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
   const [onlineError, setOnlineError] = useState<string | null>(null)
@@ -285,50 +291,43 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   const overflowMenuRef = useRef<HTMLDivElement>(null)
-  const setlistDropdownRef = useRef<HTMLDivElement>(null)
+  const moreButtonRef = useRef<HTMLButtonElement>(null)
+  const [moreMenuCoords, setMoreMenuCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const avatarPopoverRef = useRef<HTMLDivElement>(null)
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const handleMouseEnterSetlists = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current)
-      hoverTimeoutRef.current = null
-    }
-    setIsSetlistDropdownOpen(true)
-  }
+  useEffect(() => {
+    if (showOverflowMenu && moreButtonRef.current) {
+      const updatePosition = () => {
+        if (!moreButtonRef.current) return
+        const rect = moreButtonRef.current.getBoundingClientRect()
+        const menuWidth = 224
+        const margin = 8
+        const top = rect.bottom + 6
 
-  const handleMouseLeaveSetlists = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setIsSetlistDropdownOpen(false)
-    }, 200)
-  }
-
-  // Active setlist detection
-  const currentActiveSetlist = useMemo(() => {
-    return (
-      (setlists || []).find((sl) => String(sl.id) === String(activeSetlistId)) ||
-      null
-    )
-  }, [setlists, activeSetlistId])
-
-  // Resolve active setlist songs reliably so it NEVER says "No songs in active setlist" when the setlist has songs
-  const displaySetlistSongs = useMemo(() => {
-    if (activeSetlistSongs && activeSetlistSongs.length > 0) return activeSetlistSongs
-    if (currentActiveSetlist && currentActiveSetlist.songs && currentActiveSetlist.songs.length > 0) {
-      return currentActiveSetlist.songs.map((ref) => {
-        const match = allSongs.find(
-          (s) => s.title.trim().toLowerCase() === ref.title.trim().toLowerCase()
-        )
-        return {
-          title: ref.title,
-          artist: ref.artist || match?.artist || '',
-          key: match?.key || ('key' in ref && typeof ref.key === 'string' ? ref.key : ''),
+        let left = rect.right - menuWidth
+        const maxLeft = window.innerWidth - menuWidth - margin
+        if (left > maxLeft) {
+          left = maxLeft
         }
-      })
+        if (left < margin) {
+          left = margin
+        }
+
+        setMoreMenuCoords({ top, left })
+      }
+
+      updatePosition()
+      window.addEventListener('resize', updatePosition)
+      window.addEventListener('scroll', updatePosition, true)
+      return () => {
+        window.removeEventListener('resize', updatePosition)
+        window.removeEventListener('scroll', updatePosition, true)
+      }
     }
-    return []
-  }, [activeSetlistSongs, currentActiveSetlist, allSongs])
+  }, [showOverflowMenu])
+
+
 
   // Filter matching songs for real-time search dropdown overlay
   const matchingSearchSongs = useMemo(() => {
@@ -413,10 +412,10 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (overflowMenuRef.current && !overflowMenuRef.current.contains(e.target as Node)) {
+        if (moreButtonRef.current && moreButtonRef.current.contains(e.target as Node)) {
+          return
+        }
         setShowOverflowMenu(false)
-      }
-      if (setlistDropdownRef.current && !setlistDropdownRef.current.contains(e.target as Node)) {
-        setIsSetlistDropdownOpen(false)
       }
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
         setIsSearchFocused(false)
@@ -428,9 +427,6 @@ export const Header: React.FC<HeaderProps> = ({
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current)
-      }
     }
   }, [])
 
@@ -446,7 +442,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div
             onClick={onNavigateHome}
             className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95"
-            title="Return to Songbook Library Home"
+            title="Return to Songbook Library Home (Alt+0)"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-[#2AA198] group-hover:scale-105 transition-all">
               <img
@@ -668,204 +664,51 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="w-full bg-[#002B36]/50 border-t border-[#1A4A55]/40 px-2 sm:px-4 py-1">
         <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 w-full overflow-x-auto py-1 no-scrollbar">
           <ToolbarIconButton
-            icon={Music}
-            label={`Songbook${songsCount !== undefined ? ` (${songsCount})` : ''}`}
-            isActive={activeView === 'songbook'}
-            onClick={() => onViewChange('songbook')}
-            className="shrink-0"
-          />
-
-          {/* Setlists with cascading dropdown */}
-          <div
-            ref={setlistDropdownRef}
-            className="relative shrink-0"
-            onMouseEnter={handleMouseEnterSetlists}
-            onMouseLeave={handleMouseLeaveSetlists}
-          >
-            <ToolbarIconButton
-              icon={ListMusic}
-              label={`Setlists${displaySetlistSongs.length > 0 ? ` (${activeSetlistSongIndex !== undefined ? activeSetlistSongIndex + 1 : 1}/${displaySetlistSongs.length})` : ''}`}
-              isActive={queueMode === 'setlist' || isSetlistDropdownOpen}
-              onClick={() => setIsSetlistDropdownOpen((prev) => !prev)}
-              className={`shrink-0 ${queueMode === 'setlist' ? '!text-[#B58900]' : ''}`}
-            />
-
-            {/* Cascading Dropdown Menu */}
-            {isSetlistDropdownOpen && (
-              <div className="fixed sm:absolute left-2 right-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 top-24 sm:top-full mt-2 w-auto sm:w-80 max-w-[calc(100vw-1rem)] rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl p-2.5 z-50 animate-scale-in text-xs select-none">
-                {/* Active Setlist Header & Quick Actions */}
-                <div className="px-2 py-1.5 border-b border-[#1A4A55]/60 mb-1 flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[10px] font-mono text-[#93A1A1] uppercase tracking-wider block">
-                      Active Setlist
-                    </span>
-                    <span className="font-extrabold text-[#FDF6E3] text-xs truncate block">
-                      {activeSetlistName || currentActiveSetlist?.name || 'Active Setlist'}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-[#B58900] bg-[#B58900]/15 px-1.5 py-0.5 rounded border border-[#B58900]/30 shrink-0">
-                    {displaySetlistSongs.length} SONGS
-                  </span>
-                </div>
-
-                {/* Song List with Direct 1-Click Selection */}
-                <div className="max-h-60 overflow-y-auto py-1 space-y-0.5 px-1">
-                  {displaySetlistSongs && displaySetlistSongs.length > 0 ? (
-                    displaySetlistSongs.map((s, idx) => {
-                      const isCurrent =
-                        queueMode === 'setlist' && activeSetlistSongIndex === idx
-                      return (
-                        <button
-                          key={`${s.title}-${idx}`}
-                          type="button"
-                          onClick={() => {
-                            if (onSelectSetlistSong && currentActiveSetlist) {
-                              onSelectSetlistSong(currentActiveSetlist.id, idx)
-                            }
-                            onViewChange('stage')
-                            setIsSetlistDropdownOpen(false)
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-xl transition-all flex items-center justify-between gap-2 group cursor-pointer ${isCurrent
-                            ? 'bg-[#B58900]/20 text-[#FDF6E3] border border-[#B58900]/40'
-                            : 'hover:bg-[#002B36] text-[#EEE8D5]'
-                            }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className={`w-5 h-5 rounded-lg flex items-center justify-center font-mono text-[10px] font-bold shrink-0 ${isCurrent
-                                ? 'bg-[#B58900] text-[#002B36]'
-                                : 'bg-[#002B36] text-[#93A1A1] group-hover:text-[#2AA198]'
-                                }`}
-                            >
-                              {idx + 1}
-                            </span>
-                            <div className="truncate">
-                              <p
-                                className={`text-xs font-bold truncate leading-tight ${isCurrent
-                                  ? 'text-[#B58900]'
-                                  : 'text-[#FDF6E3] group-hover:text-[#2AA198]'
-                                  }`}
-                              >
-                                {s.title}
-                              </p>
-                              {s.artist && (
-                                <p className="text-[10px] text-[#93A1A1] truncate leading-tight">
-                                  {s.artist}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            {s.key && (
-                              <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-[#002B36] text-[#2AA198] font-bold">
-                                {s.key}
-                              </span>
-                            )}
-                            {isCurrent && (
-                              <Check className="w-3.5 h-3.5 text-[#B58900] shrink-0" />
-                            )}
-                          </div>
-                        </button>
-                      )
-                    })
-                  ) : (
-                    <div className="px-3 py-4 text-center text-xs text-[#93A1A1]">
-                      No songs in active setlist
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer Switcher / Drawer Trigger */}
-                <div className="border-t border-[#1A4A55]/60 pt-1.5 mt-1 px-1.5 flex items-center justify-between gap-1">
-                  {setlists.length > 1 && (
-                    <div className="flex items-center gap-1 overflow-x-auto max-w-[180px] py-0.5">
-                      {setlists.map((sl) => (
-                        <button
-                          key={sl.id}
-                          type="button"
-                          onClick={() => {
-                            if (onSelectSetlist) {
-                              onSelectSetlist(sl.id)
-                            }
-                          }}
-                          className={`text-[10px] px-2 py-0.5 rounded-lg whitespace-nowrap transition-colors cursor-pointer ${String(sl.id) === String(activeSetlistId)
-                            ? 'bg-[#B58900] text-[#002B36] font-bold'
-                            : 'bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3]'
-                            }`}
-                          title={`Switch to setlist: ${sl.name}`}
-                        >
-                          {sl.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {onOpenSetlistDrawer && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsSetlistDropdownOpen(false)
-                        onOpenSetlistDrawer()
-                      }}
-                      className="ml-auto text-[10px] font-bold text-[#2AA198] hover:underline px-2 py-1 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Layers className="w-3 h-3" />
-                      <span>Manage All...</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="w-[1px] h-5 bg-[#1A4A55]/50 mx-0.5 shrink-0" />
-
-          <ToolbarIconButton
-            icon={FileEdit}
-            label="Editor"
-            isActive={activeView === 'editor'}
-            onClick={() => onViewChange('editor')}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            icon={Eye}
-            label="Stage Mode"
+            icon={PlaySquare}
+            label="Stage Preview (Alt+1)"
             isActive={activeView === 'stage'}
             onClick={() => onViewChange('stage')}
             className="shrink-0"
           />
           <ToolbarIconButton
-            icon={Globe}
-            label="Web Sources"
-            onClick={onOpenWebsiteUrlSource}
+            icon={FileEdit}
+            label="Editor (Alt+2)"
+            isActive={activeView === 'editor'}
+            onClick={() => onViewChange('editor')}
             className="shrink-0"
           />
-          <ToolbarIconButton
-            icon={Trash2}
-            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
-            isActive={activeView === 'trash'}
-            onClick={() => onViewChange('trash')}
-            className="shrink-0"
-          />
-
-          <div className="w-[1px] h-5 bg-[#1A4A55]/50 mx-0.5 shrink-0" />
-
           <ToolbarIconButton
             icon={Radio}
-            label="Band Sync"
+            label="Band Sync (Alt+3)"
             onClick={onOpenStageTools}
             className="shrink-0"
           />
           <ToolbarIconButton
+            icon={Cast}
+            label="Cast (Alt+4)"
+            isActive={isCastActive}
+            onClick={onOpenCast || (() => {})}
+            className={`shrink-0 ${isCastActive ? '!text-[#2AA198]' : ''}`}
+          />
+          <ToolbarIconButton
             icon={Palette}
-            label="Theme"
+            label="Theme (Alt+5)"
             onClick={onToggleTheme}
             className="shrink-0"
           />
           <ToolbarIconButton
+            icon={Trash2}
+            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+            isActive={activeView === 'trash'}
+            onClick={() => onViewChange('trash')}
+            className="shrink-0"
+          />
+          <ToolbarIconButton
+            buttonRef={moreButtonRef}
             icon={MoreVertical}
             label="More"
-            onClick={() => setShowOverflowMenu(!showOverflowMenu)}
+            isActive={showOverflowMenu}
+            onClick={() => setShowOverflowMenu((prev) => !prev)}
             className="shrink-0"
           />
         </div>
@@ -1167,7 +1010,12 @@ export const Header: React.FC<HeaderProps> = ({
       {showOverflowMenu && (
         <div
           ref={overflowMenuRef}
-          className="fixed right-2 sm:right-4 top-24 sm:top-28 w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl py-2 z-50 animate-scale-in"
+          style={{
+            position: 'fixed',
+            top: `${moreMenuCoords.top}px`,
+            left: `${moreMenuCoords.left}px`,
+          }}
+          className="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl py-2 z-50 animate-scale-in"
         >
           {/* 0. Install App (PWA) */}
           {!isAppInstalled && (
@@ -1198,6 +1046,21 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Settings className="w-4 h-4 text-[#2AA198]" />
             <span className="font-semibold">Stage Settings</span>
+          </button>
+
+          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
+
+          {/* 2. Web Sources */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOverflowMenu(false)
+              onOpenWebsiteUrlSource()
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Globe className="w-4 h-4 text-[#2AA198]" />
+            <span className="font-semibold">Web Sources</span>
           </button>
 
           <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
