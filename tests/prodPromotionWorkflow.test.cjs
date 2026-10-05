@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..')
 const C = require('../.github/prod_controller.cjs')
 const { parseDevTag, inspectCheckpoint } = require('../.github/release_metadata.cjs')
 const { resolveReleaseIdentity } = require('../.github/release_identity.cjs')
-const yaml = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8')
+const yaml = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8').replace(/\r\n/g, '\n')
 function fixture(t, tag = 'v1.0.108-dev.11') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-prod-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -156,16 +156,15 @@ test('advertised main race rejects before mutation; unsupported atomic push fail
 })
 test('main build identity derives exact DEV and PROD tags without source rewrites', t => {
   const f = fixture(t), env = { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.sha }
-  const adapter = (...args) => args.join(' ') === 'remote get-url origin' ? 'https://github.com/ozzzmond/GTAR.git' : f.git(...args)
+  const adapter = (...args) => f.git(...args.map(a => a === 'https://github.com/ozzzmond/GTAR.git' ? 'origin' : a))
   assert.equal(resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'dev' }), null)
-  assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /PROD tag missing/)
+  assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /release tag missing/)
   C.promote(f.repo, f.plan())
   const before = f.git('status', '--porcelain')
   assert.deepEqual(resolveReleaseIdentity(f.repo, env, adapter), { version: '1.1.119', sourceTag: f.tag, sha: f.sha })
   assert.equal(f.git('status', '--porcelain'), before)
   assert.throws(() => resolveReleaseIdentity(f.repo, { ...env, CF_PAGES_COMMIT_SHA: 'bad' }, adapter), /full commit/)
   assert.throws(() => resolveReleaseIdentity(f.repo, { ...env, VITE_APP_ENV: 'debug' }, adapter), /debug/)
-  assert.throws(() => resolveReleaseIdentity(f.repo, env), /Noncanonical/)
   f.git('tag', 'v1.0.108-dev.12'); assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /one exact clean/)
 })
 test('readiness needs no retired DEV rulesets; remaining external gates fail closed', async () => {

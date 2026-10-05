@@ -70,6 +70,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -80,6 +81,8 @@ jobs:
       - run: npm test
       - run: npm run lint:sync
       - run: npm run build
+        env:
+          GTAR_VALIDATE_SHA: ${{ needs.plan.outputs.sha }}
   promote:
     # GitHub pauses this job for a separate native environment approval after validation.
     name: Authorize ${{ needs.plan.outputs.prod_tag }} from ${{ needs.plan.outputs.sha }}
