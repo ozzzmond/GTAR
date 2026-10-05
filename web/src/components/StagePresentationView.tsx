@@ -123,7 +123,7 @@ export const StagePresentationView: React.FC = () => {
             effectiveKey: typeof inner.effectiveKey === 'string' ? inner.effectiveKey : (song.key || 'C'),
             transposeOffset: typeof inner.transposeOffset === 'number' ? inner.transposeOffset : 0,
             fontSizePx: typeof inner.fontSizePx === 'number' ? inner.fontSizePx : 28,
-            fontStyle: inner.fontStyle === 'sans' ? 'sans' : 'mono',
+            fontStyle: inner.fontStyle === 'serif' ? 'serif' : inner.fontStyle === 'sans' ? 'sans' : 'mono',
             isTwoColumn: Boolean(inner.isTwoColumn),
             themeMode: typeof inner.themeMode === 'string' ? (inner.themeMode as StageCastState['themeMode']) : undefined,
             customThemeColors: inner.customThemeColors as StageCastState['customThemeColors'],
@@ -259,7 +259,7 @@ export const StagePresentationView: React.FC = () => {
       }}
     >
       {/* Distraction-Free Teleprompter Layout (Zero buttons, Zero controls) */}
-      <div className={`mx-auto ${isTwoColumn ? 'max-w-[96vw]' : 'max-w-5xl'}`}>
+      <div className={"w-full"}>
         {/* Subtle Song Metadata Header */}
         <div className="flex items-center justify-between gap-4 pb-4 border-b border-[#1A4A55] mb-6 flex-wrap opacity-80">
           <div className="min-w-0">
@@ -281,13 +281,8 @@ export const StagePresentationView: React.FC = () => {
                 KEY: {effectiveKey}
               </span>
             )}
-            {song.capo &&
-              song.capo.toLowerCase() !== 'no capo' &&
-              song.capo.toLowerCase() !== 'none' && (
-                <span className="px-2.5 py-1 rounded-md bg-[#073642] border border-[#1A4A55] text-[#2AA198]">
-                  {song.capo.toUpperCase()}
-                </span>
-              )}
+            {song.bpm && <span className="text-[#93A1A1]">{song.bpm.replace(/\s*bpm$/i, '')} BPM</span>}
+            {song.time && <span className="text-[#93A1A1]">{song.time}</span>}
           </div>
         </div>
 

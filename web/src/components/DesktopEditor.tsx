@@ -1,15 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import {
   Music,
-  Hash,
   Activity,
   Type,
   User,
   Tag,
   Save,
   FileEdit,
-  Library,
-  Bookmark,
   ClipboardPaste,
   Copy,
   Trash2,
@@ -20,12 +17,14 @@ import {
   Clock,
   SquareCode,
   Check,
+  MoreHorizontal,
 } from 'lucide-react'
+import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
-import { syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
+import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
 import type { ActiveSongState } from '../types/gtar'
 
 interface DesktopEditorProps {
@@ -49,13 +48,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   navigationGuardRef,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [insertAnchor, setInsertAnchor] = useState<HTMLButtonElement | null>(null)
+  const [insertOpen, setInsertOpen] = useState(false)
 
   // Local editor state initialized from active song
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
   const [localKey, setLocalKey] = useState(canonicalSongKey(song.key || ''))
   const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey ? canonicalSongKey(song.originalKey) : '')
-  const [localCapo, setLocalCapo] = useState(song.capo || '')
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
   const [localYear, setLocalYear] = useState(song.year || '')
@@ -88,7 +88,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     artist: localArtist,
     key: localKey,
     originalKey: localOriginalKey,
-    capo: localCapo,
+    capo: song.capo || '',
     bpm: localBpm,
     time: localTime,
     year: localYear,
@@ -98,8 +98,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
   const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
   const autosave = (updated: Partial<ActiveSongState>) => {
+    const canonical: CanonicalMetadata = {}
+    for (const field of ['title', 'artist', 'key', 'bpm', 'time', 'year'] as const) {
+      if (updated[field] !== undefined) canonical[field] = updated[field]
+    }
+    const rawContent = syncCanonicalDirectives(updated.rawContent ?? localRawContent, canonical)
+    const next = { ...updated, rawContent }
+    setLocalRawContent(rawContent)
     try {
-      if (onUpdateSong(updated) === true) setPersisted(previous => ({ ...previous, ...updated }))
+      if (onUpdateSong(next) === true) setPersisted(previous => ({ ...previous, ...next }))
     } catch { showToast('Changes are not saved. Retry saving before leaving.') }
   }
   const requestNavigation = (next: () => void) => {
@@ -124,7 +131,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalArtist(song.artist || '')
     setLocalKey(canonicalSongKey(song.key || ''))
     setLocalOriginalKey(song.originalKey ? canonicalSongKey(song.originalKey) : '')
-    setLocalCapo(song.capo || '')
     setLocalBpm(song.bpm || '')
     setLocalTime(song.time || '')
     setLocalYear(song.year || '')
@@ -152,11 +158,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     // Synchronize canonical ChordPro directives in rawContent
     const canonicalMetadata: CanonicalMetadata = {
       title: localTitle.trim() || 'Untitled Song',
-      artist: localArtist.trim() || undefined,
+      artist: localArtist.trim(),
       key: effectiveKey,
-      tempo: localBpm.trim() || undefined,
-      time: localTime.trim() || undefined,
-      year: localYear.trim() || undefined,
+      tempo: localBpm.trim(),
+      time: localTime.trim(),
+      year: localYear.trim(),
     }
     const syncedContent = syncCanonicalDirectives(localRawContent, canonicalMetadata)
     const standardized = standardizeChordProBrackets(syncedContent)
@@ -167,7 +173,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       artist: localArtist.trim(),
       key: effectiveKey,
       ...(localOriginalKey.trim() ? { originalKey: canonicalSongKey(localOriginalKey.trim()) } : { originalKey: undefined }),
-      capo: localCapo.trim(),
       bpm: localBpm.trim(),
       time: localTime.trim() || undefined,
       ...(localYear.trim() ? { year: localYear.trim() } : { year: undefined }),
@@ -184,7 +189,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalArtist(updatedSong.artist || '')
       setLocalKey(effectiveKey)
       setLocalOriginalKey(updatedSong.originalKey || '')
-      setLocalCapo(updatedSong.capo || '')
       setLocalBpm(updatedSong.bpm || '')
       setLocalTime(updatedSong.time || '')
       setLocalYear(updatedSong.year || '')
@@ -221,7 +225,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const cleaned = standardizeChordProBrackets(newText)
     if (remember) history.current.record({ text: localRawContent, ...selection.current }, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
     setLocalRawContent(cleaned)
-    autosave({ rawContent: cleaned })
+    const metadata = parseChordProDirectives(cleaned).metadata
+    const updated: Partial<ActiveSongState> = { rawContent: cleaned }
+    if (metadata.artist !== undefined || parseChordProDirectives(localRawContent).metadata.artist !== undefined) {
+      const artist = metadata.artist ?? ''
+      setLocalArtist(artist)
+      updated.artist = artist
+    }
+    if (metadata.title !== undefined) { setLocalTitle(metadata.title); updated.title = metadata.title }
+    autosave(updated)
   }
 
   // Insert or wrap text in [brackets] (QoL action)
@@ -251,124 +263,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         textarea.focus()
         textarea.setSelectionRange(start + 1, start + 1)
       }, 10)
-    }
-  }
-
-  // Helper 1: Mark Selection / Word as Chord [Chords]
-  const markSelectionAsChord = () => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const text = localRawContent
-
-    if (start !== end) {
-      // User has selected text
-      const selected = text.substring(start, end).trim()
-      const wrapped =
-        selected.startsWith('[') && selected.endsWith(']') ? selected : `[${selected}]`
-      const newText = text.substring(0, start) + wrapped + text.substring(end)
-      handleRawContentChange(newText)
-
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start, start + wrapped.length)
-      }, 10)
-    } else {
-      // Cursor is at a single position: find word boundary or insert []
-      if (text.length === 0) {
-        handleRawContentChange('[]')
-        setTimeout(() => {
-          textarea.focus()
-          textarea.setSelectionRange(1, 1)
-        }, 10)
-        return
-      }
-
-      let wStart = start
-      while (wStart > 0 && !/\s/.test(text[wStart - 1]) && !'[]\n'.includes(text[wStart - 1])) {
-        wStart--
-      }
-      let wEnd = start
-      while (wEnd < text.length && !/\s/.test(text[wEnd]) && !'[]\n'.includes(text[wEnd])) {
-        wEnd++
-      }
-
-      if (wStart < wEnd) {
-        const word = text.substring(wStart, wEnd)
-        const wrapped = word.startsWith('[') && word.endsWith(']') ? word : `[${word}]`
-        const newText = text.substring(0, wStart) + wrapped + text.substring(wEnd)
-        handleRawContentChange(newText)
-
-        setTimeout(() => {
-          textarea.focus()
-          textarea.setSelectionRange(wStart + wrapped.length, wStart + wrapped.length)
-        }, 10)
-      } else {
-        const newText = text.substring(0, start) + '[]' + text.substring(start)
-        handleRawContentChange(newText)
-
-        setTimeout(() => {
-          textarea.focus()
-          textarea.setSelectionRange(start + 1, start + 1)
-        }, 10)
-      }
-    }
-  }
-
-  // Helper 2: Mark Selection / Line as Section Header [Section]
-  const markSelectionAsSection = () => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const text = localRawContent
-
-    if (start !== end) {
-      const selected = text.substring(start, end).trim()
-      const wrapped =
-        selected.startsWith('[') && selected.endsWith(']') ? selected : `[${selected}]`
-      const newText = text.substring(0, start) + wrapped + text.substring(end)
-      handleRawContentChange(newText)
-
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start, start + wrapped.length)
-      }, 10)
-    } else {
-      const lineStart =
-        text.lastIndexOf('\n', Math.max(0, start - 1)) === -1
-          ? 0
-          : text.lastIndexOf('\n', Math.max(0, start - 1)) + 1
-      const lineEnd = text.indexOf('\n', start) === -1 ? text.length : text.indexOf('\n', start)
-      const lineContent = text.substring(lineStart, lineEnd).trim()
-
-      if (lineContent.length > 0 && !lineContent.startsWith('[') && !lineContent.endsWith(']')) {
-        const wrapped = `[${lineContent}]`
-        const newText = text.substring(0, lineStart) + wrapped + text.substring(lineEnd)
-        handleRawContentChange(newText)
-
-        setTimeout(() => {
-          textarea.focus()
-          textarea.setSelectionRange(lineStart, lineStart + wrapped.length)
-        }, 10)
-      } else {
-        const placeholder = '[Section]'
-        const prefix = start > 0 && !text.substring(0, start).endsWith('\n') ? '\n' : ''
-        const suffix = !text.substring(start).startsWith('\n') ? '\n' : ''
-        const inserted = `${prefix}${placeholder}${suffix}`
-        const newText = text.substring(0, start) + inserted + text.substring(start)
-        handleRawContentChange(newText)
-
-        setTimeout(() => {
-          textarea.focus()
-          const selStart = start + prefix.length + 1
-          const selEnd = selStart + 7
-          textarea.setSelectionRange(selStart, selEnd)
-        }, 10)
-      }
     }
   }
 
@@ -455,6 +349,40 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     }, 10)
   }
 
+  const songInputs = (
+    <div className="border-b border-[#1A4A55] bg-[#073642]/80 px-3 py-2 sm:px-4 sm:py-2.5 flex flex-row md:flex-col items-stretch gap-2 text-xs shrink-0">
+      {/* Song Title */}
+      <div className="flex-1 min-w-0 flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+        <Type className="w-3.5 h-3.5 text-[#2AA198] shrink-0" />
+        <input
+          type="text"
+          value={localTitle}
+          onChange={(e) => {
+            setLocalTitle(e.target.value)
+            autosave({ title: e.target.value })
+          }}
+          placeholder="Song Title *"
+          className="w-full bg-transparent text-[#FDF6E3] font-semibold focus:outline-none placeholder-[#93A1A1]/60 text-xs sm:text-sm"
+        />
+      </div>
+
+      {/* Artist */}
+      <div className="flex-1 min-w-0 flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+        <User className="w-3.5 h-3.5 text-[#93A1A1] shrink-0" />
+        <input
+          type="text"
+          value={localArtist}
+          onChange={(e) => {
+            setLocalArtist(e.target.value)
+            autosave({ artist: e.target.value })
+          }}
+          placeholder="Artist / Band"
+          className="w-full bg-transparent text-[#EEE8D5] focus:outline-none placeholder-[#93A1A1]/60 text-xs"
+        />
+      </div>
+    </div>
+  )
+
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-[#002B36]">
       {pendingNavigation && (
@@ -470,7 +398,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 setLocalOriginalKey(persisted.originalKey)
                 setLocalYear(persisted.year)
                 setLocalTime(persisted.time)
-                setLocalCapo(persisted.capo)
                 setLocalBpm(persisted.bpm)
                 setLocalTags(persisted.tags)
                 setLocalRawContent(persisted.rawContent)
@@ -484,7 +411,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         </div>
       )}
 
-      {/* 1. TOP BAR: Compact Header & Save Action */}
+      {/* Editor navigation and save status */}
       <div className="border-b border-[#1A4A55] bg-[#073642] px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onClose && (
@@ -522,78 +449,19 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Compact Save Action Button */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleSave}
-            className="p-1.5 sm:p-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-black shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
-            title="Save changes"
-            aria-label="Save changes"
-          >
-            <Save className="w-4 h-4 text-black stroke-[2.5]" />
-          </button>
-        </div>
       </div>
 
-      {/* 2. SUB-HEADER: Title, Artist & Collapsible Details Modal */}
-      <div className="border-b border-[#1A4A55] bg-[#073642]/80 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 text-xs shrink-0">
-        {/* Song Title */}
-        <div className="flex-[1.8] min-w-[130px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-          <Type className="w-3.5 h-3.5 text-[#2AA198] shrink-0" />
-          <input
-            type="text"
-            value={localTitle}
-            onChange={(e) => {
-              setLocalTitle(e.target.value)
-              autosave({ title: e.target.value })
-            }}
-            placeholder="Song Title *"
-            className="w-full bg-transparent text-[#FDF6E3] font-semibold focus:outline-none placeholder-[#93A1A1]/60 text-xs sm:text-sm"
-          />
-        </div>
-
-        {/* Artist */}
-        <div className="flex-[1.4] min-w-[110px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-          <User className="w-3.5 h-3.5 text-[#93A1A1] shrink-0" />
-          <input
-            type="text"
-            value={localArtist}
-            onChange={(e) => {
-              setLocalArtist(e.target.value)
-              autosave({ artist: e.target.value })
-            }}
-            placeholder="Artist / Band"
-            className="w-full bg-transparent text-[#EEE8D5] focus:outline-none placeholder-[#93A1A1]/60 text-xs"
-          />
-        </div>
-
-        {/* Compact Metadata / Settings Trigger */}
-        <button
-          type="button"
-          onClick={() => setIsMetadataModalOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] text-[#93A1A1] hover:text-[#FDF6E3] font-mono text-xs transition-colors cursor-pointer shrink-0"
-          title="Song Details & Metadata (Original Key, Tempo, Time, Year, Tags)"
-          aria-label="Song Details & Metadata"
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-[#2AA198]" />
-          <span className="hidden sm:inline">Details</span>
-          {(displayKey || localCapo || localBpm || localTime) ? (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 max-w-[140px] truncate">
-              {[displayKey && `Key: ${displayKey}`, localCapo && `Capo: ${localCapo}`, localBpm && `${localBpm} BPM`, localTime && `${localTime}`].filter(Boolean).join(' • ')}
-            </span>
-          ) : null}
-        </button>
-      </div>
+      <div className="md:hidden">{songInputs}</div>
 
       {/* 3. MAIN SPLIT PANE: Raw ChordPro Editor (Left) & Live Stage Preview (Right) */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* LEFT PANE: Raw ChordPro Editor */}
         <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-[#1A4A55] bg-[#002B36] h-1/2 md:h-full overflow-hidden">
+          <div className="hidden md:block">{songInputs}</div>
+
           {/* Action Editing Toolbar */}
           <div className="px-3 py-2 bg-[#073642] border-b border-[#1A4A55] flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
-            <div className="flex items-center gap-1 bg-[#002B36] p-1 rounded-lg border border-[#1A4A55]">
+            <div className="flex flex-wrap items-center gap-1 bg-[#002B36] p-1 rounded-lg border border-[#1A4A55]">
               {/* [] Bracket Wrap/Insert Action */}
               <button
                 type="button"
@@ -606,25 +474,30 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <span>[]</span>
               </button>
 
-              <button
-                type="button"
-                onClick={markSelectionAsChord}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-amber-500/20 text-[#B58900] hover:text-amber-300 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                title="Wrap selection or word in [Chord] brackets"
-              >
-                <Library className="w-3 h-3" />
-                <span>[Chords]</span>
+              <button type="button" aria-label="Insert section" title="Insert section"
+                aria-expanded={insertOpen} aria-haspopup="menu" onClick={event => { setInsertAnchor(event.currentTarget); setInsertOpen(open => !open) }}
+                className="p-1.5 rounded bg-[#073642] text-[#8B5CF6] cursor-pointer">
+                <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
-
-              <button
-                type="button"
-                onClick={markSelectionAsSection}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-[#8B5CF6]/20 text-[#8B5CF6] hover:text-purple-300 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                title="Wrap selection or line in [Section] header"
-              >
-                <Bookmark className="w-3 h-3" />
-                <span>[Section]</span>
-              </button>
+              <DropdownPortal anchorEl={insertAnchor} open={insertOpen} onClose={() => setInsertOpen(false)} align="left">
+                <div role="menu" aria-label="Insert section" className="min-w-32 rounded-lg border border-[#1A4A55] bg-[#073642] p-1 shadow-xl"
+                  onKeyDown={event => {
+                    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+                    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+                    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+                      : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+                    items[next]?.focus()
+                  }}>
+                  {QUICK_SECTIONS.map((tag, index) => (
+                    <button key={tag} role="menuitem" autoFocus={index === 0} type="button" className="block w-full text-left px-3 py-2 rounded hover:bg-[#002B36] text-[#FDF6E3]"
+                      onClick={() => { insertTextAtCursor(tag); setInsertOpen(false) }}>
+                      {tag.slice(1, -1)}
+                    </button>
+                  ))}
+                </div>
+              </DropdownPortal>
 
               <div className="w-[1px] h-4 bg-[#1A4A55] mx-0.5" />
 
@@ -668,22 +541,24 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
-            </div>
-          </div>
-
-          {/* Quick Section Snippets Bar */}
-          <div className="px-3 py-1.5 bg-[#073642]/50 border-b border-[#1A4A55]/60 flex items-center gap-1.5 overflow-x-auto text-xs shrink-0 select-none">
-            <span className="text-[10px] font-mono text-[#93A1A1] mr-1 uppercase">Insert:</span>
-            {QUICK_SECTIONS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => insertTextAtCursor(tag)}
-                className="px-2 py-0.5 rounded bg-[#002B36] border border-[#1A4A55] text-[#FDF6E3] hover:border-[#8B5CF6] hover:text-[#8B5CF6] font-mono text-[11px] transition-colors cursor-pointer"
-              >
-                {tag}
+              <button type="button" onClick={() => setIsMetadataModalOpen(true)}
+                title="Song Details & Metadata" aria-label="Song Details & Metadata"
+                className="p-1.5 rounded bg-[#073642] text-[#2AA198] hover:bg-[#2AA198]/20 cursor-pointer">
+                <SlidersHorizontal className="w-3.5 h-3.5" />
               </button>
-            ))}
+              {/* Compact Save Action Button */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="p-1.5 sm:p-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-black shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
+                  title="Save changes"
+                  aria-label="Save changes"
+                >
+                  <Save className="w-4 h-4 text-black stroke-[2.5]" />
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Textarea: Standard ChordPro Notation */}
@@ -723,7 +598,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
         {/* RIGHT PANE: Live Real-time Stage Preview Sync */}
         <div className="flex-1 flex flex-col bg-[#002B36] h-1/2 md:h-full overflow-hidden">
-          <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[#002B36] select-text">
+          <div className="flex-1 p-4 sm:p-6 md:pt-2.5 overflow-y-auto bg-[#002B36] select-text">
             <div className="border-b border-[#1A4A55] pb-3 mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-[#FDF6E3]">
@@ -863,25 +738,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 </div>
               </div>
 
-              {/* Capo (legacy compatibility display/edit) */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Hash className="w-3 h-3 text-[#93A1A1]" />
-                  <span>Capo</span>
-                </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#93A1A1] transition-colors">
-                  <input
-                    type="text"
-                    value={localCapo}
-                    onChange={(e) => {
-                      setLocalCapo(e.target.value)
-                      autosave({ capo: e.target.value })
-                    }}
-                    placeholder="e.g. 2"
-                    className="w-full bg-transparent text-[#EEE8D5] font-mono focus:outline-none text-center text-xs"
-                  />
-                </div>
-              </div>
+
             </div>
 
             {/* Tags Input */}
