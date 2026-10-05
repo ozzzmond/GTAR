@@ -6,13 +6,13 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION CHECK
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.2a', () => {
+test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.2b', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.2a';"), 'gtar.ts dev version must be 1.0.123-dev.2a')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.2b';"), 'gtar.ts dev version must be 1.0.123-dev.2b')
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.2a', 'package.json version must be 1.0.123-dev.2a')
+  assert.equal(pkgJson.version, '1.0.123-dev.2b', 'package.json version must be 1.0.123-dev.2b')
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.2a'), 'authCore.ts must reference v1.0.123-dev.2a')
+  assert.ok(authCore.includes('v1.0.123-dev.2b'), 'authCore.ts must reference v1.0.123-dev.2b')
 })
 
 // 2. RECOVERY BANNER DISMISS QOL

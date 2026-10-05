@@ -4,7 +4,7 @@ import {
   Music,
   RotateCcw
 } from 'lucide-react'
-import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
+import { transposeKey, formatTransposeOffset, formatEnharmonicKey } from '../utils/chordTransposer'
 
 interface KeyPickerModalProps {
   isOpen: boolean
@@ -73,7 +73,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-black text-[#B58900] font-mono">
-                  {effectiveTransposedKey}
+                  {formatEnharmonicKey(effectiveTransposedKey)}
                 </span>
                 {currentOffset !== 0 && (
                   <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-[#B58900]/20 text-[#B58900] border border-[#B58900]/40">
@@ -100,7 +100,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
         {/* Semitone Shift Selector Grid (-6 to +6) */}
         <div className="p-5 overflow-y-auto flex-1">
           <label className="block text-[#93A1A1] font-mono text-[11px] uppercase mb-3">
-            Select Target Key or Semitone Shift:
+            Select Transpose Key:
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {offsets.map((offset) => {
@@ -133,7 +133,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
                       {offsetLabel}
                     </span>
                     <div>
-                      <span className="font-bold text-sm font-mono text-[#FDF6E3]">{targetKey}</span>
+                      <span className="font-bold text-sm font-mono text-[#FDF6E3]">{formatEnharmonicKey(targetKey)}</span>
                       {offset === 0 && (
                         <span className="ml-1.5 text-[10px] text-[#2AA198] font-mono uppercase">
                           (Original)

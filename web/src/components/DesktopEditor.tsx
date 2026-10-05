@@ -98,13 +98,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
   const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
   const autosave = (updated: Partial<ActiveSongState>) => {
-    const canonical: CanonicalMetadata = {}
-    for (const field of ['title', 'artist', 'key', 'bpm', 'time', 'year'] as const) {
-      if (updated[field] !== undefined) canonical[field] = updated[field]
+    const next = { ...updated }
+    if (updated.rawContent === undefined) {
+      const canonical: CanonicalMetadata = {}
+      for (const field of ['title', 'artist', 'key', 'bpm', 'time', 'year'] as const) {
+        if (updated[field] !== undefined) canonical[field] = updated[field]
+      }
+      if (Object.keys(canonical).length > 0) {
+        const rawContent = syncCanonicalDirectives(localRawContent, canonical)
+        next.rawContent = rawContent
+        setLocalRawContent(rawContent)
+      }
     }
-    const rawContent = syncCanonicalDirectives(updated.rawContent ?? localRawContent, canonical)
-    const next = { ...updated, rawContent }
-    setLocalRawContent(rawContent)
     try {
       if (onUpdateSong(next) === true) setPersisted(previous => ({ ...previous, ...next }))
     } catch { showToast('Changes are not saved. Retry saving before leaving.') }
@@ -127,13 +132,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Reset local state when active song changes
   useEffect(() => {
-    setLocalTitle(song.title || '')
-    setLocalArtist(song.artist || '')
-    setLocalKey(canonicalSongKey(song.key || ''))
+    const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
+    setLocalTitle(song.title || parsedMeta.title || '')
+    setLocalArtist(song.artist || parsedMeta.artist || '')
+    const initKey = canonicalSongKey(song.key || parsedMeta.key || '')
+    setLocalKey(initKey)
     setLocalOriginalKey(song.originalKey ? canonicalSongKey(song.originalKey) : '')
-    setLocalBpm(song.bpm || '')
-    setLocalTime(song.time || '')
-    setLocalYear(song.year || '')
+    setLocalBpm(song.bpm || (parsedMeta.tempo ? String(parsedMeta.tempo) : ''))
+    setLocalTime(song.time || parsedMeta.time || '')
+    setLocalYear(song.year || (parsedMeta.year ? String(parsedMeta.year) : ''))
     setLocalTags(song.tags || '')
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
@@ -152,30 +159,38 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Handle saving changes
   const handleSave = () => {
-    const effectiveKey = normalizeMusicalKey(localKey.trim() || detectSongKey(localRawContent))
+    const currentMeta = parseChordProDirectives(localRawContent).metadata
+    const resolvedTitle = localTitle.trim() || currentMeta.title || 'Untitled Song'
+    const resolvedArtist = localArtist.trim() || currentMeta.artist || ''
+    const rawKey = localKey.trim() || currentMeta.key || detectSongKey(localRawContent)
+    const effectiveKey = normalizeMusicalKey(rawKey)
     if (effectiveKey === null) { showToast('Enter a valid key, such as G, F#m or Bb.'); return false }
+
+    const resolvedBpm = localBpm.trim() || (currentMeta.tempo ? String(currentMeta.tempo) : '')
+    const resolvedTime = localTime.trim() || currentMeta.time || ''
+    const resolvedYear = localYear.trim() || (currentMeta.year ? String(currentMeta.year) : '')
 
     // Synchronize canonical ChordPro directives in rawContent
     const canonicalMetadata: CanonicalMetadata = {
-      title: localTitle.trim() || 'Untitled Song',
-      artist: localArtist.trim(),
+      title: resolvedTitle,
+      artist: resolvedArtist,
       key: effectiveKey,
-      tempo: localBpm.trim(),
-      time: localTime.trim(),
-      year: localYear.trim(),
+      tempo: resolvedBpm || undefined,
+      time: resolvedTime || undefined,
+      year: resolvedYear || undefined,
     }
     const syncedContent = syncCanonicalDirectives(localRawContent, canonicalMetadata)
     const standardized = standardizeChordProBrackets(syncedContent)
 
     const updatedSong: ActiveSongState = {
       ...song,
-      title: localTitle.trim() || 'Untitled Song',
-      artist: localArtist.trim(),
+      title: resolvedTitle,
+      artist: resolvedArtist,
       key: effectiveKey,
       ...(localOriginalKey.trim() ? { originalKey: canonicalSongKey(localOriginalKey.trim()) } : { originalKey: undefined }),
-      bpm: localBpm.trim(),
-      time: localTime.trim() || undefined,
-      ...(localYear.trim() ? { year: localYear.trim() } : { year: undefined }),
+      bpm: resolvedBpm,
+      time: resolvedTime || undefined,
+      ...(resolvedYear ? { year: resolvedYear } : { year: undefined }),
       tags: localTags.trim(),
       rawContent: standardized,
       format: 'CHORD_PRO',
@@ -199,6 +214,22 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       return true
     } catch { showToast('Changes are not saved. Retry saving before leaving.'); return false }
   }
+
+  const saveRef = useRef(handleSave)
+  useEffect(() => {
+    saveRef.current = handleSave
+  })
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        saveRef.current()
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [])
 
   // Toggle quick genre tag chip
   const handleToggleTag = (tag: string) => {
@@ -232,7 +263,29 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalArtist(artist)
       updated.artist = artist
     }
-    if (metadata.title !== undefined) { setLocalTitle(metadata.title); updated.title = metadata.title }
+    if (metadata.title !== undefined) {
+      setLocalTitle(metadata.title)
+      updated.title = metadata.title
+    }
+    if (metadata.key !== undefined) {
+      const normKey = canonicalSongKey(metadata.key)
+      setLocalKey(normKey)
+      updated.key = normKey
+    }
+    if (metadata.tempo !== undefined) {
+      const t = String(metadata.tempo)
+      setLocalBpm(t)
+      updated.bpm = t
+    }
+    if (metadata.time !== undefined) {
+      setLocalTime(metadata.time)
+      updated.time = metadata.time
+    }
+    if (metadata.year !== undefined) {
+      const y = String(metadata.year)
+      setLocalYear(y)
+      updated.year = y
+    }
     autosave(updated)
   }
 
@@ -576,7 +629,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 const current: TextEdit = { text: localRawContent, start: textarea.selectionStart, end: textarea.selectionEnd }
                 selection.current = { start: current.start, end: current.end }
                 let next: TextEdit | undefined
-                if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
+                if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+                  e.preventDefault()
+                  handleSave()
+                  return
+                } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
                   e.preventDefault()
                   next = e.key.toLowerCase() === 'y' || e.shiftKey ? history.current.redo(current) : history.current.undo(current)
                   if (next) handleRawContentChange(next.text, false)

@@ -26,8 +26,8 @@ const {
 const { transposeChordToken, transposeKey } = require('../src/utils/chordTransposer.ts')
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.2a', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.2a')
+test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.2b', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.2b')
 })
 
 test('TEST_REQUIREMENTS: basic major, minor, 7th, maj7, add, sus, slash, chromatic, and altered supported chords in Key C', () => {
@@ -347,7 +347,7 @@ F   C   G/B   Am   F   C   Gsus4   G`
 
     // 1. Capture numbers output before key change (offset = 0)
     const baselineParsed = parseGtarSong(song.raw, 0)
-    const baselineLine = baselineParsed.lines.find((l) => l.type === 'CHORD_ROW')
+    const baselineLine = baselineParsed.lines.find((l) => l.type === 'CHORD_ROW' || l.type === 'CHORD_PRO')
     assert.ok(baselineLine, `Song ${song.title} must have at least one chord line`)
     const baselineNumbers = convertChordLineToNashville(baselineLine.raw, baseKey)
 
@@ -362,7 +362,7 @@ F   C   G/B   Am   F   C   Gsus4   G`
 
       // Render parsed chords at offset
       const steppedParsed = parseGtarSong(song.raw, offset)
-      const steppedLine = steppedParsed.lines.find((l) => l.type === 'CHORD_ROW')
+      const steppedLine = steppedParsed.lines.find((l) => l.type === 'CHORD_ROW' || l.type === 'CHORD_PRO')
       assert.ok(steppedLine)
 
       // Convert rendered chords to numbers relative to performance key
