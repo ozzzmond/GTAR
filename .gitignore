@@ -27,6 +27,6 @@ web/.env.local
 .npm-cache/
 lint-results.json
 
-# Offline test evidence, task receipts, and diagnostic dumps
-/outputs/*
-!/outputs/.gitkeep
+# Local transient residue and diagnostic dumps
+outputs/
+web/outputs/
