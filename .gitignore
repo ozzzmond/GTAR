@@ -28,5 +28,5 @@ web/.env.local
 lint-results.json
 
 # Local transient residue and diagnostic dumps
-outputs/
-web/outputs/
+/outputs/
+/web/outputs/

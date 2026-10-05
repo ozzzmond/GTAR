@@ -38,8 +38,8 @@
 - Audit-fix directives (findings/bugs to fix, offline/disposable only,
   zero live commits/pushes/deploys) → gtar_standing_protocol_v1.md.
 - Manual git updates, version bumps, tagging, and production deployment →
-  GTAR_DEPLOYMENT_PROTOCOL.md. This is the ONLY context where live git
-  commit/push/tag/deploy is permitted, and only within the guardrails that
-  file defines — confirm with the user before any push, tag, or deploy.
+  governed by RELEASE_WORKFLOW_README.md and .github/workflows/release.yml.
+  This path is fail-closed; live git commit/push/tag/deploy is permitted
+  only with explicit human authorization before any push, tag, or deploy.
 - If a task doesn't clearly say which one it is, ask before proceeding —
-  do not default to the deployment protocol's permissions.
+  do not default to release/deployment permissions.

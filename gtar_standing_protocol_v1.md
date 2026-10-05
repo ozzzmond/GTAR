@@ -75,36 +75,43 @@ Policy & Storage Invariants:
 
 Completed directives produce compact final chat reports adhering to the Caveman_Micro+Perspective dense key-value schema (proven facts only, dense key-value pairs, zero narration/decorative fluff).
 
-The final chat report MUST contain, as applicable:
-- task/directive identifier
-- completion status: PASS / HOLD / BLOCKED
-- actions performed / changes
-- verification results (compact metrics on pass, diagnostics on fail)
-- unresolved items or deviations
-- operator handoff / recommended next action
+The final chat report contains, as applicable:
+- task/directive identifier (`TASK`)
+- completion status: PASS / HOLD / FAIL / BLOCKED (`STATUS`)
+- actions performed / changes (`CHANGE`, `FILES`)
+- verification results (`TESTS`, `PROOF`, `METRICS`)
+- unresolved items or deviations (`BLOCKERS`)
+- operator handoff / recommended next action (`READY`, `PERSPECTIVE`, `NEXT`)
 
 Chat responses MUST remain compact:
 - completion status
-- PASS / HOLD / BLOCKED when applicable
+- PASS / HOLD / FAIL / BLOCKED when applicable
 - summary of changes and verification
 - critical blockers or deviations only
 
 ### Dense reporting schema (standard for final chat reports)
 
-When reporting completion, use this schema:
+When reporting completion, use applicable fields from the canonical set:
 
 ```
-STATUS:<PASS|HOLD|BLOCKED>|TASK:<name>|DATE:<YYYY-MM-DD>
-METRICS:<key>=<value>|<key>=<value>|...
+STATUS:<PASS|HOLD|FAIL|BLOCKED>
+TASK:<name>
+CHANGE:<actions performed / summary of changes>
+FILES:<changed file paths>
+TESTS:<compact verification metrics or test results>
+PROOF:<decision-critical verification details>
 POLICY:<key>=<value>|...
+READY:<key>=<value>|...
+BLOCKERS:<NONE or critical blocker details>
+PERSPECTIVE:<brief context or architectural observation>
 RECEIPT:NONE_GITHUB_NATIVE_AUDIT_TRAIL
-NEXT:<action>
+NEXT:<single action phrase or none>
 ```
 
 Rules:
-- One line per field. Field name, colon, value.
-- Multiple key=value pairs within METRICS/POLICY are pipe-separated.
-- Omit the POLICY line entirely if the task has no policy dimension.
+- One line per field. Field name, colon, value. Header fields may be combined on the first line (e.g., `STATUS:<PASS|FAIL|BLOCKED>|TASK:<name>|DATE:<YYYY-MM-DD>`).
+- Multiple key=value pairs within a field are pipe-separated.
+- Include only fields applicable to the directive; do not require irrelevant fields on every task.
 - `RECEIPT` is set to `NONE_GITHUB_NATIVE_AUDIT_TRAIL` reflecting GitHub-native audit trail without local file receipts.
 - `NEXT` is a single short action phrase, or "none" if no follow-up is needed.
-- No prose, no narration, no extra lines beyond this schema.
+- No prose, no narration, no decorative separators.
