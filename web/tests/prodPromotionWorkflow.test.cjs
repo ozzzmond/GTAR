@@ -258,7 +258,10 @@ test('terminal report keeps dry, verified, unverified and ambiguous outcomes dis
       ['false', 'failure', '', '', 1, 'BLOCKED_NOT_PROMOTED']
     ]) {
       const summary = path.join(dir, 'summary'); fs.writeFileSync(summary, '')
-      const r = spawnSync('bash', ['-c', report], { env: { ...process.env, GITHUB_STEP_SUMMARY: summary, DRY_RUN: dry, PLAN_RESULT: planResult, PROMOTE_STATE: promotion, VERIFY_STATE: verify } })
+      const bashCmd = process.platform === 'win32'
+        ? (fs.existsSync('C:\\Program Files\\Git\\bin\\bash.exe') ? 'C:\\Program Files\\Git\\bin\\bash.exe' : (fs.existsSync('C:\\Program Files\\Git\\usr\\bin\\bash.exe') ? 'C:\\Program Files\\Git\\usr\\bin\\bash.exe' : 'bash'))
+        : 'bash'
+      const r = spawnSync(bashCmd, ['-c', report], { env: { ...process.env, GITHUB_STEP_SUMMARY: summary, DRY_RUN: dry, PLAN_RESULT: planResult, PROMOTE_STATE: promotion, VERIFY_STATE: verify } })
       assert.equal(r.status, exit); assert.ok(fs.readFileSync(summary, 'utf8').includes(text))
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }

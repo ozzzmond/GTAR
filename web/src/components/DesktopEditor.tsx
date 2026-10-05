@@ -17,16 +17,15 @@ import {
   SlidersHorizontal,
   X,
   Calendar,
-  Search,
-  ExternalLink,
-  Loader2,
+  Clock,
+  SquareCode,
+  Check,
 } from 'lucide-react'
-import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
+import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
-import { acceptOriginalKey, alignChartKey, establishChartKey, trustworthyChartKey } from '../utils/chartKeyAlignment'
-import { fetchSongMetadataFromProvider, artistConflict, selectedMetadata, type MetadataFields, type MetadataCandidate } from '../utils/songMetadata'
+import { syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
 import type { ActiveSongState } from '../types/gtar'
 
 interface DesktopEditorProps {
@@ -55,10 +54,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
   const [localKey, setLocalKey] = useState(canonicalSongKey(song.key || ''))
-  const chartKeyRef = useRef(song.key || '')
   const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey ? canonicalSongKey(song.originalKey) : '')
   const [localCapo, setLocalCapo] = useState(song.capo || '')
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
+  const [localTime, setLocalTime] = useState(song.time || '')
   const [localYear, setLocalYear] = useState(song.year || '')
   const [localTags, setLocalTags] = useState(song.tags || '')
   const [localRawContent, setLocalRawContent] = useState(() =>
@@ -74,6 +73,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     originalKey: value.originalKey || '',
     capo: value.capo || '',
     bpm: value.bpm || '',
+    time: value.time || '',
     year: value.year || '',
     tags: value.tags || '',
     rawContent: value.rawContent || '',
@@ -83,14 +83,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const selection = useRef({ start: 0, end: 0 })
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
 
-  // Single-song GetSongBPM lookup state
-  const [isLookingUpMetadata, setIsLookingUpMetadata] = useState(false)
-  const [lookupCandidates, setLookupCandidates] = useState<MetadataCandidate[]>([])
-  const [lookupFeedback, setLookupFeedback] = useState<string | null>(null)
-  const [candidateIndex, setCandidateIndex] = useState(0)
-  const [metadataFields, setMetadataFields] = useState<MetadataFields>({ originalKey: true, bpm: true, year: true, artist: !song.artist?.trim() })
-  const lookupGeneration = useRef(0)
-
   const draft = {
     title: localTitle,
     artist: localArtist,
@@ -98,6 +90,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     originalKey: localOriginalKey,
     capo: localCapo,
     bpm: localBpm,
+    time: localTime,
     year: localYear,
     tags: localTags,
     rawContent: localRawContent,
@@ -130,21 +123,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalTitle(song.title || '')
     setLocalArtist(song.artist || '')
     setLocalKey(canonicalSongKey(song.key || ''))
-    chartKeyRef.current = song.key || ''
     setLocalOriginalKey(song.originalKey ? canonicalSongKey(song.originalKey) : '')
     setLocalCapo(song.capo || '')
     setLocalBpm(song.bpm || '')
+    setLocalTime(song.time || '')
     setLocalYear(song.year || '')
     setLocalTags(song.tags || '')
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
     history.current = new TextHistory()
-    setLookupCandidates([])
-    setCandidateIndex(0)
-    setMetadataFields({ originalKey: true, bpm: true, year: true, artist: !song.artist?.trim() })
-    setLookupFeedback(null)
-    lookupGeneration.current++
-    setIsLookingUpMetadata(false)
   }, [song.id])
 
   const showToast = (msg: string) => {
@@ -159,9 +146,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Handle saving changes
   const handleSave = () => {
-    const standardized = standardizeChordProBrackets(localRawContent)
-    const effectiveKey = normalizeMusicalKey(localKey.trim() || detectSongKey(standardized))
+    const effectiveKey = normalizeMusicalKey(localKey.trim() || detectSongKey(localRawContent))
     if (effectiveKey === null) { showToast('Enter a valid key, such as G, F#m or Bb.'); return false }
+
+    // Synchronize canonical ChordPro directives in rawContent
+    const canonicalMetadata: CanonicalMetadata = {
+      title: localTitle.trim() || 'Untitled Song',
+      artist: localArtist.trim() || undefined,
+      key: effectiveKey,
+      tempo: localBpm.trim() || undefined,
+      time: localTime.trim() || undefined,
+      year: localYear.trim() || undefined,
+    }
+    const syncedContent = syncCanonicalDirectives(localRawContent, canonicalMetadata)
+    const standardized = standardizeChordProBrackets(syncedContent)
+
     const updatedSong: ActiveSongState = {
       ...song,
       title: localTitle.trim() || 'Untitled Song',
@@ -170,6 +169,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       ...(localOriginalKey.trim() ? { originalKey: canonicalSongKey(localOriginalKey.trim()) } : { originalKey: undefined }),
       capo: localCapo.trim(),
       bpm: localBpm.trim(),
+      time: localTime.trim() || undefined,
       ...(localYear.trim() ? { year: localYear.trim() } : { year: undefined }),
       tags: localTags.trim(),
       rawContent: standardized,
@@ -183,10 +183,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalTitle(updatedSong.title)
       setLocalArtist(updatedSong.artist || '')
       setLocalKey(effectiveKey)
-      chartKeyRef.current = effectiveKey
       setLocalOriginalKey(updatedSong.originalKey || '')
       setLocalCapo(updatedSong.capo || '')
       setLocalBpm(updatedSong.bpm || '')
+      setLocalTime(updatedSong.time || '')
       setLocalYear(updatedSong.year || '')
       setLocalTags(updatedSong.tags || '')
       setLocalRawContent(standardized)
@@ -194,89 +194,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       showToast('Songbook saved!')
       return true
     } catch { showToast('Changes are not saved. Retry saving before leaving.'); return false }
-  }
-
-  const applyChartChanges = (changes: { key?: string; rawContent?: string }) => {
-    if (changes.key !== undefined) { chartKeyRef.current = changes.key; setLocalKey(changes.key) }
-    if (changes.rawContent !== undefined && changes.rawContent !== localRawContent) {
-      setLocalRawContent(changes.rawContent)
-      // Text-only undo cannot restore the corresponding key; start a new text history.
-      history.current = new TextHistory()
-    }
-  }
-  const handleChartKeyChange = (value: string) => {
-    setLocalKey(value)
-    const target = normalizeMusicalKey(value)
-    if (!target) return
-    const chart = { key: chartKeyRef.current, rawContent: localRawContent }
-    let source: string | undefined
-    if (!trustworthyChartKey(chart)) {
-      const entered = window.prompt('Enter the actual source key of the current chords. Enter the target key only if the chords are already aligned.', chart.key)
-      source = normalizeMusicalKey(entered || '') || undefined
-      if (!source) { setLocalKey(chart.key); return }
-    }
-    const result = alignChartKey(chart, target, source)
-    applyChartChanges(result.changes)
-    autosave(result.changes)
-  }
-  const handleEstablishSourceKey = () => {
-    const entered = window.prompt('Confirm the actual key of the current chords. If an Original Key is set, this aligns the chords to it in one operation.', chartKeyRef.current)
-    const key = normalizeMusicalKey(entered || '')
-    if (!key) return
-    const changes = normalizeMusicalKey(localOriginalKey)
-      ? acceptOriginalKey({ key: chartKeyRef.current, rawContent: localRawContent }, localOriginalKey, key).changes
-      : { key, rawContent: establishChartKey(localRawContent, key) }
-    applyChartChanges(changes)
-    autosave(changes)
-    setLookupFeedback('Current chords confirmed and alignment completed.')
-  }
-  // Single-song GetSongBPM lookup
-  const handleLookupMetadata = async () => {
-    if (!localTitle.trim() || isLookingUpMetadata) return
-    setIsLookingUpMetadata(true)
-    const generation = ++lookupGeneration.current
-    setLookupFeedback(null)
-    try {
-      const res = await fetchSongMetadataFromProvider(localTitle, localArtist)
-      if (generation !== lookupGeneration.current) return
-      if (res.success && res.candidates.length > 0) {
-        setLookupCandidates(res.candidates)
-        setCandidateIndex(0)
-        setMetadataFields({ originalKey: true, bpm: true, year: true, artist: !localArtist.trim() })
-        setLookupFeedback('Review the recording and selected fields before applying.')
-      } else if (res.success && res.candidates.length === 0) {
-        setLookupCandidates([])
-        setLookupFeedback('No matching songs found on GetSongBPM.')
-      } else {
-        setLookupCandidates([])
-        setLookupFeedback(res.error || 'Failed to lookup metadata.')
-      }
-    } catch (err: unknown) {
-      if (generation !== lookupGeneration.current) return
-      setLookupCandidates([])
-      setLookupFeedback(err instanceof Error ? err.message : 'Lookup failed.')
-    } finally {
-      if (generation === lookupGeneration.current) setIsLookingUpMetadata(false)
-    }
-  }
-
-  const handleApplyCandidateMetadata = (cand: MetadataCandidate) => {
-    if (artistConflict(localArtist, cand.artist) && !window.confirm('Artist differs: ' + localArtist + ' / ' + cand.artist + '. Confirm this recording before applying selected fields.')) return
-    const updates: Partial<ActiveSongState> = selectedMetadata(cand, metadataFields)
-    const alignment = updates.originalKey
-      ? acceptOriginalKey({ key: chartKeyRef.current, rawContent: localRawContent }, updates.originalKey)
-      : { changes: {}, needsSource: false }
-    Object.assign(updates, alignment.changes)
-    if (updates.originalKey !== undefined) setLocalOriginalKey(updates.originalKey)
-    applyChartChanges(alignment.changes)
-    setLookupFeedback(alignment.needsSource ? 'Original Key accepted; chords preserved. Choose Confirm current chords & align to finish.' : null)
-    if (updates.artist !== undefined) setLocalArtist(updates.artist)
-    if (updates.bpm !== undefined) setLocalBpm(updates.bpm)
-    if (updates.year !== undefined) setLocalYear(updates.year)
-    if (Object.keys(updates).length > 0) {
-      autosave(updates)
-      showToast('Applied selected metadata from GetSongBPM!')
-    }
   }
 
   // Toggle quick genre tag chip
@@ -295,19 +212,49 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       nextTags = [...currentTags, tag]
     }
 
-    setLocalTags(nextTags.join(', '))
+    const updatedTags = nextTags.join(', ')
+    setLocalTags(updatedTags)
   }
 
   // Raw text change handler (eliminates erratic angle brackets on the fly)
   const handleRawContentChange = (newText: string, remember = true) => {
-    // Automatically sanitize angle bracket chords <C> -> [C]
     const cleaned = standardizeChordProBrackets(newText)
     if (remember) history.current.record({ text: localRawContent, ...selection.current }, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
     setLocalRawContent(cleaned)
     autosave({ rawContent: cleaned })
   }
 
-  // Helper 1: Mark Selection / Word as Chord [Chords] (matching Android PreSaveSongReviewDialog)
+  // Insert or wrap text in [brackets] (QoL action)
+  const handleInsertBrackets = () => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const text = localRawContent
+
+    if (start !== end) {
+      // Wrap selection in brackets
+      const selected = text.substring(start, end)
+      const wrapped = selected.startsWith('[') && selected.endsWith(']') ? selected : `[${selected}]`
+      const newText = text.substring(0, start) + wrapped + text.substring(end)
+      handleRawContentChange(newText)
+      setTimeout(() => {
+        textarea.focus()
+        textarea.setSelectionRange(start, start + wrapped.length)
+      }, 10)
+    } else {
+      // Insert [] and position caret between them
+      const newText = text.substring(0, start) + '[]' + text.substring(start)
+      handleRawContentChange(newText)
+      setTimeout(() => {
+        textarea.focus()
+        textarea.setSelectionRange(start + 1, start + 1)
+      }, 10)
+    }
+  }
+
+  // Helper 1: Mark Selection / Word as Chord [Chords]
   const markSelectionAsChord = () => {
     const textarea = textareaRef.current
     if (!textarea) return
@@ -370,7 +317,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     }
   }
 
-  // Helper 2: Mark Selection / Line as Section Header [Section] (matching Android)
+  // Helper 2: Mark Selection / Line as Section Header [Section]
   const markSelectionAsSection = () => {
     const textarea = textareaRef.current
     if (!textarea) return
@@ -391,7 +338,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         textarea.setSelectionRange(start, start + wrapped.length)
       }, 10)
     } else {
-      // Find line boundaries
       const lineStart =
         text.lastIndexOf('\n', Math.max(0, start - 1)) === -1
           ? 0
@@ -419,7 +365,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         setTimeout(() => {
           textarea.focus()
           const selStart = start + prefix.length + 1
-          const selEnd = selStart + 7 // "Section"
+          const selEnd = selStart + 7
           textarea.setSelectionRange(selStart, selEnd)
         }, 10)
       }
@@ -467,7 +413,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     }
   }
 
-  // Helper 5: Clear
+  // Helper 5: Select All
+  const handleSelectAll = () => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(0, textarea.value.length)
+  }
+
+  // Helper 6: Clear
   const handleClear = () => {
     if (localRawContent.length > 0) {
       if (window.confirm('Clear the entire chord and lyric sheet?')) {
@@ -503,23 +457,34 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-[#002B36]">
-      {pendingNavigation && <div role="dialog" aria-modal="true" aria-label="Unsaved changes" className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4">
-        <div className="bg-[#073642] border border-[#1A4A55] rounded-xl p-5 text-[#FDF6E3]">
-          <p>Save unsaved changes before leaving?</p>
-          <div className="flex gap-4 mt-4">
-            <button type="button" autoFocus onClick={() => { if (handleSave()) { setPendingNavigation(null); pendingNavigation() } }}>Save</button>
-            <button type="button" onClick={() => { setLocalTitle(persisted.title); setLocalArtist(persisted.artist); setLocalKey(persisted.key); chartKeyRef.current = persisted.key
-              setLocalOriginalKey(persisted.originalKey); setLocalYear(persisted.year)
-              setLocalCapo(persisted.capo); setLocalBpm(persisted.bpm); setLocalTags(persisted.tags); setLocalRawContent(persisted.rawContent)
-              history.current = new TextHistory()
-              setPendingNavigation(null); pendingNavigation() }}>Discard</button>
-            <button type="button" onClick={() => setPendingNavigation(null)}>Cancel</button>
+      {pendingNavigation && (
+        <div role="dialog" aria-modal="true" aria-label="Unsaved changes" className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-[#073642] border border-[#1A4A55] rounded-xl p-5 text-[#FDF6E3]">
+            <p>Save unsaved changes before leaving?</p>
+            <div className="flex gap-4 mt-4">
+              <button type="button" autoFocus onClick={() => { if (handleSave()) { setPendingNavigation(null); pendingNavigation() } }}>Save</button>
+              <button type="button" onClick={() => {
+                setLocalTitle(persisted.title)
+                setLocalArtist(persisted.artist)
+                setLocalKey(persisted.key)
+                setLocalOriginalKey(persisted.originalKey)
+                setLocalYear(persisted.year)
+                setLocalTime(persisted.time)
+                setLocalCapo(persisted.capo)
+                setLocalBpm(persisted.bpm)
+                setLocalTags(persisted.tags)
+                setLocalRawContent(persisted.rawContent)
+                history.current = new TextHistory()
+                setPendingNavigation(null)
+                pendingNavigation()
+              }}>Discard</button>
+              <button type="button" onClick={() => setPendingNavigation(null)}>Cancel</button>
+            </div>
           </div>
         </div>
-      </div>}
-      {/* =================================================================== */}
-      {/* 1. TOP BAR: Compact Header & Save Icon Action                       */}
-      {/* =================================================================== */}
+      )}
+
+      {/* 1. TOP BAR: Compact Header & Save Action */}
       <div className="border-b border-[#1A4A55] bg-[#073642] px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onClose && (
@@ -572,9 +537,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         </div>
       </div>
 
-      {/* =================================================================== */}
-      {/* 2. SUB-HEADER: Title, Artist & Collapsible Metadata Drawer/Modal    */}
-      {/* =================================================================== */}
+      {/* 2. SUB-HEADER: Title, Artist & Collapsible Details Modal */}
       <div className="border-b border-[#1A4A55] bg-[#073642]/80 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 text-xs shrink-0">
         {/* Song Title */}
         <div className="flex-[1.8] min-w-[130px] flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
@@ -606,36 +569,43 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           />
         </div>
 
-        {/* Compact Metadata / Settings Icon Trigger */}
+        {/* Compact Metadata / Settings Trigger */}
         <button
           type="button"
           onClick={() => setIsMetadataModalOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] text-[#93A1A1] hover:text-[#FDF6E3] font-mono text-xs transition-colors cursor-pointer shrink-0"
-          title="Song Details & Metadata (Key, Capo, BPM, Tags)"
+          title="Song Details & Metadata (Original Key, Tempo, Time, Year, Tags)"
           aria-label="Song Details & Metadata"
         >
           <SlidersHorizontal className="w-3.5 h-3.5 text-[#2AA198]" />
           <span className="hidden sm:inline">Details</span>
-          {(displayKey || localCapo || localBpm) ? (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 max-w-[120px] truncate">
-              {[displayKey && `Key: ${displayKey}`, localCapo && `Capo: ${localCapo}`, localBpm && `${localBpm} BPM`].filter(Boolean).join(' • ')}
+          {(displayKey || localCapo || localBpm || localTime) ? (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 max-w-[140px] truncate">
+              {[displayKey && `Key: ${displayKey}`, localCapo && `Capo: ${localCapo}`, localBpm && `${localBpm} BPM`, localTime && `${localTime}`].filter(Boolean).join(' • ')}
             </span>
           ) : null}
         </button>
       </div>
 
-      {/* =================================================================== */}
-      {/* 3. MAIN SPLIT PANE: Raw ChordPro Editor (Left) & Live Stage (Right) */}
-      {/* =================================================================== */}
+      {/* 3. MAIN SPLIT PANE: Raw ChordPro Editor (Left) & Live Stage Preview (Right) */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* ----------------------------------------------------------------- */}
-        {/* LEFT PANE: Raw ChordPro Editor                                    */}
-        {/* ----------------------------------------------------------------- */}
+        {/* LEFT PANE: Raw ChordPro Editor */}
         <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-[#1A4A55] bg-[#002B36] h-1/2 md:h-full overflow-hidden">
-          {/* Action Editing Toolbar: [Chords], [Section], Paste, Copy All, Clear */}
+          {/* Action Editing Toolbar */}
           <div className="px-3 py-2 bg-[#073642] border-b border-[#1A4A55] flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
-            {/* Left: Helper Tools matching Android PreSaveSongReviewDialog */}
             <div className="flex items-center gap-1 bg-[#002B36] p-1 rounded-lg border border-[#1A4A55]">
+              {/* [] Bracket Wrap/Insert Action */}
+              <button
+                type="button"
+                onClick={handleInsertBrackets}
+                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                title="Wrap selection in brackets or insert [] at caret"
+                aria-label="Wrap selection or insert brackets []"
+              >
+                <SquareCode className="w-3.5 h-3.5" />
+                <span>[]</span>
+              </button>
+
               <button
                 type="button"
                 onClick={markSelectionAsChord}
@@ -658,34 +628,45 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
               <div className="w-[1px] h-4 bg-[#1A4A55] mx-0.5" />
 
+              {/* Icon-Only Clipboard & Edit Controls with Accessible Labels */}
               <button
                 type="button"
                 onClick={handlePasteClipboard}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-[#2AA198]/20 text-[#2AA198] hover:text-[#35B8AD] font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                title="Paste from clipboard and standardize ChordPro format"
+                className="p-1.5 rounded bg-[#073642] hover:bg-[#2AA198]/20 text-[#2AA198] hover:text-[#35B8AD] transition-colors cursor-pointer"
+                title="Paste from clipboard"
+                aria-label="Paste"
               >
-                <ClipboardPaste className="w-3 h-3" />
-                <span>Paste</span>
+                <ClipboardPaste className="w-3.5 h-3.5" />
               </button>
 
               <button
                 type="button"
                 onClick={handleCopyAll}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] font-mono text-[11px] transition-colors cursor-pointer"
-                title="Copy entire sheet to clipboard"
+                className="p-1.5 rounded bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                title="Copy all content"
+                aria-label="Copy"
               >
-                <Copy className="w-3 h-3" />
-                <span>{copyFeedback ? 'Copied!' : 'Copy All'}</span>
+                {copyFeedback ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="p-1.5 rounded bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] transition-colors cursor-pointer font-mono text-[10px] font-bold"
+                title="Select all text"
+                aria-label="Select All"
+              >
+                <span>ALL</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleClear}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-red-500/20 text-red-400 hover:text-red-300 font-mono text-[11px] transition-colors cursor-pointer"
-                title="Clear all text in editor"
+                className="p-1.5 rounded bg-[#073642] hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                title="Clear all text"
+                aria-label="Clear"
               >
-                <Trash2 className="w-3 h-3" />
-                <span>Clear</span>
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -738,68 +719,37 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               className="w-full h-full p-4 bg-[#002B36] text-[#FDF6E3] font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-[#2AA198]/30 selection:text-[#FDF6E3] overflow-y-auto"
             />
           </div>
-
         </div>
 
-        {/* ----------------------------------------------------------------- */}
-        {/* RIGHT PANE: Live Real-time Stage Preview Sync                     */}
-        {/* ----------------------------------------------------------------- */}
+        {/* RIGHT PANE: Live Real-time Stage Preview Sync */}
         <div className="flex-1 flex flex-col bg-[#002B36] h-1/2 md:h-full overflow-hidden">
-          {/* Formatted Song Rendering */}
           <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[#002B36] select-text">
-            {/* Song Preview Header */}
-            <div className="mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-[#1A4A55]/50">
-              <h1 className="text-2xl font-bold text-[#FDF6E3] tracking-tight mb-1">
-                {localTitle || parsedSong.title || 'Untitled Song'}
-              </h1>
-              <div className="flex flex-wrap items-center gap-2.5 text-xs text-[#93A1A1] font-mono">
-                {(localArtist || parsedSong.artist) && (
-                  <span className="text-[#2AA198] font-semibold">
-                    {localArtist || parsedSong.artist}
-                  </span>
-                )}
-                {(displayKey || parsedSong.key) && (
-                  <span className="px-2 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#B58900] font-bold">
-                    Key: {displayKey || canonicalSongKey(parsedSong.key)}
-                  </span>
-                )}
-                {(localCapo || parsedSong.capo) && (
-                  <span className="px-2 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#EEE8D5]">
-                    Capo: {localCapo || parsedSong.capo}
-                  </span>
-                )}
-                {(localBpm || parsedSong.bpm) && (
-                  <span className="px-2 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#CB4B16]">
-                    {localBpm || parsedSong.bpm} BPM
-                  </span>
-                )}
-                {localTags && (
-                  <div className="flex items-center gap-1">
-                    {localTags
-                      .split(',')
-                      .map((t) => t.trim())
-                      .filter(Boolean)
-                      .map((t, idx) => (
-                        <span
-                          key={idx}
-                          className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px]"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                  </div>
-                )}
+            <div className="border-b border-[#1A4A55] pb-3 mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-[#FDF6E3]">
+                  {localTitle || 'Untitled Song'}
+                </h2>
+                <div className="text-xs text-[#93A1A1] mt-0.5">
+                  {localArtist || 'Unknown Artist'}
+                  {displayKey ? ` • Original Key: ${displayKey}` : ''}
+                  {localTime ? ` • ${localTime}` : ''}
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#2AA198] px-2 py-0.5 rounded bg-[#073642] border border-[#1A4A55]">
+                  Stage Preview
+                </span>
               </div>
             </div>
 
-            {/* High-Contrast Structured Rendering (Chords cleanly above lyrics with zero brackets) */}
-            <SongLineRenderer lines={parsedSong.lines} fontSizePx={16} />
+            <div className="space-y-1 text-sm font-mono">
+              <SongLineRenderer lines={parsedSong.lines} fontSizePx={14} />
+            </div>
           </div>
-
         </div>
       </div>
 
-      {/* Song Metadata & Settings Modal */}
+      {/* Song Metadata & Details Modal */}
       {isMetadataModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-[#073642] border border-[#1A4A55] rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
@@ -821,28 +771,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </button>
             </div>
 
-            {/* Inputs: Chart Key, Original Key, Capo, BPM, Year */}
+            {/* Canonical Metadata Inputs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {/* Chart Key */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Music className="w-3 h-3 text-[#B58900]" />
-                  <span>Chart Key</span>
-                </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#B58900] transition-colors">
-                  <input
-                    type="text"
-                    value={localKey}
-                    onChange={(e) => handleChartKeyChange(e.target.value)}
-                    placeholder="e.g. G"
-                    className="w-full bg-transparent text-[#B58900] font-bold font-mono focus:outline-none text-center text-xs"
-                    title="Base key represented by stored chart chords"
-                  />
-                </div>
-                <button type="button" onClick={handleEstablishSourceKey} className="text-[11px] text-[#93A1A1] underline">{localOriginalKey ? 'Confirm current chords & align' : 'Establish source key'}</button>
-              </div>
-
-              {/* Original Recording Key (Reference) */}
+              {/* Original Key (Sole Key Input) */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
                   <Music className="w-3 h-3 text-[#2AA198]" />
@@ -851,44 +782,32 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
                   <input
                     type="text"
-                    value={localOriginalKey}
+                    value={localKey}
                     onChange={(e) => {
-                      setLocalOriginalKey(e.target.value)
-                      const canonical = normalizeMusicalKey(e.target.value)
-                      autosave({ originalKey: canonical || e.target.value.trim() })
+                      const val = e.target.value
+                      const canonical = normalizeMusicalKey(val)
+                      if (canonical) {
+                        setLocalKey(canonical)
+                        autosave({ key: canonical })
+                      } else {
+                        setLocalKey(val)
+                        if (val.trim() === '') {
+                          autosave({ key: '' })
+                        }
+                      }
                     }}
-                    placeholder="e.g. E"
+                    placeholder="e.g. G"
                     className="w-full bg-transparent text-[#2AA198] font-bold font-mono focus:outline-none text-center text-xs"
-                    title="Reference original recording key from provider or artist"
+                    title="Original Key of the song"
                   />
                 </div>
               </div>
 
-              {/* Capo */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Hash className="w-3 h-3 text-[#2AA198]" />
-                  <span>Capo</span>
-                </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-                  <input
-                    type="text"
-                    value={localCapo}
-                    onChange={(e) => {
-                      setLocalCapo(e.target.value)
-                      autosave({ capo: e.target.value })
-                    }}
-                    placeholder="e.g. 2"
-                    className="w-full bg-transparent text-[#EEE8D5] font-mono focus:outline-none text-center text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* BPM */}
+              {/* Tempo / BPM */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
                   <Activity className="w-3 h-3 text-[#CB4B16]" />
-                  <span>BPM</span>
+                  <span>Tempo (BPM)</span>
                 </label>
                 <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#CB4B16] transition-colors">
                   <input
@@ -900,6 +819,26 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     }}
                     placeholder="120"
                     className="w-full bg-transparent text-[#CB4B16] font-mono focus:outline-none text-center text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Time Signature */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-purple-400" />
+                  <span>Time</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-purple-400 transition-colors">
+                  <input
+                    type="text"
+                    value={localTime}
+                    onChange={(e) => {
+                      setLocalTime(e.target.value)
+                      autosave({ time: e.target.value.trim() })
+                    }}
+                    placeholder="4/4"
+                    className="w-full bg-transparent text-purple-400 font-mono focus:outline-none text-center text-xs"
                   />
                 </div>
               </div>
@@ -923,98 +862,26 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   />
                 </div>
               </div>
-            </div>
 
-            {/* On-Demand Metadata Lookup (GetSongBPM) */}
-            <div className="pt-2.5 border-t border-[#1A4A55]/80 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#93A1A1]">
-                  <Search className="w-3.5 h-3.5 text-[#2AA198]" />
-                  <span>Metadata Lookup (GetSongBPM)</span>
+              {/* Capo (legacy compatibility display/edit) */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
+                  <Hash className="w-3 h-3 text-[#93A1A1]" />
+                  <span>Capo</span>
+                </label>
+                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#93A1A1] transition-colors">
+                  <input
+                    type="text"
+                    value={localCapo}
+                    onChange={(e) => {
+                      setLocalCapo(e.target.value)
+                      autosave({ capo: e.target.value })
+                    }}
+                    placeholder="e.g. 2"
+                    className="w-full bg-transparent text-[#EEE8D5] font-mono focus:outline-none text-center text-xs"
+                  />
                 </div>
-                <button
-                  type="button"
-                  data-testid="editor-lookup-metadata-btn"
-                  disabled={isLookingUpMetadata || !localTitle.trim()}
-                  onClick={handleLookupMetadata}
-                  className="px-2.5 py-1 rounded-lg bg-[#2AA198]/20 hover:bg-[#2AA198]/30 text-[#2AA198] text-[11px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isLookingUpMetadata ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-                  <span>{isLookingUpMetadata ? 'Looking up...' : 'Lookup Online'}</span>
-                </button>
               </div>
-
-              {lookupFeedback && (
-                <div className="text-[11px] font-mono text-[#93A1A1] bg-[#002B36] p-2 rounded border border-[#1A4A55]">
-                  {lookupFeedback}
-                </div>
-              )}
-
-              {lookupCandidates.length > 0 && (
-                <div className="bg-[#002B36] p-2.5 rounded-xl border border-[#2AA198]/30 space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-mono text-[#2AA198] font-bold">
-                    <span>Review recording:</span>
-                    <a
-                      href={lookupCandidates[candidateIndex].sourceUrl || 'https://getsongbpm.com'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#93A1A1] hover:text-[#2AA198] flex items-center gap-0.5 font-normal"
-                    >
-                      GetSongBPM <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  </div>
-
-                  {lookupCandidates.length > 1 && (
-                    <select aria-label="Provider recording" value={candidateIndex} onChange={e => setCandidateIndex(Number(e.target.value))}>
-                      {lookupCandidates.map((c, index) => <option key={c.id} value={index}>{c.title} — {c.artist}</option>)}
-                    </select>
-                  )}
-                  {artistConflict(localArtist, lookupCandidates[candidateIndex].artist) && <p role="alert">Artist conflict: explicit recording confirmation required.</p>}
-                  <div className="flex flex-wrap gap-2">
-                    {(['originalKey', 'bpm', 'year', 'artist'] as const).map(field => lookupCandidates[candidateIndex][field] && (
-                      <label key={field}>
-                        <input type="checkbox" aria-label={'Apply ' + field} checked={metadataFields[field]}
-                          onChange={() => setMetadataFields(previous => ({ ...previous, [field]: !previous[field] }))} />
-                        {field === 'originalKey' ? 'Original Key' : field === 'bpm' ? 'BPM' : field === 'year' ? 'Year' : 'Artist'}
-                      </label>
-                    ))}
-                  </div>
-                  <div className="text-xs text-[#FDF6E3] font-mono space-y-1">
-                    <div>{lookupCandidates[candidateIndex].title} — <span className="text-[#93A1A1]">{lookupCandidates[candidateIndex].artist}</span></div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                      {lookupCandidates[candidateIndex].originalKey && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#2AA198]">
-                          Orig Key: <strong>{lookupCandidates[candidateIndex].originalKey}</strong>
-                        </span>
-                      )}
-                      {lookupCandidates[candidateIndex].bpm && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#CB4B16]">
-                          BPM: <strong>{lookupCandidates[candidateIndex].bpm}</strong>
-                        </span>
-                      )}
-                      {lookupCandidates[candidateIndex].year && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-cyan-400">
-                          Year: <strong>{lookupCandidates[candidateIndex].year}</strong>
-                        </span>
-                      )}
-                      {lookupCandidates[candidateIndex].artist && metadataFields.artist && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#073642] text-[#6C71C4]">
-                          Artist: <strong>{lookupCandidates[candidateIndex].artist}</strong>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    data-testid="editor-apply-metadata-btn"
-                    onClick={() => handleApplyCandidateMetadata(lookupCandidates[candidateIndex])}
-                    className="w-full mt-1 py-1 rounded-lg bg-[#2AA198] hover:bg-[#2AA198]/90 text-[#002B36] font-bold text-[11px] font-mono cursor-pointer transition-colors"
-                  >
-                    Apply selected metadata
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Tags Input */}

@@ -41,7 +41,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
               <Music className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">Stage Key & Transpose Engine</h2>
+              <h2 className="text-base font-bold text-[#FDF6E3]">Transpose Key</h2>
             </div>
           </div>
           <button

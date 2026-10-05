@@ -129,7 +129,7 @@ test('108-dev.3a: KeyPickerModal preserves musician-focused transpose tools and 
   const appSrc = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
 
   // Core header and key status cards intact
-  assert.ok(modalSrc.includes('Stage Key & Transpose Engine'), 'KeyPickerModal must keep title')
+  assert.ok(modalSrc.includes('Transpose Key'), 'KeyPickerModal must display Transpose Key title')
   assert.ok(modalSrc.includes('Original Key'), 'KeyPickerModal must display Original Key')
   assert.ok(modalSrc.includes('Transposed Key'), 'KeyPickerModal must display Transposed Key')
   assert.ok(modalSrc.includes('Reset (0)'), 'KeyPickerModal must provide Reset (0) button')
