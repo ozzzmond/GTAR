@@ -131,18 +131,43 @@ body {
 /* Stage Theme Palettes (Amber, OLED, Paper Light)                            */
 /* ========================================================================== */
 body.theme-amber-stage {
-  background-color: #0d131a;
-  color: #FDF6E3;
+  background-color: #181206;
+  color: #FFF8E7;
 }
 body.theme-amber-stage header,
 body.theme-amber-stage .bg-\[\#073642\] {
-  background-color: #151e28 !important;
+  background-color: #241c0c !important;
 }
 body.theme-amber-stage .bg-\[\#002B36\] {
-  background-color: #0d131a !important;
+  background-color: #181206 !important;
 }
 body.theme-amber-stage .border-\[\#1A4A55\] {
-  border-color: #2a3746 !important;
+  border-color: #3d2f16 !important;
+}
+body.theme-amber-stage div[style*="color: rgb(238, 232, 213)"],
+body.theme-amber-stage div[style*="color: #EEE8D5"],
+body.theme-amber-stage span[style*="color: rgb(238, 232, 213)"],
+body.theme-amber-stage span[style*="color: #EEE8D5"],
+body.theme-amber-stage .stage-lyric-text,
+body.theme-amber-stage .chord-sheet-container .lyrics {
+  color: #FFF8E7 !important;
+}
+body.theme-amber-stage div[style*="color: rgb(181, 137, 0)"],
+body.theme-amber-stage div[style*="color: #B58900"],
+body.theme-amber-stage span[style*="color: rgb(181, 137, 0)"],
+body.theme-amber-stage span[style*="color: #B58900"],
+body.theme-amber-stage .stage-chord-text,
+body.theme-amber-stage .text-\[\#B58900\],
+body.theme-amber-stage .chord-sheet-container .chord {
+  color: #F59E0B !important;
+}
+body.theme-amber-stage div[style*="color: rgb(139, 92, 246)"],
+body.theme-amber-stage div[style*="color: #8B5CF6"],
+body.theme-amber-stage span[style*="color: rgb(139, 92, 246)"],
+body.theme-amber-stage span[style*="color: #8B5CF6"],
+body.theme-amber-stage .stage-section-header,
+body.theme-amber-stage .chord-sheet-container .comment {
+  color: #D97706 !important;
 }
 
 body.theme-oled-black {
@@ -151,13 +176,179 @@ body.theme-oled-black {
 }
 body.theme-oled-black header,
 body.theme-oled-black .bg-\[\#073642\] {
-  background-color: #0d0d0d !important;
+  background-color: #111111 !important;
 }
 body.theme-oled-black .bg-\[\#002B36\] {
   background-color: #000000 !important;
 }
 body.theme-oled-black .border-\[\#1A4A55\] {
-  border-color: #222222 !important;
+  border-color: #262626 !important;
+}
+body.theme-oled-black div[style*="color: rgb(238, 232, 213)"],
+body.theme-oled-black div[style*="color: #EEE8D5"],
+body.theme-oled-black span[style*="color: rgb(238, 232, 213)"],
+body.theme-oled-black span[style*="color: #EEE8D5"],
+body.theme-oled-black .stage-lyric-text,
+body.theme-oled-black .chord-sheet-container .lyrics {
+  color: #FFFFFF !important;
+}
+body.theme-oled-black div[style*="color: rgb(181, 137, 0)"],
+body.theme-oled-black div[style*="color: #B58900"],
+body.theme-oled-black span[style*="color: rgb(181, 137, 0)"],
+body.theme-oled-black span[style*="color: #B58900"],
+body.theme-oled-black .stage-chord-text,
+body.theme-oled-black .text-\[\#B58900\],
+body.theme-oled-black .chord-sheet-container .chord {
+  color: #38BDF8 !important;
+}
+body.theme-oled-black div[style*="color: rgb(139, 92, 246)"],
+body.theme-oled-black div[style*="color: #8B5CF6"],
+body.theme-oled-black span[style*="color: rgb(139, 92, 246)"],
+body.theme-oled-black span[style*="color: #8B5CF6"],
+body.theme-oled-black .stage-section-header,
+body.theme-oled-black .chord-sheet-container .comment {
+  color: #0EA5E9 !important;
+}
+
+body.theme-crimson-stage {
+  background-color: #120d0f;
+  color: #FEE2E2;
+}
+body.theme-crimson-stage header,
+body.theme-crimson-stage .bg-\[\#073642\] {
+  background-color: #1f1418 !important;
+}
+body.theme-crimson-stage .bg-\[\#002B36\] {
+  background-color: #120d0f !important;
+}
+body.theme-crimson-stage .border-\[\#1A4A55\] {
+  border-color: #3b1d26 !important;
+}
+body.theme-crimson-stage div[style*="color: rgb(238, 232, 213)"],
+body.theme-crimson-stage div[style*="color: #EEE8D5"],
+body.theme-crimson-stage span[style*="color: rgb(238, 232, 213)"],
+body.theme-crimson-stage span[style*="color: #EEE8D5"],
+body.theme-crimson-stage .stage-lyric-text,
+body.theme-crimson-stage .chord-sheet-container .lyrics {
+  color: #FEE2E2 !important;
+}
+body.theme-crimson-stage div[style*="color: rgb(181, 137, 0)"],
+body.theme-crimson-stage div[style*="color: #B58900"],
+body.theme-crimson-stage span[style*="color: rgb(181, 137, 0)"],
+body.theme-crimson-stage span[style*="color: #B58900"],
+body.theme-crimson-stage .stage-chord-text,
+body.theme-crimson-stage .text-\[\#B58900\],
+body.theme-crimson-stage .chord-sheet-container .chord {
+  color: #E11D48 !important;
+}
+body.theme-crimson-stage div[style*="color: rgb(139, 92, 246)"],
+body.theme-crimson-stage div[style*="color: #8B5CF6"],
+body.theme-crimson-stage span[style*="color: rgb(139, 92, 246)"],
+body.theme-crimson-stage span[style*="color: #8B5CF6"],
+body.theme-crimson-stage .stage-section-header,
+body.theme-crimson-stage .chord-sheet-container .comment {
+  color: #FB7185 !important;
+}
+
+body.theme-azure-stage {
+  background-color: #0a1324;
+  color: #E0F2FE;
+}
+body.theme-azure-stage header,
+body.theme-azure-stage .bg-\[\#073642\] {
+  background-color: #11203b !important;
+}
+body.theme-azure-stage .bg-\[\#002B36\] {
+  background-color: #0a1324 !important;
+}
+body.theme-azure-stage .border-\[\#1A4A55\] {
+  border-color: #1e3a5f !important;
+}
+body.theme-azure-stage div[style*="color: rgb(238, 232, 213)"],
+body.theme-azure-stage div[style*="color: #EEE8D5"],
+body.theme-azure-stage span[style*="color: rgb(238, 232, 213)"],
+body.theme-azure-stage span[style*="color: #EEE8D5"],
+body.theme-azure-stage .stage-lyric-text,
+body.theme-azure-stage .chord-sheet-container .lyrics {
+  color: #E0F2FE !important;
+}
+body.theme-azure-stage div[style*="color: rgb(181, 137, 0)"],
+body.theme-azure-stage div[style*="color: #B58900"],
+body.theme-azure-stage span[style*="color: rgb(181, 137, 0)"],
+body.theme-azure-stage span[style*="color: #B58900"],
+body.theme-azure-stage .stage-chord-text,
+body.theme-azure-stage .text-\[\#B58900\],
+body.theme-azure-stage .chord-sheet-container .chord {
+  color: #06B6D4 !important;
+}
+body.theme-azure-stage div[style*="color: rgb(139, 92, 246)"],
+body.theme-azure-stage div[style*="color: #8B5CF6"],
+body.theme-azure-stage span[style*="color: rgb(139, 92, 246)"],
+body.theme-azure-stage span[style*="color: #8B5CF6"],
+body.theme-azure-stage .stage-section-header,
+body.theme-azure-stage .chord-sheet-container .comment {
+  color: #38BDF8 !important;
+}
+
+body.theme-e-ink-paper {
+  background-color: #ededed !important;
+  color: #111111 !important;
+}
+body.theme-e-ink-paper header {
+  background-color: #e2e2e2 !important;
+  border-bottom-color: #cccccc !important;
+  color: #111111 !important;
+}
+body.theme-e-ink-paper .bg-\[\#073642\],
+body.theme-e-ink-paper [class*="bg-[#073642]"] {
+  background-color: #f8f8f8 !important;
+  color: #111111 !important;
+}
+body.theme-e-ink-paper .bg-\[\#002B36\],
+body.theme-e-ink-paper [class*="bg-[#002B36]"] {
+  background-color: #e5e5e5 !important;
+  color: #111111 !important;
+}
+body.theme-e-ink-paper .border-\[\#1A4A55\],
+body.theme-e-ink-paper [class*="border-[#1A4A55]"] {
+  border-color: #cccccc !important;
+}
+body.theme-e-ink-paper .text-\[\#FDF6E3\],
+body.theme-e-ink-paper .text-\[\#EEE8D5\],
+body.theme-e-ink-paper [class*="text-[#FDF6E3]"],
+body.theme-e-ink-paper [class*="text-[#EEE8D5]"] {
+  color: #111111 !important;
+}
+body.theme-e-ink-paper .text-\[\#93A1A1\],
+body.theme-e-ink-paper [class*="text-[#93A1A1]"] {
+  color: #555555 !important;
+}
+body.theme-e-ink-paper div[style*="color: rgb(238, 232, 213)"],
+body.theme-e-ink-paper div[style*="color: #EEE8D5"],
+body.theme-e-ink-paper span[style*="color: rgb(238, 232, 213)"],
+body.theme-e-ink-paper span[style*="color: #EEE8D5"],
+body.theme-e-ink-paper .stage-lyric-text,
+body.theme-e-ink-paper .chord-sheet-container .lyrics {
+  color: #111111 !important;
+}
+body.theme-e-ink-paper div[style*="color: rgb(181, 137, 0)"],
+body.theme-e-ink-paper div[style*="color: #B58900"],
+body.theme-e-ink-paper span[style*="color: rgb(181, 137, 0)"],
+body.theme-e-ink-paper span[style*="color: #B58900"],
+body.theme-e-ink-paper .stage-chord-text,
+body.theme-e-ink-paper .text-\[\#B58900\],
+body.theme-e-ink-paper .chord-sheet-container .chord {
+  color: #404040 !important;
+  font-weight: 800 !important;
+}
+body.theme-e-ink-paper div[style*="color: rgb(139, 92, 246)"],
+body.theme-e-ink-paper div[style*="color: #8B5CF6"],
+body.theme-e-ink-paper span[style*="color: rgb(139, 92, 246)"],
+body.theme-e-ink-paper span[style*="color: #8B5CF6"],
+body.theme-e-ink-paper .stage-section-header,
+body.theme-e-ink-paper .chord-sheet-container .comment {
+  color: #262626 !important;
+  font-weight: 800 !important;
 }
 
 body.theme-paper-light {

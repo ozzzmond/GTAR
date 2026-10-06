@@ -8,7 +8,16 @@ export const SETTINGS_KEYS = {
 } as const
 
 export const SETTINGS_CHANGED = 'gtar-settings-restored'
-export const THEME_MODES = ['solarized-dark', 'amber-stage', 'oled-black', 'paper-light', 'custom'] as const
+export const THEME_MODES = [
+  'solarized-dark',
+  'amber-stage',
+  'oled-black',
+  'paper-light',
+  'crimson-stage',
+  'azure-stage',
+  'e-ink-paper',
+  'custom',
+] as const
 export const FONT_STYLES = ['mono', 'sans', 'serif'] as const
 export type ThemeMode = typeof THEME_MODES[number]
 export type SongFontStyleOption = typeof FONT_STYLES[number]
