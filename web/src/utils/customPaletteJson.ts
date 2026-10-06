@@ -19,8 +19,9 @@ export const CANONICAL_CUSTOM_PALETTE_FIELDS = [
   'textHex',
   'chordHex',
   'sectionHex',
-  // APP_CHROME (6)
+  // APP_CHROME (9)
   'headerBg',
+  'headerPrimaryText', 'headerSecondaryText', 'headerIconColor',
   'toolbarBg',
   'searchBg',
   'searchBorder',

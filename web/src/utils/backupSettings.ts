@@ -37,6 +37,9 @@ export interface CustomThemeColors {
 
   // APP_CHROME
   headerBg?: string
+  headerPrimaryText?: string
+  headerSecondaryText?: string
+  headerIconColor?: string
   toolbarBg?: string
   searchBg?: string
   searchBorder?: string
@@ -81,6 +84,7 @@ export function validateBackupSettings(data: Record<string, unknown>): string[] 
     else {
       const requiredFields = ['bgHex', 'textHex', 'chordHex', 'sectionHex']
       const optionalFields = [
+        'headerPrimaryText', 'headerSecondaryText', 'headerIconColor',
         'headerBg', 'toolbarBg', 'searchBg', 'searchBorder', 'filterBarBg', 'iconColor',
         'setlistCardBg', 'songCardBg', 'cardBorder', 'selectedCardBg', 'selectedCardBorder',
         'buttonBg', 'buttonText', 'inputBg', 'inputText', 'inputBorder', 'accentColor',
