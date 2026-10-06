@@ -41,7 +41,7 @@ import {
   type CustomThemeColors,
   DEFAULT_CUSTOM_COLORS,
   normalizeCustomThemeColors,
-  applyCustomThemeStyles,
+  applyThemeRuntime,
 } from './components/ThemeModal'
 import { BandSyncModal } from './components/BandSyncModal'
 import { TvPresentationModal } from './components/TvPresentationModal'
@@ -456,6 +456,11 @@ function LibraryApp() {
   useEffect(() => {
     const reloadSettings = () => {
       const settings = readBackupSettings()
+      // Overrides can change on restore even when the selected mode is unchanged.
+      applyThemeRuntime(
+        settings.themeMode || (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode) || 'solarized-dark',
+        normalizeCustomThemeColors(settings.customThemeColors)
+      )
       if (settings.themeMode !== undefined) setStageTheme(settings.themeMode)
       if (settings.customThemeColors !== undefined) setCustomThemeColors(normalizeCustomThemeColors(settings.customThemeColors))
       if (settings.stageSettings?.fontStyle !== undefined) setFontStyle(settings.stageSettings.fontStyle)
@@ -539,21 +544,7 @@ function LibraryApp() {
       localStorage.setItem(SETTINGS_KEYS.themeMode, stageTheme)
     } catch (_) {}
 
-    document.body.classList.remove(
-      'theme-solarized-dark',
-      'theme-amber-stage',
-      'theme-oled-black',
-      'theme-paper-light',
-      'theme-crimson-stage',
-      'theme-azure-stage',
-      'theme-e-ink-paper',
-      'theme-custom'
-    )
-    document.body.classList.add(`theme-${stageTheme}`)
-
-    if (stageTheme === 'custom') {
-      applyCustomThemeStyles(customThemeColors)
-    }
+    applyThemeRuntime(stageTheme, customThemeColors)
   }, [stageTheme, customThemeColors])
 
   // Active Setlist context

@@ -6,11 +6,11 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION ALIGNMENT
-test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3h and prod untouched', () => {
+test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3i and prod untouched', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
   assert.ok(
-    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.3h';"),
-    'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.3h'
+    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.3i';"),
+    'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.3i'
   )
   assert.ok(
     gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"),
@@ -18,48 +18,23 @@ test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3h and prod untou
   )
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3h', 'package.json must be 1.0.123-dev.3h')
+  assert.equal(pkgJson.version, '1.0.123-dev.3i', 'package.json must be 1.0.123-dev.3i')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3h', 'package-lock.json root must be 1.0.123-dev.3h')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3h', 'package-lock.json packages[""] must be 1.0.123-dev.3h')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3i', 'package-lock.json root must be 1.0.123-dev.3i')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3i', 'package-lock.json packages[""] must be 1.0.123-dev.3i')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3h'), 'authCore.ts must reference v1.0.123-dev.3h')
+  assert.ok(authCore.includes('v1.0.123-dev.3i'), 'authCore.ts must reference v1.0.123-dev.3i')
 })
 
 // 2. PAPER CREAM LIGHT READABILITY & CONTRAST
-test('PAPER_CREAM_LIGHT_THEME: readable warm light surfaces, dark slate text, and proper tokens in index.css', () => {
+test('PAPER_CREAM_LIGHT_THEME: color ownership belongs to the shared semantic runtime', () => {
   const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
-
-  // Theme presence and warm cream background
-  assert.ok(css.includes('body.theme-paper-light {'), 'Must define body.theme-paper-light')
-  assert.ok(css.includes('background-color: #f4ecd8 !important;'), 'Preserves warm cream page identity (#f4ecd8)')
-
-  // Normal card surfaces: warm near-white / very light cream (#FFFDF7)
-  assert.ok(css.includes('background-color: #FFFDF7 !important;'), 'Card surfaces use warm near-white #FFFDF7')
-
-  // Primary text: deep slate (#172033)
-  assert.ok(css.includes('color: #172033 !important;'), 'Primary text uses deep slate #172033')
-
-  // Secondary text: muted readable slate (#64748B)
-  assert.ok(css.includes('color: #64748B !important;'), 'Secondary text uses muted readable slate #64748B')
-
-  // Selected active state: soft teal tint (#eef7f6) + teal border (#2AA198)
-  assert.ok(css.includes('background-color: #eef7f6 !important;'), 'Selected active state has soft teal tint')
-  assert.ok(css.includes('border-color: #2AA198 !important;'), 'Selected active state has teal border')
-
-  // Filter toolbar light theme surface and controls
-  assert.ok(css.includes('background-color: #ede4cf !important;'), 'Filter toolbar surface is light-theme appropriate')
-
-  // GTAR teal + burnt amber identity preserved
-  assert.ok(css.includes('#b45309'), 'Burnt amber chord color preserved in paper-light')
-  assert.ok(css.includes('#0f766e'), 'Teal tab line color preserved in paper-light')
-
-  // Other themes untouched
-  assert.ok(css.includes('body.theme-amber-stage'), 'Preserves amber-stage theme')
-  assert.ok(css.includes('body.theme-oled-black'), 'Preserves oled-black theme')
-  assert.ok(css.includes('body.theme-custom'), 'Preserves custom theme')
+  assert.ok(!css.includes('body.theme-paper-light'))
+  for (const token of ['--custom-stage-bg', '--custom-card-song-bg', '--custom-uiPrimaryText', '--custom-uiSecondaryText', '--custom-card-selected-bg', '--custom-chrome-filter-bg']) {
+    assert.ok(css.includes(`var(${token}`), token)
+  }
 })
 
 test('PAPER_CREAM_LIGHT_THEME: ThemeModal preset definition aligns with readable tokens', () => {
