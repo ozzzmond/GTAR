@@ -5,12 +5,15 @@ import {
   Check,
   Palette,
   Sliders,
-  RotateCcw,
   Layout,
   Layers,
   SlidersHorizontal,
   PlaySquare,
 } from 'lucide-react'
+import { CustomPaletteEditor } from './CustomPaletteEditor'
+import { presetToCustomPalette } from '../utils/customPaletteJson'
+export { CustomPaletteEditor }
+export { presetToCustomPalette }
 
 import type { ThemeMode, CustomThemeColors } from '../utils/backupSettings'
 export type { ThemeMode, CustomThemeColors } from '../utils/backupSettings'
@@ -455,13 +458,14 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   const [stagedCustomColors, setStagedCustomColors] = useState<CustomThemeColors>(() => {
     return normalizeCustomThemeColors(customColors)
   })
-  const [activeGroup, setActiveGroup] = useState<PaletteSectionGroup>('stage')
+  const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
 
   // Synchronize internal staged state whenever modal opens
   useEffect(() => {
     if (isOpen) {
       setStagedTheme(currentTheme)
       setStagedCustomColors(normalizeCustomThemeColors(customColors))
+      setIsCustomPaletteEditorOpen(false)
     }
   }, [isOpen, currentTheme, customColors])
 
@@ -486,70 +490,168 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     onClose()
   }
 
-  const handleResetCustomPalette = () => {
-    setStagedCustomColors({ ...DEFAULT_CUSTOM_COLORS })
-  }
+  const handleCustomPaletteSaveAndApply = (colors: CustomThemeColors) => {
+    setStagedCustomColors(colors)
+    setStagedTheme('custom')
+    try {
+      localStorage.setItem(SETTINGS_KEYS.themeMode, 'custom')
+      localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(colors))
+      applyCustomThemeStyles(colors)
+    } catch (e) {
+      console.error('Failed to commit custom theme to localStorage', e)
+    }
 
-  const updateColor = (key: keyof CustomThemeColors, value: string) => {
-    setStagedCustomColors((prev) => ({
-      ...prev,
-      [key]: value,
-    }))
+    if (onApplyTheme) {
+      onApplyTheme('custom', colors)
+    } else if (onSelectTheme) {
+      onSelectTheme('custom')
+    }
+    setIsCustomPaletteEditorOpen(false)
+    onClose()
   }
-
-  const currentGroupDef = PALETTE_GROUPS.find((g) => g.id === activeGroup) || PALETTE_GROUPS[0]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
-      <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/70">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#B58900]/20 border border-[#B58900]/40 flex items-center justify-center text-[#B58900]">
-              <Palette className="w-5 h-5" />
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
+        <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+          {/* Modal Header */}
+          <div className="px-5 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/70">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#B58900]/20 border border-[#B58900]/40 flex items-center justify-center text-[#B58900]">
+                <Palette className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm sm:text-base font-bold text-[#FDF6E3]">Stage Color Theme</h2>
+                <p className="text-[11px] text-[#93A1A1]">Live Performance & Full-Theme Customization</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-[#FDF6E3]">Stage Color Theme</h2>
-              <p className="text-[11px] text-[#93A1A1]">Live Performance & Full-Theme Customization</p>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close without saving"
+              className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close without saving"
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Modal Body */}
-        <div className="p-5 overflow-y-auto space-y-3 flex-1 custom-scrollbar">
-          {/* Preset Theme Cards */}
-          {THEME_OPTIONS.map((theme) => {
-            const isSelected = stagedTheme === theme.id
-            return (
-              <div
-                key={theme.id}
-                onClick={() => setStagedTheme(theme.id)}
-                className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group ${
-                  isSelected
-                    ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
-                    : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
-                }`}
-              >
+          {/* Modal Body */}
+          <div className="p-5 overflow-y-auto space-y-3 flex-1 custom-scrollbar">
+            {/* Preset Theme Cards */}
+            {THEME_OPTIONS.map((theme) => {
+              const isSelected = stagedTheme === theme.id
+              return (
+                <div
+                  key={theme.id}
+                  onClick={() => setStagedTheme(theme.id)}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
+                    isSelected
+                      ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
+                      : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Swatch Preview Box */}
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-inner relative overflow-hidden"
+                        style={{
+                          backgroundColor: theme.bgHex,
+                          borderColor: theme.accentHex,
+                        }}
+                      >
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: theme.accentHex }}
+                        />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs font-bold leading-tight ${
+                              isSelected ? 'text-[#FDF6E3]' : 'text-[#EEE8D5] group-hover:text-[#FDF6E3]'
+                            }`}
+                          >
+                            {theme.name}
+                          </span>
+                          {theme.tag && (
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-[#2AA198] border border-[#1A4A55]">
+                              {theme.tag}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'border-[#2AA198] bg-[#2AA198] text-[#002B36]'
+                            : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Built-in Preset Customization Action */}
+                  <div className="pt-2 border-t border-[#1A4A55]/40 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-[#93A1A1]">
+                      Factory preset • Safe starting point
+                    </span>
+                    <button
+                      type="button"
+                      data-testid={`customize-preset-${theme.id}-btn`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const clonedCustom = presetToCustomPalette(theme)
+                        setStagedCustomColors(clonedCustom)
+                        setStagedTheme('custom')
+                        setIsCustomPaletteEditorOpen(true)
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
+                      title={`Customize a copy of ${theme.name} without altering factory preset`}
+                    >
+                      <Sliders className="w-3 h-3 text-amber-400" />
+                      <span>Customize This Theme</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Custom Theme Option Card */}
+            <div
+              data-testid="custom-theme-option-card"
+              onClick={() => {
+                setStagedTheme('custom')
+              }}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
+                stagedTheme === 'custom'
+                  ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
+                  : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  {/* Swatch Preview Box */}
+                  {/* Dynamic Swatch Preview Box */}
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-inner relative overflow-hidden"
                     style={{
-                      backgroundColor: theme.bgHex,
-                      borderColor: theme.accentHex,
+                      backgroundColor: stagedCustomColors.bgHex,
+                      borderColor: stagedCustomColors.chordHex,
                     }}
                   >
                     <div
-                      className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: theme.accentHex }}
+                      className="w-4 h-4 rounded-full shadow"
+                      style={{ backgroundColor: stagedCustomColors.chordHex }}
+                    />
+                    <div
+                      className="absolute bottom-0 right-0 w-3 h-3 rounded-tl"
+                      style={{ backgroundColor: stagedCustomColors.sectionHex }}
                     />
                   </div>
 
@@ -557,420 +659,85 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-xs font-bold leading-tight ${
-                          isSelected ? 'text-[#FDF6E3]' : 'text-[#EEE8D5] group-hover:text-[#FDF6E3]'
+                          stagedTheme === 'custom'
+                            ? 'text-[#FDF6E3]'
+                            : 'text-[#EEE8D5] group-hover:text-[#FDF6E3]'
                         }`}
                       >
-                        {theme.name}
+                        Custom Palette
                       </span>
-                      {theme.tag && (
-                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-[#2AA198] border border-[#1A4A55]">
-                          {theme.tag}
-                        </span>
-                      )}
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-amber-400 border border-[#1A4A55]">
+                        CUSTOM
+                      </span>
                     </div>
+                    <span className="text-[10px] text-[#93A1A1] block mt-0.5">
+                      Tailor stage, chrome, cards, inputs & floating controls
+                    </span>
                   </div>
                 </div>
 
-                <div
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                    isSelected
-                      ? 'border-[#2AA198] bg-[#2AA198] text-[#002B36]'
-                      : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
-                  }`}
-                >
-                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                      stagedTheme === 'custom'
+                        ? 'border-[#2AA198] bg-[#2AA198] text-[#002B36]'
+                        : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
+                    }`}
+                  >
+                    {stagedTheme === 'custom' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  </div>
                 </div>
               </div>
-            )
-          })}
 
-          {/* Custom Theme Option Card */}
-          <div
-            onClick={() => setStagedTheme('custom')}
-            className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-3 group ${
-              stagedTheme === 'custom'
-                ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
-                : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                {/* Dynamic Swatch Preview Box */}
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-inner relative overflow-hidden"
-                  style={{
-                    backgroundColor: stagedCustomColors.bgHex,
-                    borderColor: stagedCustomColors.chordHex,
+              {/* Dedicated Editor Launch Action Button */}
+              <div className="pt-2 border-t border-[#1A4A55]/60 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[#93A1A1]">
+                  27 custom colors across 5 responsive categories
+                </span>
+                <button
+                  type="button"
+                  data-testid="open-custom-palette-editor-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setStagedTheme('custom')
+                    setIsCustomPaletteEditorOpen(true)
                   }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
                 >
-                  <div
-                    className="w-4 h-4 rounded-full shadow"
-                    style={{ backgroundColor: stagedCustomColors.chordHex }}
-                  />
-                  <div
-                    className="absolute bottom-0 right-0 w-3 h-3 rounded-tl"
-                    style={{ backgroundColor: stagedCustomColors.sectionHex }}
-                  />
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-xs font-bold leading-tight ${
-                        stagedTheme === 'custom'
-                          ? 'text-[#FDF6E3]'
-                          : 'text-[#EEE8D5] group-hover:text-[#FDF6E3]'
-                      }`}
-                    >
-                      Custom Palette
-                    </span>
-                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-amber-400 border border-[#1A4A55]">
-                      CUSTOM
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                  stagedTheme === 'custom'
-                    ? 'border-[#2AA198] bg-[#2AA198] text-[#002B36]'
-                    : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
-                }`}
-              >
-                {stagedTheme === 'custom' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Edit Palette</span>
+                </button>
               </div>
             </div>
+          </div>
 
-            {/* Custom Theme Color Controls (Expanded when Custom is selected) */}
-            {stagedTheme === 'custom' && (
-              <div
-                className="mt-2 pt-3 border-t border-[#1A4A55]/70 space-y-3"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Live Sample Preview Box (Contextual based on active section) */}
-                <div
-                  className="p-3 rounded-xl border border-white/10 shadow-inner transition-colors"
-                  style={{
-                    backgroundColor:
-                      activeGroup === 'chrome'
-                        ? stagedCustomColors.headerBg || DEFAULT_CUSTOM_COLORS.headerBg
-                        : activeGroup === 'cards'
-                        ? stagedCustomColors.songCardBg || DEFAULT_CUSTOM_COLORS.songCardBg
-                        : activeGroup === 'stageControls'
-                        ? stagedCustomColors.dockBg || DEFAULT_CUSTOM_COLORS.dockBg
-                        : stagedCustomColors.bgHex,
-                  }}
-                >
-                  <div
-                    className="flex items-center justify-between text-[10px] font-mono opacity-70 mb-1.5 border-b border-white/10 pb-1"
-                    style={{
-                      color:
-                        activeGroup === 'chrome'
-                          ? stagedCustomColors.iconColor || DEFAULT_CUSTOM_COLORS.iconColor
-                          : stagedCustomColors.textHex,
-                    }}
-                  >
-                    <span className="flex items-center gap-1 font-bold">
-                      <Sliders className="w-3 h-3" /> LIVE PREVIEW • {currentGroupDef.label.toUpperCase()}
-                    </span>
-                    <span>
-                      {activeGroup === 'stage'
-                        ? 'Teleprompter'
-                        : activeGroup === 'chrome'
-                        ? 'App Shell'
-                        : activeGroup === 'cards'
-                        ? 'Card Surfaces'
-                        : activeGroup === 'controls'
-                        ? 'Controls & Inputs'
-                        : 'Stage Floating Dock'}
-                    </span>
-                  </div>
-
-                  {activeGroup === 'stage' && (
-                    <div>
-                      <div
-                        className="text-[11px] font-mono font-bold mb-1"
-                        style={{ color: stagedCustomColors.sectionHex }}
-                      >
-                        [Chorus 1]
-                      </div>
-                      <div
-                        className="font-mono font-bold text-xs mb-0.5 tracking-wider"
-                        style={{ color: stagedCustomColors.chordHex }}
-                      >
-                        G            Em7           Cadd9        D
-                      </div>
-                      <div
-                        className="font-mono text-xs"
-                        style={{ color: stagedCustomColors.textHex }}
-                      >
-                        Amazing grace how sweet the sound that saved a wretch like me
-                      </div>
-                    </div>
-                  )}
-
-                  {activeGroup === 'chrome' && (
-                    <div className="space-y-2">
-                      <div
-                        className="flex items-center justify-between p-1.5 rounded-lg border"
-                        style={{
-                          backgroundColor: stagedCustomColors.toolbarBg || DEFAULT_CUSTOM_COLORS.toolbarBg,
-                          borderColor: stagedCustomColors.searchBorder || DEFAULT_CUSTOM_COLORS.searchBorder,
-                        }}
-                      >
-                        <div
-                          className="flex items-center gap-1 text-[11px] font-bold"
-                          style={{ color: stagedCustomColors.iconColor || DEFAULT_CUSTOM_COLORS.iconColor }}
-                        >
-                          <Palette className="w-3.5 h-3.5" />
-                          <span>GTAR-Dev</span>
-                        </div>
-                        <div
-                          className="px-2 py-0.5 rounded text-[10px] font-mono border"
-                          style={{
-                            backgroundColor: stagedCustomColors.searchBg || DEFAULT_CUSTOM_COLORS.searchBg,
-                            borderColor: stagedCustomColors.searchBorder || DEFAULT_CUSTOM_COLORS.searchBorder,
-                            color: stagedCustomColors.textHex,
-                          }}
-                        >
-                          Search songs...
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeGroup === 'cards' && (
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div
-                        className="p-2 rounded-lg border font-mono font-bold"
-                        style={{
-                          backgroundColor: stagedCustomColors.setlistCardBg || DEFAULT_CUSTOM_COLORS.setlistCardBg,
-                          borderColor: stagedCustomColors.cardBorder || DEFAULT_CUSTOM_COLORS.cardBorder,
-                          color: stagedCustomColors.textHex,
-                        }}
-                      >
-                        Setlist Card
-                        <span className="block text-[9px] font-normal opacity-70">12 songs</span>
-                      </div>
-                      <div
-                        className="p-2 rounded-lg border font-mono font-bold shadow-md"
-                        style={{
-                          backgroundColor: stagedCustomColors.selectedCardBg || DEFAULT_CUSTOM_COLORS.selectedCardBg,
-                          borderColor: stagedCustomColors.selectedCardBorder || DEFAULT_CUSTOM_COLORS.selectedCardBorder,
-                          color: stagedCustomColors.textHex,
-                        }}
-                      >
-                        Selected Card
-                        <span className="block text-[9px] font-normal" style={{ color: stagedCustomColors.chordHex }}>Active selection</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeGroup === 'controls' && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 rounded-lg font-semibold text-[11px] shadow-sm"
-                        style={{
-                          backgroundColor: stagedCustomColors.buttonBg || DEFAULT_CUSTOM_COLORS.buttonBg,
-                          color: stagedCustomColors.buttonText || DEFAULT_CUSTOM_COLORS.buttonText,
-                          border: `1px solid ${stagedCustomColors.accentColor || DEFAULT_CUSTOM_COLORS.accentColor}`,
-                        }}
-                      >
-                        Action Button
-                      </button>
-                      <input
-                        type="text"
-                        readOnly
-                        value="Sample input..."
-                        className="px-2 py-1 rounded-lg text-[11px] font-mono border flex-1"
-                        style={{
-                          backgroundColor: stagedCustomColors.inputBg || DEFAULT_CUSTOM_COLORS.inputBg,
-                          color: stagedCustomColors.inputText || DEFAULT_CUSTOM_COLORS.inputText,
-                          borderColor: stagedCustomColors.inputBorder || DEFAULT_CUSTOM_COLORS.inputBorder,
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {activeGroup === 'stageControls' && (
-                    <div className="flex items-center justify-center gap-2">
-                      <div
-                        className="p-1.5 rounded-full border flex items-center gap-2 shadow-lg"
-                        style={{
-                          backgroundColor: stagedCustomColors.dockBg || DEFAULT_CUSTOM_COLORS.dockBg,
-                          borderColor: stagedCustomColors.dockBorder || DEFAULT_CUSTOM_COLORS.dockBorder,
-                        }}
-                      >
-                        <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center"
-                          style={{
-                            backgroundColor: stagedCustomColors.dockBtnBg || DEFAULT_CUSTOM_COLORS.dockBtnBg,
-                            color: stagedCustomColors.dockBtnIcon || DEFAULT_CUSTOM_COLORS.dockBtnIcon,
-                          }}
-                        >
-                          ▲
-                        </div>
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shadow-md"
-                          style={{
-                            backgroundColor: stagedCustomColors.dockPlayBg || DEFAULT_CUSTOM_COLORS.dockPlayBg,
-                            color: stagedCustomColors.dockPlayIcon || DEFAULT_CUSTOM_COLORS.dockPlayIcon,
-                          }}
-                        >
-                          ▶
-                        </div>
-                        <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center"
-                          style={{
-                            backgroundColor: stagedCustomColors.dockBtnBg || DEFAULT_CUSTOM_COLORS.dockBtnBg,
-                            color: stagedCustomColors.dockBtnIcon || DEFAULT_CUSTOM_COLORS.dockBtnIcon,
-                          }}
-                        >
-                          ▼
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Section Group Switcher Tabs & Reset Button */}
-                <div className="flex items-center justify-between gap-1 border-b border-[#1A4A55]/60 pb-2">
-                  <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-                    {PALETTE_GROUPS.map((grp) => {
-                      const isActive = activeGroup === grp.id
-                      const IconComponent = grp.icon
-                      return (
-                        <button
-                          key={grp.id}
-                          type="button"
-                          onClick={() => setActiveGroup(grp.id)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-                            isActive
-                              ? 'bg-[#2AA198] text-[#002B36] shadow-sm'
-                              : 'bg-[#073642]/60 hover:bg-[#073642] text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55]/50'
-                          }`}
-                        >
-                          <IconComponent className="w-3.5 h-3.5" />
-                          <span>{grp.label}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Reset Custom Palette Button */}
-                  <button
-                    type="button"
-                    onClick={handleResetCustomPalette}
-                    title="Reset custom palette to sensible defaults"
-                    className="px-2 py-1 rounded-lg text-[11px] font-mono text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] border border-[#1A4A55]/50 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span className="hidden sm:inline">Reset Defaults</span>
-                  </button>
-                </div>
-
-                {/* Color Rows for Current Active Group */}
-                <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1 custom-scrollbar">
-                  {currentGroupDef.fields.map((item) => {
-                    const value = stagedCustomColors[item.key] || DEFAULT_CUSTOM_COLORS[item.key] || '#000000'
-                    return (
-                      <div
-                        key={item.key}
-                        className="p-2.5 rounded-xl bg-[#073642]/60 border border-[#1A4A55]/50 space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <span className="text-xs font-semibold text-[#EEE8D5] block leading-tight">
-                              {item.label}
-                            </span>
-                            <span className="text-[10px] text-[#93A1A1] block mt-0.5">
-                              {item.desc}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            {/* Color Picker Swatch Button */}
-                            <label
-                              className="relative w-7 h-7 rounded-lg border border-white/20 shadow flex items-center justify-center cursor-pointer overflow-hidden hover:scale-105 transition-transform"
-                              style={{ backgroundColor: value }}
-                              title={`Choose ${item.label}`}
-                            >
-                              <input
-                                type="color"
-                                value={value}
-                                onChange={(e) => updateColor(item.key, e.target.value)}
-                                className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                              />
-                            </label>
-
-                            {/* Hex Input */}
-                            <input
-                              type="text"
-                              value={value}
-                              onChange={(e) => {
-                                let val = e.target.value.trim()
-                                if (val.length > 0 && !val.startsWith('#')) {
-                                  val = `#${val}`
-                                }
-                                updateColor(item.key, val)
-                              }}
-                              className="w-19 px-2 py-1 bg-[#002B36] border border-[#1A4A55] rounded-lg text-xs font-mono text-[#FDF6E3] focus:outline-none focus:border-amber-400"
-                              maxLength={7}
-                              placeholder="#000000"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Quick Swatches Row */}
-                        <div className="flex items-center gap-1.5 pt-0.5">
-                          <span className="text-[10px] font-mono text-[#93A1A1] mr-0.5">Quick:</span>
-                          {item.swatches.map((hex) => {
-                            const isMatch = value.toLowerCase() === hex.toLowerCase()
-                            return (
-                              <button
-                                key={hex}
-                                type="button"
-                                onClick={() => updateColor(item.key, hex)}
-                                className={`w-4 h-4 rounded-full border transition-all cursor-pointer ${
-                                  isMatch
-                                    ? 'scale-125 ring-2 ring-amber-400 border-white'
-                                    : 'border-white/30 hover:scale-110 opacity-75 hover:opacity-100'
-                                }`}
-                                style={{ backgroundColor: hex }}
-                                title={hex}
-                              />
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+          {/* Modal Footer */}
+          <div className="px-5 py-3.5 border-t border-[#1A4A55] bg-[#002B36]/80 flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAndApply}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+            >
+              Save & Apply
+            </button>
           </div>
         </div>
-
-        {/* Modal Footer */}
-        <div className="px-5 py-3.5 border-t border-[#1A4A55] bg-[#002B36]/80 flex items-center justify-end gap-2.5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveAndApply}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
-          >
-            Save & Apply
-          </button>
-        </div>
       </div>
-    </div>
+
+      {/* Dedicated Floating Custom Palette Editor */}
+      <CustomPaletteEditor
+        isOpen={isCustomPaletteEditorOpen}
+        onClose={() => setIsCustomPaletteEditorOpen(false)}
+        customColors={stagedCustomColors}
+        onSaveAndApply={handleCustomPaletteSaveAndApply}
+      />
+    </>
   )
 }
