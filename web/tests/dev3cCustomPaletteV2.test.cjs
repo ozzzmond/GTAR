@@ -39,20 +39,20 @@ const {
 const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 
 // =============================================================================
-// 1. VERSION CHECK (1.0.123-dev.3f)
+// 1. VERSION CHECK (1.0.123-dev.3g)
 // =============================================================================
-test('DEV3C_VERSION: Canonical dev version bumped to 1.0.123-dev.3f across all manifests', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3f')
+test('DEV3C_VERSION: Canonical dev version bumped to 1.0.123-dev.3g across all manifests', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3g')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3f')
+  assert.equal(pkgJson.version, '1.0.123-dev.3g')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3f')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3f')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3g')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3g')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3f'))
+  assert.ok(authCore.includes('v1.0.123-dev.3g'))
 })
 
 // =============================================================================
@@ -358,7 +358,7 @@ test('DEV3C_UI_GROUPING_CONTRACT: ThemeModal defines 5 grouped categories A-E wi
   assert.deepEqual(cardKeys, ['setlistCardBg', 'songCardBg', 'cardBorder', 'selectedCardBg', 'selectedCardBorder'])
 
   const controlKeys = PALETTE_GROUPS.find((g) => g.id === 'controls').fields.map((f) => f.key)
-  assert.deepEqual(controlKeys, ['buttonBg', 'buttonText', 'inputBg', 'inputText', 'inputBorder', 'accentColor'])
+  assert.deepEqual(controlKeys, ['actionColor', 'selectionColor', 'sectionIconColor', 'buttonBg', 'buttonText', 'inputBg', 'inputText', 'inputBorder', 'accentColor'])
 
   const dockKeys = PALETTE_GROUPS.find((g) => g.id === 'stageControls').fields.map((f) => f.key)
   assert.deepEqual(dockKeys, ['dockBg', 'dockBorder', 'dockBtnBg', 'dockBtnIcon', 'dockPlayBg', 'dockPlayIcon'])

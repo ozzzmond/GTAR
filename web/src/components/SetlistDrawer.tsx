@@ -182,7 +182,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex select-none">
+    <div className="setlist-ui fixed inset-0 z-50 flex select-none">
       {/* Backdrop overlay */}
       <div
         onClick={onClose}
@@ -197,8 +197,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         {/* Drawer Header */}
         <div className="p-4 border-b border-[#1A4A55] bg-[#002B36] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#073642] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
-              <ListMusic className="w-4 h-4" />
+            <div className="ui-section-icon w-8 h-8 rounded-lg bg-[#073642] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
+              <ListMusic className="ui-section-icon w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -311,7 +311,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   <button
                     type="button"
                     onClick={() => setlistFileInputRef.current?.click()}
-                    className="px-2 py-1 rounded-lg bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-[#2AA198]/30"
+                    className="ui-action-text px-2 py-1 rounded-lg bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-[#2AA198]/30"
                     title="Import a single setlist (.json) into your library"
                   >
                     <Upload className="w-3 h-3" />
@@ -365,7 +365,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           className="min-w-0 flex-1 flex items-center gap-2.5 cursor-pointer select-none"
                         >
                           <div className="w-8 h-8 rounded-lg bg-[#073642] border border-[#B58900]/40 flex items-center justify-center text-[#B58900] shrink-0">
-                            <ListMusic className="w-4 h-4" />
+                            <ListMusic className="ui-section-icon w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="font-bold text-xs text-[#FDF6E3] truncate">{sl.name}</div>
@@ -386,7 +386,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                 }
                                 onClose()
                               }}
-                              className="p-1.5 rounded-lg text-[#B58900] hover:text-[#D4A017] hover:bg-[#B58900]/15 transition-colors cursor-pointer"
+                              className="ui-action-text p-1.5 rounded-lg text-[#B58900] hover:text-[#D4A017] hover:bg-[#B58900]/15 transition-colors cursor-pointer"
                               title="Start Gig / Play Setlist from Beginning"
                             >
                               <PlayCircle className="w-4 h-4" />
@@ -584,7 +584,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
                     {item.key && (
                       <span className="px-1.5 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#B58900] font-bold flex items-center gap-1">
-                        <Music className="w-2.5 h-2.5" />
+                        <Music className="ui-section-icon w-2.5 h-2.5" />
                         <span>{item.key}</span>
                       </span>
                     )}

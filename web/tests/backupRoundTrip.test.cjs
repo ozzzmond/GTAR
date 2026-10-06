@@ -95,7 +95,7 @@ test('malformed settings reject the whole backup before any write', () => {
 test('settings round-trip uses exactly the runtime storage keys and valid bounds', () => {
   const map = new Map()
   const storage = { setItem: (key, value) => map.set(key, value), getItem: key => map.get(key) ?? null }
-  const settings = { themeMode: 'custom', customThemeColors: { bgHex: '#121820', textHex: '#F1F5F9', chordHex: '#F59E0B', sectionHex: '#A78BFA' },
+  const settings = { factoryThemeOverrides: {}, themeMode: 'custom', customThemeColors: { bgHex: '#121820', textHex: '#F1F5F9', chordHex: '#F59E0B', sectionHex: '#A78BFA' },
     stageSettings: { fontStyle: 'serif', fontSizePx: 38, scrollSpeed: 180, isTwoColumn: false } }
   restoreBackupSettings(settings, storage)
   assert.deepEqual(readBackupSettings(storage), settings)

@@ -340,7 +340,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }, [setlists, searchQuery, songs])
 
   return (
-    <div className="flex-1 overflow-y-auto px-2 sm:px-8 py-3 sm:py-6 max-w-7xl mx-auto w-full select-none">
+    <div className="songbook-ui flex-1 overflow-y-auto px-2 sm:px-8 py-3 sm:py-6 max-w-7xl mx-auto w-full select-none">
       {membershipSong && <SongSetlistDialog
         song={membershipSong}
         setlists={setlists}
@@ -359,7 +359,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-[#FDF6E3]">
-                <Pencil className="w-4 h-4 text-[#2AA198]" />
+                <Pencil className="ui-action-text ui-action-text w-4 h-4 text-[#2AA198]" />
                 Rename Setlist
               </h2>
               <button
@@ -428,7 +428,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-3">
               <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-[#FDF6E3]">
-                <ListPlus className="w-4 h-4 text-[#2AA198]" />
+                <ListPlus className="ui-action-text ui-action-text w-4 h-4 text-[#2AA198]" />
                 Add {selectedSongIds.size} {selectedSongIds.size === 1 ? 'Song' : 'Songs'} to Setlist
               </h2>
               <button
@@ -562,8 +562,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       {/* 1. Compact Panel Header — title + New Setlist button, no hero */}
       <div className="flex items-center justify-between mb-5 px-1">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#073642] border border-[#1A4A55] flex items-center justify-center text-[#2AA198]">
-            <Music className="w-4 h-4" />
+          <div className="ui-section-icon w-8 h-8 rounded-xl bg-[#073642] border border-[#1A4A55] flex items-center justify-center text-[#2AA198]">
+            <Music className="ui-section-icon w-4 h-4" />
           </div>
           <h1 className="ui-section-text text-lg font-bold ui-primary-text text-[#FDF6E3] tracking-tight">
             Songbook &amp; Gig Library
@@ -594,7 +594,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
           <div className="flex items-center justify-between mb-3 px-1">
             <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-[#B58900]" />
+              <Layers className="ui-section-icon w-4 h-4 text-[#B58900]" />
               <h2 className="ui-section-text text-xs font-bold ui-primary-text text-[#FDF6E3] uppercase tracking-wider font-mono">
                 Gig Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
               </h2>
@@ -602,7 +602,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <div className="flex items-center gap-2">
               {isSetlistSelectionMode ? (
                 <div data-testid="setlist-selection-bar" className="flex items-center gap-2">
-                  <span data-testid="setlist-selection-count" className="text-xs font-mono font-bold text-[#2AA198]">
+                  <span data-testid="setlist-selection-count" className="ui-action-text text-xs font-mono font-bold text-[#2AA198]">
                     {selectedSetlistIds.size} selected
                   </span>
                   <button
@@ -638,18 +638,18 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         setIsSetlistSelectionMode(true)
                         setSelectedSetlistIds(new Set())
                       }}
-                      className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198] hover:bg-[#2AA198]/10 cursor-pointer"
+                      className="ui-action-text text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198] hover:bg-[#2AA198]/10 cursor-pointer"
                     >
                       Select
                     </button>
                   )}
-                  <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198]">
+                  <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="ui-action-text text-xs px-2 py-1 border border-[#2AA198]/40 rounded text-[#2AA198]">
                     {setlistsCollapsed ? 'Show' : 'Hide'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setlistFileInputRef.current?.click()}
-                    className="text-[10px] font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer"
+                    className="ui-action-text text-[10px] font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer"
                     title="Import single setlist (.json) into your library"
                   >
                     <Upload className="w-3 h-3" />
@@ -658,7 +658,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <button
                     type="button"
                     onClick={onOpenSetlists}
-                    className="ui-link-text text-[10px] font-bold ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1 cursor-pointer"
+                    className="ui-action-text ui-link-text text-[10px] font-bold ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1 cursor-pointer"
                   >
                     <span>Manage</span>
                     <ArrowRight className="w-3 h-3" />
@@ -683,7 +683,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   className="rounded-xl"
                   cardClassName={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border transition-all cursor-pointer group flex items-center justify-between gap-2.5 sm:gap-3 relative ${
                     isSetlistChosen
-                      ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198]'
+                      ? 'ui-selection-card border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198]'
                       : 'bg-[#073642] border-[#1A4A55] hover:border-[#2AA198]/50'
                   }`}
                   onClick={() => {
@@ -697,7 +697,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   }}
                   disabled={isDeletingSetlist || isMenuOpen || isSetlistSelectionMode}
                   leftAction={{
-                    icon: <Layers className="w-4 h-4 text-current" />,
+                    icon: <Layers className="ui-section-icon w-4 h-4 text-current" />,
                     label: 'Manage',
                     testId: `swipe-action-manage-${sl.id}`,
                     onAction: () => {
@@ -724,7 +724,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         data-testid={`select-setlist-${sl.id}`}
                         className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors mr-1 ${
                           isSetlistChosen
-                            ? 'bg-[#2AA198] border-[#2AA198] text-[#002B36]'
+                            ? 'ui-selection-indicator bg-[#2AA198] border-[#2AA198] text-[#002B36]'
                             : 'border-[#1A4A55] bg-[#002B36]'
                         }`}
                       >
@@ -756,7 +756,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           onOpenSetlists()
                         }
                       }}
-                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                      className="ui-action-text w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] flex items-center justify-center transition-colors cursor-pointer shrink-0"
                       title="Play setlist"
                     >
                       <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
@@ -805,7 +805,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             }}
                             className="w-full text-left px-3 py-2 ui-primary-text text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors"
                           >
-                            <Pencil className="w-3.5 h-3.5 text-[#2AA198]" />
+                            <Pencil className="ui-action-text ui-action-text w-3.5 h-3.5 text-[#2AA198]" />
                             <span>Rename Setlist</span>
                           </button>
                         )}
@@ -821,7 +821,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             onRenameSetlist ? 'border-t border-[#1A4A55]/50' : ''
                           }`}
                         >
-                          <Share2 className="w-3.5 h-3.5 text-[#B58900]" />
+                          <Share2 className="ui-action-text w-3.5 h-3.5 text-[#B58900]" />
                           <span>Share Setlist</span>
                         </button>
                         {onDeleteSetlist && (
@@ -895,7 +895,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center gap-2">
-            <Music className="w-4 h-4 text-[#2AA198]" />
+            <Music className="ui-section-icon w-4 h-4 text-[#2AA198]" />
             <h2 className="ui-section-text text-sm font-bold ui-primary-text text-[#FDF6E3] uppercase tracking-wider font-mono">
               Songs Library ({filteredIndexedSongs.length} of {songs.length})
             </h2>
@@ -904,7 +904,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <div className="flex items-center gap-2">
               {isSongSelectionMode ? (
                 <div data-testid="song-selection-bar" className="flex items-center gap-2">
-                  <span data-testid="song-selection-count" className="text-xs font-mono font-bold text-[#2AA198]">
+                  <span data-testid="song-selection-count" className="ui-action-text text-xs font-mono font-bold text-[#2AA198]">
                     {selectedSongIds.size} selected
                   </span>
                   <button
@@ -912,7 +912,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     data-testid="bulk-add-to-setlist"
                     disabled={selectedSongIds.size === 0}
                     onClick={() => setIsBulkAddToSetlistModalOpen(true)}
-                    className="text-xs font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2.5 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="ui-action-text text-xs font-bold text-[#2AA198] hover:bg-[#2AA198]/15 px-2.5 py-1 rounded-lg border border-[#2AA198]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Add selected songs to setlist"
                   >
                     <ListPlus className="w-3.5 h-3.5" />
@@ -949,7 +949,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     setIsSongSelectionMode(true)
                     setSelectedSongIds(new Set())
                   }}
-                  className="text-xs px-2.5 py-1 border border-[#2AA198]/40 rounded-lg text-[#2AA198] hover:bg-[#2AA198]/10 font-mono font-semibold cursor-pointer"
+                  className="ui-action-text text-xs px-2.5 py-1 border border-[#2AA198]/40 rounded-lg text-[#2AA198] hover:bg-[#2AA198]/10 font-mono font-semibold cursor-pointer"
                 >
                   Select
                 </button>
@@ -1020,7 +1020,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
         {songs.length === 0 ? (
           <div className="p-12 text-center rounded-3xl border border-[#1A4A55] bg-[#073642]/50 ui-secondary-text text-[#93A1A1] space-y-3">
-            <Music className="w-8 h-8 mx-auto text-[#2AA198]" />
+            <Music className="ui-section-icon w-8 h-8 mx-auto text-[#2AA198]" />
             <div className="text-base font-bold ui-primary-text text-[#FDF6E3]">Your Songbook is Empty</div>
             <p className="text-xs max-w-sm mx-auto">
               Create your first song template or import chord charts from files or online web sources.
@@ -1044,7 +1044,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 handleFilterKeyChange('ALL')
                 handleFilterSetlistChange('ALL')
               }}
-              className="mt-2 px-3 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-xs text-[#2AA198] font-bold cursor-pointer hover:border-[#2AA198]"
+              className="ui-action-text mt-2 px-3 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-xs text-[#2AA198] font-bold cursor-pointer hover:border-[#2AA198]"
             >
               Reset Filters
             </button>
@@ -1066,9 +1066,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   className="rounded-xl"
                   cardClassName={`relative px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border transition-all cursor-pointer select-none group flex items-center justify-between gap-2 sm:gap-2.5 ${
                     isSongChosen
-                      ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198]'
+                      ? 'ui-selection-card border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198]'
                       : isSelected
-                      ? 'border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198] shadow-lg shadow-[#2AA198]/10'
+                      ? 'ui-selection-card border-[#2AA198] bg-[#073642] ring-1 ring-[#2AA198] shadow-lg shadow-[#2AA198]/10'
                       : 'border-[#1A4A55] bg-[#073642]/70 hover:border-[#2AA198] hover:bg-[#073642]'
                   }`}
                   onClick={() => {
@@ -1104,7 +1104,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         data-testid={`select-song-${originalIdx}`}
                         className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors border ${
                           isSongChosen
-                            ? 'bg-[#2AA198] border-[#2AA198] text-[#002B36]'
+                            ? 'ui-selection-indicator bg-[#2AA198] border-[#2AA198] text-[#002B36]'
                             : 'bg-[#002B36] border-[#1A4A55] ui-secondary-text text-[#93A1A1]'
                         }`}
                       >
@@ -1114,7 +1114,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       <div
                         className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors shadow-inner ${
                           isSelected
-                            ? 'bg-[#2AA198] text-[#002B36]'
+                            ? 'ui-selection-indicator bg-[#2AA198] text-[#002B36]'
                             : 'bg-[#002B36] ui-secondary-text text-[#93A1A1] group-hover:text-[#2AA198]'
                         }`}
                       >
@@ -1145,7 +1145,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               }}
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#B58900]/15 text-[#B58900] hover:bg-[#B58900]/25 border border-[#B58900]/30 text-[10px] font-mono font-bold shrink-0 transition-colors cursor-pointer"
                             >
-                              <Layers className="w-2.5 h-2.5" />
+                              <Layers className="ui-section-icon w-2.5 h-2.5" />
                               <span data-testid={`song-setlist-count-${originalIdx}`}>{songSetlists.length}</span>
                             </button>
                             <DropdownPortal
@@ -1189,7 +1189,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                       title={`Manage ${sl.name}`}
                                     >
                                       <span className="truncate flex-1">{sl.name}</span>
-                                      <ArrowRight className="w-3 h-3 text-[#2AA198] shrink-0" />
+                                      <ArrowRight className="ui-action-text ui-action-text w-3 h-3 text-[#2AA198] shrink-0" />
                                     </button>
                                   ))}
                                 </div>
@@ -1249,7 +1249,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             className="w-full text-left px-3 py-2 ui-primary-text text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
                             title="Add to Setlist"
                           >
-                            <ListPlus className="w-3.5 h-3.5 text-[#2AA198]" />
+                            <ListPlus className="ui-action-text ui-action-text w-3.5 h-3.5 text-[#2AA198]" />
                             <span>Add to Setlist</span>
                           </button>
                           <button

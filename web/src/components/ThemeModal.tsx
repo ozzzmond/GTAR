@@ -1,5 +1,5 @@
 import { normalizeFontSettings, applyFontSettings } from '../utils/customFonts'
-import { SETTINGS_KEYS } from '../utils/backupSettings'
+import { SETTINGS_KEYS, validateBackupSettings, type FactoryThemeOverrides } from '../utils/backupSettings'
 import React, { useState, useEffect } from 'react'
 import {
   X,
@@ -31,6 +31,9 @@ export interface ThemeOption {
 }
 
 export const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
+  actionColor: '#2AA198',
+  selectionColor: '#2AA198',
+  sectionIconColor: '#2AA198',
   uiPrimaryText: '#F1F5F9',
   uiSecondaryText: '#CBD5E1',
   uiSectionText: '#F1F5F9',
@@ -126,6 +129,10 @@ export function normalizeCustomThemeColors(
     ...colors,
     ...typographyDefaults(colors),
     ...headerDefaults(colors),
+    actionColor: colors.actionColor || colors.uiLinkText || '#2AA198',
+    selectionColor: colors.selectionColor || colors.selectedCardBorder || '#2AA198',
+    sectionIconColor: colors.sectionIconColor || colors.iconColor || '#2AA198',
+    ...(colors.identity ? { identity: { ...colors.identity, displayName: colors.identity.displayName.trim() } } : {}),
     fonts: normalizeFontSettings(colors.fonts),
     bgHex: colors.bgHex || DEFAULT_CUSTOM_COLORS.bgHex,
     textHex: colors.textHex || DEFAULT_CUSTOM_COLORS.textHex,
@@ -140,9 +147,14 @@ export function applyCustomThemeStyles(rawColors: CustomThemeColors) {
   const root = document.documentElement
 
   applyFontSettings(colors.fonts, root)
-  for (const [key, value] of Object.entries({ ...typographyDefaults(colors), ...headerDefaults(colors) })) {
+  for (const [key, value] of Object.entries({ ...typographyDefaults(colors), ...headerDefaults(colors), actionColor: colors.actionColor!, selectionColor: colors.selectionColor!, sectionIconColor: colors.sectionIconColor! })) {
     root.style.setProperty('--custom-' + key, value)
   }
+
+  const selection = colors.selectionColor!
+  const channels = [1, 3, 5].map(offset => parseInt(selection.slice(offset, offset + 2), 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+  const luminance = channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722
+  root.style.setProperty('--custom-selection-foreground', luminance > .179 ? '#000000' : '#FFFFFF')
 
   // STAGE
   root.style.setProperty('--custom-stage-bg', colors.bgHex)
@@ -295,7 +307,7 @@ interface PaletteGroupDef {
   label: string
   icon: React.ComponentType<{ className?: string }>
   fields: {
-    key: Exclude<keyof CustomThemeColors, 'fonts'>
+    key: Exclude<keyof CustomThemeColors, 'fonts' | 'identity'>
     label: string
     desc: string
     swatches: string[]
@@ -438,6 +450,9 @@ export const PALETTE_GROUPS: PaletteGroupDef[] = [
     label: 'Controls',
     icon: SlidersHorizontal,
     fields: [
+      { key: 'actionColor', label: 'Action Color', desc: 'Play icons and Select, Hide, Import, Manage actions', swatches: ACCENT_SWATCHES },
+      { key: 'selectionColor', label: 'Selection Color', desc: 'Songbook checkmarks and selection indicators', swatches: ACCENT_SWATCHES },
+      { key: 'sectionIconColor', label: 'Section Icon Color', desc: 'Songbook, setlist and Songs Library icons', swatches: ICON_SWATCHES },
       {
         key: 'buttonBg',
         label: 'Button Background',
@@ -534,11 +549,24 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   const [stagedCustomColors, setStagedCustomColors] = useState<CustomThemeColors>(() => {
     return normalizeCustomThemeColors(customColors)
   })
+  const [overrides, setOverrides] = useState<FactoryThemeOverrides>({})
+  const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
+  const loadOverrides = (): FactoryThemeOverrides => {
+    try {
+      const value = JSON.parse(localStorage.getItem(SETTINGS_KEYS.factoryThemeOverrides) || '{}')
+      return validateBackupSettings({ factoryThemeOverrides: value }).length ? {} : value
+    } catch { return {} }
+  }
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
 
   // Synchronize internal staged state whenever modal opens
   useEffect(() => {
     if (isOpen) {
+      const saved = loadOverrides()
+      // Adopt a V2 imported identity into its factory slot on the next explicit save.
+      if (customColors?.identity) saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
+      setOverrides(saved)
+      setPendingRestore(null)
       setStagedTheme(currentTheme)
       setStagedCustomColors(normalizeCustomThemeColors(customColors))
       setIsCustomPaletteEditorOpen(false)
@@ -549,9 +577,10 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
 
   const handleSaveAndApply = () => {
     try {
+      localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(overrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, stagedTheme)
+      localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(stagedCustomColors))
       if (stagedTheme === 'custom') {
-        localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(stagedCustomColors))
         applyCustomThemeStyles(stagedCustomColors)
       }
     } catch (e) {
@@ -567,9 +596,13 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   }
 
   const handleCustomPaletteSaveAndApply = (colors: CustomThemeColors) => {
+    const nextOverrides = { ...overrides }
+    if (colors.identity) nextOverrides[colors.identity.factoryId] = colors
+    setOverrides(nextOverrides)
     setStagedCustomColors(colors)
     setStagedTheme('custom')
     try {
+      localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, 'custom')
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(colors))
       applyCustomThemeStyles(colors)
@@ -588,7 +621,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
+      <div data-testid="theme-selector" className="theme-studio fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
         <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
           {/* Modal Header */}
           <div className="px-5 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/70">
@@ -597,15 +630,15 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                 <Palette className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-sm sm:text-base font-bold text-[#FDF6E3]">Stage Color Theme</h2>
-                <p className="text-[11px] text-[#93A1A1]">Live Performance & Full-Theme Customization</p>
+                <h2 className="ui-section-text text-sm sm:text-base font-bold ui-primary-text text-[#FDF6E3]">Stage Color Theme</h2>
+                <p className="text-[11px] ui-muted-text text-[#93A1A1]">Live Performance & Full-Theme Customization</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
               title="Close without saving"
-              className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg ui-muted-text text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -615,11 +648,17 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
           <div className="p-5 overflow-y-auto space-y-3 flex-1 custom-scrollbar">
             {/* Preset Theme Cards */}
             {THEME_OPTIONS.map((theme) => {
-              const isSelected = stagedTheme === theme.id
+              const override = overrides[theme.id as Exclude<ThemeMode, 'custom'>]
+              const isSelected = override ? stagedTheme === 'custom' && stagedCustomColors.identity?.factoryId === theme.id : stagedTheme === theme.id
+              const preview = override ? { bgHex: override.bgHex, accentHex: override.accentColor } : theme
               return (
                 <div
                   key={theme.id}
-                  onClick={() => setStagedTheme(theme.id)}
+                  data-testid={`theme-slot-${theme.id}`}
+                  onClick={() => {
+                    setStagedTheme(override ? 'custom' : theme.id)
+                    if (override) setStagedCustomColors(override)
+                  }}
                   className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
                     isSelected
                       ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
@@ -632,13 +671,13 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                       <div
                         className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-inner relative overflow-hidden"
                         style={{
-                          backgroundColor: theme.bgHex,
-                          borderColor: theme.accentHex,
+                          backgroundColor: preview.bgHex,
+                          borderColor: preview.accentHex,
                         }}
                       >
                         <div
                           className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: theme.accentHex }}
+                          style={{ backgroundColor: preview.accentHex }}
                         />
                       </div>
 
@@ -646,13 +685,13 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         <div className="flex items-center gap-2">
                           <span
                             className={`text-xs font-bold leading-tight ${
-                              isSelected ? 'text-[#FDF6E3]' : 'text-[#EEE8D5] group-hover:text-[#FDF6E3]'
+                              isSelected ? 'ui-primary-text text-[#FDF6E3]' : 'ui-primary-text text-[#EEE8D5] group-hover:text-[#FDF6E3]'
                             }`}
                           >
-                            {theme.name}
+                            {override?.identity?.displayName || theme.name}
                           </span>
                           {theme.tag && (
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-[#2AA198] border border-[#1A4A55]">
+                            <span className="ui-muted-text text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-[#2AA198] border border-[#1A4A55]">
                               {theme.tag}
                             </span>
                           )}
@@ -664,7 +703,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                       <div
                         className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                           isSelected
-                            ? 'border-[#2AA198] bg-[#2AA198] text-[#002B36]'
+                            ? 'ui-selection-indicator border-[#2AA198] bg-[#2AA198] text-[#002B36]'
                             : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
                         }`}
                       >
@@ -673,25 +712,26 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                     </div>
                   </div>
 
+                  {override && <button type="button" data-testid={`restore-factory-${theme.id}`} className="ui-action-text text-xs underline text-[#2AA198]" onClick={e => { e.stopPropagation(); setPendingRestore(theme.id) }}>Restore Factory Theme</button>}
                   {/* Built-in Preset Customization Action */}
                   <div className="pt-2 border-t border-[#1A4A55]/40 flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-[#93A1A1]">
-                      Factory preset • Safe starting point
+                    <span className="text-[10px] ui-muted-text text-[#93A1A1]">
+                      {override ? 'Customized factory theme' : 'Factory preset • Safe starting point'}
                     </span>
                     <button
                       type="button"
                       data-testid={`customize-preset-${theme.id}-btn`}
                       onClick={(e) => {
                         e.stopPropagation()
-                        const clonedCustom = presetToCustomPalette(theme)
+                        const clonedCustom = override || { ...presetToCustomPalette(theme), identity: { factoryId: theme.id as Exclude<ThemeMode, 'custom'>, displayName: `${theme.name} Custom` } }
                         setStagedCustomColors(clonedCustom)
                         setStagedTheme('custom')
                         setIsCustomPaletteEditorOpen(true)
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
-                      title={`Customize a copy of ${theme.name} without altering factory preset`}
+                      className="ui-button px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#002B36] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
+                      title={`Customize a copy of ${override?.identity?.displayName || theme.name} without altering factory preset`}
                     >
-                      <Sliders className="w-3 h-3 text-amber-400" />
+                      <Sliders className="ui-action-text w-3 h-3 text-amber-400" />
                       <span>Customize This Theme</span>
                     </button>
                   </div>
@@ -699,8 +739,20 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               )
             })}
 
+            {pendingRestore && <div role="alertdialog" aria-label="Restore factory theme" className="p-3 border border-[#1A4A55] rounded-xl bg-[#002B36]">
+              <p className="ui-primary-text text-xs">Delete this customization and restore the original factory theme? Save &amp; Apply commits the restoration.</p>
+              <button type="button" data-testid="confirm-factory-restore" className="ui-action-text text-xs p-2" onClick={() => {
+                const next = { ...overrides }; delete next[pendingRestore as Exclude<ThemeMode, 'custom'>]; setOverrides(next)
+                if (stagedCustomColors.identity?.factoryId === pendingRestore) {
+                  setStagedCustomColors(normalizeCustomThemeColors())
+                  if (stagedTheme === 'custom') setStagedTheme(pendingRestore)
+                }
+                setPendingRestore(null)
+              }}>Restore Factory Theme</button>
+              <button type="button" className="ui-secondary-text text-xs p-2" onClick={() => setPendingRestore(null)}>Cancel</button>
+            </div>}
             {/* Custom Theme Option Card */}
-            <div
+            {!stagedCustomColors.identity && <div
               data-testid="custom-theme-option-card"
               onClick={() => {
                 setStagedTheme('custom')
@@ -736,17 +788,17 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                       <span
                         className={`text-xs font-bold leading-tight ${
                           stagedTheme === 'custom'
-                            ? 'text-[#FDF6E3]'
-                            : 'text-[#EEE8D5] group-hover:text-[#FDF6E3]'
+                            ? 'ui-primary-text text-[#FDF6E3]'
+                            : 'ui-primary-text text-[#EEE8D5] group-hover:text-[#FDF6E3]'
                         }`}
                       >
                         Custom Palette
                       </span>
-                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-amber-400 border border-[#1A4A55]">
+                      <span className="ui-muted-text text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-amber-400 border border-[#1A4A55]">
                         CUSTOM
                       </span>
                     </div>
-                    <span className="text-[10px] text-[#93A1A1] block mt-0.5">
+                    <span className="text-[10px] ui-muted-text text-[#93A1A1] block mt-0.5">
                       Tailor stage, chrome, cards, inputs & floating controls
                     </span>
                   </div>
@@ -756,7 +808,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   <div
                     className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                       stagedTheme === 'custom'
-                        ? 'border-[#2AA198] bg-[#2AA198] text-[#002B36]'
+                        ? 'ui-selection-indicator border-[#2AA198] bg-[#2AA198] text-[#002B36]'
                         : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
                     }`}
                   >
@@ -767,8 +819,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
 
               {/* Dedicated Editor Launch Action Button */}
               <div className="pt-2 border-t border-[#1A4A55]/60 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-[#93A1A1]">
-                  32 custom colors across 6 responsive categories + fonts
+                <span className="text-[11px] ui-muted-text text-[#93A1A1]">
+                  Semantic colors across 6 categories + fonts
                 </span>
                 <button
                   type="button"
@@ -778,13 +830,13 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                     setStagedTheme('custom')
                     setIsCustomPaletteEditorOpen(true)
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
+                  className="ui-button px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
                 >
                   <Sliders className="w-3.5 h-3.5" />
                   <span>Edit Palette</span>
                 </button>
               </div>
-            </div>
+            </div>}
           </div>
 
           {/* Modal Footer */}
@@ -792,14 +844,15 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
+              className="ui-button px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
+              data-testid="theme-save-apply-btn"
               onClick={handleSaveAndApply}
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+              className="ui-button px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
             >
               Save & Apply
             </button>

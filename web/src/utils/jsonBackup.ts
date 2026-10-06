@@ -157,7 +157,7 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     if (!data || typeof data !== 'object') return invalid(['Expected a backup object or song array'])
     const single = data.exportType === 'SINGLE_SETLIST' || 'setlist' in data
     const settings: BackupSettings = {}
-    for (const field of ['themeMode', 'customThemeColors', 'stageSettings'] as const) {
+    for (const field of ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const) {
       if (field in data) Object.assign(settings, { [field]: data[field] })
     }
     const errors = validateBackupSettings(settings as Record<string, unknown>)
