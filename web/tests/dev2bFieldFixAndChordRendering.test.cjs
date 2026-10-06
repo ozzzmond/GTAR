@@ -53,12 +53,12 @@ const { KeyPickerModal } = require('../src/components/KeyPickerModal.tsx')
 // ---------------------------------------------------------------------------
 // 0. VERSION ALIGNMENT
 // ---------------------------------------------------------------------------
-test('DEV Version Alignment: target version is 1.0.123-dev.3i', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3i')
+test('DEV Version Alignment: target version is 1.0.123-dev.3j', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3j')
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'))
-  assert.equal(pkg.version, '1.0.123-dev.3i')
+  assert.equal(pkg.version, '1.0.123-dev.3j')
   const pkgLock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'))
-  assert.equal(pkgLock.version, '1.0.123-dev.3i')
+  assert.equal(pkgLock.version, '1.0.123-dev.3j')
 })
 
 // ---------------------------------------------------------------------------

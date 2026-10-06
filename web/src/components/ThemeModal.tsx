@@ -583,6 +583,20 @@ export function applyThemeRuntime(
   return colors
 }
 
+// Local retention for the standalone palette while the existing active-palette
+// setting carries a factory customization. JSON V2 and factory overrides stay intact.
+const STANDALONE_PALETTE_KEY = 'gtar_standalone_custom_theme_colors'
+function loadStandalonePalette(colors?: CustomThemeColors): CustomThemeColors {
+  if (colors && !colors.identity) return normalizeCustomThemeColors(colors)
+  try {
+    const saved = JSON.parse(localStorage.getItem(STANDALONE_PALETTE_KEY) || 'null')
+    if (saved && !saved.identity && !validateBackupSettings({ customThemeColors: saved }).length) {
+      return normalizeCustomThemeColors(saved)
+    }
+  } catch { /* Missing or invalid retention uses the standalone defaults. */ }
+  return normalizeCustomThemeColors()
+}
+
 export const ThemeModal: React.FC<ThemeModalProps> = ({
   isOpen,
   onClose,
@@ -596,6 +610,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   const [stagedCustomColors, setStagedCustomColors] = useState<CustomThemeColors>(() => {
     return normalizeCustomThemeColors(customColors)
   })
+  const [standaloneColors, setStandaloneColors] = useState<CustomThemeColors>(() => loadStandalonePalette(customColors))
   const [overrides, setOverrides] = useState<FactoryThemeOverrides>({})
   const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
@@ -608,6 +623,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       if (currentTheme === 'custom' && customColors?.identity) {
         saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
       }
+      setStandaloneColors(loadStandalonePalette(customColors))
       setOverrides(saved)
       setPendingRestore(null)
       setStagedTheme(currentTheme)
@@ -618,6 +634,17 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
 
   if (!isOpen) return null
 
+  const isStandaloneSelected = stagedTheme === 'custom' && !stagedCustomColors.identity
+  const selectStandalonePalette = () => {
+    setStagedTheme('custom')
+    setStagedCustomColors(standaloneColors)
+  }
+  const retainStandalonePalette = (colors: CustomThemeColors) => {
+    const standalone = colors.identity ? standaloneColors : colors
+    setStandaloneColors(standalone)
+    localStorage.setItem(STANDALONE_PALETTE_KEY, JSON.stringify(standalone))
+  }
+
   const handleSaveAndApply = () => {
     try {
       const nextOverrides = { ...overrides }
@@ -625,6 +652,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
         nextOverrides[stagedCustomColors.identity.factoryId] = stagedCustomColors
       }
       setOverrides(nextOverrides)
+      retainStandalonePalette(stagedCustomColors)
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, stagedTheme)
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(stagedCustomColors))
@@ -648,6 +676,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     setStagedCustomColors(colors)
     setStagedTheme('custom')
     try {
+      retainStandalonePalette(colors)
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, 'custom')
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(colors))
@@ -791,7 +820,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               <button type="button" data-testid="confirm-factory-restore" className="ui-action-text text-xs p-2" onClick={() => {
                 const next = { ...overrides }; delete next[pendingRestore as Exclude<ThemeMode, 'custom'>]; setOverrides(next)
                 if (stagedCustomColors.identity?.factoryId === pendingRestore) {
-                  setStagedCustomColors(normalizeCustomThemeColors())
+                  setStagedCustomColors(standaloneColors)
                   if (stagedTheme === 'custom') setStagedTheme(pendingRestore)
                 }
                 setPendingRestore(null)
@@ -799,13 +828,13 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               <button type="button" className="ui-secondary-text text-xs p-2" onClick={() => setPendingRestore(null)}>Cancel</button>
             </div>}
             {/* Custom Theme Option Card */}
-            {!stagedCustomColors.identity && <div
+            <div
               data-testid="custom-theme-option-card"
               onClick={() => {
-                setStagedTheme('custom')
+                selectStandalonePalette()
               }}
               className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
-                stagedTheme === 'custom'
+                isStandaloneSelected
                   ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
                   : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
               }`}
@@ -816,17 +845,17 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 shadow-inner relative overflow-hidden"
                     style={{
-                      backgroundColor: stagedCustomColors.bgHex,
-                      borderColor: stagedCustomColors.chordHex,
+                      backgroundColor: standaloneColors.bgHex,
+                      borderColor: standaloneColors.chordHex,
                     }}
                   >
                     <div
                       className="w-4 h-4 rounded-full shadow"
-                      style={{ backgroundColor: stagedCustomColors.chordHex }}
+                      style={{ backgroundColor: standaloneColors.chordHex }}
                     />
                     <div
                       className="absolute bottom-0 right-0 w-3 h-3 rounded-tl"
-                      style={{ backgroundColor: stagedCustomColors.sectionHex }}
+                      style={{ backgroundColor: standaloneColors.sectionHex }}
                     />
                   </div>
 
@@ -834,7 +863,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-xs font-bold leading-tight ${
-                          stagedTheme === 'custom'
+                          isStandaloneSelected
                             ? 'ui-primary-text text-[#FDF6E3]'
                             : 'ui-primary-text text-[#EEE8D5] group-hover:text-[#FDF6E3]'
                         }`}
@@ -854,12 +883,12 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                 <div className="flex items-center gap-2">
                   <div
                     className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                      stagedTheme === 'custom'
+                      isStandaloneSelected
                         ? 'ui-selection-indicator border-[#2AA198] bg-[#2AA198] text-[#002B36]'
                         : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
                     }`}
                   >
-                    {stagedTheme === 'custom' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    {isStandaloneSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                   </div>
                 </div>
               </div>
@@ -874,7 +903,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   data-testid="open-custom-palette-editor-btn"
                   onClick={(e) => {
                     e.stopPropagation()
-                    setStagedTheme('custom')
+                    selectStandalonePalette()
                     setIsCustomPaletteEditorOpen(true)
                   }}
                   className="ui-button px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
@@ -883,7 +912,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   <span>Edit Palette</span>
                 </button>
               </div>
-            </div>}
+            </div>
           </div>
 
           {/* Modal Footer */}

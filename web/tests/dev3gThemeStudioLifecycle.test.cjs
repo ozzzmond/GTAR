@@ -139,7 +139,7 @@ test('Factory customization names persist in the same slot; reset is staged, Can
   await render(theme.ThemeModal, { ...props, isOpen: false }); await render(theme.ThemeModal, props)
   let slot = document.querySelector('[data-testid="theme-slot-paper-light"]')
   assert.ok(slot.textContent.includes('Classic Facebook'))
-  assert.equal(document.querySelector('[data-testid="custom-theme-option-card"]'), null)
+  assert.ok(document.querySelector('[data-testid="custom-theme-option-card"]'))
   assert.deepEqual([...document.querySelectorAll('[data-testid^="theme-slot-"]')].map(el => el.dataset.testid.slice(11)), factorySnapshot.map(p => p.id))
   const snapshot = Object.entries(localStorage)
   await click('[data-testid="restore-factory-paper-light"]'); await click('[data-testid="confirm-factory-restore"]')
