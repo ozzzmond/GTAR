@@ -536,6 +536,53 @@ export const PALETTE_GROUPS: PaletteGroupDef[] = [
   },
 ]
 
+export function loadFactoryThemeOverrides(): FactoryThemeOverrides {
+  try {
+    const value = JSON.parse(localStorage.getItem(SETTINGS_KEYS.factoryThemeOverrides) || '{}')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    const valid: FactoryThemeOverrides = {}
+    for (const [id, palette] of Object.entries(value)) {
+      if (
+        id !== 'custom' &&
+        THEME_MODES.includes(id as ThemeMode) &&
+        palette &&
+        typeof palette === 'object' &&
+        !validateBackupSettings({ factoryThemeOverrides: { [id]: palette } }).length
+      ) {
+        valid[id as Exclude<ThemeMode, 'custom'>] = normalizeCustomThemeColors(palette as CustomThemeColors)
+      }
+    }
+    return valid
+  } catch { return {} }
+}
+
+/** Resolve factory slots and custom palettes through the existing semantic renderer. */
+export function resolveThemePalette(
+  mode: ThemeMode,
+  customColors: CustomThemeColors,
+  overrides: FactoryThemeOverrides = loadFactoryThemeOverrides()
+): CustomThemeColors {
+  if (mode === 'custom') return normalizeCustomThemeColors(customColors)
+  const preset = THEME_OPTIONS.find(theme => theme.id === mode) || THEME_OPTIONS[0]
+  return overrides[preset.id as Exclude<ThemeMode, 'custom'>] || presetToCustomPalette(preset)
+}
+
+export function applyThemeRuntime(
+  mode: ThemeMode,
+  customColors: CustomThemeColors,
+  overrides?: FactoryThemeOverrides
+): CustomThemeColors {
+  const colors = resolveThemePalette(mode, customColors, overrides)
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove(...THEME_MODES.map(theme => `theme-${theme}`))
+    // Keep the existing CSS scope as the shared semantic renderer, independent of mode.
+    document.body.classList.add('theme-custom')
+    document.body.dataset.theme = mode
+    applyCustomThemeStyles(colors)
+  }
+  return colors
+}
+
 export const ThemeModal: React.FC<ThemeModalProps> = ({
   isOpen,
   onClose,
@@ -551,31 +598,12 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   })
   const [overrides, setOverrides] = useState<FactoryThemeOverrides>({})
   const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
-  const loadOverrides = (): FactoryThemeOverrides => {
-    try {
-      const value = JSON.parse(localStorage.getItem(SETTINGS_KEYS.factoryThemeOverrides) || '{}')
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-      const valid: FactoryThemeOverrides = {}
-      for (const [id, palette] of Object.entries(value)) {
-        if (
-          id !== 'custom' &&
-          THEME_MODES.includes(id as ThemeMode) &&
-          palette &&
-          typeof palette === 'object' &&
-          !validateBackupSettings({ factoryThemeOverrides: { [id]: palette } }).length
-        ) {
-          valid[id as Exclude<ThemeMode, 'custom'>] = normalizeCustomThemeColors(palette as CustomThemeColors)
-        }
-      }
-      return valid
-    } catch { return {} }
-  }
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
 
   // Synchronize internal staged state whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      const saved = loadOverrides()
+      const saved = loadFactoryThemeOverrides()
       // Adopt active custom theme with factory identity into overrides on modal open
       if (currentTheme === 'custom' && customColors?.identity) {
         saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
@@ -600,9 +628,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, stagedTheme)
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(stagedCustomColors))
-      if (stagedTheme === 'custom') {
-        applyCustomThemeStyles(stagedCustomColors)
-      }
+      applyThemeRuntime(stagedTheme, stagedCustomColors, nextOverrides)
     } catch (e) {
       console.error('Failed to commit theme to localStorage', e)
     }
@@ -625,7 +651,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, 'custom')
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(colors))
-      applyCustomThemeStyles(colors)
+      applyThemeRuntime('custom', colors, nextOverrides)
     } catch (e) {
       console.error('Failed to commit custom theme to localStorage', e)
     }
@@ -669,8 +695,9 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
             {/* Preset Theme Cards */}
             {THEME_OPTIONS.map((theme) => {
               const override = overrides[theme.id as Exclude<ThemeMode, 'custom'>]
-              const isSelected = override ? stagedTheme === 'custom' && stagedCustomColors.identity?.factoryId === theme.id : stagedTheme === theme.id
-              const preview = override ? { bgHex: override.bgHex, accentHex: override.accentColor || override.chordHex || theme.accentHex } : theme
+              const isSelected = stagedTheme === theme.id || (stagedTheme === 'custom' && !!override && stagedCustomColors.identity?.factoryId === theme.id)
+              const resolved = resolveThemePalette(theme.id, stagedCustomColors, overrides)
+              const preview = { bgHex: resolved.bgHex, accentHex: resolved.accentColor || resolved.chordHex }
               return (
                 <div
                   key={theme.id}

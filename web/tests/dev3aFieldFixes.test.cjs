@@ -51,20 +51,20 @@ const {
 const { isValidUUID } = require('../src/utils/uuid.ts')
 
 // =============================================================================
-// 1. VERSION IDENTITY CONTRACT (v1.0.123-dev.3h)
+// 1. VERSION IDENTITY CONTRACT (v1.0.123-dev.3i)
 // =============================================================================
-test('DEV3A_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.3h across manifests, types, and functions', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3h', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.3h')
+test('DEV3A_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.3i across manifests, types, and functions', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3i', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.3i')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3h', 'package.json version must be 1.0.123-dev.3h')
+  assert.equal(pkgJson.version, '1.0.123-dev.3i', 'package.json version must be 1.0.123-dev.3i')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3h', 'package-lock.json root must be 1.0.123-dev.3h')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3h', 'package-lock.json packages[""] must be 1.0.123-dev.3h')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3i', 'package-lock.json root must be 1.0.123-dev.3i')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3i', 'package-lock.json packages[""] must be 1.0.123-dev.3i')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3h'), 'authCore.ts must reference v1.0.123-dev.3h')
+  assert.ok(authCore.includes('v1.0.123-dev.3i'), 'authCore.ts must reference v1.0.123-dev.3i')
 })
 
 // =============================================================================

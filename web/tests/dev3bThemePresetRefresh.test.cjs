@@ -95,16 +95,10 @@ test('DEV3B_AMBER_VS_OLED_DISTINCTION: Amber Stage is warm dark with gold/amber 
   assert.equal(amber.textHex.toLowerCase(), '#fff8e7', 'Amber text must be warm cream #FFF8E7')
   assert.equal(amber.accentHex.toLowerCase(), '#f59e0b', 'Amber accent must be warm amber/gold #F59E0B')
 
-  // CSS rules check
   const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
-  assert.ok(css.includes('body.theme-amber-stage {'), 'Must have body.theme-amber-stage')
-  assert.ok(css.includes('#181206'), 'Amber stage bg #181206 must be in CSS')
-  assert.ok(css.includes('#FFF8E7'), 'Amber stage text #FFF8E7 must be in CSS')
-  assert.ok(css.includes('#F59E0B'), 'Amber stage chord #F59E0B must be in CSS')
+  assert.ok(css.includes('body.theme-custom {'))
+  assert.ok(!/body\.theme-(amber-stage|oled-black)/.test(css))
 
-  assert.ok(css.includes('body.theme-oled-black {'), 'Must have body.theme-oled-black')
-  assert.ok(css.includes('background-color: #000000;'), 'OLED black bg #000000 must be in CSS')
-  assert.ok(css.includes('#38BDF8'), 'OLED black chord #38BDF8 must be in CSS')
 })
 
 // =============================================================================
@@ -136,14 +130,9 @@ test('DEV3B_NEW_PRESETS_PRESENCE: Crimson Stage, Azure Stage, and E-Ink Paper ar
   assert.equal(eInk.accentHex.toLowerCase(), '#404040')
   assert.equal(eInk.textHex.toLowerCase(), '#111111')
 
-  // CSS rules check for each new preset
   const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
-  assert.ok(css.includes('body.theme-crimson-stage {'), 'CSS defines body.theme-crimson-stage')
-  assert.ok(css.includes('#E11D48'), 'CSS defines crimson accent #E11D48')
-  assert.ok(css.includes('body.theme-azure-stage {'), 'CSS defines body.theme-azure-stage')
-  assert.ok(css.includes('#06B6D4'), 'CSS defines azure accent #06B6D4')
-  assert.ok(css.includes('body.theme-e-ink-paper {'), 'CSS defines body.theme-e-ink-paper')
-  assert.ok(css.includes('#ededed !important;'), 'CSS defines e-ink paper background #ededed')
+  assert.ok(!/body\.theme-(crimson-stage|azure-stage|e-ink-paper)/.test(css))
+
 })
 
 // =============================================================================
@@ -187,9 +176,7 @@ test('DEV3B_SAVE_AND_APPLY_CONTRACT: ThemeModal preserves Save & Apply, Cancel, 
   assert.ok(themeModalSource.includes('Cancel'), 'Cancel button preserved')
   assert.ok(themeModalSource.includes('Save & Apply'), 'Save & Apply button preserved')
 
-  // App.tsx classList removal includes all themes
   const appSource = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
-  assert.ok(appSource.includes("'theme-crimson-stage'"), 'App.tsx cleans up theme-crimson-stage')
-  assert.ok(appSource.includes("'theme-azure-stage'"), 'App.tsx cleans up theme-azure-stage')
-  assert.ok(appSource.includes("'theme-e-ink-paper'"), 'App.tsx cleans up theme-e-ink-paper')
+  assert.ok(appSource.includes('applyThemeRuntime(stageTheme, customThemeColors)'))
+
 })
