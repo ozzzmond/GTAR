@@ -155,6 +155,9 @@ export function applyCustomThemeStyles(rawColors: CustomThemeColors) {
   const channels = [1, 3, 5].map(offset => parseInt(selection.slice(offset, offset + 2), 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
   const luminance = channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722
   root.style.setProperty('--custom-selection-foreground', luminance > .179 ? '#000000' : '#FFFFFF')
+  const actionChannels = [1, 3, 5].map(offset => parseInt(colors.actionColor!.slice(offset, offset + 2), 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4)
+  const actionLuminance = actionChannels[0] * .2126 + actionChannels[1] * .7152 + actionChannels[2] * .0722
+  root.style.setProperty('--custom-action-foreground', actionLuminance > .179 ? '#000000' : '#FFFFFF')
 
   // STAGE
   root.style.setProperty('--custom-stage-bg', colors.bgHex)
@@ -168,6 +171,7 @@ export function applyCustomThemeStyles(rawColors: CustomThemeColors) {
   const g = parseInt(hex.substring(2, 4), 16) || 0
   const b = parseInt(hex.substring(4, 6), 16) || 0
   const isLight = (r * 299 + g * 587 + b * 114) / 1000 > 150
+  root.style.colorScheme = isLight ? 'light' : 'dark'
 
   if (isLight) {
     root.style.setProperty(
@@ -701,23 +705,23 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   return (
     <>
       <div data-testid="theme-selector" className="theme-studio fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
-        <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="w-full max-w-lg rounded-2xl bg-app-surface border border-app-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
           {/* Modal Header */}
-          <div className="px-5 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/70">
+          <div className="px-5 py-4 border-b border-app-border flex items-center justify-between bg-app-base/70">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#B58900]/20 border border-[#B58900]/40 flex items-center justify-center text-[#B58900]">
+              <div className="w-9 h-9 rounded-xl bg-app-accent/20 border border-app-accent/40 flex items-center justify-center text-app-accent">
                 <Palette className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="ui-section-text text-sm sm:text-base font-bold ui-primary-text text-[#FDF6E3]">Stage Color Theme</h2>
-                <p className="text-[11px] ui-muted-text text-[#93A1A1]">Live Performance & Full-Theme Customization</p>
+                <h2 className="ui-section-text text-sm sm:text-base font-bold ui-primary-text text-app-heading">Stage Color Theme</h2>
+                <p className="text-[11px] ui-muted-text text-app-muted">Live Performance & Full-Theme Customization</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
               title="Close without saving"
-              className="p-1.5 rounded-lg ui-muted-text text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -740,8 +744,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   }}
                   className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
                     isSelected
-                      ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
-                      : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
+                      ? 'bg-app-base border-app-action shadow-md ring-1 ring-app-action/40'
+                      : 'bg-app-base/50 border-app-border/60 hover:border-app-action/50 hover:bg-app-base'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -764,13 +768,13 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         <div className="flex items-center gap-2">
                           <span
                             className={`text-xs font-bold leading-tight ${
-                              isSelected ? 'ui-primary-text text-[#FDF6E3]' : 'ui-primary-text text-[#EEE8D5] group-hover:text-[#FDF6E3]'
+                              isSelected ? 'ui-primary-text text-app-heading' : 'ui-primary-text text-app-text group-hover:text-app-heading'
                             }`}
                           >
                             {override?.identity?.displayName || theme.name}
                           </span>
                           {theme.tag && (
-                            <span className="ui-muted-text text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-[#2AA198] border border-[#1A4A55]">
+                            <span className="ui-muted-text text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-surface text-app-action border border-app-border">
                               {theme.tag}
                             </span>
                           )}
@@ -782,8 +786,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                       <div
                         className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                           isSelected
-                            ? 'ui-selection-indicator border-[#2AA198] bg-[#2AA198] text-[#002B36]'
-                            : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
+                            ? 'ui-selection-indicator border-app-action bg-app-action text-app-on-action'
+                            : 'border-app-border bg-app-surface group-hover:border-app-action'
                         }`}
                       >
                         {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -791,10 +795,10 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                     </div>
                   </div>
 
-                  {override && <button type="button" data-testid={`restore-factory-${theme.id}`} className="ui-action-text text-xs underline text-[#2AA198]" onClick={e => { e.stopPropagation(); setPendingRestore(theme.id) }}>Restore Factory Theme</button>}
+                  {override && <button type="button" data-testid={`restore-factory-${theme.id}`} className="ui-action-text text-xs underline text-app-action" onClick={e => { e.stopPropagation(); setPendingRestore(theme.id) }}>Restore Factory Theme</button>}
                   {/* Built-in Preset Customization Action */}
-                  <div className="pt-2 border-t border-[#1A4A55]/40 flex items-center justify-between gap-2">
-                    <span className="text-[10px] ui-muted-text text-[#93A1A1]">
+                  <div className="pt-2 border-t border-app-border/40 flex items-center justify-between gap-2">
+                    <span className="text-[10px] ui-muted-text text-app-muted">
                       {override ? 'Customized factory theme' : 'Factory preset • Safe starting point'}
                     </span>
                     <button
@@ -807,10 +811,10 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         setStagedTheme(theme.id)
                         setIsCustomPaletteEditorOpen(true)
                       }}
-                      className="ui-button px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#002B36] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
+                      className="ui-button px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-base ui-primary-text text-app-text hover:text-app-heading border border-app-border text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
                       title={`Customize a copy of ${override?.identity?.displayName || theme.name} without altering factory preset`}
                     >
-                      <Sliders className="ui-action-text w-3 h-3 text-amber-400" />
+                      <Sliders className="ui-action-text w-3 h-3 text-app-accent" />
                       <span>Customize This Theme</span>
                     </button>
                   </div>
@@ -818,7 +822,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               )
             })}
 
-            {pendingRestore && <div role="alertdialog" aria-label="Restore factory theme" className="p-3 border border-[#1A4A55] rounded-xl bg-[#002B36]">
+            {pendingRestore && <div role="alertdialog" aria-label="Restore factory theme" className="p-3 border border-app-border rounded-xl bg-app-base">
               <p className="ui-primary-text text-xs">Delete this customization and restore the original factory theme? Save &amp; Apply commits the restoration.</p>
               <button type="button" data-testid="confirm-factory-restore" className="ui-action-text text-xs p-2" onClick={() => {
                 const next = { ...overrides }; delete next[pendingRestore as Exclude<ThemeMode, 'custom'>]; setOverrides(next)
@@ -837,8 +841,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               }}
               className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
                 isStandaloneSelected
-                  ? 'bg-[#002B36] border-[#2AA198] shadow-md ring-1 ring-[#2AA198]/40'
-                  : 'bg-[#002B36]/50 border-[#1A4A55]/60 hover:border-[#2AA198]/50 hover:bg-[#002B36]'
+                  ? 'bg-app-base border-app-action shadow-md ring-1 ring-app-action/40'
+                  : 'bg-app-base/50 border-app-border/60 hover:border-app-action/50 hover:bg-app-base'
               }`}
             >
               <div className="flex items-center justify-between gap-3">
@@ -866,17 +870,17 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                       <span
                         className={`text-xs font-bold leading-tight ${
                           isStandaloneSelected
-                            ? 'ui-primary-text text-[#FDF6E3]'
-                            : 'ui-primary-text text-[#EEE8D5] group-hover:text-[#FDF6E3]'
+                            ? 'ui-primary-text text-app-heading'
+                            : 'ui-primary-text text-app-text group-hover:text-app-heading'
                         }`}
                       >
                         Custom Palette
                       </span>
-                      <span className="ui-muted-text text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#073642] text-amber-400 border border-[#1A4A55]">
+                      <span className="ui-muted-text text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-surface text-app-accent border border-app-border">
                         CUSTOM
                       </span>
                     </div>
-                    <span className="text-[10px] ui-muted-text text-[#93A1A1] block mt-0.5">
+                    <span className="text-[10px] ui-muted-text text-app-muted block mt-0.5">
                       Tailor stage, chrome, cards, inputs & floating controls
                     </span>
                   </div>
@@ -886,8 +890,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   <div
                     className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                       isStandaloneSelected
-                        ? 'ui-selection-indicator border-[#2AA198] bg-[#2AA198] text-[#002B36]'
-                        : 'border-[#1A4A55] bg-[#073642] group-hover:border-[#2AA198]'
+                        ? 'ui-selection-indicator border-app-action bg-app-action text-app-on-action'
+                        : 'border-app-border bg-app-surface group-hover:border-app-action'
                     }`}
                   >
                     {isStandaloneSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -896,8 +900,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               </div>
 
               {/* Dedicated Editor Launch Action Button */}
-              <div className="pt-2 border-t border-[#1A4A55]/60 flex items-center justify-between gap-2">
-                <span className="text-[11px] ui-muted-text text-[#93A1A1]">
+              <div className="pt-2 border-t border-app-border/60 flex items-center justify-between gap-2">
+                <span className="text-[11px] ui-muted-text text-app-muted">
                   Semantic colors across 6 categories + fonts
                 </span>
                 <button
@@ -908,7 +912,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                     selectStandalonePalette()
                     setIsCustomPaletteEditorOpen(true)
                   }}
-                  className="ui-button px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
+                  className="ui-button px-3 py-1.5 rounded-xl bg-app-button hover:bg-app-button text-app-button-text text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
                 >
                   <Sliders className="w-3.5 h-3.5" />
                   <span>Edit Palette</span>
@@ -918,11 +922,11 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
           </div>
 
           {/* Modal Footer */}
-          <div className="px-5 py-3.5 border-t border-[#1A4A55] bg-[#002B36]/80 flex items-center justify-end gap-2.5">
+          <div className="px-5 py-3.5 border-t border-app-border bg-app-base/80 flex items-center justify-end gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="ui-button px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
+              className="ui-button px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface ui-primary-text text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors"
             >
               Cancel
             </button>
@@ -930,7 +934,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               type="button"
               data-testid="theme-save-apply-btn"
               onClick={handleSaveAndApply}
-              className="ui-button px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+              className="ui-button px-4 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
             >
               Save & Apply
             </button>

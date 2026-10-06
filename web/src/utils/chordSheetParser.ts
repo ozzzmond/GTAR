@@ -189,7 +189,7 @@ export function parseAndFormatSong(rawText: string, transposeOffset = 0): Parsed
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-    html = `<pre class="stage-mono text-solar-text">${escaped}</pre>`
+    html = `<pre class="stage-mono text-app-lyric">${escaped}</pre>`
   }
 
   return {

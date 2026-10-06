@@ -4,6 +4,7 @@
  * to secondary displays, Chromecasts, TVs, or external teleprompter popouts.
  */
 
+import type { CustomThemeColors } from './backupSettings'
 import type { ActiveSongState } from '../types/gtar'
 import { appLogger } from './logger'
 import { isIosDevice, isStandalonePwa } from './stagePerformance'
@@ -110,12 +111,7 @@ export interface StageCastState {
   lineSpacing?: 'compact' | 'normal' | 'relaxed'
   notation?: 'chords' | 'numbers'
   themeMode?: string
-  customThemeColors?: {
-    bgHex: string
-    textHex: string
-    chordHex: string
-    sectionHex: string
-  }
+  customThemeColors?: CustomThemeColors
 }
 
 export type StageCastMessage =
@@ -187,6 +183,7 @@ class StageCastEngine {
   private channel: BroadcastChannel | null = null
   private popupWindow: Window | null = null
   private presentationConnection: PresentationConnection | null = null
+  private themeSnapshot: Pick<StageCastState, 'themeMode' | 'customThemeColors'> = {}
   private lastState: StageCastState | null = null
   private lastScroll: { scrollTop: number; scrollFraction: number } | null = null
   private sessionListeners: Set<(isActive: boolean) => void> = new Set()
@@ -293,7 +290,15 @@ class StageCastEngine {
     return null
   }
 
+  public setThemeSnapshot(themeMode: string, customThemeColors: CustomThemeColors) {
+    this.themeSnapshot = { themeMode, customThemeColors }
+    if (this.lastState) this.broadcastState({ ...this.lastState, ...this.themeSnapshot })
+  }
+
   public broadcastState(state: StageCastState) {
+    // Song/scroll updates must retain the sender's canonical theme snapshot.
+    state = { ...state, themeMode: state.themeMode ?? this.themeSnapshot.themeMode ?? this.lastState?.themeMode,
+      customThemeColors: state.customThemeColors ?? this.themeSnapshot.customThemeColors ?? this.lastState?.customThemeColors }
     this.lastState = state
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))

@@ -1503,7 +1503,7 @@ export const StageView: React.FC<StageViewProps> = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[#002B36] select-none relative overflow-hidden"
+    <div className="flex-1 flex flex-col bg-app-base select-none relative overflow-hidden"
       style={{ height: inPerformanceMode ? '100vh' : 'calc(100vh - 4rem)' }}
     >
       {/* =================================================================== */}
@@ -1513,7 +1513,7 @@ export const StageView: React.FC<StageViewProps> = ({
         <div
           onClick={triggerOverlaysShow}
           className={`absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-3 sm:px-6 py-2
-                      bg-[#073642]/95 backdrop-blur-md border-b border-[#1A4A55] shadow-xl
+                      bg-app-surface/95 backdrop-blur-md border-b border-app-border shadow-xl
                       transition-all duration-300 ease-in-out transform ${
                         showStageOverlays
                           ? 'opacity-100 translate-y-0 pointer-events-auto'
@@ -1522,11 +1522,11 @@ export const StageView: React.FC<StageViewProps> = ({
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}
         >
           <div className="min-w-0 flex-1 pr-2 sm:pr-4">
-            <h1 className="text-sm sm:text-base md:text-lg font-extrabold text-[#EEE8D5] tracking-tight leading-tight truncate">
+            <h1 className="text-sm sm:text-base md:text-lg font-extrabold text-app-text tracking-tight leading-tight truncate">
               {song.title || 'Untitled Song'}
             </h1>
             {song.artist && (
-              <p className="text-[10px] sm:text-xs text-[#2AA198] font-semibold truncate leading-none mt-0.5">
+              <p className="text-[10px] sm:text-xs text-app-action font-semibold truncate leading-none mt-0.5">
                 {song.artist}
               </p>
             )}
@@ -1536,7 +1536,7 @@ export const StageView: React.FC<StageViewProps> = ({
             {notation === 'numbers' ? (
               /* Quick Key Control [- Key +] for Numbers Mode */
               <div
-                className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
+                className="flex items-center bg-app-base rounded-lg border border-app-border px-1 py-0.5 shadow-sm"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
@@ -1547,7 +1547,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     onTransposeChange(transposeOffset - 1)
                     triggerOverlaysShow()
                   }}
-                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                   title="Step Key Down (-1 semitone)"
                   aria-label="Step Key Down (-1 semitone)"
                 >
@@ -1561,8 +1561,8 @@ export const StageView: React.FC<StageViewProps> = ({
                     setIsKeyPickerOpen(true)
                     triggerOverlaysShow()
                   }}
-                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
-                    effectivePerformanceKey ? 'text-[#B58900]' : 'text-[#DC6E67]'
+                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-app-surface transition-colors cursor-pointer ${
+                    effectivePerformanceKey ? 'text-app-accent' : 'text-status-error'
                   }`}
                   title="Choose Performance Key"
                   aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}, Tap to choose key`}
@@ -1579,7 +1579,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     onTransposeChange(transposeOffset + 1)
                     triggerOverlaysShow()
                   }}
-                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                   title="Step Key Up (+1 semitone)"
                   aria-label="Step Key Up (+1 semitone)"
                 >
@@ -1589,7 +1589,7 @@ export const StageView: React.FC<StageViewProps> = ({
             ) : (
               /* Quick Transpose [- Key +] Control */
               <div
-                className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] px-1 py-0.5 shadow-sm"
+                className="flex items-center bg-app-base rounded-lg border border-app-border px-1 py-0.5 shadow-sm"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
@@ -1599,7 +1599,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     onTransposeChange(transposeOffset - 1)
                     triggerOverlaysShow()
                   }}
-                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer"
                   title="Transpose Down (-1)"
                   aria-label="Transpose Down (-1 semitone)"
                 >
@@ -1613,8 +1613,8 @@ export const StageView: React.FC<StageViewProps> = ({
                     setIsKeyPickerOpen(true)
                     triggerOverlaysShow()
                   }}
-                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-[#073642] transition-colors cursor-pointer ${
-                    transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
+                  className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-app-surface transition-colors cursor-pointer ${
+                    transposeOffset !== 0 ? 'text-app-accent' : 'text-app-text'
                   }`}
                   title="Choose Target Key"
                   aria-label={`Transpose: ${offsetStr}, Tap to choose key`}
@@ -1630,7 +1630,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     onTransposeChange(transposeOffset + 1)
                     triggerOverlaysShow()
                   }}
-                  className="w-7 h-7 flex items-center justify-center text-[#EEE8D5] hover:text-[#2AA198] hover:bg-[#073642] active:scale-90 rounded transition-all cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer"
                   title="Transpose Up (+1)"
                   aria-label="Transpose Up (+1 semitone)"
                 >
@@ -1647,8 +1647,8 @@ export const StageView: React.FC<StageViewProps> = ({
                 if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
                 else setIsDistractionFree(false)
               }}
-              className="px-2.5 py-1.5 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#EEE8D5] text-xs font-semibold
-                         flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-app-base hover:bg-app-border text-app-text text-xs font-semibold
+                         flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
               title="Exit focus mode"
               aria-label="Exit focus mode"
             >
@@ -1669,10 +1669,10 @@ export const StageView: React.FC<StageViewProps> = ({
           title="Tap to reveal stage controls"
           aria-label={`${song.title || 'Untitled Song'} • Tap to reveal stage controls`}
         >
-          <div className="max-w-[85vw] sm:max-w-lg md:max-w-xl px-4 py-1 rounded-full bg-[#073642]/85 backdrop-blur-md border border-[#1A4A55]/70 shadow-md flex items-center justify-center">
+          <div className="max-w-[85vw] sm:max-w-lg md:max-w-xl px-4 py-1 rounded-full bg-app-surface/85 backdrop-blur-md border border-app-border/70 shadow-md flex items-center justify-center">
             <span
               data-testid="stage-fullscreen-title"
-              className="text-xs sm:text-base md:text-lg font-bold text-[#EEE8D5] truncate tracking-wide text-center"
+              className="text-xs sm:text-base md:text-lg font-bold text-app-text truncate tracking-wide text-center"
             >
               {song.title || 'Untitled Song'}
             </span>
@@ -1685,7 +1685,7 @@ export const StageView: React.FC<StageViewProps> = ({
       {/*    Hidden entirely in performance mode — replaced by floating HUD.  */}
       {/* =================================================================== */}
       <div
-        className={`border-b border-[#1A4A55] bg-[#073642] px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 z-20 shadow-md transition-all duration-300 ${
+        className={`border-b border-app-border bg-app-surface px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 z-20 shadow-md transition-all duration-300 ${
           inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'opacity-100'
         }`}
       >
@@ -1695,7 +1695,7 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               onClick={onBack}
-              className="p-2 hover:bg-white/10 rounded-full transition-colors cursor-pointer text-[#EEE8D5] hover:text-[#2AA198] flex items-center justify-center -ml-1 select-none active:scale-95"
+              className="p-2 hover:bg-app-accent/50 rounded-full transition-colors cursor-pointer text-app-text hover:text-app-action flex items-center justify-center -ml-1 select-none active:scale-95"
               title="Back to Songbook Library"
               aria-label="Back to Songbook Library"
             >
@@ -1703,11 +1703,11 @@ export const StageView: React.FC<StageViewProps> = ({
             </button>
           )}
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-extrabold text-[#EEE8D5] tracking-tight leading-tight truncate max-w-[240px] sm:max-w-xs md:max-w-md">
+            <h1 className="text-base sm:text-lg font-extrabold text-app-text tracking-tight leading-tight truncate max-w-[240px] sm:max-w-xs md:max-w-md">
               {song.title || 'Untitled Song'}
             </h1>
             {song.artist && (
-              <p className="text-[11px] sm:text-xs text-[#2AA198] font-semibold truncate leading-none mt-0.5">
+              <p className="text-[11px] sm:text-xs text-app-action font-semibold truncate leading-none mt-0.5">
                 {song.artist}
               </p>
             )}
@@ -1717,7 +1717,7 @@ export const StageView: React.FC<StageViewProps> = ({
         {/* Right Side: Font Family, Font Size A-/A+, Column Reflow, Transpose Stepper, Band Sync, Stage Tools, Fullscreen */}
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
           {/* Font Family Selector (Mono / Sans / Serif matching Android SongFontStyle) */}
-          <div className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] p-0.5 text-xs font-semibold">
+          <div className="flex items-center bg-app-base rounded-lg border border-app-border p-0.5 text-xs font-semibold">
             {(
               [
                 { id: 'mono', label: 'Mono', title: 'Monospace (Recommended for stage chord alignment)' },
@@ -1731,8 +1731,8 @@ export const StageView: React.FC<StageViewProps> = ({
                 onClick={() => setFontStyle(id)}
                 className={`px-2 py-1 rounded transition-all cursor-pointer select-none ${
                   fontStyle === id
-                    ? 'bg-[#2AA198] text-[#002B36] font-extrabold shadow-sm'
-                    : 'text-[#EEE8D5] hover:text-[#2AA198]'
+                    ? 'bg-app-action text-app-on-action font-extrabold shadow-sm'
+                    : 'text-app-text hover:text-app-action'
                 }`}
                 title={title}
               >
@@ -1742,11 +1742,11 @@ export const StageView: React.FC<StageViewProps> = ({
           </div>
 
           {/* A- / A+ Font Size Stepper (matching Compose onAdjustFontSize) */}
-          <div className="flex items-center bg-[#002B36] rounded-lg border border-[#1A4A55] p-0.5">
+          <div className="flex items-center bg-app-base rounded-lg border border-app-border p-0.5">
             <button
               type="button"
               {...createHoldHandlers(-1)}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              className="px-2 py-1 text-xs font-extrabold text-app-text hover:text-app-action rounded cursor-pointer select-none active:scale-95 transition-transform"
               title="Decrease Font Size (Hold for smooth resizing)"
             >
               A-
@@ -1754,7 +1754,7 @@ export const StageView: React.FC<StageViewProps> = ({
             <span
               onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
               onTouchStart={handleNumericDoubleTap}
-              className="text-[11px] font-mono text-[#93A1A1] px-1 font-semibold cursor-pointer select-none"
+              className="text-[11px] font-mono text-app-muted px-1 font-semibold cursor-pointer select-none"
               title="Double-tap to reset to Stage default (L / 24px)"
             >
               {fontSizePx}
@@ -1762,7 +1762,7 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               {...createHoldHandlers(1)}
-              className="px-2 py-1 text-xs font-extrabold text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer select-none active:scale-95 transition-transform"
+              className="px-2 py-1 text-xs font-extrabold text-app-text hover:text-app-action rounded cursor-pointer select-none active:scale-95 transition-transform"
               title="Increase Font Size (Hold for smooth resizing)"
             >
               A+
@@ -1775,23 +1775,23 @@ export const StageView: React.FC<StageViewProps> = ({
             onClick={() => setIsTwoColumn(!isTwoColumn)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono font-semibold transition-all cursor-pointer ${
               isTwoColumn
-                ? 'bg-[#B58900]/20 text-[#B58900] border-[#B58900] font-bold shadow-sm'
-                : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:text-[#2AA198]'
+                ? 'bg-app-accent/20 text-app-accent border-app-accent font-bold shadow-sm'
+                : 'bg-app-base text-app-text border-app-border hover:text-app-action'
             }`}
             title={isTwoColumn ? 'Switch to 1 Column' : 'Switch to 2 Columns'}
           >
-            {isTwoColumn ? <Columns2 className="w-3.5 h-3.5 text-[#B58900]" /> : <Square className="w-3.5 h-3.5" />}
+            {isTwoColumn ? <Columns2 className="w-3.5 h-3.5 text-app-accent" /> : <Square className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isTwoColumn ? '2-Col' : '1-Col'}</span>
           </button>
 
           {notation === 'numbers' ? (
             /* Key Stepper for Numbers Mode: [ - ] Key: G [ + ] */
-            <div className="flex items-center rounded-lg border bg-[#002B36] border-[#1A4A55] p-0.5">
+            <div className="flex items-center rounded-lg border bg-app-base border-app-border p-0.5">
               <button
                 type="button"
                 disabled={!effectivePerformanceKey}
                 onClick={() => onTransposeChange(transposeOffset - 1)}
-                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                className="p-1 text-app-text hover:text-app-action rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                 title="Step Key Down (-1 semitone)"
                 aria-label="Step Key Down (-1 semitone)"
               >
@@ -1802,7 +1802,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 type="button"
                 onClick={() => setIsKeyPickerOpen(true)}
                 className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
-                  effectivePerformanceKey ? 'text-[#B58900] hover:bg-[#073642]' : 'text-[#DC6E67] hover:bg-[#073642]'
+                  effectivePerformanceKey ? 'text-app-accent hover:bg-app-surface' : 'text-status-error hover:bg-app-surface'
                 }`}
                 title="Select Performance Key"
                 aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}`}
@@ -1815,7 +1815,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onTransposeChange(0)}
-                  className="p-1 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
+                  className="p-1 text-app-muted hover:text-status-error cursor-pointer"
                   title="Reset Key to Original Key"
                   aria-label="Reset Key to Original Key"
                 >
@@ -1827,7 +1827,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 type="button"
                 disabled={!effectivePerformanceKey}
                 onClick={() => onTransposeChange(transposeOffset + 1)}
-                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                className="p-1 text-app-text hover:text-app-action rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                 title="Step Key Up (+1 semitone)"
                 aria-label="Step Key Up (+1 semitone)"
               >
@@ -1839,14 +1839,14 @@ export const StageView: React.FC<StageViewProps> = ({
             <div
               className={`flex items-center rounded-lg border transition-colors p-0.5 ${
                 transposeOffset !== 0
-                  ? 'bg-[#B58900]/15 border-[#B58900]'
-                  : 'bg-[#002B36] border-[#1A4A55]'
+                  ? 'bg-app-accent/15 border-app-accent'
+                  : 'bg-app-base border-app-border'
               }`}
             >
               <button
                 type="button"
                 onClick={() => onTransposeChange(transposeOffset - 1)}
-                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer"
+                className="p-1 text-app-text hover:text-app-action rounded cursor-pointer"
                 title="Transpose Down (-1)"
               >
                 <Minus className="w-3.5 h-3.5" />
@@ -1856,7 +1856,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 type="button"
                 onClick={() => setIsKeyPickerOpen(true)}
                 className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
-                  transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5] hover:bg-[#073642]'
+                  transposeOffset !== 0 ? 'text-app-accent' : 'text-app-text hover:bg-app-surface'
                 }`}
                 title="Select Target Key"
               >
@@ -1870,7 +1870,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onTransposeChange(0)}
-                  className="p-1 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
+                  className="p-1 text-app-muted hover:text-status-error cursor-pointer"
                   title="Reset Transposition to Original Key"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -1880,7 +1880,7 @@ export const StageView: React.FC<StageViewProps> = ({
               <button
                 type="button"
                 onClick={() => onTransposeChange(transposeOffset + 1)}
-                className="p-1 text-[#EEE8D5] hover:text-[#2AA198] rounded cursor-pointer"
+                className="p-1 text-app-text hover:text-app-action rounded cursor-pointer"
                 title="Transpose Up (+1)"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1894,8 +1894,8 @@ export const StageView: React.FC<StageViewProps> = ({
             onClick={handleToggleAutoScroll}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer shadow-sm ${
               isAutoScrolling
-                ? 'bg-[#EF4444]/20 border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/30 animate-pulse'
-                : 'bg-[#B58900]/15 border-[#B58900]/40 text-[#B58900] hover:bg-[#B58900]/25 hover:border-[#B58900]'
+                ? 'bg-[#EF4444]/20 border-[#EF4444] text-status-error hover:bg-[#EF4444]/30 animate-pulse'
+                : 'bg-app-accent/15 border-app-accent/40 text-app-accent hover:bg-app-accent/25 hover:border-app-accent'
             }`}
             title={isAutoScrolling ? 'Pause autoscroll (Space)' : 'Start autoscroll (Space)'}
             aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
@@ -1912,8 +1912,8 @@ export const StageView: React.FC<StageViewProps> = ({
             onClick={handleTogglePresentation}
             className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
               isCastActive
-                ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-[#DC6E67] hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
-                : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] hover:border-[#2AA198]'
+                ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
+                : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
             }`}
             title={
               isCastActive
@@ -1935,8 +1935,8 @@ export const StageView: React.FC<StageViewProps> = ({
             onClick={toggleFullscreen}
             className={`p-2 rounded-lg border transition-colors cursor-pointer ${
               isDistractionFree
-                ? 'bg-[#2AA198]/20 border-[#2AA198] text-[#2AA198] hover:bg-[#2AA198]/30'
-                : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198]'
+                ? 'bg-app-action/20 border-app-action text-app-action hover:bg-app-action/30'
+                : 'bg-app-base border-app-border text-app-text hover:text-app-action'
             }`}
             title={
               iosPwa || iosOnly
@@ -1983,17 +1983,17 @@ export const StageView: React.FC<StageViewProps> = ({
         >
 
           {inPerformanceMode && (
-            <header data-testid="stage-expanded-header" className="pt-10 pb-4 mb-5 border-b border-[#1A4A55] flex flex-wrap items-center justify-between gap-3">
+            <header data-testid="stage-expanded-header" className="pt-10 pb-4 mb-5 border-b border-app-border flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-[#FDF6E3] break-words">{song.title || 'Untitled Song'}</h1>
-                <p className="text-xs sm:text-sm text-[#93A1A1] mt-1">
+                <h1 className="text-xl sm:text-2xl font-bold text-app-heading break-words">{song.title || 'Untitled Song'}</h1>
+                <p className="text-xs sm:text-sm text-app-muted mt-1">
                   {song.artist || 'Unknown Artist'}
                   {effectivePerformanceKey ? ` • Key: ${effectivePerformanceKey}` : ''}
                   {song.bpm ? ` • ${song.bpm.replace(/\s*bpm$/i, '')} BPM` : ''}
                   {song.time ? ` • ${song.time}` : ''}
                 </p>
               </div>
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#2AA198] px-2 py-1 rounded bg-[#073642] border border-[#1A4A55]">Stage</span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-app-action px-2 py-1 rounded bg-app-surface border border-app-border">Stage</span>
             </header>
           )}
 
@@ -2001,16 +2001,16 @@ export const StageView: React.FC<StageViewProps> = ({
           {notation === 'numbers' && !effectivePerformanceKey && !song.isMissing && (
             <div
               data-testid="stage-numbers-key-missing"
-              className="mb-4 mx-auto max-w-xl p-3.5 rounded-xl bg-[#073642] border border-[#B58900]/40 flex items-center justify-between gap-3 text-xs shadow-md select-none"
+              className="mb-4 mx-auto max-w-xl p-3.5 rounded-xl bg-app-surface border border-app-accent/40 flex items-center justify-between gap-3 text-xs shadow-md select-none"
             >
-              <div className="flex items-center gap-2 text-[#EEE8D5]">
-                <span className="font-extrabold text-[#B58900]">Numbers Mode:</span>
+              <div className="flex items-center gap-2 text-app-text">
+                <span className="font-extrabold text-app-accent">Numbers Mode:</span>
                 <span>Reference key required to display numbers notation.</span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsKeyPickerOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-[#2AA198] text-[#002B36] font-extrabold text-xs hover:bg-[#35B8AD] cursor-pointer shrink-0 transition-colors shadow-sm"
+                className="px-3 py-1.5 rounded-lg bg-app-action text-app-on-action font-extrabold text-xs hover:bg-app-action cursor-pointer shrink-0 transition-colors shadow-sm"
               >
                 Choose Key
               </button>
@@ -2019,7 +2019,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
           {/* Song Lines Rendering: 1 Column or 2 Columns */}
           {song.isMissing ? (
-            <div role="alert" className="rounded-xl border border-amber-500 p-6 text-center">
+            <div role="alert" className="rounded-xl border border-app-accent p-6 text-center">
               <h2 className="text-xl font-bold">Missing song: {song.title}</h2>
               <p className="mt-2">This setlist entry is unavailable. Restore the song from Trash or a backup, or remove this entry from the setlist.</p>
             </div>
@@ -2039,7 +2039,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 />
               </div>
 
-              <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-6 lg:pl-10">
+              <div className="min-w-0 md:border-l md:border-app-border/60 md:pl-6 lg:pl-10">
                 <SongLineRenderer
                   lines={col2Lines}
                   fontSizePx={fontSizePx}
@@ -2069,7 +2069,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
           {/* Bottom Padding for scroll clearance: ensures floating controls never occlude the final lines */}
           <div
-            className="flex items-center justify-center text-xs font-mono text-[#1A4A55] select-none"
+            className="flex items-center justify-center text-xs font-mono text-app-border select-none"
             style={{
               height: 'max(240px, calc(180px + env(safe-area-inset-bottom, 24px)))',
               paddingBottom: 'env(safe-area-inset-bottom, 24px)',
@@ -2089,7 +2089,7 @@ export const StageView: React.FC<StageViewProps> = ({
         (!isInSetlistMode && songs.length > 1)) && (
         <div
           className={`absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center gap-0
-                     bg-[#073642]/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none
+                     bg-app-surface/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none
                      transition-all duration-300 ease-in-out transform ${
                        inPerformanceMode
                          ? showStageOverlays
@@ -2098,7 +2098,7 @@ export const StageView: React.FC<StageViewProps> = ({
                          : 'opacity-100 translate-y-0 pointer-events-auto'
                      }`}
           style={{
-            borderColor: isInSetlistMode ? 'rgba(181,137,0,0.35)' : 'rgba(42,161,152,0.35)',
+            borderColor: 'var(--custom-dock-border)',
             paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
           }}
         >
@@ -2111,7 +2111,7 @@ export const StageView: React.FC<StageViewProps> = ({
               triggerOverlaysShow()
             }}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
-              isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
+              isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
             }`}
             title="Previous Song"
           >
@@ -2126,7 +2126,7 @@ export const StageView: React.FC<StageViewProps> = ({
               triggerOverlaysShow()
             }}
             className={`px-3 py-2 font-extrabold text-[11px] transition-colors cursor-pointer ${
-              isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
+              isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
             }`}
             title="Open setlist / library"
           >
@@ -2144,7 +2144,7 @@ export const StageView: React.FC<StageViewProps> = ({
               triggerOverlaysShow()
             }}
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
-              isInSetlistMode ? 'text-[#B58900] hover:text-white' : 'text-[#2AA198] hover:text-white'
+              isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
             }`}
             title="Next Song"
           >
@@ -2178,10 +2178,10 @@ export const StageView: React.FC<StageViewProps> = ({
           <form
             onSubmit={handleCustomSpeedSubmit}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xs rounded-2xl bg-[#073642] border border-[#1A4A55] p-5 shadow-2xl text-[#EEE8D5]"
+            className="w-full max-w-xs rounded-2xl bg-app-surface border border-app-border p-5 shadow-2xl text-app-text"
           >
-            <h3 className="text-base font-bold text-[#B58900] mb-2">Set Scroll Speed</h3>
-            <p className="text-xs text-[#93A1A1] mb-4">Enter scroll speed in dp/s (5–180):</p>
+            <h3 className="text-base font-bold text-app-accent mb-2">Set Scroll Speed</h3>
+            <p className="text-xs text-app-muted mb-4">Enter scroll speed in dp/s (5–180):</p>
             <input
               type="number"
               min="5"
@@ -2189,15 +2189,15 @@ export const StageView: React.FC<StageViewProps> = ({
               autoFocus
               value={speedInputText}
               onChange={(e) => setSpeedInputText(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-[#002B36] border border-[#1A4A55] text-center text-lg font-mono font-bold text-[#B58900] focus:outline-none focus:border-[#2AA198]"
+              className="w-full px-3 py-2 rounded-xl bg-app-base border border-app-border text-center text-lg font-mono font-bold text-app-accent focus:outline-none focus:border-app-action"
             />
             <div className="flex items-center justify-end gap-2 mt-4">
               <button type="button" onClick={() => setIsSpeedPromptOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#93A1A1] hover:text-[#EEE8D5]">
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-app-muted hover:text-app-text">
                 Cancel
               </button>
               <button type="submit"
-                className="px-4 py-1.5 rounded-lg bg-[#2AA198] text-[#002B36] text-xs font-bold hover:bg-[#35B8AD]">
+                className="px-4 py-1.5 rounded-lg bg-app-action text-app-on-action text-xs font-bold hover:bg-app-action">
                 Apply
               </button>
             </div>
@@ -2218,22 +2218,22 @@ export const StageView: React.FC<StageViewProps> = ({
 
           {/* Sheet */}
           <div
-            className="relative z-10 rounded-t-3xl bg-[#073642] border-t border-x border-[#1A4A55] shadow-2xl px-5 pt-3 max-h-[85vh] overflow-y-auto"
+            className="relative z-10 rounded-t-3xl bg-app-surface border-t border-x border-app-border shadow-2xl px-5 pt-3 max-h-[85vh] overflow-y-auto"
             style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drag handle */}
-            <div className="w-10 h-1 bg-[#1A4A55] rounded-full mx-auto mb-4" />
+            <div className="w-10 h-1 bg-app-border rounded-full mx-auto mb-4" />
 
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-extrabold text-[#EEE8D5] tracking-wide uppercase flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4 text-[#2AA198]" /> Stage Options
+              <h2 className="text-sm font-extrabold text-app-text tracking-wide uppercase flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-app-action" /> Stage Options
               </h2>
             </div>
 
             {/* --- Notation selector row --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Notation</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Notation</span>
               <div className="grid grid-cols-2 gap-1.5 flex-1">
                 {(['chords', 'numbers'] as const).map((mode) => (
                   <button
@@ -2243,8 +2243,8 @@ export const StageView: React.FC<StageViewProps> = ({
                     onClick={() => setNotation(mode)}
                     className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
                       notation === mode
-                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
-                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                        ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
+                        : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                     }`}
                   >
                     {mode === 'chords' ? 'Chords' : 'Numbers'}
@@ -2255,19 +2255,19 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Transpose / Key row --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">
                 {notation === 'numbers' ? 'Key' : 'Transpose'}
               </span>
               <div className={`flex items-center rounded-xl border p-0.5 flex-1 ${
                 notation === 'numbers'
-                  ? effectivePerformanceKey ? 'bg-[#002B36] border-[#1A4A55]' : 'bg-[#DC6E67]/10 border-[#DC6E67]/50'
-                  : transposeOffset !== 0 ? 'bg-[#B58900]/10 border-[#B58900]' : 'bg-[#002B36] border-[#1A4A55]'
+                  ? effectivePerformanceKey ? 'bg-app-base border-app-border' : 'bg-[#DC6E67]/10 border-[#DC6E67]/50'
+                  : transposeOffset !== 0 ? 'bg-app-accent/10 border-app-accent' : 'bg-app-base border-app-border'
               }`}>
                 <button
                   type="button"
                   disabled={notation === 'numbers' && !effectivePerformanceKey}
                   onClick={() => onTransposeChange(transposeOffset - 1)}
-                  className="p-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  className="p-2 text-app-text hover:text-app-action cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                   title={notation === 'numbers' ? 'Step Key Down (-1)' : 'Transpose Down (-1)'}
                 >
                   <Minus className="w-4 h-4" />
@@ -2277,8 +2277,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   onClick={() => setIsKeyPickerOpen(true)}
                   className={`flex-1 text-center text-sm font-mono font-extrabold cursor-pointer ${
                     notation === 'numbers'
-                      ? effectivePerformanceKey ? 'text-[#B58900]' : 'text-[#DC6E67]'
-                      : transposeOffset !== 0 ? 'text-[#B58900]' : 'text-[#EEE8D5]'
+                      ? effectivePerformanceKey ? 'text-app-accent' : 'text-status-error'
+                      : transposeOffset !== 0 ? 'text-app-accent' : 'text-app-text'
                   }`}
                 >
                   {notation === 'numbers'
@@ -2289,7 +2289,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onTransposeChange(0)}
-                    className="p-2 text-[#93A1A1] hover:text-[#DC6E67] cursor-pointer"
+                    className="p-2 text-app-muted hover:text-status-error cursor-pointer"
                     title={notation === 'numbers' ? 'Reset Key to Original' : 'Reset Transposition'}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -2299,7 +2299,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   type="button"
                   disabled={notation === 'numbers' && !effectivePerformanceKey}
                   onClick={() => onTransposeChange(transposeOffset + 1)}
-                  className="p-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  className="p-2 text-app-text hover:text-app-action cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                   title={notation === 'numbers' ? 'Step Key Up (+1)' : 'Transpose Up (+1)'}
                 >
                   <Plus className="w-4 h-4" />
@@ -2310,12 +2310,12 @@ export const StageView: React.FC<StageViewProps> = ({
             {/* --- Font size row & Presets --- */}
             <div className="mb-4 flex flex-col gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Font Size</span>
-                <div className="flex items-center bg-[#002B36] rounded-xl border border-[#1A4A55] flex-1">
+                <span className="text-xs font-mono text-app-muted w-20 shrink-0">Font Size</span>
+                <div className="flex items-center bg-app-base rounded-xl border border-app-border flex-1">
                   <button
                     type="button"
                     {...createHoldHandlers(-1)}
-                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    className="px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action cursor-pointer select-none active:scale-95 transition-transform"
                     title="Decrease font size (Hold to adjust)"
                   >
                     A-
@@ -2323,7 +2323,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   <span
                     onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
                     onTouchStart={handleNumericDoubleTap}
-                    className="flex-1 text-center text-sm font-mono font-bold text-[#B58900] cursor-pointer select-none py-1"
+                    className="flex-1 text-center text-sm font-mono font-bold text-app-accent cursor-pointer select-none py-1"
                     title="Double-tap to reset to Stage default (L / 24px)"
                   >
                     {fontSizePx}px
@@ -2331,7 +2331,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   <button
                     type="button"
                     {...createHoldHandlers(1)}
-                    className="px-4 py-2 text-sm font-extrabold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer select-none active:scale-95 transition-transform"
+                    className="px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action cursor-pointer select-none active:scale-95 transition-transform"
                     title="Increase font size (Hold to adjust)"
                   >
                     A+
@@ -2351,8 +2351,8 @@ export const StageView: React.FC<StageViewProps> = ({
                       onClick={() => setStageFontSize(size)}
                       className={`flex-1 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer text-center ${
                         isSelected
-                          ? 'bg-[#B58900] text-black border-[#B58900] shadow-sm'
-                          : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                          ? 'bg-app-button text-app-button-text border-app-accent shadow-sm'
+                          : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                       }`}
                       title={`${key} (${size}px)`}
                     >
@@ -2365,7 +2365,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Chord Scaling Ratio --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Chord Size</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Chord Size</span>
               <div className="grid grid-cols-4 gap-1.5 flex-1">
                 {CHORD_SCALE_OPTIONS.map(({ value, label }) => (
                   <button
@@ -2374,8 +2374,8 @@ export const StageView: React.FC<StageViewProps> = ({
                     onClick={() => setChordScale(value)}
                     className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
                       chordScale === value
-                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
-                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                        ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
+                        : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                     }`}
                   >
                     {label}
@@ -2386,7 +2386,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Font Weight --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Weight</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Weight</span>
               <div className="grid grid-cols-3 gap-1.5 flex-1">
                 {FONT_WEIGHT_OPTIONS.map(({ value, label }) => (
                   <button
@@ -2395,8 +2395,8 @@ export const StageView: React.FC<StageViewProps> = ({
                     onClick={() => setFontWeight(value)}
                     className={`py-1.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
                       fontWeight === value
-                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] font-bold shadow-sm'
-                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                        ? 'bg-app-action text-app-on-action border-app-action font-bold shadow-sm'
+                        : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                     }`}
                   >
                     {label}
@@ -2407,7 +2407,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Line Spacing --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Spacing</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Spacing</span>
               <div className="grid grid-cols-3 gap-1.5 flex-1">
                 {LINE_SPACING_OPTIONS.map(({ value, label }) => (
                   <button
@@ -2416,8 +2416,8 @@ export const StageView: React.FC<StageViewProps> = ({
                     onClick={() => setLineSpacing(value)}
                     className={`py-1.5 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer ${
                       lineSpacing === value
-                        ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] font-bold shadow-sm'
-                        : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                        ? 'bg-app-action text-app-on-action border-app-action font-bold shadow-sm'
+                        : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                     }`}
                   >
                     {label}
@@ -2428,21 +2428,21 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Autoscroll speed row --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Speed</span>
-              <div className="flex items-center bg-[#002B36] rounded-xl border border-[#1A4A55] flex-1">
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Speed</span>
+              <div className="flex items-center bg-app-base rounded-xl border border-app-border flex-1">
                 <button type="button"
                   onClick={() => handleAdjustSpeed(Math.max(5, scrollSpeed - 5))}
-                  className="px-4 py-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
+                  className="px-4 py-2 text-app-text hover:text-app-action cursor-pointer">
                   <Minus className="w-4 h-4" />
                 </button>
                 <button type="button"
                   onClick={() => { setSpeedInputText(scrollSpeed.toString()); setIsStageMenuOpen(false); setIsSpeedPromptOpen(true) }}
-                  className="flex-1 text-center text-sm font-mono font-bold text-[#B58900] cursor-pointer py-2">
+                  className="flex-1 text-center text-sm font-mono font-bold text-app-accent cursor-pointer py-2">
                   {scrollSpeed} dp/s
                 </button>
                 <button type="button"
                   onClick={() => handleAdjustSpeed(Math.min(150, scrollSpeed + 5))}
-                  className="px-4 py-2 text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer">
+                  className="px-4 py-2 text-app-text hover:text-app-action cursor-pointer">
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
@@ -2450,12 +2450,12 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Column toggle + Font style row --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Layout</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Layout</span>
               <div className="flex items-center gap-2 flex-1 flex-wrap">
                 <button type="button"
                   onClick={() => setIsTwoColumn(!isTwoColumn)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold cursor-pointer transition-all ${
-                    isTwoColumn ? 'bg-[#B58900]/20 border-[#B58900] text-[#B58900]' : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5]'
+                    isTwoColumn ? 'bg-app-accent/20 border-app-accent text-app-accent' : 'bg-app-base border-app-border text-app-text'
                   }`}>
                   {isTwoColumn ? <Columns2 className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                   {isTwoColumn ? '2-Col' : '1-Col'}
@@ -2463,7 +2463,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 {(['mono','sans','serif'] as const).map((fs) => (
                   <button key={fs} type="button" onClick={() => setFontStyle(fs)}
                     className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                      fontStyle === fs ? 'bg-[#2AA198] border-[#2AA198] text-[#002B36] font-extrabold' : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5]'
+                      fontStyle === fs ? 'bg-app-action border-app-action text-app-on-action font-extrabold' : 'bg-app-base border-app-border text-app-text'
                     }`}>
                     {fs.charAt(0).toUpperCase() + fs.slice(1)}
                   </button>
@@ -2473,7 +2473,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Fullscreen Controls Auto-Hide row --- */}
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">Controls</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">Controls</span>
               <div className="grid grid-cols-2 gap-1.5 flex-1">
                 <button
                   type="button"
@@ -2481,8 +2481,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   onClick={() => setControlsAutoHide(true)}
                   className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
                     controlsAutoHide
-                      ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
-                      : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                      ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
+                      : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                   }`}
                   title="Auto-hide navigation dock with HUD in fullscreen mode"
                 >
@@ -2494,8 +2494,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   onClick={() => setControlsAutoHide(false)}
                   className={`py-1.5 rounded-xl border text-xs font-mono font-bold text-center transition-all cursor-pointer ${
                     !controlsAutoHide
-                      ? 'bg-[#2AA198] text-[#002B36] border-[#2AA198] shadow-sm'
-                      : 'bg-[#002B36] text-[#EEE8D5] border-[#1A4A55] hover:border-[#2AA198]'
+                      ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
+                      : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                   }`}
                   title="Keep floating navigation dock visible during fullscreen mode"
                 >
@@ -2506,7 +2506,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
             {/* --- Sync to TV / Stage Cast Action --- */}
             <div className="flex items-center gap-2 mb-5">
-              <span className="text-xs font-mono text-[#93A1A1] w-20 shrink-0">TV Sync</span>
+              <span className="text-xs font-mono text-app-muted w-20 shrink-0">TV Sync</span>
               <button
                 type="button"
                 data-testid="stage-options-sync-tv-btn"
@@ -2516,8 +2516,8 @@ export const StageView: React.FC<StageViewProps> = ({
                 }}
                 className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer flex-1 ${
                   isCastActive
-                    ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-[#DC6E67] hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
-                    : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] hover:border-[#2AA198]'
+                    ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
+                    : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
                 }`}
                 title={
                   isCastActive
@@ -2539,8 +2539,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
                   else setIsDistractionFree(false)
                 }}
-                className="w-full py-3 rounded-2xl bg-[#002B36] border border-[#1A4A55]
-                           text-sm font-bold text-[#EEE8D5] hover:border-[#DC6E67] hover:text-[#DC6E67]
+                className="w-full py-3 rounded-2xl bg-app-base border border-app-border
+                           text-sm font-bold text-app-text hover:border-[#DC6E67] hover:text-status-error
                            transition-colors cursor-pointer flex items-center justify-center gap-2 mb-2"
               >
                 <Minimize2 className="w-4 h-4" />
