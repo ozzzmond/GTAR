@@ -234,10 +234,10 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
             isArmed
               ? leftAction.isDestructive
                 ? 'bg-[#DC6E67] text-white shadow-inner font-bold'
-                : 'bg-[#2AA198] text-[#002B36] shadow-inner font-bold'
+                : 'bg-app-action text-app-on-action shadow-inner font-bold'
               : leftAction.isDestructive
-                ? 'bg-[#DC6E67]/25 text-[#DC6E67]'
-                : 'bg-[#2AA198]/20 text-[#2AA198]'
+                ? 'bg-[#DC6E67]/25 text-status-error'
+                : 'bg-app-action/20 text-app-action'
           }`}
           style={{ width: `${Math.max(offset, 0)}px` }}
         >
@@ -266,10 +266,10 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
             isArmed
               ? rightAction.isDestructive
                 ? 'bg-[#DC6E67] text-white shadow-inner font-bold'
-                : 'bg-[#2AA198] text-[#002B36] shadow-inner font-bold'
+                : 'bg-app-action text-app-on-action shadow-inner font-bold'
               : rightAction.isDestructive
-                ? 'bg-[#DC6E67]/25 text-[#DC6E67]'
-                : 'bg-[#2AA198]/20 text-[#2AA198]'
+                ? 'bg-[#DC6E67]/25 text-status-error'
+                : 'bg-app-action/20 text-app-action'
           }`}
           style={{ width: `${Math.max(-offset, 0)}px` }}
         >

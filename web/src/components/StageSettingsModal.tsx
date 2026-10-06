@@ -109,22 +109,22 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-lg rounded-2xl bg-app-surface border border-app-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/50">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#2AA198]/20 border border-[#2AA198]/30 flex items-center justify-center text-[#2AA198]">
+            <div className="w-9 h-9 rounded-xl bg-app-action/20 border border-app-action/30 flex items-center justify-center text-app-action">
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">Stage Settings</h2>
-              <p className="text-xs text-[#93A1A1]">Performance & Display Controls</p>
+              <h2 className="text-base font-bold text-app-heading">Stage Settings</h2>
+              <p className="text-xs text-app-muted">Performance & Display Controls</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -133,7 +133,7 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
         {/* Scrollable Body */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
           {toastMessage && (
-            <div className="px-3.5 py-2 rounded-xl bg-[#2AA198]/15 border border-[#2AA198]/40 text-[#2AA198] text-xs font-semibold flex items-center gap-2">
+            <div className="px-3.5 py-2 rounded-xl bg-app-action/15 border border-app-action/40 text-app-action text-xs font-semibold flex items-center gap-2">
               <Check className="w-4 h-4" />
               <span>{toastMessage}</span>
             </div>
@@ -141,25 +141,25 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
 
           {/* Section 1: Stage Display */}
           <div className="space-y-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[#B58900]">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-app-accent">
               STAGE DISPLAY
             </div>
 
             {/* Keep Screen Awake Card */}
-            <div className="p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-between gap-3">
+            <div className="p-4 rounded-xl bg-app-base border border-app-border flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    keepScreenAwake ? 'bg-[#2AA198]/20 text-[#2AA198]' : 'bg-[#073642] text-[#93A1A1]'
+                    keepScreenAwake ? 'bg-app-action/20 text-app-action' : 'bg-app-surface text-app-muted'
                   }`}
                 >
                   <Eye className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#FDF6E3]">
+                  <div className="text-xs font-bold text-app-heading">
                     Keep screen awake during performance
                   </div>
-                  <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+                  <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                     Prevents screen dimming or sleep while in Stage View / Gig Mode
                   </div>
                 </div>
@@ -168,32 +168,32 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
                 type="button"
                 onClick={() => setKeepScreenAwake(!keepScreenAwake)}
                 className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                  keepScreenAwake ? 'bg-[#2AA198]' : 'bg-[#073642] border border-[#1A4A55]'
+                  keepScreenAwake ? 'bg-app-action' : 'bg-app-surface border border-app-border'
                 }`}
               >
                 <span
-                  className={`w-4 h-4 rounded-full bg-[#002B36] absolute top-1 transition-transform ${
-                    keepScreenAwake ? 'left-6' : 'left-1 bg-[#93A1A1]'
+                  className={`w-4 h-4 rounded-full bg-app-base absolute top-1 transition-transform ${
+                    keepScreenAwake ? 'left-6' : 'left-1 bg-app-muted'
                   }`}
                 />
               </button>
             </div>
 
             {/* Two-Column Reflow Toggle */}
-            <div className="p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-between gap-3">
+            <div className="p-4 rounded-xl bg-app-base border border-app-border flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    isTwoColumn ? 'bg-[#B58900]/20 text-[#B58900]' : 'bg-[#073642] text-[#93A1A1]'
+                    isTwoColumn ? 'bg-app-accent/20 text-app-accent' : 'bg-app-surface text-app-muted'
                   }`}
                 >
                   {isTwoColumn ? <Columns2 className="w-5 h-5" /> : <Square className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#FDF6E3]">
+                  <div className="text-xs font-bold text-app-heading">
                     Two-Column Stage Reflow
                   </div>
-                  <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+                  <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                     Splits long chord charts into 2 balanced columns on wide screens
                   </div>
                 </div>
@@ -202,22 +202,22 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
                 type="button"
                 onClick={() => onToggleTwoColumn(!isTwoColumn)}
                 className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                  isTwoColumn ? 'bg-[#B58900]' : 'bg-[#073642] border border-[#1A4A55]'
+                  isTwoColumn ? 'bg-app-button' : 'bg-app-surface border border-app-border'
                 }`}
               >
                 <span
-                  className={`w-4 h-4 rounded-full bg-[#002B36] absolute top-1 transition-transform ${
-                    isTwoColumn ? 'left-6' : 'left-1 bg-[#93A1A1]'
+                  className={`w-4 h-4 rounded-full bg-app-base absolute top-1 transition-transform ${
+                    isTwoColumn ? 'left-6' : 'left-1 bg-app-muted'
                   }`}
                 />
               </button>
             </div>
 
             {/* Font Style for Chords & Lyrics */}
-            <div className="p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] space-y-3">
+            <div className="p-4 rounded-xl bg-app-base border border-app-border space-y-3">
               <div className="flex items-center gap-2.5">
-                <Type className="w-4 h-4 text-[#2AA198]" />
-                <span className="text-xs font-bold text-[#FDF6E3]">
+                <Type className="w-4 h-4 text-app-action" />
+                <span className="text-xs font-bold text-app-heading">
                   Font Style (Chords & Lyrics)
                 </span>
               </div>
@@ -231,34 +231,34 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
                       onClick={() => onSelectFontStyle(opt.id)}
                       className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
                         isSelected
-                          ? 'bg-[#2AA198]/15 border-[#2AA198]'
-                          : 'bg-[#073642] border-[#1A4A55]/60 hover:border-[#1A4A55]'
+                          ? 'bg-app-action/15 border-app-action'
+                          : 'bg-app-surface border-app-border/60 hover:border-app-border'
                       }`}
                     >
                       <div>
                         <div className="flex items-center gap-2">
                           <span
                             className={`text-xs font-bold ${
-                              isSelected ? 'text-[#2AA198]' : 'text-[#FDF6E3]'
+                              isSelected ? 'text-app-action' : 'text-app-heading'
                             }`}
                           >
                             {opt.name}
                           </span>
                           {opt.recommended && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] uppercase">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-app-action/20 text-app-action uppercase">
                               Recommended
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-[#93A1A1] mt-0.5">{opt.subtitle}</div>
+                        <div className="text-[11px] text-app-muted mt-0.5">{opt.subtitle}</div>
                       </div>
 
                       <div
                         className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                          isSelected ? 'border-[#2AA198]' : 'border-[#93A1A1]'
+                          isSelected ? 'border-app-action' : 'border-app-muted'
                         }`}
                       >
-                        {isSelected && <div className="w-2 h-2 rounded-full bg-[#2AA198]" />}
+                        {isSelected && <div className="w-2 h-2 rounded-full bg-app-action" />}
                       </div>
                     </div>
                   )
@@ -268,9 +268,9 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
           </div>
 
           {/* Section 2: PWA Offline Stage App & Information */}
-          <div className="p-4 rounded-xl bg-[#002B36]/60 border border-[#1A4A55]/70 text-center space-y-2">
-            <div className="text-xs font-extrabold text-[#FDF6E3]">GTAR Live Stage Companion</div>
-            <div className="text-[11px] font-mono font-bold text-[#2AA198]">
+          <div className="p-4 rounded-xl bg-app-base/60 border border-app-border/70 text-center space-y-2">
+            <div className="text-xs font-extrabold text-app-heading">GTAR Live Stage Companion</div>
+            <div className="text-[11px] font-mono font-bold text-app-action">
               {isDevEnv ? `Version ${GTAR_DEV_VERSION}` : `Version ${GTAR_APP_VERSION}`}
             </div>
 
@@ -280,7 +280,7 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
                 onClick={() => {
                   onInstallApp()
                 }}
-                className="w-full py-2 rounded-lg bg-[#10B981]/15 border border-[#10B981]/40 text-[#10B981] hover:bg-[#10B981] hover:text-[#002B36] text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 mt-1"
+                className="w-full py-2 rounded-lg bg-app-action/15 border border-app-action/40 text-app-action hover:bg-app-action hover:text-app-on-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 mt-1"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Install App as Standalone PWA</span>
@@ -290,11 +290,11 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-[#1A4A55] bg-[#002B36]/50 flex justify-end">
+        <div className="px-6 py-3.5 border-t border-app-border bg-app-base/50 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="w-full py-2.5 rounded-xl bg-[#2AA198] text-[#002B36] font-extrabold text-xs hover:bg-[#35B8AD] transition-colors cursor-pointer"
+            className="w-full py-2.5 rounded-xl bg-app-action text-app-on-action font-extrabold text-xs hover:bg-app-action transition-colors cursor-pointer"
           >
             Done
           </button>

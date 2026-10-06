@@ -432,7 +432,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="border-b border-[#1A4A55] bg-[#073642] flex flex-col select-none z-30 sticky top-0 shadow-md max-w-full">
+      <header className="border-b border-app-border bg-app-surface flex flex-col select-none z-30 sticky top-0 shadow-md max-w-full">
       {/* =================================================================== */}
       {/* TIER 1 (Top Bar): Branding & User Profile Avatar                   */}
       {/* =================================================================== */}
@@ -444,7 +444,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95"
             title="Return to Songbook Library Home (Alt+0)"
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-[#2AA198] group-hover:scale-105 transition-all">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-app-base border border-app-border flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-app-action group-hover:scale-105 transition-all">
               <img
                 src={isDevEnv ? devLogo : prodLogo}
                 alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
@@ -453,15 +453,15 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-mono font-bold text-sm sm:text-base tracking-wider header-primary-text text-[#FDF6E3]">
+                <span className="font-mono font-bold text-sm sm:text-base tracking-wider header-primary-text text-app-heading">
                   {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
                 </span>
                 {isDevEnv && (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/40">
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">
                     DEV
                   </span>
                 )}
-                <span className="text-[10px] font-mono header-secondary-text text-[#93A1A1] font-semibold tracking-tight">
+                <span className="text-[10px] font-mono header-secondary-text text-app-muted font-semibold tracking-tight">
                   v{isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
                 </span>
               </div>
@@ -480,23 +480,23 @@ export const Header: React.FC<HeaderProps> = ({
 
             let syncLabel = 'Cloud Sync'
             let SyncIcon = Cloud
-            let iconClass = 'w-4 h-4 text-[#2AA198]'
-            let btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#002B36] hover:bg-[#073642] text-[#2AA198] border border-[#1A4A55] hover:border-[#2AA198] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
+            let iconClass = 'w-4 h-4 text-app-action'
+            let btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
 
             {/* Canonical header entry: title="Cloud Songbook Sync" <span className="hidden md:inline font-mono text-[11px]">Cloud Sync</span> */}
             if (isSyncing) {
               syncLabel = 'Syncing\u2026'
               SyncIcon = RotateCw
-              iconClass = 'w-4 h-4 text-[#2AA198] header-sync-spin motion-safe:animate-spin'
+              iconClass = 'w-4 h-4 text-app-action header-sync-spin motion-safe:animate-spin'
             } else if (isInSync) {
               syncLabel = 'In Sync'
               SyncIcon = Check
-              iconClass = 'w-4 h-4 text-[#2AA198]'
+              iconClass = 'w-4 h-4 text-app-action'
             } else if (isIssue) {
               syncLabel = 'Sync Issue'
               SyncIcon = AlertTriangle
-              iconClass = 'w-4 h-4 text-[#DC6E67]'
-              btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-[#002B36] hover:bg-[#073642] text-[#DC6E67] border border-[#DC6E67]/50 hover:border-[#DC6E67] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
+              iconClass = 'w-4 h-4 text-status-error'
+              btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-status-error border border-[#DC6E67]/50 hover:border-[#DC6E67] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
             }
 
             return (
@@ -520,7 +520,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={handleTriggerInstall}
-              className="px-2.5 py-1 rounded-xl bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] border border-[#2AA198]/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
               title="Install GTAR App to Home Screen"
             >
               <Download className="w-4 h-4 header-neutral-icon" />
@@ -539,10 +539,10 @@ export const Header: React.FC<HeaderProps> = ({
                 src={currentSession.user.picture}
                 alt=""
                 referrerPolicy="no-referrer"
-                className="w-8 h-8 rounded-full border-2 border-[#1A4A55] hover:border-[#2AA198] transition-colors"
+                className="w-8 h-8 rounded-full border-2 border-app-border hover:border-app-action transition-colors"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-[#002B36] border-2 border-[#1A4A55] hover:border-[#2AA198] flex items-center justify-center text-[#93A1A1] transition-colors">
+              <div className="w-8 h-8 rounded-full bg-app-base border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
                 <User className="w-4 h-4 header-neutral-icon" />
               </div>
             )}
@@ -572,20 +572,20 @@ export const Header: React.FC<HeaderProps> = ({
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold ui-primary-text text-[#FDF6E3] truncate">
+                          <span className="text-xs font-bold ui-primary-text text-app-heading truncate">
                             {(currentSession.user as { name?: string }).name || 'User'}
                           </span>
                           {isSuperAdmin ? (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/30 shrink-0">
+                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">
                               ADMIN
                             </span>
                           ) : (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 shrink-0">
+                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">
                               USER
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] ui-secondary-text text-[#93A1A1] truncate">
+                        <div className="text-[10px] ui-secondary-text text-app-muted truncate">
                           {currentSession.user.email}
                         </div>
                       </div>
@@ -599,7 +599,7 @@ export const Header: React.FC<HeaderProps> = ({
                           setShowAvatarPopover(false)
                           setShowUserManagementModal(true)
                         }}
-                        className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#002B36]/80 text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#2AA198]/30 transition-all cursor-pointer mb-2"
+                        className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2"
                       >
                         <Shield className="w-3.5 h-3.5" />
                         <span>Manage Users &amp; Whitelist</span>
@@ -613,13 +613,13 @@ export const Header: React.FC<HeaderProps> = ({
                         setShowAvatarPopover(false)
                         onOpenBackupRestoreModal()
                       }}
-                      className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#094352]/50 ui-primary-text text-[#FDF6E3] hover:text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#1A4A55] transition-all cursor-pointer mb-2"
+                      className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-accent/50 ui-primary-text text-app-heading hover:text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-border transition-all cursor-pointer mb-2"
                     >
-                      <CloudUpload className="w-3.5 h-3.5 text-[#B58900]" />
+                      <CloudUpload className="w-3.5 h-3.5 text-app-accent" />
                       <span>Backup &amp; Restore (JSON)</span>
                     </button>
 
-                    <div className="h-[1px] bg-[#1A4A55]/60 mb-2" />
+                    <div className="h-[1px] bg-app-border/60 mb-2" />
 
                     {/* Sign Out */}
                     <button
@@ -628,7 +628,7 @@ export const Header: React.FC<HeaderProps> = ({
                         setShowAvatarPopover(false)
                         handleSignOut?.()
                       }}
-                      className="w-full px-3 py-2 rounded-xl hover:bg-[#002B36] text-[#DC6E67] text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Sign Out</span>
@@ -636,7 +636,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </>
                 ) : (
                   <div className="text-center py-2 space-y-3">
-                    <p className="text-xs ui-muted-text text-[#93A1A1]">
+                    <p className="text-xs ui-muted-text text-app-muted">
                       Sign in with your approved Google account.
                     </p>
                     <button
@@ -645,7 +645,7 @@ export const Header: React.FC<HeaderProps> = ({
                         setShowAvatarPopover(false)
                         void handleSignIn?.()
                       }}
-                      className="w-full px-3 py-2 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full px-3 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
@@ -661,7 +661,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* =================================================================== */}
       {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
       {/* =================================================================== */}
-      <div className="w-full bg-[#002B36]/50 border-t border-[#1A4A55]/40 px-2 sm:px-4 py-1">
+      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
         <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
           <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2">
             <ToolbarIconButton
@@ -722,11 +722,11 @@ export const Header: React.FC<HeaderProps> = ({
       {activeView === 'songbook' && (
         <div
           ref={searchContainerRef}
-          className="w-full px-3 sm:px-6 py-2 bg-[#073642] border-t border-[#1A4A55]/50 relative"
+          className="w-full px-3 sm:px-6 py-2 bg-app-surface border-t border-app-border/50 relative"
         >
           <div className="w-full flex items-center relative">
             <div className="pill-search w-full flex items-center">
-              <Search className="w-4 h-4 text-[#93A1A1] shrink-0" />
+              <Search className="w-4 h-4 text-app-muted shrink-0" />
               <input
                 id="search-input"
                 type="text"
@@ -747,7 +747,7 @@ export const Header: React.FC<HeaderProps> = ({
                     onSearchQueryChange('')
                     setIsSearchFocused(false)
                   }}
-                  className="ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                  className="ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -757,11 +757,11 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Real-time search results dropdown overlay: Local + Setlists + Online Results */}
             {isSearchFocused && searchQuery.trim().length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl py-2 z-50 animate-scale-in max-h-96 overflow-y-auto">
+              <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in max-h-96 overflow-y-auto">
                 {/* A. LOCAL SONGBOOK SECTION */}
-                <div className="px-3 py-1 text-[10px] font-mono font-bold ui-secondary-text text-[#93A1A1] uppercase tracking-wider flex items-center justify-between border-b border-[#1A4A55]/60 mb-1">
+                <div className="px-3 py-1 text-[10px] font-mono font-bold ui-secondary-text text-app-muted uppercase tracking-wider flex items-center justify-between border-b border-app-border/60 mb-1">
                   <span>Local Songs ({matchingSearchSongs.length})</span>
-                  <span className="text-[#2AA198]">Click to View on Stage</span>
+                  <span className="text-app-action">Click to View on Stage</span>
                 </div>
 
                 {matchingSearchSongs.length > 0 ? (
@@ -776,18 +776,18 @@ export const Header: React.FC<HeaderProps> = ({
                         onViewChange('stage')
                         setIsSearchFocused(false)
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] ui-primary-text text-[#EEE8D5]"
+                      className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-app-base ui-primary-text text-app-text"
                     >
                       <div className="min-w-0 flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-lg bg-[#002B36] text-[#2AA198] flex items-center justify-center text-xs font-mono font-bold group-hover:bg-[#2AA198] group-hover:text-[#002B36] transition-colors shrink-0">
+                        <div className="w-6 h-6 rounded-lg bg-app-base text-app-action flex items-center justify-center text-xs font-mono font-bold group-hover:bg-app-action group-hover:text-app-on-action transition-colors shrink-0">
                           {song.originalIdx + 1}
                         </div>
                         <div className="truncate">
-                          <div className="text-xs font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
+                          <div className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-action transition-colors truncate">
                             {song.title}
                           </div>
                           {song.artist && (
-                            <div className="text-[10px] ui-secondary-text text-[#93A1A1] truncate">
+                            <div className="text-[10px] ui-secondary-text text-app-muted truncate">
                               {song.artist}
                             </div>
                           )}
@@ -796,12 +796,12 @@ export const Header: React.FC<HeaderProps> = ({
 
                       <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
                         {song.key && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#002B36] text-[#B58900] font-bold">
+                          <span className="px-1.5 py-0.5 rounded bg-app-base text-app-accent font-bold">
                             {song.key}
                           </span>
                         )}
                         {song.bpm && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#002B36] ui-secondary-text text-[#93A1A1]">
+                          <span className="px-1.5 py-0.5 rounded bg-app-base ui-secondary-text text-app-muted">
                             {song.bpm} BPM
                           </span>
                         )}
@@ -809,7 +809,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-center text-xs ui-secondary-text text-[#93A1A1]">
+                  <div className="px-3 py-2 text-center text-xs ui-secondary-text text-app-muted">
                     No local songs matching &quot;{searchQuery}&quot;
                   </div>
                 )}
@@ -817,12 +817,12 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* B. GIG SETLISTS SECTION */}
                 {matchingSearchSetlists.length > 0 && (
                   <>
-                    <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-[#B58900] uppercase tracking-wider flex items-center justify-between border-t border-b border-[#1A4A55]/60 mt-2 mb-1 bg-[#002B36]/60">
+                    <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-accent uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
                       <div className="flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-[#B58900]" />
+                        <Layers className="w-3.5 h-3.5 text-app-accent" />
                         <span>Gig Setlists ({matchingSearchSetlists.length})</span>
                       </div>
-                      <span className="text-[#B58900]">Click to Open Setlist</span>
+                      <span className="text-app-accent">Click to Open Setlist</span>
                     </div>
 
                     {matchingSearchSetlists.map((sl) => (
@@ -838,22 +838,22 @@ export const Header: React.FC<HeaderProps> = ({
                           }
                           setIsSearchFocused(false)
                         }}
-                        className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] ui-primary-text text-[#EEE8D5]"
+                        className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-app-base ui-primary-text text-app-text"
                       >
                         <div className="min-w-0 flex items-center gap-2.5">
-                          <div className="w-6 h-6 rounded-lg bg-[#002B36] text-[#B58900] flex items-center justify-center text-xs font-mono font-bold group-hover:bg-[#B58900] group-hover:text-[#002B36] transition-colors shrink-0">
+                          <div className="w-6 h-6 rounded-lg bg-app-base text-app-accent flex items-center justify-center text-xs font-mono font-bold group-hover:bg-app-button group-hover:text-app-button-text transition-colors shrink-0">
                             <Layers className="w-3.5 h-3.5" />
                           </div>
                           <div className="truncate">
-                            <div className="text-xs font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#B58900] transition-colors truncate">
+                            <div className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-accent transition-colors truncate">
                               {sl.name}
                             </div>
-                            <div className="text-[10px] ui-secondary-text text-[#93A1A1] truncate">
+                            <div className="text-[10px] ui-secondary-text text-app-muted truncate">
                               {(sl.songs || []).length} {sl.songs?.length === 1 ? 'song' : 'songs'}
                             </div>
                           </div>
                         </div>
-                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#B58900]/15 text-[#B58900] border border-[#B58900]/30 shrink-0">
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-app-accent/15 text-app-accent border border-app-accent/30 shrink-0">
                           START GIG
                         </span>
                       </button>
@@ -862,18 +862,18 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
 
                 {/* C. ONLINE RESULTS SECTION (Parity with Android) */}
-                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-[#2AA198] uppercase tracking-wider flex items-center justify-between border-t border-b border-[#1A4A55]/60 mt-2 mb-1 bg-[#002B36]/60">
+                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-action uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
                   <div className="flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-[#2AA198]" />
+                    <Globe className="w-3.5 h-3.5 text-app-action" />
                     <span>Online Results ({onlineResults.length})</span>
                     {isOffline && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#DC6E67]/20 text-[#DC6E67] border border-[#DC6E67]/30">
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/30">
                         Offline
                       </span>
                     )}
                   </div>
                   {isSearchingOnline && (
-                    <div className="flex items-center gap-1 text-[#2AA198]">
+                    <div className="flex items-center gap-1 text-app-action">
                       <Loader2 className="w-3 h-3 animate-spin" />
                       <span className="text-[9px]">Searching...</span>
                     </div>
@@ -886,27 +886,27 @@ export const Header: React.FC<HeaderProps> = ({
                     return (
                       <div
                         key={`online-${onlineItem.id}`}
-                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-[#002B36] ui-primary-text text-[#EEE8D5] group"
+                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-app-base ui-primary-text text-app-text group"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#2AA198] truncate">
+                            <span className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-action truncate">
                               {onlineItem.songName}
                             </span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#B58900]/20 text-[#B58900] font-bold border border-[#B58900]/30 shrink-0">
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent font-bold border border-app-accent/30 shrink-0">
                               {onlineItem.type} v{onlineItem.version}
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[10px] ui-secondary-text text-[#93A1A1] mt-0.5 font-medium">
+                          <div className="flex items-center gap-2 text-[10px] ui-secondary-text text-app-muted mt-0.5 font-medium">
                             <span className="truncate">{onlineItem.artistName}</span>
                             <span>•</span>
-                            <span className="text-[#B58900] font-bold">
+                            <span className="text-app-accent font-bold">
                               ★ {onlineItem.rating.toFixed(1)}
                             </span>
                             <span>({onlineItem.votes.toLocaleString()} votes)</span>
                             {onlineItem.tonality && (
-                              <span className="px-1 py-0.2 rounded bg-[#002B36] text-[#2AA198] font-mono font-bold">
+                              <span className="px-1 py-0.2 rounded bg-app-base text-app-action font-mono font-bold">
                                 Key: {onlineItem.tonality}
                               </span>
                             )}
@@ -922,10 +922,10 @@ export const Header: React.FC<HeaderProps> = ({
                               setIsSearchFocused(false)
                               setPreviewResult(onlineItem)
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#1A4A55] ui-primary-text text-[#EEE8D5] text-[11px] font-bold flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
+                            className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-border ui-primary-text text-app-text text-[11px] font-bold flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
                             title="Preview chord sheet"
                           >
-                            <Eye className="w-3 h-3 text-[#2AA198]" />
+                            <Eye className="w-3 h-3 text-app-action" />
                             <span>Preview</span>
                           </button>
 
@@ -933,7 +933,7 @@ export const Header: React.FC<HeaderProps> = ({
                             type="button"
                             disabled={isImporting}
                             onClick={(e) => handleDirectImportOnline(e, onlineItem)}
-                            className="px-2.5 py-1 rounded-lg bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                            className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
                             title="Fetch and import chord sheet directly to library"
                           >
                             {isImporting ? (
@@ -950,16 +950,16 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : !isSearchingOnline ? (
                   isOffline ? (
                     <div className="p-3 text-center space-y-1">
-                      <p className="text-xs font-semibold text-[#DC6E67]">
+                      <p className="text-xs font-semibold text-status-error">
                         Device is currently offline
                       </p>
-                      <p className="text-[11px] ui-muted-text text-[#93A1A1]">
+                      <p className="text-[11px] ui-muted-text text-app-muted">
                         Connect to the internet to search online chord sheets.
                       </p>
                     </div>
                   ) : onlineError ? (
                     <div className="p-3 text-center space-y-1.5">
-                      <p className="text-xs font-semibold text-[#DC6E67]">
+                      <p className="text-xs font-semibold text-status-error">
                         {onlineError}
                       </p>
                       <button
@@ -972,7 +972,7 @@ export const Header: React.FC<HeaderProps> = ({
                             onOpenWebsiteUrlSource()
                           }
                         }}
-                        className="mt-1 py-1 px-2.5 rounded-lg bg-[#073642] hover:bg-[#1A4A55] text-[#2AA198] text-[11px] font-bold border border-[#1A4A55] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="mt-1 py-1 px-2.5 rounded-lg bg-app-surface hover:bg-app-border text-app-action text-[11px] font-bold border border-app-border inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Globe className="w-3 h-3" />
                         <span>Search Web Sources</span>
@@ -980,7 +980,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   ) : (
                     <div className="p-3 text-center space-y-2">
-                      <p className="text-xs ui-muted-text text-[#93A1A1]">
+                      <p className="text-xs ui-muted-text text-app-muted">
                         No online results found for &quot;{searchQuery}&quot;
                       </p>
                       <button
@@ -993,7 +993,7 @@ export const Header: React.FC<HeaderProps> = ({
                             onOpenWebsiteUrlSource()
                           }
                         }}
-                        className="w-full py-1.5 px-3 rounded-xl bg-[#2AA198]/20 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] font-bold text-xs flex items-center justify-center gap-2 border border-[#2AA198]/40 transition-all cursor-pointer shadow-sm"
+                        className="w-full py-1.5 px-3 rounded-xl bg-app-action/20 hover:bg-app-action text-app-action hover:text-app-on-action font-bold text-xs flex items-center justify-center gap-2 border border-app-action/40 transition-all cursor-pointer shadow-sm"
                       >
                         <Globe className="w-3.5 h-3.5" />
                         <span>Search on Web Sources / Ultimate-Guitar</span>
@@ -1017,7 +1017,7 @@ export const Header: React.FC<HeaderProps> = ({
             top: `${moreMenuCoords.top}px`,
             left: `${moreMenuCoords.left}px`,
           }}
-          className="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl py-2 z-50 animate-scale-in"
+          className="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in"
         >
           {/* 0. Install App (PWA) */}
           {!isAppInstalled && (
@@ -1028,12 +1028,12 @@ export const Header: React.FC<HeaderProps> = ({
                   setShowOverflowMenu(false)
                   handleTriggerInstall()
                 }}
-                className="w-full text-left px-4 py-2.5 text-xs text-[#10B981] hover:bg-[#002B36] transition-colors flex items-center gap-3 cursor-pointer"
+                className="w-full text-left px-4 py-2.5 text-xs text-app-action hover:bg-app-base transition-colors flex items-center gap-3 cursor-pointer"
               >
-                <Download className="w-4 h-4 text-[#10B981]" />
+                <Download className="w-4 h-4 text-app-action" />
                 <span className="font-semibold">Install App (PWA)</span>
               </button>
-              <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
+              <div className="h-[1px] bg-app-border/60 my-1" />
             </>
           )}
 
@@ -1044,13 +1044,13 @@ export const Header: React.FC<HeaderProps> = ({
               setShowOverflowMenu(false)
               onOpenStageSettings()
             }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
           >
-            <Settings className="w-4 h-4 text-[#2AA198]" />
+            <Settings className="w-4 h-4 text-app-action" />
             <span className="font-semibold">Stage Settings</span>
           </button>
 
-          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
+          <div className="h-[1px] bg-app-border/60 my-1" />
 
           {/* 2. Web Sources */}
           <button
@@ -1059,13 +1059,13 @@ export const Header: React.FC<HeaderProps> = ({
               setShowOverflowMenu(false)
               onOpenWebsiteUrlSource()
             }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
           >
-            <Globe className="w-4 h-4 text-[#2AA198]" />
+            <Globe className="w-4 h-4 text-app-action" />
             <span className="font-semibold">Web Sources</span>
           </button>
 
-          <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
+          <div className="h-[1px] bg-app-border/60 my-1" />
 
           {/* 2. Import... */}
           <button
@@ -1074,9 +1074,9 @@ export const Header: React.FC<HeaderProps> = ({
               setShowOverflowMenu(false)
               onOpenImportModal()
             }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
           >
-            <FolderOpen className="w-4 h-4 text-[#2AA198]" />
+            <FolderOpen className="w-4 h-4 text-app-action" />
             <span className="font-semibold">Import Songs &amp; Setlists...</span>
           </button>
 
@@ -1085,20 +1085,20 @@ export const Header: React.FC<HeaderProps> = ({
           {/* 5. Debug Logs (Debug environment only) */}
           {isDevApp && (
             <>
-              <div className="h-[1px] bg-[#1A4A55]/60 my-1" />
+              <div className="h-[1px] bg-app-border/60 my-1" />
               <button
                 type="button"
                 onClick={() => {
                   setShowOverflowMenu(false)
                   setShowDebugLogsModal(true)
                 }}
-                className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center justify-between gap-3 cursor-pointer"
               >
                 <div className="flex items-center gap-3">
-                  <Terminal className="w-4 h-4 text-[#2AA198]" />
+                  <Terminal className="w-4 h-4 text-app-action" />
                   <span className="font-semibold">Debug Logs</span>
                 </div>
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600/25 text-red-400 border border-red-500/30">
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600/25 text-status-error border border-red-500/30">
                   {isDevEnv ? 'DEV' : 'DIAG'}
                 </span>
               </button>

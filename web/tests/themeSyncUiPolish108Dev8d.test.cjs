@@ -6,11 +6,11 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION ALIGNMENT
-test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3k and prod untouched', () => {
+test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3l and prod untouched', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
   assert.ok(
-    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.3k';"),
-    'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.3k'
+    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.3l';"),
+    'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.3l'
   )
   assert.ok(
     gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"),
@@ -18,14 +18,14 @@ test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3k and prod untou
   )
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3k', 'package.json must be 1.0.123-dev.3k')
+  assert.equal(pkgJson.version, '1.0.123-dev.3l', 'package.json must be 1.0.123-dev.3l')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3k', 'package-lock.json root must be 1.0.123-dev.3k')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3k', 'package-lock.json packages[""] must be 1.0.123-dev.3k')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3l', 'package-lock.json root must be 1.0.123-dev.3l')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3l', 'package-lock.json packages[""] must be 1.0.123-dev.3l')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3k'), 'authCore.ts must reference v1.0.123-dev.3k')
+  assert.ok(authCore.includes('v1.0.123-dev.3l'), 'authCore.ts must reference v1.0.123-dev.3l')
 })
 
 // 2. PAPER CREAM LIGHT READABILITY & CONTRAST
@@ -78,7 +78,7 @@ test('CLOUD_SYNC_MANUAL_ACTION_SAFETY: Upload to Cloud button removed from norma
   assert.ok(normalActionsBlock.includes('Download from Cloud'), 'Download from Cloud button is retained as secondary recovery action')
 
   // Secondary styling check: Download button has subtle background
-  assert.ok(normalActionsBlock.includes('bg-[#002B36]'), 'Download from Cloud retains secondary card surface')
+  assert.ok(normalActionsBlock.includes('bg-app-base'), 'Download from Cloud retains secondary card surface')
 
   // Critical metadata & safety items preserved
   assert.ok(modalContent.includes('Last Synced'), 'Last Synced metadata retained')

@@ -163,13 +163,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in">
       <div
-        className="w-full max-w-lg rounded-2xl border border-[#1A4A55] bg-[#073642] text-[#FDF6E3] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#1A4A55]/80 flex items-center justify-between bg-[#002B36]/60">
+        <div className="px-5 py-4 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#2AA198]/20 border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
+            <div className="w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
               <Cloud className="w-4 h-4" />
             </div>
             <div>
@@ -181,7 +181,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-xl hover:bg-[#002B36] flex items-center justify-center text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -190,17 +190,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           {/* User Account Info */}
-          <div className="p-3.5 rounded-xl bg-[#002B36]/70 border border-[#1A4A55] flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-xl bg-app-base/70 border border-app-border flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               {session?.user?.picture ? (
                 <img
                   src={session.user.picture}
                   alt=""
                   referrerPolicy="no-referrer"
-                  className="w-8 h-8 rounded-full border border-[#2AA198]/40 shrink-0"
+                  className="w-8 h-8 rounded-full border border-app-action/40 shrink-0"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-[#1A4A55] flex items-center justify-center text-[#93A1A1] shrink-0">
+                <div className="w-8 h-8 rounded-full bg-app-border flex items-center justify-center text-app-muted shrink-0">
                   <User className="w-4 h-4" />
                 </div>
               )}
@@ -208,7 +208,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 <div className="text-xs font-bold truncate">
                   {session?.user?.name || session?.user?.email || 'Guest / Offline'}
                 </div>
-                <div className="text-[10px] text-[#93A1A1] truncate">
+                <div className="text-[10px] text-app-muted truncate">
                   {isAuthenticated ? session?.user?.email : 'Not signed in with approved account'}
                 </div>
               </div>
@@ -216,11 +216,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
             <div className="shrink-0 text-right">
               {isAuthenticated ? (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/40">
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-app-action/20 text-app-action border border-app-action/40">
                   Active {session?.user?.role === 'admin' ? 'Admin' : 'Member'}
                 </span>
               ) : (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#DC6E67]/20 text-[#DC6E67] border border-[#DC6E67]/40">
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/40">
                   Auth Required
                 </span>
               )}
@@ -228,50 +228,50 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
 
           {/* Sync Status Card */}
-          <div className="p-4 rounded-xl bg-[#002B36]/90 border border-[#1A4A55] space-y-3">
+          <div className="p-4 rounded-xl bg-app-base/90 border border-app-border space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#93A1A1] uppercase tracking-wider font-mono">
+              <span className="text-xs font-bold text-app-muted uppercase tracking-wider font-mono">
                 Sync Status
               </span>
               <div>
                 {syncStatus === 'IN_SYNC' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/40 inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-status-success border border-emerald-500/40 inline-flex items-center gap-1.5">
                     <Check className="w-3.5 h-3.5" />
                     <span>In Sync</span>
                   </span>
                 )}
                 {syncStatus === 'LOCAL_NEWER' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#B58900]/20 text-[#B58900] border border-[#B58900]/40 inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-400/20 text-status-warning border border-amber-400/40 inline-flex items-center gap-1.5">
                     <CloudUpload className="w-3.5 h-3.5" />
                     <span>Local Newer</span>
                   </span>
                 )}
                 {syncStatus === 'CLOUD_NEWER' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#268BD2]/20 text-[#268BD2] border border-[#268BD2]/40 inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-sky-500/20 text-status-info border border-sky-500/40 inline-flex items-center gap-1.5">
                     <CloudDownload className="w-3.5 h-3.5" />
                     <span>Cloud Newer</span>
                   </span>
                 )}
                 {syncStatus === 'CONFLICT' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DC6E67]/20 text-[#DC6E67] border border-[#DC6E67]/40 inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/40 inline-flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Conflict</span>
                   </span>
                 )}
                 {syncStatus === 'OFFLINE' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#93A1A1]/20 text-[#93A1A1] border border-[#93A1A1]/40 inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-app-muted/20 text-app-muted border border-app-muted/40 inline-flex items-center gap-1.5">
                     <CloudOff className="w-3.5 h-3.5" />
                     <span>Offline</span>
                   </span>
                 )}
                 {(syncStatus === 'IDLE' || syncStatus === 'SYNCING') && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#1A4A55]/40 text-[#93A1A1] border border-[#1A4A55] inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-app-border/40 text-app-muted border border-app-border inline-flex items-center gap-1.5">
                     <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
                     <span>{isProcessing ? 'Syncing...' : 'Idle'}</span>
                   </span>
                 )}
                 {syncStatus === 'ERROR' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DC6E67]/20 text-[#DC6E67] border border-[#DC6E67]/40 inline-flex items-center gap-1.5">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/40 inline-flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5" />
                     <span>Error</span>
                   </span>
@@ -281,30 +281,30 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
             {/* Status Message / Description */}
             {statusMessage && (
-              <p className="text-xs text-[#2AA198] bg-[#2AA198]/10 p-2.5 rounded-lg border border-[#2AA198]/20">
+              <p className="text-xs text-app-action bg-app-action/10 p-2.5 rounded-lg border border-app-action/20">
                 {statusMessage}
               </p>
             )}
 
             {errorMessage && (
-              <p className="text-xs text-[#DC6E67] bg-[#DC6E67]/10 p-2.5 rounded-lg border border-[#DC6E67]/20">
+              <p className="text-xs text-status-error bg-[#DC6E67]/10 p-2.5 rounded-lg border border-[#DC6E67]/20">
                 {errorMessage}
               </p>
             )}
 
             {/* Metadata Details */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1A4A55]/60 text-[11px] font-mono">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-app-border/60 text-[11px] font-mono">
               <div>
-                <span className="text-[#93A1A1] block">Last Synced</span>
-                <span className="text-[#FDF6E3] font-semibold">
+                <span className="text-app-muted block">Last Synced</span>
+                <span className="text-app-heading font-semibold">
                   {lastMeta.lastSyncedAt
                     ? new Date(lastMeta.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                     : 'Never'}
                 </span>
               </div>
               <div>
-                <span className="text-[#93A1A1] block">Fingerprint</span>
-                <span className="text-[#2AA198] truncate block text-[10px]" title={localChecksum || undefined}>
+                <span className="text-app-muted block">Fingerprint</span>
+                <span className="text-app-action truncate block text-[10px]" title={localChecksum || undefined}>
                   {localChecksum || 'None'}
                 </span>
               </div>
@@ -314,22 +314,22 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           {/* Conflict Resolution Section */}
           {syncStatus === 'CONFLICT' && conflicts.length > 0 && (
             <div className="p-4 rounded-xl bg-[#DC6E67]/10 border border-[#DC6E67]/40 space-y-3">
-              <div className="flex items-center gap-2 text-[#DC6E67]">
+              <div className="flex items-center gap-2 text-status-error">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <h3 className="font-bold text-xs">Conflict Resolution</h3>
               </div>
-              <p className="text-[11px] text-[#EEE8D5]">
+              <p className="text-[11px] text-app-text">
                 Independent edits were made on this device and on the cloud. Choose how you want to resolve this:
               </p>
 
-              <div className="max-h-32 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-[#002B36]/80 text-[11px]">
+              <div className="max-h-32 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-app-base/80 text-[11px]">
                 {conflicts.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex items-center justify-between text-xs py-0.5">
-                    <span className="text-[#FDF6E3] font-semibold truncate flex items-center gap-1.5">
-                      {item.type === 'song' ? <FileText className="w-3 h-3 text-[#2AA198]" /> : <Layers className="w-3 h-3 text-[#B58900]" />}
+                    <span className="text-app-heading font-semibold truncate flex items-center gap-1.5">
+                      {item.type === 'song' ? <FileText className="w-3 h-3 text-app-action" /> : <Layers className="w-3 h-3 text-app-accent" />}
                       {item.title}
                     </span>
-                    <span className="text-[10px] text-[#DC6E67] font-mono shrink-0">Diverged</span>
+                    <span className="text-[10px] text-status-error font-mono shrink-0">Diverged</span>
                   </div>
                 ))}
               </div>
@@ -339,7 +339,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   type="button"
                   onClick={() => handleResolveConflict('merge_preserve')}
                   disabled={isProcessing}
-                  className="w-full py-2 px-3 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                  className="w-full py-2 px-3 rounded-xl bg-app-action hover:bg-app-action text-app-on-action font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
                 >
                   <Shield className="w-3.5 h-3.5" />
                   <span>Merge &amp; Preserve Both (Keep Conflict Copies)</span>
@@ -350,9 +350,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     type="button"
                     onClick={() => handleResolveConflict('upload')}
                     disabled={isProcessing}
-                    className="py-1.5 px-3 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#FDF6E3] border border-[#1A4A55] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    className="py-1.5 px-3 rounded-lg bg-app-base hover:bg-app-border text-app-heading border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <CloudUpload className="w-3.5 h-3.5 text-[#B58900]" />
+                    <CloudUpload className="w-3.5 h-3.5 text-app-accent" />
                     <span>Keep Local Only</span>
                   </button>
 
@@ -360,9 +360,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     type="button"
                     onClick={() => handleResolveConflict('download')}
                     disabled={isProcessing}
-                    className="py-1.5 px-3 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#FDF6E3] border border-[#1A4A55] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    className="py-1.5 px-3 rounded-lg bg-app-base hover:bg-app-border text-app-heading border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <CloudDownload className="w-3.5 h-3.5 text-[#268BD2]" />
+                    <CloudDownload className="w-3.5 h-3.5 text-app-link" />
                     <span>Download Cloud</span>
                   </button>
                 </div>
@@ -377,7 +377,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               data-testid="sync-now-button"
               onClick={refreshSyncState}
               disabled={isProcessing || !isAuthenticated}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 px-4 rounded-xl bg-app-action hover:bg-app-action text-app-on-action font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isProcessing ? 'animate-spin' : ''}`} />
               <span>{isProcessing ? 'Synchronizing...' : 'Sync Now'}</span>
@@ -388,22 +388,22 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               data-testid="download-from-cloud-button"
               onClick={handleForceDownload}
               disabled={isProcessing || !isAuthenticated}
-              className="w-full py-2 px-3 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#93A1A1] hover:text-[#2AA198] border border-[#1A4A55] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full py-2 px-3 rounded-xl bg-app-base hover:bg-app-border text-app-muted hover:text-app-action border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
               title="Download from cloud library to device"
             >
-              <CloudDownload className="w-3.5 h-3.5 text-[#268BD2]" />
+              <CloudDownload className="w-3.5 h-3.5 text-app-link" />
               <span>Download from Cloud</span>
             </button>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-[#1A4A55]/80 bg-[#002B36]/60 flex items-center justify-between text-[11px] text-[#93A1A1]">
+        <div className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-between text-[11px] text-app-muted">
           <span>Offline edits preserved safely</span>
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1 rounded-lg bg-[#1A4A55]/50 hover:bg-[#1A4A55] text-[#FDF6E3] font-semibold transition-colors cursor-pointer"
+            className="px-3 py-1 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer"
           >
             Close
           </button>

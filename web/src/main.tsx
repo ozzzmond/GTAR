@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import { AuthGate } from './components/AuthGate'
+import { applyThemeRuntime, hydrateThemeSettings } from './components/ThemeModal'
+
+const initialTheme = hydrateThemeSettings()
+applyThemeRuntime(initialTheme.mode, initialTheme.standalone)
 const App = lazy(() => import('./App.tsx'))
 
 import { isDevEnv } from './utils/env'

@@ -9,7 +9,7 @@ import {
 } from '../utils/stageCast'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
 import { SongLineRenderer } from './SongLineRenderer'
-import { applyCustomThemeStyles } from './ThemeModal'
+import { applyThemeRuntime } from './ThemeModal'
 import type { ActiveSongState } from '../types/gtar'
 import {
   createFullscreenController,
@@ -41,6 +41,10 @@ export const StagePresentationView: React.FC = () => {
       }
     )
   })
+
+  useEffect(() => {
+    if (castState.customThemeColors) applyThemeRuntime('custom', castState.customThemeColors)
+  }, [castState.customThemeColors])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const isSyncingScrollRef = useRef(false)
@@ -102,7 +106,7 @@ export const StagePresentationView: React.FC = () => {
         const payload = inner.payload as StageCastState
         setCastState((prev) => ({ ...prev, ...payload }))
         if (payload.customThemeColors) {
-          applyCustomThemeStyles(payload.customThemeColors)
+          applyThemeRuntime('custom', payload.customThemeColors)
         }
         return
       }
@@ -130,7 +134,7 @@ export const StagePresentationView: React.FC = () => {
           }
           setCastState((prev) => ({ ...prev, ...newState }))
           if (newState.customThemeColors) {
-            applyCustomThemeStyles(newState.customThemeColors)
+            applyThemeRuntime('custom', newState.customThemeColors)
           }
           if (typeof inner.scrollFraction === 'number') {
             applyScroll(typeof inner.scrollTop === 'number' ? inner.scrollTop : 0, inner.scrollFraction)
@@ -184,7 +188,7 @@ export const StagePresentationView: React.FC = () => {
 
         // Apply custom theme colors if present
         if (newState.customThemeColors) {
-          applyCustomThemeStyles(newState.customThemeColors)
+          applyThemeRuntime('custom', newState.customThemeColors)
         }
       },
       applyScroll
@@ -252,7 +256,7 @@ export const StagePresentationView: React.FC = () => {
         }
         // fsCtrl has no persistent listeners here so no cleanup needed
       }}
-      className="fixed inset-0 w-screen h-screen overflow-y-auto bg-[#002B36] text-[#EEE8D5] select-none scroll-smooth px-6 sm:px-12 md:px-16 py-8"
+      className="fixed inset-0 w-screen h-screen overflow-y-auto bg-app-base text-app-text select-none scroll-smooth px-6 sm:px-12 md:px-16 py-8"
       style={{
         backgroundColor: 'var(--custom-stage-bg, #002B36)',
         color: 'var(--custom-stage-text, #EEE8D5)',
@@ -261,13 +265,13 @@ export const StagePresentationView: React.FC = () => {
       {/* Distraction-Free Teleprompter Layout (Zero buttons, Zero controls) */}
       <div className={"w-full"}>
         {/* Subtle Song Metadata Header */}
-        <div className="flex items-center justify-between gap-4 pb-4 border-b border-[#1A4A55] mb-6 flex-wrap opacity-80">
+        <div className="flex items-center justify-between gap-4 pb-4 border-b border-app-border mb-6 flex-wrap opacity-80">
           <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight truncate text-[#FDF6E3]">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight truncate text-app-heading">
               {song.title || 'Untitled Song'}
             </h1>
             {song.artist && (
-              <p className="text-base sm:text-lg text-[#2AA198] font-medium truncate mt-0.5">
+              <p className="text-base sm:text-lg text-app-action font-medium truncate mt-0.5">
                 {song.id === 0 && sessionId
                   ? `Session: ${sessionId} • Connect from GTAR Stage View`
                   : song.artist}
@@ -277,12 +281,12 @@ export const StagePresentationView: React.FC = () => {
 
           <div className="flex items-center gap-2 font-mono text-sm font-bold">
             {effectiveKey && (
-              <span className="px-2.5 py-1 rounded-md bg-[#073642] border border-[#1A4A55] text-[#B58900]">
+              <span className="px-2.5 py-1 rounded-md bg-app-surface border border-app-border text-app-accent">
                 KEY: {effectiveKey}
               </span>
             )}
-            {song.bpm && <span className="text-[#93A1A1]">{song.bpm.replace(/\s*bpm$/i, '')} BPM</span>}
-            {song.time && <span className="text-[#93A1A1]">{song.time}</span>}
+            {song.bpm && <span className="text-app-muted">{song.bpm.replace(/\s*bpm$/i, '')} BPM</span>}
+            {song.time && <span className="text-app-muted">{song.time}</span>}
           </div>
         </div>
 
@@ -301,7 +305,7 @@ export const StagePresentationView: React.FC = () => {
                 referenceKey={castState.notation === 'numbers' ? castState.effectiveKey : undefined}
               />
             </div>
-            <div className="min-w-0 md:border-l md:border-[#1A4A55]/60 md:pl-8 lg:pl-14">
+            <div className="min-w-0 md:border-l md:border-app-border/60 md:pl-8 lg:pl-14">
               <SongLineRenderer
                 lines={col2Lines}
                 fontSizePx={fontSizePx}

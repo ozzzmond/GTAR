@@ -239,33 +239,33 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 select-none">
-      <div className="w-full max-w-2xl rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-2xl rounded-2xl border border-app-border bg-app-surface shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base">
           <div className="flex items-center gap-2">
-            <FileJson className="w-5 h-5 text-[#2AA198]" />
-            <h2 className="text-base font-bold text-[#FDF6E3]">
+            <FileJson className="w-5 h-5 text-app-action" />
+            <h2 className="text-base font-bold text-app-heading">
               GTAR JSON Bridge (v1.0.45+)
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] cursor-pointer"
+            className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-surface cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-[#1A4A55] bg-[#002B36]/60 px-6">
+        <div className="flex border-b border-app-border bg-app-base/60 px-6">
           <button
             type="button"
             onClick={() => setTab('export')}
             className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 cursor-pointer transition-colors ${
               tab === 'export'
-                ? 'border-[#B58900] text-[#B58900]'
-                : 'border-transparent text-[#93A1A1] hover:text-[#FDF6E3]'
+                ? 'border-app-accent text-app-accent'
+                : 'border-transparent text-app-muted hover:text-app-heading'
             }`}
           >
             <Download className="w-4 h-4" />
@@ -276,8 +276,8 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
             onClick={() => setTab('import')}
             className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 cursor-pointer transition-colors ${
               tab === 'import'
-                ? 'border-[#2AA198] text-[#2AA198]'
-                : 'border-transparent text-[#93A1A1] hover:text-[#FDF6E3]'
+                ? 'border-app-action text-app-action'
+                : 'border-transparent text-app-muted hover:text-app-heading'
             }`}
           >
             <Upload className="w-4 h-4" />
@@ -291,7 +291,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
             <div className="space-y-4">
               {/* Format selection */}
               <div>
-                <label className="block text-[#93A1A1] font-mono text-[11px] mb-2 uppercase">
+                <label className="block text-app-muted font-mono text-[11px] mb-2 uppercase">
                   Select Android Export Schema:
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -300,14 +300,14 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                     onClick={() => setExportFormat('song')}
                     className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
                       exportFormat === 'song'
-                        ? 'border-[#2AA198] bg-[#002B36] text-[#FDF6E3] ring-1 ring-[#2AA198]'
-                        : 'border-[#1A4A55] bg-[#002B36]/50 text-[#93A1A1] hover:border-[#1A4A55]'
+                        ? 'border-app-action bg-app-base text-app-heading ring-1 ring-app-action'
+                        : 'border-app-border bg-app-base/50 text-app-muted hover:border-app-border'
                     }`}
                   >
-                    <Music className="w-4 h-4 text-[#2AA198] shrink-0 mt-0.5" />
+                    <Music className="w-4 h-4 text-app-action shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold text-xs text-[#FDF6E3]">Native SongEntity</div>
-                      <div className="text-[11px] text-[#93A1A1] mt-0.5">
+                      <div className="font-bold text-xs text-app-heading">Native SongEntity</div>
+                      <div className="text-[11px] text-app-muted mt-0.5">
                         Single song Room entity (.json)
                       </div>
                     </div>
@@ -318,14 +318,14 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                     onClick={() => setExportFormat('setlist')}
                     className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
                       exportFormat === 'setlist'
-                        ? 'border-[#B58900] bg-[#002B36] text-[#FDF6E3] ring-1 ring-[#B58900]'
-                        : 'border-[#1A4A55] bg-[#002B36]/50 text-[#93A1A1] hover:border-[#1A4A55]'
+                        ? 'border-app-accent bg-app-base text-app-heading ring-1 ring-app-accent'
+                        : 'border-app-border bg-app-base/50 text-app-muted hover:border-app-border'
                     }`}
                   >
-                    <ListMusic className="w-4 h-4 text-[#B58900] shrink-0 mt-0.5" />
+                    <ListMusic className="w-4 h-4 text-app-accent shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold text-xs text-[#FDF6E3]">GTAR Setlist</div>
-                      <div className="text-[11px] text-[#93A1A1] mt-0.5">
+                      <div className="font-bold text-xs text-app-heading">GTAR Setlist</div>
+                      <div className="text-[11px] text-app-muted mt-0.5">
                         GTAR_SETLIST v1 share (.json)
                       </div>
                     </div>
@@ -336,14 +336,14 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                     onClick={() => setExportFormat('backup')}
                     className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
                       exportFormat === 'backup'
-                        ? 'border-[#268BD2] bg-[#002B36] text-[#FDF6E3] ring-1 ring-[#268BD2]'
-                        : 'border-[#1A4A55] bg-[#002B36]/50 text-[#93A1A1] hover:border-[#1A4A55]'
+                        ? 'border-app-link bg-app-base text-app-heading ring-1 ring-app-link'
+                        : 'border-app-border bg-app-base/50 text-app-muted hover:border-app-border'
                     }`}
                   >
-                    <CloudUpload className="w-4 h-4 text-[#268BD2] shrink-0 mt-0.5" />
+                    <CloudUpload className="w-4 h-4 text-app-link shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold text-xs text-[#FDF6E3]">Export Backup</div>
-                      <div className="text-[11px] text-[#93A1A1] mt-0.5">
+                      <div className="font-bold text-xs text-app-heading">Export Backup</div>
+                      <div className="text-[11px] text-app-muted mt-0.5">
                         Full GTAR v1.0.45 backup (.json)
                       </div>
                     </div>
@@ -353,7 +353,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
 
               {(exportFormat === 'setlist' || exportFormat === 'backup') && (
                 <div>
-                  <label className="block text-[#93A1A1] font-mono text-[11px] mb-1 uppercase">
+                  <label className="block text-app-muted font-mono text-[11px] mb-1 uppercase">
                     Setlist Name:
                   </label>
                   <input
@@ -361,7 +361,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                     value={setlistName}
                     onChange={(e) => setSetlistName(e.target.value)}
                     placeholder="Enter setlist name"
-                    className="w-full px-3 py-2 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#FDF6E3] focus:outline-none focus:border-[#B58900]"
+                    className="w-full px-3 py-2 rounded-lg bg-app-base border border-app-border text-app-heading focus:outline-none focus:border-app-accent"
                   />
                 </div>
               )}
@@ -369,10 +369,10 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
               {/* JSON Preview Box */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[#93A1A1] font-mono text-[11px] uppercase">
+                  <span className="text-app-muted font-mono text-[11px] uppercase">
                     Generated JSON Payload:
                   </span>
-                  <span className="text-[#93A1A1] font-mono text-[10px]">
+                  <span className="text-app-muted font-mono text-[10px]">
                     {exportPayloadString.length} bytes
                   </span>
                 </div>
@@ -380,7 +380,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                   readOnly
                   value={exportPayloadString}
                   rows={8}
-                  className="w-full p-3 rounded-xl bg-[#002B36] border border-[#1A4A55] text-[#2AA198] font-mono text-xs focus:outline-none resize-none selection:bg-[#2AA198]/20"
+                  className="w-full p-3 rounded-xl bg-app-base border border-app-border text-app-action font-mono text-xs focus:outline-none resize-none selection:bg-app-action/20"
                 />
               </div>
 
@@ -389,15 +389,15 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="px-4 py-2.5 rounded-xl border border-[#1A4A55] bg-[#002B36] text-[#EEE8D5] hover:border-[#2AA198] hover:text-[#2AA198] font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl border border-app-border bg-app-base text-app-text hover:border-app-action hover:text-app-action font-semibold flex items-center gap-2 transition-colors cursor-pointer"
                 >
-                  {copied ? <Check className="w-4 h-4 text-[#859900]" /> : <Copy className="w-4 h-4" />}
+                  {copied ? <Check className="w-4 h-4 text-status-success" /> : <Copy className="w-4 h-4" />}
                   <span>{copied ? 'Copied to Clipboard' : 'Copy JSON'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="px-5 py-2.5 rounded-xl bg-[#B58900] hover:bg-[#B58900]/90 text-[#002B36] font-bold flex items-center gap-2 transition-colors cursor-pointer shadow-lg shadow-[#B58900]/20"
+                  className="px-5 py-2.5 rounded-xl bg-app-button hover:bg-app-button/90 text-app-button-text font-bold flex items-center gap-2 transition-colors cursor-pointer shadow-lg shadow-app-accent/20"
                 >
                   <Download className="w-4 h-4" />
                   <span>Download .json File</span>
@@ -409,13 +409,13 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
             <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-[#93A1A1] font-mono text-[11px] uppercase">
+                  <label className="text-app-muted font-mono text-[11px] uppercase">
                     Paste JSON or Upload File:
                   </label>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-xs text-[#2AA198] hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                    className="text-xs text-app-action hover:underline flex items-center gap-1 cursor-pointer font-medium"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     <span>Upload .json File</span>
@@ -436,12 +436,12 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                   }}
                   placeholder="Paste GTAR Setlist JSON, SongEntity JSON, or Backup JSON here..."
                   rows={6}
-                  className="w-full p-3 rounded-xl bg-[#002B36] border border-[#1A4A55] text-[#FDF6E3] font-mono text-xs focus:outline-none focus:border-[#2AA198] resize-none"
+                  className="w-full p-3 rounded-xl bg-app-base border border-app-border text-app-heading font-mono text-xs focus:outline-none focus:border-app-action resize-none"
                 />
               </div>
 
               {importError && (
-                <div className="p-3 rounded-xl bg-[#DC6E67]/10 border border-[#DC6E67]/40 text-[#DC6E67] flex items-center gap-2 font-mono">
+                <div className="p-3 rounded-xl bg-[#DC6E67]/10 border border-[#DC6E67]/40 text-status-error flex items-center gap-2 font-mono">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{importError}</span>
                 </div>
@@ -450,7 +450,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
               {detectedSongs.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[#93A1A1] font-mono text-[11px] uppercase">
+                    <span className="text-app-muted font-mono text-[11px] uppercase">
                       Detected Songs ({detectedSongs.length}):
                     </span>
                     {detectedSongs.length > 1 && onImportAllSongs && (
@@ -468,7 +468,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                           )
                           onClose()
                         }}
-                        className="text-xs text-[#2AA198] hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                        className="text-xs text-app-action hover:underline flex items-center gap-1 cursor-pointer font-medium"
                       >
                         <ListMusic className="w-3.5 h-3.5" />
                         <span>Import All Songs ({detectedSongs.length})</span>
@@ -479,19 +479,19 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                     {detectedSongs.map((s, idx) => (
                       <div
                         key={idx}
-                        className="p-3 rounded-xl bg-[#002B36] border border-[#1A4A55] flex items-center justify-between hover:border-[#2AA198] transition-colors"
+                        className="p-3 rounded-xl bg-app-base border border-app-border flex items-center justify-between hover:border-app-action transition-colors"
                       >
                         <div>
-                          <div className="font-bold text-[#FDF6E3]">{s.title}</div>
-                          <div className="text-[11px] text-[#93A1A1] mt-0.5 flex items-center gap-2">
+                          <div className="font-bold text-app-heading">{s.title}</div>
+                          <div className="text-[11px] text-app-muted mt-0.5 flex items-center gap-2">
                             {s.artist && <span>{s.artist}</span>}
-                            {s.key && <span className="text-[#B58900] font-mono">Key: {s.key}</span>}
+                            {s.key && <span className="text-app-accent font-mono">Key: {s.key}</span>}
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => handleSelectSongToLoad(s)}
-                          className="px-3 py-1.5 rounded-lg bg-[#2AA198] text-[#002B36] font-bold text-xs hover:bg-[#35B8AD] transition-colors cursor-pointer"
+                          className="px-3 py-1.5 rounded-lg bg-app-action text-app-on-action font-bold text-xs hover:bg-app-action transition-colors cursor-pointer"
                         >
                           Load into Editor
                         </button>

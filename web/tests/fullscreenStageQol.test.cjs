@@ -94,14 +94,14 @@ test('FULLSCREEN_TITLE_READABILITY_STYLE: increased text size, high contrast, ba
 
   // High contrast & font weight
   assert.ok(
-    block.includes('font-bold') && block.includes('text-[#EEE8D5]'),
-    'Must render full-contrast Solarized text-[#EEE8D5] in bold'
+    block.includes('font-bold') && block.includes('text-app-text'),
+    'Must render full-contrast Solarized text-app-text in bold'
   )
 
   // Backdrop styling: higher opacity glassmorphic backdrop for anti-bleed readability
   assert.ok(
-    block.includes('bg-[#073642]/85') && block.includes('backdrop-blur-md'),
-    'Must use opaque glassmorphic backdrop (bg-[#073642]/85 backdrop-blur-md) so scrolling text does not bleed through'
+    block.includes('bg-app-surface/85') && block.includes('backdrop-blur-md'),
+    'Must use opaque glassmorphic backdrop (bg-app-surface/85 backdrop-blur-md) so scrolling text does not bleed through'
   )
 
   // Truncation preserved

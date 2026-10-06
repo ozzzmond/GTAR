@@ -480,28 +480,28 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Pending Access Approval Screen
   if (session && accessStatus === 'pending') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
-        <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#B58900]/15 border border-[#B58900]/40 flex items-center justify-center text-[#B58900]">
+      <main className="min-h-screen flex items-center justify-center bg-app-base text-app-heading p-6">
+        <section className="w-full max-w-md rounded-3xl bg-app-surface border border-app-border p-8 text-center shadow-2xl">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-app-accent/15 border border-app-accent/40 flex items-center justify-center text-app-accent">
             <Clock className="w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold">Access Approval Pending</h1>
-          <p className="text-xs text-[#93A1A1] mt-2 mb-4 font-mono truncate">{session.user.email}</p>
-          <div className="p-4 mb-6 rounded-2xl bg-[#002B36] border border-[#1A4A55] text-xs text-[#93A1A1] text-left leading-relaxed">
+          <p className="text-xs text-app-muted mt-2 mb-4 font-mono truncate">{session.user.email}</p>
+          <div className="p-4 mb-6 rounded-2xl bg-app-base border border-app-border text-xs text-app-muted text-left leading-relaxed">
             Your account has been registered successfully. An administrator must approve your account before you can access GTAR songbook and cloud features.
           </div>
           {statusMessage && (
-            <p className="text-xs text-[#2AA198] mb-4 font-semibold">{statusMessage}</p>
+            <p className="text-xs text-app-action mb-4 font-semibold">{statusMessage}</p>
           )}
           {error && (
-            <p className="text-xs text-[#DC6E67] mb-4 font-semibold">{error}</p>
+            <p className="text-xs text-status-error mb-4 font-semibold">{error}</p>
           )}
           <div className="space-y-3">
             <button
               type="button"
               disabled={checkingStatus}
               onClick={() => void checkStatus()}
-              className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
               <RefreshCw className={`w-4 h-4 ${checkingStatus ? 'animate-spin' : ''}`} />
               <span>{checkingStatus ? 'Checking...' : 'Check Status'}</span>
@@ -509,21 +509,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={signOut}
-              className="w-full rounded-xl bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] border border-[#1A4A55] py-2.5 text-xs font-semibold transition-colors cursor-pointer"
+              className="w-full rounded-xl bg-transparent hover:bg-app-base text-app-muted hover:text-app-heading border border-app-border py-2.5 text-xs font-semibold transition-colors cursor-pointer"
             >
               Sign Out
             </button>
           </div>
           {isDevLogsEnabled && (
-            <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+            <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
               <button
                 type="button"
                 title="View Debug Logs"
                 aria-label="View Debug Logs"
-                className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+                className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
                 onClick={() => setIsDebugLogsOpen(true)}
               >
-                <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
+                <Terminal className="w-3.5 h-3.5 text-app-action" />
                 <span>View Debug Logs</span>
               </button>
             </div>
@@ -539,33 +539,33 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Denied Access Screen
   if (session && accessStatus === 'denied') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
-        <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 flex items-center justify-center text-[#DC6E67]">
+      <main className="min-h-screen flex items-center justify-center bg-app-base text-app-heading p-6">
+        <section className="w-full max-w-md rounded-3xl bg-app-surface border border-app-border p-8 text-center shadow-2xl">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 flex items-center justify-center text-status-error">
             <ShieldX className="w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold">Access Denied</h1>
-          <p className="text-xs text-[#93A1A1] mt-2 mb-4 font-mono truncate">{session.user.email}</p>
-          <div className="p-4 mb-6 rounded-2xl bg-[#002B36] border border-[#1A4A55] text-xs text-[#93A1A1] text-left leading-relaxed">
+          <p className="text-xs text-app-muted mt-2 mb-4 font-mono truncate">{session.user.email}</p>
+          <div className="p-4 mb-6 rounded-2xl bg-app-base border border-app-border text-xs text-app-muted text-left leading-relaxed">
             Access for this Google account has been denied by an administrator. Contact the application owner if you believe this is in error.
           </div>
           <button
             type="button"
             onClick={signOut}
-            className="w-full rounded-xl bg-[#002B36] hover:bg-[#002B36]/80 text-[#FDF6E3] border border-[#1A4A55] font-bold py-3 transition-colors cursor-pointer"
+            className="w-full rounded-xl bg-app-base hover:bg-app-base/80 text-app-heading border border-app-border font-bold py-3 transition-colors cursor-pointer"
           >
             Sign Out
           </button>
           {isDevLogsEnabled && (
-            <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+            <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
               <button
                 type="button"
                 title="View Debug Logs"
                 aria-label="View Debug Logs"
-                className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+                className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
                 onClick={() => setIsDebugLogsOpen(true)}
               >
-                <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
+                <Terminal className="w-3.5 h-3.5 text-app-action" />
                 <span>View Debug Logs</span>
               </button>
             </div>
@@ -580,9 +580,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   // Standard Login Screen
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#002B36] text-[#FDF6E3] p-6">
-      <section className="w-full max-w-md rounded-3xl bg-[#073642] border border-[#1A4A55] p-8 text-center shadow-2xl">
-        <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-[#002B36] border border-[#1A4A55] p-1 shadow-inner flex items-center justify-center">
+    <main className="min-h-screen flex items-center justify-center bg-app-base text-app-heading p-6">
+      <section className="w-full max-w-md rounded-3xl bg-app-surface border border-app-border p-8 text-center shadow-2xl">
+        <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-app-base border border-app-border p-1 shadow-inner flex items-center justify-center">
           <img
             src={isDevEnv ? devLogo : prodLogo}
             alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
@@ -590,14 +590,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
           />
         </div>
         <h1 className="text-3xl font-bold">GTAR</h1>
-        <p className="text-[#93A1A1] mt-2">Songbook &amp; Live Stage Companion</p>
+        <p className="text-app-muted mt-2">Songbook &amp; Live Stage Companion</p>
         <h2 className="text-lg font-semibold mt-8">Owner Access</h2>
-        <p className="text-sm text-[#93A1A1] mt-2 mb-6">
+        <p className="text-sm text-app-muted mt-2 mb-6">
           Access is restricted to authorized owners. Sign in with your approved Google account.
         </p>
         {isExpiredOffline && (
-          <div className="p-3 mb-4 rounded-xl bg-[#B58900]/15 border border-[#B58900]/40 text-[#EEE8D5] text-xs text-left">
-            <p className="font-bold text-[#B58900] mb-1">Offline Session Expired</p>
+          <div className="p-3 mb-4 rounded-xl bg-app-accent/15 border border-app-accent/40 text-app-text text-xs text-left">
+            <p className="font-bold text-app-accent mb-1">Offline Session Expired</p>
             <p>Your 30-day offline stage session has expired. Reconnect to the internet once to renew.</p>
           </div>
         )}
@@ -606,18 +606,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
         ) : (
           <button
             disabled={!ready || busy}
-            className="w-full rounded-xl bg-[#2AA198] text-[#002B36] font-bold py-3 disabled:opacity-50 cursor-pointer"
+            className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 cursor-pointer"
             onClick={() => void signIn()}
           >
             {busy ? 'Signing in...' : 'Sign In with Google'}
           </button>
         )}
-        <p role="status" className="text-sm text-amber-200 mt-4">
+        <p role="status" className="text-sm text-status-warning mt-4">
           {error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}
         </p>
         {canBypass && !checking && (
           <button
-            className="mt-6 text-sm underline text-[#93A1A1] cursor-pointer"
+            className="mt-6 text-sm underline text-app-muted cursor-pointer"
             onClick={() => {
               signOut()
               setBypass(true)
@@ -627,15 +627,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </button>
         )}
         {isDevLogsEnabled && (
-          <div className="mt-6 pt-4 border-t border-[#1A4A55]/60 flex justify-center">
+          <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
             <button
               type="button"
               title="View Debug Logs"
               aria-label="View Debug Logs"
-              className="px-3.5 py-1.5 rounded-xl bg-[#002B36] hover:bg-[#1A4A55] text-[#2AA198] hover:text-[#35B8AD] border border-[#1A4A55] hover:border-[#2AA198]/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+              className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
               onClick={() => setIsDebugLogsOpen(true)}
             >
-              <Terminal className="w-3.5 h-3.5 text-[#2AA198]" />
+              <Terminal className="w-3.5 h-3.5 text-app-action" />
               <span>View Debug Logs</span>
             </button>
           </div>

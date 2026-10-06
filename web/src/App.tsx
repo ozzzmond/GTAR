@@ -523,7 +523,8 @@ function LibraryApp() {
       localStorage.setItem(SETTINGS_KEYS.themeMode, stageTheme)
     } catch (_) {}
 
-    applyThemeRuntime(stageTheme, customThemeColors)
+    const appliedPalette = applyThemeRuntime(stageTheme, customThemeColors)
+    stageCast.setThemeSnapshot(stageTheme, appliedPalette)
   }, [stageTheme, customThemeColors])
 
   // Active Setlist context
@@ -1399,7 +1400,7 @@ function LibraryApp() {
     : songs
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#002B36] text-[#EEE8D5]">
+    <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
       {!isStagePerformanceMode && (
         <Header
@@ -1689,10 +1690,10 @@ function LibraryApp() {
       {/* Global Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <div className={`px-4 py-2.5 rounded-xl bg-[#002B36] border text-[#FDF6E3] text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center ${
+          <div className={`px-4 py-2.5 rounded-xl bg-app-base border text-app-heading text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center ${
             /fail|quota|warn|error|conflict|cannot|may not/i.test(toastMessage)
               ? 'border-[#CB4B16]'
-              : 'border-[#2AA198]'
+              : 'border-app-action'
           }`}>
             <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${
               /fail|quota|warn|error|conflict|cannot|may not/i.test(toastMessage)

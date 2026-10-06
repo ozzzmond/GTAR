@@ -196,7 +196,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col">
+      <div className="w-full max-w-md rounded-2xl bg-app-surface border border-app-border shadow-2xl overflow-hidden flex flex-col">
         {/* Hidden inputs for native file and directory pickers */}
         <input
           ref={fileInputRef}
@@ -217,20 +217,20 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
         />
 
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/50">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#2AA198]/20 border border-[#2AA198]/30 flex items-center justify-center text-[#2AA198]">
+            <div className="w-9 h-9 rounded-xl bg-app-action/20 border border-app-action/30 flex items-center justify-center text-app-action">
               <FolderOpen className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">Import Songs &amp; Setlists</h2>
-              <p className="text-xs text-[#93A1A1]">Import chord charts, songs, or exported setlists</p>
+              <h2 className="text-base font-bold text-app-heading">Import Songs &amp; Setlists</h2>
+              <p className="text-xs text-app-muted">Import chord charts, songs, or exported setlists</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -238,7 +238,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-4">
-          <p className="text-xs text-[#93A1A1] leading-relaxed">
+          <p className="text-xs text-app-muted leading-relaxed">
             Choose an import method for your songs, chord charts, or setlists:
           </p>
 
@@ -246,8 +246,8 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
             <div
               className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
                 feedback.type === 'success'
-                  ? 'bg-[#2AA198]/15 border-[#2AA198]/40 text-[#2AA198]'
-                  : 'bg-[#DC6E67]/15 border-[#DC6E67]/40 text-[#DC6E67]'
+                  ? 'bg-app-action/15 border-app-action/40 text-app-action'
+                  : 'bg-[#DC6E67]/15 border-[#DC6E67]/40 text-status-error'
               }`}
             >
               {feedback.type === 'success' ? (
@@ -263,16 +263,16 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-full text-left p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] hover:bg-[#094352]/30 transition-all flex items-center gap-3.5 group cursor-pointer"
+            className="w-full text-left p-4 rounded-xl bg-app-base border border-app-border hover:border-app-action hover:bg-app-accent/30 transition-all flex items-center gap-3.5 group cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-[#073642] flex items-center justify-center text-[#2AA198] group-hover:scale-105 transition-transform">
+            <div className="w-10 h-10 rounded-xl bg-app-surface flex items-center justify-center text-app-action group-hover:scale-105 transition-transform">
               <FileText className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors">
+              <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
                 Import File (.txt, .chordpro, .json)
               </div>
-              <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+              <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                 Select single song, chord sheet, or exported setlist JSON
               </div>
             </div>
@@ -282,16 +282,16 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
           <button
             type="button"
             onClick={() => folderInputRef.current?.click()}
-            className="w-full text-left p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] hover:bg-[#094352]/30 transition-all flex items-center gap-3.5 group cursor-pointer"
+            className="w-full text-left p-4 rounded-xl bg-app-base border border-app-border hover:border-app-action hover:bg-app-accent/30 transition-all flex items-center gap-3.5 group cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-[#073642] flex items-center justify-center text-[#2AA198] group-hover:scale-105 transition-transform">
+            <div className="w-10 h-10 rounded-xl bg-app-surface flex items-center justify-center text-app-action group-hover:scale-105 transition-transform">
               <FolderUp className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors">
+              <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
                 Import Folder (Batch)
               </div>
-              <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+              <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                 Select folder to batch import all chord charts and songs
               </div>
             </div>
@@ -299,17 +299,17 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
 
 
-          <div className="p-3 rounded-xl bg-[#002B36]/50 border border-[#1A4A55]/60 text-[11px] text-[#93A1A1] leading-relaxed">
-            <span className="font-semibold text-[#859900]">Looking for Full Library Backup / Restore?</span> Use the profile menu (<span className="text-[#FDF6E3] font-medium">Backup &amp; Restore</span>) to export or restore complete app settings, themes, and full library snapshots.
+          <div className="p-3 rounded-xl bg-app-base/50 border border-app-border/60 text-[11px] text-app-muted leading-relaxed">
+            <span className="font-semibold text-app-link">Looking for Full Library Backup / Restore?</span> Use the profile menu (<span className="text-app-heading font-medium">Backup &amp; Restore</span>) to export or restore complete app settings, themes, and full library snapshots.
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-[#1A4A55] bg-[#002B36]/30 flex justify-end">
+        <div className="px-6 py-3 border-t border-app-border bg-app-base/30 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-[#002B36] border border-[#1A4A55] text-xs font-semibold text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+            className="px-4 py-1.5 rounded-xl bg-app-base border border-app-border text-xs font-semibold text-app-muted hover:text-app-heading transition-colors cursor-pointer"
           >
             Cancel
           </button>

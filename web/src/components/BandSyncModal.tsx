@@ -196,37 +196,37 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-lg rounded-2xl bg-app-surface border border-app-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/50">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#2AA198]/20 border border-[#2AA198]/30 flex items-center justify-center text-[#2AA198]">
+            <div className="w-9 h-9 rounded-xl bg-app-action/20 border border-app-action/30 flex items-center justify-center text-app-action">
               <Radio className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">STAGE TOOLS & SYNC</h2>
-              <p className="text-xs text-[#93A1A1]">Metronome, Guitar Tuner & Band Sync</p>
+              <h2 className="text-base font-bold text-app-heading">STAGE TOOLS & SYNC</h2>
+              <p className="text-xs text-app-muted">Metronome, Guitar Tuner & Band Sync</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* 3-Tab Segmented Switcher */}
-        <div className="p-3 border-b border-[#1A4A55] bg-[#002B36]/30">
-          <div className="grid grid-cols-3 gap-1 bg-[#002B36] p-1 rounded-xl border border-[#1A4A55]">
+        <div className="p-3 border-b border-app-border bg-app-base/30">
+          <div className="grid grid-cols-3 gap-1 bg-app-base p-1 rounded-xl border border-app-border">
             <button
               type="button"
               onClick={() => setActiveTab('metronome')}
               className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'metronome'
-                  ? 'bg-[#2AA198] text-[#002B36] shadow-sm'
-                  : 'text-[#93A1A1] hover:text-[#FDF6E3]'
+                  ? 'bg-app-action text-app-on-action shadow-sm'
+                  : 'text-app-muted hover:text-app-heading'
               }`}
             >
               <Gauge className="w-3.5 h-3.5" />
@@ -238,8 +238,8 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
               onClick={() => setActiveTab('tuner')}
               className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'tuner'
-                  ? 'bg-[#2AA198] text-[#002B36] shadow-sm'
-                  : 'text-[#93A1A1] hover:text-[#FDF6E3]'
+                  ? 'bg-app-action text-app-on-action shadow-sm'
+                  : 'text-app-muted hover:text-app-heading'
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
@@ -251,8 +251,8 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
               onClick={() => setActiveTab('sync')}
               className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'sync'
-                  ? 'bg-[#B58900] text-[#002B36] shadow-sm'
-                  : 'text-[#93A1A1] hover:text-[#FDF6E3]'
+                  ? 'bg-app-button text-app-button-text shadow-sm'
+                  : 'text-app-muted hover:text-app-heading'
               }`}
             >
               <Wifi className="w-3.5 h-3.5" />
@@ -268,10 +268,10 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
             <div className="space-y-6 text-center">
               {/* Large BPM Display */}
               <div className="py-2">
-                <div className="text-6xl font-black font-mono text-[#FDF6E3] tracking-tighter">
+                <div className="text-6xl font-black font-mono text-app-heading tracking-tighter">
                   {metroState.bpm}
                 </div>
-                <div className="text-xs font-bold uppercase tracking-widest text-[#2AA198] mt-1">
+                <div className="text-xs font-bold uppercase tracking-widest text-app-action mt-1">
                   BPM (Beats Per Minute)
                 </div>
               </div>
@@ -284,21 +284,21 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                   max="280"
                   value={metroState.bpm}
                   onChange={(e) => metronome.setBpm(parseInt(e.target.value, 10))}
-                  className="w-full accent-[#2AA198] cursor-pointer"
+                  className="w-full accent-app-action cursor-pointer"
                 />
 
                 <div className="flex items-center justify-center gap-2">
                   <button
                     type="button"
                     onClick={() => metronome.setBpm(metroState.bpm - 5)}
-                    className="px-2.5 py-1 rounded-lg bg-[#002B36] border border-[#1A4A55] text-xs font-bold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer"
+                    className="px-2.5 py-1 rounded-lg bg-app-base border border-app-border text-xs font-bold text-app-text hover:text-app-action cursor-pointer"
                   >
                     -5
                   </button>
                   <button
                     type="button"
                     onClick={() => metronome.setBpm(metroState.bpm - 1)}
-                    className="p-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer"
+                    className="p-1.5 rounded-lg bg-app-base border border-app-border text-app-text hover:text-app-action cursor-pointer"
                   >
                     <Minus className="w-4 h-4" />
                   </button>
@@ -306,7 +306,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                   <button
                     type="button"
                     onClick={handleTapTempo}
-                    className="px-5 py-2 rounded-xl bg-[#002B36] border border-[#2AA198] text-xs font-extrabold text-[#2AA198] hover:bg-[#2AA198]/15 cursor-pointer uppercase tracking-wider active:scale-95 transition-transform"
+                    className="px-5 py-2 rounded-xl bg-app-base border border-app-action text-xs font-extrabold text-app-action hover:bg-app-action/15 cursor-pointer uppercase tracking-wider active:scale-95 transition-transform"
                   >
                     Tap Tempo
                   </button>
@@ -314,14 +314,14 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                   <button
                     type="button"
                     onClick={() => metronome.setBpm(metroState.bpm + 1)}
-                    className="p-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer"
+                    className="p-1.5 rounded-lg bg-app-base border border-app-border text-app-text hover:text-app-action cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => metronome.setBpm(metroState.bpm + 5)}
-                    className="px-2.5 py-1 rounded-lg bg-[#002B36] border border-[#1A4A55] text-xs font-bold text-[#EEE8D5] hover:text-[#2AA198] cursor-pointer"
+                    className="px-2.5 py-1 rounded-lg bg-app-base border border-app-border text-xs font-bold text-app-text hover:text-app-action cursor-pointer"
                   >
                     +5
                   </button>
@@ -335,7 +335,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                 className={`w-full py-3.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg ${
                   metroState.isRunning
                     ? 'bg-[#DC6E67] text-white hover:bg-[#E53935]'
-                    : 'bg-[#2AA198] text-[#002B36] hover:bg-[#35B8AD]'
+                    : 'bg-app-action text-app-on-action hover:bg-app-action'
                 }`}
               >
                 {metroState.isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
@@ -347,7 +347,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
           {/* 2. GUITAR TUNER PANEL */}
           {activeTab === 'tuner' && (
             <div className="space-y-4">
-              <p className="text-xs text-[#93A1A1] text-center">
+              <p className="text-xs text-app-muted text-center">
                 Click any string to play standard guitar reference frequency:
               </p>
 
@@ -361,15 +361,15 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                       onClick={() => playTuningTone(str.name, str.freq)}
                       className={`p-3.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
                         isPlaying
-                          ? 'bg-[#2AA198]/20 border-[#2AA198] text-[#2AA198] shadow-md'
-                          : 'bg-[#002B36] border-[#1A4A55] text-[#EEE8D5] hover:border-[#2AA198]'
+                          ? 'bg-app-action/20 border-app-action text-app-action shadow-md'
+                          : 'bg-app-base border-app-border text-app-text hover:border-app-action'
                       }`}
                     >
                       <Volume2
-                        className={`w-4 h-4 ${isPlaying ? 'text-[#2AA198] animate-pulse' : 'text-[#93A1A1]'}`}
+                        className={`w-4 h-4 ${isPlaying ? 'text-app-action animate-pulse' : 'text-app-muted'}`}
                       />
                       <span className="text-xs font-extrabold">{str.name}</span>
-                      <span className="text-[10px] font-mono text-[#93A1A1]">
+                      <span className="text-[10px] font-mono text-app-muted">
                         {str.freq.toFixed(1)} Hz
                       </span>
                     </button>
@@ -378,7 +378,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
               </div>
 
               {activeTuningString && (
-                <div className="p-3 rounded-xl bg-[#2AA198]/10 border border-[#2AA198]/30 text-center text-xs text-[#2AA198] font-bold">
+                <div className="p-3 rounded-xl bg-app-action/10 border border-app-action/30 text-center text-xs text-app-action font-bold">
                   Now playing reference tone for {activeTuningString}
                 </div>
               )}
@@ -389,7 +389,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
           {activeTab === 'sync' && (
             <div className="space-y-4">
               {/* Mode Selector Pills: Sync Off | Band Member */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-[#002B36] rounded-xl border border-[#1A4A55]">
+              <div className="grid grid-cols-2 gap-2 p-1 bg-app-base rounded-xl border border-app-border">
                 <button
                   type="button"
                   onClick={() => {
@@ -398,8 +398,8 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                   }}
                   className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     syncState.role === 'OFF'
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 font-extrabold shadow-sm'
-                      : 'text-[#93A1A1] hover:text-[#FDF6E3]'
+                      ? 'bg-app-accent/20 text-app-accent border border-app-accent/50 font-extrabold shadow-sm'
+                      : 'text-app-muted hover:text-app-heading'
                   }`}
                 >
                   <span>Sync Off</span>
@@ -414,8 +414,8 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                   }}
                   className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     syncState.role === 'CLIENT'
-                      ? 'bg-amber-500 text-black font-extrabold shadow-sm'
-                      : 'text-[#93A1A1] hover:text-amber-400'
+                      ? 'bg-app-button text-app-button-text font-extrabold shadow-sm'
+                      : 'text-app-muted hover:text-app-accent'
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
@@ -425,15 +425,15 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
               {/* 1. STATE: OFF */}
               {syncState.role === 'OFF' && (
-                <div className="p-6 rounded-2xl bg-[#002B36] border border-[#1A4A55] text-center space-y-4 shadow-lg animate-fade-in">
-                  <div className="w-14 h-14 rounded-2xl bg-[#073642] border border-[#1A4A55] flex items-center justify-center mx-auto text-amber-400">
+                <div className="p-6 rounded-2xl bg-app-base border border-app-border text-center space-y-4 shadow-lg animate-fade-in">
+                  <div className="w-14 h-14 rounded-2xl bg-app-surface border border-app-border flex items-center justify-center mx-auto text-app-accent">
                     <Users className="w-7 h-7" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-[#FDF6E3]">
+                    <h3 className="text-base font-bold text-app-heading">
                       Band Member Client (Sync Off)
                     </h3>
-                    <p className="text-xs text-[#93A1A1] mt-1.5 max-w-sm mx-auto leading-relaxed">
+                    <p className="text-xs text-app-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
                       Connect directly to an Android Stage Leader tablet on your local Wi-Fi or hotspot to automatically mirror songs, key changes, and autoscrolling.
                     </p>
                   </div>
@@ -443,7 +443,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                       onClick={() => {
                         bandSync.setRole('CLIENT')
                       }}
-                      className="py-2.5 px-6 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs transition-colors cursor-pointer shadow-md inline-flex items-center gap-2"
+                      className="py-2.5 px-6 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs transition-colors cursor-pointer shadow-md inline-flex items-center gap-2"
                     >
                       <Users className="w-4 h-4" />
                       <span>Connect as Band Member</span>
@@ -454,7 +454,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
               {/* 2. STATE: BAND MEMBER (CLIENT) */}
               {syncState.role === 'CLIENT' && (
-                <div className="p-5 rounded-2xl bg-[#002B36] border border-[#2AA198] space-y-4 shadow-lg animate-fade-in">
+                <div className="p-5 rounded-2xl bg-app-base border border-app-action space-y-4 shadow-lg animate-fade-in">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span
@@ -469,10 +469,10 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                       <span
                         className={`text-xs font-black tracking-wide ${
                           syncState.wsConnected
-                            ? 'text-emerald-400'
+                            ? 'text-status-success'
                             : syncState.wsConnecting
-                            ? 'text-amber-400'
-                            : 'text-[#93A1A1]'
+                            ? 'text-status-warning'
+                            : 'text-app-muted'
                         }`}
                       >
                         {syncState.wsConnected
@@ -486,14 +486,14 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                     <div
                       className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 ${
                         syncState.wsConnected
-                          ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                          ? 'bg-emerald-500/20 border border-emerald-500/40 text-status-success'
                           : syncState.wsConnecting
-                          ? 'bg-amber-400/20 border border-amber-400/40 text-amber-400'
-                          : 'bg-[#073642] border border-[#1A4A55] text-[#93A1A1]'
+                          ? 'bg-amber-400/20 border border-amber-400/40 text-status-warning'
+                          : 'bg-app-surface border border-app-border text-app-muted'
                       }`}
                     >
                       {syncState.wsConnecting && (
-                        <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                        <Loader2 className="w-3 h-3 animate-spin text-status-warning" />
                       )}
                       <span>{syncState.wsStatus}</span>
                     </div>
@@ -501,7 +501,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
                   {syncState.wsConnected ? (
                     <div className="space-y-4">
-                      <p className="text-xs text-[#FDF6E3] leading-relaxed">
+                      <p className="text-xs text-app-heading leading-relaxed">
                         Synced with Band Leader ({syncState.wsLeaderIp || 'Leader'}). Your screen will automatically follow song changes and scrolling.
                       </p>
                       <button
@@ -518,7 +518,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                   ) : (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-xs font-bold text-[#93A1A1] block mb-1">
+                        <label className="text-xs font-bold text-app-muted block mb-1">
                           Leader WebSocket Address
                         </label>
                         <div className="flex items-center gap-2">
@@ -532,19 +532,19 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                               }
                             }}
                             placeholder="ws://192.168.x.x:8765"
-                            className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#073642] border border-[#1A4A55] text-xs font-mono text-[#FDF6E3] focus:border-amber-400 outline-none"
+                            className="flex-1 px-3.5 py-2.5 rounded-xl bg-app-surface border border-app-border text-xs font-mono text-app-heading focus:border-app-accent outline-none"
                           />
                           <button
                             type="button"
                             disabled={!inputIp.trim()}
                             onClick={() => handleConnect(inputIp)}
-                            className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs disabled:opacity-50 transition-colors cursor-pointer shadow-md shrink-0"
+                            className="px-5 py-2.5 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs disabled:opacity-50 transition-colors cursor-pointer shadow-md shrink-0"
                           >
                             {syncState.wsConnecting ? 'Connecting...' : 'Connect'}
                           </button>
                         </div>
-                        <p className="text-[11px] text-[#93A1A1] mt-1.5 font-mono">
-                          Enter Android Leader IP or address (e.g. <span className="text-amber-400">ws://192.168.100.173:8765</span> or <span className="text-amber-400">192.168.43.1</span>)
+                        <p className="text-[11px] text-app-muted mt-1.5 font-mono">
+                          Enter Android Leader IP or address (e.g. <span className="text-app-accent">ws://192.168.100.173:8765</span> or <span className="text-app-accent">192.168.43.1</span>)
                         </p>
                       </div>
 
@@ -552,14 +552,14 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                       {recentLeaders.length > 0 && (
                         <div className="pt-1 space-y-1.5 animate-fade-in">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-[#93A1A1] uppercase tracking-wider flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="text-[11px] font-bold text-app-muted uppercase tracking-wider flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-app-accent" />
                               <span>Recent Leaders</span>
                             </span>
                             <button
                               type="button"
                               onClick={handleClearHistory}
-                              className="text-[10px] text-[#93A1A1] hover:text-red-400 transition-colors cursor-pointer flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-red-500/10"
+                              className="text-[10px] text-app-muted hover:text-status-error transition-colors cursor-pointer flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-red-500/10"
                               title="Clear recent leader connection history"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -572,10 +572,10 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                                 key={address}
                                 type="button"
                                 onClick={() => handleConnect(address)}
-                                className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-amber-500/20 border border-[#1A4A55] hover:border-amber-500/50 text-[#FDF6E3] hover:text-amber-400 text-[11px] font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5 group shadow-xs active:scale-95"
+                                className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-accent/20 border border-app-border hover:border-app-accent/50 text-app-heading hover:text-app-accent text-[11px] font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5 group shadow-xs active:scale-95"
                                 title={`Connect to ${address}`}
                               >
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60 group-hover:bg-amber-400 transition-colors" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-app-accent/60 group-hover:bg-app-button transition-colors" />
                                 <span>{address}</span>
                               </button>
                             ))}
@@ -590,7 +590,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                             bandSync.disconnectWebSocket()
                             bandSync.setRole('OFF')
                           }}
-                          className="w-full py-2.5 rounded-xl bg-[#073642] border border-[#1A4A55] text-[#93A1A1] hover:text-red-400 font-bold text-xs transition-colors cursor-pointer mt-2"
+                          className="w-full py-2.5 rounded-xl bg-app-surface border border-app-border text-app-muted hover:text-status-error font-bold text-xs transition-colors cursor-pointer mt-2"
                         >
                           Cancel
                         </button>
@@ -604,11 +604,11 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-[#1A4A55] bg-[#002B36]/50 flex justify-end">
+        <div className="px-6 py-3.5 border-t border-app-border bg-app-base/50 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-[#002B36] border border-[#1A4A55] text-xs font-bold text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+            className="px-5 py-2 rounded-xl bg-app-base border border-app-border text-xs font-bold text-app-muted hover:text-app-heading transition-colors cursor-pointer"
           >
             Close
           </button>

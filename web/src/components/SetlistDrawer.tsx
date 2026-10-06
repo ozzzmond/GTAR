@@ -191,34 +191,34 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
       {/* Drawer Container (Sliding smoothly from Left) */}
       <div
-        className="relative w-80 sm:w-96 max-w-[88vw] h-full bg-[#073642] border-r border-[#1A4A55] shadow-2xl flex flex-col z-50 animate-in slide-in-from-left duration-200"
+        className="relative w-80 sm:w-96 max-w-[88vw] h-full bg-app-surface border-r border-app-border shadow-2xl flex flex-col z-50 animate-in slide-in-from-left duration-200"
         onClick={() => setConfirmDeleteIndex(null)}
       >
         {/* Drawer Header */}
-        <div className="p-4 border-b border-[#1A4A55] bg-[#002B36] flex items-center justify-between">
+        <div className="p-4 border-b border-app-border bg-app-base flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="ui-section-icon w-8 h-8 rounded-lg bg-[#073642] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
+            <div className="ui-section-icon w-8 h-8 rounded-lg bg-app-surface border border-app-action/40 flex items-center justify-center text-app-action">
               <ListMusic className="ui-section-icon w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-[#FDF6E3]">
+                <h2 className="text-sm font-bold text-app-heading">
                   {drawerTab === 'songbook' ? 'Songbook Library' : 'Gig Setlists'}
                 </h2>
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30">
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-action/20 text-app-action border border-app-action/30">
                   {drawerTab === 'songbook'
                     ? `${songs.length} ${songs.length === 1 ? 'Song' : 'Songs'}`
                     : `${setlists.length} ${setlists.length === 1 ? 'Setlist' : 'Setlists'}`}
                 </span>
               </div>
-              <p className="text-[10px] font-mono text-[#93A1A1]">Live Stage & Editor Switcher</p>
+              <p className="text-[10px] font-mono text-app-muted">Live Stage & Editor Switcher</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-surface transition-colors cursor-pointer"
             title="Close Drawer"
           >
             <X className="w-5 h-5" />
@@ -226,14 +226,14 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         </div>
 
         {/* Tab Switcher: Songbook vs Setlists */}
-        <div className="flex border-b border-[#1A4A55] bg-[#002B36]/80 px-2 py-1 gap-1">
+        <div className="flex border-b border-app-border bg-app-base/80 px-2 py-1 gap-1">
           <button
             type="button"
             onClick={() => setDrawerTab('songbook')}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
               drawerTab === 'songbook'
-                ? 'bg-[#2AA198] text-[#002B36] shadow-sm'
-                : 'text-[#93A1A1] hover:text-[#EEE8D5]'
+                ? 'bg-app-action text-app-on-action shadow-sm'
+                : 'text-app-muted hover:text-app-text'
             }`}
           >
             Songbook ({songs.length})
@@ -243,8 +243,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             onClick={() => setDrawerTab('setlists')}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
               drawerTab === 'setlists'
-                ? 'bg-[#B58900] text-[#002B36] shadow-sm'
-                : 'text-[#93A1A1] hover:text-[#EEE8D5]'
+                ? 'bg-app-button text-app-button-text shadow-sm'
+                : 'text-app-muted hover:text-app-text'
             }`}
           >
             Setlists ({setlists.length})
@@ -252,22 +252,22 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         </div>
 
         {/* Real-time Search & Filter Bar */}
-        <div className="p-3 border-b border-[#1A4A55] bg-[#002B36]/60">
-          <div className="flex items-center gap-2 bg-[#002B36] px-3 py-2 rounded-xl border border-[#1A4A55] text-xs">
-            <Search className="w-3.5 h-3.5 text-[#93A1A1]" />
+        <div className="p-3 border-b border-app-border bg-app-base/60">
+          <div className="flex items-center gap-2 bg-app-base px-3 py-2 rounded-xl border border-app-border text-xs">
+            <Search className="w-3.5 h-3.5 text-app-muted" />
             <input
               type="text"
               autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={drawerTab === 'setlists' ? 'Search setlists by name or track...' : 'Search by title or artist...'}
-              className="w-full bg-transparent text-[#FDF6E3] focus:outline-none placeholder-[#93A1A1]/60 text-xs font-mono"
+              className="w-full bg-transparent text-app-heading focus:outline-none placeholder-app-muted/60 text-xs font-mono"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="text-[11px] text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                className="text-[11px] text-app-muted hover:text-app-heading cursor-pointer"
               >
                 ✕
               </button>
@@ -286,12 +286,12 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
         {/* Transient feedback toast */}
         {drawerToast && (
-          <div className="mx-3 my-1 px-3 py-1.5 rounded-lg bg-[#2AA198] text-[#002B36] text-xs font-bold font-mono animate-fade-in flex items-center justify-between">
+          <div className="mx-3 my-1 px-3 py-1.5 rounded-lg bg-app-action text-app-on-action text-xs font-bold font-mono animate-fade-in flex items-center justify-between">
             <span>{drawerToast}</span>
             <button
               type="button"
               onClick={() => setDrawerToast(null)}
-              className="text-[#002B36] hover:opacity-75"
+              className="text-app-on-action hover:opacity-75"
             >
               ✕
             </button>
@@ -303,15 +303,15 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
           {drawerTab === 'setlists' ? (
             <div className="space-y-2">
               {/* Setlists Control Bar: Import Setlist (.json) & Export All (JSON) */}
-              <div className="flex items-center justify-between gap-1.5 pb-2 border-b border-[#1A4A55]/60 mb-2">
-                <span className="text-[10px] font-mono font-bold text-[#93A1A1] uppercase tracking-wider">
+              <div className="flex items-center justify-between gap-1.5 pb-2 border-b border-app-border/60 mb-2">
+                <span className="text-[10px] font-mono font-bold text-app-muted uppercase tracking-wider">
                   Gig Setlists ({setlists.length})
                 </span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setlistFileInputRef.current?.click()}
-                    className="ui-action-text px-2 py-1 rounded-lg bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-[#2AA198]/30"
+                    className="ui-action-text px-2 py-1 rounded-lg bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-app-action/30"
                     title="Import a single setlist (.json) into your library"
                   >
                     <Upload className="w-3 h-3" />
@@ -320,7 +320,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   <button
                     type="button"
                     onClick={handleExportAll}
-                    className="px-2 py-1 rounded-lg bg-[#002B36] hover:bg-[#1A4A55] text-[#93A1A1] hover:text-[#FDF6E3] text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-[#1A4A55]"
+                    className="px-2 py-1 rounded-lg bg-app-base hover:bg-app-border text-app-muted hover:text-app-heading text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-app-border"
                     title="Export All Data (JSON)"
                   >
                     <Download className="w-3 h-3" />
@@ -330,21 +330,21 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               </div>
 
               {setlists.length === 0 ? (
-                <div className="p-8 text-center text-xs font-mono text-[#93A1A1] space-y-2">
-                  <div className="text-sm font-bold text-[#EEE8D5]">No Custom Setlists</div>
+                <div className="p-8 text-center text-xs font-mono text-app-muted space-y-2">
+                  <div className="text-sm font-bold text-app-text">No Custom Setlists</div>
                   <div>Your songbook contains {songs.length} songs.</div>
-                  <div className="text-[11px] text-[#2AA198]">
+                  <div className="text-[11px] text-app-action">
                     Setlists stay completely separate from your full library.
                   </div>
                 </div>
               ) : filteredSetlists.length === 0 ? (
-                <div className="p-8 text-center text-xs font-mono text-[#93A1A1] space-y-2">
-                  <div className="text-sm font-bold text-[#EEE8D5]">No Matching Setlists</div>
+                <div className="p-8 text-center text-xs font-mono text-app-muted space-y-2">
+                  <div className="text-sm font-bold text-app-text">No Matching Setlists</div>
                   <div>No setlists match &quot;{searchQuery}&quot;</div>
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="mt-2 px-3 py-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-xs text-[#2AA198] font-bold cursor-pointer hover:border-[#2AA198]"
+                    className="mt-2 px-3 py-1.5 rounded-lg bg-app-base border border-app-border text-xs text-app-action font-bold cursor-pointer hover:border-app-action"
                   >
                     Clear Search
                   </button>
@@ -356,7 +356,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   return (
                     <div
                       key={sl.id || sl.name}
-                      className="border border-[#1A4A55] rounded-xl bg-[#002B36]/60 overflow-hidden shadow-sm transition-all"
+                      className="border border-app-border rounded-xl bg-app-base/60 overflow-hidden shadow-sm transition-all"
                     >
                       {/* Setlist Header Card */}
                       <div className="p-3 flex items-center justify-between gap-2">
@@ -364,12 +364,12 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           onClick={() => setExpandedSetlistId(isExpanded ? null : sl.id)}
                           className="min-w-0 flex-1 flex items-center gap-2.5 cursor-pointer select-none"
                         >
-                          <div className="w-8 h-8 rounded-lg bg-[#073642] border border-[#B58900]/40 flex items-center justify-center text-[#B58900] shrink-0">
+                          <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-accent/40 flex items-center justify-center text-app-accent shrink-0">
                             <ListMusic className="ui-section-icon w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="font-bold text-xs text-[#FDF6E3] truncate">{sl.name}</div>
-                            <div className="text-[10px] font-mono text-[#93A1A1]">
+                            <div className="font-bold text-xs text-app-heading truncate">{sl.name}</div>
+                            <div className="text-[10px] font-mono text-app-muted">
                               {slSongs.length} {slSongs.length === 1 ? 'track' : 'tracks'} • Tap to expand
                             </div>
                           </div>
@@ -386,7 +386,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                 }
                                 onClose()
                               }}
-                              className="ui-action-text p-1.5 rounded-lg text-[#B58900] hover:text-[#D4A017] hover:bg-[#B58900]/15 transition-colors cursor-pointer"
+                              className="ui-action-text p-1.5 rounded-lg text-app-accent hover:text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer"
                               title="Start Gig / Play Setlist from Beginning"
                             >
                               <PlayCircle className="w-4 h-4" />
@@ -398,7 +398,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               e.stopPropagation()
                               handleExportSingle(sl)
                             }}
-                            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#2AA198] hover:bg-[#073642] transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg text-app-muted hover:text-app-action hover:bg-app-surface transition-colors cursor-pointer"
                             title="Export Setlist (.json)"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -406,7 +406,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => setExpandedSetlistId(isExpanded ? null : sl.id)}
-                            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-surface transition-colors cursor-pointer"
                             title={isExpanded ? 'Collapse' : 'Expand'}
                           >
                             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -415,7 +415,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             <button
                               type="button"
                               onClick={() => onDeleteSetlist(sl.id)}
-                              className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#DC6E67] hover:bg-[#DC6E67]/15 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer"
                               title="Delete Setlist"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -426,9 +426,9 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
                     {/* Smoothly Expanded Cascading Songs List (1:1 Android SetlistCard) */}
                     {isExpanded && (
-                      <div className="p-2 border-t border-[#1A4A55] bg-[#002B36]/90 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                      <div className="p-2 border-t border-app-border bg-app-base/90 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
                         {slSongs.length === 0 ? (
-                          <div className="p-4 text-center text-[11px] font-mono text-[#93A1A1]">
+                          <div className="p-4 text-center text-[11px] font-mono text-app-muted">
                             No songs in this setlist. Add songs from your songbook!
                           </div>
                         ) : (
@@ -447,8 +447,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                 }}
                                 className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${
                                   isCurrentSetlistSong
-                                    ? 'bg-[#073642] border-[#B58900] shadow-sm'
-                                    : 'bg-[#002B36] border-[#1A4A55]/60 hover:border-[#2AA198] hover:bg-[#073642]/60'
+                                    ? 'bg-app-surface border-app-accent shadow-sm'
+                                    : 'bg-app-base border-app-border/60 hover:border-app-action hover:bg-app-surface/60'
                                 }`}
                               >
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -456,8 +456,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                   <div
                                     className={`w-6 h-6 rounded-md flex items-center justify-center font-mono text-[10px] font-black shrink-0 ${
                                       isCurrentSetlistSong
-                                        ? 'bg-[#B58900] text-[#002B36]'
-                                        : 'bg-[#073642] text-[#B58900]'
+                                        ? 'bg-app-button text-app-button-text'
+                                        : 'bg-app-surface text-app-accent'
                                     }`}
                                   >
                                     {sIdx + 1}
@@ -467,12 +467,12 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                   <div className="min-w-0 flex-1">
                                     <div
                                       className={`text-xs font-semibold truncate ${
-                                        isCurrentSetlistSong ? 'text-[#FDF6E3] font-bold' : 'text-[#EEE8D5]'
+                                        isCurrentSetlistSong ? 'text-app-heading font-bold' : 'text-app-text'
                                       }`}
                                     >
                                       {resolvedSong?.title ?? `Missing song: ${sRef.title}`}
                                     </div>
-                                    <div className="text-[10px] text-[#93A1A1] truncate">
+                                    <div className="text-[10px] text-app-muted truncate">
                                       {[resolvedSong?.artist ?? sRef.artist, resolvedSong?.key ? `Key: ${resolvedSong.key}` : null]
                                         .filter(Boolean)
                                         .join(' • ')}
@@ -491,7 +491,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                         type="button"
                                         disabled={sIdx === 0}
                                         onClick={() => onReorderSetlistSong(sl.id, sIdx, true)}
-                                        className="p-1 rounded text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                                        className="p-1 rounded text-app-muted hover:text-app-heading hover:bg-app-surface disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
                                         title="Move Song Up"
                                       >
                                         <ChevronUp className="w-3.5 h-3.5" />
@@ -500,7 +500,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                         type="button"
                                         disabled={sIdx === slSongs.length - 1}
                                         onClick={() => onReorderSetlistSong(sl.id, sIdx, false)}
-                                        className="p-1 rounded text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                                        className="p-1 rounded text-app-muted hover:text-app-heading hover:bg-app-surface disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
                                         title="Move Song Down"
                                       >
                                         <ChevronDown className="w-3.5 h-3.5" />
@@ -512,7 +512,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => onRemoveSetlistSong(sl.id, sIdx)}
-                                      className="p-1 rounded text-[#93A1A1] hover:text-[#DC6E67] hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5"
+                                      className="p-1 rounded text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5"
                                       title="Remove from setlist"
                                     >
                                       <X className="w-3.5 h-3.5" />
@@ -531,7 +531,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               )}
             </div>
           ) : filteredSongs.length === 0 ? (
-            <div className="p-8 text-center text-xs font-mono text-[#93A1A1]">
+            <div className="p-8 text-center text-xs font-mono text-app-muted">
               No songs matched &quot;{searchQuery}&quot;
             </div>
           ) : (
@@ -549,8 +549,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   }}
                   className={`relative p-3 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer select-none group ${
                     isActive
-                      ? 'border-[#B58900] bg-[#002B36] text-[#FDF6E3] ring-1 ring-[#B58900] shadow-md shadow-[#B58900]/10'
-                      : 'border-[#1A4A55] bg-[#002B36]/40 text-[#EEE8D5] hover:border-[#2AA198] hover:bg-[#002B36]'
+                      ? 'border-app-accent bg-app-base text-app-heading ring-1 ring-app-accent shadow-md shadow-app-accent/10'
+                      : 'border-app-border bg-app-base/40 text-app-text hover:border-app-action hover:bg-app-base'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -558,8 +558,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
                         isActive
-                          ? 'bg-[#B58900] text-[#002B36]'
-                          : 'bg-[#073642] text-[#93A1A1] group-hover:text-[#2AA198]'
+                          ? 'bg-app-button text-app-button-text'
+                          : 'bg-app-surface text-app-muted group-hover:text-app-action'
                       }`}
                     >
                       {isActive ? (
@@ -571,10 +571,10 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
                     {/* Song Info */}
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-xs truncate text-[#FDF6E3] leading-tight">
+                      <div className="font-bold text-xs truncate text-app-heading leading-tight">
                         {item.title || 'Untitled Song'}
                       </div>
-                      <div className="text-[11px] text-[#2AA198] truncate leading-tight mt-0.5 font-medium">
+                      <div className="text-[11px] text-app-action truncate leading-tight mt-0.5 font-medium">
                         {item.artist || 'Unknown Artist'}
                       </div>
                     </div>
@@ -583,26 +583,26 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   {/* Badges Cluster */}
                   <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
                     {item.key && (
-                      <span className="px-1.5 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#B58900] font-bold flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded bg-app-surface border border-app-border text-app-accent font-bold flex items-center gap-1">
                         <Music className="ui-section-icon w-2.5 h-2.5" />
                         <span>{item.key}</span>
                       </span>
                     )}
                     {item.bpm && (
-                      <span className="hidden sm:flex px-1.5 py-0.5 rounded bg-[#073642] border border-[#1A4A55] text-[#CB4B16] items-center gap-1">
+                      <span className="hidden sm:flex px-1.5 py-0.5 rounded bg-app-surface border border-app-border text-[#CB4B16] items-center gap-1">
                         <Activity className="w-2.5 h-2.5" />
                         <span>{item.bpm}</span>
                       </span>
                     )}
                     {isActive && (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#859900]" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-status-success" />
                     )}
 
                     {/* Inline Trash / Delete Button */}
                     <button
                       type="button"
                       onClick={(e) => handleDeleteClick(e, originalIndex)}
-                      className="p-1 rounded-lg text-[#93A1A1] hover:text-[#DC6E67] hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5"
+                      className="p-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5"
                       title="Delete song from library"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -613,9 +613,9 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   {isDeleting && (
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute inset-0 bg-[#073642] border border-[#DC6E67] rounded-xl px-3 py-2 flex items-center justify-between z-10 animate-in fade-in zoom-in-95 duration-150"
+                      className="absolute inset-0 bg-app-surface border border-[#DC6E67] rounded-xl px-3 py-2 flex items-center justify-between z-10 animate-in fade-in zoom-in-95 duration-150"
                     >
-                      <div className="flex items-center gap-1.5 text-xs text-[#DC6E67] font-semibold">
+                      <div className="flex items-center gap-1.5 text-xs text-status-error font-semibold">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                         <span>Delete song?</span>
                       </div>
@@ -630,7 +630,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                         <button
                           type="button"
                           onClick={handleCancelDelete}
-                          className="px-2 py-1 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                          className="px-2 py-1 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -644,7 +644,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         </div>
 
         {/* Drawer Bottom Action Bar: Contextual (+ New Song vs + New Setlist) */}
-        <div className="p-3 bg-[#002B36] border-t border-[#1A4A55] flex flex-col gap-2">
+        <div className="p-3 bg-app-base border-t border-app-border flex flex-col gap-2">
           {drawerTab === 'songbook' ? (
             <button
               type="button"
@@ -652,7 +652,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 onNewSong()
                 onClose()
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#2AA198] text-[#002B36] font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#35B8AD] transition-all cursor-pointer shadow-md active:scale-95 select-none"
+              className="w-full py-2.5 px-4 rounded-xl bg-app-action text-app-on-action font-bold text-xs flex items-center justify-center gap-2 hover:bg-app-action transition-all cursor-pointer shadow-md active:scale-95 select-none"
               title="Create a new blank song template in Desktop Editor"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
@@ -666,7 +666,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   onNewSetlist()
                 }
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#B58900] text-[#002B36] font-bold text-xs flex items-center justify-center gap-2 hover:bg-[#B58900]/90 transition-all cursor-pointer shadow-md active:scale-95 select-none"
+              className="w-full py-2.5 px-4 rounded-xl bg-app-button text-app-button-text font-bold text-xs flex items-center justify-center gap-2 hover:bg-app-button/90 transition-all cursor-pointer shadow-md active:scale-95 select-none"
               title="Create a new empty setlist"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
@@ -674,16 +674,16 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             </button>
           )}
 
-          <div className="flex items-center justify-between text-[10px] font-mono text-[#93A1A1] px-1">
+          <div className="flex items-center justify-between text-[10px] font-mono text-app-muted px-1">
             {drawerTab === 'songbook' ? (
               <>
                 <span>Active: {songs[activeSongIndex]?.title || 'None'}</span>
-                <span className="text-[#2AA198]">{songs.length} total</span>
+                <span className="text-app-action">{songs.length} total</span>
               </>
             ) : (
               <>
                 <span>Active Setlist: {setlists.find((s) => s.id === activeSetlistId)?.name || 'None'}</span>
-                <span className="text-[#B58900]">{setlists.length} setlists</span>
+                <span className="text-app-accent">{setlists.length} setlists</span>
               </>
             )}
           </div>

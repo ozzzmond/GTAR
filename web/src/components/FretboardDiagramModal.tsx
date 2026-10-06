@@ -36,19 +36,19 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-sm rounded-[20px] bg-[#073642] border border-[#1A4A55] p-6 shadow-2xl text-[#EEE8D5] select-none"
+        className="relative w-full max-w-sm rounded-[20px] bg-app-surface border border-app-border p-6 shadow-2xl text-app-text select-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header: Chord Name, Frets & Close */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#1A4A55]">
+        <div className="flex items-center justify-between pb-3 border-b border-app-border">
           <div>
-            <h2 className="text-2xl font-black text-[#B58900] tracking-tight">{voicing.chord}</h2>
-            <p className="text-xs font-mono text-[#93A1A1] mt-0.5">Frets: {fretsSummary}</p>
+            <h2 className="text-2xl font-black text-app-accent tracking-tight">{voicing.chord}</h2>
+            <p className="text-xs font-mono text-app-muted mt-0.5">Frets: {fretsSummary}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
             title="Close Diagram"
           >
             <X className="w-5 h-5" />
@@ -56,14 +56,14 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
         </div>
 
         {/* Fretboard SVG Canvas */}
-        <div className="mt-4 p-2 rounded-xl bg-[#002B36] flex flex-col items-center justify-center border border-[#1A4A55]">
+        <div className="mt-4 p-2 rounded-xl bg-app-base flex flex-col items-center justify-center border border-app-border">
           <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
             {/* Base Fret Indicator (if > 1) */}
             {voicing.baseFret > 1 && (
               <text
                 x={startX - 12}
                 y={startY + fretSpacing / 2 + 5}
-                fill="#B58900"
+                fill="var(--custom-stage-chord)"
                 fontSize="12"
                 fontWeight="bold"
                 fontFamily="monospace"
@@ -80,7 +80,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                 y1={startY}
                 x2={endX}
                 y2={startY}
-                stroke="#EEE8D5"
+                stroke="var(--custom-uiPrimaryText)"
                 strokeWidth="5"
                 strokeLinecap="round"
               />
@@ -90,7 +90,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                 y1={startY}
                 x2={endX}
                 y2={startY}
-                stroke="#1A4A55"
+                stroke="var(--custom-card-border)"
                 strokeWidth="2"
               />
             )}
@@ -106,7 +106,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                   y1={y}
                   x2={endX}
                   y2={y}
-                  stroke="#1A4A55"
+                  stroke="var(--custom-card-border)"
                   strokeWidth="1.5"
                 />
               )
@@ -122,7 +122,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                   y1={startY}
                   x2={x}
                   y2={endY}
-                  stroke="#93A1A1"
+                  stroke="var(--custom-uiMutedText)"
                   strokeWidth={i < 3 ? 1.5 : 1}
                 />
               )
@@ -140,7 +140,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                     key={`marker-${i}`}
                     x={x}
                     y={y + 4}
-                    fill="#DC6E67"
+                    fill="var(--custom-uiMutedText)"
                     fontSize="13"
                     fontWeight="bold"
                     fontFamily="monospace"
@@ -159,7 +159,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                     cy={y}
                     r="4.5"
                     fill="none"
-                    stroke="#2AA198"
+                    stroke="var(--custom-actionColor)"
                     strokeWidth="1.8"
                   />
                 )
@@ -189,7 +189,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                   y1={y}
                   x2={x2}
                   y2={y}
-                  stroke="#B58900"
+                  stroke="var(--custom-stage-chord)"
                   strokeWidth="14"
                   strokeLinecap="round"
                   opacity="0.8"
@@ -209,12 +209,12 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
 
               return (
                 <g key={`dot-${i}`}>
-                  <circle cx={x} cy={y} r="8.5" fill="#B58900" />
+                  <circle cx={x} cy={y} r="8.5" fill="var(--custom-stage-chord)" />
                   {finger > 0 && (
                     <text
                       x={x}
                       y={y + 4}
-                      fill="#002B36"
+                      fill="var(--custom-stage-bg)"
                       fontSize="11"
                       fontWeight="bold"
                       fontFamily="sans-serif"
@@ -235,7 +235,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
                   key={`name-${i}`}
                   x={x}
                   y={endY + 18}
-                  fill="#93A1A1"
+                  fill="var(--custom-uiMutedText)"
                   fontSize="11"
                   fontWeight="bold"
                   fontFamily="monospace"
@@ -249,8 +249,8 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
         </div>
 
         {/* Footer info */}
-        <p className="text-[11px] text-center text-[#93A1A1] mt-3">
-          Click outside or press <span className="font-mono text-[#2AA198]">ESC</span> to dismiss
+        <p className="text-[11px] text-center text-app-muted mt-3">
+          Click outside or press <span className="font-mono text-app-action">ESC</span> to dismiss
         </p>
       </div>
     </div>

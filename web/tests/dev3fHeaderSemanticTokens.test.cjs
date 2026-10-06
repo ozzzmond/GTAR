@@ -110,7 +110,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
     const color = selector => window.getComputedStyle(document.querySelector(selector)).color
     const title = document.querySelector('.header-primary-text'), version = document.querySelector('.header-secondary-text')
     assert.equal(title.textContent.trim(), 'GTAR-Dev')
-    assert.match(version.textContent, /v1\.0\.123-dev\.3k/)
+    assert.match(version.textContent, /v1\.0\.123-dev\.3l/)
     assert.ok(!title.classList.contains('ui-primary-text'))
     assert.ok(!version.classList.contains('ui-secondary-text'))
     apply(target)
@@ -135,7 +135,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
       await act(async () => window.dispatchEvent(new window.CustomEvent('gtar:cloud_sync_state', { detail: { status: state, isProcessing: false } })))
       const sync = document.querySelector('[data-testid="header-cloud-sync-button"]')
       assert.equal(sync.querySelectorAll('.header-neutral-icon').length, 0)
-      assert.ok(sync.querySelector('svg').getAttribute('class').includes(state === 'ERROR' || state === 'CONFLICT' ? 'text-[#DC6E67]' : 'text-[#2AA198]'))
+      assert.ok(sync.querySelector('svg').getAttribute('class').includes(state === 'ERROR' || state === 'CONFLICT' ? 'text-status-error' : 'text-app-action'))
     }
     assert.ok(![...document.querySelectorAll('span')].find(el => el.textContent === 'DEV').classList.contains('header-primary-text'))
     assert.ok(!document.querySelector('.auth-dot').classList.contains('header-neutral-icon'))

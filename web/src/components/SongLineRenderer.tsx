@@ -258,11 +258,11 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               style={{ display: 'inline-flex', flexDirection: 'column', minWidth: 0, maxWidth: '100%' }}>
               <span className={`stage-chord-text stage-mono ${weightConfig.chordClass} select-none`}
                 style={{ fontSize: `${chordScale * 0.9}em`, lineHeight: 1.2, minHeight: '1.2em', whiteSpace: 'pre',
-                  paddingRight: segment.chord ? '0.35em' : undefined, color: '#B58900' }}>
+                  paddingRight: segment.chord ? '0.35em' : undefined, color: 'var(--custom-stage-chord)' }}>
                 {segment.chord ? renderInteractiveChordLine(segment.chord, onChordClick, 1, isHighContrast, notation, referenceKey) : '\u00a0'}
               </span>
               <span className={`stage-lyric-text ${weightConfig.lyricClass}`}
-                style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: spacing.lineHeightMultiplier, color: '#EEE8D5' }}>
+                style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: spacing.lineHeightMultiplier, color: 'var(--custom-stage-text)' }}>
                 {segment.text || '\u00a0'}
               </span>
             </span>
@@ -294,7 +294,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                 style={{
                   fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                   paddingTop: spacing.sectionHeaderPt, paddingBottom: spacing.sectionHeaderPb, margin: 0,
-                  color: '#A78BFA', fontWeight: 600, letterSpacing: '0.04em',
+                  color: 'var(--custom-stage-section)', fontWeight: 600, letterSpacing: '0.04em',
                   whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', breakAfter: 'avoid',
                   overflowAnchor: 'none',
                 }}>
@@ -315,7 +315,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   fontSize: `${fontSizePx}px`,
                   lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                   letterSpacing: '0.8px',
-                  color: '#B58900',
+                  color: 'var(--custom-stage-chord)',
                   whiteSpace: 'pre-wrap',
                   overflowWrap: 'break-word',
                   wordBreak: 'break-word',
@@ -340,7 +340,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   fontSize: `${fontSizePx}px`,
                   lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
                   letterSpacing: '0.8px',
-                  color: '#EEE8D5',
+                  color: 'var(--custom-stage-text)',
                   whiteSpace: 'pre-wrap',
                   overflowWrap: 'break-word',
                   wordBreak: 'break-word',
@@ -364,7 +364,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                     fontSize: `${tabFontSize}px`,
                     lineHeight: `${tabFontSize * 1.25}px`,
                     letterSpacing: '0.8px',
-                    color: '#35B8AD',
+                    color: 'var(--custom-actionColor)',
                   }}
                   className="stage-mono stage-tab-text font-normal whitespace-pre overflow-x-auto select-text"
                 >

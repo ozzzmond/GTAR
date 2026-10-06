@@ -208,25 +208,25 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
-      <div className="relative w-full max-w-xl bg-[#073642] border border-[#1A4A55] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-[#EEE8D5]">
+      <div className="relative w-full max-w-xl bg-app-surface border border-app-border rounded-2xl shadow-2xl flex flex-col overflow-hidden text-app-text">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1A4A55] bg-[#002B36]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-app-border bg-app-base">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#073642] text-[#2AA198] border border-[#1A4A55]">
+            <div className="p-2 rounded-xl bg-app-surface text-app-action border border-app-border">
               <Shield className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-[#FDF6E3]">D1 Account &amp; Access Control</h2>
+                <h2 className="text-base font-bold text-app-heading">D1 Account &amp; Access Control</h2>
               </div>
-              <p className="text-xs text-[#93A1A1]">Server-authoritative Google account management</p>
+              <p className="text-xs text-app-muted">Server-authoritative Google account management</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-[#073642] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -236,15 +236,15 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         {/* Content Body */}
         <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh]">
           {/* Status Filter Tabs */}
-          <div className="flex items-center justify-between gap-2 border-b border-[#1A4A55]/60 pb-3">
+          <div className="flex items-center justify-between gap-2 border-b border-app-border/60 pb-3">
             <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
               <button
                 type="button"
                 onClick={() => setFilter('all')}
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   filter === 'all'
-                    ? 'bg-[#2AA198] text-[#002B36]'
-                    : 'bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3]'
+                    ? 'bg-app-action text-app-on-action'
+                    : 'bg-app-base text-app-muted hover:text-app-heading'
                 }`}
               >
                 All ({users.length})
@@ -254,13 +254,13 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                 onClick={() => setFilter('pending')}
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   filter === 'pending'
-                    ? 'bg-[#B58900] text-[#002B36]'
-                    : 'bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3]'
+                    ? 'bg-amber-400 text-black'
+                    : 'bg-app-base text-app-muted hover:text-app-heading'
                 }`}
               >
                 <span>Pending ({pendingCount})</span>
                 {pendingCount > 0 && filter !== 'pending' && (
-                  <span className="w-2 h-2 rounded-full bg-[#B58900] animate-pulse" />
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                 )}
               </button>
               <button
@@ -268,8 +268,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                 onClick={() => setFilter('active')}
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   filter === 'active'
-                    ? 'bg-[#10B981] text-[#002B36]'
-                    : 'bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3]'
+                    ? 'bg-[#10B981] text-black'
+                    : 'bg-app-base text-app-muted hover:text-app-heading'
                 }`}
               >
                 Active ({activeCount})
@@ -280,7 +280,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   filter === 'denied'
                     ? 'bg-[#DC322F] text-white'
-                    : 'bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3]'
+                    : 'bg-app-base text-app-muted hover:text-app-heading'
                 }`}
               >
                 Denied ({deniedCount})
@@ -290,24 +290,24 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             <button
               type="button"
               onClick={handleCopyEmails}
-              className="text-[11px] text-[#2AA198] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+              className="text-[11px] text-app-action hover:underline flex items-center gap-1 cursor-pointer shrink-0"
               title="Copy active user emails"
             >
-              {copied ? <Check className="w-3 h-3 text-[#10B981]" /> : <Copy className="w-3 h-3" />}
+              {copied ? <Check className="w-3 h-3 text-status-success" /> : <Copy className="w-3 h-3" />}
               <span>{copied ? 'Copied!' : 'Copy Active'}</span>
             </button>
           </div>
 
-          {error && <p className="text-xs text-[#DC6E67] font-semibold">{error}</p>}
+          {error && <p className="text-xs text-status-error font-semibold">{error}</p>}
 
           {/* User List */}
           {loading && users.length === 0 ? (
-            <div className="py-8 flex flex-col items-center justify-center text-xs text-[#93A1A1] gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-[#2AA198]" />
+            <div className="py-8 flex flex-col items-center justify-center text-xs text-app-muted gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-app-action" />
               <span>Loading registered accounts from D1...</span>
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="py-8 text-center text-xs text-[#93A1A1]">
+            <div className="py-8 text-center text-xs text-app-muted">
               {filter === 'pending'
                 ? 'No pending approval requests.'
                 : filter === 'denied'
@@ -324,7 +324,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                 return (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#002B36] border border-[#1A4A55]/60 hover:border-[#1A4A55] transition-colors gap-2"
+                    className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-app-base border border-app-border/60 hover:border-app-border transition-colors gap-2"
                   >
                     {/* User Identity */}
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -333,41 +333,41 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           src={user.picture_url}
                           alt=""
                           referrerPolicy="no-referrer"
-                          className="w-7 h-7 rounded-full border border-[#1A4A55] shrink-0"
+                          className="w-7 h-7 rounded-full border border-app-border shrink-0"
                         />
                       ) : (
-                        <div className="w-7 h-7 rounded-full bg-[#073642] border border-[#1A4A55] flex items-center justify-center text-[#93A1A1] text-xs font-bold shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-app-surface border border-app-border flex items-center justify-center text-app-muted text-xs font-bold shrink-0">
                           {user.email.charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-medium text-[#FDF6E3] truncate">
+                          <span className="text-xs font-medium text-app-heading truncate">
                             {user.display_name || user.email}
                           </span>
                           {user.role === 'admin' ? (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#B58900]/25 text-[#B58900] border border-[#B58900]/30 shrink-0">
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">
                               ADMIN
                             </span>
                           ) : (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30 shrink-0">
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">
                               MEMBER
                             </span>
                           )}
                           {user.access_status === 'pending' && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#B58900]/20 text-[#B58900] border border-[#B58900]/30 shrink-0 flex items-center gap-1">
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-400/20 text-status-warning border border-amber-400/30 shrink-0 flex items-center gap-1">
                               <Clock className="w-2.5 h-2.5" />
                               <span>PENDING</span>
                             </span>
                           )}
                           {user.access_status === 'denied' && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#DC322F]/20 text-[#DC322F] border border-[#DC322F]/30 shrink-0 flex items-center gap-1">
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#DC322F]/20 text-status-error border border-[#DC322F]/30 shrink-0 flex items-center gap-1">
                               <ShieldAlert className="w-2.5 h-2.5" />
                               <span>DENIED</span>
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-[#93A1A1] font-mono truncate">{user.email}</div>
+                        <div className="text-[10px] text-app-muted font-mono truncate">{user.email}</div>
                       </div>
                     </div>
 
@@ -379,7 +379,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                             type="button"
                             disabled={isBusy}
                             onClick={() => void handleApprove(user.id)}
-                            className="px-2.5 py-1 rounded-lg bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                            className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
                             title="Approve access"
                           >
                             <Check className="w-3.5 h-3.5" />
@@ -389,7 +389,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                             type="button"
                             disabled={isBusy}
                             onClick={() => void handleDeny(user.id, user.email)}
-                            className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#DC322F]/20 text-[#DC322F] border border-[#DC322F]/40 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                            className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-[#DC322F]/20 text-status-error border border-[#DC322F]/40 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
                             title="Deny access"
                           >
                             <Ban className="w-3.5 h-3.5" />
@@ -403,7 +403,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           type="button"
                           disabled={isBusy}
                           onClick={() => void handleDeny(user.id, user.email)}
-                          className="px-2 py-1 rounded-lg text-[#93A1A1] hover:text-[#DC6E67] hover:bg-[#DC6E67]/10 transition-colors cursor-pointer text-xs flex items-center gap-1"
+                          className="px-2 py-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/10 transition-colors cursor-pointer text-xs flex items-center gap-1"
                           title="Revoke access"
                         >
                           <Ban className="w-3.5 h-3.5" />
@@ -416,7 +416,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           type="button"
                           disabled={isBusy}
                           onClick={() => void handleRestore(user.id)}
-                          className="px-2.5 py-1 rounded-lg bg-[#2AA198]/20 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] border border-[#2AA198]/40 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                          className="px-2.5 py-1 rounded-lg bg-app-action/20 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
                           title="Restore access"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
@@ -432,12 +432,12 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3 border-t border-[#1A4A55] bg-[#002B36] flex items-center justify-between">
+        <div className="px-5 py-3 border-t border-app-border bg-app-base flex items-center justify-between">
           <button
             type="button"
             onClick={() => void loadUsers()}
             disabled={loading}
-            className="text-[11px] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            className="text-[11px] text-app-muted hover:text-app-heading flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
           >
             <RotateCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
@@ -445,7 +445,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-[#2AA198] hover:bg-[#35B8AD] text-[#002B36] font-bold text-xs transition-colors cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action font-bold text-xs transition-colors cursor-pointer"
           >
             Done
           </button>

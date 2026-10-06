@@ -191,7 +191,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col">
+      <div className="w-full max-w-md rounded-2xl bg-app-surface border border-app-border shadow-2xl overflow-hidden flex flex-col">
         {/* Hidden file input for SAF backup restore */}
         <input
           ref={restoreFileInputRef}
@@ -202,16 +202,16 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
         />
 
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/50">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#B58900]/20 border border-[#B58900]/30 flex items-center justify-center text-[#B58900]">
+            <div className="w-9 h-9 rounded-xl bg-app-accent/20 border border-app-accent/30 flex items-center justify-center text-app-accent">
               <CloudUpload className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">
+              <h2 className="text-base font-bold text-app-heading">
                 {pendingRestore ? 'Confirm Full Restore' : 'Backup & Restore'}
               </h2>
-              <p className="text-xs text-[#93A1A1]">
+              <p className="text-xs text-app-muted">
                 {pendingRestore ? 'Review backup contents before replacing library' : 'Manage songbook and setlists backup'}
               </p>
             </div>
@@ -219,7 +219,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -231,8 +231,8 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
             <div
               className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
                 feedback.type === 'success'
-                  ? 'bg-[#2AA198]/15 border-[#2AA198]/40 text-[#2AA198]'
-                  : 'bg-[#DC6E67]/15 border-[#DC6E67]/40 text-[#DC6E67]'
+                  ? 'bg-app-action/15 border-app-action/40 text-app-action'
+                  : 'bg-[#DC6E67]/15 border-[#DC6E67]/40 text-status-error'
               }`}
             >
               {feedback.type === 'success' ? (
@@ -247,61 +247,61 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
           {pendingRestore ? (
             <div className="space-y-4">
               {/* Destructive Warning Alert */}
-              <div className="p-3.5 rounded-xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 text-[#DC6E67] flex items-start gap-2.5">
-                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-[#DC6E67]" />
+              <div className="p-3.5 rounded-xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 text-status-error flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-status-error" />
                 <div className="text-xs">
                   <div className="font-bold">Destructive Wipe & Replace</div>
-                  <div className="mt-0.5 text-[11px] leading-relaxed text-[#FDF6E3]">
+                  <div className="mt-0.5 text-[11px] leading-relaxed text-app-heading">
                     This action will permanently drop your current songs, setlists, and trash, replacing them with the backup contents below.
                   </div>
                 </div>
               </div>
 
               {/* Decision-Useful Summary */}
-              <div className="p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] space-y-2.5">
-                <div className="text-xs font-bold text-[#B58900] border-b border-[#1A4A55] pb-1.5 flex items-center justify-between">
+              <div className="p-4 rounded-xl bg-app-base border border-app-border space-y-2.5">
+                <div className="text-xs font-bold text-app-accent border-b border-app-border pb-1.5 flex items-center justify-between">
                   <span>Backup Preview</span>
-                  <span className="text-[10px] text-[#93A1A1] font-normal">Ready to restore</span>
+                  <span className="text-[10px] text-app-muted font-normal">Ready to restore</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div>
-                    <span className="text-[#93A1A1]">App Version:</span>{' '}
-                    <span className="font-semibold text-[#FDF6E3]">
+                    <span className="text-app-muted">App Version:</span>{' '}
+                    <span className="font-semibold text-app-heading">
                       {pendingRestore.parsed.metadata?.version || 'N/A'}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[#93A1A1]">Schema Version:</span>{' '}
-                    <span className="font-semibold text-[#FDF6E3]">
+                    <span className="text-app-muted">Schema Version:</span>{' '}
+                    <span className="font-semibold text-app-heading">
                       {pendingRestore.parsed.metadata?.schemaVersion !== undefined
                         ? `v${pendingRestore.parsed.metadata.schemaVersion}`
                         : 'Legacy (unversioned)'}
                     </span>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-[#93A1A1]">Exported At:</span>{' '}
-                    <span className="font-semibold text-[#FDF6E3]">
+                    <span className="text-app-muted">Exported At:</span>{' '}
+                    <span className="font-semibold text-app-heading">
                       {pendingRestore.parsed.metadata?.exportedAt
                         ? new Date(pendingRestore.parsed.metadata.exportedAt).toLocaleString()
                         : 'N/A'}
                     </span>
                   </div>
-                  <div className="p-2 rounded-lg bg-[#073642] border border-[#1A4A55]">
-                    <div className="text-[10px] text-[#93A1A1]">Active Songs</div>
-                    <div className="text-sm font-bold text-[#2AA198]">
+                  <div className="p-2 rounded-lg bg-app-surface border border-app-border">
+                    <div className="text-[10px] text-app-muted">Active Songs</div>
+                    <div className="text-sm font-bold text-app-action">
                       {pendingRestore.parsed.metadata?.songCount ?? 0}
                     </div>
                   </div>
-                  <div className="p-2 rounded-lg bg-[#073642] border border-[#1A4A55]">
-                    <div className="text-[10px] text-[#93A1A1]">Setlists</div>
-                    <div className="text-sm font-bold text-[#2AA198]">
+                  <div className="p-2 rounded-lg bg-app-surface border border-app-border">
+                    <div className="text-[10px] text-app-muted">Setlists</div>
+                    <div className="text-sm font-bold text-app-action">
                       {pendingRestore.parsed.metadata?.setlistCount ?? 0}
                     </div>
                   </div>
-                  <div className="col-span-2 p-2 rounded-lg bg-[#073642] border border-[#1A4A55] flex justify-between items-center">
-                    <span className="text-[10px] text-[#93A1A1]">Trash Bin (Archived Songs)</span>
-                    <span className="text-xs font-semibold text-[#FDF6E3]">
+                  <div className="col-span-2 p-2 rounded-lg bg-app-surface border border-app-border flex justify-between items-center">
+                    <span className="text-[10px] text-app-muted">Trash Bin (Archived Songs)</span>
+                    <span className="text-xs font-semibold text-app-heading">
                       {pendingRestore.parsed.metadata?.trashCount ?? 0}
                     </span>
                   </div>
@@ -314,7 +314,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                   type="button"
                   disabled={isRestoring}
                   onClick={() => setPendingRestore(null)}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-[#002B36] border border-[#1A4A55] text-xs font-semibold text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#073642] transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-app-base border border-app-border text-xs font-semibold text-app-muted hover:text-app-heading hover:bg-app-surface transition-colors cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -322,7 +322,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                   type="button"
                   disabled={isRestoring}
                   onClick={handleConfirmWipeAndReplace}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-[#DC6E67] hover:bg-[#C95B54] text-[#FDF6E3] text-xs font-bold transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-[#DC6E67] hover:bg-[#C95B54] text-white text-xs font-bold transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   <CloudDownload className="w-4 h-4 shrink-0" />
                   <span>{isRestoring ? 'Restoring...' : 'Confirm Wipe & Replace'}</span>
@@ -331,7 +331,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
             </div>
           ) : (
             <>
-              <p className="text-xs text-[#93A1A1] leading-relaxed">
+              <p className="text-xs text-app-muted leading-relaxed">
                 Manage your GTAR songbook and setlists backup:
               </p>
 
@@ -340,28 +340,28 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                 <button
                   type="button"
                   onClick={() => setShowExportOptions(true)}
-                  className="w-full text-left p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#B58900] hover:bg-[#094352]/30 transition-all flex items-center gap-3.5 group cursor-pointer"
+                  className="w-full text-left p-4 rounded-xl bg-app-base border border-app-border hover:border-app-accent hover:bg-app-accent/30 transition-all flex items-center gap-3.5 group cursor-pointer"
                 >
-                  <div className="w-10 h-10 rounded-xl bg-[#073642] flex items-center justify-center text-[#B58900] group-hover:scale-105 transition-transform">
+                  <div className="w-10 h-10 rounded-xl bg-app-surface flex items-center justify-center text-app-accent group-hover:scale-105 transition-transform">
                     <CloudUpload className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#B58900] transition-colors">
+                    <div className="text-xs font-bold text-app-heading group-hover:text-app-accent transition-colors">
                       Export Backup
                     </div>
-                    <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+                    <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                       Save to Device (.json) or share via files
                     </div>
                   </div>
                 </button>
               ) : (
-                <div className="p-4 rounded-xl bg-[#002B36] border border-[#B58900]/50 space-y-3">
+                <div className="p-4 rounded-xl bg-app-base border border-app-accent/50 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#B58900]">Export Backup Options</span>
+                    <span className="text-xs font-bold text-app-accent">Export Backup Options</span>
                     <button
                       type="button"
                       onClick={() => setShowExportOptions(false)}
-                      className="text-[11px] text-[#93A1A1] hover:text-[#FDF6E3]"
+                      className="text-[11px] text-app-muted hover:text-app-heading"
                     >
                       Back
                     </button>
@@ -371,18 +371,18 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                     <button
                       type="button"
                       onClick={handleDownloadBackup}
-                      className="py-2.5 px-3 rounded-xl bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198] text-[#FDF6E3] text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer"
+                      className="py-2.5 px-3 rounded-xl bg-app-surface border border-app-border hover:border-app-action text-app-heading text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer"
                     >
-                      <Download className="w-4 h-4 text-[#2AA198]" />
+                      <Download className="w-4 h-4 text-app-action" />
                       <span>Download .json</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handleCopyBackup}
-                      className="py-2.5 px-3 rounded-xl bg-[#073642] border border-[#1A4A55] hover:border-[#B58900] text-[#FDF6E3] text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer"
+                      className="py-2.5 px-3 rounded-xl bg-app-surface border border-app-border hover:border-app-accent text-app-heading text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer"
                     >
-                      <Copy className="w-4 h-4 text-[#B58900]" />
+                      <Copy className="w-4 h-4 text-app-accent" />
                       <span>Copy JSON</span>
                     </button>
                   </div>
@@ -394,7 +394,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                         onClose()
                         onOpenAdvancedBridge()
                       }}
-                      className="w-full text-center text-[11px] text-[#2AA198] hover:underline cursor-pointer pt-1 flex items-center justify-center gap-1"
+                      className="w-full text-center text-[11px] text-app-action hover:underline cursor-pointer pt-1 flex items-center justify-center gap-1"
                     >
                       <Database className="w-3.5 h-3.5" />
                       <span>Open Advanced JSON Bridge Modal</span>
@@ -410,16 +410,16 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                   setIsWipeAndReplace(true)
                   restoreFileInputRef.current?.click()
                 }}
-                className="w-full text-left p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#DC6E67] hover:bg-[#094352]/30 transition-all flex items-center gap-3.5 group cursor-pointer"
+                className="w-full text-left p-4 rounded-xl bg-app-base border border-app-border hover:border-[#DC6E67] hover:bg-app-accent/30 transition-all flex items-center gap-3.5 group cursor-pointer"
               >
-                <div className="w-10 h-10 rounded-xl bg-[#073642] flex items-center justify-center text-[#DC6E67] group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-app-surface flex items-center justify-center text-status-error group-hover:scale-105 transition-transform">
                   <CloudDownload className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#DC6E67] transition-colors">
+                  <div className="text-xs font-bold text-app-heading group-hover:text-status-error transition-colors">
                     Full Restore (Wipe & Replace)
                   </div>
-                  <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+                  <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                     Drops/resets existing songs & setlists, then imports complete backup
                   </div>
                 </div>
@@ -432,16 +432,16 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                   setIsWipeAndReplace(false)
                   restoreFileInputRef.current?.click()
                 }}
-                className="w-full text-left p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] hover:bg-[#094352]/30 transition-all flex items-center gap-3.5 group cursor-pointer"
+                className="w-full text-left p-4 rounded-xl bg-app-base border border-app-border hover:border-app-action hover:bg-app-accent/30 transition-all flex items-center gap-3.5 group cursor-pointer"
               >
-                <div className="w-10 h-10 rounded-xl bg-[#073642] flex items-center justify-center text-[#2AA198] group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-app-surface flex items-center justify-center text-app-action group-hover:scale-105 transition-transform">
                   <CloudDownload className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors">
+                  <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
                     Restore Backup (Smart Merge)
                   </div>
-                  <div className="text-[11px] text-[#93A1A1] mt-0.5 leading-snug">
+                  <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                     Updates existing songs and appends new ones without deleting current local data
                   </div>
                 </div>
@@ -452,11 +452,11 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
 
         {/* Footer */}
         {!pendingRestore && (
-          <div className="px-6 py-3 border-t border-[#1A4A55] bg-[#002B36]/30 flex justify-end">
+          <div className="px-6 py-3 border-t border-app-border bg-app-base/30 flex justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-1.5 rounded-xl bg-[#002B36] border border-[#1A4A55] text-xs font-semibold text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+              className="px-4 py-1.5 rounded-xl bg-app-base border border-app-border text-xs font-semibold text-app-muted hover:text-app-heading transition-colors cursor-pointer"
             >
               Cancel
             </button>

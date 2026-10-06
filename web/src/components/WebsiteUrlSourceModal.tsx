@@ -89,16 +89,16 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg rounded-2xl bg-[#073642] border border-[#1A4A55] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-lg rounded-2xl bg-app-surface border border-app-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#1A4A55] flex items-center justify-between bg-[#002B36]/50">
+        <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base/50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#2AA198]/20 border border-[#2AA198]/30 flex items-center justify-center text-[#2AA198]">
+            <div className="w-9 h-9 rounded-xl bg-app-action/20 border border-app-action/30 flex items-center justify-center text-app-action">
               <Globe className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#FDF6E3]">Browse Song Sources</h2>
-              <p className="text-xs text-[#93A1A1]">
+              <h2 className="text-base font-bold text-app-heading">Browse Song Sources</h2>
+              <p className="text-xs text-app-muted">
                 Open chords online with 1-tap song chords import
               </p>
             </div>
@@ -106,7 +106,7 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -115,7 +115,7 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
           {toastMessage && (
-            <div className="px-3.5 py-2 rounded-xl bg-[#2AA198]/15 border border-[#2AA198]/40 text-[#2AA198] text-xs font-semibold flex items-center gap-2">
+            <div className="px-3.5 py-2 rounded-xl bg-app-action/15 border border-app-action/40 text-app-action text-xs font-semibold flex items-center gap-2">
               <Check className="w-4 h-4" />
               <span>{toastMessage}</span>
             </div>
@@ -123,7 +123,7 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
 
           {/* Quick URL Input */}
           <form onSubmit={handleDirectFetch} className="space-y-2">
-            <label className="text-xs font-bold text-[#EEE8D5] uppercase tracking-wide">
+            <label className="text-xs font-bold text-app-text uppercase tracking-wide">
               Direct Chord Sheet URL
             </label>
             <div className="flex gap-2">
@@ -132,11 +132,11 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
                 value={directUrl}
                 onChange={(e) => setDirectUrl(e.target.value)}
                 placeholder="https://ultimate-guitar.com/tabs/..."
-                className="flex-1 bg-[#002B36] border border-[#1A4A55] rounded-xl px-3.5 py-2 text-xs text-[#FDF6E3] placeholder-[#93A1A1]/60 focus:outline-none focus:border-[#2AA198]"
+                className="flex-1 bg-app-base border border-app-border rounded-xl px-3.5 py-2 text-xs text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action"
               />
               <button
                 type="submit"
-                className="px-4 py-2 bg-[#2AA198] text-[#002B36] font-bold rounded-xl text-xs hover:bg-[#35B8AD] transition-colors cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 bg-app-action text-app-on-action font-bold rounded-xl text-xs hover:bg-app-action transition-colors cursor-pointer flex items-center gap-1.5"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Open</span>
@@ -146,7 +146,7 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
 
           {/* Sources List */}
           <div className="space-y-2 pt-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#B58900]">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-app-accent">
               Verified Chord Repositories
             </span>
 
@@ -157,20 +157,20 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
                   href={src.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3.5 rounded-xl bg-[#002B36] border border-[#1A4A55] hover:border-[#2AA198] transition-all group cursor-pointer"
+                  className="flex items-center justify-between p-3.5 rounded-xl bg-app-base border border-app-border hover:border-app-action transition-all group cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[#073642] flex items-center justify-center text-[#2AA198]">
+                    <div className="w-8 h-8 rounded-lg bg-app-surface flex items-center justify-center text-app-action">
                       <Music className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors">
+                      <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
                         {src.name}
                       </div>
-                      <div className="text-[11px] text-[#93A1A1]">{src.desc}</div>
+                      <div className="text-[11px] text-app-muted">{src.desc}</div>
                     </div>
                   </div>
-                  <ExternalLink className="w-4 h-4 text-[#93A1A1] group-hover:text-[#2AA198] transition-colors" />
+                  <ExternalLink className="w-4 h-4 text-app-muted group-hover:text-app-action transition-colors" />
                 </a>
               ))}
             </div>
@@ -180,15 +180,15 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
           {showAddForm ? (
             <form
               onSubmit={handleAddSource}
-              className="p-4 rounded-xl bg-[#002B36] border border-[#1A4A55] space-y-3"
+              className="p-4 rounded-xl bg-app-base border border-app-border space-y-3"
             >
-              <div className="text-xs font-bold text-[#2AA198]">Add Custom Website URL</div>
+              <div className="text-xs font-bold text-app-action">Add Custom Website URL</div>
               <input
                 type="text"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 placeholder="Source Name (e.g. My Praise Chords)"
-                className="w-full bg-[#073642] border border-[#1A4A55] rounded-lg px-3 py-1.5 text-xs text-[#FDF6E3] placeholder-[#93A1A1]/60 focus:outline-none focus:border-[#2AA198]"
+                className="w-full bg-app-surface border border-app-border rounded-lg px-3 py-1.5 text-xs text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action"
               />
               <input
                 type="url"
@@ -196,26 +196,26 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
                 value={customUrl}
                 onChange={(e) => setCustomUrl(e.target.value)}
                 placeholder="Website URL (https://...)"
-                className="w-full bg-[#073642] border border-[#1A4A55] rounded-lg px-3 py-1.5 text-xs text-[#FDF6E3] placeholder-[#93A1A1]/60 focus:outline-none focus:border-[#2AA198]"
+                className="w-full bg-app-surface border border-app-border rounded-lg px-3 py-1.5 text-xs text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action"
               />
               <input
                 type="text"
                 value={customDesc}
                 onChange={(e) => setCustomDesc(e.target.value)}
                 placeholder="Description (e.g. Church setlist charts)"
-                className="w-full bg-[#073642] border border-[#1A4A55] rounded-lg px-3 py-1.5 text-xs text-[#FDF6E3] placeholder-[#93A1A1]/60 focus:outline-none focus:border-[#2AA198]"
+                className="w-full bg-app-surface border border-app-border rounded-lg px-3 py-1.5 text-xs text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action"
               />
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setShowAddForm(false)}
-                  className="px-3 py-1.5 text-xs text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                  className="px-3 py-1.5 text-xs text-app-muted hover:text-app-heading cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1.5 bg-[#2AA198] text-[#002B36] font-bold rounded-lg text-xs hover:bg-[#35B8AD] cursor-pointer"
+                  className="px-3 py-1.5 bg-app-action text-app-on-action font-bold rounded-lg text-xs hover:bg-app-action cursor-pointer"
                 >
                   Save Source
                 </button>
@@ -225,7 +225,7 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
             <button
               type="button"
               onClick={() => setShowAddForm(true)}
-              className="w-full py-2.5 rounded-xl border border-dashed border-[#2AA198]/50 text-[#2AA198] text-xs font-bold hover:bg-[#2AA198]/10 transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-xl border border-dashed border-app-action/50 text-app-action text-xs font-bold hover:bg-app-action/10 transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
               <Plus className="w-4 h-4" />
               <span>+ Add Custom Website URL</span>
@@ -234,11 +234,11 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-[#1A4A55] bg-[#002B36]/30 flex justify-end">
+        <div className="px-6 py-3 border-t border-app-border bg-app-base/30 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-[#002B36] border border-[#1A4A55] text-xs font-semibold text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+            className="px-4 py-1.5 rounded-xl bg-app-base border border-app-border text-xs font-semibold text-app-muted hover:text-app-heading transition-colors cursor-pointer"
           >
             Close
           </button>

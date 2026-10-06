@@ -446,10 +446,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }
 
   const songInputs = (
-    <div className="border-b border-[#1A4A55] bg-[#073642]/80 px-3 py-2 sm:px-4 sm:py-2.5 flex flex-row md:flex-col items-stretch gap-2 text-xs shrink-0">
+    <div className="border-b border-app-border bg-app-surface/80 px-3 py-2 sm:px-4 sm:py-2.5 flex flex-row md:flex-col items-stretch gap-2 text-xs shrink-0">
       {/* Song Title */}
-      <div className="flex-1 min-w-0 flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-        <Type className="w-3.5 h-3.5 text-[#2AA198] shrink-0" />
+      <div className="flex-1 min-w-0 flex items-center gap-2 bg-app-base px-2.5 py-1.5 rounded-lg border border-app-border focus-within:border-app-action transition-colors">
+        <Type className="w-3.5 h-3.5 text-app-action shrink-0" />
         <input
           type="text"
           value={localTitle}
@@ -458,13 +458,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             autosave({ title: e.target.value })
           }}
           placeholder="Song Title *"
-          className="w-full bg-transparent text-[#FDF6E3] font-semibold focus:outline-none placeholder-[#93A1A1]/60 text-xs sm:text-sm"
+          className="w-full bg-transparent text-app-heading font-semibold focus:outline-none placeholder-app-muted/60 text-xs sm:text-sm"
         />
       </div>
 
       {/* Artist */}
-      <div className="flex-1 min-w-0 flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
-        <User className="w-3.5 h-3.5 text-[#93A1A1] shrink-0" />
+      <div className="flex-1 min-w-0 flex items-center gap-2 bg-app-base px-2.5 py-1.5 rounded-lg border border-app-border focus-within:border-app-action transition-colors">
+        <User className="w-3.5 h-3.5 text-app-muted shrink-0" />
         <input
           type="text"
           value={localArtist}
@@ -473,17 +473,17 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             autosave({ artist: e.target.value })
           }}
           placeholder="Artist / Band"
-          className="w-full bg-transparent text-[#EEE8D5] focus:outline-none placeholder-[#93A1A1]/60 text-xs"
+          className="w-full bg-transparent text-app-text focus:outline-none placeholder-app-muted/60 text-xs"
         />
       </div>
     </div>
   )
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-[#002B36]">
+    <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-app-base">
       {pendingNavigation && (
         <div role="dialog" aria-modal="true" aria-label="Unsaved changes" className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-[#073642] border border-[#1A4A55] rounded-xl p-5 text-[#FDF6E3]">
+          <div className="bg-app-surface border border-app-border rounded-xl p-5 text-app-heading">
             <p>Save unsaved changes before leaving?</p>
             <div className="flex gap-4 mt-4">
               <button type="button" autoFocus onClick={() => { if (handleSave()) { setPendingNavigation(null); pendingNavigation() } }}>Save</button>
@@ -508,38 +508,38 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       )}
 
       {/* Editor navigation and save status */}
-      <div className="border-b border-[#1A4A55] bg-[#073642] px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
+      <div className="border-b border-app-border bg-app-surface px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onClose && (
             <button
               type="button"
               onClick={() => requestNavigation(onClose)}
-              className="p-1 sm:p-1.5 rounded-lg bg-[#002B36] border border-[#1A4A55] text-[#93A1A1] hover:text-[#FDF6E3] hover:border-[#2AA198] transition-colors cursor-pointer shrink-0"
+              className="p-1 sm:p-1.5 rounded-lg bg-app-base border border-app-border text-app-muted hover:text-app-heading hover:border-app-action transition-colors cursor-pointer shrink-0"
               title="Return to Stage View"
             >
               <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           )}
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-[#002B36] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198] shrink-0">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-app-base border border-app-action/40 flex items-center justify-center text-app-action shrink-0">
               <FileEdit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-xs sm:text-sm text-[#FDF6E3] tracking-wide">
+                <span className="font-bold text-xs sm:text-sm text-app-heading tracking-wide">
                   Editor
                 </span>
                 {!isSaved ? (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent border border-app-accent/30">
                     Unsaved
                   </span>
                 ) : (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#2AA198]/20 text-[#2AA198] border border-[#2AA198]/30">
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30">
                     Saved
                   </span>
                 )}
               </div>
-              <span className="text-[10px] sm:text-[11px] text-[#93A1A1] font-mono truncate max-w-[180px] sm:max-w-[400px]">
+              <span className="text-[10px] sm:text-[11px] text-app-muted font-mono truncate max-w-[180px] sm:max-w-[400px]">
                 {localTitle || 'Untitled Song'} {localArtist ? `• ${localArtist}` : ''}
               </span>
             </div>
@@ -552,17 +552,17 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       {/* 3. MAIN SPLIT PANE: Raw ChordPro Editor (Left) & Live Stage Preview (Right) */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* LEFT PANE: Raw ChordPro Editor */}
-        <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-[#1A4A55] bg-[#002B36] h-1/2 md:h-full overflow-hidden">
+        <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-app-border bg-app-base h-1/2 md:h-full overflow-hidden">
           <div className="hidden md:block">{songInputs}</div>
 
           {/* Action Editing Toolbar */}
-          <div className="px-3 py-2 bg-[#073642] border-b border-[#1A4A55] flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
-            <div className="flex flex-wrap items-center gap-1 bg-[#002B36] p-1 rounded-lg border border-[#1A4A55]">
+          <div className="px-3 py-2 bg-app-surface border-b border-app-border flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
+            <div className="flex flex-wrap items-center gap-1 bg-app-base p-1 rounded-lg border border-app-border">
               {/* [] Bracket Wrap/Insert Action */}
               <button
                 type="button"
                 onClick={handleInsertBrackets}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-[#073642] hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action font-mono text-[11px] font-bold transition-colors cursor-pointer"
                 title="Wrap selection in brackets or insert [] at caret"
                 aria-label="Wrap selection or insert brackets []"
               >
@@ -572,11 +572,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
               <button type="button" aria-label="Insert section" title="Insert section"
                 aria-expanded={insertOpen} aria-haspopup="menu" onClick={event => { setInsertAnchor(event.currentTarget); setInsertOpen(open => !open) }}
-                className="p-1.5 rounded bg-[#073642] text-[#8B5CF6] cursor-pointer">
+                className="p-1.5 rounded bg-app-surface text-app-section cursor-pointer">
                 <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
               <DropdownPortal anchorEl={insertAnchor} open={insertOpen} onClose={() => setInsertOpen(false)} align="left">
-                <div role="menu" aria-label="Insert section" className="min-w-32 rounded-lg border border-[#1A4A55] bg-[#073642] p-1 shadow-xl"
+                <div role="menu" aria-label="Insert section" className="min-w-32 rounded-lg border border-app-border bg-app-surface p-1 shadow-xl"
                   onKeyDown={event => {
                     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
                     event.preventDefault()
@@ -587,7 +587,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     items[next]?.focus()
                   }}>
                   {QUICK_SECTIONS.map((tag, index) => (
-                    <button key={tag} role="menuitem" autoFocus={index === 0} type="button" className="block w-full text-left px-3 py-2 rounded hover:bg-[#002B36] text-[#FDF6E3]"
+                    <button key={tag} role="menuitem" autoFocus={index === 0} type="button" className="block w-full text-left px-3 py-2 rounded hover:bg-app-base text-app-heading"
                       onClick={() => { insertTextAtCursor(tag); setInsertOpen(false) }}>
                       {tag.slice(1, -1)}
                     </button>
@@ -600,20 +600,20 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 type="button"
                 data-testid="editor-new-song-button"
                 onClick={handleNewSong}
-                className="p-1.5 rounded bg-[#073642] hover:bg-amber-500/20 text-[#B58900] hover:text-amber-300 transition-colors cursor-pointer"
+                className="p-1.5 rounded bg-app-surface hover:bg-app-accent/20 text-app-accent hover:text-app-accent transition-colors cursor-pointer"
                 title="New Song (blank document)"
                 aria-label="New Song"
               >
                 <FilePlus className="w-3.5 h-3.5" />
               </button>
 
-              <div className="w-[1px] h-4 bg-[#1A4A55] mx-0.5" />
+              <div className="w-[1px] h-4 bg-app-border mx-0.5" />
 
               {/* Icon-Only Clipboard & Edit Controls with Accessible Labels */}
               <button
                 type="button"
                 onClick={handlePasteClipboard}
-                className="p-1.5 rounded bg-[#073642] hover:bg-[#2AA198]/20 text-[#2AA198] hover:text-[#35B8AD] transition-colors cursor-pointer"
+                className="p-1.5 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action transition-colors cursor-pointer"
                 title="Paste from clipboard"
                 aria-label="Paste"
               >
@@ -623,17 +623,17 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               <button
                 type="button"
                 onClick={handleCopyAll}
-                className="p-1.5 rounded bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer"
                 title="Copy all content"
                 aria-label="Copy"
               >
-                {copyFeedback ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copyFeedback ? <Check className="w-3.5 h-3.5 text-status-success" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
 
               <button
                 type="button"
                 onClick={handleSelectAll}
-                className="p-1.5 rounded bg-[#073642] hover:bg-[#002B36] text-[#EEE8D5] hover:text-[#FDF6E3] transition-colors cursor-pointer font-mono text-[10px] font-bold"
+                className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer font-mono text-[10px] font-bold"
                 title="Select all text"
                 aria-label="Select All"
               >
@@ -643,7 +643,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-1.5 rounded bg-[#073642] hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                className="p-1.5 rounded bg-app-surface hover:bg-red-500/20 text-status-error hover:text-status-error transition-colors cursor-pointer"
                 title="Clear all text"
                 aria-label="Clear"
               >
@@ -651,7 +651,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </button>
               <button type="button" onClick={() => setIsMetadataModalOpen(true)}
                 title="Song Details & Metadata" aria-label="Song Details & Metadata"
-                className="p-1.5 rounded bg-[#073642] text-[#2AA198] hover:bg-[#2AA198]/20 cursor-pointer">
+                className="p-1.5 rounded bg-app-surface text-app-action hover:bg-app-action/20 cursor-pointer">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
               </button>
               {/* Compact Save Action Button */}
@@ -659,11 +659,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="p-1.5 sm:p-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-black shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
+                  className="p-1.5 sm:p-2 rounded-lg bg-app-button hover:bg-app-button text-app-button-text shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
                   title="Save changes"
                   aria-label="Save changes"
                 >
-                  <Save className="w-4 h-4 text-black stroke-[2.5]" />
+                  <Save className="w-4 h-4 text-app-button-text stroke-[2.5]" />
                 </button>
               </div>
             </div>
@@ -703,27 +703,27 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 }
               }}
               spellCheck={false}
-              className="w-full h-full p-4 bg-[#002B36] text-[#FDF6E3] font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-[#2AA198]/30 selection:text-[#FDF6E3] overflow-y-auto"
+              className="w-full h-full p-4 bg-app-base text-app-heading font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-app-action/30 selection:text-app-heading overflow-y-auto"
             />
           </div>
         </div>
 
         {/* RIGHT PANE: Live Real-time Stage Preview Sync */}
-        <div className="flex-1 flex flex-col bg-[#002B36] h-1/2 md:h-full overflow-hidden">
-          <div className="flex-1 p-4 sm:p-6 md:pt-2.5 overflow-y-auto bg-[#002B36] select-text">
-            <div className="border-b border-[#1A4A55] pb-3 mb-4 flex items-center justify-between">
+        <div className="flex-1 flex flex-col bg-app-base h-1/2 md:h-full overflow-hidden">
+          <div className="flex-1 p-4 sm:p-6 md:pt-2.5 overflow-y-auto bg-app-base select-text">
+            <div className="border-b border-app-border pb-3 mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-[#FDF6E3]">
+                <h2 className="text-base sm:text-lg font-bold text-app-heading">
                   {localTitle || 'Untitled Song'}
                 </h2>
-                <div className="text-xs text-[#93A1A1] mt-0.5">
+                <div className="text-xs text-app-muted mt-0.5">
                   {localArtist || 'Unknown Artist'}
                   {displayKey ? ` • Original Key: ${displayKey}` : ''}
                   {localTime ? ` • ${localTime}` : ''}
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[#2AA198] px-2 py-0.5 rounded bg-[#073642] border border-[#1A4A55]">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-app-action px-2 py-0.5 rounded bg-app-surface border border-app-border">
                   Stage Preview
                 </span>
               </div>
@@ -739,19 +739,19 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       {/* Song Metadata & Details Modal */}
       {isMetadataModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-[#073642] border border-[#1A4A55] rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
+          <div className="bg-app-surface border border-app-border rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#1A4A55] pb-3">
+            <div className="flex items-center justify-between border-b border-app-border pb-3">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-[#002B36] border border-[#2AA198]/40 flex items-center justify-center text-[#2AA198]">
+                <div className="w-7 h-7 rounded-lg bg-app-base border border-app-action/40 flex items-center justify-center text-app-action">
                   <SlidersHorizontal className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-sm text-[#FDF6E3]">Song Details & Metadata</span>
+                <span className="font-bold text-sm text-app-heading">Song Details & Metadata</span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsMetadataModalOpen(false)}
-                className="p-1 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer"
+                className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -762,11 +762,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {/* Original Key (Sole Key Input) */}
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Music className="w-3 h-3 text-[#2AA198]" />
+                <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
+                  <Music className="w-3 h-3 text-app-action" />
                   <span>Original Key</span>
                 </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#2AA198] transition-colors">
+                <div className="flex items-center bg-app-base px-2 py-1.5 rounded-lg border border-app-border focus-within:border-app-action transition-colors">
                   <input
                     type="text"
                     value={localKey}
@@ -784,7 +784,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       }
                     }}
                     placeholder="e.g. G"
-                    className="w-full bg-transparent text-[#2AA198] font-bold font-mono focus:outline-none text-center text-xs"
+                    className="w-full bg-transparent text-app-action font-bold font-mono focus:outline-none text-center text-xs"
                     title="Original Key of the song"
                   />
                 </div>
@@ -792,11 +792,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
               {/* Tempo / BPM */}
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Activity className="w-3 h-3 text-[#CB4B16]" />
+                <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
+                  <Activity className="w-3 h-3 text-app-accent" />
                   <span>Tempo (BPM)</span>
                 </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-[#CB4B16] transition-colors">
+                <div className="flex items-center bg-app-base px-2 py-1.5 rounded-lg border border-app-border focus-within:border-app-accent transition-colors">
                   <input
                     type="text"
                     value={localBpm}
@@ -805,18 +805,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       autosave({ bpm: e.target.value })
                     }}
                     placeholder="120"
-                    className="w-full bg-transparent text-[#CB4B16] font-mono focus:outline-none text-center text-xs"
+                    className="w-full bg-transparent text-app-accent font-mono focus:outline-none text-center text-xs"
                   />
                 </div>
               </div>
 
               {/* Time Signature */}
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-purple-400" />
+                <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-app-section" />
                   <span>Time</span>
                 </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-purple-400 transition-colors">
+                <div className="flex items-center bg-app-base px-2 py-1.5 rounded-lg border border-app-border focus-within:border-app-section transition-colors">
                   <input
                     type="text"
                     value={localTime}
@@ -825,18 +825,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       autosave({ time: e.target.value.trim() })
                     }}
                     placeholder="4/4"
-                    className="w-full bg-transparent text-purple-400 font-mono focus:outline-none text-center text-xs"
+                    className="w-full bg-transparent text-app-section font-mono focus:outline-none text-center text-xs"
                   />
                 </div>
               </div>
 
               {/* Release Year */}
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-cyan-400" />
+                <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-app-section" />
                   <span>Release Year</span>
                 </label>
-                <div className="flex items-center bg-[#002B36] px-2 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-cyan-400 transition-colors">
+                <div className="flex items-center bg-app-base px-2 py-1.5 rounded-lg border border-app-border focus-within:border-app-section transition-colors">
                   <input
                     type="text"
                     value={localYear}
@@ -845,7 +845,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       autosave({ year: e.target.value.trim() })
                     }}
                     placeholder="e.g. 1979"
-                    className="w-full bg-transparent text-cyan-400 font-mono focus:outline-none text-center text-xs"
+                    className="w-full bg-transparent text-app-section font-mono focus:outline-none text-center text-xs"
                   />
                 </div>
               </div>
@@ -855,11 +855,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
             {/* Tags Input */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-mono text-[#93A1A1] flex items-center gap-1">
-                <Tag className="w-3 h-3 text-amber-400" />
+              <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
+                <Tag className="w-3 h-3 text-app-accent" />
                 <span>Tags</span>
               </label>
-              <div className="flex items-center gap-2 bg-[#002B36] px-2.5 py-1.5 rounded-lg border border-[#1A4A55] focus-within:border-amber-500/60 transition-colors">
+              <div className="flex items-center gap-2 bg-app-base px-2.5 py-1.5 rounded-lg border border-app-border focus-within:border-app-accent/60 transition-colors">
                 <input
                   type="text"
                   value={localTags}
@@ -868,14 +868,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     autosave({ tags: e.target.value })
                   }}
                   placeholder="Tags (e.g. Worship, OPM, Acoustic)"
-                  className="w-full bg-transparent text-[#EEE8D5] font-mono text-xs focus:outline-none placeholder-[#93A1A1]/60"
+                  className="w-full bg-transparent text-app-text font-mono text-xs focus:outline-none placeholder-app-muted/60"
                 />
               </div>
             </div>
 
             {/* Quick Tag Suggestion Chips */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-mono text-[#93A1A1] uppercase tracking-wider">
+              <span className="text-[10px] font-mono text-app-muted uppercase tracking-wider">
                 Quick Tags:
               </span>
               <div className="flex flex-wrap gap-1.5">
@@ -892,8 +892,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       onClick={() => handleToggleTag(tag)}
                       className={`px-2.5 py-1 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
                         isSelected
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
-                          : 'bg-[#002B36] text-[#93A1A1] border-[#1A4A55] hover:text-[#FDF6E3] hover:border-[#2AA198]/60'
+                          ? 'bg-app-accent/20 text-app-accent border-app-accent/50 shadow-sm'
+                          : 'bg-app-base text-app-muted border-app-border hover:text-app-heading hover:border-app-action/60'
                       }`}
                     >
                       {tag}
@@ -904,11 +904,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             </div>
 
             {/* Done Button */}
-            <div className="pt-2 border-t border-[#1A4A55] flex justify-end">
+            <div className="pt-2 border-t border-app-border flex justify-end">
               <button
                 type="button"
                 onClick={() => setIsMetadataModalOpen(false)}
-                className="px-4 py-1.5 rounded-lg bg-[#2AA198] hover:bg-[#2AA198]/80 text-[#002B36] font-bold text-xs transition-colors cursor-pointer"
+                className="px-4 py-1.5 rounded-lg bg-app-action hover:bg-app-action/80 text-app-on-action font-bold text-xs transition-colors cursor-pointer"
               >
                 Done
               </button>
@@ -919,8 +919,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
       {/* Local Toast Notification Popup */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#002B36] border border-[#2AA198] text-[#FDF6E3] px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-3 text-sm font-medium animate-fade-in">
-          <div className="w-2 h-2 rounded-full bg-[#2AA198] animate-ping" />
+        <div className="fixed bottom-6 right-6 z-50 bg-app-base border border-app-action text-app-heading px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-3 text-sm font-medium animate-fade-in">
+          <div className="w-2 h-2 rounded-full bg-app-action animate-ping" />
           <span>{toastMessage}</span>
         </div>
       )}

@@ -49,17 +49,17 @@ export class StageErrorBoundary extends Component<StageErrorBoundaryProps, Stage
         <div
           role="alert"
           aria-live="assertive"
-          className="flex-1 flex flex-col items-center justify-center p-6 bg-[#002B36] text-[#EEE8D5] select-none text-center min-h-[400px]"
+          className="flex-1 flex flex-col items-center justify-center p-6 bg-app-base text-app-text select-none text-center min-h-[400px]"
         >
-          <div className="w-14 h-14 rounded-2xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 flex items-center justify-center text-[#DC6E67] mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-[#DC6E67]/15 border border-[#DC6E67]/40 flex items-center justify-center text-status-error mb-4">
             <AlertTriangle className="w-8 h-8" />
           </div>
 
-          <h2 className="text-xl font-bold text-[#FDF6E3] mb-2 font-mono">
+          <h2 className="text-xl font-bold text-app-heading mb-2 font-mono">
             Stage View Error
           </h2>
 
-          <p className="text-sm text-[#93A1A1] max-w-md mb-6 leading-relaxed">
+          <p className="text-sm text-app-muted max-w-md mb-6 leading-relaxed">
             The stage view encountered an unexpected render issue. Your song library and setlists are completely safe.
           </p>
 
@@ -67,7 +67,7 @@ export class StageErrorBoundary extends Component<StageErrorBoundaryProps, Stage
             <button
               type="button"
               onClick={this.handleRetry}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2AA198] text-[#002B36] font-bold text-sm shadow-md hover:bg-[#2AA198]/90 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-app-action text-app-on-action font-bold text-sm shadow-md hover:bg-app-action/90 transition-colors cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
               Retry Stage
@@ -76,7 +76,7 @@ export class StageErrorBoundary extends Component<StageErrorBoundaryProps, Stage
             <button
               type="button"
               onClick={this.handleExit}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#073642] border border-[#1A4A55] text-[#EEE8D5] font-semibold text-sm hover:border-[#2AA198] transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-app-surface border border-app-border text-app-text font-semibold text-sm hover:border-app-action transition-colors cursor-pointer"
             >
               <BookOpen className="w-4 h-4" />
               Return to Songbook
