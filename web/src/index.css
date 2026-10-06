@@ -906,6 +906,10 @@ body.theme-custom .chord-sheet-container .comment {
 
 
 /* Semantic app typography; factory presets keep their original utilities. */
+/* Explicit top-header roles avoid recoloring body/popover text or health indicators. */
+body.theme-custom .header-primary-text { color: var(--custom-headerPrimaryText, #F1F5F9) !important; }
+body.theme-custom .header-secondary-text { color: var(--custom-headerSecondaryText, #CBD5E1) !important; }
+body.theme-custom .header-neutral-icon { color: var(--custom-headerIconColor, #94A3B8) !important; }
 body.theme-custom .ui-primary-text { color: var(--custom-uiPrimaryText, #F1F5F9) !important; }
 body.theme-custom .ui-secondary-text { color: var(--custom-uiSecondaryText, #CBD5E1) !important; }
 body.theme-custom .ui-section-text { color: var(--custom-uiSectionText, #F1F5F9) !important; }

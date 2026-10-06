@@ -453,7 +453,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-mono font-bold text-sm sm:text-base tracking-wider ui-primary-text text-[#FDF6E3]">
+                <span className="font-mono font-bold text-sm sm:text-base tracking-wider header-primary-text text-[#FDF6E3]">
                   {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
                 </span>
                 {isDevEnv && (
@@ -461,7 +461,7 @@ export const Header: React.FC<HeaderProps> = ({
                     DEV
                   </span>
                 )}
-                <span className="text-[10px] font-mono ui-secondary-text text-[#93A1A1] font-semibold tracking-tight">
+                <span className="text-[10px] font-mono header-secondary-text text-[#93A1A1] font-semibold tracking-tight">
                   v{isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
                 </span>
               </div>
@@ -523,7 +523,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="px-2.5 py-1 rounded-xl bg-[#2AA198]/15 hover:bg-[#2AA198] text-[#2AA198] hover:text-[#002B36] border border-[#2AA198]/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
               title="Install GTAR App to Home Screen"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 header-neutral-icon" />
             </button>
           )}
 
@@ -542,8 +542,8 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-8 h-8 rounded-full border-2 border-[#1A4A55] hover:border-[#2AA198] transition-colors"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-[#002B36] border-2 border-[#1A4A55] hover:border-[#2AA198] flex items-center justify-center ui-secondary-text text-[#93A1A1] transition-colors">
-                <User className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-full bg-[#002B36] border-2 border-[#1A4A55] hover:border-[#2AA198] flex items-center justify-center text-[#93A1A1] transition-colors">
+                <User className="w-4 h-4 header-neutral-icon" />
               </div>
             )}
             <span className={`auth-dot ${userDotClass}`} />

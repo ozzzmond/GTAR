@@ -378,7 +378,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                 className="flex items-center justify-between text-[11px] font-mono opacity-80 mb-3 border-b border-white/10 pb-1.5"
                 style={{
                   color:
-                    activeGroup === 'stage' ? stagedColors.textHex : stagedColors.uiMutedText,
+                    activeGroup === 'stage' ? stagedColors.textHex : activeGroup === 'chrome' ? stagedColors.headerSecondaryText : stagedColors.uiMutedText,
                 }}
               >
                 <span className="font-bold flex items-center gap-1.5">
@@ -433,6 +433,11 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               {/* CHROME PREVIEW */}
               {activeGroup === 'chrome' && (
                 <div className="space-y-3">
+                  <div data-testid="header-preview" className="flex items-center gap-2 p-2 rounded-xl" style={{ backgroundColor: stagedColors.headerBg }}>
+                    <Palette data-testid="header-icon-preview" className="w-4 h-4" style={{ color: stagedColors.headerIconColor }} />
+                    <span data-testid="header-primary-preview" className="text-xs font-bold" style={{ color: stagedColors.headerPrimaryText }}>GTAR-Dev</span>
+                    <span data-testid="header-secondary-preview" className="text-[10px]" style={{ color: stagedColors.headerSecondaryText }}>Version</span>
+                  </div>
                   <div
                     className="flex items-center justify-between p-2 rounded-xl border"
                     style={{
@@ -445,7 +450,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                       style={{ color: stagedColors.iconColor || DEFAULT_CUSTOM_COLORS.iconColor }}
                     >
                       <Palette className="w-4 h-4" />
-                      <span>GTAR-Dev</span>
+                      <span>Toolbar</span>
                     </div>
                     <div
                       className="px-3 py-1 rounded-lg text-[11px] font-mono border"
@@ -468,6 +473,10 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                     }}
                   >
                     Filter: All Songs (24) • Sort by Title
+                  </div>
+                  <div data-testid="header-body-preview" className="p-2 rounded-xl" style={{ backgroundColor: stagedColors.songCardBg }}>
+                    <p style={{ color: stagedColors.uiPrimaryText }}>Amazing Grace · Sunday Setlist</p>
+                    <p style={{ color: stagedColors.uiSecondaryText }}>Artist · 12 songs</p>
                   </div>
                 </div>
               )}

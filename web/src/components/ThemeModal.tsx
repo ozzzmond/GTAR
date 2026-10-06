@@ -44,6 +44,9 @@ export const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
 
   // APP_CHROME
   headerBg: '#1A222D',
+  headerPrimaryText: '#F1F5F9',
+  headerSecondaryText: '#CBD5E1',
+  headerIconColor: '#94A3B8',
   toolbarBg: '#121820',
   searchBg: '#121820',
   searchBorder: '#2A3644',
@@ -87,6 +90,33 @@ function typographyDefaults(colors: Partial<CustomThemeColors>) {
   }
 }
 
+// Derive legacy header colors against the header surface, independently of the body.
+function headerDefaults(colors: Partial<CustomThemeColors>) {
+  const luminance = (hex: string) => {
+    const channels = [1, 3, 5].map(offset => {
+      const value = parseInt(hex.slice(offset, offset + 2), 16) / 255
+      return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4
+    })
+    return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722
+  }
+  const background = luminance(colors.headerBg || DEFAULT_CUSTOM_COLORS.headerBg!)
+  const contrast = (hex: string) => {
+    const foreground = luminance(hex)
+    return (Math.max(background, foreground) + .05) / (Math.min(background, foreground) + .05)
+  }
+  const safeColor = (candidate: string | undefined, light: string, dark: string) => {
+    if (candidate && contrast(candidate) >= 4.5) return candidate
+    if (contrast(light) >= 4.5) return light
+    if (contrast(dark) >= 4.5) return dark
+    return contrast('#FFFFFF') >= contrast('#000000') ? '#FFFFFF' : '#000000'
+  }
+  return {
+    headerPrimaryText: colors.headerPrimaryText || safeColor(colors.uiPrimaryText, '#F1F5F9', '#111827'),
+    headerSecondaryText: colors.headerSecondaryText || safeColor(colors.uiSecondaryText, '#CBD5E1', '#374151'),
+    headerIconColor: colors.headerIconColor || safeColor(colors.iconColor, '#94A3B8', '#4B5563'),
+  }
+}
+
 export function normalizeCustomThemeColors(
   colors?: Partial<CustomThemeColors> | null
 ): CustomThemeColors {
@@ -95,6 +125,7 @@ export function normalizeCustomThemeColors(
     ...DEFAULT_CUSTOM_COLORS,
     ...colors,
     ...typographyDefaults(colors),
+    ...headerDefaults(colors),
     fonts: normalizeFontSettings(colors.fonts),
     bgHex: colors.bgHex || DEFAULT_CUSTOM_COLORS.bgHex,
     textHex: colors.textHex || DEFAULT_CUSTOM_COLORS.textHex,
@@ -109,7 +140,7 @@ export function applyCustomThemeStyles(rawColors: CustomThemeColors) {
   const root = document.documentElement
 
   applyFontSettings(colors.fonts, root)
-  for (const [key, value] of Object.entries(typographyDefaults(colors))) {
+  for (const [key, value] of Object.entries({ ...typographyDefaults(colors), ...headerDefaults(colors) })) {
     root.style.setProperty('--custom-' + key, value)
   }
 
@@ -323,6 +354,15 @@ export const PALETTE_GROUPS: PaletteGroupDef[] = [
         label: 'Header',
         desc: 'Top header shell & branding bar',
         swatches: CHROME_BG_SWATCHES,
+      },
+      {
+        key: 'headerPrimaryText', label: 'Header Primary Text', desc: 'GTAR title in the top header', swatches: TEXT_SWATCHES,
+      },
+      {
+        key: 'headerSecondaryText', label: 'Header Secondary Text', desc: 'Version in the top header', swatches: TEXT_SWATCHES,
+      },
+      {
+        key: 'headerIconColor', label: 'Header Icon Color', desc: 'Neutral top-header icons; status colors stay semantic', swatches: ICON_SWATCHES,
       },
       {
         key: 'toolbarBg',
