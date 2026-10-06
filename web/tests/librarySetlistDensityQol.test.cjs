@@ -260,6 +260,6 @@ test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid expands to 4 columns
   )
 })
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.3i', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3i')
+test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.3j', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3j')
 })

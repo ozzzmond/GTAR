@@ -662,55 +662,57 @@ export const Header: React.FC<HeaderProps> = ({
       {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
       {/* =================================================================== */}
       <div className="w-full bg-[#002B36]/50 border-t border-[#1A4A55]/40 px-2 sm:px-4 py-1">
-        <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 w-full overflow-x-auto py-1 no-scrollbar">
-          <ToolbarIconButton
-            icon={PlaySquare}
-            label="Stage Preview (Alt+1)"
-            isActive={activeView === 'stage'}
-            onClick={() => onViewChange('stage')}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            icon={FileEdit}
-            label="Editor (Alt+2)"
-            isActive={activeView === 'editor'}
-            onClick={() => onViewChange('editor')}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            icon={Radio}
-            label="Band Sync (Alt+3)"
-            onClick={onOpenStageTools}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            icon={Cast}
-            label="Cast (Alt+4)"
-            isActive={isCastActive}
-            onClick={onOpenCast || (() => {})}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            icon={Palette}
-            label="Theme (Alt+5)"
-            onClick={onToggleTheme}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            icon={Trash2}
-            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
-            isActive={activeView === 'trash'}
-            onClick={() => onViewChange('trash')}
-            className="shrink-0"
-          />
-          <ToolbarIconButton
-            buttonRef={moreButtonRef}
-            icon={MoreVertical}
-            label="More"
-            isActive={showOverflowMenu}
-            onClick={() => setShowOverflowMenu((prev) => !prev)}
-            className="shrink-0"
-          />
+        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
+          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2">
+            <ToolbarIconButton
+              icon={PlaySquare}
+              label="Stage Preview (Alt+1)"
+              isActive={activeView === 'stage'}
+              onClick={() => onViewChange('stage')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={FileEdit}
+              label="Editor (Alt+2)"
+              isActive={activeView === 'editor'}
+              onClick={() => onViewChange('editor')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Radio}
+              label="Band Sync (Alt+3)"
+              onClick={onOpenStageTools}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Cast}
+              label="Cast (Alt+4)"
+              isActive={isCastActive}
+              onClick={onOpenCast || (() => {})}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Palette}
+              label="Theme (Alt+5)"
+              onClick={onToggleTheme}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Trash2}
+              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+              isActive={activeView === 'trash'}
+              onClick={() => onViewChange('trash')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              buttonRef={moreButtonRef}
+              icon={MoreVertical}
+              label="More"
+              isActive={showOverflowMenu}
+              onClick={() => setShowOverflowMenu((prev) => !prev)}
+              className="shrink-0"
+            />
+          </div>
         </div>
       </div>
 

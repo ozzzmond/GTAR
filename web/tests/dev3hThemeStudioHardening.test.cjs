@@ -215,6 +215,17 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
     }))
   })
 
+  const sheet = document.createElement('style')
+  sheet.textContent = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0] + css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
+  document.head.appendChild(sheet)
+  const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
+  assert.ok(scroll.classList.contains('overflow-x-auto'))
+  const content = scroll.firstElementChild
+  assert.ok(content.classList.contains('justify-center'))
+  assert.ok(!content.className.includes('justify-start'))
+  const layout = window.getComputedStyle(content)
+  assert.equal(layout.width, 'max-content')
+  assert.equal(layout.minWidth, '100%')
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
   assert.equal(toolbarButtons.length, 7)
   const labels = [...toolbarButtons].map(btn => btn.querySelector('.toolbar-tooltip')?.textContent)
@@ -229,6 +240,11 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   ])
   for (const btn of toolbarButtons) {
     assert.ok(btn.classList.contains('shrink-0'))
+    assert.equal(btn.parentElement, content)
+    const footprint = window.getComputedStyle(btn)
+    assert.equal(footprint.width, '36px'); assert.equal(footprint.height, '36px')
+    assert.equal(footprint.display, 'inline-flex')
+    assert.equal(footprint.alignItems, 'center'); assert.equal(footprint.justifyContent, 'center')
   }
   act(() => root.unmount()); dom.window.close()
   delete global.window; delete global.document; delete global.localStorage; delete global.IS_REACT_ACT_ENVIRONMENT

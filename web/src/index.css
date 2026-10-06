@@ -336,6 +336,12 @@ body.theme-custom .chord-sheet-container .comment {
   animation: scale-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Intrinsic width prevents centering from making overflow's first action unreachable. */
+.main-toolbar-content {
+  width: max-content;
+  min-width: 100%;
+}
+
 /* Toolbar icon tooltip */
 .toolbar-icon-btn {
   position: relative;
