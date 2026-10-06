@@ -538,7 +538,8 @@ body.theme-paper-light .stage-tab-text {
 /* ========================================================================== */
 body.theme-custom {
   background-color: var(--custom-stage-bg, #121820) !important;
-  color: var(--custom-stage-text, #F1F5F9) !important;
+  color: var(--custom-uiPrimaryText, #F1F5F9) !important;
+  font-family: var(--custom-font-ui, var(--font-stage-sans));
 }
 
 /* 1. APP CHROME: Top Header Shell & Main Toolbar */
@@ -559,7 +560,7 @@ body.theme-custom .pill-search {
   border-color: var(--custom-chrome-search-border, var(--custom-stage-border, #2A3644)) !important;
 }
 body.theme-custom .pill-search input {
-  color: var(--custom-stage-text, #F1F5F9) !important;
+  color: var(--custom-control-input-text, #F1F5F9) !important;
 }
 body.theme-custom .pill-search input::placeholder {
   color: var(--custom-chrome-icon, #94A3B8) !important;
@@ -903,3 +904,26 @@ body.theme-custom .chord-sheet-container .comment {
   color: #002B36;
 }
 
+
+/* Semantic app typography; factory presets keep their original utilities. */
+body.theme-custom .ui-primary-text { color: var(--custom-uiPrimaryText, #F1F5F9) !important; }
+body.theme-custom .ui-secondary-text { color: var(--custom-uiSecondaryText, #CBD5E1) !important; }
+body.theme-custom .ui-section-text { color: var(--custom-uiSectionText, #F1F5F9) !important; }
+body.theme-custom .ui-muted-text { color: var(--custom-uiMutedText, #94A3B8) !important; }
+body.theme-custom .ui-link-text { color: var(--custom-uiLinkText, #38BDF8) !important; }
+body.theme-custom :is(.ui-primary-text, .ui-secondary-text, .ui-muted-text, .ui-link-text) {
+  font-family: var(--custom-font-ui, var(--font-stage-sans));
+}
+body.theme-custom :is(h1, h2, h3, .ui-section-text) {
+  font-family: var(--custom-font-heading, var(--custom-font-ui, var(--font-stage-sans)));
+}
+body.theme-custom .stage-mono { font-family: var(--custom-font-stage, var(--font-stage-mono)); }
+body.theme-custom .stage-sans { font-family: var(--custom-font-stage, var(--font-stage-sans)); }
+body.theme-custom .stage-serif { font-family: var(--custom-font-stage, var(--font-stage-serif)); }
+
+body.theme-custom header .font-mono {
+  font-family: var(--custom-font-ui, var(--font-stage-sans));
+}
+body.theme-custom .group:hover .ui-primary-text[class*="group-hover:text"] {
+  color: var(--custom-uiLinkText, #38BDF8) !important;
+}

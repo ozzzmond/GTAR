@@ -39,20 +39,20 @@ const {
 const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 
 // =============================================================================
-// 1. VERSION CHECK (1.0.123-dev.3d)
+// 1. VERSION CHECK (1.0.123-dev.3e)
 // =============================================================================
-test('DEV3C_VERSION: Canonical dev version bumped to 1.0.123-dev.3d across all manifests', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3d')
+test('DEV3C_VERSION: Canonical dev version bumped to 1.0.123-dev.3e across all manifests', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3e')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3d')
+  assert.equal(pkgJson.version, '1.0.123-dev.3e')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3d')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3d')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3e')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3e')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3d'))
+  assert.ok(authCore.includes('v1.0.123-dev.3e'))
 })
 
 // =============================================================================
@@ -343,10 +343,10 @@ test('DEV3C_BUILTIN_PRESETS_PRESERVED: 7 Built-in presets remain intact and unto
 // =============================================================================
 test('DEV3C_UI_GROUPING_CONTRACT: ThemeModal defines 5 grouped categories A-E with canonical fields', () => {
   assert.ok(Array.isArray(PALETTE_GROUPS), 'PALETTE_GROUPS array must exist')
-  assert.equal(PALETTE_GROUPS.length, 5, 'Must define exactly 5 grouped sections A-E')
+  assert.equal(PALETTE_GROUPS.length, 6, 'Must define exactly 6 grouped sections A-E')
 
   const groupIds = PALETTE_GROUPS.map((g) => g.id)
-  assert.deepEqual(groupIds, ['stage', 'chrome', 'cards', 'controls', 'stageControls'])
+  assert.deepEqual(groupIds, ['typography', 'stage', 'chrome', 'cards', 'controls', 'stageControls'])
 
   const stageKeys = PALETTE_GROUPS.find((g) => g.id === 'stage').fields.map((f) => f.key)
   assert.deepEqual(stageKeys, ['bgHex', 'textHex', 'chordHex', 'sectionHex'])

@@ -1,3 +1,4 @@
+import { validateFontSettings, type FontSettings } from './customFonts'
 export const SETTINGS_KEYS = {
   themeMode: 'gtar_theme_store',
   customThemeColors: 'gtar_custom_theme_colors',
@@ -22,6 +23,12 @@ export const FONT_STYLES = ['mono', 'sans', 'serif'] as const
 export type ThemeMode = typeof THEME_MODES[number]
 export type SongFontStyleOption = typeof FONT_STYLES[number]
 export interface CustomThemeColors {
+  fonts?: FontSettings
+  uiPrimaryText?: string
+  uiSecondaryText?: string
+  uiSectionText?: string
+  uiMutedText?: string
+  uiLinkText?: string
   // STAGE
   bgHex: string
   textHex: string
@@ -78,6 +85,7 @@ export function validateBackupSettings(data: Record<string, unknown>): string[] 
         'setlistCardBg', 'songCardBg', 'cardBorder', 'selectedCardBg', 'selectedCardBorder',
         'buttonBg', 'buttonText', 'inputBg', 'inputText', 'inputBorder', 'accentColor',
         'dockBg', 'dockBorder', 'dockBtnBg', 'dockBtnIcon', 'dockPlayBg', 'dockPlayIcon',
+        'uiPrimaryText', 'uiSecondaryText', 'uiSectionText', 'uiMutedText', 'uiLinkText',
       ]
       const allowedFields = new Set([...requiredFields, ...optionalFields])
       for (const field of requiredFields) {
@@ -85,7 +93,9 @@ export function validateBackupSettings(data: Record<string, unknown>): string[] 
         if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) errors.push(`customThemeColors.${field}: expected #RRGGBB`)
       }
       for (const [field, color] of Object.entries(colors)) {
-        if (!allowedFields.has(field)) {
+        if (field === 'fonts') {
+          errors.push(...validateFontSettings(color))
+        } else if (!allowedFields.has(field)) {
           errors.push(`customThemeColors.${field}: unknown color setting`)
         } else if (optionalFields.includes(field) && (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color))) {
           errors.push(`customThemeColors.${field}: expected #RRGGBB`)

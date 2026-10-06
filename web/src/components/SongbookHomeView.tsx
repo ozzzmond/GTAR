@@ -354,18 +354,18 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         <dialog
           open
           onCancel={() => setRenamingSetlist(null)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#1A4A55] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#1A4A55] bg-[#073642] ui-primary-text text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-bold text-sm flex items-center gap-2 text-[#FDF6E3]">
+              <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-[#FDF6E3]">
                 <Pencil className="w-4 h-4 text-[#2AA198]" />
                 Rename Setlist
               </h2>
               <button
                 type="button"
                 onClick={() => setRenamingSetlist(null)}
-                className="p-1 rounded-lg hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                className="p-1 rounded-lg hover:bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
@@ -382,7 +382,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 }
               }}
             >
-              <label htmlFor="rename-setlist-input" className="text-xs text-[#93A1A1] font-mono block mb-1.5">
+              <label htmlFor="rename-setlist-input" className="text-xs ui-secondary-text text-[#93A1A1] font-mono block mb-1.5">
                 Setlist Name
               </label>
               <input
@@ -393,13 +393,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 onChange={(e) => setRenameInputValue(e.target.value)}
                 maxLength={120}
                 autoFocus
-                className="w-full rounded-lg border border-[#1A4A55] bg-[#002B36] p-2 text-sm text-[#FDF6E3] focus:border-[#2AA198] focus:outline-none"
+                className="w-full rounded-lg border border-[#1A4A55] bg-[#002B36] p-2 text-sm ui-primary-text text-[#FDF6E3] focus:border-[#2AA198] focus:outline-none"
               />
               <div className="flex justify-end gap-2 mt-4 font-mono text-xs font-bold">
                 <button
                   type="button"
                   onClick={() => setRenamingSetlist(null)}
-                  className="px-3 py-1.5 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -423,29 +423,29 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           open
           data-testid="bulk-add-to-setlist-dialog"
           onCancel={() => setIsBulkAddToSetlistModalOpen(false)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#1A4A55] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#1A4A55] bg-[#073642] ui-primary-text text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-3">
-              <h2 className="font-bold text-sm flex items-center gap-2 text-[#FDF6E3]">
+              <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-[#FDF6E3]">
                 <ListPlus className="w-4 h-4 text-[#2AA198]" />
                 Add {selectedSongIds.size} {selectedSongIds.size === 1 ? 'Song' : 'Songs'} to Setlist
               </h2>
               <button
                 type="button"
                 onClick={() => setIsBulkAddToSetlistModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                className="p-1 rounded-lg hover:bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-[#93A1A1] mb-3">
+            <p className="text-xs ui-muted-text text-[#93A1A1] mb-3">
               Choose an existing setlist to add selected songs:
             </p>
             <div className="max-h-60 overflow-y-auto space-y-1 mb-4">
               {setlists.filter(sl => !sl.isDeleted).length === 0 ? (
-                <div className="text-xs text-[#93A1A1] italic p-3 text-center bg-[#002B36]/60 rounded-xl">
+                <div className="text-xs ui-secondary-text text-[#93A1A1] italic p-3 text-center bg-[#002B36]/60 rounded-xl">
                   No setlists available.
                 </div>
               ) : (
@@ -455,10 +455,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     type="button"
                     data-testid={`bulk-add-target-${sl.id}`}
                     onClick={() => handleConfirmBulkAddToSetlist(sl.id)}
-                    className="w-full text-left px-3 py-2.5 rounded-xl bg-[#002B36] hover:bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198] text-sm text-[#EEE8D5] flex items-center justify-between transition-colors cursor-pointer"
+                    className="w-full text-left px-3 py-2.5 rounded-xl bg-[#002B36] hover:bg-[#073642] border border-[#1A4A55] hover:border-[#2AA198] text-sm ui-primary-text text-[#EEE8D5] flex items-center justify-between transition-colors cursor-pointer"
                   >
                     <span className="font-bold truncate">{sl.name}</span>
-                    <span className="text-xs font-mono text-[#93A1A1]">{sl.songs.length} songs</span>
+                    <span className="text-xs font-mono ui-secondary-text text-[#93A1A1]">{sl.songs.length} songs</span>
                   </button>
                 ))
               )}
@@ -468,7 +468,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 type="button"
                 data-testid="cancel-bulk-add-to-setlist"
                 onClick={() => setIsBulkAddToSetlistModalOpen(false)}
-                className="px-3.5 py-1.5 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] font-mono text-xs font-bold transition-colors cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] font-mono text-xs font-bold transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -483,16 +483,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           open
           data-testid="bulk-delete-songs-confirm-dialog"
           onCancel={() => setIsBulkDeleteSongsConfirmOpen(false)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-[#073642] ui-primary-text text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2.5 text-[#DC6E67] mb-3">
               <AlertTriangle className="w-5 h-5 shrink-0" />
-              <h2 className="text-base font-bold text-[#FDF6E3]">
+              <h2 className="ui-section-text text-base font-bold ui-primary-text text-[#FDF6E3]">
                 Delete {selectedSongIds.size} {selectedSongIds.size === 1 ? 'song' : 'songs'}?
               </h2>
             </div>
-            <p className="text-xs text-[#93A1A1] leading-relaxed mb-4">
+            <p className="text-xs ui-muted-text text-[#93A1A1] leading-relaxed mb-4">
               Selected songs will be removed from your songbook and references to them will be removed from setlists.
             </p>
             <div className="flex justify-end gap-2 font-mono text-xs font-bold">
@@ -501,7 +501,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 autoFocus
                 data-testid="cancel-bulk-delete-songs"
                 onClick={() => setIsBulkDeleteSongsConfirmOpen(false)}
-                className="px-3.5 py-2 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                className="px-3.5 py-2 rounded-lg bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -524,16 +524,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           open
           data-testid="bulk-delete-setlists-confirm-dialog"
           onCancel={() => setIsBulkDeleteSetlistsConfirmOpen(false)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-[#073642] text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-[#073642] ui-primary-text text-[#FDF6E3] p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2.5 text-[#DC6E67] mb-3">
               <AlertTriangle className="w-5 h-5 shrink-0" />
-              <h2 className="text-base font-bold text-[#FDF6E3]">
+              <h2 className="ui-section-text text-base font-bold ui-primary-text text-[#FDF6E3]">
                 Delete {selectedSetlistIds.size} {selectedSetlistIds.size === 1 ? 'setlist' : 'setlists'}?
               </h2>
             </div>
-            <p className="text-xs text-[#93A1A1] leading-relaxed mb-4">
+            <p className="text-xs ui-muted-text text-[#93A1A1] leading-relaxed mb-4">
               Songs in these setlists will remain in your songbook.
             </p>
             <div className="flex justify-end gap-2 font-mono text-xs font-bold">
@@ -542,7 +542,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 autoFocus
                 data-testid="cancel-bulk-delete-setlists"
                 onClick={() => setIsBulkDeleteSetlistsConfirmOpen(false)}
-                className="px-3.5 py-2 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                className="px-3.5 py-2 rounded-lg bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -565,7 +565,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <div className="w-8 h-8 rounded-xl bg-[#073642] border border-[#1A4A55] flex items-center justify-center text-[#2AA198]">
             <Music className="w-4 h-4" />
           </div>
-          <h1 className="text-lg font-bold text-[#FDF6E3] tracking-tight">
+          <h1 className="ui-section-text text-lg font-bold ui-primary-text text-[#FDF6E3] tracking-tight">
             Songbook &amp; Gig Library
           </h1>
         </div>
@@ -595,7 +595,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <div className="flex items-center justify-between mb-3 px-1">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-[#B58900]" />
-              <h2 className="text-xs font-bold text-[#FDF6E3] uppercase tracking-wider font-mono">
+              <h2 className="ui-section-text text-xs font-bold ui-primary-text text-[#FDF6E3] uppercase tracking-wider font-mono">
                 Gig Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
               </h2>
             </div>
@@ -623,7 +623,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       setIsSetlistSelectionMode(false)
                       setSelectedSetlistIds(new Set())
                     }}
-                    className="text-xs font-mono text-[#93A1A1] hover:text-[#FDF6E3] px-2 py-1 rounded cursor-pointer"
+                    className="text-xs font-mono ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] px-2 py-1 rounded cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -658,7 +658,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <button
                     type="button"
                     onClick={onOpenSetlists}
-                    className="text-[10px] font-bold text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1 cursor-pointer"
+                    className="ui-link-text text-[10px] font-bold ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] flex items-center gap-1 cursor-pointer"
                   >
                     <span>Manage</span>
                     <ArrowRight className="w-3 h-3" />
@@ -732,10 +732,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs sm:text-sm font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
+                      <div className="text-xs sm:text-sm font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#2AA198] truncate transition-colors">
                         {sl.name}
                       </div>
-                      <div className="text-[10px] sm:text-[11px] font-mono text-[#93A1A1] mt-0.5">
+                      <div className="text-[10px] sm:text-[11px] font-mono ui-secondary-text text-[#93A1A1] mt-0.5">
                         {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
                       </div>
                     </div>
@@ -776,7 +776,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         setSetlistMenuAnchor(isMenuOpen ? null : e.currentTarget)
                         setSongMenuAnchor(null)
                       }}
-                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
+                      className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
                       title="Setlist actions"
                     >
                       <MoreHorizontal className="w-4 h-4" />
@@ -803,7 +803,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               setRenamingSetlist(sl)
                               setRenameInputValue(sl.name)
                             }}
-                            className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors"
+                            className="w-full text-left px-3 py-2 ui-primary-text text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors"
                           >
                             <Pencil className="w-3.5 h-3.5 text-[#2AA198]" />
                             <span>Rename Setlist</span>
@@ -817,7 +817,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             setActiveMenuSetlistId(null)
                             exportSingleSetlistJson(sl, songs)
                           }}
-                          className={`w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors ${
+                          className={`w-full text-left px-3 py-2 ui-primary-text text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors ${
                             onRenameSetlist ? 'border-t border-[#1A4A55]/50' : ''
                           }`}
                         >
@@ -876,7 +876,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             e.stopPropagation()
                             setConfirmDeleteSetlistId(null)
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -896,7 +896,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center gap-2">
             <Music className="w-4 h-4 text-[#2AA198]" />
-            <h2 className="text-sm font-bold text-[#FDF6E3] uppercase tracking-wider font-mono">
+            <h2 className="ui-section-text text-sm font-bold ui-primary-text text-[#FDF6E3] uppercase tracking-wider font-mono">
               Songs Library ({filteredIndexedSongs.length} of {songs.length})
             </h2>
           </div>
@@ -936,7 +936,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       setIsSongSelectionMode(false)
                       setSelectedSongIds(new Set())
                     }}
-                    className="text-xs font-mono text-[#93A1A1] hover:text-[#FDF6E3] px-2 py-1 rounded cursor-pointer"
+                    className="text-xs font-mono ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] px-2 py-1 rounded cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -964,11 +964,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <div className="flex items-center gap-2.5 flex-wrap">
               {/* Sort Dropdown */}
               <div className="flex items-center gap-1.5 text-xs font-mono">
-                <span className="text-[#93A1A1] text-[11px] font-bold">Sort:</span>
+                <span className="ui-secondary-text text-[#93A1A1] text-[11px] font-bold">Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => handleSortChange(e.target.value as SortOption)}
-                  className="bg-[#002B36] border border-[#1A4A55] text-[#EEE8D5] rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-[#2AA198] transition-colors"
+                  className="bg-[#002B36] border border-[#1A4A55] ui-primary-text text-[#EEE8D5] rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-[#2AA198] transition-colors"
                 >
                   <option value="title">Title (A-Z)</option>
                   <option value="artist">Artist (A-Z)</option>
@@ -980,11 +980,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               {/* Key Filter Dropdown */}
               {availableKeys.length > 0 && (
                 <div className="flex items-center gap-1.5 text-xs font-mono">
-                  <span className="text-[#93A1A1] text-[11px] font-bold">Key:</span>
+                  <span className="ui-secondary-text text-[#93A1A1] text-[11px] font-bold">Key:</span>
                   <select
                     value={filterKey}
                     onChange={(e) => handleFilterKeyChange(e.target.value)}
-                    className="bg-[#002B36] border border-[#1A4A55] text-[#EEE8D5] rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-[#2AA198] transition-colors"
+                    className="bg-[#002B36] border border-[#1A4A55] ui-primary-text text-[#EEE8D5] rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-[#2AA198] transition-colors"
                   >
                     <option value="ALL">All Keys</option>
                     {availableKeys.map((k) => (
@@ -999,11 +999,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               {/* Setlist Filter Dropdown */}
               {setlists.length > 0 && (
                 <div className="flex items-center gap-1.5 text-xs font-mono">
-                  <span className="text-[#93A1A1] text-[11px] font-bold">Setlist:</span>
+                  <span className="ui-secondary-text text-[#93A1A1] text-[11px] font-bold">Setlist:</span>
                   <select
                     value={filterSetlistId}
                     onChange={(e) => handleFilterSetlistChange(e.target.value)}
-                    className="bg-[#002B36] border border-[#1A4A55] text-[#EEE8D5] rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-[#2AA198] transition-colors"
+                    className="bg-[#002B36] border border-[#1A4A55] ui-primary-text text-[#EEE8D5] rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-[#2AA198] transition-colors"
                   >
                     <option value="ALL">All Setlists</option>
                     {setlists.map((sl) => (
@@ -1019,9 +1019,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         )}
 
         {songs.length === 0 ? (
-          <div className="p-12 text-center rounded-3xl border border-[#1A4A55] bg-[#073642]/50 text-[#93A1A1] space-y-3">
+          <div className="p-12 text-center rounded-3xl border border-[#1A4A55] bg-[#073642]/50 ui-secondary-text text-[#93A1A1] space-y-3">
             <Music className="w-8 h-8 mx-auto text-[#2AA198]" />
-            <div className="text-base font-bold text-[#FDF6E3]">Your Songbook is Empty</div>
+            <div className="text-base font-bold ui-primary-text text-[#FDF6E3]">Your Songbook is Empty</div>
             <p className="text-xs max-w-sm mx-auto">
               Create your first song template or import chord charts from files or online web sources.
             </p>
@@ -1034,8 +1034,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             </button>
           </div>
         ) : sortedIndexedSongs.length === 0 ? (
-          <div className="p-8 text-center rounded-2xl border border-[#1A4A55] bg-[#073642]/40 text-[#93A1A1] space-y-2">
-            <div className="text-sm font-bold text-[#FDF6E3]">No matching songs found</div>
+          <div className="p-8 text-center rounded-2xl border border-[#1A4A55] bg-[#073642]/40 ui-secondary-text text-[#93A1A1] space-y-2">
+            <div className="text-sm font-bold ui-primary-text text-[#FDF6E3]">No matching songs found</div>
             <p className="text-xs">Try clearing your search query or adjusting key/setlist filters.</p>
             <button
               type="button"
@@ -1105,7 +1105,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors border ${
                           isSongChosen
                             ? 'bg-[#2AA198] border-[#2AA198] text-[#002B36]'
-                            : 'bg-[#002B36] border-[#1A4A55] text-[#93A1A1]'
+                            : 'bg-[#002B36] border-[#1A4A55] ui-secondary-text text-[#93A1A1]'
                         }`}
                       >
                         {isSongChosen ? <Check className="w-4 h-4 stroke-[3]" /> : String(displayIdx + 1).padStart(2, '0')}
@@ -1115,7 +1115,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg flex items-center justify-center font-mono text-[10px] sm:text-xs font-bold shrink-0 transition-colors shadow-inner ${
                           isSelected
                             ? 'bg-[#2AA198] text-[#002B36]'
-                            : 'bg-[#002B36] text-[#93A1A1] group-hover:text-[#2AA198]'
+                            : 'bg-[#002B36] ui-secondary-text text-[#93A1A1] group-hover:text-[#2AA198]'
                         }`}
                       >
                         {String(displayIdx + 1).padStart(2, '0')}
@@ -1123,7 +1123,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <h3 className="font-bold text-xs sm:text-sm text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
+                        <h3 className="font-bold text-xs sm:text-sm ui-primary-text text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
                           {song.title || 'Untitled Song'}
                         </h3>
                         {songSetlists.length > 0 && (
@@ -1165,7 +1165,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                 onClick={(e) => e.stopPropagation()}
                                 className="w-48 bg-[#002B36] border border-[#1A4A55] rounded-xl shadow-xl py-1.5 px-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100 z-50"
                               >
-                                <div className="px-2 py-1 text-[10px] text-[#93A1A1] uppercase tracking-wider font-bold border-b border-[#1A4A55]/40 mb-1">
+                                <div className="px-2 py-1 text-[10px] ui-secondary-text text-[#93A1A1] uppercase tracking-wider font-bold border-b border-[#1A4A55]/40 mb-1">
                                   In Setlists ({songSetlists.length})
                                 </div>
                                 <div className="max-h-48 overflow-y-auto space-y-0.5">
@@ -1185,7 +1185,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                           onOpenSetlists()
                                         }
                                       }}
-                                      className="w-full text-left px-2 py-1.5 rounded-lg text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
+                                      className="ui-link-text w-full text-left px-2 py-1.5 rounded-lg ui-primary-text text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
                                       title={`Manage ${sl.name}`}
                                     >
                                       <span className="truncate flex-1">{sl.name}</span>
@@ -1198,7 +1198,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           </>
                         )}
                       </div>
-                      <p className="text-[11px] sm:text-xs text-[#93A1A1] truncate mt-0.5">
+                      <p className="text-[11px] sm:text-xs ui-secondary-text text-[#93A1A1] truncate mt-0.5">
                         {song.artist || 'Unknown Artist'}
                       </p>
                     </div>
@@ -1219,7 +1219,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
                           setSetlistMenuAnchor(null)
                         }}
-                        className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
+                        className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] flex items-center justify-center transition-colors cursor-pointer"
                         title="Song options"
                       >
                         <MoreHorizontal className="w-4 h-4" />
@@ -1246,7 +1246,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               setActiveMenuSongIdx(null)
                               setMembershipSongId(song.id ?? null)
                             }}
-                            className="w-full text-left px-3 py-2 text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                            className="w-full text-left px-3 py-2 ui-primary-text text-[#EEE8D5] hover:bg-[#073642] hover:text-[#2AA198] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
                             title="Add to Setlist"
                           >
                             <ListPlus className="w-3.5 h-3.5 text-[#2AA198]" />
@@ -1302,7 +1302,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             e.stopPropagation()
                             setConfirmDeleteIdx(null)
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-[#002B36] text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-[#002B36] ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] transition-colors cursor-pointer"
                         >
                           Cancel
                         </button>

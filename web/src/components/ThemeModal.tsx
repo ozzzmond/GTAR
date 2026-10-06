@@ -1,3 +1,4 @@
+import { normalizeFontSettings, applyFontSettings } from '../utils/customFonts'
 import { SETTINGS_KEYS } from '../utils/backupSettings'
 import React, { useState, useEffect } from 'react'
 import {
@@ -30,6 +31,11 @@ export interface ThemeOption {
 }
 
 export const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
+  uiPrimaryText: '#F1F5F9',
+  uiSecondaryText: '#CBD5E1',
+  uiSectionText: '#F1F5F9',
+  uiMutedText: '#94A3B8',
+  uiLinkText: '#38BDF8',
   // STAGE
   bgHex: '#121820',
   textHex: '#F1F5F9',
@@ -68,6 +74,19 @@ export const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
   dockPlayIcon: '#000000',
 }
 
+function typographyDefaults(colors: Partial<CustomThemeColors>) {
+  const light = parseInt((colors.bgHex || '#121820').slice(1, 3), 16) * .299 +
+    parseInt((colors.bgHex || '#121820').slice(3, 5), 16) * .587 +
+    parseInt((colors.bgHex || '#121820').slice(5, 7), 16) * .114 > 150
+  return {
+    uiPrimaryText: colors.uiPrimaryText || (light ? '#111827' : '#F1F5F9'),
+    uiSecondaryText: colors.uiSecondaryText || (light ? '#374151' : '#CBD5E1'),
+    uiSectionText: colors.uiSectionText || (light ? '#111827' : '#F1F5F9'),
+    uiMutedText: colors.uiMutedText || (light ? '#4B5563' : '#94A3B8'),
+    uiLinkText: colors.uiLinkText || (light ? '#1D4ED8' : '#38BDF8'),
+  }
+}
+
 export function normalizeCustomThemeColors(
   colors?: Partial<CustomThemeColors> | null
 ): CustomThemeColors {
@@ -75,6 +94,8 @@ export function normalizeCustomThemeColors(
   return {
     ...DEFAULT_CUSTOM_COLORS,
     ...colors,
+    ...typographyDefaults(colors),
+    fonts: normalizeFontSettings(colors.fonts),
     bgHex: colors.bgHex || DEFAULT_CUSTOM_COLORS.bgHex,
     textHex: colors.textHex || DEFAULT_CUSTOM_COLORS.textHex,
     chordHex: colors.chordHex || DEFAULT_CUSTOM_COLORS.chordHex,
@@ -86,6 +107,11 @@ export function applyCustomThemeStyles(rawColors: CustomThemeColors) {
   if (typeof document === 'undefined') return
   const colors = normalizeCustomThemeColors(rawColors)
   const root = document.documentElement
+
+  applyFontSettings(colors.fonts, root)
+  for (const [key, value] of Object.entries(typographyDefaults(colors))) {
+    root.style.setProperty('--custom-' + key, value)
+  }
 
   // STAGE
   root.style.setProperty('--custom-stage-bg', colors.bgHex)
@@ -231,14 +257,14 @@ const BORDER_SWATCHES = ['#1A4A55', '#2A3644', '#334155', '#3F3F46', '#2AA198', 
 const ICON_SWATCHES = ['#93A1A1', '#94A3B8', '#2AA198', '#F59E0B', '#38BDF8', '#FFFFFF']
 const ACCENT_SWATCHES = ['#2AA198', '#F59E0B', '#38BDF8', '#10B981', '#EC4899', '#8B5CF6']
 
-export type PaletteSectionGroup = 'stage' | 'chrome' | 'cards' | 'controls' | 'stageControls'
+export type PaletteSectionGroup = 'stage' | 'chrome' | 'cards' | 'controls' | 'stageControls' | 'typography'
 
 interface PaletteGroupDef {
   id: PaletteSectionGroup
   label: string
   icon: React.ComponentType<{ className?: string }>
   fields: {
-    key: keyof CustomThemeColors
+    key: Exclude<keyof CustomThemeColors, 'fonts'>
     label: string
     desc: string
     swatches: string[]
@@ -246,6 +272,16 @@ interface PaletteGroupDef {
 }
 
 export const PALETTE_GROUPS: PaletteGroupDef[] = [
+  {
+    id: 'typography', label: 'Typography', icon: Sliders,
+    fields: [
+      { key: 'uiPrimaryText', label: 'Primary UI Text', desc: 'Titles and major labels', swatches: TEXT_SWATCHES },
+      { key: 'uiSecondaryText', label: 'Secondary UI Text', desc: 'Artists, counts and metadata', swatches: TEXT_SWATCHES },
+      { key: 'uiSectionText', label: 'Section Text', desc: 'Library section headings', swatches: TEXT_SWATCHES },
+      { key: 'uiMutedText', label: 'Muted Text', desc: 'Helpers and informational text', swatches: TEXT_SWATCHES },
+      { key: 'uiLinkText', label: 'Link Text', desc: 'Lightweight actions and links', swatches: TEXT_SWATCHES },
+    ],
+  },
   {
     id: 'stage',
     label: 'Stage',
@@ -692,7 +728,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               {/* Dedicated Editor Launch Action Button */}
               <div className="pt-2 border-t border-[#1A4A55]/60 flex items-center justify-between gap-2">
                 <span className="text-[11px] text-[#93A1A1]">
-                  27 custom colors across 5 responsive categories
+                  32 custom colors across 6 responsive categories + fonts
                 </span>
                 <button
                   type="button"

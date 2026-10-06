@@ -1,3 +1,4 @@
+import { validateFontSettings, normalizeFontSettings, type FontSettings } from './customFonts'
 import type { CustomThemeColors } from './backupSettings'
 import { DEFAULT_CUSTOM_COLORS, normalizeCustomThemeColors } from '../components/ThemeModal'
 
@@ -7,10 +8,12 @@ export const CUSTOM_PALETTE_JSON_VERSION = 2 as const
 export interface CustomPaletteJsonPayload {
   format: typeof CUSTOM_PALETTE_JSON_FORMAT
   version: typeof CUSTOM_PALETTE_JSON_VERSION
+  fonts?: FontSettings
   colors: Record<string, string>
 }
 
 export const CANONICAL_CUSTOM_PALETTE_FIELDS = [
+  'uiPrimaryText', 'uiSecondaryText', 'uiSectionText', 'uiMutedText', 'uiLinkText',
   // STAGE (4)
   'bgHex',
   'textHex',
@@ -64,6 +67,7 @@ export function exportCustomPaletteJson(rawColors: CustomThemeColors): CustomPal
     format: CUSTOM_PALETTE_JSON_FORMAT,
     version: CUSTOM_PALETTE_JSON_VERSION,
     colors,
+    fonts: normalizeFontSettings(normalized.fonts),
   }
 }
 
@@ -108,6 +112,12 @@ export function importCustomPaletteJson(input: unknown): {
   const rawColors = obj.colors as Record<string, unknown>
   const allowedSet = new Set<string>(CANONICAL_CUSTOM_PALETTE_FIELDS)
 
+  if (Object.keys(obj).some(key => !['format', 'version', 'colors', 'fonts'].includes(key))) {
+    return { success: false, error: 'Unsupported palette field' }
+  }
+  if ('fonts' in obj && validateFontSettings(obj.fonts).length) {
+    return { success: false, error: validateFontSettings(obj.fonts).join('; ') }
+  }
   // Validate fields
   for (const [key, value] of Object.entries(rawColors)) {
     if (!allowedSet.has(key)) {
@@ -119,7 +129,7 @@ export function importCustomPaletteJson(input: unknown): {
   }
 
   // Build normalized palette: any missing canonical fields fall back to normalized defaults
-  const normalized = normalizeCustomThemeColors(rawColors as Partial<CustomThemeColors>)
+  const normalized = normalizeCustomThemeColors({ ...rawColors as Partial<CustomThemeColors>, fonts: normalizeFontSettings(obj.fonts) })
 
   return {
     success: true,
@@ -193,6 +203,9 @@ export function presetToCustomPalette(preset: {
   const dockPlayIcon = isAccentLight ? '#000000' : '#ffffff'
 
   const customPalette: CustomThemeColors = {
+    uiPrimaryText: text, uiSecondaryText: isLight ? '#374151' : '#CBD5E1',
+    uiSectionText: text, uiMutedText: isLight ? '#4B5563' : mutedText,
+    uiLinkText: isLight ? '#1D4ED8' : '#38BDF8',
     // STAGE
     bgHex: bg,
     textHex: text,
