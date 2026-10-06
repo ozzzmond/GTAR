@@ -8,7 +8,7 @@ export type { ThemeMode, CustomThemeColors } from '../utils/backupSettings'
 export interface ThemeOption {
   id: ThemeMode
   name: string
-  subtitle: string
+  subtitle?: string
   bgHex: string
   surfaceHex: string
   accentHex: string
@@ -63,7 +63,6 @@ export const THEME_OPTIONS: ThemeOption[] = [
   {
     id: 'solarized-dark',
     name: 'Solarized Dark',
-    subtitle: 'Classic GTAR stage theme with rich teal & cyan contrasts',
     bgHex: '#002B36',
     surfaceHex: '#073642',
     accentHex: '#2AA198',
@@ -73,32 +72,50 @@ export const THEME_OPTIONS: ThemeOption[] = [
   {
     id: 'amber-stage',
     name: 'Amber Stage',
-    subtitle: 'Warm high-visibility amber & gold chords for live gigs',
-    bgHex: '#0d131a',
-    surfaceHex: '#151e28',
-    accentHex: '#B58900',
-    textHex: '#FDF6E3',
-    tag: 'POPULAR',
+    bgHex: '#181206',
+    surfaceHex: '#241c0c',
+    accentHex: '#F59E0B',
+    textHex: '#FFF8E7',
   },
   {
     id: 'oled-black',
     name: 'OLED Pure Black',
-    subtitle: 'Ultra-high contrast deep black for battery conservation and zero backlight bleed',
     bgHex: '#000000',
     surfaceHex: '#111111',
-    accentHex: '#10B981',
+    accentHex: '#38BDF8',
     textHex: '#FFFFFF',
-    tag: 'BATTERY',
   },
   {
     id: 'paper-light',
     name: 'Paper Cream Light',
-    subtitle: 'Warm soft paper with high-contrast dark text & burnt amber chords',
     bgHex: '#f4ecd8',
     surfaceHex: '#FFFDF7',
     accentHex: '#b45309',
     textHex: '#172033',
-    tag: 'DAYLIGHT',
+  },
+  {
+    id: 'crimson-stage',
+    name: 'Crimson Stage',
+    bgHex: '#120d0f',
+    surfaceHex: '#1f1418',
+    accentHex: '#E11D48',
+    textHex: '#FEE2E2',
+  },
+  {
+    id: 'azure-stage',
+    name: 'Azure Stage',
+    bgHex: '#0a1324',
+    surfaceHex: '#11203b',
+    accentHex: '#06B6D4',
+    textHex: '#E0F2FE',
+  },
+  {
+    id: 'e-ink-paper',
+    name: 'E-Ink Paper',
+    bgHex: '#ededed',
+    surfaceHex: '#f8f8f8',
+    accentHex: '#404040',
+    textHex: '#111111',
   },
 ]
 
@@ -266,9 +283,6 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-[#93A1A1] mt-0.5 line-clamp-1">
-                      {theme.subtitle}
-                    </p>
                   </div>
                 </div>
 
@@ -329,9 +343,6 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                       CUSTOM
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#93A1A1] mt-0.5 line-clamp-1">
-                    Personalized colors for background, lyrics, chords & section headers
-                  </p>
                 </div>
               </div>
 

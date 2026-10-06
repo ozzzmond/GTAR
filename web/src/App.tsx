@@ -543,6 +543,9 @@ function LibraryApp() {
       'theme-amber-stage',
       'theme-oled-black',
       'theme-paper-light',
+      'theme-crimson-stage',
+      'theme-azure-stage',
+      'theme-e-ink-paper',
       'theme-custom'
     )
     document.body.classList.add(`theme-${stageTheme}`)
