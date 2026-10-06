@@ -129,7 +129,7 @@ test('Standalone colors/fonts stay independent through factory customization, re
   let props = { isOpen: true, currentTheme: 'custom', customColors: standalone, onClose() {}, onApplyTheme: (mode, colors) => applied.push({ mode, colors }) }
   const reopen = async () => {
     const active = applied.at(-1)
-    if (active) props = { ...props, currentTheme: active.mode, customColors: active.colors }
+    if (active) props = { ...props, currentTheme: active.mode, customColors: JSON.parse(localStorage.getItem(SETTINGS_KEYS.customThemeColors)) }
     await render({ ...props, isOpen: false }); await render(props)
   }
   const save = () => click('[data-testid="theme-save-apply-btn"]')

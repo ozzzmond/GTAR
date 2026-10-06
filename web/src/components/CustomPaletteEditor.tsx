@@ -114,7 +114,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
       return
     }
     // Apply imported values to the editor preview only (stagedColors), not persistent yet
-    setStagedColors(result.colors)
+    setStagedColors({ ...result.colors, identity: stagedColors.identity ? { ...stagedColors.identity } : undefined })
     setJsonStatus({ message: 'Palette successfully imported into editor preview!', isError: false })
     setTimeout(() => {
       setJsonModalMode(null)
