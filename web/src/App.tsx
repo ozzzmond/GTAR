@@ -40,6 +40,7 @@ import {
   type ThemeMode,
   type CustomThemeColors,
   DEFAULT_CUSTOM_COLORS,
+  normalizeCustomThemeColors,
   applyCustomThemeStyles,
 } from './components/ThemeModal'
 import { BandSyncModal } from './components/BandSyncModal'
@@ -407,7 +408,7 @@ function LibraryApp() {
     try {
       const saved = localStorage.getItem(SETTINGS_KEYS.customThemeColors)
       if (saved) {
-        return { ...DEFAULT_CUSTOM_COLORS, ...JSON.parse(saved) }
+        return normalizeCustomThemeColors(JSON.parse(saved))
       }
     } catch (e) {
       console.error('Failed to load custom theme colors from localStorage', e)
@@ -456,7 +457,7 @@ function LibraryApp() {
     const reloadSettings = () => {
       const settings = readBackupSettings()
       if (settings.themeMode !== undefined) setStageTheme(settings.themeMode)
-      if (settings.customThemeColors !== undefined) setCustomThemeColors(settings.customThemeColors)
+      if (settings.customThemeColors !== undefined) setCustomThemeColors(normalizeCustomThemeColors(settings.customThemeColors))
       if (settings.stageSettings?.fontStyle !== undefined) setFontStyle(settings.stageSettings.fontStyle)
       if (settings.stageSettings?.isTwoColumn !== undefined) setIsTwoColumn(settings.stageSettings.isTwoColumn)
     }

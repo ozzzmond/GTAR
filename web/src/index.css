@@ -534,21 +534,148 @@ body.theme-paper-light .stage-tab-text {
 }
 
 /* ========================================================================== */
-/* Custom Stage Theme Palette                                                 */
+/* Custom Stage Theme Palette V2 (Full-Theme Customization)                   */
 /* ========================================================================== */
 body.theme-custom {
   background-color: var(--custom-stage-bg, #121820) !important;
   color: var(--custom-stage-text, #F1F5F9) !important;
 }
+
+/* 1. APP CHROME: Top Header Shell & Main Toolbar */
 body.theme-custom header,
-body.theme-custom .bg-\[\#073642\] {
+body.theme-custom header.bg-\[\#073642\],
+body.theme-custom header [class*="bg-[#073642]"] {
+  background-color: var(--custom-chrome-header-bg, var(--custom-stage-surface, #1A222D)) !important;
+}
+
+body.theme-custom header .bg-\[\#002B36\]\/50,
+body.theme-custom header [class*="bg-[#002B36]"] {
+  background-color: var(--custom-chrome-toolbar-bg, var(--custom-stage-bg, #121820)) !important;
+}
+
+/* 2. APP CHROME: Search Bar & Search Border */
+body.theme-custom .pill-search {
+  background-color: var(--custom-chrome-search-bg, var(--custom-stage-bg, #121820)) !important;
+  border-color: var(--custom-chrome-search-border, var(--custom-stage-border, #2A3644)) !important;
+}
+body.theme-custom .pill-search input {
+  color: var(--custom-stage-text, #F1F5F9) !important;
+}
+body.theme-custom .pill-search input::placeholder {
+  color: var(--custom-chrome-icon, #94A3B8) !important;
+  opacity: 0.7;
+}
+
+/* 3. APP CHROME: Filter / Sort Toolbar */
+body.theme-custom .shadow-sm.bg-\[\#073642\]\/70,
+body.theme-custom [class*="rounded-2xl"][class*="bg-[#073642]"] {
+  background-color: var(--custom-chrome-filter-bg, var(--custom-stage-surface, #1A222D)) !important;
+  border-color: var(--custom-card-border, var(--custom-stage-border, #2A3644)) !important;
+}
+
+/* 4. APP CHROME: Action Icons & Toolbar Icons */
+body.theme-custom .toolbar-icon-btn,
+body.theme-custom header .toolbar-icon-btn {
+  color: var(--custom-chrome-icon, #94A3B8) !important;
+}
+body.theme-custom .toolbar-icon-btn:hover,
+body.theme-custom .toolbar-icon-btn:focus-visible {
+  color: var(--custom-control-accent, #F59E0B) !important;
+}
+body.theme-custom .toolbar-icon-btn.active {
+  color: var(--custom-control-accent, #F59E0B) !important;
+}
+body.theme-custom .toolbar-icon-btn .active-dot {
+  background-color: var(--custom-control-accent, #F59E0B) !important;
+}
+
+/* 5. CARDS & BOXES: Setlist & Song Cards */
+body.theme-custom [data-testid^="setlist-card-"] [class*="bg-[#073642]"]:not([class*="border-[#2AA198]"]),
+body.theme-custom [data-testid^="setlist-card-"] [class*="rounded-xl"]:not([class*="border-[#2AA198]"]) {
+  background-color: var(--custom-card-setlist-bg, var(--custom-stage-surface, #1A222D)) !important;
+}
+
+body.theme-custom [data-testid^="song-card-"] [class*="bg-[#073642]"]:not([class*="border-[#2AA198]"]),
+body.theme-custom [data-testid^="song-card-"] [class*="rounded-xl"]:not([class*="border-[#2AA198]"]) {
+  background-color: var(--custom-card-song-bg, var(--custom-stage-surface, #1A222D)) !important;
+}
+
+/* General surfaces fallback */
+body.theme-custom .bg-\[\#073642\],
+body.theme-custom [class*="bg-[#073642]"] {
   background-color: var(--custom-stage-surface, #1A222D) !important;
 }
-body.theme-custom .bg-\[\#002B36\] {
+body.theme-custom .bg-\[\#002B36\],
+body.theme-custom [class*="bg-[#002B36]"] {
   background-color: var(--custom-stage-bg, #121820) !important;
 }
-body.theme-custom .border-\[\#1A4A55\] {
-  border-color: var(--custom-stage-border, #2A3644) !important;
+
+/* Card & Surface Borders */
+body.theme-custom .border-\[\#1A4A55\],
+body.theme-custom [class*="border-[#1A4A55]"] {
+  border-color: var(--custom-card-border, var(--custom-stage-border, #2A3644)) !important;
+}
+
+/* 6. CARDS & BOXES: Selected Card State */
+body.theme-custom [data-testid^="song-card-"] [class*="border-[#2AA198]"],
+body.theme-custom [data-testid^="setlist-card-"] [class*="border-[#2AA198]"],
+body.theme-custom [class*="border-[#2AA198]"][class*="bg-[#073642]"],
+body.theme-custom [class*="ring-[#2AA198]"] {
+  background-color: var(--custom-card-selected-bg, #22313F) !important;
+  border-color: var(--custom-card-selected-border, #38BDF8) !important;
+}
+
+/* 7. CONTROLS: Buttons */
+body.theme-custom button.bg-amber-500,
+body.theme-custom button.hover\:bg-amber-600 {
+  background-color: var(--custom-control-button-bg, #24303E) !important;
+  color: var(--custom-control-button-text, #F1F5F9) !important;
+}
+body.theme-custom .view-toggle-btn.active {
+  background-color: var(--custom-control-accent, #F59E0B) !important;
+  border-color: var(--custom-control-accent, #F59E0B) !important;
+  color: var(--custom-control-button-text, #000000) !important;
+}
+
+/* 8. CONTROLS: Inputs & Selects Dropdowns */
+body.theme-custom select,
+body.theme-custom select.bg-\[\#002B36\],
+body.theme-custom input:not([type="checkbox"]):not([type="color"]):not(.pill-search input),
+body.theme-custom textarea {
+  background-color: var(--custom-control-input-bg, var(--custom-stage-bg, #121820)) !important;
+  color: var(--custom-control-input-text, var(--custom-stage-text, #F1F5F9)) !important;
+  border-color: var(--custom-control-input-border, var(--custom-stage-border, #2A3644)) !important;
+}
+
+/* 9. CONTROLS: Accent & Focus State */
+body.theme-custom input:focus,
+body.theme-custom select:focus,
+body.theme-custom textarea:focus {
+  border-color: var(--custom-control-accent, #F59E0B) !important;
+}
+
+/* 10. STAGE FLOATING CONTROLS: Dock & Buttons */
+body.theme-custom [data-stage-dock="true"] {
+  background-color: var(--custom-dock-bg, rgba(26, 34, 45, 0.95)) !important;
+  border-color: var(--custom-dock-border, #2A3644) !important;
+}
+
+body.theme-custom [data-stage-dock="true"] button[aria-label="Jump to previous section"],
+body.theme-custom [data-stage-dock="true"] button[aria-label="Jump to next section"] {
+  background-color: var(--custom-dock-btn-bg, #121820) !important;
+  color: var(--custom-dock-btn-icon, #F1F5F9) !important;
+  border-color: var(--custom-dock-border, #2A3644) !important;
+}
+
+body.theme-custom [data-stage-dock="true"] button[aria-label*="autoscroll"]:not([aria-label*="Pause"]) {
+  background-color: var(--custom-dock-play-bg, #F59E0B) !important;
+  color: var(--custom-dock-play-icon, #000000) !important;
+  border-color: var(--custom-dock-play-bg, #F59E0B) !important;
+}
+
+body.theme-custom [data-stage-dock="true"] button:disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
 }
 
 /* Custom Lyrics & Text */
