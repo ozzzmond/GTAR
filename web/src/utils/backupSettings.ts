@@ -21,7 +21,44 @@ export const THEME_MODES = [
 export const FONT_STYLES = ['mono', 'sans', 'serif'] as const
 export type ThemeMode = typeof THEME_MODES[number]
 export type SongFontStyleOption = typeof FONT_STYLES[number]
-export interface CustomThemeColors { bgHex: string; textHex: string; chordHex: string; sectionHex: string }
+export interface CustomThemeColors {
+  // STAGE
+  bgHex: string
+  textHex: string
+  chordHex: string
+  sectionHex: string
+
+  // APP_CHROME
+  headerBg?: string
+  toolbarBg?: string
+  searchBg?: string
+  searchBorder?: string
+  filterBarBg?: string
+  iconColor?: string
+
+  // CARDS_AND_BOXES
+  setlistCardBg?: string
+  songCardBg?: string
+  cardBorder?: string
+  selectedCardBg?: string
+  selectedCardBorder?: string
+
+  // CONTROLS
+  buttonBg?: string
+  buttonText?: string
+  inputBg?: string
+  inputText?: string
+  inputBorder?: string
+  accentColor?: string
+
+  // STAGE_FLOATING_CONTROLS
+  dockBg?: string
+  dockBorder?: string
+  dockBtnBg?: string
+  dockBtnIcon?: string
+  dockPlayBg?: string
+  dockPlayIcon?: string
+}
 export interface BackupSettings {
   themeMode?: ThemeMode
   customThemeColors?: CustomThemeColors
@@ -35,12 +72,25 @@ export function validateBackupSettings(data: Record<string, unknown>): string[] 
     const colors = data.customThemeColors
     if (!colors || typeof colors !== 'object' || Array.isArray(colors)) errors.push('customThemeColors: must be a color object')
     else {
-      const fields = ['bgHex', 'textHex', 'chordHex', 'sectionHex']
-      for (const field of fields) {
+      const requiredFields = ['bgHex', 'textHex', 'chordHex', 'sectionHex']
+      const optionalFields = [
+        'headerBg', 'toolbarBg', 'searchBg', 'searchBorder', 'filterBarBg', 'iconColor',
+        'setlistCardBg', 'songCardBg', 'cardBorder', 'selectedCardBg', 'selectedCardBorder',
+        'buttonBg', 'buttonText', 'inputBg', 'inputText', 'inputBorder', 'accentColor',
+        'dockBg', 'dockBorder', 'dockBtnBg', 'dockBtnIcon', 'dockPlayBg', 'dockPlayIcon',
+      ]
+      const allowedFields = new Set([...requiredFields, ...optionalFields])
+      for (const field of requiredFields) {
         const color = (colors as Record<string, unknown>)[field]
         if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) errors.push(`customThemeColors.${field}: expected #RRGGBB`)
       }
-      for (const field of Object.keys(colors)) if (!fields.includes(field)) errors.push(`customThemeColors.${field}: unknown color setting`)
+      for (const [field, color] of Object.entries(colors)) {
+        if (!allowedFields.has(field)) {
+          errors.push(`customThemeColors.${field}: unknown color setting`)
+        } else if (optionalFields.includes(field) && (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color))) {
+          errors.push(`customThemeColors.${field}: expected #RRGGBB`)
+        }
+      }
     }
   }
   if ('stageSettings' in data) {
