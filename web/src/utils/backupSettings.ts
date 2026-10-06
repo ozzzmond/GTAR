@@ -1,6 +1,7 @@
 import { validateFontSettings, type FontSettings } from './customFonts'
 export const SETTINGS_KEYS = {
   themeMode: 'gtar_theme_store',
+  factoryThemeOverrides: 'gtar_factory_theme_overrides',
   customThemeColors: 'gtar_custom_theme_colors',
   fontStyle: 'gtar_font_style_store',
   isTwoColumn: 'gtar_twocolumn_store',
@@ -22,7 +23,22 @@ export const THEME_MODES = [
 export const FONT_STYLES = ['mono', 'sans', 'serif'] as const
 export type ThemeMode = typeof THEME_MODES[number]
 export type SongFontStyleOption = typeof FONT_STYLES[number]
+export interface CustomThemeIdentity { factoryId: Exclude<ThemeMode, 'custom'>; displayName: string }
+export const CUSTOM_THEME_NAME_MAX_LENGTH = 80
+export function validateCustomThemeIdentity(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ['Theme identity must be an object']
+  const identity = value as Record<string, unknown>
+  if (Object.keys(identity).some(key => !['factoryId', 'displayName'].includes(key))) return ['Unsupported theme identity field']
+  if (identity.factoryId === 'custom' || !THEME_MODES.includes(identity.factoryId as ThemeMode)) return ['Unsupported factory theme']
+  if (typeof identity.displayName !== 'string' || !identity.displayName.trim() || identity.displayName.trim().length > CUSTOM_THEME_NAME_MAX_LENGTH) return ['Custom name must contain 1–80 characters']
+  return []
+}
+export type FactoryThemeOverrides = Partial<Record<Exclude<ThemeMode, 'custom'>, CustomThemeColors>>
 export interface CustomThemeColors {
+  identity?: CustomThemeIdentity
+  actionColor?: string
+  selectionColor?: string
+  sectionIconColor?: string
   fonts?: FontSettings
   uiPrimaryText?: string
   uiSecondaryText?: string
@@ -70,6 +86,7 @@ export interface CustomThemeColors {
   dockPlayIcon?: string
 }
 export interface BackupSettings {
+  factoryThemeOverrides?: FactoryThemeOverrides
   themeMode?: ThemeMode
   customThemeColors?: CustomThemeColors
   stageSettings?: { fontStyle?: SongFontStyleOption; fontSizePx?: number; isTwoColumn?: boolean; scrollSpeed?: number }
@@ -77,6 +94,15 @@ export interface BackupSettings {
 
 export function validateBackupSettings(data: Record<string, unknown>): string[] {
   const errors: string[] = []
+  if ('factoryThemeOverrides' in data) {
+    const overrides = data.factoryThemeOverrides
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) errors.push('factoryThemeOverrides: must be an object')
+    else for (const [id, palette] of Object.entries(overrides)) {
+      const identity = (palette as CustomThemeColors | null)?.identity
+      if (id === 'custom' || !THEME_MODES.includes(id as ThemeMode) || identity?.factoryId !== id) errors.push('factoryThemeOverrides: invalid factory slot')
+      errors.push(...validateBackupSettings({ customThemeColors: palette }))
+    }
+  }
   if ('themeMode' in data && !THEME_MODES.includes(data.themeMode as ThemeMode)) errors.push('themeMode: unsupported theme')
   if ('customThemeColors' in data) {
     const colors = data.customThemeColors
@@ -89,6 +115,7 @@ export function validateBackupSettings(data: Record<string, unknown>): string[] 
         'setlistCardBg', 'songCardBg', 'cardBorder', 'selectedCardBg', 'selectedCardBorder',
         'buttonBg', 'buttonText', 'inputBg', 'inputText', 'inputBorder', 'accentColor',
         'dockBg', 'dockBorder', 'dockBtnBg', 'dockBtnIcon', 'dockPlayBg', 'dockPlayIcon',
+        'actionColor', 'selectionColor', 'sectionIconColor',
         'uiPrimaryText', 'uiSecondaryText', 'uiSectionText', 'uiMutedText', 'uiLinkText',
       ]
       const allowedFields = new Set([...requiredFields, ...optionalFields])
@@ -97,7 +124,9 @@ export function validateBackupSettings(data: Record<string, unknown>): string[] 
         if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) errors.push(`customThemeColors.${field}: expected #RRGGBB`)
       }
       for (const [field, color] of Object.entries(colors)) {
-        if (field === 'fonts') {
+        if (field === 'identity') {
+          errors.push(...validateCustomThemeIdentity(color))
+        } else if (field === 'fonts') {
           errors.push(...validateFontSettings(color))
         } else if (!allowedFields.has(field)) {
           errors.push(`customThemeColors.${field}: unknown color setting`)
@@ -130,6 +159,8 @@ export function readBackupSettings(storage: Pick<Storage, 'getItem'> = localStor
   const colors = storage.getItem(SETTINGS_KEYS.customThemeColors)
   if (theme !== null) data.themeMode = theme
   if (colors !== null) data.customThemeColors = JSON.parse(colors)
+  const overrides = storage.getItem(SETTINGS_KEYS.factoryThemeOverrides)
+  if (overrides !== null) data.factoryThemeOverrides = JSON.parse(overrides)
   const stage: Record<string, unknown> = {}
   for (const key of ['fontStyle', 'fontSizePx', 'scrollSpeed', 'isTwoColumn'] as const) {
     const value = storage.getItem(SETTINGS_KEYS[key])
@@ -145,6 +176,7 @@ export function restoreBackupSettings(settings: BackupSettings, storage: Pick<St
   // Validate the whole object first; never write a valid prefix of malformed settings.
   const errors = validateBackupSettings(settings as Record<string, unknown>)
   if (errors.length) throw new Error(errors.join('\n'))
+  if (settings.factoryThemeOverrides !== undefined) storage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(settings.factoryThemeOverrides))
   if (settings.themeMode !== undefined) storage.setItem(SETTINGS_KEYS.themeMode, settings.themeMode)
   if (settings.customThemeColors !== undefined) storage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(settings.customThemeColors))
   for (const [key, value] of Object.entries(settings.stageSettings ?? {})) {

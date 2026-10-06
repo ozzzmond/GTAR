@@ -6,11 +6,11 @@ const path = require('node:path')
 const webDir = path.resolve(__dirname, '..')
 
 // 1. VERSION ALIGNMENT
-test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3f and prod untouched', () => {
+test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3g and prod untouched', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
   assert.ok(
-    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.3f';"),
-    'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.3f'
+    gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.3g';"),
+    'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.3g'
   )
   assert.ok(
     gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"),
@@ -18,14 +18,14 @@ test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.3f and prod untou
   )
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3f', 'package.json must be 1.0.123-dev.3f')
+  assert.equal(pkgJson.version, '1.0.123-dev.3g', 'package.json must be 1.0.123-dev.3g')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3f', 'package-lock.json root must be 1.0.123-dev.3f')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3f', 'package-lock.json packages[""] must be 1.0.123-dev.3f')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3g', 'package-lock.json root must be 1.0.123-dev.3g')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3g', 'package-lock.json packages[""] must be 1.0.123-dev.3g')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3f'), 'authCore.ts must reference v1.0.123-dev.3f')
+  assert.ok(authCore.includes('v1.0.123-dev.3g'), 'authCore.ts must reference v1.0.123-dev.3g')
 })
 
 // 2. PAPER CREAM LIGHT READABILITY & CONTRAST

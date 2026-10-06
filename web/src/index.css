@@ -931,3 +931,35 @@ body.theme-custom header .font-mono {
 body.theme-custom .group:hover .ui-primary-text[class*="group-hover:text"] {
   color: var(--custom-uiLinkText, #38BDF8) !important;
 }
+
+/* DEV.3g: explicit roles leave destructive, auth, health and environment colors intact. */
+body.theme-custom .ui-action-text { color: var(--custom-actionColor, #2AA198) !important; }
+body.theme-custom .ui-section-icon { color: var(--custom-sectionIconColor, #2AA198) !important; }
+body.theme-custom .ui-selection-card {
+  border-color: var(--custom-selectionColor, #2AA198) !important;
+  --tw-ring-color: var(--custom-selectionColor, #2AA198);
+}
+body.theme-custom .ui-selection-indicator {
+  background-color: var(--custom-selectionColor, #2AA198) !important;
+  border-color: var(--custom-selectionColor, #2AA198) !important;
+  /* Paired legible foreground is derived when the selection token changes. */
+  color: var(--custom-selection-foreground, #000000) !important;
+}
+body.theme-custom .ui-action-text[class*="border-[#2AA198]"] {
+  border-color: var(--custom-actionColor, #2AA198) !important;
+}
+body.theme-custom .ui-action-text:hover {
+  background-color: var(--custom-control-button-bg, #24303E) !important;
+}
+body.theme-custom :is(.theme-studio, .songbook-ui, .setlist-ui) :is(button, input, select, textarea, label, .font-mono) {
+  font-family: var(--custom-font-ui, var(--font-stage-sans));
+}
+body.theme-custom .theme-studio .ui-primary-text { color: var(--custom-uiPrimaryText, #F1F5F9) !important; }
+body.theme-custom .theme-studio .ui-muted-text { color: var(--custom-uiMutedText, #94A3B8) !important; }
+body.theme-custom .theme-studio .ui-section-text { color: var(--custom-uiSectionText, #F1F5F9) !important; }
+body.theme-custom .theme-studio .ui-button {
+  background-color: var(--custom-control-button-bg, #24303E) !important;
+  color: var(--custom-control-button-text, #F1F5F9) !important;
+  border-color: var(--custom-control-input-border, #2A3644) !important;
+}
+body.theme-custom .theme-studio .ui-button :is(span, svg) { color: inherit !important; }

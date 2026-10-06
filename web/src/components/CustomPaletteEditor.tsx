@@ -11,7 +11,7 @@ import {
   Palette,
   AlertCircle,
 } from 'lucide-react'
-import type { CustomThemeColors } from '../utils/backupSettings'
+import { validateCustomThemeIdentity, CUSTOM_THEME_NAME_MAX_LENGTH, type CustomThemeColors } from '../utils/backupSettings'
 import {
   DEFAULT_CUSTOM_COLORS,
   normalizeCustomThemeColors,
@@ -62,18 +62,18 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
   if (!isOpen) return null
 
   const handleSaveAndApply = () => {
-    const errors = validateFontSettings(stagedColors.fonts || {})
+    const errors = [...validateFontSettings(stagedColors.fonts || {}), ...(stagedColors.identity ? validateCustomThemeIdentity(stagedColors.identity) : [])]
     if (errors.length) { setJsonStatus({ message: errors.join('; '), isError: true }); return }
-    onSaveAndApply(stagedColors)
+    onSaveAndApply(normalizeCustomThemeColors(stagedColors))
     onClose()
   }
 
   const handleResetDefaults = () => {
-    setStagedColors({ ...DEFAULT_CUSTOM_COLORS })
+    setStagedColors({ ...DEFAULT_CUSTOM_COLORS, ...(stagedColors.identity ? { identity: { ...stagedColors.identity } } : {}) })
     setJsonStatus(null)
   }
 
-  const updateColor = (key: Exclude<keyof CustomThemeColors, 'fonts'>, value: string) => {
+  const updateColor = (key: Exclude<keyof CustomThemeColors, 'fonts' | 'identity'>, value: string) => {
     setStagedColors((prev) => ({
       ...prev,
       [key]: value,
@@ -127,7 +127,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
   return (
     <div
       data-testid="custom-palette-editor-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-sm animate-fade-in select-none"
+      className="theme-studio fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-sm animate-fade-in select-none"
     >
       <div
         data-testid="custom-palette-editor-window"
@@ -141,12 +141,12 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-bold text-[#FDF6E3]">Custom Palette Editor</h2>
+                <h2 className="text-sm sm:text-base font-bold ui-primary-text text-[#FDF6E3]">Custom Palette Editor</h2>
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#002B36] text-amber-400 border border-[#1A4A55]">
                   V2
                 </span>
               </div>
-              <p className="text-[11px] text-[#93A1A1]">Fine-grained performance colors & responsive dock tuning</p>
+              <p className="text-[11px] ui-muted-text text-[#93A1A1]">Fine-grained performance colors & responsive dock tuning</p>
             </div>
           </div>
 
@@ -156,7 +156,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               data-testid="export-palette-btn"
               onClick={handleOpenExport}
               title="Export palette as JSON"
-              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#EEE8D5] hover:text-[#FDF6E3] bg-[#002B36]/70 hover:bg-[#002B36] border border-[#1A4A55] flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] bg-[#002B36]/70 hover:bg-[#002B36] border border-[#1A4A55] flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <Download className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden sm:inline">Export JSON</span>
@@ -166,7 +166,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               data-testid="import-palette-btn"
               onClick={handleOpenImport}
               title="Import palette from JSON"
-              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#EEE8D5] hover:text-[#FDF6E3] bg-[#002B36]/70 hover:bg-[#002B36] border border-[#1A4A55] flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] bg-[#002B36]/70 hover:bg-[#002B36] border border-[#1A4A55] flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <Upload className="w-3.5 h-3.5 text-[#2AA198]" />
               <span className="hidden sm:inline">Import JSON</span>
@@ -176,7 +176,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               data-testid="close-palette-editor-btn"
               onClick={onClose}
               title="Close without saving"
-              className="p-1.5 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer ml-1"
+              className="p-1.5 rounded-lg ui-muted-text text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] transition-colors cursor-pointer ml-1"
             >
               <X className="w-5 h-5" />
             </button>
@@ -201,7 +201,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'bg-[#2AA198] text-[#002B36] shadow-md ring-1 ring-[#2AA198]/60 font-bold'
-                      : 'bg-[#073642]/80 hover:bg-[#073642] text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55]/60'
+                      : 'bg-[#073642]/80 hover:bg-[#073642] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55]/60'
                   }`}
                 >
                   <IconComponent className="w-3.5 h-3.5" />
@@ -216,7 +216,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             data-testid="reset-palette-defaults-btn"
             onClick={handleResetDefaults}
             title="Reset palette to default values"
-            className="px-2.5 py-1.5 rounded-xl text-[11px] font-mono text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] border border-[#1A4A55]/60 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+            className="px-2.5 py-1.5 rounded-xl text-[11px] font-mono ui-muted-text text-[#93A1A1] hover:text-[#FDF6E3] hover:bg-[#002B36] border border-[#1A4A55]/60 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reset Defaults</span>
@@ -231,13 +231,16 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             className="md:col-span-7 p-4 sm:p-5 overflow-y-auto space-y-3 custom-scrollbar border-b md:border-b-0 md:border-r border-[#1A4A55]/60"
           >
             <div className="flex items-center justify-between pb-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#93A1A1]">
+              <span className="text-xs font-bold uppercase tracking-wider ui-muted-text text-[#93A1A1]">
                 Category: {currentGroupDef.label} ({currentGroupDef.fields.length} controls)
               </span>
             </div>
 
+            {stagedColors.identity && <label className="ui-primary-text block text-xs">Custom theme name
+              <input aria-label="Custom theme name" maxLength={CUSTOM_THEME_NAME_MAX_LENGTH} className="block w-full p-2 border rounded-lg mt-1" value={stagedColors.identity.displayName} onChange={e => setStagedColors(prev => ({ ...prev, identity: { ...prev.identity!, displayName: e.target.value } }))} />
+            </label>}
             {activeGroup === 'typography' && (
-              <div data-testid="font-settings" className="space-y-3 text-xs text-[#EEE8D5]">
+              <div data-testid="font-settings" className="space-y-3 text-xs ui-primary-text text-[#EEE8D5]">
                 {FONT_TARGETS.map(target => {
                   const choice = stagedColors.fonts?.[target] || { source: 'system' as const }
                   const update = (next: FontChoice) => setStagedColors(prev => ({ ...prev, fonts: { ...prev.fonts, [target]: next } }))
@@ -272,10 +275,10 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <span className="text-xs font-bold text-[#FDF6E3] block leading-tight">
+                        <span className="text-xs font-bold ui-primary-text text-[#FDF6E3] block leading-tight">
                           {item.label}
                         </span>
-                        <span className="text-[10px] text-[#93A1A1] block mt-0.5 truncate max-w-[200px] sm:max-w-xs">
+                        <span className="text-[10px] ui-muted-text text-[#93A1A1] block mt-0.5 truncate max-w-[200px] sm:max-w-xs">
                           {item.desc}
                         </span>
                       </div>
@@ -306,7 +309,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                             }
                             updateColor(item.key, val)
                           }}
-                          className="w-20 px-2 py-1.5 bg-[#073642] border border-[#1A4A55] rounded-xl text-xs font-mono text-[#FDF6E3] focus:outline-none focus:border-amber-400"
+                          className="w-20 px-2 py-1.5 bg-[#073642] border border-[#1A4A55] rounded-xl text-xs font-mono ui-primary-text text-[#FDF6E3] focus:outline-none focus:border-amber-400"
                           maxLength={7}
                           placeholder="#000000"
                         />
@@ -315,7 +318,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
 
                     {/* Quick Swatches Row */}
                     <div className="flex items-center gap-1.5 pt-0.5">
-                      <span className="text-[10px] font-mono text-[#93A1A1] mr-0.5">Quick:</span>
+                      <span className="text-[10px] font-mono ui-muted-text text-[#93A1A1] mr-0.5">Quick:</span>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {item.swatches.map((hex) => {
                           const isMatch = value.toLowerCase() === hex.toLowerCase()
@@ -348,7 +351,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             className="md:col-span-5 p-4 sm:p-5 overflow-y-auto space-y-3.5 bg-[#002B36]/30 custom-scrollbar flex flex-col justify-start"
           >
             <div className="flex items-center justify-between pb-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#93A1A1] flex items-center gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider ui-muted-text text-[#93A1A1] flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-amber-400" />
                 Live Preview
               </span>
@@ -517,6 +520,11 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               {/* CONTROLS PREVIEW */}
               {activeGroup === 'controls' && (
                 <div className="space-y-3">
+                  <div data-testid="semantic-accents-preview" className="p-3 rounded-xl space-y-2" style={{ backgroundColor: stagedColors.songCardBg, fontFamily: fontStack(normalizeFontSettings(stagedColors.fonts).ui) }}>
+                    <p data-testid="section-icon-preview" style={{ color: stagedColors.sectionIconColor }}>♫ Songs Library · Setlists</p>
+                    <p data-testid="action-color-preview" style={{ color: stagedColors.actionColor }}>▶ Play · Select · Hide · Import · Manage</p>
+                    <p data-testid="selection-color-preview" style={{ color: stagedColors.selectionColor }}>✓ Selected song</p>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -633,7 +641,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             type="button"
             data-testid="cancel-palette-editor-btn"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
+            className="px-4 py-2 rounded-xl border border-[#1A4A55] bg-[#073642]/60 hover:bg-[#073642] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] font-medium text-xs sm:text-sm cursor-pointer transition-colors"
           >
             Cancel
           </button>
@@ -663,20 +671,20 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                 ) : (
                   <Upload className="w-4 h-4 text-[#2AA198]" />
                 )}
-                <h3 className="text-sm font-bold text-[#FDF6E3]">
+                <h3 className="text-sm font-bold ui-primary-text text-[#FDF6E3]">
                   {jsonModalMode === 'export' ? 'Export Custom Palette JSON' : 'Import Custom Palette JSON'}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setJsonModalMode(null)}
-                className="p-1 rounded-lg text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                className="p-1 rounded-lg ui-muted-text text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-[11px] text-[#93A1A1]">
+            <p className="text-[11px] ui-muted-text text-[#93A1A1]">
               {jsonModalMode === 'export'
                 ? 'Copy this JSON to backup or share your custom palette colors.'
                 : 'Paste custom palette JSON. Imported colors will apply to preview until saved.'}
@@ -692,7 +700,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               readOnly={jsonModalMode === 'export'}
               rows={10}
               placeholder='{\n  "format": "gtar-custom-palette",\n  "version": 2,\n  "colors": { ... }\n}'
-              className="w-full p-3 rounded-xl bg-[#073642] border border-[#1A4A55] text-xs font-mono text-[#FDF6E3] focus:outline-none focus:border-[#2AA198] custom-scrollbar"
+              className="w-full p-3 rounded-xl bg-[#073642] border border-[#1A4A55] text-xs font-mono ui-primary-text text-[#FDF6E3] focus:outline-none focus:border-[#2AA198] custom-scrollbar"
             />
 
             {jsonStatus && (
@@ -712,7 +720,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               <button
                 type="button"
                 onClick={() => setJsonModalMode(null)}
-                className="px-3 py-1.5 rounded-xl border border-[#1A4A55] bg-[#073642] text-xs font-medium text-[#EEE8D5] hover:text-[#FDF6E3] cursor-pointer"
+                className="px-3 py-1.5 rounded-xl border border-[#1A4A55] bg-[#073642] text-xs font-medium ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] cursor-pointer"
               >
                 Close
               </button>

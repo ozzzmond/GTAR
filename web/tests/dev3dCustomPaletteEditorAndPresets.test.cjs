@@ -40,20 +40,20 @@ const {
 const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 
 // =============================================================================
-// 1. VERSION CHECK (1.0.123-dev.3f)
+// 1. VERSION CHECK (1.0.123-dev.3g)
 // =============================================================================
-test('DEV3D_VERSION: Canonical dev version identity is 1.0.123-dev.3f', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3f')
+test('DEV3D_VERSION: Canonical dev version identity is 1.0.123-dev.3g', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3g')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3f')
+  assert.equal(pkgJson.version, '1.0.123-dev.3g')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3f')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3f')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3g')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3g')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3f'))
+  assert.ok(authCore.includes('v1.0.123-dev.3g'))
 })
 
 // =============================================================================
@@ -118,7 +118,7 @@ test('DEV3D_CATEGORY_NAV: All 5 categories accessible, stageControls reachable a
 
   // Verify all 27 canonical fields are accounted for across the 5 categories
   const totalFields = PALETTE_GROUPS.reduce((acc, g) => acc + g.fields.length, 0)
-  assert.equal(totalFields, 35)
+  assert.equal(totalFields, 38)
 })
 
 // =============================================================================

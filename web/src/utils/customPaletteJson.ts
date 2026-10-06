@@ -1,5 +1,5 @@
 import { validateFontSettings, normalizeFontSettings, type FontSettings } from './customFonts'
-import type { CustomThemeColors } from './backupSettings'
+import { validateCustomThemeIdentity, type CustomThemeIdentity, type CustomThemeColors } from './backupSettings'
 import { DEFAULT_CUSTOM_COLORS, normalizeCustomThemeColors } from '../components/ThemeModal'
 
 export const CUSTOM_PALETTE_JSON_FORMAT = 'gtar-custom-palette' as const
@@ -8,11 +8,13 @@ export const CUSTOM_PALETTE_JSON_VERSION = 2 as const
 export interface CustomPaletteJsonPayload {
   format: typeof CUSTOM_PALETTE_JSON_FORMAT
   version: typeof CUSTOM_PALETTE_JSON_VERSION
+  identity?: CustomThemeIdentity
   fonts?: FontSettings
   colors: Record<string, string>
 }
 
 export const CANONICAL_CUSTOM_PALETTE_FIELDS = [
+  'actionColor', 'selectionColor', 'sectionIconColor',
   'uiPrimaryText', 'uiSecondaryText', 'uiSectionText', 'uiMutedText', 'uiLinkText',
   // STAGE (4)
   'bgHex',
@@ -68,6 +70,7 @@ export function exportCustomPaletteJson(rawColors: CustomThemeColors): CustomPal
     format: CUSTOM_PALETTE_JSON_FORMAT,
     version: CUSTOM_PALETTE_JSON_VERSION,
     colors,
+    ...(normalized.identity ? { identity: { ...normalized.identity, displayName: normalized.identity.displayName.trim() } } : {}),
     fonts: normalizeFontSettings(normalized.fonts),
   }
 }
@@ -113,9 +116,10 @@ export function importCustomPaletteJson(input: unknown): {
   const rawColors = obj.colors as Record<string, unknown>
   const allowedSet = new Set<string>(CANONICAL_CUSTOM_PALETTE_FIELDS)
 
-  if (Object.keys(obj).some(key => !['format', 'version', 'colors', 'fonts'].includes(key))) {
+  if (Object.keys(obj).some(key => !['format', 'version', 'colors', 'fonts', 'identity'].includes(key))) {
     return { success: false, error: 'Unsupported palette field' }
   }
+  if ('identity' in obj && validateCustomThemeIdentity(obj.identity).length) return { success: false, error: validateCustomThemeIdentity(obj.identity).join('; ') }
   if ('fonts' in obj && validateFontSettings(obj.fonts).length) {
     return { success: false, error: validateFontSettings(obj.fonts).join('; ') }
   }
@@ -130,7 +134,7 @@ export function importCustomPaletteJson(input: unknown): {
   }
 
   // Build normalized palette: any missing canonical fields fall back to normalized defaults
-  const normalized = normalizeCustomThemeColors({ ...rawColors as Partial<CustomThemeColors>, fonts: normalizeFontSettings(obj.fonts) })
+  const normalized = normalizeCustomThemeColors({ ...rawColors as Partial<CustomThemeColors>, fonts: normalizeFontSettings(obj.fonts), ...(obj.identity ? { identity: obj.identity as CustomThemeIdentity } : {}) })
 
   return {
     success: true,
