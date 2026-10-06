@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Settings,
   Eye,
@@ -36,52 +36,47 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
   onSelectFontStyle,
   isTwoColumn,
   onToggleTwoColumn,
-  onOpenStageTools: _onOpenStageTools,
-  onToggleTheme: _onToggleTheme,
-  onExportAllData: _onExportAllData,
-  onOpenBackupRestoreModal: _onOpenBackupRestoreModal,
   onInstallApp,
 }) => {
   const [keepScreenAwake, setKeepScreenAwake] = useState(false)
-  const [wakeLockSentinel, setWakeLockSentinel] = useState<WakeLockSentinel | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 3000)
+  }, [])
+
   useEffect(() => {
-    if (!keepScreenAwake) {
-      if (wakeLockSentinel) {
-        wakeLockSentinel.release().catch(() => {})
-        setWakeLockSentinel(null)
-      }
-      return
-    }
+    if (!keepScreenAwake) return
+    let active = true
+    let acquired: WakeLockSentinel | null = null
 
     if ('wakeLock' in navigator) {
       navigator.wakeLock
         .request('screen')
         .then((sentinel: WakeLockSentinel) => {
-          setWakeLockSentinel(sentinel)
+          if (!active) {
+            void sentinel.release().catch(() => {})
+            return
+          }
+          acquired = sentinel
           showToast('Stage Wake Lock active: screen will remain awake')
         })
         .catch(() => {
-          showToast('Wake Lock not supported on this browser')
+          if (active) showToast('Wake Lock not supported on this browser')
         })
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Browser capability feedback is required even when no asynchronous request is possible.
       showToast('Wake Lock not supported on this browser')
     }
 
     return () => {
-      if (wakeLockSentinel) {
-        wakeLockSentinel.release().catch(() => {})
-      }
+      active = false
+      void acquired?.release().catch(() => {})
     }
-  }, [keepScreenAwake])
+  }, [keepScreenAwake, showToast])
 
   if (!isOpen) return null
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
-  }
 
   const fontOptions: Array<{
     id: SongFontStyleOption

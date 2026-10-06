@@ -249,15 +249,16 @@ function recoveryNoticeFingerprint(value: string): string {
     .map(part => (part >>> 0).toString(16).padStart(8, '0')).join('')
 }
 
+// Acknowledge this exact archive set only. New/changed sources need attention.
+const recoveryNoticeId = () => recoveryNoticeFingerprint(JSON.stringify(Object.entries(recoveryData())
+  .filter(([key]) => key !== 'gtar_library_v1' && key !== 'gtar_sync_library_owner')
+  .sort(([a], [b]) => a.localeCompare(b))))
+const checkRecovery = () => {
+  try { readPersistedLibrary(); return { retired: !hasActionableRecovery(), damaged: false, noticeId: recoveryNoticeId() } }
+  catch { return { retired: false, damaged: true, noticeId: null } }
+}
+
 function LibraryStartup() {
-  // Acknowledge this exact archive set only. New/changed sources need attention.
-  const recoveryNoticeId = () => recoveryNoticeFingerprint(JSON.stringify(Object.entries(recoveryData())
-    .filter(([key]) => key !== 'gtar_library_v1' && key !== 'gtar_sync_library_owner')
-    .sort(([a], [b]) => a.localeCompare(b))))
-  const checkRecovery = () => {
-    try { readPersistedLibrary(); return { retired: !hasActionableRecovery(), damaged: false, noticeId: recoveryNoticeId() } }
-    catch { return { retired: false, damaged: true, noticeId: null } }
-  }
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
   useEffect(() => {
     const refresh = () => setStatus(checkRecovery())
@@ -404,7 +405,7 @@ function LibraryApp() {
     try {
       const saved = localStorage.getItem('gtar_active_setlist_id')
       if (saved) return JSON.parse(saved)
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     return 'gig-set-1'
   })
   const [activeSongIndex, setActiveSongIndex] = useState<number>(
@@ -423,14 +424,14 @@ function LibraryApp() {
     try {
       const saved = localStorage.getItem(SETTINGS_KEYS.fontStyle) as SongFontStyleOption
       if (saved) return saved
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     return 'mono'
   })
   const [isTwoColumn, setIsTwoColumn] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(SETTINGS_KEYS.isTwoColumn)
       if (saved !== null) return JSON.parse(saved)
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     return false
   })
 
@@ -500,28 +501,28 @@ function LibraryApp() {
   useEffect(() => {
     try {
       localStorage.setItem('gtar_active_setlist_id', JSON.stringify(activeSetlistId))
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
   }, [activeSetlistId])
 
   // Save font style to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(SETTINGS_KEYS.fontStyle, fontStyle)
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
   }, [fontStyle])
 
   // Save two-column state to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(SETTINGS_KEYS.isTwoColumn, JSON.stringify(isTwoColumn))
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
   }, [isTwoColumn])
 
   // Apply theme to document.body and persist
   useEffect(() => {
     try {
       localStorage.setItem(SETTINGS_KEYS.themeMode, stageTheme)
-    } catch (_) {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
 
     const appliedPalette = applyThemeRuntime(stageTheme, customThemeColors)
     stageCast.setThemeSnapshot(stageTheme, appliedPalette)
@@ -653,6 +654,23 @@ function LibraryApp() {
   ])
 
   // Band Sync: listen to leader song sync events when client
+  // Transpose handler
+  const handleTransposeChange = useCallback((newOffset: number) => {
+    if (!Number.isSafeInteger(newOffset) || newOffset < -11 || newOffset > 11) return
+    if (isInSetlistMode) {
+      const target = activeSetlistSongs[activeSetlistSongIndex]
+      if (target) {
+        setSongs((prev) =>
+          prev.map((s) => (s.id === target.id ? { ...s, transposeOffset: newOffset } : s))
+        )
+      }
+    } else {
+      setSongs((prev) =>
+        prev.map((s, idx) => (idx === activeSongIndex ? { ...s, transposeOffset: newOffset } : s))
+      )
+    }
+  }, [isInSetlistMode, activeSetlistSongs, activeSetlistSongIndex, activeSongIndex])
+
   useEffect(() => {
     const unsub = bandSync.onMessage((msg) => {
       if (bandSync.getRole() === 'CLIENT') {
@@ -835,24 +853,7 @@ function LibraryApp() {
       }
     })
     return unsub
-  }, [songs.length, activeSetlist, activeSetlistSongs, setlists])
-
-  // Transpose handler
-  const handleTransposeChange = (newOffset: number) => {
-    if (!Number.isSafeInteger(newOffset) || newOffset < -11 || newOffset > 11) return
-    if (isInSetlistMode) {
-      const target = activeSetlistSongs[activeSetlistSongIndex]
-      if (target) {
-        setSongs((prev) =>
-          prev.map((s) => (s.id === target.id ? { ...s, transposeOffset: newOffset } : s))
-        )
-      }
-    } else {
-      setSongs((prev) =>
-        prev.map((s, idx) => (idx === activeSongIndex ? { ...s, transposeOffset: newOffset } : s))
-      )
-    }
-  }
+  }, [songs, activeSetlist, activeSetlistSongs, setlists, handleTransposeChange])
 
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
@@ -1239,12 +1240,12 @@ function LibraryApp() {
   }
 
   // Navigate Home (Logo click / Songbook tab opens Songbook Library)
-  const handleNavigateHome = () => {
+  const handleNavigateHome = useCallback(() => {
     setQueueMode('library')
     setActiveView('songbook')
     setSearchQuery('')
     setIsSetlistDrawerOpen(false)
-  }
+  }, [])
 
   // Desktop Global Navigation Shortcuts (Alt+1..6, Alt+0/H)
   useEffect(() => {

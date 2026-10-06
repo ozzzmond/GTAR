@@ -68,8 +68,8 @@ export function getPresentationCapabilities(): PresentationCapabilities {
 
   const canDirectPresent = supportsPresentationApi || supportsMultiWindow
 
-  let recommendedMode: 'presentation_api' | 'popup_window' | 'tv_pairing' = 'tv_pairing'
-  let platform: PresentationCapabilities['platform'] = 'desktop'
+  let recommendedMode: 'presentation_api' | 'popup_window' | 'tv_pairing'
+  let platform: PresentationCapabilities['platform']
 
   if (isIos) {
     platform = 'ios'
@@ -217,14 +217,14 @@ class StageCastEngine {
           this.sessionId = stored
           return stored
         }
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
     const code = Math.random().toString(36).substring(2, 6).toUpperCase()
     this.sessionId = `GTAR-${code}`
     if (typeof window !== 'undefined') {
       try {
         sessionStorage.setItem('gtar_cast_session_id', this.sessionId)
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
     return this.sessionId
   }
@@ -269,7 +269,7 @@ class StageCastEngine {
     for (const listener of this.sessionListeners) {
       try {
         listener(active)
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
   }
 
@@ -286,7 +286,7 @@ class StageCastEngine {
       if (raw) {
         return JSON.parse(raw) as StageCastState
       }
-    } catch {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     return null
   }
 
@@ -302,7 +302,7 @@ class StageCastEngine {
     this.lastState = state
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
 
     const msg: StageCastMessage = { type: 'STATE_UPDATE', payload: state }
 
@@ -317,7 +317,7 @@ class StageCastEngine {
     if (this.popupWindow && !this.popupWindow.closed) {
       try {
         this.popupWindow.postMessage({ source: 'GTAR_CAST', message: msg }, '*')
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
 
     if (this.presentationConnection && this.presentationConnection.state === 'connected') {
@@ -339,19 +339,19 @@ class StageCastEngine {
     if (this.channel) {
       try {
         this.channel.postMessage(msg)
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
 
     if (this.popupWindow && !this.popupWindow.closed) {
       try {
         this.popupWindow.postMessage({ source: 'GTAR_CAST', message: msg }, '*')
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
 
     if (this.presentationConnection && this.presentationConnection.state === 'connected') {
       try {
         this.presentationConnection.send(JSON.stringify({ source: 'GTAR_CAST', message: msg }))
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
   }
 
@@ -395,7 +395,7 @@ class StageCastEngine {
             message: { type: 'SCROLL_UPDATE', payload: this.lastScroll },
           })
         )
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
   }
 
@@ -404,7 +404,7 @@ class StageCastEngine {
     if (this.channel) {
       try {
         this.channel.postMessage(msg)
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
   }
 
@@ -525,7 +525,7 @@ class StageCastEngine {
               appLogger.info('StageCast', 'Received REQUEST_STATE from PresentationConnection. Re-injecting state...')
               this.sendCurrentStateToConnection(conn)
             }
-          } catch {}
+          } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
         }
 
         return { success: true, mode: 'presentation_api' }
@@ -617,7 +617,7 @@ class StageCastEngine {
                   )
                 }
               }
-            } catch {}
+            } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
           }
           setTimeout(injectPopupState, 150)
           setTimeout(injectPopupState, 600)
@@ -659,10 +659,11 @@ class StageCastEngine {
           }
         }
       }, 1500)
-      if (this.windowCheckTimer && typeof (this.windowCheckTimer as any).unref === 'function') {
-        ;(this.windowCheckTimer as any).unref()
+      const timer = this.windowCheckTimer as unknown as { unref?: () => void } | null
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref()
       }
-    } catch {}
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
   }
 
   public subscribe(
@@ -738,7 +739,7 @@ class StageCastEngine {
           if (parsed && typeof parsed === 'object') {
             handleMessage({ type: 'STATE_UPDATE', payload: parsed })
           }
-        } catch {}
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       }
     }
 
@@ -765,7 +766,7 @@ class StageCastEngine {
               conn.addEventListener('message', onMsg)
               try {
                 conn.send(JSON.stringify({ type: 'REQUEST_STATE', source: 'GTAR_CAST' }))
-              } catch {}
+              } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
             }
             list.connections.forEach((conn: PresentationConnection) => listenToConn(conn))
             const onAvail = (evt: Event) => {

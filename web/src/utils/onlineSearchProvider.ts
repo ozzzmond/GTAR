@@ -450,7 +450,7 @@ export class UltimateGuitarProvider implements OnlineSearchProvider {
       throw new Error(errorMsg)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      throw new Error(`Could not extract authentic chord sheet for "${result.songName}": ${message}`)
+      throw new Error(`Could not extract authentic chord sheet for "${result.songName}": ${message}`, { cause: err })
     }
   }
 }

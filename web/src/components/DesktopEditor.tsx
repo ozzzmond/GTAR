@@ -151,6 +151,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Reset local state when active song changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching song identity resets the draft and undo history together.
     setEditingSong(song)
     const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
     setLocalTitle(song.title || parsedMeta.title || '')
@@ -165,6 +166,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
     history.current = new TextHistory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Same-ID updates must not erase the unsaved draft or undo history.
   }, [song.id])
 
   const showToast = (msg: string) => {

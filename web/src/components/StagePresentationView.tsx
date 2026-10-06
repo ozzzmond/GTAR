@@ -158,7 +158,7 @@ export const StagePresentationView: React.FC = () => {
               // Immediately request latest stage state
               try {
                 conn.send(JSON.stringify({ type: 'REQUEST_STATE', source: 'GTAR_CAST' }))
-              } catch {}
+              } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
             }
 
             list.connections.forEach(handlePresentationConn)

@@ -1,5 +1,5 @@
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useLayoutEffect, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
   createWakeLockController,
@@ -127,7 +127,6 @@ export const StageView: React.FC<StageViewProps> = ({
   onSelectFontStyle: externalOnSelectFontStyle,
   isTwoColumn: externalIsTwoColumn,
   onToggleTwoColumn: externalOnToggleTwoColumn,
-  onOpenBandSync: _onOpenBandSync,
   onBack,
   onPerformanceModeChange,
 }) => {
@@ -344,6 +343,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
   useEffect(() => {
     if (isPerformanceMode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- A committed song or mode transition starts the existing overlay visibility timer.
       triggerOverlaysShow()
     } else {
       setShowStageOverlays(true)
@@ -702,7 +702,7 @@ export const StageView: React.FC<StageViewProps> = ({
   }
 
   // Toggle autoscroll and broadcast if HOST
-  const handleToggleAutoScroll = () => {
+  const handleToggleAutoScroll = useCallback(() => {
     const nextVal = !isAutoScrolling
     setIsAutoScrolling(nextVal)
     if (nextVal) {
@@ -713,10 +713,10 @@ export const StageView: React.FC<StageViewProps> = ({
     if (syncState.role === 'HOST') {
       bandSync.broadcastAutoScroll(nextVal, scrollSpeed)
     }
-  }
+  }, [isAutoScrolling, syncState.role, scrollSpeed])
 
   // Adjust scroll speed and broadcast if HOST
-  const handleAdjustSpeed = (newSpeed: number) => {
+  const handleAdjustSpeed = useCallback((newSpeed: number) => {
     const clamped = Math.max(10, Math.min(150, newSpeed))
     setScrollSpeed(clamped)
     if (typeof window !== 'undefined') {
@@ -725,7 +725,7 @@ export const StageView: React.FC<StageViewProps> = ({
     if (syncState.role === 'HOST') {
       bandSync.broadcastAutoScroll(isAutoScrolling, clamped)
     }
-  }
+  }, [isAutoScrolling, syncState.role])
 
   // Structural sections in document order matching Android SongParser.kt
   const sectionHeaders = useMemo(() => {
@@ -844,9 +844,7 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [isInSetlistMode, onSelectSetlistSongIndex, activeSetlistSongIndex, activeSetlistSongs.length, activeSongIndex, songs.length, onSelectSongIndex])
 
   const executePrevSongRef = useRef(executePrevSong)
-  executePrevSongRef.current = executePrevSong
   const executeNextSongRef = useRef(executeNextSong)
-  executeNextSongRef.current = executeNextSong
 
   const canPrev = isInSetlistMode
     ? activeSetlistSongIndex > 0
@@ -856,17 +854,22 @@ export const StageView: React.FC<StageViewProps> = ({
     : activeSongIndex < songs.length - 1
 
   const canPrevRef = useRef(canPrev)
-  canPrevRef.current = canPrev
   const canNextRef = useRef(canNext)
-  canNextRef.current = canNext
 
   const fontSizePxRef = useRef(fontSizePx)
-  fontSizePxRef.current = fontSizePx
 
   const isPerformanceModeRef = useRef(inPerformanceMode)
-  isPerformanceModeRef.current = inPerformanceMode
   const triggerOverlaysShowRef = useRef(triggerOverlaysShow)
-  triggerOverlaysShowRef.current = triggerOverlaysShow
+  // Publish committed values before input events; suspended renders cannot leak.
+  useLayoutEffect(() => {
+    executePrevSongRef.current = executePrevSong
+    executeNextSongRef.current = executeNextSong
+    canPrevRef.current = canPrev
+    canNextRef.current = canNext
+    fontSizePxRef.current = fontSizePx
+    isPerformanceModeRef.current = inPerformanceMode
+    triggerOverlaysShowRef.current = triggerOverlaysShow
+  }, [executePrevSong, executeNextSong, canPrev, canNext, fontSizePx, inPerformanceMode, triggerOverlaysShow])
 
   const slideContentRef = useRef<HTMLDivElement>(null)
   const isAnimatingRef = useRef(false)
@@ -1343,6 +1346,8 @@ export const StageView: React.FC<StageViewProps> = ({
     handlePrevSong,
     handleNextSection,
     handlePrevSection,
+    handleToggleAutoScroll,
+    handleAdjustSpeed,
     isAnyOverlayActive,
   ])
 
@@ -2131,8 +2136,8 @@ export const StageView: React.FC<StageViewProps> = ({
             title="Open setlist / library"
           >
             {isInSetlistMode
-              ? `${activeSetlistSongIndex + 1} / ${activeSetlistSongs.length}`
-              : `${activeSongIndex + 1} / ${songs.length}`}
+              ? `${activeSetlistSongIndex + 1}\u202f/\u202f${activeSetlistSongs.length}`
+              : `${activeSongIndex + 1}\u202f/\u202f${songs.length}`}
           </button>
 
           <button

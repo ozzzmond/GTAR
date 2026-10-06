@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { AuthContext, useOptionalGoogleAuth } from '../utils/authContext'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
 import {
   loadGoogleIdentity,
@@ -22,22 +23,8 @@ import { Terminal, Clock, ShieldX, RefreshCw } from 'lucide-react'
 
 const isDevLogsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
-interface AuthState {
-  session: GoogleSession | null
-  signOut: () => void
-  signIn: () => Promise<void>
-  checkStatus: () => Promise<void>
-  ready: boolean
-  bypass: boolean
-  role: UserRole
-  isSuperAdmin: boolean
-  accessStatus: AccessStatus
-}
-
-const AuthContext = createContext<AuthState | null>(null)
-
 export function useGoogleAuth() {
-  const auth = useContext(AuthContext)
+  const auth = useOptionalGoogleAuth()
   if (!auth) throw new Error('Authentication boundary is required.')
   return auth
 }
@@ -335,6 +322,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       })
     }
 
+    // This is a generation counter, not a DOM ref: invalidate the current epoch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Capturing the mount value would revive stale async work.
     return () => { epoch.current++ }
   }, [backgroundRecheck, configuredEmails])
 
@@ -420,7 +409,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         const idToken = await requestGoogleCredential(clientId)
         if (generation !== epoch.current) return
         serverSession = await authenticateWithServer(idToken)
-      } catch (idErr) {
+      } catch {
         // Fallback to GIS oauth2 flow if idToken prompt was dismissed or unhandled
         const legacySession = await requestGoogleSession(clientId)
         if (generation !== epoch.current) return

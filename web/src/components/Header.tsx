@@ -124,11 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeView,
   onViewChange,
   allSongs = [],
-  songsCount: _songsCount,
   deletedSongsCount = 0,
-  queueMode: _queueMode,
-  activeSetlistSongsCount: _activeSetlistSongsCount,
-  activeSetlistSongIndex: _activeSetlistSongIndex,
   searchQuery,
   onSearchQueryChange,
   onSelectSearchSong,
@@ -140,14 +136,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStageSettings,
   onOpenImportModal,
   onOpenBackupRestoreModal,
-  onOpenSetlistDrawer: _onOpenSetlistDrawer,
   setlists = [],
-  activeSetlistId: _activeSetlistId,
-  activeSetlistName: _activeSetlistName,
-  activeSetlistSongs: _activeSetlistSongs = [],
   onSelectSetlistSong,
   onSelectSetlist,
-  onPushSetlistToBandSync: _onPushSetlistToBandSync,
   onDirectImportOnlineSong,
   onCloudSyncApplied,
   onOpenCast,
@@ -219,6 +210,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   useEffect(() => {
     if (!isSuperAdmin) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Revoked admin access must immediately clear the external pending count.
       setPendingCount(0)
       return
     }
@@ -264,6 +256,7 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
 
     if (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialize from the browser display mode after installing the prompt listener.
       setIsAppInstalled(true)
     }
 
@@ -361,6 +354,7 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     const trimmed = searchQuery.trim()
     if (!trimmed || trimmed.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Invalid search queries synchronously clear prior remote results and request state.
       setOnlineResults([])
       setOnlineError(null)
       setIsSearchingOnline(false)

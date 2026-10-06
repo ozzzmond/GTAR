@@ -70,6 +70,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
   useEffect(() => {
     if (isOpen && activeSetlistId !== null && activeSetlistId !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the drawer synchronizes the externally selected setlist and expansion.
       setDrawerTab('setlists')
       setExpandedSetlistId(activeSetlistId)
     }

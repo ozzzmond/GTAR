@@ -651,6 +651,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       if (currentTheme === 'custom' && customColors?.identity) {
         saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open storage synchronization preserves standalone and factory draft separation.
       setStandaloneColors(loadStandalonePalette(customColors))
       setOverrides(saved)
       setPendingRestore(null)

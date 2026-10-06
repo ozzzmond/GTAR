@@ -1,5 +1,5 @@
 /**
- * GTAR Server-Authoritative Account & Access Control (v1.0.123-dev.3l)
+ * GTAR Server-Authoritative Account & Access Control (v1.0.123-dev.3m)
  * Cloudflare Pages Functions + D1 SQLite Core Library
  */
 
@@ -130,7 +130,7 @@ export async function verifyGoogleIdToken(
   // Handle mock / test tokens in test environment
   if (env.TEST_MOCK_AUTH === 'true' && token.startsWith('test_token:')) {
     const parts = token.slice('test_token:'.length).split(':')
-    const [sub, email, name, role] = parts
+    const [sub, email, name] = parts
     return {
       sub: sub || 'test_sub',
       email: (email || 'test@example.com').toLowerCase().trim(),
@@ -345,7 +345,7 @@ export async function verifySessionToken(
 
   const encoder = new TextEncoder()
   const message = `${parts[0]}.${parts[1]}`
-  let validSig = false
+  let validSig: boolean
 
   if (typeof crypto !== 'undefined' && crypto.subtle) {
     try {

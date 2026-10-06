@@ -123,8 +123,6 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
 
       setPendingRestore(null)
       showFeedback('success', `Backup restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists`)
-    } catch (err: unknown) {
-      throw err
     } finally {
       setIsRestoring(false)
     }

@@ -42,7 +42,7 @@ export function saveStageSession(data: StageSessionData, customStorage?: Storage
         timestamp: data.timestamp ?? Date.now(),
       })
     )
-  } catch (_) {
+  } catch {
     // Quota or access error - ignore gracefully
   }
 }
@@ -52,7 +52,7 @@ export function clearStageSession(customStorage?: Storage | null): void {
   if (!storage) return
   try {
     storage.removeItem(STAGE_SESSION_KEY)
-  } catch (_) {}
+  } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
 }
 
 export function readStageSession(customStorage?: Storage | null): StageSessionData | null {

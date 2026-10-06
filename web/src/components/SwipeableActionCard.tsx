@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useLayoutEffect, useRef, useEffect, useCallback } from 'react'
 
 export interface SwipeActionConfig {
   icon: React.ReactNode
@@ -97,8 +97,11 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const offsetRef = useRef(0)
 
   // Keep refs in sync for touch release evaluation
-  isArmedRef.current = isArmed
-  offsetRef.current = offset
+  // Publish committed values before input events; suspended renders cannot leak.
+  useLayoutEffect(() => {
+    isArmedRef.current = isArmed
+    offsetRef.current = offset
+  }, [isArmed, offset])
 
   const resetCard = useCallback(() => {
     setOffset(0)
@@ -120,6 +123,7 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   // Reset if disabled changes
   useEffect(() => {
     if (disabled && (offset !== 0 || isArmed)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Disabling a card must clear its live gesture and coordinator state.
       resetCard()
     }
   }, [disabled, offset, isArmed, resetCard])

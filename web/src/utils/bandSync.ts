@@ -1,3 +1,4 @@
+import type { ActiveSongState } from '../types/gtar'
 import { formatLeaderAddress, formatLeaderDisplay } from './bandSyncAddress'
 export { formatLeaderAddress, formatLeaderDisplay } from './bandSyncAddress'
 /**
@@ -8,11 +9,33 @@ export { formatLeaderAddress, formatLeaderDisplay } from './bandSyncAddress'
 
 export type BandSyncRole = 'OFF' | 'HOST' | 'CLIENT'
 
+export interface BandSyncPayload extends Partial<ActiveSongState> {
+  role?: BandSyncRole
+  content?: string
+  songTitle?: string
+  songIndex?: number
+  songId?: number
+  queueType?: string
+  queueIndex?: number
+  setlistIndex?: number
+  transpose?: number
+  offset?: number
+  scroll?: number
+  scrollTop?: number
+  scrollFraction?: number
+  scrollProgress?: number
+  isAutoScrolling?: boolean
+  scrollSpeed?: number
+  disconnecting?: boolean
+  setlistName?: string
+  songs?: Array<Partial<ActiveSongState>>
+}
+
 export interface BandSyncMessage {
   type: 'SONG_SYNC' | 'SCROLL_SYNC' | 'AUTOSCROLL_SYNC' | 'SETLIST_SYNC' | 'HEARTBEAT'
   senderId: string
   role: BandSyncRole
-  payload: any
+  payload: BandSyncPayload
   timestamp: number
 }
 
@@ -42,7 +65,8 @@ type MessageHandler = (msg: BandSyncMessage) => void
  */
 export async function detectLanIp(): Promise<string | null> {
   if (typeof window === 'undefined') return null
-  const RTCPeer = (window as any).RTCPeerConnection || (window as any).webkitRTCPeerConnection
+  const legacyWindow = window as Window & { webkitRTCPeerConnection?: typeof RTCPeerConnection }
+  const RTCPeer = window.RTCPeerConnection || legacyWindow.webkitRTCPeerConnection
   if (!RTCPeer) return null
 
   return new Promise((resolve) => {
@@ -55,12 +79,12 @@ export async function detectLanIp(): Promise<string | null> {
           resolved = true
           try {
             pc.close()
-          } catch {}
+          } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
           resolve(ip)
         }
       }
 
-      pc.onicecandidate = (e: any) => {
+      pc.onicecandidate = (e: RTCPeerConnectionIceEvent) => {
         if (!e || !e.candidate || !e.candidate.candidate) return
         const cand = e.candidate.candidate
         // Match private IPv4 address (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
@@ -71,7 +95,7 @@ export async function detectLanIp(): Promise<string | null> {
       }
 
       pc.createOffer()
-        .then((offer: any) => pc.setLocalDescription(offer))
+        .then((offer: RTCSessionDescriptionInit) => pc.setLocalDescription(offer))
         .catch(() => finish(null))
 
       setTimeout(() => finish(null), 1200)
@@ -220,7 +244,7 @@ class BandSyncEngine {
       }
     })
 
-    let status: ConnectionStatus = 'Disconnected'
+    let status: ConnectionStatus
     if (this.wsConnected) {
       status = 'Connected to Leader (synced)'
     } else if (this.wsConnecting || this.shouldReconnectWs) {
@@ -239,8 +263,8 @@ class BandSyncEngine {
       browserHost !== '127.0.0.1' &&
       browserHost !== '::1'
 
-    let effectiveHost = ''
-    let hasLanIp = false
+    let effectiveHost: string
+    let hasLanIp: boolean
 
     if (this.customHostIp) {
       effectiveHost = this.customHostIp
@@ -304,7 +328,7 @@ class BandSyncEngine {
     if (this.ws) {
       try {
         this.ws.close()
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       this.ws = null
     }
     this.notify()
@@ -316,7 +340,7 @@ class BandSyncEngine {
     if (this.ws) {
       try {
         this.ws.close()
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       this.ws = null
     }
 
@@ -367,7 +391,7 @@ class BandSyncEngine {
         this.wsConnected = false
         this.notify()
       }
-    } catch (err) {
+    } catch {
       this.wsConnected = false
       if (this.shouldReconnectWs) {
         this.wsConnecting = true
@@ -390,8 +414,9 @@ class BandSyncEngine {
     }, 2500)
   }
 
-  private handleWebSocketMessage(data: any) {
-    if (!data || typeof data !== 'object') return
+  private handleWebSocketMessage(input: unknown) {
+    if (!input || typeof input !== 'object') return
+    const data = input as BandSyncPayload & { type?: string }
 
     // Convert Android SyncMessage JSON to web BandSyncMessage
     if (data.type === 'SONG' || data.type === 'SONG_CHANGE') {
@@ -529,7 +554,7 @@ class BandSyncEngine {
     this.notify()
   }
 
-  public broadcastMessage(type: BandSyncMessage['type'], payload: any) {
+  public broadcastMessage(type: BandSyncMessage['type'], payload: BandSyncPayload) {
     if (this.role === 'OFF') return
 
     const msg: BandSyncMessage = {
@@ -613,7 +638,7 @@ class BandSyncEngine {
               scroll: scrollFraction,
             })
           )
-        } catch {}
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       }
     }
   }
@@ -630,7 +655,7 @@ class BandSyncEngine {
               offset: transposeOffset,
             })
           )
-        } catch {}
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       }
     }
   }
@@ -641,7 +666,7 @@ class BandSyncEngine {
     }
   }
 
-  public broadcastSetlist(setlistName: string, songs: any[]) {
+  public broadcastSetlist(setlistName: string, songs: Array<Partial<ActiveSongState> & { content?: string }>) {
     // Members must purely be receivers/followers and never broadcast setlists to the Leader over WebSocket
     if (this.role !== 'HOST') {
       console.warn('BandSync: Followers/members cannot broadcast setlists to the Leader.')
@@ -671,8 +696,10 @@ class BandSyncEngine {
     }
   }
 
-  private handleIncoming(data: any) {
-    if (!data || typeof data !== 'object' || !data.senderId) return
+  private handleIncoming(input: unknown) {
+    if (!input || typeof input !== 'object') return
+    const data = input as BandSyncMessage
+    if (!data.senderId) return
     if (data.senderId === this.peerId) return // Ignore self-messages
 
     const msg = data as BandSyncMessage

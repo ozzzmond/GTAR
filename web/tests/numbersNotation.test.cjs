@@ -26,8 +26,8 @@ const {
 const { transposeChordToken, transposeKey } = require('../src/utils/chordTransposer.ts')
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.3l', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3l')
+test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.3m', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3m')
 })
 
 test('TEST_REQUIREMENTS: basic major, minor, 7th, maj7, add, sus, slash, chromatic, and altered supported chords in Key C', () => {
