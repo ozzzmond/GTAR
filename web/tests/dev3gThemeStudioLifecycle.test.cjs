@@ -134,8 +134,8 @@ test('Factory customization names persist in the same slot; reset is staged, Can
   await click('[data-testid="save-apply-palette-btn"]')
   assert.equal(applied.length, 1)
   const active = applied[0].colors
-  assert.equal(active.identity.displayName, 'Classic Facebook'); assert.equal(applied[0].mode, 'custom')
-  props = { ...props, currentTheme: 'custom', customColors: active }
+  assert.equal(active.identity.displayName, 'Classic Facebook'); assert.equal(applied[0].mode, 'paper-light')
+  props = { ...props, currentTheme: 'paper-light', customColors: target }
   await render(theme.ThemeModal, { ...props, isOpen: false }); await render(theme.ThemeModal, props)
   let slot = document.querySelector('[data-testid="theme-slot-paper-light"]')
   assert.ok(slot.textContent.includes('Classic Facebook'))
@@ -194,7 +194,7 @@ test('Multiple factory overrides retain slots; restoring an inactive slot preser
   await render(theme.ThemeModal, props)
   assert.equal(document.querySelectorAll('[data-testid^="theme-slot-"]').length, 7)
   await click('[data-testid="restore-factory-paper-light"]'); await click('[data-testid="confirm-factory-restore"]'); await click('[data-testid="theme-save-apply-btn"]')
-  assert.equal(applied[0].mode, 'custom'); assert.deepEqual(applied[0].colors, theme.normalizeCustomThemeColors(active))
+  assert.equal(applied[0].mode, 'azure-stage'); assert.deepEqual(applied[0].colors, theme.normalizeCustomThemeColors(active))
   const overrides = JSON.parse(localStorage.getItem(backup.SETTINGS_KEYS.factoryThemeOverrides))
   assert.deepEqual(Object.keys(overrides), ['azure-stage'])
   assert.equal(overrides['azure-stage'].identity.displayName, 'Red Yahoo')

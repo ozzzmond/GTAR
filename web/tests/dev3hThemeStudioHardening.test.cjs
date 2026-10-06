@@ -94,7 +94,7 @@ test('PERSISTENCE: Customized factory colors survive Save & Apply, reopen, theme
   await click('[data-testid="save-apply-palette-btn"]')
 
   assert.equal(applied.length, 1)
-  assert.equal(applied[0].mode, 'custom')
+  assert.equal(applied[0].mode, 'crimson-stage')
   assert.equal(applied[0].colors.identity.displayName, 'Deep Red Overdrive')
   assert.equal(applied[0].colors.identity.factoryId, 'crimson-stage')
   assert.equal(applied[0].colors.actionColor, '#EC4899')
@@ -106,7 +106,7 @@ test('PERSISTENCE: Customized factory colors survive Save & Apply, reopen, theme
   assert.equal(rawOverrides['crimson-stage'].actionColor, '#EC4899')
 
   // 2. Reopen Theme Studio modal
-  props = { ...props, currentTheme: 'custom', customColors: applied[0].colors }
+  props = { ...props, currentTheme: 'crimson-stage', customColors: target }
   await render(theme.ThemeModal, { ...props, isOpen: false })
   await render(theme.ThemeModal, props)
 
@@ -131,7 +131,7 @@ test('PERSISTENCE: Customized factory colors survive Save & Apply, reopen, theme
   // Switch back to Crimson Stage override
   await click('[data-testid="theme-slot-crimson-stage"]')
   await click('[data-testid="theme-save-apply-btn"]')
-  assert.equal(applied.at(-1).mode, 'custom')
+  assert.equal(applied.at(-1).mode, 'crimson-stage')
   assert.equal(applied.at(-1).colors.identity.displayName, 'Deep Red Overdrive')
   assert.equal(applied.at(-1).colors.actionColor, '#EC4899')
 }))

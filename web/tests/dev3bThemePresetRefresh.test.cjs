@@ -170,9 +170,9 @@ test('DEV3B_SAVE_AND_APPLY_CONTRACT: ThemeModal preserves Save & Apply, Cancel, 
 
   // Handler structure
   assert.ok(themeModalSource.includes('handleSaveAndApply'), 'handleSaveAndApply function preserved')
-  assert.ok(themeModalSource.includes('localStorage.setItem(SETTINGS_KEYS.themeMode, stagedTheme)'), 'Persists staged theme to localStorage')
-  assert.ok(themeModalSource.includes('onApplyTheme(stagedTheme, stagedCustomColors)'), 'Calls onApplyTheme on save')
-  assert.ok(themeModalSource.includes('onSelectTheme(stagedTheme)'), 'Calls onSelectTheme fallback on save')
+  assert.ok(themeModalSource.includes('localStorage.setItem(SETTINGS_KEYS.themeMode, mode)'), 'Persists staged theme to localStorage')
+  assert.ok(themeModalSource.includes('onApplyTheme?.(mode, resolveThemePalette(mode, standalone, nextOverrides))'), 'Calls onApplyTheme on save')
+  assert.ok(themeModalSource.includes('onSelectTheme?.(mode)'), 'Calls onSelectTheme fallback on save')
   assert.ok(themeModalSource.includes('Cancel'), 'Cancel button preserved')
   assert.ok(themeModalSource.includes('Save & Apply'), 'Save & Apply button preserved')
 

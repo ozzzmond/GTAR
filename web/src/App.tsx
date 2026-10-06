@@ -39,9 +39,8 @@ import {
   ThemeModal,
   type ThemeMode,
   type CustomThemeColors,
-  DEFAULT_CUSTOM_COLORS,
-  normalizeCustomThemeColors,
   applyThemeRuntime,
+  hydrateThemeSettings,
 } from './components/ThemeModal'
 import { BandSyncModal } from './components/BandSyncModal'
 import { TvPresentationModal } from './components/TvPresentationModal'
@@ -393,28 +392,10 @@ function LibraryApp() {
   const [setlists, setSetlists] = useState<WebSetlist[]>(initialLibrary.setlists)
 
   // Stage Color Theme (persisted in localStorage)
-  const [stageTheme, setStageTheme] = useState<ThemeMode>(() => {
-    try {
-      const saved = localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode
-      if (saved) return saved
-    } catch (e) {
-      console.error('Failed to load theme from localStorage', e)
-    }
-    return 'solarized-dark'
-  })
+  const [stageTheme, setStageTheme] = useState<ThemeMode>(() => hydrateThemeSettings().mode)
 
-  // Custom Stage Theme Colors (persisted in localStorage)
-  const [customThemeColors, setCustomThemeColors] = useState<CustomThemeColors>(() => {
-    try {
-      const saved = localStorage.getItem(SETTINGS_KEYS.customThemeColors)
-      if (saved) {
-        return normalizeCustomThemeColors(JSON.parse(saved))
-      }
-    } catch (e) {
-      console.error('Failed to load custom theme colors from localStorage', e)
-    }
-    return DEFAULT_CUSTOM_COLORS
-  })
+  // Only standalone Custom Palette lives here; factory overrides use their own slots.
+  const [customThemeColors, setCustomThemeColors] = useState<CustomThemeColors>(() => hydrateThemeSettings().standalone)
 
   const [activeSetlistId, setActiveSetlistId] = useState<string | number | null>(() => {
     if (initialStageSession.isValid && initialStageSession.activeSetlistId) {
@@ -456,13 +437,11 @@ function LibraryApp() {
   useEffect(() => {
     const reloadSettings = () => {
       const settings = readBackupSettings()
-      // Overrides can change on restore even when the selected mode is unchanged.
-      applyThemeRuntime(
-        settings.themeMode || (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode) || 'solarized-dark',
-        normalizeCustomThemeColors(settings.customThemeColors)
-      )
-      if (settings.themeMode !== undefined) setStageTheme(settings.themeMode)
-      if (settings.customThemeColors !== undefined) setCustomThemeColors(normalizeCustomThemeColors(settings.customThemeColors))
+      // Hydration also upgrades legacy active-palette backups to separate storage.
+      const hydrated = hydrateThemeSettings()
+      applyThemeRuntime(hydrated.mode, hydrated.standalone)
+      setStageTheme(hydrated.mode)
+      setCustomThemeColors(hydrated.standalone)
       if (settings.stageSettings?.fontStyle !== undefined) setFontStyle(settings.stageSettings.fontStyle)
       if (settings.stageSettings?.isTwoColumn !== undefined) setIsTwoColumn(settings.stageSettings.isTwoColumn)
     }
@@ -1610,7 +1589,7 @@ function LibraryApp() {
         customColors={customThemeColors}
         onApplyTheme={(theme, colors) => {
           setStageTheme(theme)
-          if (colors) {
+          if (theme === 'custom' && colors) {
             setCustomThemeColors(colors)
           }
         }}

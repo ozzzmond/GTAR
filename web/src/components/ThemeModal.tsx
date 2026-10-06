@@ -583,18 +583,42 @@ export function applyThemeRuntime(
   return colors
 }
 
-// Local retention for the standalone palette while the existing active-palette
-// setting carries a factory customization. JSON V2 and factory overrides stay intact.
+// DEV.3j retention is read only for migration. Canonical standalone storage
+// is SETTINGS_KEYS.customThemeColors; overrides remain in their factory slots.
 const STANDALONE_PALETTE_KEY = 'gtar_standalone_custom_theme_colors'
 function loadStandalonePalette(colors?: CustomThemeColors): CustomThemeColors {
   if (colors && !colors.identity) return normalizeCustomThemeColors(colors)
   try {
-    const saved = JSON.parse(localStorage.getItem(STANDALONE_PALETTE_KEY) || 'null')
+    const canonical = JSON.parse(localStorage.getItem(SETTINGS_KEYS.customThemeColors) || 'null')
+    const saved = canonical && !canonical.identity ? canonical : JSON.parse(localStorage.getItem(STANDALONE_PALETTE_KEY) || 'null')
     if (saved && !saved.identity && !validateBackupSettings({ customThemeColors: saved }).length) {
       return normalizeCustomThemeColors(saved)
     }
   } catch { /* Missing or invalid retention uses the standalone defaults. */ }
   return normalizeCustomThemeColors()
+}
+
+/** Migrate DEV.3g–3j active-palette storage without consuming standalone colors. */
+export function hydrateThemeSettings(): { mode: ThemeMode; standalone: CustomThemeColors } {
+  let mode: ThemeMode = 'solarized-dark'
+  let colors: CustomThemeColors | undefined
+  try {
+    const savedMode = localStorage.getItem(SETTINGS_KEYS.themeMode)
+    if (THEME_MODES.includes(savedMode as ThemeMode)) mode = savedMode as ThemeMode
+    const savedColors = JSON.parse(localStorage.getItem(SETTINGS_KEYS.customThemeColors) || 'null')
+    if (savedColors && !validateBackupSettings({ customThemeColors: savedColors }).length) colors = savedColors
+    const standalone = loadStandalonePalette(colors)
+    if (colors?.identity) {
+      const overrides = loadFactoryThemeOverrides()
+      // Preserve authoritative slot storage if it already exists.
+      overrides[colors.identity.factoryId] ||= normalizeCustomThemeColors(colors)
+      if (mode === 'custom') mode = colors.identity.factoryId
+      localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(overrides))
+      localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(standalone))
+      localStorage.setItem(SETTINGS_KEYS.themeMode, mode)
+    }
+    return { mode, standalone }
+  } catch { return { mode, standalone: normalizeCustomThemeColors() } }
 }
 
 export const ThemeModal: React.FC<ThemeModalProps> = ({
@@ -626,7 +650,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       setStandaloneColors(loadStandalonePalette(customColors))
       setOverrides(saved)
       setPendingRestore(null)
-      setStagedTheme(currentTheme)
+      setStagedTheme(currentTheme === 'custom' && customColors?.identity ? customColors.identity.factoryId : currentTheme)
       setStagedCustomColors(normalizeCustomThemeColors(customColors))
       setIsCustomPaletteEditorOpen(false)
     }
@@ -639,59 +663,39 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     setStagedTheme('custom')
     setStagedCustomColors(standaloneColors)
   }
-  const retainStandalonePalette = (colors: CustomThemeColors) => {
-    const standalone = colors.identity ? standaloneColors : colors
-    setStandaloneColors(standalone)
-    localStorage.setItem(STANDALONE_PALETTE_KEY, JSON.stringify(standalone))
-  }
-
-  const handleSaveAndApply = () => {
+  // The editor draft may carry identity; committed standalone storage never does.
+  const commitTheme = (mode: ThemeMode, standalone: CustomThemeColors, nextOverrides: FactoryThemeOverrides) => {
     try {
-      const nextOverrides = { ...overrides }
-      if (stagedTheme === 'custom' && stagedCustomColors.identity) {
-        nextOverrides[stagedCustomColors.identity.factoryId] = stagedCustomColors
-      }
-      setOverrides(nextOverrides)
-      retainStandalonePalette(stagedCustomColors)
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
-      localStorage.setItem(SETTINGS_KEYS.themeMode, stagedTheme)
-      localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(stagedCustomColors))
-      applyThemeRuntime(stagedTheme, stagedCustomColors, nextOverrides)
+      localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(standalone))
+      localStorage.setItem(SETTINGS_KEYS.themeMode, mode)
+      applyThemeRuntime(mode, standalone, nextOverrides)
     } catch (e) {
       console.error('Failed to commit theme to localStorage', e)
+      return
     }
-
-    if (onApplyTheme) {
-      onApplyTheme(stagedTheme, stagedCustomColors)
-    } else if (onSelectTheme) {
-      onSelectTheme(stagedTheme)
-    }
+    // Factory callbacks expose the active palette, while App keeps standalone state separate.
+    onApplyTheme?.(mode, resolveThemePalette(mode, standalone, nextOverrides))
+    if (!onApplyTheme) onSelectTheme?.(mode)
     onClose()
   }
 
-  const handleCustomPaletteSaveAndApply = (colors: CustomThemeColors) => {
-    const nextOverrides = { ...overrides }
-    if (colors.identity) nextOverrides[colors.identity.factoryId] = colors
-    setOverrides(nextOverrides)
-    setStagedCustomColors(colors)
-    setStagedTheme('custom')
-    try {
-      retainStandalonePalette(colors)
-      localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
-      localStorage.setItem(SETTINGS_KEYS.themeMode, 'custom')
-      localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(colors))
-      applyThemeRuntime('custom', colors, nextOverrides)
-    } catch (e) {
-      console.error('Failed to commit custom theme to localStorage', e)
-    }
+  const handleSaveAndApply = () => commitTheme(stagedTheme, standaloneColors, overrides)
 
-    if (onApplyTheme) {
-      onApplyTheme('custom', colors)
-    } else if (onSelectTheme) {
-      onSelectTheme('custom')
+  const handleCustomPaletteSaveAndApply = (colors: CustomThemeColors) => {
+    // Slot association belongs to the launch context, never imported palette metadata.
+    const factoryId = stagedCustomColors.identity?.factoryId
+    if (factoryId) {
+      const palette = normalizeCustomThemeColors({ ...colors, identity: {
+        factoryId, displayName: colors.identity?.displayName || stagedCustomColors.identity!.displayName,
+      } })
+      commitTheme(factoryId, standaloneColors, { ...overrides, [factoryId]: palette })
+    } else {
+      const standalone = { ...colors }
+      delete standalone.identity
+      commitTheme('custom', normalizeCustomThemeColors(standalone), overrides)
     }
     setIsCustomPaletteEditorOpen(false)
-    onClose()
   }
 
   return (
@@ -724,7 +728,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
             {/* Preset Theme Cards */}
             {THEME_OPTIONS.map((theme) => {
               const override = overrides[theme.id as Exclude<ThemeMode, 'custom'>]
-              const isSelected = stagedTheme === theme.id || (stagedTheme === 'custom' && !!override && stagedCustomColors.identity?.factoryId === theme.id)
+              const isSelected = stagedTheme === theme.id
               const resolved = resolveThemePalette(theme.id, stagedCustomColors, overrides)
               const preview = { bgHex: resolved.bgHex, accentHex: resolved.accentColor || resolved.chordHex }
               return (
@@ -732,8 +736,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   key={theme.id}
                   data-testid={`theme-slot-${theme.id}`}
                   onClick={() => {
-                    setStagedTheme(override ? 'custom' : theme.id)
-                    if (override) setStagedCustomColors(override)
+                    setStagedTheme(theme.id)
                   }}
                   className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2 group ${
                     isSelected
@@ -801,7 +804,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         e.stopPropagation()
                         const clonedCustom = override || { ...presetToCustomPalette(theme), identity: { factoryId: theme.id as Exclude<ThemeMode, 'custom'>, displayName: `${theme.name} Custom` } }
                         setStagedCustomColors(clonedCustom)
-                        setStagedTheme('custom')
+                        setStagedTheme(theme.id)
                         setIsCustomPaletteEditorOpen(true)
                       }}
                       className="ui-button px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#002B36] ui-primary-text text-[#EEE8D5] hover:text-[#FDF6E3] border border-[#1A4A55] text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
@@ -819,9 +822,8 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               <p className="ui-primary-text text-xs">Delete this customization and restore the original factory theme? Save &amp; Apply commits the restoration.</p>
               <button type="button" data-testid="confirm-factory-restore" className="ui-action-text text-xs p-2" onClick={() => {
                 const next = { ...overrides }; delete next[pendingRestore as Exclude<ThemeMode, 'custom'>]; setOverrides(next)
-                if (stagedCustomColors.identity?.factoryId === pendingRestore) {
+                if (stagedTheme === pendingRestore) {
                   setStagedCustomColors(standaloneColors)
-                  if (stagedTheme === 'custom') setStagedTheme(pendingRestore)
                 }
                 setPendingRestore(null)
               }}>Restore Factory Theme</button>
