@@ -211,6 +211,37 @@ test('DEV3C_STAGE_DOCK_STYLING: index.css wires dock shell, navigation buttons, 
 
   // Preserves disabled visibility
   assert.ok(css.includes('body.theme-custom [data-stage-dock="true"] button:disabled'))
+
+  // Regression test: both Play and Pause states honor custom palette colors, no exclusion of Pause
+  assert.ok(!css.includes(':not([aria-label*="Pause"])'), 'Pause state must not be excluded from custom palette')
+  assert.ok(
+    css.includes('body.theme-custom [data-stage-dock="true"] button[aria-label*="autoscroll"]'),
+    'Both play and pause autoscroll states must match the stage dock play button selector'
+  )
+})
+
+test('DEV3C_STAGE_DOCK_PAUSE_PALETTE: Both Play and Pause states in StageControlDock honor dockPlayBg and dockPlayIcon', () => {
+  const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
+  const dockSource = fs.readFileSync(path.join(webDir, 'src/components/StageControlDock.tsx'), 'utf8')
+
+  // Extract aria-labels from StageControlDock for play and pause states
+  const playLabel = 'Start autoscroll. Long press to open stage options'
+  const pauseLabel = 'Pause autoscroll. Long press to open stage options'
+  assert.ok(dockSource.includes(playLabel), 'StageControlDock has play aria-label')
+  assert.ok(dockSource.includes(pauseLabel), 'StageControlDock has pause aria-label')
+
+  // Both aria-labels contain "autoscroll" so button[aria-label*="autoscroll"] matches both
+  assert.ok(playLabel.includes('autoscroll'))
+  assert.ok(pauseLabel.includes('autoscroll'))
+
+  // Verify CSS selector targets button[aria-label*="autoscroll"] unconditionally
+  const autoscrollRuleMatch = css.match(/body\.theme-custom\s+\[data-stage-dock="true"\]\s+button\[aria-label\*="autoscroll"\][^\{]*\{([^}]+)\}/s)
+  assert.ok(autoscrollRuleMatch, 'CSS rule for dock autoscroll button exists')
+  const ruleBody = autoscrollRuleMatch[1]
+
+  assert.ok(ruleBody.includes('var(--custom-dock-play-bg'), 'Autoscroll rule uses dockPlayBg')
+  assert.ok(ruleBody.includes('var(--custom-dock-play-icon'), 'Autoscroll rule uses dockPlayIcon')
+  assert.ok(!css.includes(':not([aria-label*="Pause"])'), 'CSS must not exclude Pause state')
 })
 
 // =============================================================================

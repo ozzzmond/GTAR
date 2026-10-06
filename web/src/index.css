@@ -667,7 +667,7 @@ body.theme-custom [data-stage-dock="true"] button[aria-label="Jump to next secti
   border-color: var(--custom-dock-border, #2A3644) !important;
 }
 
-body.theme-custom [data-stage-dock="true"] button[aria-label*="autoscroll"]:not([aria-label*="Pause"]) {
+body.theme-custom [data-stage-dock="true"] button[aria-label*="autoscroll"] {
   background-color: var(--custom-dock-play-bg, #F59E0B) !important;
   color: var(--custom-dock-play-icon, #000000) !important;
   border-color: var(--custom-dock-play-bg, #F59E0B) !important;
