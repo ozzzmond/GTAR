@@ -1,3 +1,4 @@
+import { FONT_TARGETS, BUILTIN_FONTS, normalizeFontSettings, validateFontSettings, fontStack, loadFontResources, type FontChoice } from '../utils/customFonts'
 import React, { useState, useEffect } from 'react'
 import {
   X,
@@ -54,9 +55,15 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
     }
   }, [isOpen, customColors])
 
+  useEffect(() => {
+    if (isOpen) loadFontResources(normalizeFontSettings(stagedColors.fonts))
+  }, [isOpen, stagedColors.fonts])
+
   if (!isOpen) return null
 
   const handleSaveAndApply = () => {
+    const errors = validateFontSettings(stagedColors.fonts || {})
+    if (errors.length) { setJsonStatus({ message: errors.join('; '), isError: true }); return }
     onSaveAndApply(stagedColors)
     onClose()
   }
@@ -66,7 +73,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
     setJsonStatus(null)
   }
 
-  const updateColor = (key: keyof CustomThemeColors, value: string) => {
+  const updateColor = (key: Exclude<keyof CustomThemeColors, 'fonts'>, value: string) => {
     setStagedColors((prev) => ({
       ...prev,
       [key]: value,
@@ -229,6 +236,31 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               </span>
             </div>
 
+            {activeGroup === 'typography' && (
+              <div data-testid="font-settings" className="space-y-3 text-xs text-[#EEE8D5]">
+                {FONT_TARGETS.map(target => {
+                  const choice = stagedColors.fonts?.[target] || { source: 'system' as const }
+                  const update = (next: FontChoice) => setStagedColors(prev => ({ ...prev, fonts: { ...prev.fonts, [target]: next } }))
+                  return <fieldset key={target} className="p-3 border border-[#1A4A55] rounded-xl space-y-2">
+                    <legend>{target === 'ui' ? 'UI' : target === 'stage' ? 'Stage / lyrics' : 'Heading'} font</legend>
+                    <label className="block">Source
+                      <select aria-label={`${target} font source`} value={choice.source} className="block w-full bg-[#002B36] p-2 rounded" onChange={e => {
+                        const source = e.target.value as FontChoice['source']
+                        update(source === 'system' ? { source } : { source, family: 'Inter', ...(['stylesheet', 'webfont'].includes(source) ? { url: '' } : {}) })
+                      }}>
+                        <option value="system">System / default</option><option value="builtin">GTAR built-in</option>
+                        <option value="google">Google Fonts</option><option value="stylesheet">HTTPS stylesheet</option><option value="webfont">HTTPS web-font file</option>
+                      </select>
+                    </label>
+                    {choice.source === 'builtin' ? <label className="block">Family<select aria-label={`${target} font family`} value={choice.family} className="block w-full bg-[#002B36] p-2" onChange={e => update({ ...choice, family: e.target.value })}>{BUILTIN_FONTS.map(family => <option key={family}>{family}</option>)}</select></label>
+                      : choice.source !== 'system' && <label className="block">Family<input aria-label={`${target} font family`} value={choice.family || ''} maxLength={80} className="block w-full bg-[#002B36] p-2" onChange={e => update({ ...choice, family: e.target.value })} /></label>}
+                    {['stylesheet', 'webfont'].includes(choice.source) && <label className="block">HTTPS URL<input aria-label={`${target} font URL`} type="url" value={choice.url || ''} className="block w-full bg-[#002B36] p-2" onChange={e => update({ ...choice, url: e.target.value })} /></label>}
+                  </fieldset>
+                })}
+                <p>External fonts load only for configured previews. Unavailable fonts use a local fallback. Stage default preserves Mono / Sans / Serif.</p>
+              </div>
+            )}
+            {jsonStatus?.isError && <p role="alert" className="text-red-300 text-xs">{jsonStatus.message}</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-2.5">
               {currentGroupDef.fields.map((item) => {
                 const value = stagedColors[item.key] || DEFAULT_CUSTOM_COLORS[item.key] || '#000000'
@@ -330,6 +362,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               data-testid="palette-live-preview-box"
               className="p-4 rounded-2xl border border-white/10 shadow-xl transition-all"
               style={{
+                fontFamily: fontStack(normalizeFontSettings(stagedColors.fonts).ui),
                 backgroundColor:
                   activeGroup === 'chrome'
                     ? stagedColors.headerBg || DEFAULT_CUSTOM_COLORS.headerBg
@@ -345,9 +378,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                 className="flex items-center justify-between text-[11px] font-mono opacity-80 mb-3 border-b border-white/10 pb-1.5"
                 style={{
                   color:
-                    activeGroup === 'chrome'
-                      ? stagedColors.iconColor || DEFAULT_CUSTOM_COLORS.iconColor
-                      : stagedColors.textHex,
+                    activeGroup === 'stage' ? stagedColors.textHex : stagedColors.uiMutedText,
                 }}
               >
                 <span className="font-bold flex items-center gap-1.5">
@@ -367,6 +398,14 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                 </span>
               </div>
 
+              {activeGroup === 'typography' && <div data-testid="typography-preview" className="space-y-2">
+                <h3 style={{ color: stagedColors.uiSectionText, fontFamily: fontStack(normalizeFontSettings(stagedColors.fonts).heading || normalizeFontSettings(stagedColors.fonts).ui, 'heading') }}>Songbook &amp; Gig Library</h3>
+                <p style={{ color: stagedColors.uiPrimaryText }}>Amazing Grace — Primary text</p>
+                <p style={{ color: stagedColors.uiSecondaryText }}>Artist · 12 songs · Secondary text</p>
+                <p style={{ color: stagedColors.uiMutedText }}>Helper / muted text</p>
+                <button type="button" style={{ color: stagedColors.uiLinkText }}>Manage — Link / action text</button>
+                <p style={{ color: stagedColors.uiPrimaryText, fontFamily: fontStack(normalizeFontSettings(stagedColors.fonts).stage, 'stage') }}>Stage / lyrics font preview</p>
+              </div>}
               {/* STAGE PREVIEW */}
               {activeGroup === 'stage' && (
                 <div className="space-y-2 p-2">
@@ -384,7 +423,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                   </div>
                   <div
                     className="font-mono text-xs sm:text-sm leading-relaxed"
-                    style={{ color: stagedColors.textHex }}
+                    style={{ color: stagedColors.uiPrimaryText, fontFamily: fontStack(normalizeFontSettings(stagedColors.fonts).stage, 'stage') }}
                   >
                     Amazing grace how sweet the sound that saved a wretch like me
                   </div>
@@ -413,7 +452,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                       style={{
                         backgroundColor: stagedColors.searchBg || DEFAULT_CUSTOM_COLORS.searchBg,
                         borderColor: stagedColors.searchBorder || DEFAULT_CUSTOM_COLORS.searchBorder,
-                        color: stagedColors.textHex,
+                        color: stagedColors.uiPrimaryText,
                       }}
                     >
                       Search songs...
@@ -425,7 +464,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                     style={{
                       backgroundColor: stagedColors.filterBarBg || DEFAULT_CUSTOM_COLORS.filterBarBg,
                       borderColor: stagedColors.searchBorder || DEFAULT_CUSTOM_COLORS.searchBorder,
-                      color: stagedColors.textHex,
+                      color: stagedColors.uiPrimaryText,
                     }}
                   >
                     Filter: All Songs (24) • Sort by Title
@@ -441,7 +480,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                     style={{
                       backgroundColor: stagedColors.setlistCardBg || DEFAULT_CUSTOM_COLORS.setlistCardBg,
                       borderColor: stagedColors.cardBorder || DEFAULT_CUSTOM_COLORS.cardBorder,
-                      color: stagedColors.textHex,
+                      color: stagedColors.uiPrimaryText,
                     }}
                   >
                     Setlist Card
@@ -452,7 +491,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                     style={{
                       backgroundColor: stagedColors.selectedCardBg || DEFAULT_CUSTOM_COLORS.selectedCardBg,
                       borderColor: stagedColors.selectedCardBorder || DEFAULT_CUSTOM_COLORS.selectedCardBorder,
-                      color: stagedColors.textHex,
+                      color: stagedColors.uiPrimaryText,
                     }}
                   >
                     Selected Card
@@ -550,7 +589,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                   </div>
                   <span
                     className="text-[10px] font-mono opacity-70"
-                    style={{ color: stagedColors.textHex }}
+                    style={{ color: stagedColors.uiPrimaryText, fontFamily: fontStack(normalizeFontSettings(stagedColors.fonts).stage, 'stage') }}
                   >
                     Floating Autoscroll & Jump Dock
                   </span>
@@ -564,7 +603,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                 className="p-3 rounded-xl border border-white/10 opacity-75 transition-colors text-[11px]"
                 style={{
                   backgroundColor: stagedColors.bgHex,
-                  color: stagedColors.textHex,
+                  color: stagedColors.uiPrimaryText,
                 }}
               >
                 <div className="font-mono font-bold" style={{ color: stagedColors.sectionHex }}>

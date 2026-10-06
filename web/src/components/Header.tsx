@@ -453,7 +453,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-mono font-bold text-sm sm:text-base tracking-wider text-[#FDF6E3]">
+                <span className="font-mono font-bold text-sm sm:text-base tracking-wider ui-primary-text text-[#FDF6E3]">
                   {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
                 </span>
                 {isDevEnv && (
@@ -461,7 +461,7 @@ export const Header: React.FC<HeaderProps> = ({
                     DEV
                   </span>
                 )}
-                <span className="text-[10px] font-mono text-[#93A1A1] font-semibold tracking-tight">
+                <span className="text-[10px] font-mono ui-secondary-text text-[#93A1A1] font-semibold tracking-tight">
                   v{isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
                 </span>
               </div>
@@ -542,7 +542,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-8 h-8 rounded-full border-2 border-[#1A4A55] hover:border-[#2AA198] transition-colors"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-[#002B36] border-2 border-[#1A4A55] hover:border-[#2AA198] flex items-center justify-center text-[#93A1A1] transition-colors">
+              <div className="w-8 h-8 rounded-full bg-[#002B36] border-2 border-[#1A4A55] hover:border-[#2AA198] flex items-center justify-center ui-secondary-text text-[#93A1A1] transition-colors">
                 <User className="w-4 h-4" />
               </div>
             )}
@@ -572,7 +572,7 @@ export const Header: React.FC<HeaderProps> = ({
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-[#FDF6E3] truncate">
+                          <span className="text-xs font-bold ui-primary-text text-[#FDF6E3] truncate">
                             {(currentSession.user as { name?: string }).name || 'User'}
                           </span>
                           {isSuperAdmin ? (
@@ -585,7 +585,7 @@ export const Header: React.FC<HeaderProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-[#93A1A1] truncate">
+                        <div className="text-[10px] ui-secondary-text text-[#93A1A1] truncate">
                           {currentSession.user.email}
                         </div>
                       </div>
@@ -613,7 +613,7 @@ export const Header: React.FC<HeaderProps> = ({
                         setShowAvatarPopover(false)
                         onOpenBackupRestoreModal()
                       }}
-                      className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#094352]/50 text-[#FDF6E3] hover:text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#1A4A55] transition-all cursor-pointer mb-2"
+                      className="w-full px-3 py-2 rounded-xl bg-[#002B36] hover:bg-[#094352]/50 ui-primary-text text-[#FDF6E3] hover:text-[#2AA198] text-xs font-bold flex items-center justify-center gap-2 border border-[#1A4A55] transition-all cursor-pointer mb-2"
                     >
                       <CloudUpload className="w-3.5 h-3.5 text-[#B58900]" />
                       <span>Backup &amp; Restore (JSON)</span>
@@ -636,7 +636,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </>
                 ) : (
                   <div className="text-center py-2 space-y-3">
-                    <p className="text-xs text-[#93A1A1]">
+                    <p className="text-xs ui-muted-text text-[#93A1A1]">
                       Sign in with your approved Google account.
                     </p>
                     <button
@@ -745,7 +745,7 @@ export const Header: React.FC<HeaderProps> = ({
                     onSearchQueryChange('')
                     setIsSearchFocused(false)
                   }}
-                  className="text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
+                  className="ui-secondary-text text-[#93A1A1] hover:text-[#FDF6E3] cursor-pointer"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -757,7 +757,7 @@ export const Header: React.FC<HeaderProps> = ({
             {isSearchFocused && searchQuery.trim().length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl border border-[#1A4A55] bg-[#073642] shadow-2xl py-2 z-50 animate-scale-in max-h-96 overflow-y-auto">
                 {/* A. LOCAL SONGBOOK SECTION */}
-                <div className="px-3 py-1 text-[10px] font-mono font-bold text-[#93A1A1] uppercase tracking-wider flex items-center justify-between border-b border-[#1A4A55]/60 mb-1">
+                <div className="px-3 py-1 text-[10px] font-mono font-bold ui-secondary-text text-[#93A1A1] uppercase tracking-wider flex items-center justify-between border-b border-[#1A4A55]/60 mb-1">
                   <span>Local Songs ({matchingSearchSongs.length})</span>
                   <span className="text-[#2AA198]">Click to View on Stage</span>
                 </div>
@@ -774,18 +774,18 @@ export const Header: React.FC<HeaderProps> = ({
                         onViewChange('stage')
                         setIsSearchFocused(false)
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] text-[#EEE8D5]"
+                      className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] ui-primary-text text-[#EEE8D5]"
                     >
                       <div className="min-w-0 flex items-center gap-2.5">
                         <div className="w-6 h-6 rounded-lg bg-[#002B36] text-[#2AA198] flex items-center justify-center text-xs font-mono font-bold group-hover:bg-[#2AA198] group-hover:text-[#002B36] transition-colors shrink-0">
                           {song.originalIdx + 1}
                         </div>
                         <div className="truncate">
-                          <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
+                          <div className="text-xs font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#2AA198] transition-colors truncate">
                             {song.title}
                           </div>
                           {song.artist && (
-                            <div className="text-[10px] text-[#93A1A1] truncate">
+                            <div className="text-[10px] ui-secondary-text text-[#93A1A1] truncate">
                               {song.artist}
                             </div>
                           )}
@@ -799,7 +799,7 @@ export const Header: React.FC<HeaderProps> = ({
                           </span>
                         )}
                         {song.bpm && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#002B36] text-[#93A1A1]">
+                          <span className="px-1.5 py-0.5 rounded bg-[#002B36] ui-secondary-text text-[#93A1A1]">
                             {song.bpm} BPM
                           </span>
                         )}
@@ -807,7 +807,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-center text-xs text-[#93A1A1]">
+                  <div className="px-3 py-2 text-center text-xs ui-secondary-text text-[#93A1A1]">
                     No local songs matching &quot;{searchQuery}&quot;
                   </div>
                 )}
@@ -836,17 +836,17 @@ export const Header: React.FC<HeaderProps> = ({
                           }
                           setIsSearchFocused(false)
                         }}
-                        className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] text-[#EEE8D5]"
+                        className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-[#002B36] ui-primary-text text-[#EEE8D5]"
                       >
                         <div className="min-w-0 flex items-center gap-2.5">
                           <div className="w-6 h-6 rounded-lg bg-[#002B36] text-[#B58900] flex items-center justify-center text-xs font-mono font-bold group-hover:bg-[#B58900] group-hover:text-[#002B36] transition-colors shrink-0">
                             <Layers className="w-3.5 h-3.5" />
                           </div>
                           <div className="truncate">
-                            <div className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#B58900] transition-colors truncate">
+                            <div className="text-xs font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#B58900] transition-colors truncate">
                               {sl.name}
                             </div>
-                            <div className="text-[10px] text-[#93A1A1] truncate">
+                            <div className="text-[10px] ui-secondary-text text-[#93A1A1] truncate">
                               {(sl.songs || []).length} {sl.songs?.length === 1 ? 'song' : 'songs'}
                             </div>
                           </div>
@@ -884,11 +884,11 @@ export const Header: React.FC<HeaderProps> = ({
                     return (
                       <div
                         key={`online-${onlineItem.id}`}
-                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-[#002B36] text-[#EEE8D5] group"
+                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-[#002B36] ui-primary-text text-[#EEE8D5] group"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-[#FDF6E3] group-hover:text-[#2AA198] truncate">
+                            <span className="text-xs font-bold ui-primary-text text-[#FDF6E3] group-hover:text-[#2AA198] truncate">
                               {onlineItem.songName}
                             </span>
                             <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#B58900]/20 text-[#B58900] font-bold border border-[#B58900]/30 shrink-0">
@@ -896,7 +896,7 @@ export const Header: React.FC<HeaderProps> = ({
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[10px] text-[#93A1A1] mt-0.5 font-medium">
+                          <div className="flex items-center gap-2 text-[10px] ui-secondary-text text-[#93A1A1] mt-0.5 font-medium">
                             <span className="truncate">{onlineItem.artistName}</span>
                             <span>•</span>
                             <span className="text-[#B58900] font-bold">
@@ -920,7 +920,7 @@ export const Header: React.FC<HeaderProps> = ({
                               setIsSearchFocused(false)
                               setPreviewResult(onlineItem)
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#1A4A55] text-[#EEE8D5] text-[11px] font-bold flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
+                            className="px-2.5 py-1 rounded-lg bg-[#073642] hover:bg-[#1A4A55] ui-primary-text text-[#EEE8D5] text-[11px] font-bold flex items-center gap-1 border border-[#1A4A55] transition-colors cursor-pointer"
                             title="Preview chord sheet"
                           >
                             <Eye className="w-3 h-3 text-[#2AA198]" />
@@ -951,7 +951,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <p className="text-xs font-semibold text-[#DC6E67]">
                         Device is currently offline
                       </p>
-                      <p className="text-[11px] text-[#93A1A1]">
+                      <p className="text-[11px] ui-muted-text text-[#93A1A1]">
                         Connect to the internet to search online chord sheets.
                       </p>
                     </div>
@@ -978,7 +978,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   ) : (
                     <div className="p-3 text-center space-y-2">
-                      <p className="text-xs text-[#93A1A1]">
+                      <p className="text-xs ui-muted-text text-[#93A1A1]">
                         No online results found for &quot;{searchQuery}&quot;
                       </p>
                       <button
@@ -1042,7 +1042,7 @@ export const Header: React.FC<HeaderProps> = ({
               setShowOverflowMenu(false)
               onOpenStageSettings()
             }}
-            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
           >
             <Settings className="w-4 h-4 text-[#2AA198]" />
             <span className="font-semibold">Stage Settings</span>
@@ -1057,7 +1057,7 @@ export const Header: React.FC<HeaderProps> = ({
               setShowOverflowMenu(false)
               onOpenWebsiteUrlSource()
             }}
-            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
           >
             <Globe className="w-4 h-4 text-[#2AA198]" />
             <span className="font-semibold">Web Sources</span>
@@ -1072,7 +1072,7 @@ export const Header: React.FC<HeaderProps> = ({
               setShowOverflowMenu(false)
               onOpenImportModal()
             }}
-            className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center gap-3 cursor-pointer"
           >
             <FolderOpen className="w-4 h-4 text-[#2AA198]" />
             <span className="font-semibold">Import Songs &amp; Setlists...</span>
@@ -1090,7 +1090,7 @@ export const Header: React.FC<HeaderProps> = ({
                   setShowOverflowMenu(false)
                   setShowDebugLogsModal(true)
                 }}
-                className="w-full text-left px-4 py-2.5 text-xs text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-[#FDF6E3] hover:bg-[#002B36] hover:text-[#2AA198] transition-colors flex items-center justify-between gap-3 cursor-pointer"
               >
                 <div className="flex items-center gap-3">
                   <Terminal className="w-4 h-4 text-[#2AA198]" />
