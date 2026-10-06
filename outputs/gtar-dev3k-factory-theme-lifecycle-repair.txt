@@ -1,0 +1,14 @@
+STATUS:PASS|TASK:GTAR_DEV3K_FACTORY_THEME_CUSTOMIZATION_LIFECYCLE_REPAIR
+ROOT_CAUSE:Factory selection/editor Save committed custom mode and factory identity into standalone storage/App state; JSON import could replace originating identity. Existing tests encoded this overloaded model.
+CHANGE:Stable factory active ID; separate slot overrides and standalone storage; legacy hydration migration; import preserves launch identity; staged restore deletes override only.
+PROOF:Base tag/dev=f7a966a814aac2f52e0cc9940dca4c55b2338023|Controlled UI hex/name edit→save→reload→switch→edit→restore verified|Exact factory palette/name/order preserved|Standalone+backup independent|Semantic runtime retained|Code commit=47975ddf77cd4bd49b76506346f59aad571fe8d8|Tested source tree=ee0978bcb4075a500b4223f5746fb7e7c9f60a25|No merge/tags
+TESTS:FOCUSED=79/79|WEB=535/535|CONTROLLER=45/45|LINT:REQUIRED=PASS|BUILD=PASS
+FILES:ThemeModal.tsx|CustomPaletteEditor.tsx|App.tsx|dev3kFactoryThemeLifecycle.test.cjs|Affected lifecycle tests|Version metadata/assertions|Canonical receipt
+VERSION:1.0.123-dev.3k
+READY:VERIFY=YES|PASS=YES|CLOSE=NO|COMMIT=YES|PUSH=YES
+BLOCKERS:none
+PERSPECTIVE:Automated controlled UI passes; original device-specific field failure not reproduced before repair. Safari/iOS field verification and GitHub CI remain pending.
+PR:39|TARGET:dev|UNMERGED|URL:https://github.com/ozzzmond/GTAR/pull/39
+EFFICIENCY:discovery_passes=1|full_scans=1|targeted_tests=3|full_suites=1|redundant_checks=0
+RECEIPT:outputs/gtar-dev3k-factory-theme-lifecycle-repair.txt
+NEXT:Field-test PR39 factory customize/save/reload/switch/edit/restore plus standalone independence.
