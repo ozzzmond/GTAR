@@ -33,6 +33,7 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
 
   useEffect(() => {
     if (!isOpen || !result) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing or changing the remote preview clears its prior request state.
       setSheet(null)
       setError(null)
       setImported(false)

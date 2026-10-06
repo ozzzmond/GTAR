@@ -10,7 +10,7 @@ import {
   Copy,
   Loader2,
 } from 'lucide-react'
-import { useGoogleAuth } from './AuthGate'
+import { useOptionalGoogleAuth } from '../utils/authContext'
 import { DEFAULT_ROOT_ADMIN } from '../utils/authPolicy'
 
 interface AdminUser {
@@ -46,16 +46,9 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
-  let sessionToken: string | undefined
-  let currentEmail: string | undefined
-
-  try {
-    const auth = useGoogleAuth()
-    sessionToken = auth.session?.sessionToken || auth.session?.idToken
-    currentEmail = auth.session?.user?.email
-  } catch {
-    // Isolated tests or previews
-  }
+  const auth = useOptionalGoogleAuth()
+  const sessionToken = auth?.session?.sessionToken || auth?.session?.idToken
+  const currentEmail = auth?.session?.user?.email
 
   const rootAdmin = (import.meta.env.VITE_ROOT_ADMIN_EMAIL as string | undefined) || DEFAULT_ROOT_ADMIN
 
@@ -95,6 +88,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open external admin request preserves the synchronous loading and reset sequence.
       void loadUsers()
       setError('')
       setFilter('all')

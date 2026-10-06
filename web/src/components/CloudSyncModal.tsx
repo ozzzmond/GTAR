@@ -14,7 +14,7 @@ import {
   Layers,
   FileText,
 } from 'lucide-react'
-import { useGoogleAuth } from './AuthGate'
+import { useOptionalGoogleAuth } from '../utils/authContext'
 import {
   performCloudSongbookSync,
   readCloudSyncMeta,
@@ -39,12 +39,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   onSyncApplied,
   onSyncStateChange,
 }) => {
-  let authContext
-  try {
-    authContext = useGoogleAuth()
-  } catch {
-    authContext = null
-  }
+  const authContext = useOptionalGoogleAuth()
 
   const session = authContext?.session
   const token = session?.sessionToken || session?.idToken || session?.token
@@ -98,6 +93,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   useEffect(() => {
     if (isOpen && isAuthenticated) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Start the external sync request with its existing synchronous busy guard.
       void refreshSyncState()
     }
   }, [isOpen, isAuthenticated, refreshSyncState])
@@ -112,7 +108,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             detail: { status: syncStatus, isProcessing },
           })
         )
-      } catch (_) {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
   }, [syncStatus, isProcessing, onSyncStateChange])
 

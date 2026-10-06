@@ -144,7 +144,7 @@ class WebLoggerEngine {
     // Intercept unhandled promise rejections
     window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
       const reason = event.reason
-      let message = 'Unhandled Promise Rejection'
+      let message: string
       let stack: string | undefined
 
       if (reason instanceof Error) {
@@ -175,7 +175,7 @@ class WebLoggerEngine {
     try {
       const messageParts: string[] = []
       let stack: string | undefined
-      let details: string | undefined
+      const details = undefined
 
       for (const arg of args) {
         if (arg instanceof Error) {
@@ -264,7 +264,7 @@ class WebLoggerEngine {
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.removeItem(STORAGE_KEY)
-      } catch { }
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
     this.notifyListeners()
   }
@@ -282,7 +282,7 @@ class WebLoggerEngine {
     for (const listener of this.listeners) {
       try {
         listener(current)
-      } catch { }
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
   }
 

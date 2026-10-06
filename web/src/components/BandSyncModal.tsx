@@ -46,9 +46,6 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
   isOpen,
   onClose,
   initialTab = 'sync',
-  onPushSetlist: _onPushSetlist,
-  activeSetlistName: _activeSetlistName,
-  activeSetlistSongCount: _activeSetlistSongCount = 0,
 }) => {
   const [activeTab, setActiveTab] = useState<'metronome' | 'tuner' | 'sync'>(initialTab)
   const [syncState, setSyncState] = useState<BandSyncState>(() => bandSync.getState())
@@ -70,6 +67,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
   })
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open reset preserves the requested tab on every reopen.
     setActiveTab(initialTab)
   }, [initialTab, isOpen])
 
@@ -82,6 +80,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
   // Keep input in sync with external role changes
   useEffect(() => {
     if (syncState.wsLeaderIp && !inputIp) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- One guarded fallback mirrors the externally supplied leader address.
       setInputIp(syncState.wsLeaderIp)
     }
   }, [syncState.wsLeaderIp, inputIp])
@@ -92,6 +91,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
   // Refresh recent leaders when modal opens or when connection status changes
   useEffect(() => {
     if (isOpen || syncState.wsConnected) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Read external persisted history on open or connection change.
       setRecentLeaders(getRecentLeaders())
     }
   }, [isOpen, syncState.wsConnected])
@@ -122,7 +122,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
         try {
           activeOsc.stop()
           activeOsc.disconnect()
-        } catch {}
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       }
     }
   }, [activeOsc])
@@ -154,7 +154,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
         try {
           activeOsc.stop()
           activeOsc.disconnect()
-        } catch {}
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
       }
       setActiveOsc(null)
       setActiveTuningString(null)
@@ -165,7 +165,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
       try {
         activeOsc.stop()
         activeOsc.disconnect()
-      } catch {}
+      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
 
     type AudioContextConstructor = typeof AudioContext

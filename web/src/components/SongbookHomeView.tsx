@@ -301,7 +301,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       return true
     })
-  }, [indexedSongs, searchQuery, filterKey, filterSetlistId, setlists])
+  }, [indexedSongs, songs, searchQuery, filterKey, filterSetlistId, setlists])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {

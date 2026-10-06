@@ -21,18 +21,18 @@ const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
 // =============================================================================
 // 1. VERSION IDENTITY CONTRACT
 // =============================================================================
-test('DEV3_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.3l across manifests and types', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3l', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.3l')
+test('DEV3_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.3m across manifests and types', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.3m', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.3m')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.3l', 'package.json version must be 1.0.123-dev.3l')
+  assert.equal(pkgJson.version, '1.0.123-dev.3m', 'package.json version must be 1.0.123-dev.3m')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.3l', 'package-lock.json root must be 1.0.123-dev.3l')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3l', 'package-lock.json packages[""] must be 1.0.123-dev.3l')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.3m', 'package-lock.json root must be 1.0.123-dev.3m')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.3m', 'package-lock.json packages[""] must be 1.0.123-dev.3m')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.3l'), 'authCore.ts must reference v1.0.123-dev.3l')
+  assert.ok(authCore.includes('v1.0.123-dev.3m'), 'authCore.ts must reference v1.0.123-dev.3m')
 })
 
 // =============================================================================

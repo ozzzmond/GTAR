@@ -208,7 +208,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
         <input
           ref={folderInputRef}
           type="file"
-          // @ts-ignore
+          // @ts-expect-error React input types omit the legacy directory attributes.
           webkitdirectory="true"
           directory="true"
           multiple

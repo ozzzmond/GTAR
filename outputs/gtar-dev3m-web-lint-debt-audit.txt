@@ -1,0 +1,132 @@
+STATUS:PASS|TASK:GTAR_DEV3M_WEB_LINT_DEBT_AUDIT_AND_SAFE_CLEANUP
+BASE:v1.0.123-dev.3l|SHA:45a49b47246d9738256a22f66094f01765fab8ba|origin_dev_at_start=SAME|branch=codex/dev3m-web-lint-cleanup
+AUDIT:errors=146|warnings=8|rules=16|files=26|diagnostics=154|capture=npm run lint -- --format json|discovery_passes=1
+CLASSIFICATION:SAFE_MECHANICAL=52|CORRECTNESS_RELEVANT=24|INTENTIONAL_PATTERN=54|TEST_OR_TOOLING=0|CONFIGURATION_MISMATCH=24
+RESOLVED:SAFE_MECHANICAL=52|CORRECTNESS_RELEVANT=24|INTENTIONAL_PATTERN=54|TEST_OR_TOOLING=0|CONFIGURATION_MISMATCH=24|remaining=0
+SCOPE:application=152|worker=2|tests=0|config_tooling=0|generated=0|normal_source_exclusions=0
+CONFIG_SCOPE:eslint .|recommended_js_ts_hooks_refresh=TS/TSX|browser_globals=TS/TSX|ignored=dist,dev-dist|CJS_tests_tooling_have_no_recommended_rules_in_current_config|scope_preserved
+CI_CAUSE:validate.yml,web-preview.yml,release.yml explicitly run lint:sync|package_script targets 12 critical sync/auth/backup utility files|full lint script was not a CI step|no GitHub Actions changes
+CHANGE:remove unused local bindings, overwritten initializers and redundant rethrow|annotate intentional best-effort catches|preserve U+202F via escaped literal|document expected legacy input attribute error|type WebRTC, timer and band wire interfaces|preserve remote error cause
+BEHAVIOR:optional auth hook is unconditional; strict hook still rejects missing boundary|immutable token binding preserves admin callback inference|recovery helper hoisted without changing mount frequency|navigation callback stable|band listener captures current songs and selection without reconnecting|filter memo includes read songs
+BEHAVIOR:stage/swipe event refs publish in layout effects after commit; aborted render cannot affect live input|stage keyboard callbacks stable with explicit dependencies|wake lock owns acquired sentinel in effect, releases on toggle/unmount/late resolution, avoids declaration-order exception
+INTENTIONAL:no-empty=36 documented best-effort operations retain failure handling|15 existing reset/request effect diagnostics retain exact modal/browser/gesture lifecycle|auth epoch cleanup invalidates current generation|editor song-ID reset preserves unsaved draft/history|entrypoint lazy App retains singleton root
+EXCEPTIONS:19 exact-line eslint-disable-next-line statements with rule and rationale|16 effect sites include newly exposed unsupported-wake feedback; original wake-state mirror eliminated|2 exhaustive-deps sites=epoch counter and identity-only editor reset|1 refresh site=singleton main bootstrap|no file/directory/global disable
+CONFIG_CHANGE:24 exact legacy public export names across 6 exact component files allowExportNames|rule remains error|allowConstantExport already inherited from Vite preset|retain public helper imports and Vite importer invalidation/full-reload fallback|no arbitrary export exemptions|no rule severity downgrade
+CONFIG_PROOF:synthetic unexpected ThemeModal export rejected|same allowed name in another file rejected|unexcepted set-state-in-effect in ThemeModal rejected|existing named export accepted
+TYPING_LIMIT:wire interfaces model existing caller assumptions; unknown input guards unchanged|type assertions do not validate malformed protocol payloads|no new wire transformation or persistence schema
+TESTS:focused_distinct=45/45|new_runtime_guard_tests=12/12|full_web=554/554|prior_web=542/542|lint_sync=PASS|full_lint=0_errors/0_warnings|production_build=PASS|controller=1/1
+REGRESSIONS:DEV.3l semantic coverage and DEV.3k factory lifecycle PASS|standalone reload/backup/restore/edit/delete PASS|auth StrictMode idle/rerender tests PASS|editor history/navigation/recovery tests PASS|band address/cast and sync/auth/backup suite PASS
+RUNTIME_PROOF:wake request stable across five rerenders, release once on off/unmount and after pending resolution|optional context absent/present/absent keeps hook order|swipe release/disabled guard|suspended stage transition navigates committed song|App latest-selected Beta transpose preserved without duplicate listeners or network calls|band aliases/null inputs unchanged
+LINT:baseline=146_errors/8_warnings|final=0_errors/0_warnings|raw_outputs=transient_outside_repository|suppressed_messages=19_documented_sites
+BUILD_NOTES:nonblocking bundler chunk-size and mixed dynamic/static logger-import warnings retained|no dependency upgrades
+POLICY:WEB_PWA_ONLY|theme_behavior_preserved|no UI redesign|no blanket suppressions|no dependency changes|no GitHub Actions changes|no merge|no tag
+VERSION:1.0.123-dev.3m|package,lock,gtar DEV constant,authCore banner and current checkpoint assertions aligned|PROD unchanged
+PERSPECTIVE:full Web lint suitable for a future CI gate with --max-warnings 0|CI remains unchanged|review explicit exceptions; baseline does not imply runtime schema validation or a performance guarantee
+EFFICIENCY:discovery_passes=1|targeted_lints=5|full_lints=2|full_suites=1|production_builds=1|targeted_test_retries=selector_and_timer_harness_corrections|redundant_checks=0
+RECEIPT:outputs/gtar-dev3m-web-lint-debt-audit.txt|one_canonical_receipt|explicit_task_overrides_repository_default_no_receipts
+NEXT:Review dedicated PR targeting dev; do not merge or tag in this task
+RULE:@typescript-eslint/no-unused-vars|count=30
+RULE:no-useless-assignment|count=7
+RULE:react-hooks/exhaustive-deps|count=8
+RULE:no-empty|count=36
+RULE:react-hooks/immutability|count=2
+RULE:react-refresh/only-export-components|count=25
+RULE:no-useless-catch|count=1
+RULE:react-hooks/set-state-in-effect|count=16
+RULE:react-hooks/rules-of-hooks|count=1
+RULE:@typescript-eslint/ban-ts-comment|count=1
+RULE:react-hooks/refs|count=9
+RULE:no-irregular-whitespace|count=4
+RULE:react-hooks/preserve-manual-memoization|count=1
+RULE:@typescript-eslint/no-explicit-any|count=11
+RULE:no-unassigned-vars|count=1
+RULE:preserve-caught-error|count=1
+AUDIT_FILE:web/functions/lib/authCore.ts|errors=2|warnings=0
+DIAGNOSTICS:web/functions/lib/authCore.ts|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=133:30|count=1|resolved=YES
+DIAGNOSTICS:web/functions/lib/authCore.ts|rule=no-useless-assignment|category=SAFE_MECHANICAL|base_locations=348:7|count=1|resolved=YES
+AUDIT_FILE:web/src/App.tsx|errors=15|warnings=3
+DIAGNOSTICS:web/src/App.tsx|rule=react-hooks/exhaustive-deps|category=SAFE_MECHANICAL|base_locations=269:6,1242:9|count=2|resolved=YES
+DIAGNOSTICS:web/src/App.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=407:14,426:14,433:14,503:14,510:14,517:14,524:14|count=7|resolved=YES
+DIAGNOSTICS:web/src/App.tsx|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=407:17,426:17,433:17,503:17,510:17,517:17,524:17|count=7|resolved=YES
+DIAGNOSTICS:web/src/App.tsx|rule=react-hooks/immutability|category=CORRECTNESS_RELEVANT|base_locations=767:13|count=1|resolved=YES
+DIAGNOSTICS:web/src/App.tsx|rule=react-hooks/exhaustive-deps|category=CORRECTNESS_RELEVANT|base_locations=838:6|count=1|resolved=YES
+AUDIT_FILE:web/src/components/AuthGate.tsx|errors=2|warnings=1
+DIAGNOSTICS:web/src/components/AuthGate.tsx|rule=react-refresh/only-export-components|category=CONFIGURATION_MISMATCH|base_locations=39:17|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/AuthGate.tsx|rule=react-hooks/exhaustive-deps|category=INTENTIONAL_PATTERN|base_locations=338:26|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/AuthGate.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=423:16|count=1|resolved=YES
+AUDIT_FILE:web/src/components/BackupRestoreDialogModal.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/components/BackupRestoreDialogModal.tsx|rule=no-useless-catch|category=SAFE_MECHANICAL|base_locations=126:7|count=1|resolved=YES
+AUDIT_FILE:web/src/components/BandSyncModal.tsx|errors=9|warnings=0
+DIAGNOSTICS:web/src/components/BandSyncModal.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=49:18,50:22,51:27|count=3|resolved=YES
+DIAGNOSTICS:web/src/components/BandSyncModal.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=73:5,85:7,95:7|count=3|resolved=YES
+DIAGNOSTICS:web/src/components/BandSyncModal.tsx|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=125:17,157:17,168:15|count=3|resolved=YES
+AUDIT_FILE:web/src/components/ChordPreviewModal.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/components/ChordPreviewModal.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=36:7|count=1|resolved=YES
+AUDIT_FILE:web/src/components/CloudSyncModal.tsx|errors=4|warnings=0
+DIAGNOSTICS:web/src/components/CloudSyncModal.tsx|rule=react-hooks/rules-of-hooks|category=CORRECTNESS_RELEVANT|base_locations=44:19|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/CloudSyncModal.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=101:12|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/CloudSyncModal.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=115:16|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/CloudSyncModal.tsx|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=115:19|count=1|resolved=YES
+AUDIT_FILE:web/src/components/CustomPaletteEditor.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/components/CustomPaletteEditor.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=50:7|count=1|resolved=YES
+AUDIT_FILE:web/src/components/DesktopEditor.tsx|errors=2|warnings=1
+DIAGNOSTICS:web/src/components/DesktopEditor.tsx|rule=react-refresh/only-export-components|category=CONFIGURATION_MISMATCH|base_locations=32:17|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/DesktopEditor.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=154:5|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/DesktopEditor.tsx|rule=react-hooks/exhaustive-deps|category=INTENTIONAL_PATTERN|base_locations=168:6|count=1|resolved=YES
+AUDIT_FILE:web/src/components/Header.tsx|errors=12|warnings=0
+DIAGNOSTICS:web/src/components/Header.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=127:15,129:14,130:28,131:27,143:24,145:20,146:22,147:23,150:28|count=9|resolved=YES
+DIAGNOSTICS:web/src/components/Header.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=222:7,267:7,364:7|count=3|resolved=YES
+AUDIT_FILE:web/src/components/ImportDialogModal.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/components/ImportDialogModal.tsx|rule=@typescript-eslint/ban-ts-comment|category=SAFE_MECHANICAL|base_locations=211:11|count=1|resolved=YES
+AUDIT_FILE:web/src/components/SetlistDrawer.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/components/SetlistDrawer.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=73:7|count=1|resolved=YES
+AUDIT_FILE:web/src/components/SongbookHomeView.tsx|errors=0|warnings=1
+DIAGNOSTICS:web/src/components/SongbookHomeView.tsx|rule=react-hooks/exhaustive-deps|category=CORRECTNESS_RELEVANT|base_locations=304:6|count=1|resolved=YES
+AUDIT_FILE:web/src/components/StageControlDock.tsx|errors=6|warnings=0
+DIAGNOSTICS:web/src/components/StageControlDock.tsx|rule=react-refresh/only-export-components|category=CONFIGURATION_MISMATCH|base_locations=15:14,20:14,32:17,49:17,75:17,99:17|count=6|resolved=YES
+AUDIT_FILE:web/src/components/StagePresentationView.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/components/StagePresentationView.tsx|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=161:23|count=1|resolved=YES
+AUDIT_FILE:web/src/components/StageSettingsModal.tsx|errors=6|warnings=1
+DIAGNOSTICS:web/src/components/StageSettingsModal.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=39:21,40:18,41:20,42:29|count=4|resolved=YES
+DIAGNOSTICS:web/src/components/StageSettingsModal.tsx|rule=react-hooks/set-state-in-effect|category=CORRECTNESS_RELEVANT|base_locations=53:9|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/StageSettingsModal.tsx|rule=react-hooks/immutability|category=CORRECTNESS_RELEVANT|base_locations=63:11|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/StageSettingsModal.tsx|rule=react-hooks/exhaustive-deps|category=CORRECTNESS_RELEVANT|base_locations=77:6|count=1|resolved=YES
+AUDIT_FILE:web/src/components/StageView.tsx|errors=17|warnings=1
+DIAGNOSTICS:web/src/components/StageView.tsx|rule=react-refresh/only-export-components|category=CONFIGURATION_MISMATCH|base_locations=84:14,91:14,98:14,104:14|count=4|resolved=YES
+DIAGNOSTICS:web/src/components/StageView.tsx|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=130:19|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/StageView.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=347:7|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/StageView.tsx|rule=react-hooks/refs|category=CORRECTNESS_RELEVANT|base_locations=847:3,849:3,859:3,861:3,864:3,867:3,869:3|count=7|resolved=YES
+DIAGNOSTICS:web/src/components/StageView.tsx|rule=react-hooks/exhaustive-deps|category=CORRECTNESS_RELEVANT|base_locations=1331:6|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/StageView.tsx|rule=no-irregular-whitespace|category=SAFE_MECHANICAL|base_locations=2134:47,2134:49,2135:40,2135:42|count=4|resolved=YES
+AUDIT_FILE:web/src/components/SwipeableActionCard.tsx|errors=5|warnings=0
+DIAGNOSTICS:web/src/components/SwipeableActionCard.tsx|rule=react-refresh/only-export-components|category=CONFIGURATION_MISMATCH|base_locations=27:17,39:17|count=2|resolved=YES
+DIAGNOSTICS:web/src/components/SwipeableActionCard.tsx|rule=react-hooks/refs|category=CORRECTNESS_RELEVANT|base_locations=100:3,101:3|count=2|resolved=YES
+DIAGNOSTICS:web/src/components/SwipeableActionCard.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=123:7|count=1|resolved=YES
+AUDIT_FILE:web/src/components/ThemeModal.tsx|errors=11|warnings=0
+DIAGNOSTICS:web/src/components/ThemeModal.tsx|rule=react-refresh/only-export-components|category=CONFIGURATION_MISMATCH|base_locations=17:10,33:14,123:17,144:17,228:14,321:14,543:17,564:17,574:17,606:17|count=10|resolved=YES
+DIAGNOSTICS:web/src/components/ThemeModal.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=654:7|count=1|resolved=YES
+AUDIT_FILE:web/src/components/UserManagementModal.tsx|errors=2|warnings=0
+DIAGNOSTICS:web/src/components/UserManagementModal.tsx|rule=react-hooks/preserve-manual-memoization|category=CORRECTNESS_RELEVANT|base_locations=94:7|count=1|resolved=YES
+DIAGNOSTICS:web/src/components/UserManagementModal.tsx|rule=react-hooks/set-state-in-effect|category=INTENTIONAL_PATTERN|base_locations=98:12|count=1|resolved=YES
+AUDIT_FILE:web/src/main.tsx|errors=1|warnings=0
+DIAGNOSTICS:web/src/main.tsx|rule=react-refresh/only-export-components|category=INTENTIONAL_PATTERN|base_locations=10:7|count=1|resolved=YES
+AUDIT_FILE:web/src/utils/bandSync.ts|errors=18|warnings=0
+DIAGNOSTICS:web/src/utils/bandSync.ts|rule=@typescript-eslint/no-explicit-any|category=CORRECTNESS_RELEVANT|base_locations=15:12,393:40,532:67,644:55,674:32|count=5|resolved=YES
+DIAGNOSTICS:web/src/utils/bandSync.ts|rule=@typescript-eslint/no-explicit-any|category=SAFE_MECHANICAL|base_locations=45:30,45:67,63:31,74:23|count=4|resolved=YES
+DIAGNOSTICS:web/src/utils/bandSync.ts|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=58:19,307:15,319:15,616:17,633:17|count=5|resolved=YES
+DIAGNOSTICS:web/src/utils/bandSync.ts|rule=no-useless-assignment|category=SAFE_MECHANICAL|base_locations=223:9,242:9,243:9|count=3|resolved=YES
+DIAGNOSTICS:web/src/utils/bandSync.ts|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=370:14|count=1|resolved=YES
+AUDIT_FILE:web/src/utils/logger.ts|errors=4|warnings=0
+DIAGNOSTICS:web/src/utils/logger.ts|rule=no-useless-assignment|category=SAFE_MECHANICAL|base_locations=147:11|count=1|resolved=YES
+DIAGNOSTICS:web/src/utils/logger.ts|rule=no-unassigned-vars|category=SAFE_MECHANICAL|base_locations=178:11|count=1|resolved=YES
+DIAGNOSTICS:web/src/utils/logger.ts|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=267:15,285:15|count=2|resolved=YES
+AUDIT_FILE:web/src/utils/onlineSearchProvider.ts|errors=1|warnings=0
+DIAGNOSTICS:web/src/utils/onlineSearchProvider.ts|rule=preserve-caught-error|category=CORRECTNESS_RELEVANT|base_locations=453:7|count=1|resolved=YES
+AUDIT_FILE:web/src/utils/stageCast.ts|errors=20|warnings=0
+DIAGNOSTICS:web/src/utils/stageCast.ts|rule=no-useless-assignment|category=SAFE_MECHANICAL|base_locations=71:7,72:7|count=2|resolved=YES
+DIAGNOSTICS:web/src/utils/stageCast.ts|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=220:15,227:15,272:15,289:13,305:13,320:15,342:15,348:15,354:15,398:15,407:15,528:19,620:21,665:13,741:17,768:23|count=16|resolved=YES
+DIAGNOSTICS:web/src/utils/stageCast.ts|rule=@typescript-eslint/no-explicit-any|category=SAFE_MECHANICAL|base_locations=662:69,663:36|count=2|resolved=YES
+AUDIT_FILE:web/src/utils/stageSession.ts|errors=3|warnings=0
+DIAGNOSTICS:web/src/utils/stageSession.ts|rule=@typescript-eslint/no-unused-vars|category=SAFE_MECHANICAL|base_locations=45:12,55:12|count=2|resolved=YES
+DIAGNOSTICS:web/src/utils/stageSession.ts|rule=no-empty|category=INTENTIONAL_PATTERN|base_locations=55:15|count=1|resolved=YES
+FILES:count=47|web/eslint.config.js|web/functions/lib/authCore.ts|web/package-lock.json|web/package.json|web/src/App.tsx|web/src/components/AuthGate.tsx|web/src/components/BackupRestoreDialogModal.tsx|web/src/components/BandSyncModal.tsx|web/src/components/ChordPreviewModal.tsx|web/src/components/CloudSyncModal.tsx|web/src/components/CustomPaletteEditor.tsx|web/src/components/DesktopEditor.tsx|web/src/components/Header.tsx|web/src/components/ImportDialogModal.tsx|web/src/components/SetlistDrawer.tsx|web/src/components/SongbookHomeView.tsx|web/src/components/StagePresentationView.tsx|web/src/components/StageSettingsModal.tsx|web/src/components/StageView.tsx|web/src/components/SwipeableActionCard.tsx|web/src/components/ThemeModal.tsx|web/src/components/UserManagementModal.tsx|web/src/main.tsx|web/src/types/gtar.ts|web/src/utils/bandSync.ts|web/src/utils/logger.ts|web/src/utils/onlineSearchProvider.ts|web/src/utils/stageCast.ts|web/src/utils/stageSession.ts|web/tests/dev2bFieldFixAndChordRendering.test.cjs|web/tests/dev3QolNavigationStageControls.test.cjs|web/tests/dev3aFieldFixes.test.cjs|web/tests/dev3cCustomPaletteV2.test.cjs|web/tests/dev3dCustomPaletteEditorAndPresets.test.cjs|web/tests/dev3fHeaderSemanticTokens.test.cjs|web/tests/fieldCorrections108Dev8b.test.cjs|web/tests/librarySetlistBulkQol108Dev8f.test.cjs|web/tests/librarySetlistDensityQol.test.cjs|web/tests/mainSetlistCardActions.test.cjs|web/tests/numbersNotation.test.cjs|web/tests/songbookDataFoundation.test.cjs|web/tests/swipeCardActions.test.cjs|web/tests/themeSyncUiPolish108Dev8d.test.cjs|web/tests/uiCopyDensityCleanup108Dev8c.test.cjs|web/src/utils/authContext.ts|web/tests/dev3mLintBehavior.test.cjs|outputs/gtar-dev3m-web-lint-debt-audit.txt

@@ -47,6 +47,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the editor creates a fresh draft from the externally controlled palette.
       setStagedColors(normalizeCustomThemeColors(customColors))
       setActiveGroup('stage')
       setJsonModalMode(null)
