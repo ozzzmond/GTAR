@@ -688,7 +688,7 @@ export const Header: React.FC<HeaderProps> = ({
             label="Cast (Alt+4)"
             isActive={isCastActive}
             onClick={onOpenCast || (() => {})}
-            className={`shrink-0 ${isCastActive ? '!text-[#2AA198]' : ''}`}
+            className="shrink-0"
           />
           <ToolbarIconButton
             icon={Palette}

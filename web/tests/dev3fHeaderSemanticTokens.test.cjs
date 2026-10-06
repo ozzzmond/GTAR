@@ -14,7 +14,7 @@ const { CustomPaletteEditor } = require('../src/components/CustomPaletteEditor.t
 // Render the real header without loading unrelated auth, search or modal implementations.
 const Module = require('node:module'), originalLoad = Module._load
 Module._load = function (request, parent, ...args) {
-  if (parent?.filename.endsWith('/components/Header.tsx')) {
+  if (parent?.filename && /[\\/]components[\\/]Header\.tsx$/.test(parent.filename)) {
     if (request === '../utils/env') return { isDevEnv: true }
     if (request === './AuthGate') return { useGoogleAuth: () => ({ session: null }) }
     if (request.endsWith('.png')) return 'logo.png'
@@ -110,7 +110,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
     const color = selector => window.getComputedStyle(document.querySelector(selector)).color
     const title = document.querySelector('.header-primary-text'), version = document.querySelector('.header-secondary-text')
     assert.equal(title.textContent.trim(), 'GTAR-Dev')
-    assert.match(version.textContent, /v1\.0\.123-dev\.3g/)
+    assert.match(version.textContent, /v1\.0\.123-dev\.3h/)
     assert.ok(!title.classList.contains('ui-primary-text'))
     assert.ok(!version.classList.contains('ui-secondary-text'))
     apply(target)
