@@ -1,5 +1,5 @@
 import { normalizeFontSettings, applyFontSettings } from '../utils/customFonts'
-import { SETTINGS_KEYS, validateBackupSettings, type FactoryThemeOverrides } from '../utils/backupSettings'
+import { SETTINGS_KEYS, validateBackupSettings, THEME_MODES, type FactoryThemeOverrides } from '../utils/backupSettings'
 import React, { useState, useEffect } from 'react'
 import {
   X,
@@ -554,7 +554,20 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   const loadOverrides = (): FactoryThemeOverrides => {
     try {
       const value = JSON.parse(localStorage.getItem(SETTINGS_KEYS.factoryThemeOverrides) || '{}')
-      return validateBackupSettings({ factoryThemeOverrides: value }).length ? {} : value
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+      const valid: FactoryThemeOverrides = {}
+      for (const [id, palette] of Object.entries(value)) {
+        if (
+          id !== 'custom' &&
+          THEME_MODES.includes(id as ThemeMode) &&
+          palette &&
+          typeof palette === 'object' &&
+          !validateBackupSettings({ factoryThemeOverrides: { [id]: palette } }).length
+        ) {
+          valid[id as Exclude<ThemeMode, 'custom'>] = normalizeCustomThemeColors(palette as CustomThemeColors)
+        }
+      }
+      return valid
     } catch { return {} }
   }
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
@@ -563,8 +576,10 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       const saved = loadOverrides()
-      // Adopt a V2 imported identity into its factory slot on the next explicit save.
-      if (customColors?.identity) saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
+      // Adopt active custom theme with factory identity into overrides on modal open
+      if (currentTheme === 'custom' && customColors?.identity) {
+        saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
+      }
       setOverrides(saved)
       setPendingRestore(null)
       setStagedTheme(currentTheme)
@@ -577,7 +592,12 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
 
   const handleSaveAndApply = () => {
     try {
-      localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(overrides))
+      const nextOverrides = { ...overrides }
+      if (stagedTheme === 'custom' && stagedCustomColors.identity) {
+        nextOverrides[stagedCustomColors.identity.factoryId] = stagedCustomColors
+      }
+      setOverrides(nextOverrides)
+      localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.themeMode, stagedTheme)
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(stagedCustomColors))
       if (stagedTheme === 'custom') {
@@ -650,7 +670,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
             {THEME_OPTIONS.map((theme) => {
               const override = overrides[theme.id as Exclude<ThemeMode, 'custom'>]
               const isSelected = override ? stagedTheme === 'custom' && stagedCustomColors.identity?.factoryId === theme.id : stagedTheme === theme.id
-              const preview = override ? { bgHex: override.bgHex, accentHex: override.accentColor } : theme
+              const preview = override ? { bgHex: override.bgHex, accentHex: override.accentColor || override.chordHex || theme.accentHex } : theme
               return (
                 <div
                   key={theme.id}
