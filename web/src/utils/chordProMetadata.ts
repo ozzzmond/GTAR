@@ -2,6 +2,7 @@ export interface CanonicalMetadata {
   title?: string;
   artist?: string;
   key?: string;
+  originalKey?: string;
   tempo?: string | number;
   bpm?: string | number;
   time?: string;
@@ -126,6 +127,23 @@ export function syncCanonicalDirectives(
       }
     } else if (val !== '') {
       pendingInsertions.push({ directive: dirName, formatted: `{${dirName}: ${val}}` });
+    }
+  }
+
+  // Synchronize original_key only if explicitly specified in updates
+  if (updates.originalKey !== undefined) {
+    const rawVal = updates.originalKey.trim();
+    const existingOriginalKeyIndices = lines.flatMap((line, index) => {
+      const match = line.trim().match(DIRECTIVE_REGEX);
+      return match && (match[1].toLowerCase() === 'original_key' || match[1].toLowerCase() === 'originalkey') ? [index] : [];
+    });
+
+    if (existingOriginalKeyIndices.length > 0) {
+      for (const index of existingOriginalKeyIndices) {
+        updatedLines[index] = rawVal === '' ? '' : `{original_key: ${rawVal}}`;
+      }
+    } else if (rawVal !== '') {
+      pendingInsertions.push({ directive: 'key', formatted: `{original_key: ${rawVal}}` });
     }
   }
 

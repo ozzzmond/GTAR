@@ -36,13 +36,13 @@ const pkgJson = require('../package.json')
 const pkgLockJson = require('../package-lock.json')
 const authCore = fs.readFileSync(require.resolve('../functions/lib/authCore.ts'), 'utf8')
 
-// 1. VERSION CONTRACT (1.0.123-dev.4b)
-test('DEV4B_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.4b', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.4b', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.4b')
-  assert.equal(pkgJson.version, '1.0.123-dev.4b', 'package.json version must be 1.0.123-dev.4b')
-  assert.equal(pkgLockJson.version, '1.0.123-dev.4b', 'package-lock.json root version must be 1.0.123-dev.4b')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.4b', 'package-lock.json packages[""] must be 1.0.123-dev.4b')
-  assert.ok(authCore.includes('v1.0.123-dev.4b'), 'authCore.ts header must reference v1.0.123-dev.4b')
+// 1. VERSION CONTRACT (1.0.123-dev.5)
+test('DEV4B_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.5')
+  assert.equal(pkgJson.version, '1.0.123-dev.5', 'package.json version must be 1.0.123-dev.5')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.5', 'package-lock.json root version must be 1.0.123-dev.5')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5', 'package-lock.json packages[""] must be 1.0.123-dev.5')
+  assert.ok(authCore.includes('v1.0.123-dev.5'), 'authCore.ts header must reference v1.0.123-dev.5')
 })
 
 // 2. DATASET DISCOVERY, PROVENANCE & LICENSING
