@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import {
   Music,
   Activity,
@@ -104,6 +104,56 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [persisted, setPersisted] = useState(() => fields(song))
   const history = useRef(new TextHistory())
   const selection = useRef({ start: 0, end: 0 })
+  const pendingCaretRestoration = useRef<{
+    songId?: string | number
+    selectionStart: number
+    selectionEnd: number
+    scrollTop: number
+    scrollLeft: number
+  } | null>(null)
+
+  const captureEditorSelection = () => {
+    const textarea = textareaRef.current
+    if (textarea) {
+      selection.current = { start: textarea.selectionStart, end: textarea.selectionEnd }
+      pendingCaretRestoration.current = {
+        songId: editingSong.id,
+        selectionStart: textarea.selectionStart,
+        selectionEnd: textarea.selectionEnd,
+        scrollTop: textarea.scrollTop,
+        scrollLeft: textarea.scrollLeft,
+      }
+    }
+  }
+
+  useLayoutEffect(() => {
+    if (!pendingCaretRestoration.current) return
+    const { songId, selectionStart, selectionEnd, scrollTop, scrollLeft } = pendingCaretRestoration.current
+    if (songId !== editingSong.id) {
+      pendingCaretRestoration.current = null
+      return
+    }
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const maxLen = textarea.value.length
+    const clampedStart = Math.min(Math.max(0, selectionStart), maxLen)
+    const clampedEnd = Math.min(Math.max(clampedStart, selectionEnd), maxLen)
+
+    try {
+      if (typeof textarea.focus === 'function') {
+        textarea.focus({ preventScroll: true })
+      }
+    } catch {
+      textarea.focus?.()
+    }
+
+    textarea.setSelectionRange(clampedStart, clampedEnd)
+    textarea.scrollTop = scrollTop
+    textarea.scrollLeft = scrollLeft
+    selection.current = { start: clampedStart, end: clampedEnd }
+    pendingCaretRestoration.current = null
+  }, [localRawContent, editingSong.id])
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
 
   const draft = {
@@ -205,6 +255,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     // Updates canonical metadata fields only; never alters {key} and never transposes chord symbols
     const updates: Partial<ActiveSongState> = {}
 
+    if (meta.title && meta.title.trim()) {
+      setLocalTitle(meta.title.trim())
+      updates.title = meta.title.trim()
+    }
     if (meta.artist && meta.artist.trim()) {
       setLocalArtist(meta.artist.trim())
       updates.artist = meta.artist.trim()
@@ -459,30 +513,36 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Insert or wrap text in [brackets] (QoL action)
   const handleInsertBrackets = () => {
     const textarea = textareaRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
+    const start = textarea ? textarea.selectionStart : selection.current.start
+    const end = textarea ? textarea.selectionEnd : selection.current.end
     const text = localRawContent
+    const scrollTop = textarea?.scrollTop ?? 0
+    const scrollLeft = textarea?.scrollLeft ?? 0
 
     if (start !== end) {
       // Wrap selection in brackets
       const selected = text.substring(start, end)
       const wrapped = selected.startsWith('[') && selected.endsWith(']') ? selected : `[${selected}]`
       const newText = text.substring(0, start) + wrapped + text.substring(end)
+      pendingCaretRestoration.current = {
+        songId: editingSong.id,
+        selectionStart: start,
+        selectionEnd: start + wrapped.length,
+        scrollTop,
+        scrollLeft,
+      }
       handleRawContentChange(newText)
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start, start + wrapped.length)
-      }, 10)
     } else {
       // Insert [] and position caret between them
       const newText = text.substring(0, start) + '[]' + text.substring(start)
+      pendingCaretRestoration.current = {
+        songId: editingSong.id,
+        selectionStart: start + 1,
+        selectionEnd: start + 1,
+        scrollTop,
+        scrollLeft,
+      }
       handleRawContentChange(newText)
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + 1, start + 1)
-      }, 10)
     }
   }
 
@@ -503,12 +563,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       const end = textarea.selectionEnd
       const text = localRawContent
       const updated = text.substring(0, start) + sanitized + text.substring(end)
+      pendingCaretRestoration.current = {
+        songId: editingSong.id,
+        selectionStart: start + sanitized.length,
+        selectionEnd: start + sanitized.length,
+        scrollTop: textarea.scrollTop,
+        scrollLeft: textarea.scrollLeft,
+      }
       handleRawContentChange(updated)
-
-      setTimeout(() => {
-        textarea.focus()
-        textarea.setSelectionRange(start + sanitized.length, start + sanitized.length)
-      }, 10)
       showToast('Pasted and standardized ChordPro notation')
     } catch {
       showToast('Clipboard access denied. Please use Ctrl+V / Cmd+V.')
@@ -548,25 +610,28 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Quick insert section snippet
   const insertTextAtCursor = (insertText: string) => {
     const textarea = textareaRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
+    const start = textarea ? textarea.selectionStart : selection.current.start
+    const end = textarea ? textarea.selectionEnd : selection.current.end
     const text = localRawContent
+    const scrollTop = textarea?.scrollTop ?? 0
+    const scrollLeft = textarea?.scrollLeft ?? 0
     const before = text.substring(0, start)
     const after = text.substring(end)
 
     const prefix = before.endsWith('\n') || before.length === 0 ? '' : '\n'
     const suffix = after.startsWith('\n') || after.length === 0 ? '\n' : '\n'
     const updated = `${before}${prefix}${insertText}${suffix}${after}`
+    const newCursorPos = start + prefix.length + insertText.length + suffix.length
+
+    pendingCaretRestoration.current = {
+      songId: editingSong.id,
+      selectionStart: newCursorPos,
+      selectionEnd: newCursorPos,
+      scrollTop,
+      scrollLeft,
+    }
 
     handleRawContentChange(updated)
-
-    setTimeout(() => {
-      textarea.focus()
-      const newCursorPos = start + prefix.length + insertText.length + suffix.length
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-    }, 10)
   }
 
   const songInputs = (
@@ -685,6 +750,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               {/* [] Bracket Wrap/Insert Action */}
               <button
                 type="button"
+                onPointerDown={captureEditorSelection}
                 onClick={handleInsertBrackets}
                 className="flex items-center gap-1 px-2 py-1 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action font-mono text-[11px] font-bold transition-colors cursor-pointer"
                 title="Wrap selection in brackets or insert [] at caret"
@@ -695,7 +761,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </button>
 
               <button type="button" aria-label="Insert section" title="Insert section"
-                aria-expanded={insertOpen} aria-haspopup="menu" onClick={event => { setInsertAnchor(event.currentTarget); setInsertOpen(open => !open) }}
+                aria-expanded={insertOpen} aria-haspopup="menu" onPointerDown={captureEditorSelection} onClick={event => { captureEditorSelection(); setInsertAnchor(event.currentTarget); setInsertOpen(open => !open) }}
                 className="p-1.5 rounded bg-app-surface text-app-section cursor-pointer">
                 <MoreHorizontal className="w-3.5 h-3.5" />
               </button>

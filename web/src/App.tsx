@@ -1623,6 +1623,8 @@ function LibraryApp() {
             onBulkDeleteSongs={handleBulkDeleteSongs}
             onBulkAddSongsToSetlist={handleBulkAddSongsToSetlist}
             onBulkDeleteSetlists={handleBulkDeleteSetlists}
+            onShareSetlist={(sl) => setSharingSetlist(sl)}
+            onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
           />
         ) : activeView === 'editor' ? (
           <DesktopEditor

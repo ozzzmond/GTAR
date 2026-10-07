@@ -1,3 +1,5 @@
+import { normalizeMusicalKey } from './musicalKey';
+
 export interface CanonicalMetadata {
   title?: string;
   artist?: string;
@@ -65,6 +67,9 @@ export function parseChordProDirectives(content: string): {
       if (!metadata.year) metadata.year = value;
     } else if (name === 'original_key' || name === 'originalkey' || name === 'capo') {
       if (!legacyDirectives[name]) legacyDirectives[name] = value;
+      if ((name === 'original_key' || name === 'originalkey') && !metadata.originalKey) {
+        metadata.originalKey = value;
+      }
     }
   }
 
@@ -183,4 +188,168 @@ export function syncCanonicalDirectives(
   }
 
   return filteredLines.join(lineEnding);
+}
+
+export type SongMetadataStatus = 'METADATA_OK' | 'NEEDS_METADATA';
+
+export interface SongMetadataDetail {
+  status: SongMetadataStatus;
+  isComplete: boolean;
+  missingFields: Array<'title' | 'artist' | 'key' | 'tempo' | 'time' | 'year' | 'originalKey'>;
+  resolved: {
+    title?: string;
+    artist?: string;
+    key?: string;
+    tempo?: number;
+    timeSignature?: string;
+    year?: number | string;
+    originalKey?: string;
+  };
+  details: {
+    title?: string;
+    artist?: string;
+    key?: string;
+    tempo?: number;
+    time?: string;
+    year?: string;
+    originalKey?: string;
+  };
+}
+
+export interface SongLikeMetadata {
+  title?: string | null;
+  artist?: string | null;
+  key?: string | null;
+  originalKey?: string | null;
+  bpm?: string | number | null;
+  tempo?: string | number | null;
+  time?: string | null;
+  year?: string | number | null;
+  rawContent?: string | null;
+}
+
+/**
+ * Deterministically checks the library metadata completeness of a song.
+ *
+ * GTAR separates REFERENCE METADATA from CURRENT CHART STATE.
+ * Reference metadata completeness (METADATA_OK) requires:
+ * 1. Meaningful explicit title (non-empty string).
+ * 2. Meaningful artist not equal to case-insensitive "Unknown Artist" (and non-empty).
+ * 3. Valid explicit originalKey / original_key.
+ * 4. Valid explicit tempo in canonical supported form/range 30-300 BPM (e.g. 120, "120", "120 BPM").
+ * 5. Valid explicit time signature using supported grammar (^\d{1,2}\/\d{1,2}$).
+ * 6. Valid 4-digit year (^\d{4}$).
+ *
+ * Current chart state `key` is NOT part of Metadata OK completeness.
+ * Missing/present `key` does not affect METADATA_OK status.
+ * Do not infer original_key from key for status calculation.
+ */
+export function getSongMetadataStatus(song: SongLikeMetadata): SongMetadataDetail {
+  const missingFields: Array<'title' | 'artist' | 'key' | 'tempo' | 'time' | 'year' | 'originalKey'> = [];
+  const parsedDirectives = song.rawContent ? parseChordProDirectives(song.rawContent).metadata : null;
+
+  // 1. Title
+  const rawTitle = (song.title ?? parsedDirectives?.title ?? '').trim();
+  let validTitle: string | undefined;
+  if (!rawTitle) {
+    missingFields.push('title');
+  } else {
+    validTitle = rawTitle;
+  }
+
+  // 2. Artist
+  const rawArtist = (song.artist ?? parsedDirectives?.artist ?? '').trim();
+  let validArtist: string | undefined;
+  if (!rawArtist || rawArtist.toLowerCase() === 'unknown artist') {
+    missingFields.push('artist');
+  } else {
+    validArtist = rawArtist;
+  }
+
+  // 3. Current Key (captured for resolved state if valid, but NOT part of Metadata OK completeness)
+  const rawKey = (song.key ?? parsedDirectives?.key ?? '').trim();
+  const normalizedKey = rawKey ? normalizeMusicalKey(rawKey) : null;
+  const validKey = normalizedKey || undefined;
+
+  // 4. Tempo (must be in 30-300 range)
+  const rawTempoValue = song.tempo ?? song.bpm ?? parsedDirectives?.tempo ?? parsedDirectives?.bpm ?? null;
+  let validTempo: number | undefined;
+  if (rawTempoValue === null || rawTempoValue === undefined || String(rawTempoValue).trim() === '') {
+    missingFields.push('tempo');
+  } else {
+    let parsedNum: number | null = null;
+    if (typeof rawTempoValue === 'number' && Number.isFinite(rawTempoValue)) {
+      parsedNum = Math.round(rawTempoValue);
+    } else if (typeof rawTempoValue === 'string') {
+      const match = rawTempoValue.trim().match(/^(\d{1,3})(?:\s*bpm)?$/i);
+      if (match) {
+        parsedNum = parseInt(match[1], 10);
+      }
+    }
+    if (parsedNum !== null && parsedNum >= 30 && parsedNum <= 300) {
+      validTempo = parsedNum;
+    } else {
+      missingFields.push('tempo');
+    }
+  }
+
+  // 5. Time Signature (^\d{1,2}\/\d{1,2}$)
+  const rawTime = (song.time ?? parsedDirectives?.time ?? '').trim();
+  let validTime: string | undefined;
+  if (!rawTime || !/^\d{1,2}\/\d{1,2}$/.test(rawTime)) {
+    missingFields.push('time');
+  } else {
+    validTime = rawTime;
+  }
+
+  // 6. Year (^\d{4}$)
+  const rawYear = (song.year !== undefined && song.year !== null ? String(song.year) : (parsedDirectives?.year !== undefined && parsedDirectives?.year !== null ? String(parsedDirectives.year) : '')).trim();
+  let validYear: string | undefined;
+  if (!rawYear || !/^\d{4}$/.test(rawYear)) {
+    missingFields.push('year');
+  } else {
+    validYear = rawYear;
+  }
+
+  // 7. Original Key (Mandatory reference metadata for Metadata OK completeness)
+  const rawOrigKey = (song.originalKey ?? parsedDirectives?.originalKey ?? '').trim();
+  let validOrigKey: string | undefined;
+  if (!rawOrigKey) {
+    missingFields.push('originalKey');
+  } else {
+    const normOrig = normalizeMusicalKey(rawOrigKey);
+    if (!normOrig) {
+      missingFields.push('originalKey');
+    } else {
+      validOrigKey = normOrig;
+    }
+  }
+
+  const isComplete = missingFields.length === 0;
+
+  const resolved = {
+    ...(validTitle ? { title: validTitle } : {}),
+    ...(validArtist ? { artist: validArtist } : {}),
+    ...(validKey ? { key: validKey } : {}),
+    ...(validTempo !== undefined ? { tempo: validTempo } : {}),
+    ...(validTime ? { timeSignature: validTime, time: validTime } : {}),
+    ...(validYear ? { year: Number(validYear) || validYear } : {}),
+    ...(validOrigKey ? { originalKey: validOrigKey } : {}),
+  };
+
+  return {
+    status: isComplete ? 'METADATA_OK' : 'NEEDS_METADATA',
+    isComplete,
+    missingFields,
+    resolved,
+    details: {
+      ...(validTitle ? { title: validTitle } : {}),
+      ...(validArtist ? { artist: validArtist } : {}),
+      ...(validKey ? { key: validKey } : {}),
+      ...(validTempo !== undefined ? { tempo: validTempo } : {}),
+      ...(validTime ? { time: validTime } : {}),
+      ...(validYear ? { year: validYear } : {}),
+      ...(validOrigKey ? { originalKey: validOrigKey } : {}),
+    },
+  };
 }
