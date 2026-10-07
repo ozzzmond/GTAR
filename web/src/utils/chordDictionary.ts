@@ -5,6 +5,9 @@
 
 import { NATURAL_CHORD_VOICINGS } from '../data/naturalChords'
 import { ACCIDENTAL_CHORD_VOICINGS } from '../data/accidentalChords'
+import { IMPORTED_CHORD_VOICINGS } from '../data/importedChords'
+
+export type VoicingProvenance = 'CURATED_GTAR' | 'LICENSED_IMPORTED' | 'SONG_DEFINED'
 
 export interface ChordVoicing {
   chord: string
@@ -12,6 +15,8 @@ export interface ChordVoicing {
   frets: number[] // -1 = muted/x, 0 = open, 1..n = fret number
   fingers?: number[] // 0 = none, 1 = index, 2 = middle, 3 = ring, 4 = pinky
   barres?: number[]
+  source?: VoicingProvenance
+  voicingIndex?: number
 }
 
 // Enharmonic alias pairs for root and bass lookups
@@ -32,15 +37,45 @@ export const ENHARMONIC_ROOT_ALIASES: Record<string, string> = {
   'fb': 'e',
 }
 
-// Aggregate all trusted catalog entries
-export const standardChords: ChordVoicing[] = [
-  ...NATURAL_CHORD_VOICINGS,
-  ...ACCIDENTAL_CHORD_VOICINGS,
+// Curated GTAR voicings (hand-verified highest priority)
+export const curatedChords: ChordVoicing[] = [
+  ...NATURAL_CHORD_VOICINGS.map((v) => ({ ...v, source: 'CURATED_GTAR' as const })),
+  ...ACCIDENTAL_CHORD_VOICINGS.map((v) => ({ ...v, source: 'CURATED_GTAR' as const })),
 ]
 
+// Aggregate all trusted catalog entries
+export const standardChords: ChordVoicing[] = [
+  ...curatedChords,
+  ...IMPORTED_CHORD_VOICINGS.map((v) => ({ ...v, source: 'LICENSED_IMPORTED' as const })),
+]
+
+// Primary default map (curated has precedence, then imported)
 const chordMap = new Map<string, ChordVoicing>()
-for (const v of standardChords) {
-  chordMap.set(v.chord.toLowerCase(), v)
+// Curated-only map for prioritized candidate lookups
+const curatedMap = new Map<string, ChordVoicing>()
+// Multi-voicing catalog: maps normalized chord name -> array of all trusted voicings
+const multiVoicingMap = new Map<string, ChordVoicing[]>()
+
+// Index imported first so curated can overwrite default voicing
+for (const v of IMPORTED_CHORD_VOICINGS) {
+  const key = v.chord.toLowerCase()
+  if (!chordMap.has(key)) {
+    chordMap.set(key, { ...v, source: 'LICENSED_IMPORTED' })
+  }
+  const existing = multiVoicingMap.get(key) || []
+  existing.push({ ...v, source: 'LICENSED_IMPORTED' })
+  multiVoicingMap.set(key, existing)
+}
+
+// Index curated (overwriting default voicing so GTAR hand-curated shapes take precedence)
+for (const v of curatedChords) {
+  const key = v.chord.toLowerCase()
+  curatedMap.set(key, v)
+  chordMap.set(key, v)
+  const existing = multiVoicingMap.get(key) || []
+  // Prepend curated voicing to multi-voicing list
+  existing.unshift(v)
+  multiVoicingMap.set(key, existing)
 }
 
 /**
@@ -172,16 +207,50 @@ export function normalizeChordForVoicingLookup(chord: string): string[] {
 
 /**
  * Resolves a trusted guitar voicing for a given chord name.
+ * Precedence order:
+ * SONG_DEFINED_VOICING -> GTAR_CURATED -> LICENSED_IMPORTED -> SAFE_ALIAS -> UNAVAILABLE (null)
+ * 
  * Returns null if no trusted voicing exists (clean no-diagram state).
  */
-export function getChordVoicing(chordName: string): ChordVoicing | null {
+export function getChordVoicing(
+  chordName: string,
+  songDefinitions?: Map<string, ChordVoicing> | Record<string, ChordVoicing>
+): ChordVoicing | null {
   if (!chordName || typeof chordName !== 'string') return null
   const clean = chordName.trim()
   if (!clean || clean.toLowerCase() === 'n.c.' || clean.toLowerCase() === 'nc') {
     return null
   }
 
+  // Precedence 1: Song-level defined voicing ({define: ...})
+  if (songDefinitions) {
+    const songMatch =
+      songDefinitions instanceof Map
+        ? songDefinitions.get(clean.toLowerCase())
+        : songDefinitions[clean.toLowerCase()]
+    if (songMatch) {
+      return {
+        ...songMatch,
+        chord: clean,
+        source: 'SONG_DEFINED',
+      }
+    }
+  }
+
   const candidates = normalizeChordForVoicingLookup(clean)
+
+  // Pass 1: Check curated GTAR hand-verified voicings across all candidates
+  for (const candidate of candidates) {
+    const curatedMatch = curatedMap.get(candidate.toLowerCase())
+    if (curatedMatch) {
+      return {
+        ...curatedMatch,
+        chord: clean, // Preserve requested chord label
+      }
+    }
+  }
+
+  // Pass 2: Check licensed imported voicings across candidates
   for (const candidate of candidates) {
     const match = chordMap.get(candidate.toLowerCase())
     if (match) {
@@ -193,4 +262,29 @@ export function getChordVoicing(chordName: string): ChordVoicing | null {
   }
 
   return null
+}
+
+/**
+ * Returns all trusted voicings available for a given chord identity.
+ */
+export function getAllChordVoicings(chordName: string): ChordVoicing[] {
+  if (!chordName || typeof chordName !== 'string') return []
+  const clean = chordName.trim()
+  if (!clean || clean.toLowerCase() === 'n.c.' || clean.toLowerCase() === 'nc') {
+    return []
+  }
+
+  const candidates = normalizeChordForVoicingLookup(clean)
+  for (const candidate of candidates) {
+    const matches = multiVoicingMap.get(candidate.toLowerCase())
+    if (matches && matches.length > 0) {
+      return matches.map((m, idx) => ({
+        ...m,
+        chord: clean,
+        voicingIndex: idx,
+      }))
+    }
+  }
+
+  return []
 }

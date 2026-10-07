@@ -45,6 +45,7 @@ import {
 } from './SongLineRenderer'
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
+import { ChordQuickPreview, type ChordQuickPreviewAnchor } from './ChordQuickPreview'
 import { BandSyncModal } from './BandSyncModal'
 import { TvPresentationModal } from './TvPresentationModal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -393,6 +394,10 @@ export const StageView: React.FC<StageViewProps> = ({
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
   const [selectedVoicing, setSelectedVoicing] = useState<ChordVoicing | null>(null)
   const [selectedChordName, setSelectedChordName] = useState<string | null>(null)
+  const [previewAnchor, setPreviewAnchor] = useState<ChordQuickPreviewAnchor | null>(null)
+  const [previewVoicing, setPreviewVoicing] = useState<ChordVoicing | null>(null)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isHoveringPreviewRef = useRef(false)
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
@@ -1488,11 +1493,77 @@ export const StageView: React.FC<StageViewProps> = ({
     lineSpacing,
   ])
 
-  const handleChordClick = (chordName: string) => {
-    setSelectedChordName(chordName)
-    const voicing = getChordVoicing(chordName)
-    setSelectedVoicing(voicing)
+  const handleChordClick = (chordName: string, targetEl?: HTMLElement) => {
+    // Clear any pending hover timer
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+
+    if (targetEl) {
+      // If clicking same chord that is already in quick preview, or on mobile/touch,
+      // clicking pins/opens the anchored quick preview
+      const rect = targetEl.getBoundingClientRect()
+      if (previewAnchor?.chord === chordName) {
+        // Toggle or open full modal
+        setSelectedChordName(chordName)
+        const voicing = getChordVoicing(chordName)
+        setSelectedVoicing(voicing)
+        setPreviewAnchor(null)
+        setPreviewVoicing(null)
+      } else {
+        setPreviewAnchor({ rect, chord: chordName })
+        setPreviewVoicing(getChordVoicing(chordName))
+      }
+    } else {
+      // Fallback for direct invocation without element target
+      setSelectedChordName(chordName)
+      const voicing = getChordVoicing(chordName)
+      setSelectedVoicing(voicing)
+      setPreviewAnchor(null)
+      setPreviewVoicing(null)
+    }
   }
+
+  const handleChordHover = (chordName: string, targetEl: HTMLElement) => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+
+    // 250ms intentional hover delay to prevent flashing
+    hoverTimerRef.current = setTimeout(() => {
+      const rect = targetEl.getBoundingClientRect()
+      setPreviewAnchor({ rect, chord: chordName })
+      setPreviewVoicing(getChordVoicing(chordName))
+    }, 250)
+  }
+
+  const handleChordLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+
+    // Delay closing briefly to allow pointer movement into the preview popover
+    setTimeout(() => {
+      if (!isHoveringPreviewRef.current) {
+        setPreviewAnchor(null)
+        setPreviewVoicing(null)
+      }
+    }, 150)
+  }
+
+  // Dismiss quick preview on scroll to avoid detached floating popovers
+  useEffect(() => {
+    if (!previewAnchor) return
+    const handleScroll = () => {
+      setPreviewAnchor(null)
+      setPreviewVoicing(null)
+    }
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true })
+    return () => window.removeEventListener('scroll', handleScroll, { capture: true })
+  }, [previewAnchor])
 
   // Notify parent whenever performance mode changes (so App can hide global Header)
   useEffect(() => {
@@ -2037,6 +2108,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
+                  onChordHover={handleChordHover}
+                  onChordLeave={handleChordLeave}
                   chordScale={chordScale}
                   fontWeight={fontWeight}
                   lineSpacing={lineSpacing}
@@ -2051,6 +2124,8 @@ export const StageView: React.FC<StageViewProps> = ({
                   fontSizePx={fontSizePx}
                   fontFamily={fontStyle}
                   onChordClick={handleChordClick}
+                  onChordHover={handleChordHover}
+                  onChordLeave={handleChordLeave}
                   chordScale={chordScale}
                   fontWeight={fontWeight}
                   lineSpacing={lineSpacing}
@@ -2065,6 +2140,8 @@ export const StageView: React.FC<StageViewProps> = ({
               fontSizePx={fontSizePx}
               fontFamily={fontStyle}
               onChordClick={handleChordClick}
+              onChordHover={handleChordHover}
+              onChordLeave={handleChordLeave}
               chordScale={chordScale}
               fontWeight={fontWeight}
               lineSpacing={lineSpacing}
@@ -2556,6 +2633,30 @@ export const StageView: React.FC<StageViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Lightweight Responsive Chord Quick Preview Popover */}
+      <ChordQuickPreview
+        anchor={previewAnchor}
+        voicing={previewVoicing}
+        onOpenDiagram={(chord, voicing) => {
+          setSelectedChordName(chord)
+          setSelectedVoicing(voicing)
+          setPreviewAnchor(null)
+          setPreviewVoicing(null)
+        }}
+        onClose={() => {
+          setPreviewAnchor(null)
+          setPreviewVoicing(null)
+        }}
+        onMouseEnter={() => {
+          isHoveringPreviewRef.current = true
+        }}
+        onMouseLeave={() => {
+          isHoveringPreviewRef.current = false
+          setPreviewAnchor(null)
+          setPreviewVoicing(null)
+        }}
+      />
 
       {/* Fretboard Diagram Modal (1:1 Android FretboardDiagramDialog.kt) */}
       <FretboardDiagramModal
