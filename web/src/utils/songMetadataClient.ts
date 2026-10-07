@@ -28,8 +28,11 @@ export async function lookupSongMetadata(params: {
   title: string
   artist?: string
   currentKey?: string
+  tempo?: number | string
+  timeSignature?: string
+  year?: string | number
 }): Promise<SongMetadataResponse> {
-  const { title, artist, currentKey } = params
+  const { title, artist, currentKey, tempo, timeSignature, year } = params
   if (!title || !title.trim()) {
     return {
       success: false,
@@ -60,6 +63,9 @@ export async function lookupSongMetadata(params: {
         title: title.trim(),
         artist: artist?.trim() || undefined,
         currentKey: currentKey?.trim() || undefined,
+        tempo: tempo !== undefined && tempo !== null && String(tempo).trim() ? tempo : undefined,
+        timeSignature: timeSignature?.trim() || undefined,
+        year: year !== undefined && year !== null && String(year).trim() ? year : undefined,
       }),
       signal: AbortSignal.timeout(10000),
     })

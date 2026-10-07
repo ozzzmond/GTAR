@@ -49,6 +49,9 @@ export interface SongMetadataRequest {
   title: string
   artist?: string
   currentKey?: string
+  tempo?: number | string
+  timeSignature?: string
+  year?: string | number
 }
 
 export interface SongMetadataResult {
@@ -113,12 +116,56 @@ export function validateMetadataPayload(body: unknown): { isValid: boolean; data
     currentKey = obj.currentKey.trim() || undefined
   }
 
+  let tempo: string | number | undefined
+  if (obj.tempo !== undefined && obj.tempo !== null) {
+    if (typeof obj.tempo === 'number' && Number.isFinite(obj.tempo)) {
+      tempo = obj.tempo
+    } else if (typeof obj.tempo === 'string') {
+      const t = obj.tempo.trim()
+      if (t.length > 20) {
+        return { isValid: false, error: 'tempo length must not exceed 20 characters' }
+      }
+      tempo = t || undefined
+    } else {
+      return { isValid: false, error: 'tempo must be a number or string if provided' }
+    }
+  }
+
+  let timeSignature: string | undefined
+  if (obj.timeSignature !== undefined && obj.timeSignature !== null) {
+    if (typeof obj.timeSignature !== 'string') {
+      return { isValid: false, error: 'timeSignature must be a string if provided' }
+    }
+    if (obj.timeSignature.length > 20) {
+      return { isValid: false, error: 'timeSignature length must not exceed 20 characters' }
+    }
+    timeSignature = obj.timeSignature.trim() || undefined
+  }
+
+  let year: string | number | undefined
+  if (obj.year !== undefined && obj.year !== null) {
+    if (typeof obj.year === 'number' && Number.isFinite(obj.year)) {
+      year = obj.year
+    } else if (typeof obj.year === 'string') {
+      const y = obj.year.trim()
+      if (y.length > 20) {
+        return { isValid: false, error: 'year length must not exceed 20 characters' }
+      }
+      year = y || undefined
+    } else {
+      return { isValid: false, error: 'year must be a number or string if provided' }
+    }
+  }
+
   return {
     isValid: true,
     data: {
       title: obj.title.trim(),
       artist,
       currentKey,
+      tempo,
+      timeSignature,
+      year,
     },
   }
 }
@@ -162,28 +209,48 @@ export function isTitleIdentityMismatch(requested: string, matched: string): boo
 
 /**
  * Builds the strict, uncertainty-tolerant prompt for Workers AI.
+ * Distinguishes current performance key from original recording key.
+ * Never requests or transposes chord charts.
  */
 export function buildWorkersAiMetadataPrompt(
   title: string,
   artist?: string,
-  currentKey?: string
+  currentKey?: string,
+  hints?: {
+    tempo?: number | string
+    timeSignature?: string
+    year?: string | number
+  }
 ): { system: string; user: string } {
   const system =
-    'You are a music metadata catalog assistant. You provide factual studio release metadata and the authoritative original key of the original recording. ' +
+    'You are a music metadata suggestion assistant. Given the canonical metadata for the currently open song, identify the exact song/recording represented by TITLE + ARTIST and propose factual/reference metadata for that song. ' +
     'You MUST NOT guess or hallucinate. If song identity is uncertain, or if the original key is unknown, disputed, or varies across versions, report status "ambiguous" or "not_found" and set originalKey to null. ' +
-    'Respond ONLY with a valid JSON object matching the requested schema.'
+    'Do not alter chord charts. Do not transpose anything. Respond ONLY with a valid JSON object matching the requested schema.'
 
-  const user = `Identify factual metadata and original recording key for:
+  const hintLines: string[] = []
+  if (hints?.tempo !== undefined && hints.tempo !== null && String(hints.tempo).trim()) {
+    hintLines.push(`Existing Tempo Hint: "${hints.tempo}"`)
+  }
+  if (hints?.timeSignature !== undefined && hints.timeSignature !== null && hints.timeSignature.trim()) {
+    hintLines.push(`Existing Time Signature Hint: "${hints.timeSignature.trim()}"`)
+  }
+  if (hints?.year !== undefined && hints.year !== null && String(hints.year).trim()) {
+    hintLines.push(`Existing Release Year Hint: "${hints.year}"`)
+  }
+
+  const user = `Given the canonical metadata for the currently open song, identify the exact song/recording represented by TITLE + ARTIST and propose factual/reference metadata for that song:
 Title: "${title}"
 ${artist ? `Artist: "${artist}"` : 'Artist: (unspecified)'}
-${currentKey ? `Current Chart Key: "${currentKey}"` : ''}
-
-Strict requirements:
-1. Matched Identity: Return matchedTitle and matchedArtist for the original version. If the song cannot be identified with certainty, set status to "not_found".
-2. Ambiguity & Covers: If multiple distinct songs share this title, or the artist recording is ambiguous, set status to "ambiguous" and confidence to "low".
-3. Original Key: Provide the original key of the original release (standard major or minor, e.g. "C", "G", "Eb", "F#m", "Bbm"). If uncertain or unknown, set originalKey to null. Never fabricate a key.
-4. Additional Fields: tempo (integer BPM, e.g. 120), timeSignature (e.g. "4/4"), year (4-digit year string, e.g. "1975"). Set to null if uncertain.
-5. Confidence: "high", "medium", or "low".
+${currentKey ? `Current Chart Key: "${currentKey}" (Note: this is the CURRENT/PERFORMANCE chart key, NOT necessarily the original recording key)` : ''}
+${hintLines.length > 0 ? hintLines.join('\n') + '\n' : ''}
+Strict job requirements:
+1. Primary Identity: TITLE + ARTIST represent the primary identity of the song. Matched identity must reflect this specific recording.
+2. Current Key vs Original Key: {key}/currentKey is the CURRENT/PERFORMANCE key of the GTAR chart. currentKey MUST NOT automatically be reported as originalKey. originalKey means the authoritative original/reference recording key.
+3. Contextual Hints: Existing tempo/time/year are contextual hints, NOT guaranteed truth; propose corrected values if known.
+4. No Transposition / No Chords: Do not alter chord charts. Do not transpose anything.
+5. Ambiguity & Covers: If identity is uncertain, covers/live/alternate recordings exist without clear reference, or originalKey is unknown/disputed, set status to "ambiguous" or "not_found" with originalKey null. Never fabricate unknown values.
+6. Fields: matchedTitle, matchedArtist, originalKey (e.g. "C", "G", "Eb", "F#m"), tempo (integer BPM), timeSignature (e.g. "4/4"), year (4-digit string, e.g. "2011"). Null if uncertain.
+7. Confidence: "high", "medium", or "low".
 
 JSON schema:
 {
@@ -250,7 +317,7 @@ export function validateAndReconcileAiOutput(
   if (rawStatus === 'not_found') {
     return {
       status: 'not_found',
-      error: `No authoritative metadata found for "${requestedTitle}"`,
+      error: `No confident metadata suggestion found for "${requestedTitle}"`,
     }
   }
 
@@ -360,7 +427,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorResponse(validation.error || 'Validation failed', 400)
   }
 
-  const { title, artist, currentKey } = validation.data
+  const { title, artist, currentKey, tempo, timeSignature, year } = validation.data
 
   // 3. Workers AI binding check
   if (!env.AI || typeof env.AI.run !== 'function') {
@@ -378,7 +445,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const modelId = resolveWorkersAiModel(env)
   let aiRes: unknown
   try {
-    const { system, user } = buildWorkersAiMetadataPrompt(title, artist, currentKey)
+    const { system, user } = buildWorkersAiMetadataPrompt(title, artist, currentKey, {
+      tempo,
+      timeSignature,
+      year,
+    })
     aiRes = await env.AI.run(modelId, {
       messages: [
         { role: 'system', content: system },
@@ -406,7 +477,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       {
         success: true,
         status: 'not_found',
-        error: result.error || `No authoritative metadata found for "${title}"`,
+        error: result.error || `No confident metadata suggestion found for "${title}"`,
       },
       200
     )
