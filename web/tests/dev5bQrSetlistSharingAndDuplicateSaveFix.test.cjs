@@ -16,18 +16,18 @@ for (const ext of ['.ts', '.tsx']) {
 
 const webDir = path.resolve(__dirname, '..')
 
-// 1. VERSION CONTRACT (1.0.123-dev.5b)
-test('DEV5B_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5b across manifests, types, and functions', () => {
+// 1. VERSION CONTRACT (1.0.123-dev.5c)
+test('DEV5B_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5c across manifests, types, and functions', () => {
   const { GTAR_DEV_VERSION } = require(path.join(webDir, 'src/types/gtar.ts'))
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
 
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5b', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.5b')
-  assert.equal(pkgJson.version, '1.0.123-dev.5b', 'package.json version must be 1.0.123-dev.5b')
-  assert.equal(pkgLockJson.version, '1.0.123-dev.5b', 'package-lock.json root version must be 1.0.123-dev.5b')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5b', 'package-lock.json packages[""] must be 1.0.123-dev.5b')
-  assert.ok(authCore.includes('v1.0.123-dev.5b'), 'authCore.ts header must reference v1.0.123-dev.5b')
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5c', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.5c')
+  assert.equal(pkgJson.version, '1.0.123-dev.5c', 'package.json version must be 1.0.123-dev.5c')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.5c', 'package-lock.json root version must be 1.0.123-dev.5c')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5c', 'package-lock.json packages[""] must be 1.0.123-dev.5c')
+  assert.ok(authCore.includes('v1.0.123-dev.5c'), 'authCore.ts header must reference v1.0.123-dev.5c')
 })
 
 // 2. DELIVERABLE 2: NEW SONG FIRST SAVE PRODUCES EXACTLY ONE RECORD

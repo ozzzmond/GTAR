@@ -4,8 +4,6 @@ import {
   X,
   ListMusic,
   Search,
-  Music,
-  Activity,
   Play,
   CheckCircle2,
   Trash2,
@@ -17,9 +15,13 @@ import {
   Download,
   Upload,
   QrCode,
+  ListPlus,
+  Check,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
+import { getSongMetadataStatus } from '../utils/chordProMetadata'
+import { SongSetlistDialog } from './SongSetlistDialog'
 
 interface SetlistDrawerProps {
   isOpen: boolean
@@ -41,6 +43,8 @@ interface SetlistDrawerProps {
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   onExportAllData?: () => void
   onShareSetlist?: (setlist: WebSetlist) => void
+  onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => void
+  onCreateSetlistForSong?: (songId: string | number, name: string) => void
 }
 
 export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
@@ -63,13 +67,21 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   onSmartMerge,
   onExportAllData,
   onShareSetlist,
+  onSongMembershipChange,
+  onCreateSetlistForSong,
 }) => {
   const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>('songbook')
   const [searchQuery, setSearchQuery] = useState('')
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null)
   const [expandedSetlistId, setExpandedSetlistId] = useState<string | number | null>(activeSetlistId)
   const [drawerToast, setDrawerToast] = useState<string | null>(null)
+  const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const setlistFileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const activeSetlists = setlists.filter((sl) => !sl.isDeleted)
+  const membershipSong = songs.find(
+    (song) => membershipSongId !== null && String(song.id) === String(membershipSongId)
+  )
 
   useEffect(() => {
     if (isOpen && activeSetlistId !== null && activeSetlistId !== undefined) {
@@ -155,8 +167,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   })
 
   // Real-time search filter for setlists (matching setlist name or tracks)
-  const filteredSetlists = setlists.filter((sl) => {
-    if (sl.isDeleted) return false
+  const filteredSetlists = activeSetlists.filter((sl) => {
     const q = searchQuery.toLowerCase().trim()
     if (!q) return true
     const matchName = sl.name.toLowerCase().includes(q)
@@ -212,7 +223,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-action/20 text-app-action border border-app-action/30">
                   {drawerTab === 'songbook'
                     ? `${songs.length} ${songs.length === 1 ? 'Song' : 'Songs'}`
-                    : `${setlists.length} ${setlists.length === 1 ? 'Setlist' : 'Setlists'}`}
+                    : `${activeSetlists.length} ${activeSetlists.length === 1 ? 'Setlist' : 'Setlists'}`}
                 </span>
               </div>
               <p className="text-[10px] font-mono text-app-muted">Live Stage & Editor Switcher</p>
@@ -251,7 +262,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 : 'text-app-muted hover:text-app-text'
             }`}
           >
-            Setlists ({setlists.length})
+            Setlists ({activeSetlists.length})
           </button>
         </div>
 
@@ -271,15 +282,15 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="text-[11px] text-app-muted hover:text-app-heading cursor-pointer"
+                className="text-app-muted hover:text-app-heading p-0.5 cursor-pointer"
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         </div>
 
-        {/* Hidden file input for Setlist .json import */}
+        {/* Hidden File Input for Setlist (.json) Import */}
         <input
           ref={setlistFileInputRef}
           type="file"
@@ -288,15 +299,11 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
           className="hidden"
         />
 
-        {/* Transient feedback toast */}
+        {/* Drawer Toast Notification */}
         {drawerToast && (
-          <div className="mx-3 my-1 px-3 py-1.5 rounded-lg bg-app-action text-app-on-action text-xs font-bold font-mono animate-fade-in flex items-center justify-between">
+          <div className="m-3 p-2.5 rounded-xl bg-app-action text-app-on-action font-mono text-xs font-bold shadow-lg flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-150">
             <span>{drawerToast}</span>
-            <button
-              type="button"
-              onClick={() => setDrawerToast(null)}
-              className="text-app-on-action hover:opacity-75"
-            >
+            <button type="button" onClick={() => setDrawerToast(null)} className="ml-2 opacity-80 hover:opacity-100">
               ✕
             </button>
           </div>
@@ -309,7 +316,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               {/* Setlists Control Bar: Import Setlist (.json) & Export All (JSON) */}
               <div className="flex items-center justify-between gap-1.5 pb-2 border-b border-app-border/60 mb-2">
                 <span className="text-[10px] font-mono font-bold text-app-muted uppercase tracking-wider">
-                  Gig Setlists ({setlists.length})
+                  Gig Setlists ({activeSetlists.length})
                 </span>
                 <div className="flex items-center gap-1">
                   <button
@@ -333,7 +340,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 </div>
               </div>
 
-              {setlists.length === 0 ? (
+              {activeSetlists.length === 0 ? (
                 <div className="p-8 text-center text-xs font-mono text-app-muted space-y-2">
                   <div className="text-sm font-bold text-app-text">No Custom Setlists</div>
                   <div>Your songbook contains {songs.length} songs.</div>
@@ -368,18 +375,20 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           onClick={() => setExpandedSetlistId(isExpanded ? null : sl.id)}
                           className="min-w-0 flex-1 flex items-center gap-2.5 cursor-pointer select-none"
                         >
-                          <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-accent/40 flex items-center justify-center text-app-accent shrink-0">
+                          <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-border flex items-center justify-center text-app-accent shrink-0">
                             <ListMusic className="ui-section-icon w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="font-bold text-xs text-app-heading truncate">{sl.name}</div>
+                            <div className="font-bold text-xs truncate text-app-heading">
+                              {sl.name}
+                            </div>
                             <div className="text-[10px] font-mono text-app-muted">
-                              {slSongs.length} {slSongs.length === 1 ? 'track' : 'tracks'} • Tap to expand
+                              {slSongs.length} {slSongs.length === 1 ? 'song' : 'songs'}
                             </div>
                           </div>
                         </div>
 
-                        {/* Header Actions: Quick Play Setlist, Export Setlist (.json), Toggle Expand, Delete Setlist */}
+                        {/* Header Actions: Quick Play Setlist, Share Setlist (QR Code), Export Setlist (.json), Toggle Expand, Delete Setlist */}
                         <div className="flex items-center gap-1 shrink-0">
                           {slSongs.length > 0 && (
                             <button
@@ -396,7 +405,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               <PlayCircle className="w-4 h-4" />
                             </button>
                           )}
-                           {onShareSetlist && (
+                          {onShareSetlist && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -556,6 +565,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               const originalIndex = songs.indexOf(item)
               const isActive = originalIndex === activeSongIndex
               const isDeleting = confirmDeleteIndex === originalIndex
+              const metadataStatus = getSongMetadataStatus(item)
+              const isMetaOk = metadataStatus.status === 'METADATA_OK'
 
               return (
                 <div
@@ -597,22 +608,42 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     </div>
                   </div>
 
-                  {/* Badges Cluster */}
+                  {/* Badges Cluster: Metadata Status + Add to Setlist */}
                   <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
-                    {item.key && (
-                      <span className="px-1.5 py-0.5 rounded bg-app-surface border border-app-border text-app-accent font-bold flex items-center gap-1">
-                        <Music className="ui-section-icon w-2.5 h-2.5" />
-                        <span>{item.key}</span>
-                      </span>
-                    )}
-                    {item.bpm && (
-                      <span className="hidden sm:flex px-1.5 py-0.5 rounded bg-app-surface border border-app-border text-[#CB4B16] items-center gap-1">
-                        <Activity className="w-2.5 h-2.5" />
-                        <span>{item.bpm}</span>
-                      </span>
-                    )}
+                    {/* Metadata OK / Needs Metadata Badge */}
+                    <span
+                      data-testid={`drawer-song-metadata-status-${originalIndex}`}
+                      className={`px-1.5 py-0.5 rounded border font-semibold flex items-center gap-1 ${
+                        isMetaOk
+                          ? 'bg-status-success/15 border-status-success/30 text-status-success'
+                          : 'bg-app-accent/15 border-app-accent/30 text-app-accent'
+                      }`}
+                      title={isMetaOk ? 'Metadata OK' : `Needs Metadata (${metadataStatus.missingFields.join(', ')})`}
+                    >
+                      {isMetaOk ? <Check className="w-2.5 h-2.5" /> : null}
+                      <span>{isMetaOk ? 'Metadata OK' : 'Needs Metadata'}</span>
+                    </span>
+
+                    {/* Add to Setlist Action */}
+                    <button
+                      type="button"
+                      data-testid={`drawer-song-add-to-setlist-${originalIndex}`}
+                      disabled={item.id === undefined}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (item.id !== undefined) {
+                          setMembershipSongId(item.id)
+                        }
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-app-surface hover:bg-app-action/20 border border-app-border hover:border-app-action/40 text-app-action font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
+                      title="Add to Setlist"
+                    >
+                      <ListPlus className="w-2.5 h-2.5" />
+                      <span>Add to Setlist</span>
+                    </button>
+
                     {isActive && (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-status-success" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-status-success shrink-0" />
                     )}
 
                     {/* Inline Trash / Delete Button */}
@@ -679,33 +710,37 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (onNewSetlist) {
-                  onNewSetlist()
-                }
+                if (onNewSetlist) onNewSetlist()
+                onClose()
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-app-button text-app-button-text font-bold text-xs flex items-center justify-center gap-2 hover:bg-app-button/90 transition-all cursor-pointer shadow-md active:scale-95 select-none"
-              title="Create a new empty setlist"
+              className="w-full py-2.5 px-4 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95 select-none"
+              title="Create new setlist"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
               <span>New Setlist</span>
             </button>
           )}
-
-          <div className="flex items-center justify-between text-[10px] font-mono text-app-muted px-1">
-            {drawerTab === 'songbook' ? (
-              <>
-                <span>Active: {songs[activeSongIndex]?.title || 'None'}</span>
-                <span className="text-app-action">{songs.length} total</span>
-              </>
-            ) : (
-              <>
-                <span>Active Setlist: {setlists.find((s) => s.id === activeSetlistId)?.name || 'None'}</span>
-                <span className="text-app-accent">{setlists.length} setlists</span>
-              </>
-            )}
-          </div>
         </div>
       </div>
+
+      {/* Add to Setlist Dialog */}
+      {membershipSong && (
+        <SongSetlistDialog
+          song={membershipSong}
+          setlists={activeSetlists}
+          onMembershipChange={(songId, setlistId, included) => {
+            if (onSongMembershipChange) {
+              onSongMembershipChange(songId, setlistId, included)
+            }
+          }}
+          onCreate={(songId, name) => {
+            if (onCreateSetlistForSong) {
+              onCreateSetlistForSong(songId, name)
+            }
+          }}
+          onClose={() => setMembershipSongId(null)}
+        />
+      )}
     </div>
   )
 }

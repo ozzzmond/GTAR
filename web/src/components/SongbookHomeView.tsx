@@ -19,6 +19,9 @@ import {
   Check,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
+import { getSongMetadataStatus } from '../utils/chordProMetadata'
+import { extractShareToken, type SharedSetlistPayload } from '../utils/sharedSetlist'
+import { Link, QrCode } from 'lucide-react'
 import { SwipeableActionCard } from './SwipeableActionCard'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
@@ -43,6 +46,8 @@ interface SongbookHomeViewProps {
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
   onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
   onBulkDeleteSetlists?: (setlistIds: Array<string | number>) => void
+  onShareSetlist?: (setlist: WebSetlist) => void
+  onImportSharedSetlist?: (shared: SharedSetlistPayload) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -66,6 +71,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onBulkDeleteSongs,
   onBulkAddSongsToSetlist,
   onBulkDeleteSetlists,
+  onShareSetlist,
+  onImportSharedSetlist,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -85,6 +92,36 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     else setInternalSearchQuery(val)
   }
   const setlistFileInputRef = useRef<HTMLInputElement>(null)
+
+  const activeSetlists = useMemo(() => setlists.filter(sl => !sl.isDeleted), [setlists])
+
+  // Dialog state for Share Setlist chooser (when multiple active setlists exist)
+  const [isShareChooserOpen, setIsShareChooserOpen] = useState(false)
+
+  // Dialog state for Link-first Setlist Import
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [pastedShareLink, setPastedShareLink] = useState('')
+  const [importLinkError, setImportLinkError] = useState<string | null>(null)
+  const [isResolvingLink, setIsResolvingLink] = useState(false)
+
+  // Metadata filter: 'ALL' | 'METADATA_OK' | 'NEEDS_METADATA'
+  type MetadataFilterOption = 'ALL' | 'METADATA_OK' | 'NEEDS_METADATA'
+  const [filterMetadata, setFilterMetadata] = useState<MetadataFilterOption>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_songbook_filter_metadata')
+      if (saved === 'ALL' || saved === 'METADATA_OK' || saved === 'NEEDS_METADATA') {
+        return saved
+      }
+    }
+    return 'ALL'
+  })
+
+  const handleFilterMetadataChange = (val: MetadataFilterOption) => {
+    setFilterMetadata(val)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_songbook_filter_metadata', val)
+    }
+  }
 
   // Setlist multi-selection state
   const [isSetlistSelectionMode, setIsSetlistSelectionMode] = useState(false)
@@ -228,6 +265,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return 'ALL'
   })
 
+  // Recover safely if persisted filterSetlistId points to a deleted or nonexistent setlist
+  React.useEffect(() => {
+    if (filterSetlistId !== 'ALL') {
+      const exists = activeSetlists.some(sl => String(sl.id) === String(filterSetlistId))
+      if (!exists) {
+        queueMicrotask(() => {
+          setFilterSetlistId('ALL')
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('gtar_songbook_filter_setlist', 'ALL')
+          }
+        })
+      }
+    }
+  }, [filterSetlistId, activeSetlists])
+
   const handleSortChange = (newSort: SortOption) => {
     setSortBy(newSort)
     if (typeof window !== 'undefined') {
@@ -251,8 +303,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Find setlists containing a song
   const getSongSetlists = (song: ActiveSongState) => {
-    return setlists.filter((sl) =>
-      !sl.isDeleted &&
+    return activeSetlists.filter((sl) =>
       sl.songs.some(
         (ref) => resolveSetlistSong(ref, songs)?.id === song.id
       )
@@ -291,7 +342,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       }
 
       if (filterSetlistId !== 'ALL') {
-        const sl = setlists.find((s) => !s.isDeleted && String(s.id) === String(filterSetlistId))
+        const sl = activeSetlists.find((s) => String(s.id) === String(filterSetlistId))
         if (!sl) return false
         const inSetlist = sl.songs.some(
           (ref) => resolveSetlistSong(ref, songs)?.id === song.id
@@ -299,9 +350,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         if (!inSetlist) return false
       }
 
+      if (filterMetadata !== 'ALL') {
+        const metaStatus = getSongMetadataStatus(song).status
+        if (filterMetadata === 'METADATA_OK' && metaStatus !== 'METADATA_OK') return false
+        if (filterMetadata === 'NEEDS_METADATA' && metaStatus !== 'NEEDS_METADATA') return false
+      }
+
       return true
     })
-  }, [indexedSongs, songs, searchQuery, filterKey, filterSetlistId, setlists])
+  }, [indexedSongs, songs, searchQuery, filterKey, filterSetlistId, filterMetadata, activeSetlists])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {
@@ -324,7 +381,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Filter setlists by search query (matching setlist name or tracks inside setlist)
   const filteredSetlists = useMemo(() => {
-    const activeSetlists = setlists.filter((sl) => !sl.isDeleted)
     const q = searchQuery.toLowerCase().trim()
     if (!q) return activeSetlists
     return activeSetlists.filter((sl) => {
@@ -337,17 +393,223 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       })
       return matchName || matchSong
     })
-  }, [setlists, searchQuery, songs])
+  }, [activeSetlists, searchQuery, songs])
+
+  const handleMainShareSetlist = () => {
+    if (activeSetlists.length === 0) return
+    if (activeSetlists.length === 1) {
+      onShareSetlist?.(activeSetlists[0])
+    } else {
+      setIsShareChooserOpen(true)
+    }
+  }
+
+  const handleResolvePastedShareLink = async () => {
+    setImportLinkError(null)
+    const extracted = extractShareToken(pastedShareLink)
+    if (!extracted.isValid) {
+      setImportLinkError(extracted.error)
+      return
+    }
+
+    setIsResolvingLink(true)
+    try {
+      const res = await fetch(`/api/setlist/share?token=${extracted.token}`)
+      if (!res.ok) {
+        throw new Error('Shared setlist not found or expired.')
+      }
+      const data = await res.json()
+      if (data?.setlist) {
+        setIsImportModalOpen(false)
+        setPastedShareLink('')
+        setImportLinkError(null)
+        onImportSharedSetlist?.(data.setlist)
+      } else {
+        throw new Error('Invalid shared setlist payload received.')
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setImportLinkError(msg || 'Failed to load shared setlist.')
+    } finally {
+      setIsResolvingLink(false)
+    }
+  }
 
   return (
     <div className="songbook-ui flex-1 overflow-y-auto px-2 sm:px-8 py-3 sm:py-6 max-w-7xl mx-auto w-full select-none">
       {membershipSong && <SongSetlistDialog
         song={membershipSong}
-        setlists={setlists}
+        setlists={activeSetlists}
         onMembershipChange={onSongMembershipChange}
         onCreate={onCreateSetlistForSong}
         onClose={() => setMembershipSongId(null)}
       />}
+
+            {/* Share Setlist Chooser Modal (when multiple active setlists exist) */}
+      {isShareChooserOpen && (
+        <dialog
+          open
+          data-testid="share-setlist-chooser-dialog"
+          onCancel={() => setIsShareChooserOpen(false)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface ui-primary-text text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-app-heading">
+                <Share2 className="ui-action-text w-4 h-4 text-app-accent" />
+                Select Setlist to Share
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsShareChooserOpen(false)}
+                className="p-1 rounded-lg hover:bg-app-base ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs ui-muted-text text-app-muted mb-3">
+              Choose a setlist to generate an immutable QR code and link snapshot:
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-1 mb-4">
+              {activeSetlists.map((sl) => (
+                <button
+                  key={sl.id}
+                  type="button"
+                  data-testid={`share-chooser-target-${sl.id}`}
+                  onClick={() => {
+                    setIsShareChooserOpen(false)
+                    onShareSetlist?.(sl)
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl bg-app-base hover:bg-app-surface border border-app-border hover:border-app-accent text-sm ui-primary-text text-app-text flex items-center justify-between transition-colors cursor-pointer"
+                >
+                  <span className="font-bold truncate">{sl.name}</span>
+                  <span className="text-xs font-mono ui-secondary-text text-app-muted">{sl.songs.length} songs</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsShareChooserOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-app-base ui-secondary-text text-app-muted hover:text-app-heading font-mono text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+
+      {/* Link-First Setlist Import Modal */}
+      {isImportModalOpen && (
+        <dialog
+          open
+          data-testid="setlist-import-dialog"
+          onCancel={() => {
+            setIsImportModalOpen(false)
+            setImportLinkError(null)
+          }}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface ui-primary-text text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-app-heading">
+                <Upload className="ui-action-text w-4 h-4 text-app-action" />
+                Import Setlist
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImportModalOpen(false)
+                  setImportLinkError(null)
+                }}
+                className="p-1 rounded-lg hover:bg-app-base ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Primary Action: Paste GTAR Share Link */}
+            <div className="space-y-2 mb-5">
+              <label htmlFor="paste-share-link-input" className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
+                <Link className="w-3.5 h-3.5 text-app-action" />
+                <span>Paste GTAR Share Link</span>
+              </label>
+              <p className="text-[11px] ui-muted-text text-app-muted">
+                Enter a share link or 16-character token created from GTAR:
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  id="paste-share-link-input"
+                  data-testid="paste-share-link-input"
+                  type="text"
+                  placeholder="e.g. https://.../?share=0123456789abcdef"
+                  value={pastedShareLink}
+                  onChange={(e) => {
+                    setPastedShareLink(e.target.value)
+                    setImportLinkError(null)
+                  }}
+                  className="flex-1 rounded-lg border border-app-border bg-app-base p-2 text-xs font-mono ui-primary-text text-app-heading focus:border-app-action focus:outline-none"
+                />
+                <button
+                  type="button"
+                  data-testid="load-share-link-btn"
+                  disabled={!pastedShareLink.trim() || isResolvingLink}
+                  onClick={handleResolvePastedShareLink}
+                  className="px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  {isResolvingLink ? 'Loading...' : 'Load'}
+                </button>
+              </div>
+              {importLinkError && (
+                <p data-testid="import-link-error" className="text-[11px] text-status-error font-mono font-medium">
+                  {importLinkError}
+                </p>
+              )}
+            </div>
+
+            {/* Secondary Action: Legacy JSON file import */}
+            <div className="pt-4 border-t border-app-border/60">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold ui-primary-text text-app-heading">
+                    Legacy JSON File
+                  </div>
+                  <div className="text-[10px] ui-secondary-text text-app-muted">
+                    Import from a downloaded .json backup
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="choose-setlist-json-file"
+                  onClick={() => {
+                    setIsImportModalOpen(false)
+                    setlistFileInputRef.current?.click()
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-app-border hover:border-app-action bg-app-base ui-secondary-text text-app-muted hover:text-app-heading text-xs font-mono font-bold transition-colors cursor-pointer"
+                >
+                  Select File
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImportModalOpen(false)
+                  setImportLinkError(null)
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-app-base ui-secondary-text text-app-muted hover:text-app-heading font-mono text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
 
       {/* Rename Setlist Modal Dialog */}
       {renamingSetlist && (
@@ -643,12 +905,27 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       Select
                     </button>
                   )}
+                  <button
+                    type="button"
+                    data-testid="main-share-setlist-btn"
+                    disabled={activeSetlists.length === 0}
+                    onClick={handleMainShareSetlist}
+                    className="ui-action-text text-[10px] font-bold text-app-accent hover:bg-app-accent/15 px-2 py-1 rounded-lg border border-app-accent/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share setlist via QR code and link'}
+                  >
+                    <QrCode className="w-3 h-3" />
+                    <span>Share Setlist</span>
+                  </button>
                   <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="ui-action-text text-xs px-2 py-1 border border-app-action/40 rounded text-app-action">
                     {setlistsCollapsed ? 'Show' : 'Hide'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setlistFileInputRef.current?.click()}
+                    data-testid="main-import-setlist-btn"
+                    onClick={() => {
+                      setImportLinkError(null)
+                      setIsImportModalOpen(true)
+                    }}
                     className="ui-action-text text-[10px] font-bold text-app-action hover:bg-app-action/15 px-2 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer"
                     title="Import single setlist (.json) into your library"
                   >
@@ -809,20 +1086,35 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <span>Rename Setlist</span>
                           </button>
                         )}
+                        {onShareSetlist && (
+                          <button
+                            type="button"
+                            data-testid={`menu-share-${sl.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveMenuSetlistId(null)
+                              onShareSetlist(sl)
+                            }}
+                            className={`w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-accent flex items-center gap-2 cursor-pointer transition-colors ${
+                              onRenameSetlist ? 'border-t border-app-border/50' : ''
+                            }`}
+                          >
+                            <QrCode className="ui-action-text w-3.5 h-3.5 text-app-accent" />
+                            <span>Share Setlist</span>
+                          </button>
+                        )}
                         <button
                           type="button"
-                          data-testid={`menu-share-${sl.id}`}
+                          data-testid={`menu-export-json-${sl.id}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             setActiveMenuSetlistId(null)
                             exportSingleSetlistJson(sl, songs)
                           }}
-                          className={`w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors ${
-                            onRenameSetlist ? 'border-t border-app-border/50' : ''
-                          }`}
+                          className="w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors border-t border-app-border/50"
                         >
-                          <Share2 className="ui-action-text w-3.5 h-3.5 text-app-accent" />
-                          <span>Share Setlist</span>
+                          <Upload className="ui-action-text w-3.5 h-3.5 text-app-action rotate-180" />
+                          <span>Export JSON</span>
                         </button>
                         {onDeleteSetlist && (
                           <button
@@ -950,8 +1242,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     setSelectedSongIds(new Set())
                   }}
                   className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer"
+                  title="Manage song selection, setlist assignment, and batch actions"
                 >
-                  Select
+                  Manage
                 </button>
               )}
             </div>
@@ -973,7 +1266,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <option value="title">Title (A-Z)</option>
                   <option value="artist">Artist (A-Z)</option>
                   <option value="key">Key</option>
-                  <option value="date">Date Added</option>
+                  <option value="date">Library Order</option>
                 </select>
               </div>
 
@@ -996,17 +1289,33 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 </div>
               )}
 
+              {/* Metadata Filter Dropdown */}
+              <div className="flex items-center gap-1.5 text-xs font-mono">
+                <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Metadata:</span>
+                <select
+                  data-testid="filter-metadata-select"
+                  value={filterMetadata}
+                  onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
+                  className="bg-app-base border border-app-border ui-primary-text text-app-text rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-app-action transition-colors"
+                >
+                  <option value="ALL">All</option>
+                  <option value="METADATA_OK">Metadata OK</option>
+                  <option value="NEEDS_METADATA">Needs Metadata</option>
+                </select>
+              </div>
+
               {/* Setlist Filter Dropdown */}
-              {setlists.length > 0 && (
+              {activeSetlists.length > 0 && (
                 <div className="flex items-center gap-1.5 text-xs font-mono">
                   <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Setlist:</span>
                   <select
+                    data-testid="filter-setlist-select"
                     value={filterSetlistId}
                     onChange={(e) => handleFilterSetlistChange(e.target.value)}
                     className="bg-app-base border border-app-border ui-primary-text text-app-text rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-app-action transition-colors"
                   >
                     <option value="ALL">All Setlists</option>
-                    {setlists.map((sl) => (
+                    {activeSetlists.map((sl) => (
                       <option key={sl.id} value={String(sl.id)}>
                         {sl.name}
                       </option>
@@ -1043,6 +1352,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 handleSearchChange('')
                 handleFilterKeyChange('ALL')
                 handleFilterSetlistChange('ALL')
+                handleFilterMetadataChange('ALL')
               }}
               className="ui-action-text mt-2 px-3 py-1.5 rounded-lg bg-app-base border border-app-border text-xs text-app-action font-bold cursor-pointer hover:border-app-action"
             >

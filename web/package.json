@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.0.123-dev.5b",
+  "version": "1.0.123-dev.5c",
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
@@ -9,7 +9,8 @@
     "dev:debug": "vite --port 5174 --mode debug",
     "dev:api": "wrangler pages dev --port 8788",
     "d1:migrate:local": "wrangler d1 migrations apply DB --local",
-    "d1:migrate:preview": "wrangler d1 migrations apply DB --local --env preview",
+    "d1:migrate:preview": "node -e \"console.warn('[DEPRECATED] d1:migrate:preview used local emulation. For local dev use d1:migrate:local. For remote DEV D1 migrations use npm run d1:migrate:dev:remote'); process.exit(1)\"",
+    "d1:migrate:dev:remote": "node scripts/migrate-dev-remote.cjs",
     "admin:bootstrap:local": "node scripts/bootstrap-local-admin.cjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -20,6 +21,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "chordsheetjs": "^16.2.2",
     "lucide-react": "^1.41.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
@@ -27,6 +29,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.3",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
@@ -35,6 +38,7 @@
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",
+    "jsqr": "^1.4.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.67.0",
     "vite": "^8.2.2",
