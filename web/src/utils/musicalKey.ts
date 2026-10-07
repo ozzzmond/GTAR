@@ -32,7 +32,8 @@ const standardRoots: Record<string, string> = {
 }
 
 // null means unsupported input; empty metadata remains supported.
-export function normalizeMusicalKey(value: string): string | null {
+export function normalizeMusicalKey(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null
   if (!value.trim()) return ''
   const match = /^([a-g])([#b]?)(m|min|maj)?$/i.exec(value.trim())
   if (!match) return null

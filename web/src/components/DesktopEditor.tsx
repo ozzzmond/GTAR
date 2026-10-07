@@ -19,6 +19,8 @@ import {
   Check,
   MoreHorizontal,
   FilePlus,
+  Sparkles,
+  Loader2,
 } from 'lucide-react'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
@@ -26,6 +28,8 @@ import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../ut
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
 import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
+import { transposeCanonicalSong } from '../utils/chartKeyAlignment'
+import { lookupSongMetadata, type SongMetadataResult } from '../utils/songMetadataClient'
 import { generateUUID } from '../utils/uuid'
 import type { ActiveSongState } from '../types/gtar'
 
@@ -148,6 +152,99 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     return () => window.removeEventListener('beforeunload', guard)
   }, [isSaved])
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
+  const [isLookingUpMetadata, setIsLookingUpMetadata] = useState(false)
+  const [lookupResult, setLookupResult] = useState<SongMetadataResult | null>(null)
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null)
+
+  const handleLookupMetadata = async () => {
+    if (!localTitle.trim()) {
+      showToast('Enter a song title first')
+      return
+    }
+    setIsLookingUpMetadata(true)
+    setLookupMessage(null)
+    setLookupResult(null)
+    try {
+      const res = await lookupSongMetadata({
+        title: localTitle.trim(),
+        artist: localArtist.trim() || undefined,
+        currentKey: localKey.trim() || undefined,
+      })
+      if (res.status === 'ok' && res.metadata) {
+        setLookupResult(res.metadata)
+      } else if (res.status === 'ambiguous' && res.metadata) {
+        setLookupResult(res.metadata)
+        setLookupMessage('Matched song identity; Original Key not verified')
+      } else if (res.status === 'not_found') {
+        setLookupMessage('No factual metadata match found')
+      } else {
+        setLookupMessage(res.error || 'Metadata lookup error')
+      }
+    } catch {
+      setLookupMessage('Metadata service unavailable')
+    } finally {
+      setIsLookingUpMetadata(false)
+    }
+  }
+
+  const handleApplyMetadataOnly = (meta: SongMetadataResult) => {
+    if (meta.artist && !localArtist.trim()) {
+      setLocalArtist(meta.artist)
+      autosave({ artist: meta.artist })
+    }
+    if (meta.tempo && !localBpm.trim()) {
+      const formatted = String(meta.tempo)
+      setLocalBpm(formatted)
+      autosave({ bpm: formatted })
+    }
+    if (meta.timeSignature && !localTime.trim()) {
+      setLocalTime(meta.timeSignature)
+      autosave({ time: meta.timeSignature })
+    }
+    if (meta.year && !localYear.trim()) {
+      const y = String(meta.year)
+      setLocalYear(y)
+      autosave({ year: y })
+    }
+    if (meta.originalKey) {
+      setLocalOriginalKey(meta.originalKey)
+      autosave({ originalKey: meta.originalKey })
+    }
+    showToast('Song metadata updated')
+  }
+
+  const handleConfirmTransposeToOriginalKey = (targetOriginalKey: string | null | undefined) => {
+    const validated = normalizeMusicalKey(targetOriginalKey)
+    if (!validated) {
+      showToast('Invalid Original Key')
+      return
+    }
+    const currentKey = normalizeMusicalKey(localKey)
+    if (!currentKey) {
+      showToast('Set current key before transposing')
+      return
+    }
+
+    if (currentKey === validated) {
+      setLocalOriginalKey(validated)
+      autosave({ originalKey: validated })
+      showToast('Chart is already in Original Key')
+      return
+    }
+
+    // Call deterministic transposition
+    const transposed = transposeCanonicalSong(localRawContent, currentKey, validated)
+    setLocalKey(transposed.key)
+    setLocalOriginalKey(validated)
+    setLocalRawContent(transposed.rawContent)
+
+    autosave({
+      key: transposed.key,
+      originalKey: validated,
+      rawContent: transposed.rawContent,
+    })
+    showToast(`Chart transposed from ${currentKey} to Original Key ${validated} (${transposed.semitones > 0 ? '+' : ''}${transposed.semitones} semitones)`)
+  }
 
   // Reset local state when active song changes
   useEffect(() => {
@@ -750,15 +847,92 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 </div>
                 <span className="font-bold text-sm text-app-heading">Song Details & Metadata</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsMetadataModalOpen(false)}
-                className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleLookupMetadata}
+                  disabled={isLookingUpMetadata || !localTitle.trim()}
+                  className="px-2.5 py-1 rounded-lg bg-app-base border border-app-border hover:border-app-action text-app-action hover:text-app-heading flex items-center gap-1.5 font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Search factual song metadata (Original Key, Tempo, Year)"
+                >
+                  {isLookingUpMetadata ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  <span>Lookup Metadata</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMetadataModalOpen(false)}
+                  className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+
+            {/* Metadata Lookup Status / Results Card */}
+            {(lookupResult || lookupMessage) && (
+              <div className="p-3 rounded-xl bg-app-base border border-app-border flex flex-col gap-2">
+                {lookupResult ? (
+                  <>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-app-heading truncate max-w-[200px]">
+                        {lookupResult.title} {lookupResult.artist ? `— ${lookupResult.artist}` : ''}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-app-surface text-app-muted border border-app-border font-mono">
+                        {lookupResult.source} ({lookupResult.confidence})
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-mono py-1">
+                      <div>
+                        <span className="text-app-muted">Discovered Key: </span>
+                        <span className="font-bold text-app-action">
+                          {lookupResult.originalKey || 'Not verified'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-app-muted">Current Chart: </span>
+                        <span className="font-bold text-app-text">{localKey || 'None'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-app-border/60">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyMetadataOnly(lookupResult)}
+                        className="px-2 py-1 rounded bg-app-surface hover:bg-app-border text-app-text font-medium text-[11px] transition-colors cursor-pointer"
+                      >
+                        Apply Metadata
+                      </button>
+
+                      {lookupResult.originalKey && (
+                        normalizeMusicalKey(localKey) === normalizeMusicalKey(lookupResult.originalKey) ? (
+                          <span className="text-[11px] text-app-accent font-semibold px-2 py-1">
+                            Already Aligned ({lookupResult.originalKey})
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmTransposeToOriginalKey(lookupResult.originalKey)}
+                            className="px-2.5 py-1 rounded bg-app-action hover:bg-app-action/80 text-app-on-action font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            Transpose to Original Key ({lookupResult.originalKey})
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-app-muted italic text-center py-1">
+                    {lookupMessage}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Canonical Metadata Inputs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
