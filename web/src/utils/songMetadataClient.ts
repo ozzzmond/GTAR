@@ -9,7 +9,7 @@ import { normalizeMusicalKey } from './musicalKey'
 export interface SongMetadataResult {
   title: string
   artist: string
-  originalKey: string
+  originalKey: string | null
   tempo?: number | string | null
   timeSignature?: string | null
   year?: string | null
@@ -76,11 +76,9 @@ export async function lookupSongMetadata(params: {
     // Strictly validate returned metadata original key
     if (data.metadata?.originalKey) {
       const validatedKey = normalizeMusicalKey(data.metadata.originalKey)
-      if (!validatedKey) {
-        data.metadata.originalKey = ''
-      } else {
-        data.metadata.originalKey = validatedKey
-      }
+      data.metadata.originalKey = validatedKey || null
+    } else if (data.metadata) {
+      data.metadata.originalKey = null
     }
 
     return data

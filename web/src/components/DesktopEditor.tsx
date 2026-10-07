@@ -213,7 +213,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     showToast('Song metadata updated')
   }
 
-  const handleConfirmTransposeToOriginalKey = (targetOriginalKey: string) => {
+  const handleConfirmTransposeToOriginalKey = (targetOriginalKey: string | null | undefined) => {
     const validated = normalizeMusicalKey(targetOriginalKey)
     if (!validated) {
       showToast('Invalid Original Key')

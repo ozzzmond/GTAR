@@ -7,11 +7,12 @@ import {
 } from '../../lib/authCore.ts'
 import { normalizeMusicalKey } from '../../../src/utils/musicalKey.ts'
 
+export const WORKERS_AI_MODEL = '@cf/meta/llama-3-8b-instruct'
+
 export interface MetadataEnv extends AuthEnv {
   AI?: {
     run(model: string, inputs: Record<string, unknown>): Promise<unknown>
   }
-  GEMINI_API_KEY?: string
 }
 
 interface PagesContext {
@@ -28,10 +29,10 @@ export interface SongMetadataRequest {
 export interface SongMetadataResult {
   title: string
   artist: string
-  originalKey: string
-  tempo?: number | string | null
-  timeSignature?: string | null
-  year?: string | null
+  originalKey: string | null
+  tempo: number | null
+  timeSignature: string | null
+  year: string | null
   confidence: 'high' | 'medium' | 'low'
   source: string
 }
@@ -53,7 +54,7 @@ export async function onRequestOptions(): Promise<Response> {
 /**
  * Validates request payload boundary
  */
-function validateMetadataPayload(body: unknown): { isValid: boolean; data?: SongMetadataRequest; error?: string } {
+export function validateMetadataPayload(body: unknown): { isValid: boolean; data?: SongMetadataRequest; error?: string } {
   if (!body || typeof body !== 'object') {
     return { isValid: false, error: 'Request body must be a valid JSON object' }
   }
@@ -98,168 +99,213 @@ function validateMetadataPayload(body: unknown): { isValid: boolean; data?: Song
 }
 
 /**
- * Deterministic metadata lookup via MusicBrainz public recording registry
+ * Detects if the model's matched artist materially conflicts with the user's requested artist.
+ * Prevents silent substitution of different artists, recordings, or cover versions.
  */
-async function queryMusicBrainz(
-  title: string,
-  artist?: string
-): Promise<{
-  matchedTitle: string
-  matchedArtist: string
-  year?: string
-  confidence: 'high' | 'medium' | 'low'
-  score: number
-} | null> {
-  try {
-    let query = `recording:"${title.replace(/"/g, '')}"`
-    if (artist) {
-      query += ` AND artist:"${artist.replace(/"/g, '')}"`
-    }
-    const url = `https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&limit=5&fmt=json`
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'GTAR-Songbook/1.0 (https://github.com/ozzzmond/GTAR)',
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(6000),
-    })
+export function isArtistIdentityMismatch(requested: string, matched: string): boolean {
+  const normReq = requested.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const normMat = matched.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!normReq || !normMat) return false
+  if (normReq === normMat) return false
+  if (normReq.includes(normMat) || normMat.includes(normReq)) return false
 
-    if (!res.ok) return null
-    const data = (await res.json()) as {
-      recordings?: Array<{
-        title: string
-        score?: number | string
-        'first-release-date'?: string
-        'artist-credit'?: Array<{ name?: string }>
-      }>
-    }
+  const reqTokens = requested.toLowerCase().split(/[\s,./\\&+-]+/).filter(t => t.length >= 3)
+  const matTokens = matched.toLowerCase().split(/[\s,./\\&+-]+/).filter(t => t.length >= 3)
+  if (reqTokens.length === 0 || matTokens.length === 0) return false
 
-    if (!data.recordings || data.recordings.length === 0) return null
-    const first = data.recordings[0]
-    const score = Number(first.score) || 0
-    if (score < 60) return null
-
-    const matchedTitle = first.title || title
-    const matchedArtist = first['artist-credit']?.[0]?.name || artist || ''
-    const year = first['first-release-date'] ? first['first-release-date'].slice(0, 4) : undefined
-    const confidence: 'high' | 'medium' | 'low' = score >= 90 ? 'high' : score >= 75 ? 'medium' : 'low'
-
-    return {
-      matchedTitle,
-      matchedArtist,
-      year,
-      confidence,
-      score,
-    }
-  } catch {
-    return null
-  }
+  const hasOverlap = reqTokens.some(t => matTokens.includes(t))
+  return !hasOverlap
 }
 
 /**
- * Server-side AI metadata resolution using Cloudflare Workers AI or Gemini API if configured
+ * Detects if the model's matched title materially conflicts with the user's requested title.
  */
-async function queryAiMetadataReconciliation(
+export function isTitleIdentityMismatch(requested: string, matched: string): boolean {
+  const normReq = requested.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const normMat = matched.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!normReq || !normMat) return false
+  if (normReq === normMat) return false
+  if (normReq.includes(normMat) || normMat.includes(normReq)) return false
+
+  const reqTokens = requested.toLowerCase().split(/[\s,./\\&+-]+/).filter(t => t.length >= 3)
+  const matTokens = matched.toLowerCase().split(/[\s,./\\&+-]+/).filter(t => t.length >= 3)
+  if (reqTokens.length === 0 || matTokens.length === 0) return false
+
+  const hasOverlap = reqTokens.some(t => matTokens.includes(t))
+  return !hasOverlap
+}
+
+/**
+ * Builds the strict, uncertainty-tolerant prompt for Workers AI.
+ */
+export function buildWorkersAiMetadataPrompt(
   title: string,
-  artist: string | undefined,
-  currentKey: string | undefined,
-  env: MetadataEnv
-): Promise<{
-  originalKey?: string
-  tempo?: number
-  timeSignature?: string
-  year?: string
-  confidence?: 'high' | 'medium' | 'low'
-  sourceDescriptor?: string
-} | null> {
-  const prompt = `You are a music metadata expert. For the song "${title}"${artist ? ` by "${artist}"` : ''}${currentKey ? ` (currently noted in key "${currentKey}")` : ''}:
-Identify the original key in which the song was originally recorded/released.
-Return ONLY valid JSON matching this schema:
+  artist?: string,
+  currentKey?: string
+): { system: string; user: string } {
+  const system =
+    'You are a music metadata catalog assistant. You provide factual studio release metadata and the authoritative original key of the original recording. ' +
+    'You MUST NOT guess or hallucinate. If song identity is uncertain, or if the original key is unknown, disputed, or varies across versions, report status "ambiguous" or "not_found" and set originalKey to null. ' +
+    'Respond ONLY with a valid JSON object matching the requested schema.'
+
+  const user = `Identify factual metadata and original recording key for:
+Title: "${title}"
+${artist ? `Artist: "${artist}"` : 'Artist: (unspecified)'}
+${currentKey ? `Current Chart Key: "${currentKey}"` : ''}
+
+Strict requirements:
+1. Matched Identity: Return matchedTitle and matchedArtist for the original version. If the song cannot be identified with certainty, set status to "not_found".
+2. Ambiguity & Covers: If multiple distinct songs share this title, or the artist recording is ambiguous, set status to "ambiguous" and confidence to "low".
+3. Original Key: Provide the original key of the original release (standard major or minor, e.g. "C", "G", "Eb", "F#m", "Bbm"). If uncertain or unknown, set originalKey to null. Never fabricate a key.
+4. Additional Fields: tempo (integer BPM, e.g. 120), timeSignature (e.g. "4/4"), year (4-digit year string, e.g. "1975"). Set to null if uncertain.
+5. Confidence: "high", "medium", or "low".
+
+JSON schema:
 {
-  "originalKey": "G", // musical key (e.g. C, G, D, A, E, B, F#, C#, F, Bb, Eb, Ab, Db, Gb, or minor equivalents like Am, Em, Bm, F#m, C#m, G#m, D#m, A#m, Dm, Gm, Cm, Fm, Bbm, Ebm, Abm). Return empty string if unknown.
-  "tempo": 120, // integer BPM if known, else null
-  "timeSignature": "4/4", // string like "4/4", "3/4", "6/8" if known, else null
-  "year": "1975", // 4-digit release year if known, else null
-  "confidence": "high" // "high", "medium", or "low"
+  "status": "ok" | "ambiguous" | "not_found",
+  "matchedTitle": string,
+  "matchedArtist": string,
+  "originalKey": string | null,
+  "tempo": number | null,
+  "timeSignature": string | null,
+  "year": string | null,
+  "confidence": "high" | "medium" | "low"
 }`
 
-  // 1. If Cloudflare Workers AI binding is configured
-  if (env.AI && typeof env.AI.run === 'function') {
-    try {
-      const aiRes = (await env.AI.run('@cf/meta/llama-3-8b-instruct', {
-        messages: [
-          { role: 'system', content: 'You respond only in strictly formatted JSON.' },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 256,
-      })) as { response?: string }
+  return { system, user }
+}
 
-      const raw = aiRes.response || ''
-      const jsonMatch = raw.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as {
-          originalKey?: string
-          tempo?: number
-          timeSignature?: string
-          year?: string
-          confidence?: 'high' | 'medium' | 'low'
-        }
-        return {
-          originalKey: parsed.originalKey,
-          tempo: parsed.tempo ? Number(parsed.tempo) : undefined,
-          timeSignature: parsed.timeSignature || undefined,
-          year: parsed.year ? String(parsed.year).slice(0, 4) : undefined,
-          confidence: parsed.confidence || 'medium',
-          sourceDescriptor: 'Workers AI (Llama 3)',
-        }
-      }
-    } catch {
-      // Fallback
+/**
+ * Validates and reconciles untrusted Workers AI output against strict domain invariants.
+ */
+export function validateAndReconcileAiOutput(
+  rawAiOutput: unknown,
+  requestedTitle: string,
+  requestedArtist?: string
+): {
+  status: 'ok' | 'not_found' | 'ambiguous'
+  metadata?: SongMetadataResult
+  error?: string
+} {
+  let rawText = ''
+  if (typeof rawAiOutput === 'string') {
+    rawText = rawAiOutput
+  } else if (rawAiOutput && typeof rawAiOutput === 'object') {
+    if ('response' in rawAiOutput && typeof (rawAiOutput as { response: unknown }).response === 'string') {
+      rawText = (rawAiOutput as { response: string }).response
+    } else {
+      rawText = JSON.stringify(rawAiOutput)
     }
   }
 
-  // 2. If Gemini API Key is configured in environment secrets
-  if (env.GEMINI_API_KEY) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-          }),
-          signal: AbortSignal.timeout(6000),
-        }
-      )
-      if (res.ok) {
-        const geminiData = (await res.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-        }
-        const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        const parsed = JSON.parse(text) as {
-          originalKey?: string
-          tempo?: number
-          timeSignature?: string
-          year?: string
-          confidence?: 'high' | 'medium' | 'low'
-        }
-        return {
-          originalKey: parsed.originalKey,
-          tempo: parsed.tempo ? Number(parsed.tempo) : undefined,
-          timeSignature: parsed.timeSignature || undefined,
-          year: parsed.year ? String(parsed.year).slice(0, 4) : undefined,
-          confidence: parsed.confidence || 'medium',
-          sourceDescriptor: 'Gemini AI',
-        }
-      }
-    } catch {
-      // Fallback
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    return {
+      status: 'ambiguous',
+      error: 'Workers AI returned malformed non-JSON output',
     }
   }
 
-  return null
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+  } catch {
+    return {
+      status: 'ambiguous',
+      error: 'Failed to parse Workers AI JSON response',
+    }
+  }
+
+  const rawStatus = typeof parsed.status === 'string' ? parsed.status.toLowerCase().trim() : ''
+  if (rawStatus === 'not_found') {
+    return {
+      status: 'not_found',
+      error: `No authoritative metadata found for "${requestedTitle}"`,
+    }
+  }
+
+  const matchedTitle =
+    typeof parsed.matchedTitle === 'string' && parsed.matchedTitle.trim()
+      ? parsed.matchedTitle.trim().slice(0, 200)
+      : requestedTitle
+
+  const matchedArtist =
+    typeof parsed.matchedArtist === 'string' && parsed.matchedArtist.trim()
+      ? parsed.matchedArtist.trim().slice(0, 200)
+      : (requestedArtist || '')
+
+  // Identity checks
+  const titleMismatch = isTitleIdentityMismatch(requestedTitle, matchedTitle)
+  const artistMismatch = requestedArtist ? isArtistIdentityMismatch(requestedArtist, matchedArtist) : false
+  const hasIdentityMismatch = titleMismatch || artistMismatch
+
+  // Musical key validation through deterministic GTAR-compatible normalization
+  let originalKey: string | null = null
+  if (typeof parsed.originalKey === 'string' && parsed.originalKey.trim()) {
+    originalKey = normalizeMusicalKey(parsed.originalKey.trim())
+  }
+
+  // Confidence enum validation
+  let confidence: 'high' | 'medium' | 'low' = 'low'
+  if (parsed.confidence === 'high' || parsed.confidence === 'medium' || parsed.confidence === 'low') {
+    confidence = parsed.confidence
+  }
+
+  // Tempo bounds validation: 30 to 300 BPM
+  let tempo: number | null = null
+  if (typeof parsed.tempo === 'number' && Number.isFinite(parsed.tempo) && parsed.tempo >= 30 && parsed.tempo <= 300) {
+    tempo = Math.round(parsed.tempo)
+  } else if (typeof parsed.tempo === 'string' && /^\d+$/.test(parsed.tempo.trim())) {
+    const parsedTempo = parseInt(parsed.tempo.trim(), 10)
+    if (parsedTempo >= 30 && parsedTempo <= 300) {
+      tempo = parsedTempo
+    }
+  }
+
+  // Time signature validation
+  let timeSignature: string | null = null
+  if (typeof parsed.timeSignature === 'string' && /^\d{1,2}\/\d{1,2}$/.test(parsed.timeSignature.trim())) {
+    timeSignature = parsed.timeSignature.trim()
+  }
+
+  // Year validation: 4-digit
+  let year: string | null = null
+  if (parsed.year !== undefined && parsed.year !== null) {
+    const yStr = String(parsed.year).trim()
+    if (/^\d{4}$/.test(yStr)) {
+      year = yStr
+    }
+  }
+
+  let finalStatus: 'ok' | 'ambiguous' = rawStatus === 'ok' ? 'ok' : 'ambiguous'
+
+  if (hasIdentityMismatch) {
+    finalStatus = 'ambiguous'
+    originalKey = null
+    confidence = 'low'
+  } else if (!originalKey) {
+    finalStatus = 'ambiguous'
+    confidence = 'low'
+  }
+
+  const source =
+    finalStatus === 'ambiguous'
+      ? `Workers AI (${WORKERS_AI_MODEL}) (Uncertain/Unverified)`
+      : `Workers AI (${WORKERS_AI_MODEL})`
+
+  return {
+    status: finalStatus,
+    metadata: {
+      title: matchedTitle,
+      artist: matchedArtist,
+      originalKey,
+      tempo,
+      timeSignature,
+      year,
+      confidence,
+      source,
+    },
+  }
 }
 
 export async function onRequestPost(context: PagesContext): Promise<Response> {
@@ -286,80 +332,72 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const { title, artist, currentKey } = validation.data
 
-  try {
-    // 3. Evidence-driven factual lookup via MusicBrainz
-    const mbRecord = await queryMusicBrainz(title, artist)
-
-    // 4. Key and musical parameter reconciliation via AI / Provider
-    const aiRecord = await queryAiMetadataReconciliation(title, artist || mbRecord?.matchedArtist, currentKey, env)
-
-    const resolvedTitle = mbRecord?.matchedTitle || title
-    const resolvedArtist = mbRecord?.matchedArtist || artist || ''
-    const resolvedYear = mbRecord?.year || aiRecord?.year || null
-    const resolvedTempo = aiRecord?.tempo || null
-    const resolvedTime = aiRecord?.timeSignature || null
-
-    let rawKey = aiRecord?.originalKey || ''
-    if (!rawKey && currentKey) {
-      // If AI did not supply original key, cannot fabricate
-      rawKey = ''
-    }
-
-    const validatedKey = normalizeMusicalKey(rawKey)
-
-    if (validatedKey) {
-      const responsePayload: SongMetadataResponse = {
-        success: true,
-        status: 'ok',
-        metadata: {
-          title: resolvedTitle,
-          artist: resolvedArtist,
-          originalKey: validatedKey,
-          tempo: resolvedTempo,
-          timeSignature: resolvedTime,
-          year: resolvedYear,
-          confidence: aiRecord?.confidence || mbRecord?.confidence || 'medium',
-          source: [mbRecord ? 'MusicBrainz' : null, aiRecord?.sourceDescriptor || null]
-            .filter(Boolean)
-            .join(' + ') || 'Metadata Service',
-        },
-      }
-      return jsonResponse(responsePayload, 200)
-    }
-
-    // If no valid original key could be verified/discovered
-    if (mbRecord) {
-      // We found factual song identity but not an authoritative original key
-      const responsePayload: SongMetadataResponse = {
-        success: true,
-        status: 'ambiguous',
-        metadata: {
-          title: resolvedTitle,
-          artist: resolvedArtist,
-          originalKey: '',
-          tempo: resolvedTempo,
-          timeSignature: resolvedTime,
-          year: resolvedYear,
-          confidence: 'low',
-          source: 'MusicBrainz (Key unverified)',
-        },
-      }
-      return jsonResponse(responsePayload, 200)
-    }
-
-    const notFoundPayload: SongMetadataResponse = {
-      success: true,
-      status: 'not_found',
-      error: `No authoritative metadata found for "${title}"`,
-    }
-    return jsonResponse(notFoundPayload, 200)
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Internal metadata resolution error'
-    const errorPayload: SongMetadataResponse = {
-      success: false,
-      status: 'error',
-      error: errorMsg,
-    }
-    return jsonResponse(errorPayload, 500)
+  // 3. Workers AI binding check
+  if (!env.AI || typeof env.AI.run !== 'function') {
+    return jsonResponse(
+      {
+        success: false,
+        status: 'error',
+        error: 'Cloudflare Workers AI binding (env.AI) is not configured',
+      },
+      503
+    )
   }
+
+  // 4. Query Workers AI
+  let aiRes: unknown
+  try {
+    const { system, user } = buildWorkersAiMetadataPrompt(title, artist, currentKey)
+    aiRes = await env.AI.run(WORKERS_AI_MODEL, {
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      max_tokens: 300,
+    })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Workers AI execution error'
+    return jsonResponse(
+      {
+        success: false,
+        status: 'error',
+        error: `Workers AI execution failed: ${errorMsg}`,
+      },
+      500
+    )
+  }
+
+  // 5. Strict server-side validation and reconciliation
+  const result = validateAndReconcileAiOutput(aiRes, title, artist)
+
+  if (result.status === 'not_found') {
+    return jsonResponse(
+      {
+        success: true,
+        status: 'not_found',
+        error: result.error || `No authoritative metadata found for "${title}"`,
+      },
+      200
+    )
+  }
+
+  if (!result.metadata) {
+    return jsonResponse(
+      {
+        success: false,
+        status: 'error',
+        error: result.error || 'Invalid metadata resolution from Workers AI',
+      },
+      500
+    )
+  }
+
+  return jsonResponse(
+    {
+      success: true,
+      status: result.status,
+      metadata: result.metadata,
+    },
+    200
+  )
 }
