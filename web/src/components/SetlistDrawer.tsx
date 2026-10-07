@@ -16,6 +16,7 @@ import {
   PlayCircle,
   Download,
   Upload,
+  QrCode,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
@@ -39,6 +40,7 @@ interface SetlistDrawerProps {
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   onExportAllData?: () => void
+  onShareSetlist?: (setlist: WebSetlist) => void
 }
 
 export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
@@ -60,6 +62,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   onImportSingleSetlist,
   onSmartMerge,
   onExportAllData,
+  onShareSetlist,
 }) => {
   const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>('songbook')
   const [searchQuery, setSearchQuery] = useState('')
@@ -391,6 +394,19 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               title="Start Gig / Play Setlist from Beginning"
                             >
                               <PlayCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                           {onShareSetlist && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onShareSetlist(sl)
+                              }}
+                              className="p-1.5 rounded-lg text-app-muted hover:text-app-accent hover:bg-app-surface transition-colors cursor-pointer"
+                              title="Share Setlist (QR Code)"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
                             </button>
                           )}
                           <button

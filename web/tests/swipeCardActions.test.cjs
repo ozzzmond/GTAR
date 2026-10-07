@@ -1,4 +1,4 @@
-const { test } = require('node:test')
+﻿const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -31,8 +31,8 @@ const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 const { evaluateSwipeIntent, computeSwipeOffset, SwipeableActionCard } = require('../src/components/SwipeableActionCard.tsx')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.5a', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5a')
+test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.5b', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5b')
 })
 
 test('GESTURE_GUARD: Vertical scroll remains primary when vertical intent is detected', () => {

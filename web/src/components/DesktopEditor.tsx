@@ -121,7 +121,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
   const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
   const autosave = (updated: Partial<ActiveSongState>) => {
-    const next = { ...updated }
+    const next = { ...updated, id: editingSong.id }
     if (updated.rawContent === undefined) {
       const canonical: CanonicalMetadata = {}
       for (const field of ['title', 'artist', 'key', 'originalKey', 'bpm', 'time', 'year'] as const) {
@@ -826,6 +826,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 let next: TextEdit | undefined
                 if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
                   e.preventDefault()
+                  e.stopPropagation()
                   handleSave()
                   return
                 } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {

@@ -1,4 +1,4 @@
-const test = require('node:test')
+﻿const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -45,14 +45,14 @@ function metadataRequest(body) {
   })
 }
 
-test('DEV5A_VERSION_CONTRACT: canonical Web/PWA version is 1.0.123-dev.5a', () => {
+test('DEV5A_VERSION_CONTRACT: canonical Web/PWA version is 1.0.123-dev.5b', () => {
   const { GTAR_DEV_VERSION } = require(path.join(webDir, 'src/types/gtar.ts'))
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5a')
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5b')
   const pkg = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
   const lock = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkg.version, '1.0.123-dev.5a')
-  assert.equal(lock.version, '1.0.123-dev.5a')
-  assert.equal(lock.packages[''].version, '1.0.123-dev.5a')
+  assert.equal(pkg.version, '1.0.123-dev.5b')
+  assert.equal(lock.version, '1.0.123-dev.5b')
+  assert.equal(lock.packages[''].version, '1.0.123-dev.5b')
 })
 
 test('DEV5A_MODEL_HOTFIX: selected Workers AI model is not the retired DEV.5 model', () => {

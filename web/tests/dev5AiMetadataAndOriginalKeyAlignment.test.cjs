@@ -1,4 +1,4 @@
-const test = require('node:test')
+﻿const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -24,20 +24,20 @@ for (const ext of ['.ts', '.tsx']) {
 
 const webDir = path.resolve(__dirname, '..')
 
-// 1. VERSION CONTRACT (1.0.123-dev.5a)
-test('DEV5_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5a across codebase', () => {
+// 1. VERSION CONTRACT (1.0.123-dev.5b)
+test('DEV5_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5b across codebase', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.5a';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.5a')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.5b';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.5b')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.5a', 'package.json must be 1.0.123-dev.5a')
+  assert.equal(pkgJson.version, '1.0.123-dev.5b', 'package.json must be 1.0.123-dev.5b')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.5a', 'package-lock.json root must be 1.0.123-dev.5a')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5a', 'package-lock.json packages[""] must be 1.0.123-dev.5a')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.5b', 'package-lock.json root must be 1.0.123-dev.5b')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5b', 'package-lock.json packages[""] must be 1.0.123-dev.5b')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.5a'), 'authCore.ts header must reference v1.0.123-dev.5a')
+  assert.ok(authCore.includes('v1.0.123-dev.5b'), 'authCore.ts header must reference v1.0.123-dev.5b')
 })
 
 // 2. SERVER ENDPOINT CONTRACT & PAYLOAD VALIDATION
