@@ -51,6 +51,7 @@ import type { ActiveSongState } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
 import { isDevEnv } from './utils/env'
+import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
 
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
@@ -386,6 +387,42 @@ function LibraryApp() {
   const [activeView, setActiveView] = useState<'songbook' | 'editor' | 'stage' | 'trash'>(
     initialStageSession.isValid ? initialStageSession.view : 'songbook'
   )
+
+  // DEV.5a: mirror view changes into browser history (Back semantics, no hardcoded route).
+  const viewFromHistoryRef = useRef(false)
+  const activeViewRef = useRef(activeView)
+  useEffect(() => {
+    activeViewRef.current = activeView
+    if (typeof window === 'undefined' || !window.history) return
+    const current: unknown = window.history.state
+    if (!isGtarViewHistoryState(current)) {
+      window.history.replaceState(buildViewHistoryState(activeView, 0, current), '')
+      viewFromHistoryRef.current = false
+      return
+    }
+    if (viewFromHistoryRef.current) {
+      viewFromHistoryRef.current = false
+      return
+    }
+    if (current.gtarView !== activeView) {
+      window.history.pushState(buildViewHistoryState(activeView, current.gtarDepth + 1, null), '')
+    }
+  }, [activeView])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onPopState = (event: PopStateEvent) => {
+      const state: unknown = event.state
+      if (!isGtarViewHistoryState(state) || state.gtarView === activeViewRef.current) return
+      const next = () => {
+        viewFromHistoryRef.current = true
+        setActiveView(state.gtarView)
+      }
+      if (editorNavigationGuard.current) editorNavigationGuard.current(next)
+      else next()
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
   const [songs, setSongs] = useState<ActiveSongState[]>(initialLibrary.active)
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
 

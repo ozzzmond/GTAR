@@ -225,11 +225,12 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   assert.ok(!content.className.includes('justify-start'))
   const layout = window.getComputedStyle(content)
   assert.equal(layout.width, 'max-content')
-  assert.equal(layout.minWidth, '100%')
+  assert.match(css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0], /margin-inline:\s*auto;/)
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
-  assert.equal(toolbarButtons.length, 7)
+  assert.equal(toolbarButtons.length, 8)
   const labels = [...toolbarButtons].map(btn => btn.querySelector('.toolbar-tooltip')?.textContent)
   assert.deepEqual(labels, [
+    'Back',
     'Stage Preview (Alt+1)',
     'Editor (Alt+2)',
     'Band Sync (Alt+3)',
