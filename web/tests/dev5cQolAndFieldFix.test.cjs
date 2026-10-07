@@ -44,22 +44,22 @@ test('DEV5C_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5c across
 test('DELIVERABLE 1: getSongMetadataStatus determines METADATA_OK and NEEDS_METADATA deterministically', () => {
   const { getSongMetadataStatus } = require(path.join(webDir, 'src/utils/chordProMetadata.ts'))
 
-  // Complete song with all required metadata
+  // Complete song with all required reference metadata (even with no key)
   const completeSong = {
     title: 'Hotel California',
     artist: 'Eagles',
-    key: 'Bm',
+    originalKey: 'Bm',
     bpm: '75',
     time: '4/4',
     year: '1976',
-    rawContent: '{title: Hotel California}\n{artist: Eagles}\n{key: Bm}\n{tempo: 75}\n{time: 4/4}\n{year: 1976}\n[Bm]Welcome to the Hotel California',
+    rawContent: '{title: Hotel California}\n{artist: Eagles}\n{original_key: Bm}\n{tempo: 75}\n{time: 4/4}\n{year: 1976}\n[Bm]Welcome to the Hotel California',
   }
   const status1 = getSongMetadataStatus(completeSong)
   assert.equal(status1.status, 'METADATA_OK')
   assert.equal(status1.missingFields.length, 0)
   assert.equal(status1.resolved.title, 'Hotel California')
   assert.equal(status1.resolved.artist, 'Eagles')
-  assert.equal(status1.resolved.key, 'Bm')
+  assert.equal(status1.resolved.originalKey, 'Bm')
   assert.equal(status1.resolved.tempo, 75)
   assert.equal(status1.resolved.timeSignature, '4/4')
   assert.equal(status1.resolved.year, 1976)
@@ -68,7 +68,7 @@ test('DELIVERABLE 1: getSongMetadataStatus determines METADATA_OK and NEEDS_META
   const unknownArtistSong = {
     title: 'Some Song',
     artist: 'unknown artist',
-    key: 'G',
+    originalKey: 'G',
     bpm: '120',
     time: '4/4',
     year: '2020',
@@ -77,7 +77,7 @@ test('DELIVERABLE 1: getSongMetadataStatus determines METADATA_OK and NEEDS_META
   assert.equal(statusUnknown.status, 'NEEDS_METADATA')
   assert.ok(statusUnknown.missingFields.includes('artist'))
 
-  // Missing title, artist, key, tempo, time, year
+  // Missing title, artist, originalKey, tempo, time, year (key is NOT in missingFields)
   const emptySong = {
     title: '',
     artist: '',
@@ -86,7 +86,8 @@ test('DELIVERABLE 1: getSongMetadataStatus determines METADATA_OK and NEEDS_META
   assert.equal(statusEmpty.status, 'NEEDS_METADATA')
   assert.ok(statusEmpty.missingFields.includes('title'))
   assert.ok(statusEmpty.missingFields.includes('artist'))
-  assert.ok(statusEmpty.missingFields.includes('key'))
+  assert.ok(statusEmpty.missingFields.includes('originalKey'))
+  assert.ok(!statusEmpty.missingFields.includes('key'))
   assert.ok(statusEmpty.missingFields.includes('tempo'))
   assert.ok(statusEmpty.missingFields.includes('time'))
   assert.ok(statusEmpty.missingFields.includes('year'))
@@ -120,18 +121,27 @@ test('DELIVERABLE 1: getSongMetadataStatus determines METADATA_OK and NEEDS_META
   }
   assert.equal(getSongMetadataStatus(invalidTime).status, 'NEEDS_METADATA')
 
-  // Optional originalKey absent: must NOT fail METADATA_OK
-  const noOrigKey = { ...completeSong, originalKey: undefined }
-  assert.equal(getSongMetadataStatus(noOrigKey).status, 'METADATA_OK')
+  // Missing originalKey => NEEDS_METADATA even when current key exists
+  const missingOrigKey = {
+    title: 'Song With Key But No Orig Key',
+    artist: 'Artist',
+    key: 'D',
+    tempo: 120,
+    time: '4/4',
+    year: 2020,
+  }
+  const statusMissingOrig = getSongMetadataStatus(missingOrigKey)
+  assert.equal(statusMissingOrig.status, 'NEEDS_METADATA')
+  assert.ok(statusMissingOrig.missingFields.includes('originalKey'))
 
-  // Optional originalKey present and valid: METADATA_OK (can differ from current key)
-  const validOrigKey = { ...completeSong, key: 'C', originalKey: 'Bm' }
-  const statusValidOrig = getSongMetadataStatus(validOrigKey)
-  assert.equal(statusValidOrig.status, 'METADATA_OK')
-  assert.equal(statusValidOrig.resolved.key, 'C')
-  assert.equal(statusValidOrig.resolved.originalKey, 'Bm')
+  // {key: D} + {original_key: G} => METADATA_OK when all reference metadata is complete
+  const validDifferingKeys = { ...completeSong, key: 'D', originalKey: 'G' }
+  const statusValidDiffering = getSongMetadataStatus(validDifferingKeys)
+  assert.equal(statusValidDiffering.status, 'METADATA_OK')
+  assert.equal(statusValidDiffering.resolved.key, 'D')
+  assert.equal(statusValidDiffering.resolved.originalKey, 'G')
 
-  // Optional originalKey present but malformed: NEEDS_METADATA
+  // Malformed originalKey: NEEDS_METADATA
   const malformedOrigKey = { ...completeSong, originalKey: 'InvalidKeyString' }
   const statusMalformedOrig = getSongMetadataStatus(malformedOrigKey)
   assert.equal(statusMalformedOrig.status, 'NEEDS_METADATA')

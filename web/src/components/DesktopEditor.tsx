@@ -255,6 +255,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     // Updates canonical metadata fields only; never alters {key} and never transposes chord symbols
     const updates: Partial<ActiveSongState> = {}
 
+    if (meta.title && meta.title.trim()) {
+      setLocalTitle(meta.title.trim())
+      updates.title = meta.title.trim()
+    }
     if (meta.artist && meta.artist.trim()) {
       setLocalArtist(meta.artist.trim())
       updates.artist = meta.artist.trim()

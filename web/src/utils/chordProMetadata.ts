@@ -231,15 +231,18 @@ export interface SongLikeMetadata {
 /**
  * Deterministically checks the library metadata completeness of a song.
  *
- * METADATA_OK requires:
+ * GTAR separates REFERENCE METADATA from CURRENT CHART STATE.
+ * Reference metadata completeness (METADATA_OK) requires:
  * 1. Meaningful explicit title (non-empty string).
  * 2. Meaningful artist not equal to case-insensitive "Unknown Artist" (and non-empty).
- * 3. Nonempty valid normalized current key.
+ * 3. Valid explicit originalKey / original_key.
  * 4. Valid explicit tempo in canonical supported form/range 30-300 BPM (e.g. 120, "120", "120 BPM").
  * 5. Valid explicit time signature using supported grammar (^\d{1,2}\/\d{1,2}$).
  * 6. Valid 4-digit year (^\d{4}$).
  *
- * OPTIONAL: originalKey. If present, it must be valid. If absent, it does not fail status.
+ * Current chart state `key` is NOT part of Metadata OK completeness.
+ * Missing/present `key` does not affect METADATA_OK status.
+ * Do not infer original_key from key for status calculation.
  */
 export function getSongMetadataStatus(song: SongLikeMetadata): SongMetadataDetail {
   const missingFields: Array<'title' | 'artist' | 'key' | 'tempo' | 'time' | 'year' | 'originalKey'> = [];
@@ -263,15 +266,10 @@ export function getSongMetadataStatus(song: SongLikeMetadata): SongMetadataDetai
     validArtist = rawArtist;
   }
 
-  // 3. Current Key (must be valid normalized key)
+  // 3. Current Key (captured for resolved state if valid, but NOT part of Metadata OK completeness)
   const rawKey = (song.key ?? parsedDirectives?.key ?? '').trim();
   const normalizedKey = rawKey ? normalizeMusicalKey(rawKey) : null;
-  let validKey: string | undefined;
-  if (!normalizedKey) {
-    missingFields.push('key');
-  } else {
-    validKey = normalizedKey;
-  }
+  const validKey = normalizedKey || undefined;
 
   // 4. Tempo (must be in 30-300 range)
   const rawTempoValue = song.tempo ?? song.bpm ?? parsedDirectives?.tempo ?? parsedDirectives?.bpm ?? null;
@@ -313,10 +311,12 @@ export function getSongMetadataStatus(song: SongLikeMetadata): SongMetadataDetai
     validYear = rawYear;
   }
 
-  // 7. Optional Original Key: if present, must be valid
+  // 7. Original Key (Mandatory reference metadata for Metadata OK completeness)
   const rawOrigKey = (song.originalKey ?? parsedDirectives?.originalKey ?? '').trim();
   let validOrigKey: string | undefined;
-  if (rawOrigKey) {
+  if (!rawOrigKey) {
+    missingFields.push('originalKey');
+  } else {
     const normOrig = normalizeMusicalKey(rawOrigKey);
     if (!normOrig) {
       missingFields.push('originalKey');
