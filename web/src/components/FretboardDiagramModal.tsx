@@ -4,14 +4,58 @@ import type { ChordVoicing } from '../utils/chordDictionary'
 
 interface FretboardDiagramModalProps {
   voicing: ChordVoicing | null
+  requestedChord?: string | null
   onClose: () => void
 }
 
 export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
   voicing,
+  requestedChord,
   onClose,
 }) => {
-  if (!voicing) return null
+  if (!voicing && !requestedChord) return null
+
+  const chordTitle = voicing?.chord || requestedChord || ''
+
+  if (!voicing) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+        onClick={onClose}
+      >
+        <div
+          className="relative w-full max-w-sm rounded-[20px] bg-app-surface border border-app-border p-6 shadow-2xl text-app-text select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-app-border">
+            <div>
+              <h2 className="text-2xl font-black text-app-accent tracking-tight">{chordTitle}</h2>
+              <p className="text-xs font-mono text-app-muted mt-0.5">Chord Voicing</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
+              title="Close Diagram"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="mt-6 py-8 px-4 rounded-xl bg-app-base flex flex-col items-center justify-center border border-app-border text-center">
+            <p className="text-sm font-medium text-app-text">Chord diagram unavailable</p>
+            <p className="text-xs text-app-muted mt-1 max-w-[220px]">
+              No trusted guitar fingering is currently cataloged for this chord.
+            </p>
+          </div>
+
+          <p className="text-[11px] text-center text-app-muted mt-4">
+            Click outside or press <span className="font-mono text-app-action">ESC</span> to dismiss
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const fretsSummary = voicing.frets.map((f) => (f === -1 ? 'x' : f.toString())).join(' ')
 

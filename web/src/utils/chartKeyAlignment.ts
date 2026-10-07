@@ -1,9 +1,8 @@
-import { normalizeMusicalKey } from './musicalKey'
+import { normalizeMusicalKey, musicalKeyPitchClass } from './musicalKey'
 import { transposeChordToken, transposeChordLine } from './chordTransposer'
 import { parseGtarSong, isTabChartLine, isSectionHeader } from './songParser'
 
 type Chart = { key?: string | null; rawContent: string }
-const roots = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 // A legacy label or first-chord inference alone is not evidence of the tonic.
 export function trustworthyChartKey(chart: Chart): string | null {
@@ -19,8 +18,15 @@ export function establishChartKey(rawContent: string, key: string): string {
     : `{key: ${key}}${rawContent.includes('\r\n') ? '\r\n' : '\n'}${rawContent}`
 }
 
-// Classification uses the same parser as the preview; never rewrite lyrics or fixed-pitch tabs.
-export function transposeChartText(rawContent: string, semitones: number): string {
+/**
+ * Transposes song text by semitones, respecting targetKey enharmonic preference where available.
+ * Classification uses the same parser as the preview; never rewrites lyrics or fixed-pitch tabs.
+ */
+export function transposeChartText(
+  rawContent: string,
+  semitones: number,
+  targetKey?: string | null
+): string {
   if (!semitones) return rawContent
   let tab = false
   let chartBlock = false
@@ -41,13 +47,77 @@ export function transposeChartText(rawContent: string, semitones: number): strin
       if (/[[<]/.test(part)) return part.split(/(\[[^\]]*\]|<[^>]*>)/).map(piece => {
         if (/^(?:\[|<)/.test(piece)) {
           const chord = piece.slice(1, -1)
-          return piece[0] + transposeChordToken(chord, semitones) + piece.slice(-1)
+          return piece[0] + transposeChordToken(chord, semitones, targetKey) + piece.slice(-1)
         }
-        return parsed.some(value => value.type === 'CHORD_PRO') ? piece : transposeChordLine(piece, semitones)
+        return parsed.some(value => value.type === 'CHORD_PRO') ? piece : transposeChordLine(piece, semitones, targetKey)
       }).join('')
-      return parsed.some(value => value.type === 'CHORD_PRO') ? part : transposeChordLine(part, semitones)
+      return parsed.some(value => value.type === 'CHORD_PRO') ? part : transposeChordLine(part, semitones, targetKey)
     }).join('')
   }).join('')
+}
+
+/**
+ * Pure deterministic canonical song transposition API.
+ * Transposes canonical ChordPro text from sourceKey to targetKey:
+ * - Computes deterministic semitone movement from pitch classes
+ * - Applies target-key aware enharmonic spelling
+ * - Updates canonical {key: ...} metadata
+ * - Preserves all directives, comments, lyrics, and non-chord lines
+ * - Completely local, pure function with no network/AI dependencies
+ */
+export function transposeCanonicalSong(
+  rawContent: string,
+  fromKey: string,
+  toKey: string
+): { rawContent: string; key: string; semitones: number } {
+  const normFrom = normalizeMusicalKey(fromKey)
+  const normTo = normalizeMusicalKey(toKey)
+
+  if (!normTo) {
+    return { rawContent, key: normFrom || fromKey, semitones: 0 }
+  }
+
+  if (!normFrom) {
+    // If source key is unknown/unspecified, simply establish {key: toKey} without altering chords
+    return {
+      rawContent: establishChartKey(rawContent, normTo),
+      key: normTo,
+      semitones: 0,
+    }
+  }
+
+  const fromPc = musicalKeyPitchClass(normFrom)
+  const toPc = musicalKeyPitchClass(normTo)
+
+  if (fromPc === null || toPc === null) {
+    return {
+      rawContent: establishChartKey(rawContent, normTo),
+      key: normTo,
+      semitones: 0,
+    }
+  }
+
+  const delta = ((toPc - fromPc) % 12 + 12) % 12
+  if (delta === 0) {
+    // Same pitch class: if spelling differs (e.g. C# vs Db), update key declaration and apply target enharmonic
+    if (normFrom !== normTo) {
+      return {
+        rawContent: establishChartKey(rawContent, normTo),
+        key: normTo,
+        semitones: 0,
+      }
+    }
+    return { rawContent, key: normTo, semitones: 0 }
+  }
+
+  const transposed = transposeChartText(rawContent, delta, normTo)
+  const finalContent = establishChartKey(transposed, normTo)
+
+  return {
+    rawContent: finalContent,
+    key: normTo,
+    semitones: delta,
+  }
 }
 
 export function alignChartKey(chart: Chart, targetValue: string, confirmedSource?: string) {
@@ -55,10 +125,9 @@ export function alignChartKey(chart: Chart, targetValue: string, confirmedSource
   if (!target) return { changes: {}, needsSource: false }
   const source = confirmedSource ? normalizeMusicalKey(confirmedSource) : trustworthyChartKey(chart)
   if (!source) return { changes: {}, needsSource: true }
-  const delta = (roots.indexOf(target.replace(/m$/, '')) - roots.indexOf(source.replace(/m$/, '')) + 12) % 12
-  const rawContent = source === target && !confirmedSource ? chart.rawContent
-    : establishChartKey(transposeChartText(chart.rawContent, delta), target)
-  return { changes: { key: target, rawContent }, needsSource: false }
+
+  const result = transposeCanonicalSong(chart.rawContent, source, target)
+  return { changes: { key: result.key, rawContent: result.rawContent }, needsSource: false }
 }
 
 export function acceptOriginalKey(chart: Chart, value?: string, confirmedSource?: string) {
