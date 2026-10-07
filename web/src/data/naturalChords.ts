@@ -117,6 +117,7 @@ export const NATURAL_CHORD_VOICINGS: ChordVoicing[] = [
 
   // Slash chords
   { chord: 'E/G#', baseFret: 1, frets: [4, 2, 2, 1, 0, 0], fingers: [4, 2, 3, 1, 0, 0] },
+  { chord: 'E7/G#', baseFret: 1, frets: [4, 2, 0, 1, 0, 0], fingers: [4, 2, 0, 1, 0, 0] },
   { chord: 'E/B', baseFret: 1, frets: [-1, 2, 2, 1, 0, 0], fingers: [0, 2, 3, 1, 0, 0] },
   { chord: 'E/D', baseFret: 1, frets: [0, 2, 0, 1, 0, 0], fingers: [0, 2, 0, 1, 0, 0] },
   { chord: 'Em/G', baseFret: 1, frets: [3, 2, 2, 0, 0, 0], fingers: [3, 1, 2, 0, 0, 0] },
