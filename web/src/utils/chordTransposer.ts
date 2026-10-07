@@ -2,11 +2,35 @@
  * Musical chord and key transposition utilities
  */
 
-// Shared by detection, highlighting and transposition; numeric slashes belong to the quality.
-export const CHORD_TOKEN_REGEX = /^[A-G][b#]?(?:maj|min|dim|aug|sus[24]?|add(?:2|4|9|11|13)|M|m|[0-9]+|b[0-9]+|#[0-9]+|alt)*(?:\/[0-9]{1,2})?(?:\/[A-G][b#]?(?:min|m)?)?$/i
+import { parseChord } from './chordParser'
+import {
+  transposeNoteWithKey,
+  keyPrefersFlats,
+  CHROMATIC_SHARPS,
+  CHROMATIC_FLATS,
+} from './enharmonicPolicy'
 
-const CHROMATIC_SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-const CHROMATIC_FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+// Export parser utilities for unified consumers
+export {
+  parseChord,
+  isChordToken,
+  isValidRootNote,
+  normalizeRootNote,
+  type ParsedChord,
+} from './chordParser'
+
+export {
+  keyPrefersFlats,
+  spellPitchClass,
+  transposeNoteWithKey,
+} from './enharmonicPolicy'
+
+// Shared token regex matching both known chords and safe-rooted unknown chords
+export const CHORD_TOKEN_REGEX = {
+  test(token: string): boolean {
+    return parseChord(token) !== null
+  },
+}
 
 const NOTE_ALIASES: Record<string, number> = {
   'B#': 0, 'C': 0,
@@ -110,27 +134,56 @@ export function formatTransposeOffset(offset: number): string {
 }
 
 /**
- * Transposes a single chord token, handling slash chords (e.g. "D/F#", "Am7", "C#m7b5")
+ * Transposes a single chord token using pure chord parsing and enharmonic policy:
+ * - transposes root
+ * - preserves chord quality and modifiers intact (including parenthesized extensions, safe unknown suffixes)
+ * - transposes slash bass with consistent enharmonic policy
+ * - targetKey or preferFlats parameter guides enharmonic spelling
  */
-export function transposeChordToken(chord: string, semitones: number, preferFlats?: boolean): string {
-  if (!Number.isSafeInteger(semitones) || semitones === 0 || !CHORD_TOKEN_REGEX.test(chord)) return chord
-  const rootMatch = /^([A-Ga-g][#b]?)(.*)$/.exec(chord)!
-  const root = rootMatch[1][0].toUpperCase() + rootMatch[1].slice(1)
-  // Only a final note slash is a bass: the slash in C6/9 is part of its quality.
-  const bassMatch = /\/([A-Ga-g][#b]?)(min|m)?$/.exec(rootMatch[2])
-  const quality = bassMatch ? rootMatch[2].slice(0, bassMatch.index) : rootMatch[2]
-  const flats = preferFlats ?? (root.includes('b') || root === 'F')
-  const transposedRoot = transposeNote(root, semitones, flats)
-  if (!bassMatch) return transposedRoot + quality
-  const bass = bassMatch[1][0].toUpperCase() + bassMatch[1].slice(1)
-  return `${transposedRoot}${quality}/${transposeNote(bass, semitones, flats)}${bassMatch[2] ?? ''}`
+export function transposeChordToken(
+  chord: string,
+  semitones: number,
+  preferFlatsOrTargetKey?: boolean | string | null
+): string {
+  if (!Number.isSafeInteger(semitones) || semitones === 0) return chord
+
+  const parsed = parseChord(chord)
+  if (!parsed) return chord
+
+  // Determine target key context or flats preference
+  let targetKey: string | undefined
+  let preferFlats: boolean | undefined
+
+  if (typeof preferFlatsOrTargetKey === 'string') {
+    targetKey = preferFlatsOrTargetKey
+    preferFlats = keyPrefersFlats(targetKey)
+  } else if (typeof preferFlatsOrTargetKey === 'boolean') {
+    preferFlats = preferFlatsOrTargetKey
+  } else {
+    // If unspecified, inherit from source root preference: flats if source root had flat or was F
+    preferFlats = parsed.root.includes('b') || parsed.root === 'F'
+  }
+
+  const transposedRoot = transposeNoteWithKey(parsed.root, semitones, targetKey, preferFlats)
+
+  if (!parsed.bass) {
+    return `${transposedRoot}${parsed.quality}`
+  }
+
+  const transposedBass = transposeNoteWithKey(parsed.bass, semitones, targetKey, preferFlats)
+  const bassQuality = parsed.bassQuality ?? ''
+  return `${transposedRoot}${parsed.quality}/${transposedBass}${bassQuality}`
 }
 
 /**
  * Transposes all bracketed chords in ChordPro content
  * e.g. [G]Amazing [D/F#]grace -> [A]Amazing [E/G#]grace
  */
-export function transposeChordProText(text: string, semitones: number): string {
+export function transposeChordProText(
+  text: string,
+  semitones: number,
+  preferFlatsOrTargetKey?: boolean | string | null
+): string {
   if (semitones === 0) return text
 
   return text
@@ -139,13 +192,13 @@ export function transposeChordProText(text: string, semitones: number): string {
       if (/^(Intro|Verse|Chorus|Bridge|Pre-Chorus|Post-Chorus|Outro|Solo|Tab)/i.test(chord)) {
         return match
       }
-      return `[${transposeChordToken(chord, semitones)}]`
+      return `[${transposeChordToken(chord, semitones, preferFlatsOrTargetKey)}]`
     })
     .replace(/<([A-Ga-g][#b]?[^>]*)>/g, (match, chord) => {
       if (/^(Intro|Verse|Chorus|Bridge|Pre-Chorus|Post-Chorus|Outro|Solo|Tab)/i.test(chord)) {
         return match
       }
-      return `[${transposeChordToken(chord, semitones)}]`
+      return `[${transposeChordToken(chord, semitones, preferFlatsOrTargetKey)}]`
     })
 }
 
@@ -153,7 +206,11 @@ export function transposeChordProText(text: string, semitones: number): string {
  * Transposes a full chord line while preserving column-width alignment.
  * Uses spacing compensation matching Android TransposeEngine.transposeChordLine.
  */
-export function transposeChordLine(chordLine: string, semitones: number): string {
+export function transposeChordLine(
+  chordLine: string,
+  semitones: number,
+  preferFlatsOrTargetKey?: boolean | string | null
+): string {
   if (!Number.isSafeInteger(semitones) || semitones === 0 || !chordLine.trim()) return chordLine
   let result = ''
   let i = 0
@@ -167,7 +224,7 @@ export function transposeChordLine(chordLine: string, semitones: number): string
     const clean = raw.slice(prefix.length, raw.length - suffix.length)
     const parts = clean.split(/([-??])/)
     if (!parts.every((part, index) => index % 2 === 1 || CHORD_TOKEN_REGEX.test(part))) { result += raw; continue }
-    const replacement = prefix + parts.map((part, index) => index % 2 === 1 ? part : transposeChordToken(part, semitones)).join('') + suffix
+    const replacement = prefix + parts.map((part, index) => index % 2 === 1 ? part : transposeChordToken(part, semitones, preferFlatsOrTargetKey)).join('') + suffix
     result += replacement
     const difference = replacement.length - raw.length
     let spaces = 0
@@ -179,4 +236,3 @@ export function transposeChordLine(chordLine: string, semitones: number): string
 }
 
 export * from './nashvilleNotation'
-

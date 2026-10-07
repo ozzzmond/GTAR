@@ -392,6 +392,7 @@ export const StageView: React.FC<StageViewProps> = ({
   // Modals & Drawers
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
   const [selectedVoicing, setSelectedVoicing] = useState<ChordVoicing | null>(null)
+  const [selectedChordName, setSelectedChordName] = useState<string | null>(null)
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
@@ -403,6 +404,7 @@ export const StageView: React.FC<StageViewProps> = ({
   const isAnyOverlayActive = Boolean(
     isKeyPickerOpen ||
     selectedVoicing ||
+    selectedChordName ||
     isBandSyncModalOpen ||
     isTvPresentationModalOpen ||
     isStageMenuOpen ||
@@ -1487,10 +1489,9 @@ export const StageView: React.FC<StageViewProps> = ({
   ])
 
   const handleChordClick = (chordName: string) => {
+    setSelectedChordName(chordName)
     const voicing = getChordVoicing(chordName)
-    if (voicing) {
-      setSelectedVoicing(voicing)
-    }
+    setSelectedVoicing(voicing)
   }
 
   // Notify parent whenever performance mode changes (so App can hide global Header)
@@ -2559,7 +2560,11 @@ export const StageView: React.FC<StageViewProps> = ({
       {/* Fretboard Diagram Modal (1:1 Android FretboardDiagramDialog.kt) */}
       <FretboardDiagramModal
         voicing={selectedVoicing}
-        onClose={() => setSelectedVoicing(null)}
+        requestedChord={selectedChordName}
+        onClose={() => {
+          setSelectedVoicing(null)
+          setSelectedChordName(null)
+        }}
       />
 
       {/* Key & Transpose Picker Modal */}
