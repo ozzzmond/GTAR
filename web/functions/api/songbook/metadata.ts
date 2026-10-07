@@ -7,12 +7,37 @@ import {
 } from '../../lib/authCore.ts'
 import { normalizeMusicalKey } from '../../../src/utils/musicalKey.ts'
 
-export const WORKERS_AI_MODEL = '@cf/meta/llama-3-8b-instruct'
+/**
+ * Single source of truth for the Workers AI metadata model.
+ * DEV.5a: @cf/meta/llama-3-8b-instruct was retired by Cloudflare on 2026-05-30 (error 5028).
+ * To rotate models without code changes, set the optional WORKERS_AI_METADATA_MODEL var.
+ */
+export const WORKERS_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+
+/** Known-retired model IDs; never dispatched even if supplied via env override. */
+export const RETIRED_WORKERS_AI_MODELS: readonly string[] = [
+  '@cf/meta/llama-3-8b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct',
+]
+
+const WORKERS_AI_MODEL_ID_PATTERN = /^@cf\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
 
 export interface MetadataEnv extends AuthEnv {
   AI?: {
     run(model: string, inputs: Record<string, unknown>): Promise<unknown>
   }
+  WORKERS_AI_METADATA_MODEL?: string
+}
+
+/**
+ * Resolves the model ID: valid, non-retired env override wins; otherwise the centralized default.
+ */
+export function resolveWorkersAiModel(env?: Pick<MetadataEnv, 'WORKERS_AI_METADATA_MODEL'>): string {
+  const override = typeof env?.WORKERS_AI_METADATA_MODEL === 'string' ? env.WORKERS_AI_METADATA_MODEL.trim() : ''
+  if (override && WORKERS_AI_MODEL_ID_PATTERN.test(override) && !RETIRED_WORKERS_AI_MODELS.includes(override)) {
+    return override
+  }
+  return WORKERS_AI_MODEL
 }
 
 interface PagesContext {
@@ -181,7 +206,8 @@ JSON schema:
 export function validateAndReconcileAiOutput(
   rawAiOutput: unknown,
   requestedTitle: string,
-  requestedArtist?: string
+  requestedArtist?: string,
+  modelId: string = WORKERS_AI_MODEL
 ): {
   status: 'ok' | 'not_found' | 'ambiguous'
   metadata?: SongMetadataResult
@@ -191,8 +217,12 @@ export function validateAndReconcileAiOutput(
   if (typeof rawAiOutput === 'string') {
     rawText = rawAiOutput
   } else if (rawAiOutput && typeof rawAiOutput === 'object') {
-    if ('response' in rawAiOutput && typeof (rawAiOutput as { response: unknown }).response === 'string') {
-      rawText = (rawAiOutput as { response: string }).response
+    const response = 'response' in rawAiOutput ? (rawAiOutput as { response: unknown }).response : undefined
+    if (typeof response === 'string') {
+      rawText = response
+    } else if (response && typeof response === 'object') {
+      // Newer models may return an already-parsed JSON object in `response`.
+      rawText = JSON.stringify(response)
     } else {
       rawText = JSON.stringify(rawAiOutput)
     }
@@ -290,8 +320,8 @@ export function validateAndReconcileAiOutput(
 
   const source =
     finalStatus === 'ambiguous'
-      ? `Workers AI (${WORKERS_AI_MODEL}) (Uncertain/Unverified)`
-      : `Workers AI (${WORKERS_AI_MODEL})`
+      ? `Workers AI (${modelId}) (Uncertain/Unverified)`
+      : `Workers AI (${modelId})`
 
   return {
     status: finalStatus,
@@ -345,10 +375,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   // 4. Query Workers AI
+  const modelId = resolveWorkersAiModel(env)
   let aiRes: unknown
   try {
     const { system, user } = buildWorkersAiMetadataPrompt(title, artist, currentKey)
-    aiRes = await env.AI.run(WORKERS_AI_MODEL, {
+    aiRes = await env.AI.run(modelId, {
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -368,7 +399,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   // 5. Strict server-side validation and reconciliation
-  const result = validateAndReconcileAiOutput(aiRes, title, artist)
+  const result = validateAndReconcileAiOutput(aiRes, title, artist, modelId)
 
   if (result.status === 'not_found') {
     return jsonResponse(

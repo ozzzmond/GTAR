@@ -26,6 +26,7 @@ import {
   Shield,
   RotateCw,
   AlertTriangle,
+  ArrowLeft,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
@@ -46,6 +47,7 @@ import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
+import { navigateBack } from '../utils/viewHistory'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -98,6 +100,7 @@ function ToolbarIconButton({
   onClick,
   className = '',
   buttonRef,
+  testId,
 }: {
   icon: React.FC<{ className?: string }>
   label: string
@@ -105,12 +108,15 @@ function ToolbarIconButton({
   onClick: () => void
   className?: string
   buttonRef?: React.Ref<HTMLButtonElement>
+  testId?: string
 }) {
   return (
     <button
       ref={buttonRef}
       type="button"
       onClick={onClick}
+      aria-label={label}
+      data-testid={testId}
       className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
     >
       <Icon className="w-4 h-4" />
@@ -657,7 +663,14 @@ export const Header: React.FC<HeaderProps> = ({
       {/* =================================================================== */}
       <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
         <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
-          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2">
+          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
+            <ToolbarIconButton
+              icon={ArrowLeft}
+              label="Back"
+              onClick={() => { navigateBack() }}
+              className="shrink-0"
+              testId="toolbar-back"
+            />
             <ToolbarIconButton
               icon={PlaySquare}
               label="Stage Preview (Alt+1)"
