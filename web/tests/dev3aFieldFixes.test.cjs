@@ -1,4 +1,4 @@
-const { test } = require('node:test')
+﻿const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -51,20 +51,20 @@ const {
 const { isValidUUID } = require('../src/utils/uuid.ts')
 
 // =============================================================================
-// 1. VERSION IDENTITY CONTRACT (v1.0.123-dev.5a)
+// 1. VERSION IDENTITY CONTRACT (v1.0.123-dev.5b)
 // =============================================================================
-test('DEV3A_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.5a across manifests, types, and functions', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5a', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.5a')
+test('DEV3A_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.5b across manifests, types, and functions', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5b', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.5b')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.5a', 'package.json version must be 1.0.123-dev.5a')
+  assert.equal(pkgJson.version, '1.0.123-dev.5b', 'package.json version must be 1.0.123-dev.5b')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.5a', 'package-lock.json root must be 1.0.123-dev.5a')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5a', 'package-lock.json packages[""] must be 1.0.123-dev.5a')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.5b', 'package-lock.json root must be 1.0.123-dev.5b')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5b', 'package-lock.json packages[""] must be 1.0.123-dev.5b')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.5a'), 'authCore.ts must reference v1.0.123-dev.5a')
+  assert.ok(authCore.includes('v1.0.123-dev.5b'), 'authCore.ts must reference v1.0.123-dev.5b')
 })
 
 // =============================================================================

@@ -30,6 +30,9 @@ import { TrashView } from './components/TrashView'
 import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
+import { ShareSetlistModal } from './components/ShareSetlistModal'
+import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
+import type { SharedSetlistPayload } from './utils/sharedSetlist'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
 import { ImportDialogModal } from './components/ImportDialogModal'
 import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
@@ -606,8 +609,43 @@ function LibraryApp() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
+  const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
+  const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
+
+  // Handle incoming ?share=<token> parameter on load
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const shareToken = urlParams.get('share')
+      if (shareToken && /^[a-f0-9]{16}$/i.test(shareToken)) {
+        fetch(`/api/setlist/share?token=${shareToken}`)
+          .then((res) => {
+            if (!res.ok) throw new Error('Shared setlist not found or expired')
+            return res.json()
+          })
+          .then((data) => {
+            if (data?.setlist) {
+              setIncomingSharedSetlist(data.setlist)
+            }
+          })
+          .catch((err) => {
+            console.warn('[Share] Failed to load shared setlist:', err)
+            setToastMessage('Could not load shared setlist: link may be expired or invalid.')
+            setTimeout(() => setToastMessage(null), 4000)
+          })
+          .finally(() => {
+            // Clean up share parameter from URL without page reload
+            const cleanUrl = new URL(window.location.href)
+            cleanUrl.searchParams.delete('share')
+            window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
+          })
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
@@ -1428,6 +1466,68 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 4000)
   }
 
+  const handleImportSharedSetlist = (shared: SharedSetlistPayload) => {
+    const newSongStates: ActiveSongState[] = shared.songs.map((s) => ({
+      id: generateUUID(),
+      title: s.title,
+      artist: s.artist || '',
+      key: s.key || detectSongKey(s.rawContent || ''),
+      capo: s.capo || 'No Capo',
+      bpm: s.bpm || '120',
+      time: s.time,
+      format: 'CHORD_PRO',
+      transposeOffset: 0,
+      rawContent: s.rawContent,
+    }))
+
+    const newSetlist: WebSetlist = {
+      id: generateUUID(),
+      name: shared.name,
+      createdAt: Date.now(),
+      songs: newSongStates.map((ns) => ({
+        id: ns.id,
+        title: ns.title,
+        artist: ns.artist,
+      })),
+    }
+
+    handleImportSingleSetlist(newSetlist, newSongStates)
+    setIncomingSharedSetlist(null)
+  }
+
+  const handleOpenSharedSetlistInStage = (shared: SharedSetlistPayload) => {
+    const newSongStates: ActiveSongState[] = shared.songs.map((s) => ({
+      id: generateUUID(),
+      title: s.title,
+      artist: s.artist || '',
+      key: s.key || detectSongKey(s.rawContent || ''),
+      capo: s.capo || 'No Capo',
+      bpm: s.bpm || '120',
+      time: s.time,
+      format: 'CHORD_PRO',
+      transposeOffset: 0,
+      rawContent: s.rawContent,
+    }))
+
+    const newSetlist: WebSetlist = {
+      id: generateUUID(),
+      name: shared.name,
+      createdAt: Date.now(),
+      songs: newSongStates.map((ns) => ({
+        id: ns.id,
+        title: ns.title,
+        artist: ns.artist,
+      })),
+    }
+
+    handleImportSingleSetlist(newSetlist, newSongStates)
+    setActiveSetlistId(newSetlist.id)
+    setActiveSetlistSongIndex(0)
+    setQueueMode('setlist')
+    setActiveView('stage')
+    setIncomingSharedSetlist(null)
+  }
+
   // Filter songs if searchQuery is active
   const filteredSongs = searchQuery.trim()
     ? songs.filter(
@@ -1532,6 +1632,7 @@ function LibraryApp() {
             onClose={() => setActiveView('stage')}
             navigationGuardRef={editorNavigationGuard}
             transposeOffset={currentSong.transposeOffset || 0}
+            onNewSong={handleNewSong}
           />
         ) : activeView === 'trash' ? (
           <TrashView
@@ -1618,6 +1719,7 @@ function LibraryApp() {
         onImportSingleSetlist={handleImportSingleSetlist}
         onSmartMerge={handleSmartMerge}
         onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
+        onShareSetlist={(sl) => setSharingSetlist(sl)}
       />
 
       {/* Stage Color Theme Modal */}
@@ -1724,6 +1826,25 @@ function LibraryApp() {
         isOpen={isTvPresentationModalOpen}
         onClose={() => setIsTvPresentationModalOpen(false)}
       />
+
+      {/* Share Setlist QR Code Modal */}
+      {sharingSetlist && (
+        <ShareSetlistModal
+          setlist={sharingSetlist}
+          allSongs={[...songs, ...deletedSongs]}
+          onClose={() => setSharingSetlist(null)}
+        />
+      )}
+
+      {/* Import Shared Setlist Preview Modal */}
+      {incomingSharedSetlist && (
+        <ImportSharedSetlistModal
+          sharedSetlist={incomingSharedSetlist}
+          onImport={handleImportSharedSetlist}
+          onOpenStage={handleOpenSharedSetlistInStage}
+          onClose={() => setIncomingSharedSetlist(null)}
+        />
+      )}
 
       {/* Global Toast Notification */}
       {toastMessage && (

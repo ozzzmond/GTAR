@@ -1,4 +1,4 @@
-const test = require('node:test')
+﻿const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -40,20 +40,20 @@ const {
 const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 
 // =============================================================================
-// 1. VERSION CHECK (1.0.123-dev.5a)
+// 1. VERSION CHECK (1.0.123-dev.5b)
 // =============================================================================
-test('DEV3D_VERSION: Canonical dev version identity is 1.0.123-dev.5a', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5a')
+test('DEV3D_VERSION: Canonical dev version identity is 1.0.123-dev.5b', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5b')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.5a')
+  assert.equal(pkgJson.version, '1.0.123-dev.5b')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.5a')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5a')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.5b')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5b')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.5a'))
+  assert.ok(authCore.includes('v1.0.123-dev.5b'))
 })
 
 // =============================================================================
