@@ -14,8 +14,8 @@ export interface ChordVoicing {
   barres?: number[]
 }
 
-// Enharmonic alias pairs for root lookups
-const ENHARMONIC_ROOT_ALIASES: Record<string, string> = {
+// Enharmonic alias pairs for root and bass lookups
+export const ENHARMONIC_ROOT_ALIASES: Record<string, string> = {
   'c#': 'db',
   'db': 'c#',
   'd#': 'eb',
@@ -26,9 +26,13 @@ const ENHARMONIC_ROOT_ALIASES: Record<string, string> = {
   'ab': 'g#',
   'a#': 'bb',
   'bb': 'a#',
+  'e#': 'f',
+  'b#': 'c',
+  'cb': 'b',
+  'fb': 'e',
 }
 
-// Aggregate all trusted catalog entries (288 direct entries)
+// Aggregate all trusted catalog entries
 export const standardChords: ChordVoicing[] = [
   ...NATURAL_CHORD_VOICINGS,
   ...ACCIDENTAL_CHORD_VOICINGS,
@@ -40,25 +44,134 @@ for (const v of standardChords) {
 }
 
 /**
- * Normalizes quality aliases for diagram lookup:
- * e.g. "Cmajor7" -> "Cmaj7", "Cminor7" -> "Cm7", "C(add9)" -> "Cadd9", "CΔ" -> "Cmaj7"
+ * Pure normalization layer: generates prioritized candidates for diagram lookup.
+ * Resolves harmless notation wrappers, safe quality aliases, enharmonics,
+ * and preserves slash-bass requirements without mutating song text or transpose logic.
  */
-function normalizeQualityForLookup(chord: string): string {
-  return chord
-    .replace(/\(([^)]+)\)/g, '$1') // C(add9) -> Cadd9, F#m7(b5) -> F#m7b5
+export function normalizeChordForVoicingLookup(chord: string): string[] {
+  if (!chord || typeof chord !== 'string') return []
+  const clean = chord.trim()
+  if (!clean || clean.toLowerCase() === 'n.c.' || clean.toLowerCase() === 'nc') {
+    return []
+  }
+
+  // Strip enclosing brackets/parentheses: "[Am7]" -> "Am7", "(Am7)" -> "Am7", "<Am7>" -> "Am7"
+  let stripped = clean
+  if (
+    (stripped.startsWith('[') && stripped.endsWith(']')) ||
+    (stripped.startsWith('(') && stripped.endsWith(')')) ||
+    (stripped.startsWith('<') && stripped.endsWith('>'))
+  ) {
+    const inner = stripped.slice(1, -1).trim()
+    if (inner) stripped = inner
+  }
+
+  const slashIdx = stripped.indexOf('/')
+  const basePart = slashIdx !== -1 ? stripped.slice(0, slashIdx).trim() : stripped
+  const bassPart = slashIdx !== -1 ? stripped.slice(slashIdx + 1).trim() : null
+
+  const rootMatch = /^([A-Ga-g][#b]?)(.*)$/.exec(basePart)
+  if (!rootMatch) return [clean]
+
+  const rootRaw = rootMatch[1]
+  const rootCanonical = rootRaw.charAt(0).toUpperCase() + rootRaw.slice(1).toLowerCase()
+  let qual = rootMatch[2].trim()
+
+  // Strip inner parens: C(add9) -> Cadd9, F#m7(b5) -> F#m7b5
+  qual = qual.replace(/\(([^)]+)\)/g, '$1')
+  // Quality symbol and word normalizations
+  qual = qual
     .replace(/major/i, 'maj')
     .replace(/minor/i, 'm')
     .replace(/Δ/g, 'maj7')
     .replace(/°/g, 'dim7')
     .replace(/ø/g, 'm7b5')
-    .trim()
+
+  if (qual === 'M' || qual === 'maj') qual = ''
+  if (qual === 'min') qual = 'm'
+
+  // Quality candidate variants
+  const qualVariants: string[] = []
+  if (qual === 'sus') {
+    qualVariants.push('sus4', 'sus2')
+  } else if (qual === '2') {
+    qualVariants.push('2', 'add2', 'add9', 'sus2')
+  } else if (qual === 'add2') {
+    qualVariants.push('add2', 'add9', 'sus2')
+  } else if (qual === 'add4') {
+    qualVariants.push('add4', 'add11')
+  } else if (qual === 'add11') {
+    qualVariants.push('add11', 'add4')
+  } else if (qual === 'madd9' || qual === 'm(add9)') {
+    qualVariants.push('madd9', 'm9')
+  } else {
+    qualVariants.push(qual)
+  }
+
+  // Root variants (canonical + enharmonic)
+  const rootVariants = [rootCanonical]
+  const aliasRoot = ENHARMONIC_ROOT_ALIASES[rootCanonical.toLowerCase()]
+  if (aliasRoot) {
+    rootVariants.push(aliasRoot.charAt(0).toUpperCase() + aliasRoot.slice(1).toLowerCase())
+  }
+
+  // Bass variants (canonical + enharmonic)
+  const bassVariants: string[] = []
+  if (bassPart) {
+    const bassMatch = /^([A-Ga-g][#b]?)(.*)$/.exec(bassPart)
+    if (bassMatch) {
+      const bRoot = bassMatch[1].charAt(0).toUpperCase() + bassMatch[1].slice(1).toLowerCase()
+      const bQual = bassMatch[2]
+      bassVariants.push(bRoot + bQual)
+      const aliasBass = ENHARMONIC_ROOT_ALIASES[bRoot.toLowerCase()]
+      if (aliasBass) {
+        bassVariants.push(aliasBass.charAt(0).toUpperCase() + aliasBass.slice(1).toLowerCase() + bQual)
+      }
+    } else {
+      bassVariants.push(bassPart)
+    }
+  }
+
+  const candidates: string[] = []
+  const add = (c: string) => {
+    if (!candidates.includes(c)) candidates.push(c)
+  }
+
+  // Priority 1: exact requested string and stripped form
+  add(clean)
+  if (stripped !== clean) add(stripped)
+
+  // Priority 2: root/enharmonic + quality variants (+ bass/enharmonics)
+  for (const r of rootVariants) {
+    for (const q of qualVariants) {
+      if (bassVariants.length > 0) {
+        for (const b of bassVariants) {
+          add(`${r}${q}/${b}`)
+        }
+      } else {
+        add(`${r}${q}`)
+      }
+    }
+  }
+
+  // Priority 3: for slash chords with 2/add2/add9/sus, allow fallback to root/bass
+  // Strictly preserving the requested bass note!
+  if (
+    bassVariants.length > 0 &&
+    (qual === '2' || qual === 'add2' || qual === 'add9' || qual === 'sus' || qual === 'sus4')
+  ) {
+    for (const r of rootVariants) {
+      for (const b of bassVariants) {
+        add(`${r}/${b}`)
+      }
+    }
+  }
+
+  return candidates
 }
 
 /**
  * Resolves a trusted guitar voicing for a given chord name.
- * 1. Checks exact match
- * 2. Checks stripped brackets/parentheses and quality aliases
- * 3. Resolves enharmonic root/bass aliases (e.g. A# -> Bb)
  * Returns null if no trusted voicing exists (clean no-diagram state).
  */
 export function getChordVoicing(chordName: string): ChordVoicing | null {
@@ -68,61 +181,13 @@ export function getChordVoicing(chordName: string): ChordVoicing | null {
     return null
   }
 
-  // 1. Direct exact lookup
-  const exact = chordMap.get(clean.toLowerCase())
-  if (exact) return exact
-
-  // 2. Strip outer enclosing brackets/parentheses if fully enclosed: "[Am7]" -> "Am7", "(Am7)" -> "Am7"
-  let stripped = clean
-  if (
-    (stripped.startsWith('[') && stripped.endsWith(']')) ||
-    (stripped.startsWith('(') && stripped.endsWith(')')) ||
-    (stripped.startsWith('<') && stripped.endsWith('>'))
-  ) {
-    const inner = stripped.slice(1, -1).trim()
-    // Only strip if inner contains a chord root (avoid destroying parenthesized modifier like (add9) when standalone)
-    if (inner) stripped = inner
-  }
-  const strippedMatch = chordMap.get(stripped.toLowerCase())
-  if (strippedMatch) return strippedMatch
-
-  // 3. Normalize internal parentheses and quality aliases: "C(add9)" -> "Cadd9", "F#m7(b5)" -> "F#m7b5"
-  const normalized = normalizeQualityForLookup(stripped)
-  const normMatch = chordMap.get(normalized.toLowerCase())
-  if (normMatch) return normMatch
-
-  // 4. Enharmonic root / bass alias resolution
-  // e.g., if "A#7" is requested and catalog has "Bb7", or vice-versa
-  const slashIdx = normalized.indexOf('/')
-  const basePart = slashIdx !== -1 ? normalized.slice(0, slashIdx) : normalized
-  const bassPart = slashIdx !== -1 ? normalized.slice(slashIdx + 1) : null
-
-  // Extract root and quality
-  const rootMatch = /^([A-Ga-g][#b]?)(.*)$/.exec(basePart)
-  if (rootMatch) {
-    const root = rootMatch[1].toLowerCase()
-    const qual = rootMatch[2]
-    const aliasRoot = ENHARMONIC_ROOT_ALIASES[root]
-    if (aliasRoot) {
-      let candidateKey = `${aliasRoot}${qual}`
-      if (bassPart) {
-        const bassMatch = /^([A-Ga-g][#b]?)(.*)$/.exec(bassPart)
-        if (bassMatch) {
-          const bassRoot = bassMatch[1].toLowerCase()
-          const bassQual = bassMatch[2]
-          const aliasBass = ENHARMONIC_ROOT_ALIASES[bassRoot] || bassRoot
-          candidateKey = `${candidateKey}/${aliasBass}${bassQual}`
-        } else {
-          candidateKey = `${candidateKey}/${bassPart}`
-        }
-      }
-      const aliasVoicing = chordMap.get(candidateKey.toLowerCase())
-      if (aliasVoicing) {
-        // Return voicing labeled with requested chord name for consistency
-        return {
-          ...aliasVoicing,
-          chord: clean,
-        }
+  const candidates = normalizeChordForVoicingLookup(clean)
+  for (const candidate of candidates) {
+    const match = chordMap.get(candidate.toLowerCase())
+    if (match) {
+      return {
+        ...match,
+        chord: clean, // Preserve requested chord label
       }
     }
   }
