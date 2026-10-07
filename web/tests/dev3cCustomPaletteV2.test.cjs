@@ -39,20 +39,20 @@ const {
 const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 
 // =============================================================================
-// 1. VERSION CHECK (1.0.123-dev.4)
+// 1. VERSION CHECK (1.0.123-dev.4a)
 // =============================================================================
-test('DEV3C_VERSION: Canonical dev version bumped to 1.0.123-dev.4 across all manifests', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.4')
+test('DEV3C_VERSION: Canonical dev version bumped to 1.0.123-dev.4a across all manifests', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.4a')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.4')
+  assert.equal(pkgJson.version, '1.0.123-dev.4a')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.4')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.4')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.4a')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.4a')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.4'))
+  assert.ok(authCore.includes('v1.0.123-dev.4a'))
 })
 
 // =============================================================================
