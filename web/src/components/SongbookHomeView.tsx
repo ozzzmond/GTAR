@@ -17,6 +17,9 @@ import {
   Share2,
   MoreHorizontal,
   Check,
+  CheckCircle2,
+  AlertCircle,
+  Menu,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
@@ -34,6 +37,7 @@ interface SongbookHomeViewProps {
   onNewSong: () => void
   onNewSetlist?: () => void
   onOpenSetlists: () => void
+  onOpenSongbook?: () => void
   onManageSetlist?: (setlist: WebSetlist) => void
   onDeleteSong: (index: number) => void
   onDeleteSetlist?: (setlistId: string | number) => void
@@ -59,6 +63,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onNewSong,
   onNewSetlist,
   onOpenSetlists,
+  onOpenSongbook,
   onManageSetlist,
   onDeleteSong,
   onDeleteSetlist,
@@ -910,11 +915,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     data-testid="main-share-setlist-btn"
                     disabled={activeSetlists.length === 0}
                     onClick={handleMainShareSetlist}
-                    className="ui-action-text text-[10px] font-bold text-app-accent hover:bg-app-accent/15 px-2 py-1 rounded-lg border border-app-accent/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share setlist via QR code and link'}
+                    aria-label="Share Setlist"
+                    className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent"
+                    title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share Setlist'}
                   >
-                    <QrCode className="w-3 h-3" />
-                    <span>Share Setlist</span>
+                    <QrCode className="w-3.5 h-3.5" />
                   </button>
                   <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="ui-action-text text-xs px-2 py-1 border border-app-action/40 rounded text-app-action">
                     {setlistsCollapsed ? 'Show' : 'Hide'}
@@ -934,11 +939,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   </button>
                   <button
                     type="button"
+                    data-testid="open-setlists-panel-btn"
                     onClick={onOpenSetlists}
-                    className="ui-action-text ui-link-text text-[10px] font-bold ui-secondary-text text-app-muted hover:text-app-heading flex items-center gap-1 cursor-pointer"
+                    className="p-1.5 rounded-lg border border-app-border bg-app-surface text-app-muted hover:text-app-heading hover:border-app-action/40 transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-app-action"
+                    title="Open Setlists panel"
+                    aria-label="Open Setlists panel"
                   >
-                    <span>Manage</span>
-                    <ArrowRight className="w-3 h-3" />
+                    <Menu className="w-3.5 h-3.5" />
                   </button>
                 </>
               )}
@@ -1192,63 +1199,77 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               Songs Library ({filteredIndexedSongs.length} of {songs.length})
             </h2>
           </div>
-          {songs.length > 0 && (
-            <div className="flex items-center gap-2">
-              {isSongSelectionMode ? (
-                <div data-testid="song-selection-bar" className="flex items-center gap-2">
-                  <span data-testid="song-selection-count" className="ui-action-text text-xs font-mono font-bold text-app-action">
-                    {selectedSongIds.size} selected
-                  </span>
-                  <button
-                    type="button"
-                    data-testid="bulk-add-to-setlist"
-                    disabled={selectedSongIds.size === 0}
-                    onClick={() => setIsBulkAddToSetlistModalOpen(true)}
-                    className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Add selected songs to setlist"
-                  >
-                    <ListPlus className="w-3.5 h-3.5" />
-                    <span>Add to Setlist</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="bulk-delete-songs"
-                    disabled={selectedSongIds.size === 0}
-                    onClick={() => setIsBulkDeleteSongsConfirmOpen(true)}
-                    className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Delete selected songs"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="cancel-song-selection"
-                    onClick={() => {
-                      setIsSongSelectionMode(false)
-                      setSelectedSongIds(new Set())
-                    }}
-                    className="text-xs font-mono ui-secondary-text text-app-muted hover:text-app-heading px-2 py-1 rounded cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
+          <div className="flex items-center gap-2">
+            {songs.length > 0 && isSongSelectionMode ? (
+              <div data-testid="song-selection-bar" className="flex items-center gap-2">
+                <span data-testid="song-selection-count" className="ui-action-text text-xs font-mono font-bold text-app-action">
+                  {selectedSongIds.size} selected
+                </span>
                 <button
                   type="button"
-                  data-testid="toggle-song-selection-mode"
+                  data-testid="bulk-add-to-setlist"
+                  disabled={selectedSongIds.size === 0}
+                  onClick={() => setIsBulkAddToSetlistModalOpen(true)}
+                  className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Add selected songs to setlist"
+                >
+                  <ListPlus className="w-3.5 h-3.5" />
+                  <span>Add to Setlist</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="bulk-delete-songs"
+                  disabled={selectedSongIds.size === 0}
+                  onClick={() => setIsBulkDeleteSongsConfirmOpen(true)}
+                  className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Delete selected songs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="cancel-song-selection"
                   onClick={() => {
-                    setIsSongSelectionMode(true)
+                    setIsSongSelectionMode(false)
                     setSelectedSongIds(new Set())
                   }}
-                  className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer"
-                  title="Manage song selection, setlist assignment, and batch actions"
+                  className="text-xs font-mono ui-secondary-text text-app-muted hover:text-app-heading px-2 py-1 rounded cursor-pointer"
                 >
-                  Manage
+                  Cancel
                 </button>
-              )}
-            </div>
-          )}
+              </div>
+            ) : (
+              <>
+                {songs.length > 0 && (
+                  <button
+                    type="button"
+                    data-testid="toggle-song-selection-mode"
+                    onClick={() => {
+                      setIsSongSelectionMode(true)
+                      setSelectedSongIds(new Set())
+                    }}
+                    className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer"
+                    title="Manage song selection, setlist assignment, and batch actions"
+                  >
+                    Manage
+                  </button>
+                )}
+                {onOpenSongbook && (
+                  <button
+                    type="button"
+                    data-testid="open-songbook-panel-btn"
+                    onClick={onOpenSongbook}
+                    className="p-1.5 rounded-lg border border-app-border bg-app-surface text-app-muted hover:text-app-heading hover:border-app-action/40 transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-app-action"
+                    title="Open Songbook panel"
+                    aria-label="Open Songbook panel"
+                  >
+                    <Menu className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Sort & Filter Toolbar */}
@@ -1367,6 +1388,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               const isMenuOpen = activeMenuSongIdx === originalIdx
               const isSongChosen = selectedSongIds.has(song.id ?? originalIdx)
               const songSetlists = getSongSetlists(song)
+              const metadataStatus = getSongMetadataStatus(song)
+              const isMetaOk = metadataStatus.status === 'METADATA_OK'
 
               return (
                 <SwipeableActionCard
@@ -1436,6 +1459,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         <h3 className="font-bold text-xs sm:text-sm ui-primary-text text-app-heading group-hover:text-app-action transition-colors truncate">
                           {song.title || 'Untitled Song'}
                         </h3>
+                        <span
+                          data-testid={`song-metadata-status-${originalIdx}`}
+                          role="status"
+                          aria-label={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
+                          title={isMetaOk ? 'Metadata OK' : `Needs Metadata (${metadataStatus.missingFields.join(', ')})`}
+                          className={`p-0.5 rounded flex items-center justify-center shrink-0 ${
+                            isMetaOk ? 'text-status-success' : 'text-app-accent'
+                          }`}
+                        >
+                          {isMetaOk ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5" />
+                          )}
+                        </span>
                         {songSetlists.length > 0 && (
                           <>
                             <button

@@ -16,7 +16,7 @@ import {
   Upload,
   QrCode,
   ListPlus,
-  Check,
+  AlertCircle,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
@@ -45,6 +45,7 @@ interface SetlistDrawerProps {
   onShareSetlist?: (setlist: WebSetlist) => void
   onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => void
   onCreateSetlistForSong?: (songId: string | number, name: string) => void
+  initialTab?: 'songbook' | 'setlists'
 }
 
 export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
@@ -69,27 +70,45 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   onShareSetlist,
   onSongMembershipChange,
   onCreateSetlistForSong,
+  initialTab,
 }) => {
-  const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>('songbook')
+  const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>(initialTab || 'songbook')
   const [searchQuery, setSearchQuery] = useState('')
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null)
   const [expandedSetlistId, setExpandedSetlistId] = useState<string | number | null>(activeSetlistId)
   const [drawerToast, setDrawerToast] = useState<string | null>(null)
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const setlistFileInputRef = React.useRef<HTMLInputElement>(null)
+  const prevOpenRef = React.useRef(false)
+  const prevInitialTabRef = React.useRef(initialTab)
 
   const activeSetlists = setlists.filter((sl) => !sl.isDeleted)
   const membershipSong = songs.find(
     (song) => membershipSongId !== null && String(song.id) === String(membershipSongId)
   )
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Opening the drawer synchronizes the requested tab and active setlist */
   useEffect(() => {
-    if (isOpen && activeSetlistId !== null && activeSetlistId !== undefined) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the drawer synchronizes the externally selected setlist and expansion.
-      setDrawerTab('setlists')
-      setExpandedSetlistId(activeSetlistId)
+    if (isOpen) {
+      const isOpening = !prevOpenRef.current
+      const isTabChanged = initialTab !== undefined && initialTab !== prevInitialTabRef.current
+
+      if (isOpening || isTabChanged) {
+        if (activeSetlistId !== null && activeSetlistId !== undefined) {
+          setDrawerTab('setlists')
+        } else if (initialTab) {
+          setDrawerTab(initialTab)
+        }
+      }
+
+      if (activeSetlistId !== null && activeSetlistId !== undefined && isOpening) {
+        setExpandedSetlistId(activeSetlistId)
+      }
     }
-  }, [isOpen, activeSetlistId])
+    prevOpenRef.current = isOpen
+    prevInitialTabRef.current = initialTab
+  }, [isOpen, initialTab, activeSetlistId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const showDrawerToast = (msg: string) => {
     setDrawerToast(msg)
@@ -608,26 +627,30 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     </div>
                   </div>
 
-                  {/* Badges Cluster: Metadata Status + Add to Setlist */}
+                  {/* Actions / Badges Cluster: Metadata Status + Add to Setlist */}
                   <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
-                    {/* Metadata OK / Needs Metadata Badge */}
+                    {/* Metadata OK / Needs Metadata Compact Icon */}
                     <span
                       data-testid={`drawer-song-metadata-status-${originalIndex}`}
-                      className={`px-1.5 py-0.5 rounded border font-semibold flex items-center gap-1 ${
-                        isMetaOk
-                          ? 'bg-status-success/15 border-status-success/30 text-status-success'
-                          : 'bg-app-accent/15 border-app-accent/30 text-app-accent'
-                      }`}
+                      role="status"
+                      aria-label={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
                       title={isMetaOk ? 'Metadata OK' : `Needs Metadata (${metadataStatus.missingFields.join(', ')})`}
+                      className={`p-1 rounded flex items-center justify-center shrink-0 ${
+                        isMetaOk ? 'text-status-success' : 'text-app-accent'
+                      }`}
                     >
-                      {isMetaOk ? <Check className="w-2.5 h-2.5" /> : null}
-                      <span>{isMetaOk ? 'Metadata OK' : 'Needs Metadata'}</span>
+                      {isMetaOk ? (
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5" />
+                      )}
                     </span>
 
-                    {/* Add to Setlist Action */}
+                    {/* Add to Setlist Action (Compact Icon Button) */}
                     <button
                       type="button"
                       data-testid={`drawer-song-add-to-setlist-${originalIndex}`}
+                      aria-label="Add to Setlist"
                       disabled={item.id === undefined}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -635,23 +658,19 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           setMembershipSongId(item.id)
                         }
                       }}
-                      className="px-1.5 py-0.5 rounded bg-app-surface hover:bg-app-action/20 border border-app-border hover:border-app-action/40 text-app-action font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
+                      className="p-1 rounded-lg bg-app-surface hover:bg-app-action/20 border border-app-border hover:border-app-action/40 text-app-action flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-app-action"
                       title="Add to Setlist"
                     >
-                      <ListPlus className="w-2.5 h-2.5" />
-                      <span>Add to Setlist</span>
+                      <ListPlus className="w-3.5 h-3.5" />
                     </button>
-
-                    {isActive && (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-status-success shrink-0" />
-                    )}
 
                     {/* Inline Trash / Delete Button */}
                     <button
                       type="button"
                       onClick={(e) => handleDeleteClick(e, originalIndex)}
-                      className="p-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5"
+                      className="p-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5 focus:outline-none focus:ring-1 focus:ring-status-error"
                       title="Delete song from library"
+                      aria-label="Delete song from library"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
