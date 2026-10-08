@@ -6,7 +6,7 @@ declare const __GTAR_PROD_VERSION__: string | null
 // Legacy fallback for local/preview builds; Pages main requires exact tag-derived identity.
 export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string'
   ? __GTAR_PROD_VERSION__ : '1.1.108';
-export const GTAR_DEV_VERSION = '1.0.123-dev.5d';
+export const GTAR_DEV_VERSION = '1.0.123-dev.6';
 export const GTAR_SETLIST_VERSION = 1
 export const GTAR_SETLIST_TYPE = 'GTAR_SETLIST'
 

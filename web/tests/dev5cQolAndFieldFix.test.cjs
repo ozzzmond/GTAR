@@ -26,18 +26,18 @@ for (const ext of [".ts", ".tsx"]) {
 
 const webDir = path.resolve(__dirname, '..')
 
-// 1. VERSION CONTRACT (1.0.123-dev.5d)
-test('DEV5C_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.5d across manifests and types', () => {
+// 1. VERSION CONTRACT (1.0.123-dev.6)
+test('DEV5C_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.6 across manifests and types', () => {
   const { GTAR_DEV_VERSION } = require(path.join(webDir, 'src/types/gtar.ts'))
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
 
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5d', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.5d')
-  assert.equal(pkgJson.version, '1.0.123-dev.5d', 'package.json version must be 1.0.123-dev.5d')
-  assert.equal(pkgLockJson.version, '1.0.123-dev.5d', 'package-lock.json root version must be 1.0.123-dev.5d')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.5d', 'package-lock.json packages[""] must be 1.0.123-dev.5d')
-  assert.ok(authCore.includes('v1.0.123-dev.5d'), 'authCore.ts header must reference v1.0.123-dev.5d')
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.6')
+  assert.equal(pkgJson.version, '1.0.123-dev.6', 'package.json version must be 1.0.123-dev.6')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.6', 'package-lock.json root version must be 1.0.123-dev.6')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.6', 'package-lock.json packages[""] must be 1.0.123-dev.6')
+  assert.ok(authCore.includes('v1.0.123-dev.6'), 'authCore.ts header must reference v1.0.123-dev.6')
 })
 
 // 2. DELIVERABLE 1: CANONICAL METADATA STATUS PREDICATE
