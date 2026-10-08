@@ -23,3 +23,7 @@ dev-dist
 *.njsproj
 *.sln
 *.sw?
+
+# Cloudflare local runtime state and generated Pages worker bundle
+/.wrangler/
+/_worker.bundle

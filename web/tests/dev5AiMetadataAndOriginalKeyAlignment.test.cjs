@@ -24,20 +24,20 @@ for (const ext of ['.ts', '.tsx']) {
 
 const webDir = path.resolve(__dirname, '..')
 
-// 1. VERSION CONTRACT (1.0.123-dev.6)
-test('DEV5_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.6 across codebase', () => {
+// 1. VERSION CONTRACT (1.0.123-dev.6b)
+test('DEV5_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.6b across codebase', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.6';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.6')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.6b';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.6b')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.6', 'package.json must be 1.0.123-dev.6')
+  assert.equal(pkgJson.version, '1.0.123-dev.6b', 'package.json must be 1.0.123-dev.6b')
 
   const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.6', 'package-lock.json root must be 1.0.123-dev.6')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.6', 'package-lock.json packages[""] must be 1.0.123-dev.6')
+  assert.equal(pkgLockJson.version, '1.0.123-dev.6b', 'package-lock.json root must be 1.0.123-dev.6b')
+  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.6b', 'package-lock.json packages[""] must be 1.0.123-dev.6b')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.6'), 'authCore.ts header must reference v1.0.123-dev.6')
+  assert.ok(authCore.includes('v1.0.123-dev.6b'), 'authCore.ts header must reference v1.0.123-dev.6b')
 })
 
 // 2. SERVER ENDPOINT CONTRACT & PAYLOAD VALIDATION

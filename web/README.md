@@ -12,6 +12,47 @@ Use `Run_API_Dev.bat` for the backend only. It also applies/verifies local D1 mi
 
 `npm run dev` starts the Vite frontend; use the API helper when local backend access is needed.
 
+## Environment and account prerequisites
+
+Use the Node runtime selected by GitHub Actions (Node 22) and npm. A pristine
+checkout contains `package-lock.json`; `npm ci` reproduces its dependency set.
+The npm scripts use the repository's local Vite, TypeScript and Wrangler tools.
+
+For Google sign-in, configure the frontend `VITE_GOOGLE_CLIENT_ID` in the ignored
+`.env.local` using `.env.example`. Register `http://localhost:5173` and each exact
+hosted origin with the Google Web application OAuth client. See
+[Google sign-in and server sync](GOOGLE_SYNC.md).
+
+Supply these server bindings to the local Pages Functions runtime, separately
+from frontend Vite variables:
+
+- `DB`: the D1 binding in `wrangler.jsonc`; apply the tracked `migrations/*.sql`
+  locally before backend use. Both BAT launchers run the local migration command.
+- `GOOGLE_CLIENT_ID`, or the supported `VITE_GOOGLE_CLIENT_ID` alias: the OAuth
+  audience verified by the server; use the same client as the frontend.
+- `AUTH_SECRET`: a private session-signing secret. The implementation has a public
+  development fallback when this binding is absent; it is unsuitable for hosted
+  DEV/PROD. Configure a private server secret in each hosted environment before
+  exposing authenticated endpoints. Never use a `VITE_` variable for this secret.
+- `BOOTSTRAP_ADMIN_GOOGLE_SUB` or `BOOTSTRAP_ADMIN_EMAIL`: explicitly identify the
+  intended first administrator on the server. First-login-wins is not supported.
+  Other registrations start pending and require administrator approval.
+
+Wrangler supports a local `.dev.vars` file for bindings/secrets. Before creating
+one, exclude it locally through `.git/info/exclude`; it is not covered by the
+narrow runtime-residue ignore rules in this repository. Keep it untracked and
+never commit real values. Do not assume frontend `.env.local` configures the API.
+`TEST_MOCK_AUTH` is a test facility and must remain disabled in hosted environments.
+
+For an existing local test identity, `npm run admin:bootstrap:local -- <email>`
+configures local D1 access only; its documented role/status and revert options
+remain available. It does not configure hosted accounts or remote D1.
+
+Start `Run_Full_Stack_Dev.bat` after dependency/environment setup. Keep ports 5173
+(Vite/OAuth origin) and 8788 (Pages Functions) available. `Run_API_Dev.bat` is the
+backend-only helper; `npm run dev` alone does not start the API. These launchers
+apply local migrations; they do not apply remote DEV/PROD migrations or deploy.
+
 ## Development checks
 
 - `npm test` — Web/PWA regression tests.

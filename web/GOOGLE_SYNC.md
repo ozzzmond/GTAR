@@ -1,17 +1,48 @@
-# Google Drive sync (web)
+# Google sign-in and server songbook sync
 
-Set `VITE_GOOGLE_CLIENT_ID` in `web/.env.local` using `web/.env.example`, then restart Vite. In the Google Cloud project, enable Drive API, configure the OAuth consent screen (including test users if in testing), and create a Web application OAuth client with the exact deployed and development origins as authorized JavaScript origins. No client secret belongs in the web app.
+This filename is retained for continuity. Active GTAR uses Google identity for
+sign-in and Cloudflare Pages Functions/D1 for cloud songbook synchronization.
+Google Drive AppData sync and the former `useDriveSync` hook are historical.
 
-The header provides Google sign-in/out and Sync Now. The GIS token client requests only `openid email profile https://www.googleapis.com/auth/drive.appdata`. Valid tokens are cached in sessionStorage for tab reloads. Expiration or a 401 clears the session; reauthorization requires a user click. No background OAuth popups or refresh tokens are used. Sign Out clears this application's session, without signing the user out of Google globally.
+## Authentication configuration
 
-Sync uses durable account-scoped journals and create-only Drive revisions. See [sync and recovery semantics](../SYNC_RECOVERY.md) for identity, conflict, restart, recovery export, and concurrency behavior. Songs, trash, and setlists are saved together in the atomic `gtar_library_v1` localStorage entry; older storage keys remain compatibility mirrors. Display settings are included in backups but are not automatically applied from Drive.
+Set the frontend `VITE_GOOGLE_CLIENT_ID` in the ignored `web/.env.local`, using
+`web/.env.example` as a starting point, then restart Vite. Configure a Google Web
+application OAuth client with the exact hosted and local JavaScript origins,
+including `http://localhost:5173` for canonical local development. No Google
+client secret belongs in the frontend. Drive API enablement and Drive AppData
+scope are not prerequisites for current server-backed songbook sync.
 
-Validation: `npm test`, `npm run lint:sync`, and `npm run build`. Tests include a real React mount of the presentation route under AuthGate and a real useDriveSync failed-upload/remount sequence. Network responses are simulated; live OAuth and two-device Drive checks remain separate.
+The server also needs the matching `GOOGLE_CLIENT_ID` (or its supported
+`VITE_GOOGLE_CLIENT_ID` alias), a private `AUTH_SECRET`, a `DB` binding with the
+tracked migrations applied, and an explicitly configured administrator bootstrap
+identity when establishing the first administrator. See [server and local
+prerequisites](README.md).
 
-Owner login gate: set `VITE_AUTHORIZED_EMAILS` in the Cloudflare Pages build environment to comma-separated allowed addresses, then rebuild. When unset, the owner defaults to `jlopez3rd@gmail.com`; an explicitly empty value allows nobody. Matching trims whitespace and ignores case, with no substring or domain wildcard matching. `VITE_GOOGLE_CLIENT_ID` remains required, and the hosted origin must be registered as an authorized JavaScript origin in Google Cloud.
+Sign-in obtains a Google ID token and sends it to `/api/auth/session`. The server
+verifies the identity and authoritative D1 account/access status, then issues a
+session token. Pending or denied accounts see their respective access screens;
+active accounts can use the app. `VITE_AUTHORIZED_EMAILS` supports client-side
+role/allowlist behavior; it does not replace server approval or D1 authorization.
 
-The application and all routes, including presentation, mount only after Google userinfo verifies the current token and an allowed, verified email. Valid sessionStorage tokens are reverified on refresh without an OAuth popup. If verification is unavailable, the hosted client remains locked. Sign Out or expiration unmounts the application and clears the cached session; local library data is retained for the next authorized sign-in. The old passcode/quick-unlock screen is no longer used. Logging storage is also paused while locked.
+Sessions are retained in browser sessionStorage and rechecked against the server.
+Sign-out or an invalid/expired session locks the client while retaining device
+songbook data. The explicit development bypass is available only in a Vite DEV
+build on loopback hosts; it bypasses local app access and disables cloud sync.
+It is unavailable in hosted preview/production builds and on LAN hosts.
 
-Development bypass is an explicit, in-memory button available only with `import.meta.env.DEV` and a loopback hostname (localhost, 127.0.0.1 or IPv6 loopback). It disables Drive sync and is unavailable in Pages preview/production builds or on LAN hosts.
+## Cloud songbook operation
 
-Security boundary: this is a client-side UI lock. Vite environment values and static assets are public, and a browser owner can alter JavaScript or local storage. Enforce access at Cloudflare Access (including preview URLs) if the hosted application/files must be protected against deliberate bypass. No Cloudflare Access policy or deployment is changed by this implementation.
+Use **Cloud Songbook Sync** and **Sync Now** to synchronize the signed-in account's
+songs and setlists through `/api/songbook/sync`. Review conflict information and
+export backups before resolution. See [sync and recovery semantics](../SYNC_RECOVERY.md)
+for current merge behavior, device recovery, and implementation limits.
+
+## Validation and security boundary
+
+Run `npm test`, `npm run lint:sync`, and `npm run build` from `web`. Authentication
+and cloud-songbook tests exercise the current server/session contract with mocked
+network/D1 responses; they do not claim live OAuth or cross-device verification.
+The UI gate is client-side; backend authorization protects server data. Static
+frontend configuration/assets are public. Separately configure hosting access
+controls if the static application itself must be restricted.

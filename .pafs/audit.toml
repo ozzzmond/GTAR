@@ -15,8 +15,7 @@ exclude = [
     ".venv",
     "outputs",
     "*.md",
-    "*.txt",
-    "Deploy_And_Sync.bat"
+    "*.txt"
 ]
 pattern = 'git\s+add\s+(-A|--all)(?!\s*--\s*\S+)\s*$'
 severity = "HIGH"

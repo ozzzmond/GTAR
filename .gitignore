@@ -30,3 +30,6 @@ lint-results.json
 # Local transient residue and diagnostic dumps
 /outputs/
 /web/outputs/
+
+# Root Cloudflare local runtime state
+/.wrangler/

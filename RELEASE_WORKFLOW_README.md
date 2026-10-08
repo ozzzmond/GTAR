@@ -63,7 +63,7 @@ exact pinned one-time reconciliation below; all other discrepancies still block.
 The checkpoint must contain the reviewed release identity helper/parser bytes and
 Vite/runtime integration. Next DEV is an advisory output only.
 
-### Reviewed clean baseline after abandoned v1.1.122
+### Historical reviewed baseline after abandoned v1.1.122
 
 GitHub discovery for this rebaseline found both dev and main at
 `c254195e6dfc946138336551e4ce8a87520baf7f`, with identical root tree
@@ -83,14 +83,12 @@ The exception retires when a higher canonical PROD tag becomes the baseline.
 Historical v1.1.62 reconciliation code remains for its existing tests; it cannot
 activate while the highest canonical PROD tag is v1.1.122.
 
-After review and acceptance, sync reviewed main into dev and establish a fresh
-clean canonical checkpoint. GitHub tags alone determine versions at that time;
-this PR chooses no next DEV or PROD version and creates no tags. Existing latest
-DEV cannot be reused: it maps to the abandoned identity. Future candidates must
-preserve main ancestry, match exact dev tip and committed metadata, carry the
-reviewed runtime contract, and calculate a new PROD tag above the baseline.
-Human approval, fresh state checks, atomic non-force promotion, and verification
-of the new exact-SHA deployment remain mandatory.
+This historical reconciliation explains the pinned ancestry exception; it is not
+an instruction to reuse the abandoned identity or repeat the old controller
+rollout. Future candidates must preserve main ancestry, match exact dev tip and
+committed metadata, carry the reviewed runtime contract, and calculate a new PROD
+tag above the baseline. Human approval, fresh state checks, atomic non-force
+promotion, and verification of the new exact-SHA deployment remain mandatory.
 
 Configure GitHub **Settings → Environments → gtar-production** before execution:
 required human reviewer **ozzzmond** (GitHub User ID `17817198`), **Prevent
@@ -172,8 +170,8 @@ schema/data mutation, or remediation. Humans review the pending filenames,
 perform any separately authorized remediation, and rerun the complete readiness
 check. The ledger records names, not SQL checksums; applied-file content/schema
 equivalence is not claimed. D1 state can change after the final read; concurrency
-does not lock external database writers. Lettered `1.0.123-dev.1a` remains
-non-promotable; its future tag is manual and is not created by this change.
+does not lock external database writers. Lettered checkpoints remain
+non-promotable; canonical tags are created manually after checkpoint acceptance.
 
 ### Race and transaction contract
 
@@ -233,9 +231,9 @@ release.json with version/sourceTag/full SHA. Pages must permit read access to
 canonical GitHub tags. Future post-approval verification proves this new identity
 on the new deployment; historical deployment recovery is unnecessary.
 
-### Production verification and external integration gap
+### Production verification and external integration prerequisites
 
-The existing GitHub check observed on DEV.10 was emitted by app
+A historical GitHub check observed on DEV.10 was emitted by app
 `cloudflare-workers-and-pages`, project `gtar-web`, deployment
 `214ccb9b-aa78-456c-b3ab-4af9f70b4312`, full SHA
 `bad302b79a91e422bcb485a3f2b5f4020ec21417`. Its summary labels preview URLs and has
@@ -256,49 +254,38 @@ source tag and full SHA and rechecks main/PROD refs. Only then is `VERIFIED_PROD
 emitted. Any missing API field/credential, stale/preview/manual deployment,
 untrusted project/source, failed build, or runtime mismatch fails closed.
 
-The connector used for this implementation rejects environment endpoints and has
-no connected Cloudflare account read API. Therefore actual environment protection,
-read/push secrets, Pages production-branch settings and API payload
-availability were **not verified or configured in this task**. Configure the above
-settings and run the reviewed controller's dry run; a failed gate is not permission
-to bypass it. Cloudflare remains the deployment producer; this read API verifier
+Environment protection, read/push secret provisioning, Pages production-branch
+settings and API payload availability require separate operator verification.
+Repository tests do not prove live configuration. Configure the above settings
+and run the reviewed controller's dry run; a failed gate is not permission to
+bypass it. Cloudflare remains the deployment producer; this read API verifier
 adds no second deployment mechanism.
 
 Promotion followed by insufficient/failed verification reports
 `PROD_PROMOTED_BUT_UNVERIFIED` and fails the workflow. Preserve actual refs and
 investigate deployment/identity evidence. Never auto-rollback main or tags.
 
-### Separate reviewed controller rollout (no production work in this PR)
+### Current checkpoint and promotion procedure
 
-Current audited refs: dev/DEV.10 `bad302b79a91e422bcb485a3f2b5f4020ec21417`;
-main `247e016a6234204013857c70d1b4a34b1e6360fc`. Main has 18 commits outside DEV;
-DEV has 111 outside main. Main is not an ancestor. Highest canonical PROD tag is
-`v1.1.62`, with its own package `1.1.62`; main package is `1.1.108`. These history
-and baseline/deployed identity discrepancies remain real release blockers.
+Prepare changes through a dedicated PR against `dev`. Before merge, keep
+`web/package.json`, both root package-lock version fields, `GTAR_DEV_VERSION`,
+and the authCore release stamp equal to the intended DEV tag without `v`.
+Run the repository checks before a human creates the tag at the accepted merge
+SHA. Preview validation retains exact tag/HEAD and package-version checks.
 
-1. Review and merge **this PR to dev only**. This task changes no main/DEV/PROD tag,
-   creates no environment/ruleset, and triggers no PROD deployment.
-2. Separately authorize a narrow PR based on current main that installs only the
-   reviewed controller files: `release.yml`, `prod_controller.cjs`,
-   `release_metadata.cjs`, `release_identity.cjs`, and this operator README. Replace
-   main's legacy APK release workflow entirely. Do not merge dev into main just to
-   install it. Main is GitHub's default branch, required for manual dispatch.
-   Before that rollout merge, separately authorize temporarily disabling Pages
-   production auto-builds so the controller-only main push cannot deploy legacy
-   source; verify the setting. Restore builds only under the later release plan.
-3. Separately review all main-only history and actual deployed baseline identity;
-   reconcile them into dev with explicit conflict decisions. Do not invent a
-   baseline tag or silently discard history. Include the installed main controller
-   as an ancestor of a future DEV checkpoint. Metadata/identity must satisfy the
-   implemented baseline gates; document any separately reviewed contract change.
-4. After acceptance, establish and validate a **new development iteration and new
-   clean numeric DEV checkpoint** under the existing policy. DEV.10 cannot be
-   promoted once dev changes; source stamps in this implementation stay unchanged
-   until that separately reviewed stabilization. No tags are created by this PR.
-5. Configure protection/secrets/Pages settings, enable Git builds, and dry-run
-   from reviewed main with the new exact tag/SHA. After
-   all gates succeed, a separate explicitly authorized real dispatch runs tests,
-   waits for required human approval, rechecks, and performs the transaction.
+`v1.0.123-dev.6a` is immutable historical evidence: its tag points to the accepted
+cleanup SHA, but its committed stamps remained `1.0.123-dev.6`, so tag-preview
+metadata validation rejected it. Do not move or recreate that tag or weaken the
+validator. The next hygiene checkpoint uses `1.0.123-dev.6b` consistently.
+Lettered checkpoints can produce DEV preview artifacts but cannot be promoted.
+
+Production requires a later clean numeric DEV checkpoint satisfying all controller
+gates, including latest DEV, exact dev tip, main ancestry, checkpoint metadata,
+production baseline and D1 readiness. Verify the current GitHub refs and configured
+protection/secrets/Pages settings through the reviewed controller on `main`; old
+rollout snapshots are not deployment instructions. A dry run performs gates only.
+Real promotion requires separate explicit human authorization, exact-SHA validation,
+native environment approval, fresh checks and verified Pages deployment.
 
 After `VERIFIED_PROD`, separately review a dev metadata PR for advisory next DEV,
 validate/merge it, then manually create its tag under the existing policy.
