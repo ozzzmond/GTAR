@@ -1,6 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const { readSource } = require('./helpers/sourceText.cjs')
 const path = require('node:path')
 const ts = require('typescript')
 
@@ -103,7 +104,7 @@ test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin (Basurahan) removed from More menu
 // 4. SETLIST HIDE BEHAVIOR: SELECT HIDDEN WITH SETLIST CONTROLS
 // =============================================================================
 test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collapsed; restored when shown', () => {
-  const songbookSource = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
+  const songbookSource = readSource(path.join(webDir, 'src/components/SongbookHomeView.tsx'))
 
   // Select button must be conditionally rendered on !setlistsCollapsed
   assert.ok(
@@ -132,7 +133,7 @@ test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collap
 // 5. NEW BLANK SONG EDITOR ACTION & UNSAVED CHANGES PROTECTION
 // =============================================================================
 test('DEV3A_NEW_BLANK_SONG_EDITOR_ACTION: New Song icon in toolbar between Insert Section and Paste with unsaved protection', () => {
-  const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
+  const editorSource = readSource(path.join(webDir, 'src/components/DesktopEditor.tsx'))
 
   // Button exists with accessible attributes and test id
   assert.ok(editorSource.includes('data-testid="editor-new-song-button"'), 'Editor renders New Song button')
@@ -170,7 +171,7 @@ test('DEV3A_NEW_BLANK_SONG_EDITOR_ACTION: New Song icon in toolbar between Inser
   )
 
   // App.tsx handles saving without auto-saving on typing
-  const appSource = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
+  const appSource = readSource(path.join(webDir, 'src/App.tsx'))
   assert.ok(
     appSource.includes('// Do not auto-save unpersisted new blank song to library\n      return false'),
     'App.tsx handleUpdateSong ignores unpersisted new songs from auto-saving'

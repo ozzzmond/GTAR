@@ -1,3 +1,4 @@
+const { readSource } = require('./helpers/sourceText.cjs')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('path')
@@ -89,7 +90,7 @@ test('DEV5C_QA_1_2: Side-panel cards render compact metadata status icon and com
 
   // 3. Redundant green check removal:
   // Active song has the playing pulse icon, but NOT a redundant standalone green check action
-  const drawerSource = fs.readFileSync(path.join(webDir, 'src/components/SetlistDrawer.tsx'), 'utf8')
+  const drawerSource = readSource(path.join(webDir, 'src/components/SetlistDrawer.tsx'))
   assert.ok(
     !drawerSource.includes('{isActive && (\n                      <CheckCircle2 className="w-3.5 h-3.5 text-status-success shrink-0" />\n                    )}'),
     'Redundant green circled-check icon indicator must be removed from Songbook drawer cards'

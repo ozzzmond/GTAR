@@ -1,6 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const { readSource } = require('./helpers/sourceText.cjs')
 const path = require('node:path')
 const ts = require('typescript')
 
@@ -125,7 +126,7 @@ test('108-dev.3a: KeyPickerModal contains ZERO capo guidance, suggestions, or ca
 
 test('108-dev.3a: KeyPickerModal preserves musician-focused transpose tools and single-state binding', () => {
   const modalSrc = fs.readFileSync(path.join(__dirname, '../src/components/KeyPickerModal.tsx'), 'utf8')
-  const stageSrc = fs.readFileSync(path.join(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  const stageSrc = readSource(path.join(__dirname, '../src/components/StageView.tsx'))
   const appSrc = fs.readFileSync(path.join(__dirname, '../src/App.tsx'), 'utf8')
 
   // Core header and key status cards intact
