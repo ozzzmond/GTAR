@@ -33,6 +33,8 @@ import { TrashView } from './components/TrashView'
 import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
+import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
+import { EDGE_SWIPE_STORAGE_KEY } from './utils/edgeSwipe'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
 import type { SharedSetlistPayload } from './utils/sharedSetlist'
@@ -501,6 +503,13 @@ function LibraryApp() {
     } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     return false
   })
+  const [isEdgeSwipePanelEnabled, setIsEdgeSwipePanelEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(EDGE_SWIPE_STORAGE_KEY)
+      if (saved !== null) return JSON.parse(saved)
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
+    return false
+  })
 
   useEffect(() => {
     const reloadSettings = () => {
@@ -512,6 +521,10 @@ function LibraryApp() {
       setCustomThemeColors(hydrated.standalone)
       if (settings.stageSettings?.fontStyle !== undefined) setFontStyle(settings.stageSettings.fontStyle)
       if (settings.stageSettings?.isTwoColumn !== undefined) setIsTwoColumn(settings.stageSettings.isTwoColumn)
+      try {
+        const savedSwipe = localStorage.getItem(EDGE_SWIPE_STORAGE_KEY)
+        if (savedSwipe !== null) setIsEdgeSwipePanelEnabled(JSON.parse(savedSwipe))
+      } catch { /* Best-effort */ }
     }
     window.addEventListener(SETTINGS_CHANGED, reloadSettings)
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
@@ -584,6 +597,13 @@ function LibraryApp() {
       localStorage.setItem(SETTINGS_KEYS.isTwoColumn, JSON.stringify(isTwoColumn))
     } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
   }, [isTwoColumn])
+
+  // Save edge swipe panel state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(EDGE_SWIPE_STORAGE_KEY, JSON.stringify(isEdgeSwipePanelEnabled))
+    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
+  }, [isEdgeSwipePanelEnabled])
 
   // Apply theme to document.body and persist
   useEffect(() => {
@@ -1698,41 +1718,53 @@ function LibraryApp() {
         )}
       </main>
 
-      {/* Slide-over Setlist / Library Drawer */}
-      <SetlistDrawer
+      {/* Slide-over Setlist / Library Drawer with Opt-in Edge Swipe Coordination */}
+      <EdgeSwipePanelCoordinator
+        enabled={isEdgeSwipePanelEnabled}
         isOpen={isSetlistDrawerOpen}
-        initialTab={drawerInitialTab}
+        onOpen={() => setIsSetlistDrawerOpen(true)}
         onClose={() => setIsSetlistDrawerOpen(false)}
-        songs={filteredSongs.length > 0 ? filteredSongs : songs}
-        activeSongIndex={activeSongIndex}
-        onSelectSongIndex={(idx) => {
-          navigateSafely(() => {
-            handleSelectLibrarySong(idx)
-            setActiveView('stage')
-            setIsSetlistDrawerOpen(false)
-          })
-        }}
-        setlists={setlists}
-        activeSetlistId={activeSetlistId}
-        activeSetlistSongIndex={activeSetlistSongIndex}
-        onSelectSetlistSong={(setlistId, songIdx) => {
-          navigateSafely(() => {
-            handleSelectSetlistSong(setlistId, songIdx)
-            setActiveView('stage')
-            setIsSetlistDrawerOpen(false)
-          })
-        }}
-        onReorderSetlistSong={handleReorderSetlistSong}
-        onRemoveSetlistSong={handleRemoveSetlistSong}
-        onDeleteSetlist={handleDeleteSetlist}
-        onDeleteSong={handleDeleteSong}
-        onNewSong={handleNewSong}
-        onNewSetlist={handleNewSetlist}
-        onImportSingleSetlist={handleImportSingleSetlist}
-        onSmartMerge={handleSmartMerge}
-        onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
-        onShareSetlist={(sl) => setSharingSetlist(sl)}
-      />
+      >
+        {({ drawerStyle, backdropStyle, drawerTouchHandlers }) => (
+          <SetlistDrawer
+            isOpen={isSetlistDrawerOpen}
+            initialTab={drawerInitialTab}
+            drawerStyle={drawerStyle}
+            backdropStyle={backdropStyle}
+            drawerTouchHandlers={drawerTouchHandlers}
+            onClose={() => setIsSetlistDrawerOpen(false)}
+            songs={filteredSongs.length > 0 ? filteredSongs : songs}
+            activeSongIndex={activeSongIndex}
+            onSelectSongIndex={(idx) => {
+              navigateSafely(() => {
+                handleSelectLibrarySong(idx)
+                setActiveView('stage')
+                setIsSetlistDrawerOpen(false)
+              })
+            }}
+            setlists={setlists}
+            activeSetlistId={activeSetlistId}
+            activeSetlistSongIndex={activeSetlistSongIndex}
+            onSelectSetlistSong={(setlistId, songIdx) => {
+              navigateSafely(() => {
+                handleSelectSetlistSong(setlistId, songIdx)
+                setActiveView('stage')
+                setIsSetlistDrawerOpen(false)
+              })
+            }}
+            onReorderSetlistSong={handleReorderSetlistSong}
+            onRemoveSetlistSong={handleRemoveSetlistSong}
+            onDeleteSetlist={handleDeleteSetlist}
+            onDeleteSong={handleDeleteSong}
+            onNewSong={handleNewSong}
+            onNewSetlist={handleNewSetlist}
+            onImportSingleSetlist={handleImportSingleSetlist}
+            onSmartMerge={handleSmartMerge}
+            onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
+            onShareSetlist={(sl) => setSharingSetlist(sl)}
+          />
+        )}
+      </EdgeSwipePanelCoordinator>
 
       {/* Stage Color Theme Modal */}
       <ThemeModal
@@ -1787,6 +1819,8 @@ function LibraryApp() {
         onSelectFontStyle={setFontStyle}
         isTwoColumn={isTwoColumn}
         onToggleTwoColumn={setIsTwoColumn}
+        edgeSwipePanel={isEdgeSwipePanelEnabled}
+        onToggleEdgeSwipePanel={setIsEdgeSwipePanelEnabled}
         onOpenStageTools={() => {
           setIsStageSettingsModalOpen(false)
           setIsStageToolsModalOpen(true)

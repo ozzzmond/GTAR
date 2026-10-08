@@ -1,4 +1,4 @@
-﻿const test = require('node:test')
+const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -36,14 +36,14 @@ test('UI_COPY_CLEANUP: SongbookHomeView removes redundant Stage View instruction
   assert.ok(homeViewContent.includes('filteredIndexedSongs.length'), 'SongbookHomeView must retain song count')
 })
 
-test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.5c and prod untouched', () => {
+test('VERSION_ALIGNMENT: dev checkpoint rolled to v1.0.123-dev.5d and prod untouched', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.5c';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.5c')
+  assert.ok(gtarTypes.includes("export const GTAR_DEV_VERSION = '1.0.123-dev.5d';"), 'gtar.ts must define GTAR_DEV_VERSION as 1.0.123-dev.5d')
   assert.ok(gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"), 'gtar.ts must preserve GTAR_APP_VERSION as 1.1.108')
 
   const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.5c', 'package.json must be 1.0.123-dev.5c')
+  assert.equal(pkgJson.version, '1.0.123-dev.5d', 'package.json must be 1.0.123-dev.5d')
 
   const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.5c'), 'authCore.ts must reference v1.0.123-dev.5c')
+  assert.ok(authCore.includes('v1.0.123-dev.5d'), 'authCore.ts must reference v1.0.123-dev.5d')
 })

@@ -1,4 +1,4 @@
-﻿const { test } = require('node:test')
+const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -27,7 +27,7 @@ test('VERSION_CONTRACT: Canonical web version contract matches dev or prod confi
   )
 
   // Dev version constant in gtar.ts must match expected dev iteration
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5c', 'GTAR_DEV_VERSION constant in gtar.ts must be 1.0.123-dev.5c')
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5d', 'GTAR_DEV_VERSION constant in gtar.ts must be 1.0.123-dev.5d')
 
   // In dev trees, package.json equals GTAR_DEV_VERSION; in promoted prod trees, package.json equals GTAR_APP_VERSION
   const validVersions = [GTAR_DEV_VERSION, GTAR_APP_VERSION]

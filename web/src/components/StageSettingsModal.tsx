@@ -8,6 +8,7 @@ import {
   X,
   Download,
   Check,
+  PanelLeftClose,
 } from 'lucide-react'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
 import { isDevEnv } from '../utils/env'
@@ -22,6 +23,8 @@ interface StageSettingsModalProps {
   onSelectFontStyle: (style: SongFontStyleOption) => void
   isTwoColumn: boolean
   onToggleTwoColumn: (enabled: boolean) => void
+  edgeSwipePanel?: boolean
+  onToggleEdgeSwipePanel?: (enabled: boolean) => void
   onOpenStageTools: () => void
   onToggleTheme: () => void
   onExportAllData?: () => void
@@ -36,6 +39,8 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
   onSelectFontStyle,
   isTwoColumn,
   onToggleTwoColumn,
+  edgeSwipePanel = false,
+  onToggleEdgeSwipePanel,
   onInstallApp,
 }) => {
   const [keepScreenAwake, setKeepScreenAwake] = useState(false)
@@ -203,6 +208,44 @@ export const StageSettingsModal: React.FC<StageSettingsModalProps> = ({
                 <span
                   className={`w-4 h-4 rounded-full bg-app-base absolute top-1 transition-transform ${
                     isTwoColumn ? 'left-6' : 'left-1 bg-app-muted'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Edge Swipe Panel Toggle */}
+            <div className="p-4 rounded-xl bg-app-base border border-app-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    edgeSwipePanel ? 'bg-app-action/20 text-app-action' : 'bg-app-surface text-app-muted'
+                  }`}
+                >
+                  <PanelLeftClose className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-app-heading">
+                    Edge Swipe Panel
+                  </div>
+                  <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
+                    Swipe from the screen edge to open the side panel.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                data-testid="toggle-edge-swipe-panel"
+                aria-checked={edgeSwipePanel}
+                aria-label="Edge Swipe Panel"
+                onClick={() => onToggleEdgeSwipePanel?.(!edgeSwipePanel)}
+                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                  edgeSwipePanel ? 'bg-app-action' : 'bg-app-surface border border-app-border'
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded-full bg-app-base absolute top-1 transition-transform ${
+                    edgeSwipePanel ? 'left-6' : 'left-1 bg-app-muted'
                   }`}
                 />
               </button>
