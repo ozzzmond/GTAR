@@ -117,3 +117,34 @@ export function setSongMembership(setlist: WebSetlist, song: ActiveSongState, in
   if (isSongInSetlist(setlist, song.id)) return setlist
   return { ...setlist, songs: [...setlist.songs, { id: song.id, title: song.title, artist: song.artist }] }
 }
+
+export interface SongLifecycleState {
+  active: ActiveSongState[]
+  deleted: ActiveSongState[]
+  setlists: WebSetlist[]
+}
+export type SongLifecycleOperation =
+  | { kind: 'trash'; ids: Array<string | number>; blank: ActiveSongState }
+  | { kind: 'restore' | 'permanent'; ids: Array<string | number> }
+  | { kind: 'empty' }
+
+/** Pure complete-state transition. Only physically removed tombstone IDs prune membership. */
+export function transitionSongLibrary(state: SongLifecycleState, operation: SongLifecycleOperation): SongLifecycleState {
+  const ids = new Set(operation.kind === 'empty' ? state.deleted.map(song => String(song.id)) : operation.ids.map(String))
+  const selected = (song: ActiveSongState) => song.id !== undefined && ids.has(String(song.id))
+  if (operation.kind === 'trash') {
+    const moved = state.active.filter(selected)
+    if (!moved.length) return state
+    const remaining = state.active.filter(song => !selected(song))
+    return { ...state, active: remaining.length ? remaining : [operation.blank],
+      deleted: [...moved.map(song => ({ ...song, isDeleted: true })), ...state.deleted] }
+  }
+  const moved = state.deleted.filter(selected)
+  if (operation.kind === 'restore') return { ...state,
+    active: [...moved.map(song => ({ ...song, isDeleted: false })), ...state.active],
+    deleted: state.deleted.filter(song => !selected(song)) }
+  const removed = new Set(moved.map(song => String(song.id)))
+  return { ...state, deleted: state.deleted.filter(song => !selected(song)),
+    setlists: state.setlists.map(list => ({ ...list,
+      songs: list.songs.filter(ref => ref.id === undefined || !removed.has(String(ref.id))) })) }
+}

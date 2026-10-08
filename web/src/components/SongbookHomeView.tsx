@@ -760,7 +760,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </h2>
             </div>
             <p className="text-xs ui-muted-text text-app-muted leading-relaxed mb-4">
-              Selected songs will be removed from your songbook and references to them will be removed from setlists.
+              Selected songs will move to Trash. Setlist entries are preserved and become available again when restored.
             </p>
             <div className="flex justify-end gap-2 font-mono text-xs font-bold">
               <button

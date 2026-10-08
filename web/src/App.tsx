@@ -1,5 +1,8 @@
 import {
   persistLibrary,
+  planDanglingReferenceRepair,
+  applyDanglingReferenceRepair,
+  type DanglingReferenceRepair,
   readPersistedLibrary,
   isQuotaError,
   performStorageHousekeeping,
@@ -13,7 +16,7 @@ import { generateUUID, isValidUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
-import { setSongMembership, resolveSetlistSong, mergeBackupLibrary, partitionSongs } from './utils/setlistSongs'
+import { setSongMembership, resolveSetlistSong, mergeBackupLibrary, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
   readStageSession,
   saveStageSession,
@@ -263,6 +266,8 @@ const checkRecovery = () => {
 }
 
 function LibraryStartup() {
+  const [repairPreview, setRepairPreview] = useState<DanglingReferenceRepair | null>(null)
+  const [repairError, setRepairError] = useState<string | null>(null)
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
   useEffect(() => {
     const refresh = () => setStatus(checkRecovery())
@@ -293,6 +298,16 @@ function LibraryStartup() {
     setDismissedNotice(status.noticeId)
     try { localStorage.setItem(RECOVERY_NOTICE_ACK_KEY, status.noticeId) } catch { /* Session acknowledgement still works. */ }
   }
+  const repairPlan = status.damaged ? planDanglingReferenceRepair() : null
+  const applyRepair = () => {
+    if (!repairPreview) return
+    try {
+      applyDanglingReferenceRepair(repairPreview)
+      setRepairPreview(null)
+      setRepairError(null)
+      setStatus(checkRecovery())
+    } catch (err) { setRepairError(err instanceof Error ? err.message : 'Repair failed. Original data remains available for export.') }
+  }
   const showBanner = status.damaged || (isDevEnv && !status.retired)
   return <>
     {!dismissed && showBanner && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
@@ -311,6 +326,18 @@ function LibraryStartup() {
         <span aria-hidden="true" className="text-lg leading-none font-bold">×</span>
       </button>}
     </aside>}
+    {status.damaged && repairPlan && <section className="p-4" aria-label="Repair dangling setlist references">
+      <h2>Repair dangling setlist references</h2>
+      <p>Missing song records cannot be reconstructed. This repair removes only setlist entries whose song records no longer exist. Export recovery data first. The exact original input will also be archived before repair.</p>
+      {!repairPreview && <button className="border rounded px-3 py-2 cursor-pointer" onClick={() => { setRepairPreview(repairPlan); setRepairError(null) }}>Preview</button>}
+      {repairPreview && <div>
+        <ul>{repairPreview.references.map((ref, index) => <li key={index}>{ref.name} (setlist {ref.setlistId}), entry {ref.position + 1}: {ref.title} — missing song ID {ref.songId}</li>)}</ul>
+        <p>Apply Repair confirms removal of exactly these entries.</p>
+        <button className="border rounded px-3 py-2 mr-3 cursor-pointer" onClick={() => { setRepairPreview(null); setRepairError(null) }}>Cancel</button>
+        <button className="border rounded px-3 py-2 cursor-pointer" onClick={applyRepair}>Apply Repair</button>
+      </div>}
+      {repairError && <p role="alert">{repairError}</p>}
+    </section>}
     {!status.damaged && <LibraryApp />}
   </>
 }
@@ -1130,80 +1157,50 @@ function LibraryApp() {
     }
   }
 
-  // Soft-delete song from library (moves to Trash bin)
+  const createLifecycleBlank = (): ActiveSongState => {
+    return {
+      id: generateUUID(),
+      title: 'New Song',
+      artist: '',
+      key: 'G',
+      capo: 'No Capo',
+      bpm: '120',
+      format: 'CHORD_PRO',
+      transposeOffset: 0,
+      rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
+    }
+  }
+
+  // Persist the validated complete candidate before scheduling any state partition.
+  const commitSongLifecycle = (operation: SongLifecycleOperation) => {
+    const next = transitionSongLibrary({ active: songs, deleted: deletedSongs, setlists }, operation)
+    try { persistLibrary({ songs: [...next.active, ...next.deleted], setlists: next.setlists }) }
+    catch (err) { handleStorageWriteFailure(err); return null }
+    setSongs(next.active)
+    setDeletedSongs(next.deleted)
+    setSetlists(next.setlists)
+    return next
+  }
+
   const handleDeleteSong = (indexToDelete: number) => {
     const songToDelete = songs[indexToDelete]
-    if (!songToDelete) return
-
-    // Move to deletedSongs (Trash)
-    setDeletedSongs((prev) => [{ ...songToDelete, isDeleted: true }, ...prev])
-
-    if (songs.length <= 1) {
-      // If last remaining song is deleted, create blank song template
-      const blankSong: ActiveSongState = {
-        id: generateUUID(),
-        title: 'New Song',
-        artist: '',
-        key: 'G',
-        capo: 'No Capo',
-        bpm: '120',
-        format: 'CHORD_PRO',
-        transposeOffset: 0,
-        rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
-      }
-      setSongs([blankSong])
-      setActiveSongIndex(0)
-    } else {
-      const updatedSongs = songs.filter((_, idx) => idx !== indexToDelete)
-      setSongs(updatedSongs)
-      if (activeSongIndex === indexToDelete) {
-        setActiveSongIndex(Math.min(indexToDelete, updatedSongs.length - 1))
-      } else if (activeSongIndex > indexToDelete) {
-        setActiveSongIndex(activeSongIndex - 1)
-      }
-    }
-
+    if (!songToDelete || songToDelete.id === undefined) return
+    const next = commitSongLifecycle({ kind: 'trash', ids: [songToDelete.id], blank: createLifecycleBlank() })
+    if (!next) return
+    if (activeSongIndex === indexToDelete) setActiveSongIndex(Math.min(indexToDelete, next.active.length - 1))
+    else if (activeSongIndex > indexToDelete) setActiveSongIndex(activeSongIndex - 1)
     setToastMessage(`Moved "${songToDelete.title}" to Trash.`)
     setTimeout(() => setToastMessage(null), 3500)
   }
 
-  // Bulk delete songs from library (moves to Trash) and reconciles setlist references
   const handleBulkDeleteSongs = (ids: Array<string | number>) => {
     const idSet = new Set(ids.map(String))
-    const songsToDelete = songs.filter((s) => s.id !== undefined && idSet.has(String(s.id)))
-    if (songsToDelete.length === 0) return
-
-    setDeletedSongs((prev) => [...songsToDelete.map((s) => ({ ...s, isDeleted: true })), ...prev])
-
-    // Reconcile setlist references: remove deleted songs from all setlists
-    setSetlists((prev) =>
-      prev.map((sl) => ({
-        ...sl,
-        songs: sl.songs.filter((ref) => ref.id === undefined || !idSet.has(String(ref.id))),
-      }))
-    )
-
-    const remainingSongs = songs.filter((s) => s.id === undefined || !idSet.has(String(s.id)))
-    if (remainingSongs.length === 0) {
-      const blankSong: ActiveSongState = {
-        id: generateUUID(),
-        title: 'New Song',
-        artist: '',
-        key: 'G',
-        capo: 'No Capo',
-        bpm: '120',
-        format: 'CHORD_PRO',
-        transposeOffset: 0,
-        rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
-      }
-      setSongs([blankSong])
-      setActiveSongIndex(0)
-    } else {
-      setSongs(remainingSongs)
-      setActiveSongIndex((prev) => Math.min(prev, remainingSongs.length - 1))
-    }
-
-    setToastMessage(`Moved ${songsToDelete.length} ${songsToDelete.length === 1 ? 'song' : 'songs'} to Trash.`)
+    const count = songs.filter(song => song.id !== undefined && idSet.has(String(song.id))).length
+    if (!count) return
+    const next = commitSongLifecycle({ kind: 'trash', ids, blank: createLifecycleBlank() })
+    if (!next) return
+    setActiveSongIndex(Math.min(activeSongIndex, next.active.length - 1))
+    setToastMessage(`Moved ${count} ${count === 1 ? 'song' : 'songs'} to Trash.`)
     setTimeout(() => setToastMessage(null), 3500)
   }
 
@@ -1234,9 +1231,8 @@ function LibraryApp() {
     const songToRestore = deletedSongs.find((s) => String(s.id) === String(id))
     if (!songToRestore) return
 
-    setDeletedSongs((prev) => prev.filter((s) => String(s.id) !== String(id)))
-    const restoredSong: ActiveSongState = { ...songToRestore, isDeleted: false }
-    setSongs((prev) => [restoredSong, ...prev])
+    if (!commitSongLifecycle({ kind: 'restore', ids: [id] })) return
+    const restoredSong = songToRestore
 
     setToastMessage(`Restored "${restoredSong.title}" to Songbook Library!`)
     setTimeout(() => setToastMessage(null), 3500)
@@ -1245,7 +1241,7 @@ function LibraryApp() {
   // Permanently delete song from Trash
   const handlePermanentDeleteSong = (id: number | string) => {
     const target = deletedSongs.find((s) => String(s.id) === String(id))
-    setDeletedSongs((prev) => prev.filter((s) => String(s.id) !== String(id)))
+    if (!target || !commitSongLifecycle({ kind: 'permanent', ids: [id] })) return
     setToastMessage(`Permanently deleted ${target ? `"${target.title}"` : 'song'}.`)
     setTimeout(() => setToastMessage(null), 3500)
   }
@@ -1253,7 +1249,7 @@ function LibraryApp() {
   // Permanently delete all songs in Trash
   const handleEmptyTrash = () => {
     const count = deletedSongs.length
-    setDeletedSongs([])
+    if (!commitSongLifecycle({ kind: 'empty' })) return
     setToastMessage(`Trash emptied (${count} songs permanently deleted).`)
     setTimeout(() => setToastMessage(null), 3500)
   }
