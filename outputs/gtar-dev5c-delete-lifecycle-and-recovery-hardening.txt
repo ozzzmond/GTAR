@@ -1,0 +1,22 @@
+STATUS:PASS|TASK:GTAR_DEV5C_DELETE_LIFECYCLE_AND_RECOVERY_HARDENING
+CHANGE:Pure complete-state lifecycle helper; synchronous validate/persist-before-state commit; bounded explicit recovery UI.
+LIFECYCLE:Trash(single/bulk)=retain IDs+tombstones+ordered memberships|Restore=same ID+original setlist positions|Permanent/Empty=remove only actual removed tombstone IDs from every persisted setlist|Final-active deletion=valid blank replacement.
+VALIDATOR:Strict validateLibrary semantics unchanged; retained tombstones valid; absent references and genuine corruption rejected.
+PERSISTENCE:Pre-write strict validation; rejected producer/storage writes preserve prior canonical bytes and lifecycle React partitions; no await/flushSync partition boundaries.
+RECOVERY:Dangling-reference-only planner; exact setlist/position/song-ID preview; Cancel=no writes; explicit Apply=revalidate copied repair+archive exact raw+replace only approved missing refs; mixed/duplicate/malformed/stale input refused; export retained; successful repair remounts normal app; missing songs not reconstructed.
+SYNC:Architecture unchanged; soft Trash creates no membership deletion; strict incompatible-library rejection retained; recovery has no cloud-upload call; startup integration observed zero uploads.
+PROOF:BASE=22eb30fb6d9af0aa9c115ac0624417b09da03eae|IMPLEMENTATION=8165b77e4f99b7335f53c90f0f12abb3655b086e|TREE=10998feca21930ad8ddab38e7c2bed9b85dc5e98|PR_BASE=exact expected SHA|APP_INTEGRATION=mounted throughout lifecycle; failed persistence preserves active/trash state.
+TESTS:TARGETED=25/25|AFFECTED=71/71|FULL=667/667|LINT_SYNC=PASS|LINT=PASS|BUILD=PASS
+FILES:web/src/App.tsx;web/src/components/SongbookHomeView.tsx;web/src/utils/setlistSongs.ts;web/src/utils/syncJournal.ts;web/tests/deleteLifecycleRecovery.test.cjs;web/tests/storageRecoveryUi.test.cjs;web/tests/librarySetlistBulkQol108Dev8f.test.cjs;outputs/gtar-dev5c-delete-lifecycle-and-recovery-hardening.txt
+VERSION:1.0.123-dev.5c
+PR:51|https://github.com/ozzzmond/GTAR/pull/51|BASE=dev|BRANCH=fix/dev5c-delete-lifecycle-recovery|UNMERGED=YES|TAG_CREATED=NO
+READY:VERIFY=YES|PASS=YES|CLOSE=NO|COMMIT=YES|PUSH=YES
+BLOCKERS:NONE
+PERSPECTIVE:Automated acceptance passes; actual affected DEV browser and device storage field QA remain required before tagging. Build retains standard large-chunk advisory.
+DEVIATION:One earlier validation-output retrieval was rejected by automatic approval review for unverified www.googleapis.com test egress; that process result became unavailable. One replacement completed validation used a temporary external-fetch-denying preload, preserving explicit test fetch mocks; no harness committed. Receipt intentionally tracked per this directive despite repository default against outputs receipts.
+QA_A:Record referenced song's setlist position; Trash it; app stays mounted and song leaves active Songbook; export backup if needed to verify retained exact-ID membership; Restore; verify same song at original setlist position.
+QA_B:Trash a referenced song; Permanently Delete; app stays mounted; verify exact reference removed and remaining entries keep order.
+QA_C:Trash multiple referenced songs; Empty Trash; app stays mounted; verify references to actual trashed IDs removed while unrelated entries remain.
+QA_D:On already-affected DEV browser, Export recovery data; Preview supported repair and review exact setlist/entry/missing IDs; Cancel once and compare exported canonical raw bytes; Preview again; Apply Repair; confirm normal app mounts and raw archive remains exportable; no recovery-triggered cloud upload.
+RECEIPT:outputs/gtar-dev5c-delete-lifecycle-and-recovery-hardening.txt
+NEXT:Run field QA A-D on PR preview before merge/tag decisions.
