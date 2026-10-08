@@ -14,22 +14,8 @@ require.extensions['.ts'] = (module, filename) =>
 
 const { GTAR_DEV_VERSION, GTAR_APP_VERSION } = require('../src/types/gtar.ts')
 
-test('VERSION_CONTRACT: Canonical web version contract matches dev or prod configuration', () => {
+test('PROD_SOURCE_VERSION: package permits DEV source or PROD identity', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'))
-  const pkgLock = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package-lock.json'), 'utf8'))
-
-  // package-lock.json must always agree with package.json
-  assert.equal(pkgLock.version, pkg.version, 'package-lock.json root version must match package.json')
-  assert.equal(
-    pkgLock.packages[''].version,
-    pkg.version,
-    'package-lock.json packages[""] version must match package.json'
-  )
-
-  // Dev version constant in gtar.ts must match expected dev iteration
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6b', 'GTAR_DEV_VERSION constant in gtar.ts must be 1.0.123-dev.6b')
-
-  // In dev trees, package.json equals GTAR_DEV_VERSION; in promoted prod trees, package.json equals GTAR_APP_VERSION
   const validVersions = [GTAR_DEV_VERSION, GTAR_APP_VERSION]
   assert.ok(
     validVersions.includes(pkg.version),

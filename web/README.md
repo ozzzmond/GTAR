@@ -38,10 +38,9 @@ from frontend Vite variables:
   intended first administrator on the server. First-login-wins is not supported.
   Other registrations start pending and require administrator approval.
 
-Wrangler supports a local `.dev.vars` file for bindings/secrets. Before creating
-one, exclude it locally through `.git/info/exclude`; it is not covered by the
-narrow runtime-residue ignore rules in this repository. Keep it untracked and
-never commit real values. Do not assume frontend `.env.local` configures the API.
+Wrangler supports a local `.dev.vars` file for bindings/secrets. `.dev.vars` and
+`.dev.vars.*` are repository-ignored by `web/.gitignore`. Real secret values must
+never be committed. Do not assume frontend `.env.local` configures the API.
 `TEST_MOCK_AUTH` is a test facility and must remain disabled in hosted environments.
 
 For an existing local test identity, `npm run admin:bootstrap:local -- <email>`

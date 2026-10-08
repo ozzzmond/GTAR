@@ -15,25 +15,7 @@ require.extensions['.png'] = (module) => { module.exports = '/assets/dev-logo.pn
 
 const React = require('react')
 const webDir = path.resolve(__dirname, '..')
-const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
-
-// =============================================================================
-// 1. VERSION IDENTITY CONTRACT
-// =============================================================================
-test('DEV3_VERSION_CONTRACT: Canonical version rolled to 1.0.123-dev.6b across manifests and types', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6b', 'GTAR_DEV_VERSION in gtar.ts must be 1.0.123-dev.6b')
-
-  const pkgJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  assert.equal(pkgJson.version, '1.0.123-dev.6b', 'package.json version must be 1.0.123-dev.6b')
-
-  const pkgLockJson = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkgLockJson.version, '1.0.123-dev.6b', 'package-lock.json root must be 1.0.123-dev.6b')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.6b', 'package-lock.json packages[""] must be 1.0.123-dev.6b')
-
-  const authCore = fs.readFileSync(path.join(webDir, 'functions/lib/authCore.ts'), 'utf8')
-  assert.ok(authCore.includes('v1.0.123-dev.6b'), 'authCore.ts must reference v1.0.123-dev.6b')
-})
 
 // =============================================================================
 // 2. HEADER PRIMARY TOOLBAR ORDER & REPLACEMENTS

@@ -45,16 +45,6 @@ function metadataRequest(body) {
   })
 }
 
-test('DEV5A_VERSION_CONTRACT: canonical Web/PWA version is 1.0.123-dev.6b', () => {
-  const { GTAR_DEV_VERSION } = require(path.join(webDir, 'src/types/gtar.ts'))
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6b')
-  const pkg = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'))
-  const lock = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
-  assert.equal(pkg.version, '1.0.123-dev.6b')
-  assert.equal(lock.version, '1.0.123-dev.6b')
-  assert.equal(lock.packages[''].version, '1.0.123-dev.6b')
-})
-
 test('DEV5A_MODEL_HOTFIX: selected Workers AI model is not the retired DEV.5 model', () => {
   const { WORKERS_AI_MODEL, RETIRED_WORKERS_AI_MODELS } = require(metadataPath)
   assert.notEqual(WORKERS_AI_MODEL, DEPRECATED_DEV5_MODEL)

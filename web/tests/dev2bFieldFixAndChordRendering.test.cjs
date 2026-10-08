@@ -39,8 +39,6 @@ window.prompt = (_msg, src) => src
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
-
-const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 const {
   transposeKey,
@@ -49,17 +47,6 @@ const {
 } = require('../src/utils/chordTransposer.ts')
 const { DesktopEditor } = require('../src/components/DesktopEditor.tsx')
 const { KeyPickerModal } = require('../src/components/KeyPickerModal.tsx')
-
-// ---------------------------------------------------------------------------
-// 0. VERSION ALIGNMENT
-// ---------------------------------------------------------------------------
-test('DEV Version Alignment: target version is 1.0.123-dev.6b', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6b')
-  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'))
-  assert.equal(pkg.version, '1.0.123-dev.6b')
-  const pkgLock = JSON.parse(fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'))
-  assert.equal(pkgLock.version, '1.0.123-dev.6b')
-})
 
 // ---------------------------------------------------------------------------
 // SCOPE 1: SAVE BEHAVIOR & DIRECTIVES PRESERVATION

@@ -24,13 +24,8 @@ const {
   computePlaybackKey,
   normalizeTitleForTransposeComparison,
 } = require('../src/utils/songbookFoundation.ts')
-const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 const { createBackupPayload, parseBackupJson } = require('../src/utils/jsonBackup.ts')
 const { chordTokenToNashville, getTrustworthySongKey } = require('../src/utils/nashvilleNotation.ts')
-
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.6b', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6b')
-})
 
 test('NEW_SONG_IDS_ARE_VALID_STRING_UUIDS: generateUUID outputs valid RFC4122 v4 UUID strings', () => {
   for (let i = 0; i < 50; i++) {

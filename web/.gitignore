@@ -27,3 +27,7 @@ dev-dist
 # Cloudflare local runtime state and generated Pages worker bundle
 /.wrangler/
 /_worker.bundle
+
+# Local Wrangler server bindings and secrets
+/.dev.vars
+/.dev.vars.*

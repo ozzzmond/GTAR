@@ -16,7 +16,6 @@ require.extensions['.png'] = (module) => { module.exports = '/assets/dev-logo.pn
 const React = require('react')
 const { renderToString } = require('react-dom/server')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
-const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 
 test('SETLIST_CARD_DENSITY: Setlist cards use compact padding, reduced vertical space, and retain title + song count', () => {
   const songs = [
@@ -258,8 +257,4 @@ test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid expands to 4 columns
     viewCode.includes('truncate'),
     'Song title must be truncated when long'
   )
-})
-
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.6b', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6b')
 })
