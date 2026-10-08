@@ -46,6 +46,14 @@ interface SetlistDrawerProps {
   onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => void
   onCreateSetlistForSong?: (songId: string | number, name: string) => void
   initialTab?: 'songbook' | 'setlists'
+  drawerStyle?: React.CSSProperties
+  backdropStyle?: React.CSSProperties
+  drawerTouchHandlers?: {
+    onTouchStart: (e: React.TouchEvent) => void
+    onTouchMove: (e: React.TouchEvent) => void
+    onTouchEnd: (e: React.TouchEvent) => void
+    onTouchCancel: (e: React.TouchEvent) => void
+  }
 }
 
 export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
@@ -71,6 +79,9 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   onSongMembershipChange,
   onCreateSetlistForSong,
   initialTab,
+  drawerStyle,
+  backdropStyle,
+  drawerTouchHandlers,
 }) => {
   const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>(initialTab || 'songbook')
   const [searchQuery, setSearchQuery] = useState('')
@@ -220,12 +231,18 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
       {/* Backdrop overlay */}
       <div
         onClick={onClose}
+        style={backdropStyle}
         className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
       />
 
       {/* Drawer Container (Sliding smoothly from Left) */}
       <div
         className="relative w-80 sm:w-96 max-w-[88vw] h-full bg-app-surface border-r border-app-border shadow-2xl flex flex-col z-50 animate-in slide-in-from-left duration-200"
+        style={drawerStyle}
+        onTouchStart={drawerTouchHandlers?.onTouchStart}
+        onTouchMove={drawerTouchHandlers?.onTouchMove}
+        onTouchEnd={drawerTouchHandlers?.onTouchEnd}
+        onTouchCancel={drawerTouchHandlers?.onTouchCancel}
         onClick={() => setConfirmDeleteIndex(null)}
       >
         {/* Drawer Header */}

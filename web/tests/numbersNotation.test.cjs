@@ -1,4 +1,4 @@
-﻿const test = require('node:test')
+const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -26,8 +26,8 @@ const {
 const { transposeChordToken, transposeKey } = require('../src/utils/chordTransposer.ts')
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.5c', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5c')
+test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.5d', () => {
+  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.5d')
 })
 
 test('TEST_REQUIREMENTS: basic major, minor, 7th, maj7, add, sus, slash, chromatic, and altered supported chords in Key C', () => {

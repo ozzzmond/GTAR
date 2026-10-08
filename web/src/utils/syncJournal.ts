@@ -36,6 +36,7 @@ export const CANONICAL_STORAGE_PREFIXES = [
   'gtar_is_two_column',
   'gtar_stage_font_size',
   'gtar_stage_scroll_speed',
+  'gtar_edge_swipe_panel',
 ]
 
 export function isCanonicalKey(k: string): boolean {
