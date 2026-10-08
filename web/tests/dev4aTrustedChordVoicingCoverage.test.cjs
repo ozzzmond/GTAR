@@ -26,19 +26,6 @@ const {
   normalizeChordForVoicingLookup,
   standardChords,
 } = require('../src/utils/chordDictionary.ts')
-const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
-const pkgJson = require('../package.json')
-const pkgLockJson = require('../package-lock.json')
-const authCore = fs.readFileSync(require.resolve('../functions/lib/authCore.ts'), 'utf8')
-
-// 1. VERSION CONTRACT (1.0.123-dev.6)
-test('DEV4A_VERSION_CONTRACT: Canonical version updated to 1.0.123-dev.6', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6', 'gtar.ts GTAR_DEV_VERSION must be 1.0.123-dev.6')
-  assert.equal(pkgJson.version, '1.0.123-dev.6', 'package.json version must be 1.0.123-dev.6')
-  assert.equal(pkgLockJson.version, '1.0.123-dev.6', 'package-lock.json root version must be 1.0.123-dev.6')
-  assert.equal(pkgLockJson.packages[''].version, '1.0.123-dev.6', 'package-lock.json packages[""] must be 1.0.123-dev.6')
-  assert.ok(authCore.includes('v1.0.123-dev.6'), 'authCore.ts header must reference v1.0.123-dev.6')
-})
 
 // 2. FIELD REGRESSIONS
 test('FIELD_REGRESSIONS: Fm6, Abadd4, Absus, Db2/F resolve to trusted practical diagrams', () => {

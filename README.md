@@ -10,7 +10,7 @@ A high-performance Progressive Web App (PWA) stage teleprompter and chord chart 
 * **Stage Display Engine:** High-contrast Solarized Dark UI tailored for low-light stage visibility with section-based autoscroll.
 * **Keep Screen Awake:** Web Screen Wake Lock API prevents screen timeouts during live performances.
 * **Smart Setlist Manager:** Organize repertoires, reorder sets on the fly, and switch charts instantly.
-* **Offline-First PWA:** Installable on tablets, laptops, and phones via browser with robust local storage caching and Google Drive sync recovery.
+* **Offline-First PWA:** Installable on tablets, laptops, and phones via browser with local songbook storage and authenticated server-backed cloud sync.
 
 ---
 
@@ -18,7 +18,7 @@ A high-performance Progressive Web App (PWA) stage teleprompter and chord chart 
 
 * **Platform:** Web / Progressive Web App (PWA)
 * **Frontend:** React, TypeScript, Vite, Tailwind CSS
-* **Storage:** LocalStorage with atomic sync journal and Google Drive AppData sync
+* **Storage:** LocalStorage with an atomic songbook library; Cloudflare Pages Functions and D1 for account-scoped cloud songbook sync
 * **CI/CD:** GitHub Actions (PR Validation & Preview Artifacts)
 
 ---
@@ -30,8 +30,12 @@ To run the web app locally:
 ```bash
 cd web
 npm install
-npm run dev
+Run_Full_Stack_Dev.bat
 ```
+
+On Windows, the full-stack launcher starts Vite and the local Pages Functions API.
+See [Web/PWA development prerequisites](web/README.md) for environment setup,
+local D1 migrations, and the backend-only helper. `npm run dev` starts only Vite.
 
 For production builds:
 

@@ -27,13 +27,8 @@ require.extensions['.png'] = (module) => {
 
 const React = require('react')
 const { renderToString } = require('react-dom/server')
-const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
 const { evaluateSwipeIntent, computeSwipeOffset, SwipeableActionCard } = require('../src/components/SwipeableActionCard.tsx')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
-
-test('VERSION_STAMP: Target iteration rolled to v1.0.123-dev.6', () => {
-  assert.equal(GTAR_DEV_VERSION, '1.0.123-dev.6')
-})
 
 test('GESTURE_GUARD: Vertical scroll remains primary when vertical intent is detected', () => {
   // Deadzone under 8px

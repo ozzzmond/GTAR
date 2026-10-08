@@ -1,4 +1,4 @@
-"""Run controller migration tests in existing release-scripts CI, outside the pinned Web tree."""
+"""Adapt the root Node baseline-reconciliation suite for standing Python verification."""
 import subprocess
 import unittest
 from pathlib import Path
