@@ -25,7 +25,6 @@ or promote to production. No stage environment is included. The separate product
 
 PR validation runs the full Web/PWA test suite (including disposable-repository
 metadata integration tests and repository boundary checks), sync lint, and build.
-The optional read-only `audit_local.py` remains an audit tool, not release tooling.
 
 ## Agent handoff standard
 

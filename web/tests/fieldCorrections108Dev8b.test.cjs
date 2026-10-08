@@ -34,14 +34,9 @@ test('canonical_5173_strict_port: Vite config and batch runners enforce port 517
     'Run_Full_Stack_Dev.bat must not kill unrelated processes'
   )
 
-  const webDevBat = fs.readFileSync(path.join(webDir, 'Run_Web_Dev.bat'), 'utf8')
   assert.ok(
-    webDevBat.includes('5173'),
-    'Run_Web_Dev.bat must check or target port 5173'
-  )
-  assert.ok(
-    webDevBat.includes('Port 5173 is already in use'),
-    'Run_Web_Dev.bat must provide actionable error message on port 5173 conflict'
+    fullStackBat.includes('http://localhost:5173'),
+    'Run_Full_Stack_Dev.bat must target the canonical localhost:5173 origin'
   )
 })
 

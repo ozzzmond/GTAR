@@ -45,7 +45,6 @@ paths = [
     "RELEASE_WORKFLOW_README.md",
     ".gitignore",
     ".pafs/**",
-    "audit_report.md",
     "web/src/components/BackupRestoreDialogModal.tsx",
     "web/src/components/BandSyncModal.tsx",
     "web/src/components/Header.tsx",
@@ -61,9 +60,4 @@ paths = [
     "web/src/utils/ugCore.ts",
     "web/vite.config.ts",
     "skills-lock.json",
-]
-
-[evidence]
-paths = [
-    "outputs/**",
 ]

@@ -15,5 +15,5 @@ test('tracked repository contains no native Android/Gradle or obsolete local rel
 test('boundary rejects representative native and local-release regressions while allowing Android browser support', () => {
   const bad = ['app/src/main/AndroidManifest.xml', 'gradle/wrapper/gradle-wrapper.jar', 'gradlew.bat', 'settings.gradle.kts', '.gradle/cache', 'release_web.py', 'deploy.py', 'deploy_web.py', 'push_release.py', '.github/release_metadata.py']
   assert.deepEqual(violations(bad), bad)
-  assert.deepEqual(violations(['web/src/utils/stageCast.ts', 'web/tests/backupRoundTrip.test.cjs', 'audit_local.py']), [])
+  assert.deepEqual(violations(['web/src/utils/stageCast.ts', 'web/tests/backupRoundTrip.test.cjs']), [])
 })
