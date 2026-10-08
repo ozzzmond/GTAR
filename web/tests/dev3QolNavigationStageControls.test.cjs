@@ -1,6 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const { readSource } = require('./helpers/sourceText.cjs')
 const path = require('node:path')
 const ts = require('typescript')
 
@@ -171,7 +172,7 @@ test('DEV3_SECTION_NAVIGATION_ABSOLUTE_BOTTOM: Up from absolute bottom navigates
 // 8. MANAGE SETLIST DIRECT STAGE NAVIGATION
 // =============================================================================
 test('DEV3_SETLIST_DRAWER_NAVIGATION: Selecting song from SetlistDrawer or Header setlist directly routes to Stage view', () => {
-  const appSource = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
+  const appSource = readSource(path.join(webDir, 'src/App.tsx'))
 
   // SetlistDrawer onSelectSongIndex and onSelectSetlistSong route to stage
   const setlistDrawerBlock = appSource.substring(appSource.indexOf('<SetlistDrawer'))
@@ -191,7 +192,7 @@ test('DEV3_SETLIST_DRAWER_NAVIGATION: Selecting song from SetlistDrawer or Heade
 // 9. DESKTOP GLOBAL KEYBOARD NAVIGATION SHORTCUTS
 // =============================================================================
 test('DEV3_KEYBOARD_SHORTCUTS: Alt+1..6 and Alt+0/H navigation shortcuts registered with editable-field exclusion', () => {
-  const appSource = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
+  const appSource = readSource(path.join(webDir, 'src/App.tsx'))
 
   assert.ok(appSource.includes('handleGlobalNavShortcuts'), 'Global navigation shortcuts listener registered')
   assert.ok(appSource.includes("case '1':"), 'Alt+1 navigates to stage')
@@ -213,7 +214,7 @@ test('DEV3_KEYBOARD_SHORTCUTS: Alt+1..6 and Alt+0/H navigation shortcuts registe
 // 10. CAST NAVIGATION IN APP & HEADER
 // =============================================================================
 test('DEV3_CAST_MAIN_TOOLBAR: Cast exposed as primary action hooked to StageCastEngine session', () => {
-  const appSource = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
+  const appSource = readSource(path.join(webDir, 'src/App.tsx'))
 
   assert.ok(appSource.includes('import { TvPresentationModal }'), 'App imports TvPresentationModal')
   assert.ok(appSource.includes('import { stageCast }'), 'App imports stageCast')

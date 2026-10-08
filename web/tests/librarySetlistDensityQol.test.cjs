@@ -1,6 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const { readSource } = require('./helpers/sourceText.cjs')
 const path = require('node:path')
 const ts = require('typescript')
 
@@ -77,7 +78,7 @@ test('SETLIST_PLAY_QUICK_ACTION: Quick play action remains directly accessible o
 })
 
 test('SETLIST_DELETE_OPTIONS_ACTION: Setlist delete is consolidated into options menu and preserves confirmation guard', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
   // Setlist card does NOT have an always-visible trash button outside the options menu
   const cardTrashOutsideMenu = viewCode.match(/<button[^>]*title="Delete setlist"[^>]*>[\s\S]*?<\/button>\s*\{?\/\*\s*Three-dot/i)
@@ -164,7 +165,7 @@ test('SONG_OPTIONS_MENU: Song card has compact ellipsis button for options', () 
 })
 
 test('SONG_ADD_TO_SETLIST_OPTIONS_ACTION: Add to setlist is consolidated into song options menu', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
   // Menu item exists and triggers membership dialog
   assert.ok(viewCode.includes('data-testid={`menu-add-to-setlist-${originalIdx}`}'), 'Add to setlist menu button exists')
@@ -173,7 +174,7 @@ test('SONG_ADD_TO_SETLIST_OPTIONS_ACTION: Add to setlist is consolidated into so
 })
 
 test('SONG_DELETE_OPTIONS_ACTION: Song delete is consolidated into options menu with confirmation guard', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
   // Menu item exists and triggers confirm state
   assert.ok(viewCode.includes('data-testid={`menu-delete-song-${originalIdx}`}'), 'Delete song menu button exists')
@@ -187,7 +188,7 @@ test('SONG_DELETE_OPTIONS_ACTION: Song delete is consolidated into options menu 
 })
 
 test('SONG_CARD_STAGE_LAUNCH: Clicking song card calls onSelectSong to launch stage view', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
   assert.ok(
     viewCode.includes('onClick={() => onSelectSong(originalIdx)}') ||
@@ -197,7 +198,7 @@ test('SONG_CARD_STAGE_LAUNCH: Clicking song card calls onSelectSong to launch st
 })
 
 test('MENU_CLICK_DOES_NOT_LAUNCH_STAGE: Clicking song options menu button or items stops event propagation', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
   // Check that song menu trigger stops propagation
   assert.ok(
@@ -243,7 +244,7 @@ test('EXISTING_SEARCH+FILTER_REGRESSION: Search and key/setlist/sort controls re
 })
 
 test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid expands to 4 columns and cards truncate long titles', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
   // Multi-column responsive layout with 4 columns on large/desktop screens
   assert.ok(
