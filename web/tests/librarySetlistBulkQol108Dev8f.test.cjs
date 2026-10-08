@@ -1,4 +1,4 @@
-﻿const test = require('node:test')
+const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -106,36 +106,14 @@ test('PROVE_BULK_ADD: Deduplication policy preserves existing memberships and ad
   assert.equal(nextSongs.filter(id => id === 'song-2').length, 1, 'No duplicate membership created')
 })
 
-// 6. PROVE_BULK_SONG_DELETE: CONFIRMATION & SETLIST REFERENCE CLEANUP
-test('PROVE_BULK_SONG_DELETE: Confirmation shows count, deletes only selected, cleans setlist references', () => {
+// 6. Bulk Trash intentionally preserves reversible membership.
+test('PROVE_BULK_SONG_DELETE: Confirmation states reversible Trash semantics', () => {
   const songbookHome = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
-  const appTsx = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
-
-  // Dialog and confirmation details
-  assert.ok(songbookHome.includes('data-testid="bulk-delete-songs-confirm-dialog"'), 'Must render bulk delete songs dialog')
-  assert.ok(songbookHome.includes('data-testid="confirm-bulk-delete-songs"'), 'Must have confirm bulk delete button')
-  assert.ok(songbookHome.includes('data-testid="cancel-bulk-delete-songs"'), 'Must have cancel bulk delete button')
-  assert.ok(songbookHome.includes('Delete {selectedSongIds.size}'), 'Confirm button must include count')
-  assert.ok(songbookHome.includes('Selected songs will be removed from your songbook and references to them will be removed from setlists'), 'Must state consequence clearly')
-
-  // App.tsx logic removes song references from setlists
-  assert.ok(appTsx.includes('handleBulkDeleteSongs'), 'App.tsx must define handleBulkDeleteSongs')
-  
-  // Test reference safety directly:
-  const setlists = [
-    { id: 'sl-1', name: 'Gig 1', songs: ['song-1', 'song-2', 'song-3'] },
-    { id: 'sl-2', name: 'Gig 2', songs: ['song-2', 'song-4'] }
-  ]
-  const songsToDelete = ['song-2', 'song-5']
-
-  const reconciledSetlists = setlists.map(sl => ({
-    ...sl,
-    songs: sl.songs.filter(id => !songsToDelete.includes(id))
-  }))
-
-  assert.deepEqual(reconciledSetlists[0].songs, ['song-1', 'song-3'], 'Deleted song-2 removed from sl-1')
-  assert.deepEqual(reconciledSetlists[1].songs, ['song-4'], 'Deleted song-2 removed from sl-2')
-  assert.equal(reconciledSetlists.length, 2, 'Setlists themselves remain intact')
+  assert.ok(songbookHome.includes('data-testid="bulk-delete-songs-confirm-dialog"'))
+  assert.ok(songbookHome.includes('data-testid="confirm-bulk-delete-songs"'))
+  assert.ok(songbookHome.includes('data-testid="cancel-bulk-delete-songs"'))
+  assert.ok(songbookHome.includes('Delete {selectedSongIds.size}'))
+  assert.ok(songbookHome.includes('Setlist entries are preserved and become available again when restored.'))
 })
 
 // 7. PROVE_BULK_SETLIST_DELETE: CONFIRMATION & SONGS REMAIN IN LIBRARY

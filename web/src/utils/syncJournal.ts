@@ -300,6 +300,7 @@ export function performStorageHousekeeping(storage: Storage = localStorage) {
 }
 
 export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
+  validateLibrary(library)
   library = { ...library, songs: library.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) })) }
   try {
     storage.setItem(LIBRARY_KEY, JSON.stringify(library))
@@ -385,4 +386,54 @@ export function setupCrossTabLibraryConflictGuard(
       ;(targetWindow as EventTarget).removeEventListener('storage', handler as EventListener)
     }
   }
+}
+export interface DanglingReferenceRepair {
+  raw: string
+  references: Array<{ setlistId: string | number; name: string; position: number; songId: string | number; title: string }>
+}
+
+/** Strict validation of the copied remainder proves missing IDs are the sole defect. */
+function danglingReferenceCandidate(raw: string) {
+  const library = JSON.parse(raw) as SyncLibrary
+  if (!library || !Array.isArray(library.songs) || !Array.isArray(library.setlists)) throw new Error('Unsupported recovery data.')
+  // Validate songs, duplicates and top-level fields before considering references.
+  validateLibrary({ ...library, setlists: [] })
+  const ids = new Set(library.songs.map(song => String(song.id)))
+  const references: DanglingReferenceRepair['references'] = []
+  const repaired = { ...library, setlists: library.setlists.map(list => {
+    if (!list || !Array.isArray(list.songs)) throw new Error('Unsupported setlist record.')
+    return { ...list, songs: list.songs.filter((ref, position) => {
+      if (!ref || !validId(ref.id) || typeof ref.title !== 'string') throw new Error('Unsupported song reference.')
+      if (ids.has(String(ref.id))) return true
+      references.push({ setlistId: list.id, name: list.name, position, songId: ref.id!, title: ref.title })
+      return false
+    }) }
+  }) }
+  validateLibrary(repaired)
+  if (!references.length) throw new Error('No dangling references to repair.')
+  return { repaired, references }
+}
+
+export function planDanglingReferenceRepair(storage: Storage = localStorage): DanglingReferenceRepair | null {
+  try {
+    const raw = storage.getItem(LIBRARY_KEY)
+    if (raw === null) return null
+    return { raw, references: danglingReferenceCandidate(raw).references }
+  } catch { return null }
+}
+
+/** Explicit caller confirmation only. Refuse stale previews and preserve exact input first. */
+export function applyDanglingReferenceRepair(plan: DanglingReferenceRepair, storage: Storage = localStorage): void {
+  if (storage.getItem(LIBRARY_KEY) !== plan.raw) throw new Error('Library changed. Preview repair again.')
+  const { repaired, references } = danglingReferenceCandidate(plan.raw)
+  if (JSON.stringify(references) !== JSON.stringify(plan.references)) throw new Error('Repair preview does not match current references.')
+  validateLibrary(repaired)
+  // Invalid raw archive fails strict snapshot validation and remains exportable.
+  const archive = 'gtar_sync_recovery:dangling-references:' + Date.now() + ':' + Math.random().toString(36).slice(2)
+  storage.setItem(archive, plan.raw)
+  if (storage.getItem(archive) !== plan.raw) throw new Error('Could not preserve original recovery data.')
+  if (storage.getItem(LIBRARY_KEY) !== plan.raw) throw new Error('Library changed. Preview repair again.')
+  storage.setItem(LIBRARY_KEY, JSON.stringify(repaired))
+  readPersistedLibrary(storage)
+  if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
 }
