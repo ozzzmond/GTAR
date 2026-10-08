@@ -2,11 +2,11 @@
 
 Stable IDs are authoritative for songs and setlists. Different stable IDs are never collapsed based on a current or historical title. Name matching remains for legacy references without IDs, and ambiguous references stop validation. This intentionally replaces the previous automatic same-title arrangement collapse: independently identified arrangements can remain duplicates until the user reconciles them.
 
-Both clients use three-way reconciliation against a durable account baseline. A record changed differently on both sides, including delete-versus-edit and divergent setlist membership/order, stops synchronization. Unknown baselines never choose cloud content over a differing local record. Both versions remain available in device recovery snapshots and/or retained Drive files. Empty new devices can still restore a cloud library. Setlists whose names collide across a rename retain their IDs and references.
+The Web/PWA client uses three-way reconciliation against a durable account baseline. A record changed differently on both sides, including delete-versus-edit and divergent setlist membership/order, stops synchronization. Unknown baselines never choose cloud content over a differing local record. Both versions remain available in device recovery snapshots and/or retained Drive files. Empty new devices can still restore a cloud library. Setlists whose names collide across a rename retain their IDs and references.
 
 Each attempt saves a recovery snapshot and pending before/merged state before uploading. Upload acknowledgment is durable before local apply; successful local persistence advances the baseline. A restart resumes pending acknowledged apply against its original input and preserves intervening edits or raises a conflict. Failed/uncertain uploads leave the prior baseline intact. Storage failures stop sync. Tokens are not persisted in these journals. A device library is bound to one verified account ID: account changes stop automatic sync rather than uploading the previous account's data. Sign back into the original account to continue; cross-account library transfer is deliberately manual.
 
-Web stores songs, trash, and setlists in one atomic localStorage value. Android uses transactional Room writes with an intervening-edit check. Snapshots are retained, not automatically pruned; storage exhaustion stops sync safely. Export archives before any manual storage repair.
+Web stores songs, trash, and setlists in one atomic localStorage value. The frozen legacy Android client used transactional Room writes with an intervening-edit check. Snapshots are retained, not automatically pruned; storage exhaustion stops sync safely. Export archives before any manual storage repair.
 
 ## Drive protocol v1
 
@@ -20,7 +20,7 @@ Upgrade every syncing device before relying on this protocol. Old versions canno
 
 ## Resolving a conflict
 
-1. Use **Download sync recovery data** on web or **Export sync recovery data** in Android Settings. The archive includes current device data, saved attempt snapshots, and raw cloud revisions. Check cloudError: an unavailable cloud download does not mean those files were exported. Retry with a valid session/connection.
+1. Use **Download sync recovery data** in the Web/PWA app. For the frozen legacy Android client, use **Export sync recovery data** in its Settings. The archive includes current device data, saved attempt snapshots, and raw cloud revisions. Check cloudError: an unavailable cloud download does not mean those files were exported. Retry with a valid session/connection.
 2. Extract the desired normal full-backup objects from the archive, compare charts and setlists, and use the existing backup import/editor flows to assemble the intended device library. Recovery archives themselves are intentionally not directly importable. Keep the original archive.
 3. From the conflict status, choose **Publish resolved device library** and confirm only after reviewing that device's content. This creates a revision acknowledging all currently observed heads. Prior cloud files remain retained. It does not erase an unobserved concurrent writer.
 
@@ -28,8 +28,8 @@ If a full backup has a missing setlist song, normal export fails with a referenc
 
 ## Presentation and validation
 
-The hosted web owner gate is unchanged: token expiry (30-second safety margin), sign-out, or failed cached-token verification locks the app and unmounts presentation. Local data remains saved; offline reload does not bypass owner verification. Android permits local editing/presentation after sign-out or token errors. These behaviors differ intentionally. The web presentation expiry/offline-reload test mounts the real presentation component in jsdom; it is not a long performance or physical-display test.
+The hosted web owner gate is unchanged: token expiry (30-second safety margin), sign-out, or failed cached-token verification locks the app and unmounts presentation. Local data remains saved; offline reload does not bypass owner verification. The frozen legacy Android client permitted local editing/presentation after sign-out or token errors. Its historical behavior differs from the active Web/PWA owner gate. The web presentation expiry/offline-reload test mounts the real presentation component in jsdom; it is not a long performance or physical-display test.
 
-PR validation runs web tests, production build, strict sync/backup/auth/URL/wake-lock lint, and Python release-script tests. No remote branch protection was modified.
+PR validation runs web tests, production build, strict sync/backup/auth/URL/wake-lock lint, and repository/release-controller checks. No remote branch protection was modified.
 
 `npm run lint:sync` uses all existing ESLint rules and zero allowed warnings on the critical modules. `npm run lint` remains the whole-project diagnostic; existing UI/casting lint debt is not suppressed or baselined away. Generated dev-dist files are excluded as build outputs. Extend the lint gate as remaining modules are repaired; this is not a claim that the whole tree is lint-clean.

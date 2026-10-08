@@ -110,7 +110,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
     const color = selector => window.getComputedStyle(document.querySelector(selector)).color
     const title = document.querySelector('.header-primary-text'), version = document.querySelector('.header-secondary-text')
     assert.equal(title.textContent.trim(), 'GTAR-Dev')
-    assert.match(version.textContent, /v1\.0\.123-dev\.5/)
+    assert.match(version.textContent, /v1\.0\.123-dev\.6/)
     assert.ok(!title.classList.contains('ui-primary-text'))
     assert.ok(!version.classList.contains('ui-secondary-text'))
     apply(target)
