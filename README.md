@@ -41,6 +41,6 @@ npm run build --prefix web
 
 ## Repository boundary
 
-Active development continues in [ozzzmond/GTAR](https://github.com/ozzzmond/GTAR) for the Web/PWA app and its GitHub validation tooling. Native Android is frozen legacy; its source, history, and historical releases are preserved in [ozzzmond/GTAR-Android-Legacy](https://github.com/ozzzmond/GTAR-Android-Legacy). Historical Git history is intentionally preserved here; original GitHub PR and issue metadata remains with ozzzmond/GTAR. Android browser support and legacy backup import remain part of the PWA. Do not add native Android/Gradle projects or local Python release/deploy scripts.
+Active [ozzzmond/GTAR](https://github.com/ozzzmond/GTAR) is Web/PWA-only, with its GitHub validation tooling. Native Android is frozen legacy; its source, history, tags, historical releases, and APKs are preserved in [ozzzmond/GTAR-Android-Legacy](https://github.com/ozzzmond/GTAR-Android-Legacy). Historical Git history is intentionally preserved here; original GitHub PR and issue metadata remains with ozzzmond/GTAR. Android browser support and legacy backup import remain part of the PWA. Do not add native Android/Gradle projects or local Python release/deploy scripts.
 
 See [GitHub preview contract](RELEASE_WORKFLOW_README.md) for canonical DEV tag validation.

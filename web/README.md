@@ -1,78 +1,23 @@
-# React + TypeScript + Vite
+# GTAR Web/PWA
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+GTAR's active implementation is the Web/PWA app. Historical native Android code belongs in [ozzzmond/GTAR-Android-Legacy](https://github.com/ozzzmond/GTAR-Android-Legacy).
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run commands from `web`. Install dependencies with `npm install`.
 
-## React Compiler
+On Windows, use `Run_Full_Stack_Dev.bat` as the normal local entry point. It applies/verifies local D1 migrations and starts the frontend at http://localhost:5173 and the local Cloudflare Pages Functions/API at http://localhost:8788. Port 5173 must be available; Vite enforces a strict port for the canonical local origin.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Use `Run_API_Dev.bat` for the backend only. It also applies/verifies local D1 migrations before starting the API.
 
-## Expanding the ESLint configuration
+`npm run dev` starts the Vite frontend; use the API helper when local backend access is needed.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Development checks
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+- `npm test` — Web/PWA regression tests.
+- `npm run lint` — whole-tree ESLint checks.
+- `npm run lint:sync` — focused sync and storage utility lint checks.
+- `npm run build` — TypeScript checks and production Web/PWA build.
 
 ## Legacy Drive state retirement (2026-09-15)
 
