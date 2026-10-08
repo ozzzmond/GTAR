@@ -609,6 +609,7 @@ function LibraryApp() {
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
+  const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
   const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
@@ -1609,7 +1610,19 @@ function LibraryApp() {
             onCreateSetlistForSong={handleCreateSetlistForSong}
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}
-            onOpenSetlists={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
+            onOpenSetlists={() => {
+              navigateSafely(() => {
+                setDrawerInitialTab('setlists')
+                setIsSetlistDrawerOpen(true)
+              })
+            }}
+            onOpenSongbook={() => {
+              navigateSafely(() => {
+                setActiveSetlistId(null)
+                setDrawerInitialTab('songbook')
+                setIsSetlistDrawerOpen(true)
+              })
+            }}
             onManageSetlist={handleManageSetlist}
             onDeleteSong={handleDeleteSong}
             onDeleteSetlist={handleDeleteSetlist}
@@ -1692,6 +1705,7 @@ function LibraryApp() {
       {/* Slide-over Setlist / Library Drawer */}
       <SetlistDrawer
         isOpen={isSetlistDrawerOpen}
+        initialTab={drawerInitialTab}
         onClose={() => setIsSetlistDrawerOpen(false)}
         songs={filteredSongs.length > 0 ? filteredSongs : songs}
         activeSongIndex={activeSongIndex}

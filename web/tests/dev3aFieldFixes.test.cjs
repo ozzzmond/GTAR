@@ -1,4 +1,4 @@
-﻿const { test } = require('node:test')
+const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -139,9 +139,9 @@ test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collap
     'Clears selected setlist IDs when collapsing'
   )
 
-  // Preserves New Setlist, Manage, and Import buttons
+  // Preserves New Setlist, Open Setlists panel, and Import buttons
   assert.ok(songbookSource.includes('title="Create new empty gig setlist"'), 'New Setlist button preserved')
-  assert.ok(songbookSource.includes('<span>Manage</span>'), 'Manage setlists button preserved')
+  assert.ok(songbookSource.includes('data-testid="open-setlists-panel-btn"'), 'Open Setlists panel button preserved')
   assert.ok(songbookSource.includes('title="Import single setlist (.json) into your library"'), 'Import setlist button preserved')
   assert.ok(songbookSource.includes("{setlistsCollapsed ? 'Show' : 'Hide'}"), 'Show/Hide toggle button preserved')
 })
