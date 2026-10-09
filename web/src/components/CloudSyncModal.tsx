@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Cloud,
   CloudUpload,
@@ -52,6 +52,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
 
+  // Parent callbacks can change when applying React state; that must not start another sync.
+  const onSyncAppliedRef = useRef(onSyncApplied)
+  useEffect(() => { onSyncAppliedRef.current = onSyncApplied }, [onSyncApplied])
+
   const refreshSyncState = useCallback(async () => {
     if (!token || !isAuthenticated) return
     setIsProcessing(true)
@@ -62,20 +66,15 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setLastMeta(readCloudSyncMeta())
 
       if (result.success) {
+        if (result.updatedLibrary) onSyncAppliedRef.current?.(result.updatedLibrary)
         if (result.actionTaken === 'NONE') {
           setStatusMessage('')
         } else if (result.actionTaken === 'UPLOADED') {
           setStatusMessage('Local songbook uploaded to cloud successfully.')
         } else if (result.actionTaken === 'DOWNLOADED') {
           setStatusMessage('Newer cloud songbook downloaded to this device.')
-          if (result.updatedLibrary && onSyncApplied) {
-            onSyncApplied(result.updatedLibrary)
-          }
         } else if (result.actionTaken === 'MERGED') {
           setStatusMessage('Songbooks merged safely. All changes preserved.')
-          if (result.updatedLibrary && onSyncApplied) {
-            onSyncApplied(result.updatedLibrary)
-          }
         }
       } else if (result.status === 'CONFLICT') {
         setStatusMessage('Conflicting edits detected between this device and the cloud.')
@@ -90,7 +89,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     } finally {
       setIsProcessing(false)
     }
-  }, [token, isAuthenticated, onSyncApplied])
+  }, [token, isAuthenticated])
 
   useEffect(() => {
     if (isOpen && isAuthenticated) {

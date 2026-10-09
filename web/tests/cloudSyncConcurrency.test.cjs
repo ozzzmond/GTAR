@@ -2,9 +2,9 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const ts = require('typescript')
-require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(
+for (const extension of ['.ts', '.tsx']) require.extensions[extension] = (module, filename) => module._compile(ts.transpileModule(
   fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'),
-  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX } }
 ).outputText, filename)
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
 const { upsertUserSongbook, findUserSongbook, createSessionToken } = require('../functions/lib/authCore.ts')
@@ -331,4 +331,233 @@ test('CLIENT: changed account during 409 refresh cannot receive the previous acc
   })
   assert.equal(posts, 1)
   assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
+})
+
+
+test('F1: identical merged-content race applies remote additions to React and persisted state', async () => {
+  const { JSDOM } = require('jsdom')
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const auth = require('../src/utils/authContext.ts')
+  const savedAuth = auth.useOptionalGoogleAuth
+  auth.useOptionalGoogleAuth = () => ({ session: { token: 'token' }, accessStatus: 'active' })
+  const { CloudSyncModal } = require('../src/components/CloudSyncModal.tsx')
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://example.com' })
+  const saved = Object.fromEntries(['window', 'document', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT'].map(k => [k, global[k]]))
+  global.window = dom.window; global.document = dom.window.document
+  global.localStorage = dom.window.localStorage; global.IS_REACT_ACT_ENVIRONMENT = true
+  const root = createRoot(document.getElementById('root'))
+  const originalSync = sync.performCloudSongbookSync
+  let completeSync
+  const completed = new Promise(resolve => { completeSync = resolve })
+  sync.performCloudSongbookSync = async (...args) => {
+    const result = await originalSync(...args)
+    completeSync(result)
+    return result
+  }
+  try {
+    const { db, request } = await fixture()
+    const base = library('base'), local = library('local')
+    const remote = structuredClone(base)
+    remote.songs.push({ id: listId, title: 'Remote addition', rawContent: 'addition' })
+    await write(db, base, emptyRevision)
+    persistLibrary(local, localStorage)
+    sync.saveCloudSyncBase(base, localStorage)
+    sync.saveCloudSyncMeta({ lastSyncedUserId: 'user-a', lastSyncedChecksum: sync.computeSongbookChecksum(base) }, localStorage)
+    let posts = 0
+    let displayed = local
+    let gets = 0
+    function Harness() {
+      const [data, setData] = React.useState(local)
+      return React.createElement(React.Fragment, null,
+        React.createElement('div', { id: 'library' }, data.songs.map(s => s.rawContent).join(',')),
+        React.createElement(CloudSyncModal, { isOpen: true, onClose() {}, onSyncApplied: updated => { displayed = updated; setData(updated) } }))
+    }
+    await withFetch(async (url, opts) => {
+      if (opts.method === 'GET') { gets++; return request('GET') }
+      if (++posts === 1) await write(db, remote, revision(await findUserSongbook(db, 'user-a')))
+      else await write(db, JSON.parse(opts.body).data, revision(await findUserSongbook(db, 'user-a')))
+      return request('POST', JSON.parse(opts.body))
+    }, async () => {
+      await act(async () => root.render(React.createElement(Harness)))
+      await act(async () => { assert.equal((await completed).success, true) })
+    })
+    assert.equal(posts, 2)
+    assert.equal(gets, 3, 'React state application must not trigger another sync')
+    assert.equal(document.getElementById('library').textContent, 'local,addition')
+    assert.deepEqual(displayed, readPersistedLibrary(localStorage))
+    assert.deepEqual(displayed.songs.map(s => s.rawContent).sort(), ['addition', 'local'])
+    assert.equal(sync.computeSongbookChecksum(displayed), (await findUserSongbook(db, 'user-a')).checksum)
+  } finally {
+    await act(async () => root.unmount())
+    sync.performCloudSongbookSync = originalSync
+    auth.useOptionalGoogleAuth = savedAuth
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete global[key]; else global[key] = value }
+    dom.window.close()
+  }
+})
+
+test('F2: first-write same-ID race preserves both edits without a common base item', async () => {
+  const { db, request } = await fixture()
+  const store = seedStorage(library('local'))
+  let posts = 0
+  await withFetch(async (url, opts) => {
+    if (opts.method === 'GET') return request('GET')
+    if (++posts === 1) await write(db, library('remote'), emptyRevision)
+    return request('POST', JSON.parse(opts.body))
+  }, async () => {
+    const result = await sync.performCloudSongbookSync('token', { storage: store })
+    assert.equal(result.success, true)
+    assert.deepEqual(result.updatedLibrary.songs.map(s => s.rawContent).sort(), ['local', 'remote'])
+    assert.equal(new Set(result.updatedLibrary.songs.map(s => s.id)).size, 2)
+    assert.deepEqual(readPersistedLibrary(store), result.updatedLibrary)
+  })
+  assert.equal(posts, 2)
+})
+
+test('F3: failed or unverifiable recovery snapshot aborts download without changing local data or metadata', async () => {
+  const { request, db } = await fixture()
+  await write(db, library('remote'), emptyRevision)
+  for (const failure of ['throw', 'silent']) {
+    const store = seedStorage(library('local'), library('base'))
+    const before = store.getItem(sync.CLOUD_SYNC_META_KEY)
+    const setItem = store.setItem
+    store.setItem = (key, value) => {
+      if (key.startsWith('gtar_sync_recovery:')) { if (failure === 'throw') throw new Error('quota'); return }
+      setItem(key, value)
+    }
+    await withFetch((url, opts) => request(opts.method), async () => {
+      const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction: 'download' })
+      assert.equal(result.success, false)
+      assert.equal(result.actionTaken, 'NONE')
+      assert.match(result.error, /backup|storage/i)
+      assert.equal(result.updatedLibrary, undefined)
+    })
+    assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
+    assert.equal(store.getItem(sync.CLOUD_SYNC_META_KEY), before)
+  }
+})
+
+test('F3: automatic and explicit downloads abort when browser edits arrive during GET', async () => {
+  const { request, db } = await fixture()
+  const base = library('base')
+  await write(db, library('remote'), emptyRevision)
+  for (const forceAction of [undefined, 'download']) {
+    const store = seedStorage(base, base)
+    await withFetch(async (url, opts) => {
+      persistLibrary(library('in-flight edit'), store)
+      return request(opts.method)
+    }, async () => {
+      const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction })
+      assert.equal(result.success, false)
+      assert.match(result.error, /changed|edit/i)
+      assert.equal(result.updatedLibrary, undefined)
+    })
+    assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'in-flight edit')
+    assert.equal(sync.readCloudSyncMeta(store).cloudVersion, 1)
+  }
+})
+
+test('F4: persisted song fields affect equality and checksum; tag-only changes reconcile without loss', () => {
+  const base = library('base')
+  for (const [field, value] of Object.entries({ tags: 'worship', isFavorite: true, createdAt: 42, lastOpenedAt: 43, isMissing: true })) {
+    const changed = structuredClone(base)
+    changed.songs[0][field] = value
+    assert.equal(sync.songEquals(base.songs[0], changed.songs[0]), false, field)
+    assert.notEqual(sync.computeSongbookChecksum(base), sync.computeSongbookChecksum(changed), field)
+    assert.equal(sync.reconcileSongbook(changed, base, base).merged.songs[0][field], value)
+    assert.equal(sync.reconcileSongbook(base, changed, base).merged.songs[0][field], value)
+  }
+  const local = structuredClone(base), remote = structuredClone(base)
+  local.songs[0].tags = 'local'; remote.songs[0].tags = 'remote'
+  const result = sync.reconcileSongbook(local, remote, base)
+  assert.equal(result.hasConflicts, true)
+  assert.deepEqual(result.merged.songs.map(s => s.tags).sort(), ['local', 'remote'])
+})
+
+test('F6: database write failure preserves cloud revision and local data; legacy clients receive update guidance', async () => {
+  const { request, db } = await fixture()
+  const base = library('base')
+  const first = await write(db, base, emptyRevision)
+  const legacy = await request('POST', { data: library('legacy'), clientVersion: 1 })
+  assert.equal(legacy.status, 409)
+  assert.match((await legacy.json()).error, /Update the app/)
+  const prepare = db.prepare.bind(db)
+  db.prepare = sql => { if (/(?:INSERT INTO|UPDATE) user_songbooks/.test(sql)) throw new Error('database write failed'); return prepare(sql) }
+  const store = seedStorage(library('local'), base)
+  await withFetch((url, opts) => request(opts.method, opts.body && JSON.parse(opts.body)), async () => {
+    const result = await sync.performCloudSongbookSync('token', { storage: store })
+    assert.equal(result.success, false)
+    assert.match(result.error, /database write failed/)
+  })
+  assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
+  assert.equal((await findUserSongbook(db, 'user-a')).version, first.version)
+})
+
+
+test('F2: no-base tombstone divergence retains both persisted edits', () => {
+  const local = library('local'), remote = library('remote')
+  for (const [left, right] of [[true, true], [false, true], [true, false]]) {
+    local.songs[0].isDeleted = left; remote.songs[0].isDeleted = right
+    const result = sync.reconcileSongbook(local, remote, { songs: [], setlists: [] })
+    assert.equal(result.hasConflicts, true)
+    assert.deepEqual(result.merged.songs.map(s => [s.rawContent, s.isDeleted]), [['local', left], ['remote', right]])
+  }
+})
+
+test('F3: local write failure retains durable download recovery and never acknowledges success', async () => {
+  const { request, db } = await fixture()
+  await write(db, library('remote'), emptyRevision)
+  const store = seedStorage(library('local'), library('base'))
+  const setItem = store.setItem
+  store.setItem = (key, value) => { if (key === 'gtar_library_v1') throw new Error('write failure'); setItem(key, value) }
+  await withFetch((url, opts) => request(opts.method), async () => {
+    const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction: 'download' })
+    assert.equal(result.success, false)
+    assert.match(result.error, /write failure/)
+  })
+  assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
+  assert.equal(sync.readCloudSyncMeta(store).lastSyncedChecksum, sync.computeSongbookChecksum(library('base')))
+  assert.ok(Object.values(recoveryData(store)).some(raw => JSON.parse(raw).songs?.[0]?.rawContent === 'local'))
+})
+
+test('F1: upload acknowledgement returns latest browser edits and preserves uploaded base', async () => {
+  const { request, db } = await fixture()
+  const base = library('base')
+  await write(db, base, emptyRevision)
+  const store = seedStorage(library('local'), base)
+  await withFetch((url, opts) => {
+    if (opts.method === 'POST') persistLibrary(library('later edit'), store)
+    return request(opts.method, opts.body && JSON.parse(opts.body))
+  }, async () => {
+    const result = await sync.performCloudSongbookSync('token', { storage: store })
+    assert.equal(result.success, true)
+    assert.equal(result.updatedLibrary.songs[0].rawContent, 'later edit')
+    assert.deepEqual(result.updatedLibrary, readPersistedLibrary(store))
+    assert.equal(sync.readCloudSyncBase(store).songs[0].rawContent, 'local')
+  })
+})
+
+
+test('F6: explicit cloud replacement requires verified recovery of both libraries', async () => {
+  const { request, db } = await fixture()
+  await write(db, library('remote'), emptyRevision)
+  for (const failSnapshot of [true, false]) {
+    const store = seedStorage(library('local'))
+    const setItem = store.setItem
+    store.setItem = (key, value) => { if (failSnapshot && key.startsWith('gtar_sync_recovery:')) throw new Error('quota'); setItem(key, value) }
+    let posts = 0
+    await withFetch((url, opts) => {
+      if (opts.method === 'POST') posts++
+      return request(opts.method, opts.body && JSON.parse(opts.body))
+    }, async () => {
+      const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction: 'upload' })
+      assert.equal(result.success, !failSnapshot)
+      if (failSnapshot) assert.match(result.error, /backup/)
+    })
+    assert.equal(posts, failSnapshot ? 0 : 1)
+    if (failSnapshot) assert.equal(JSON.parse((await findUserSongbook(db, 'user-a')).data_json).songs[0].rawContent, 'remote')
+    else assert.ok(Object.values(recoveryData(store)).some(raw => JSON.parse(raw).remote?.songs[0]?.rawContent === 'remote'))
+  }
 })
