@@ -79,6 +79,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         }
       } else if (result.status === 'CONFLICT') {
         setStatusMessage('Conflicting edits detected between this device and the cloud.')
+        setErrorMessage(result.error || '')
         setConflicts(result.conflicts || [])
       } else {
         setErrorMessage(result.error || 'Failed to sync with cloud.')

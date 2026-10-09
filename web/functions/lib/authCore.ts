@@ -608,25 +608,34 @@ export async function findUserSongbook(db: D1Database, userId: string): Promise<
   return (await stmt.first<UserSongbookRecord>()) || null
 }
 
+export interface SongbookRevision {
+  version: number
+  checksum: string | null
+}
+
 export async function upsertUserSongbook(
   db: D1Database,
   userId: string,
   dataJson: string,
   checksum: string,
-  updatedAt: string
-): Promise<{ version: number; checksum: string; updated_at: string }> {
-  const existing = await findUserSongbook(db, userId)
-  const nextVersion = (existing?.version || 0) + 1
-  const stmt = db.prepare(
-    `INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET
-       version = ?,
-       data_json = excluded.data_json,
-       checksum = excluded.checksum,
-       updated_at = excluded.updated_at`
-  ).bind(userId, nextVersion, dataJson, checksum, updatedAt, nextVersion)
-  await stmt.run()
-  return { version: nextVersion, checksum, updated_at: updatedAt }
+  updatedAt: string,
+  expected: SongbookRevision
+): Promise<{ version: number; checksum: string; updated_at: string } | null> {
+  // One SQLite statement owns both the revision predicate and increment.
+  // RETURNING reports only this write, without a second (racy) read.
+  if (!expected || !Number.isSafeInteger(expected.version) || expected.version < 0 ||
+      (expected.version === 0 ? expected.checksum !== null :
+        typeof expected.checksum !== 'string' || !/^ck_[0-9a-f]{16}$/.test(expected.checksum))) {
+    return null
+  }
+  const statement = expected.version === 0
+    ? db.prepare(`INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
+        VALUES (?, 1, ?, ?, ?) ON CONFLICT(user_id) DO NOTHING
+        RETURNING version, checksum, updated_at`).bind(userId, dataJson, checksum, updatedAt)
+    : db.prepare(`UPDATE user_songbooks SET version = version + 1,
+        data_json = ?, checksum = ?, updated_at = ?
+        WHERE user_id = ? AND version = ? AND checksum = ? AND version < 9007199254740991
+        RETURNING version, checksum, updated_at`)
+      .bind(dataJson, checksum, updatedAt, userId, expected.version, expected.checksum)
+  return statement.first<{ version: number; checksum: string; updated_at: string }>()
 }
-

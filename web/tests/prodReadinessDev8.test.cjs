@@ -65,12 +65,12 @@ function createMockStorage(initial = {}) {
 
 function createMockD1() {
   const users = new Map()
-  const songbooks = new Map()
+  const songbookDb = require('./helpers/songbookSqlite.cjs').createSongbookSqlite()
 
   return {
     _users: users,
-    _songbooks: songbooks,
     prepare(sql) {
+      if (sql.includes('user_songbooks')) return songbookDb.prepare(sql)
       let bound = []
       return {
         bind(...args) {
@@ -89,10 +89,7 @@ function createMockD1() {
             }
             return null
           }
-          if (sql.includes('FROM user_songbooks WHERE user_id = ?')) {
-            const [userId] = bound
-            return songbooks.get(userId) || null
-          }
+
           return null
         },
         async all() {
@@ -104,11 +101,7 @@ function createMockD1() {
             users.set(id, { id, google_sub, email, display_name, picture_url, role, access_status, created_at, updated_at, last_login_at })
             return { success: true }
           }
-          if (sql.includes('INSERT INTO user_songbooks')) {
-            const [userId, version, dataJson, checksum, updatedAt] = bound
-            songbooks.set(userId, { user_id: userId, version, data_json: dataJson, checksum, updated_at: updatedAt })
-            return { success: true }
-          }
+
           return { success: true }
         },
       }
@@ -385,7 +378,7 @@ test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on cl
   const postReq = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ action: 'upload', data: libOrder1 }),
+    body: JSON.stringify({ action: 'upload', data: libOrder1, expectedVersion: 0, expectedChecksum: null }),
   })
 
   const postRes = await syncApi.onRequestPost({ request: postReq, env })
