@@ -171,14 +171,20 @@ export async function verifyGoogleIdToken(
   }
 
   // 2. Verify Expiration
-  if (typeof payload.exp !== 'number' || payload.exp * 1000 <= now) {
+  if (typeof payload.exp !== 'number' || !Number.isSafeInteger(payload.exp) || payload.exp * 1000 <= now) {
     throw new Error('Google ID token is expired')
   }
 
   // 3. Verify Audience
-  const expectedClientId = env.GOOGLE_CLIENT_ID || env.VITE_GOOGLE_CLIENT_ID
-  if (expectedClientId && payload.aud !== expectedClientId) {
-    throw new Error(`Token audience mismatch: expected ${expectedClientId}, got ${payload.aud}`)
+  // These are Pages runtime bindings; frontend Vite substitution is not sufficient.
+  // An explicitly configured canonical binding must not fall back when invalid.
+  const expectedClientId = env.GOOGLE_CLIENT_ID ?? env.VITE_GOOGLE_CLIENT_ID
+  if (typeof expectedClientId !== 'string' || !expectedClientId.trim() ||
+      expectedClientId !== expectedClientId.trim()) {
+    throw new Error('Google OAuth audience binding is missing or invalid')
+  }
+  if (typeof payload.aud !== 'string' || payload.aud !== expectedClientId) {
+    throw new Error('Token audience mismatch')
   }
 
   // 4. Verify Identity
@@ -241,8 +247,18 @@ export async function verifyGoogleIdToken(
         { signal: AbortSignal.timeout(10000) }
       )
       if (verifyRes.ok) {
-        const info = (await verifyRes.json()) as { sub?: string; email?: string; aud?: string; email_verified?: string }
-        if (info.sub === payload.sub) {
+        const info = (await verifyRes.json()) as {
+          sub?: string; email?: string; aud?: string; email_verified?: boolean | string
+          iss?: string; exp?: string | number
+        }
+        // Do not let the fallback validate only a subject while trusting other claims.
+        const verifiedExpiry = typeof info.exp === 'string' && /^\d+$/.test(info.exp)
+          ? Number(info.exp) : info.exp
+        if (info.sub === payload.sub && info.email === payload.email &&
+            info.aud === expectedClientId && info.iss === payload.iss &&
+            typeof verifiedExpiry === 'number' && Number.isSafeInteger(verifiedExpiry) &&
+            verifiedExpiry === payload.exp && verifiedExpiry * 1000 > now &&
+            (info.email_verified === true || info.email_verified === 'true')) {
           signatureValid = true
         }
       }

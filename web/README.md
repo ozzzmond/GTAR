@@ -30,6 +30,15 @@ from frontend Vite variables:
   locally before backend use. Both BAT launchers run the local migration command.
 - `GOOGLE_CLIENT_ID`, or the supported `VITE_GOOGLE_CLIENT_ID` alias: the OAuth
   audience verified by the server; use the same client as the frontend.
+  This must be a non-empty Pages Functions runtime binding on `context.env`;
+  a frontend build variable alone is insufficient. Missing or invalid bindings
+  reject Google credentials; existing private-key sessions remain valid.
+  `GOOGLE_CLIENT_ID` takes precedence when configured, including invalid values.
+  Read-only Pages project configuration inspection on 2026-10-10 confirmed
+  `VITE_GOOGLE_CLIENT_ID` under `deployment_configs.preview.env_vars` (plain text)
+  and `deployment_configs.production.env_vars` (secret); `GOOGLE_CLIENT_ID` was
+  absent in both. Values were not inspected. Cloudflare documents both as runtime
+  bindings: [Pages environment variables and secrets](https://developers.cloudflare.com/pages/functions/bindings/#environment-variables).
 - `AUTH_SECRET`: a private HS256 session-signing secret, required locally and in
   each Cloudflare Pages production and DEV preview environment. Missing, empty,
   whitespace-only, non-string and retired public-fallback keys fail closed:
