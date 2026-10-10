@@ -5,6 +5,7 @@ import {
   isBootstrapAdmin,
   createSessionToken,
   verifySessionToken,
+  isValidAuthSecret,
   findUserByGoogleSub,
   findUserById,
   insertUser,
@@ -35,6 +36,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context
   if (!env.DB) {
     return errorResponse('Database binding DB is missing or unconfigured', 500)
+  }
+  if (!isValidAuthSecret(env.AUTH_SECRET)) {
+    return errorResponse('Authentication service is unavailable', 503)
   }
 
   let body: { idToken?: string; credential?: string }
@@ -115,9 +119,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       },
       sessionToken,
     })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return errorResponse(`Authentication failed: ${msg}`, 401)
+  } catch {
+    return errorResponse('Authentication failed', 401)
   }
 }
 
@@ -130,6 +133,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const { request, env } = context
   if (!env.DB) {
     return errorResponse('Database binding DB is missing or unconfigured', 500)
+  }
+  if (!isValidAuthSecret(env.AUTH_SECRET)) {
+    return errorResponse('Authentication service is unavailable', 503)
   }
 
   const authHeader = request.headers.get('Authorization')
@@ -148,6 +154,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
     user = await findUserById(env.DB, sessionData.uid)
+    if (user && user.google_sub !== sessionData.sub) user = null
   } else {
     // 2. Google ID token fallback
     try {

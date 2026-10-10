@@ -1,5 +1,5 @@
 /**
- * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.1a)
+ * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.1b)
  * Cloudflare Pages Functions + D1 SQLite Core Library
  */
 
@@ -281,17 +281,21 @@ export function isBootstrapAdmin(profile: VerifiedGoogleProfile, env: AuthEnv): 
   return false
 }
 
-// Internal session token secret (default fallback or server env)
-const DEFAULT_AUTH_SECRET = 'gtar_d1_auth_internal_secret_dev_only'
+// Reject the retired public key even if explicitly configured. Never substitute a key.
+export function isValidAuthSecret(secret: unknown): secret is string {
+  return typeof secret === 'string' && secret.trim().length > 0 &&
+    secret.trim() !== 'gtar_d1_auth_internal_secret_dev_only'
+}
 
 /**
  * Generate HMAC-SHA256 session token
  */
 export async function createSessionToken(
   user: UserRecord,
-  secret = DEFAULT_AUTH_SECRET,
+  secret?: string,
   durationMs = 30 * 24 * 60 * 60 * 1000
 ): Promise<string> {
+  if (!isValidAuthSecret(secret)) throw new Error('Authentication service is unavailable')
   const header = { alg: 'HS256', typ: 'JWT' }
   const now = Date.now()
   const payload = {
@@ -336,12 +340,18 @@ export async function createSessionToken(
  */
 export async function verifySessionToken(
   token: string,
-  secret = DEFAULT_AUTH_SECRET,
+  secret?: string,
   now = Date.now()
 ): Promise<{ uid: string; sub: string; email: string; role: string; status: string } | null> {
-  if (!token || typeof token !== 'string') return null
+  if (!isValidAuthSecret(secret) || !token || typeof token !== 'string') return null
   const parts = token.trim().split('.')
-  if (parts.length !== 3) return null
+  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return null
+  try {
+    const header = JSON.parse(base64UrlDecode(parts[0]))
+    if (header?.alg !== 'HS256' || header?.typ !== 'JWT') return null
+  } catch {
+    return null
+  }
 
   const encoder = new TextEncoder()
   const message = `${parts[0]}.${parts[1]}`
@@ -370,8 +380,10 @@ export async function verifySessionToken(
       const cryptoNode = await import('node:crypto')
       const hmac = cryptoNode.createHmac('sha256', secret)
       hmac.update(message)
-      const expectedSig = hmac.digest('base64url')
-      validSig = parts[2] === expectedSig
+      const expectedSig = hmac.digest()
+      const suppliedSig = Buffer.from(parts[2], 'base64url')
+      validSig = suppliedSig.length === expectedSig.length &&
+        cryptoNode.timingSafeEqual(suppliedSig, expectedSig)
     } catch {
       return null
     }
@@ -381,10 +393,11 @@ export async function verifySessionToken(
 
   try {
     const payload = JSON.parse(base64UrlDecode(parts[1]))
-    if (typeof payload.exp === 'number' && payload.exp * 1000 <= now) {
+    if (!Number.isSafeInteger(payload?.exp) || payload.exp * 1000 <= now) {
       return null
     }
-    if (!payload.uid || !payload.sub) {
+    if (typeof payload.uid !== 'string' || !payload.uid.trim() ||
+        typeof payload.sub !== 'string' || !payload.sub.trim()) {
       return null
     }
     return {
@@ -488,6 +501,9 @@ export async function authenticateAdminRequest(
   if (!env.DB) {
     return { error: 'Database binding DB is missing', status: 500 }
   }
+  if (!isValidAuthSecret(env.AUTH_SECRET)) {
+    return { error: 'Authentication service is unavailable', status: 503 }
+  }
 
   const authHeader = request.headers.get('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -502,7 +518,7 @@ export async function authenticateAdminRequest(
   let callerId: string | null = null
 
   // 1. Try session token first
-  const sessionData = await verifySessionToken(token, env.AUTH_SECRET || DEFAULT_AUTH_SECRET)
+  const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
     callerId = sessionData.uid
   } else {
@@ -524,8 +540,8 @@ export async function authenticateAdminRequest(
 
   // 3. Query authoritative D1 user record
   const user = await findUserById(env.DB, callerId)
-  if (!user) {
-    return { error: 'User record not found in authoritative database', status: 401 }
+  if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
+    return { error: 'Invalid or expired session token', status: 401 }
   }
 
   if (user.role !== 'admin' || user.access_status !== 'active') {
@@ -556,6 +572,9 @@ export async function authenticateUserRequest(
   if (!env.DB) {
     return { error: 'Database binding DB is missing', status: 500 }
   }
+  if (!isValidAuthSecret(env.AUTH_SECRET)) {
+    return { error: 'Authentication service is unavailable', status: 503 }
+  }
 
   const authHeader = request.headers.get('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -570,7 +589,7 @@ export async function authenticateUserRequest(
   let callerId: string | null = null
 
   // 1. Try session token first
-  const sessionData = await verifySessionToken(token, env.AUTH_SECRET || DEFAULT_AUTH_SECRET)
+  const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
     callerId = sessionData.uid
   } else {
@@ -592,11 +611,11 @@ export async function authenticateUserRequest(
 
   // 3. Query authoritative D1 user record
   const user = await findUserById(env.DB, callerId)
-  if (!user) {
-    return { error: 'User record not found in authoritative database', status: 401 }
+  if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
+    return { error: 'Invalid or expired session token', status: 401 }
   }
 
-  if (user.access_status !== 'active') {
+  if (user.access_status !== 'active' || (user.role !== 'member' && user.role !== 'admin')) {
     return { error: 'Forbidden: Active account approval required', status: 403 }
   }
 

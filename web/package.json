@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.0.130-dev.1a",
+  "version": "1.0.130-dev.1b",
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
