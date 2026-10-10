@@ -54,7 +54,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   try {
-    const verified = await verifyGoogleIdToken(token, env)
+    const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
     const nowIso = new Date().toISOString()
 
     let user = await findUserByGoogleSub(env.DB, verified.sub)
@@ -158,7 +158,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   } else {
     // 2. Google ID token fallback
     try {
-      const verified = await verifyGoogleIdToken(token, env)
+      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       user = await findUserByGoogleSub(env.DB, verified.sub)
     } catch {
       // Invalid

@@ -43,7 +43,8 @@ function fixture(t, { jwks = true, info, unavailable = false } = {}) {
 
 test('valid RSA Google credential accepts canonical and explicitly bound VITE alias', async t => {
   const { core } = fixture(t)
-  for (const bindings of [env, { VITE_GOOGLE_CLIENT_ID: claims.aud }]) {
+  for (const bindings of [env, { VITE_GOOGLE_CLIENT_ID: claims.aud },
+    { ...env, TEST_MOCK_AUTH: 'true', CF_PAGES: '1' }]) {
     const profile = await core.verifyGoogleIdToken(token(), bindings, now)
     assert.equal(profile.sub, claims.sub)
     assert.equal(profile.email, claims.email)
@@ -137,11 +138,11 @@ test('mock identity requires exact explicit flag; flag never bypasses real JWT v
   for (const flag of [undefined, 'false', 'TRUE', true]) {
     await assert.rejects(core.verifyGoogleIdToken('test_token:sub:user@example.invalid', {
       ...env, TEST_MOCK_AUTH: flag,
-    }), /Malformed/)
+    }, now, new Request('http://localhost')), /Malformed/)
   }
   assert.equal((await core.verifyGoogleIdToken('test_token:sub:user@example.invalid', {
     TEST_MOCK_AUTH: 'true',
-  })).sub, 'sub')
+  }, now, new Request('http://localhost'))).sub, 'sub')
   await assert.rejects(core.verifyGoogleIdToken(token({ aud: 'other-client' }), {
     ...env, TEST_MOCK_AUTH: 'true',
   }, now), /audience mismatch/)
@@ -182,4 +183,102 @@ test('session endpoint preserves valid Google login; missing audience and mock a
   assert.equal((await core.authenticateUserRequest(new Request('https://disposable.invalid', {
     headers: { Authorization: `Bearer ${sessionToken}` },
   }), withoutAudience)).user.id, user.id)
+})
+
+
+test('mock identity fails closed without local request context or with any Pages marker', async t => {
+  const { core, calls } = fixture(t)
+  const mock = 'test_token:disposable-sub:user@example.invalid'
+  const bindings = { TEST_MOCK_AUTH: 'true' }
+  for (const request of [undefined, { url: 'invalid-url' }, { url: 'https://localhost@attacker.invalid' }, new Request('file:///localhost')]) {
+    await assert.rejects(core.verifyGoogleIdToken(mock, bindings, now, request), /Malformed/)
+  }
+  for (const marker of ['CF_PAGES', 'CF_PAGES_URL', 'CF_PAGES_BRANCH', 'CF_PAGES_COMMIT_SHA']) {
+    for (const value of ['1', 'true', 'false', '', null]) {
+      await assert.rejects(core.verifyGoogleIdToken(mock, { ...bindings, [marker]: value },
+        now, new Request('http://localhost')), /Malformed/)
+    }
+  }
+  for (const url of ['http://localhost:8788', 'http://127.0.0.1:8788', 'http://[::1]:8788']) {
+    assert.equal((await core.verifyGoogleIdToken(mock, bindings, now, new Request(url))).sub, 'disposable-sub')
+  }
+  assert.equal(calls.length, 0)
+})
+
+test('hosted mock tokens cannot bootstrap, mint sessions, read users or authorize user/admin access', async t => {
+  const { core, session, calls } = fixture(t)
+  const admin = require('../functions/api/admin/users.ts')
+  const approve = require('../functions/api/admin/approve.ts')
+  let databaseCalls = 0
+  const bindings = {
+    TEST_MOCK_AUTH: 'true', AUTH_SECRET: 'disposable-private-key',
+    GOOGLE_CLIENT_ID: claims.aud, BOOTSTRAP_ADMIN_GOOGLE_SUB: 'disposable-sub',
+    BOOTSTRAP_ADMIN_EMAIL: 'owner@example.invalid',
+    DB: { prepare() { databaseCalls++; throw new Error('Rejected identity must not reach D1') } },
+  }
+  const mock = 'test_token:disposable-sub:owner@example.invalid:Owner'
+  const headers = {
+    Authorization: `Bearer ${mock}`, Host: 'localhost', Origin: 'http://localhost',
+    'X-Forwarded-Host': '127.0.0.1', 'X-Forwarded-Proto': 'http',
+    Forwarded: 'host=localhost;proto=http',
+  }
+  const cases = [
+    ['https://gtar-web.pages.dev', {}],
+    ['https://dev.gtar-web.pages.dev', {}],
+    ['https://checkpoint.gtar-web.pages.dev', { CF_PAGES: '1', CF_PAGES_BRANCH: 'dev' }],
+    ['https://gtar.example.invalid', {}],
+    ['http://192.168.1.2:8788', {}],
+    ['https://localhost.attacker.invalid', {}],
+    ['http://localhost:8788', { CF_PAGES: '1' }],
+  ]
+  for (const [url, markers] of cases) {
+    const env = { ...bindings, ...markers }
+    const post = await session.onRequestPost({ env, request: new Request(`${url}/api/auth/session`, {
+      method: 'POST', headers, body: JSON.stringify({ idToken: mock }),
+    }) })
+    assert.equal(post.status, 401, url)
+    assert.deepEqual(await post.json(), { success: false, error: 'Authentication failed' })
+    const request = new Request(`${url}/api/auth/session`, { headers })
+    assert.equal((await session.onRequestGet({ request, env })).status, 401, url)
+    assert.equal((await core.authenticateUserRequest(request, env)).status, 401, url)
+    assert.equal((await core.authenticateAdminRequest(request, env)).status, 401, url)
+    assert.equal((await admin.onRequestGet({ request, env })).status, 401, url)
+    assert.equal((await approve.onRequestPost({ env, request: new Request(`${url}/api/admin/approve`, {
+      method: 'POST', headers, body: JSON.stringify({ userId: 'target-user' }),
+    }) })).status, 401, url)
+  }
+  assert.equal(databaseCalls, 0)
+  assert.equal(calls.length, 0)
+})
+
+test('local mock and private-key session remain compatible across all authentication entry points', async t => {
+  const { core, session } = fixture(t)
+  const user = {
+    id: 'disposable-user', google_sub: 'disposable-sub', email: 'user@example.invalid',
+    role: 'admin', access_status: 'active', display_name: null, picture_url: null,
+    created_at: '', updated_at: '', last_login_at: '',
+  }
+  const env = {
+    TEST_MOCK_AUTH: 'true', AUTH_SECRET: 'disposable-private-key',
+    DB: { prepare() { return {
+      bind() { return this }, async first() { return { ...user } },
+      async run() { return { success: true } },
+    } } },
+  }
+  const mock = 'test_token:disposable-sub:user@example.invalid'
+  const post = await session.onRequestPost({ env, request: new Request('http://localhost/api/auth/session', {
+    method: 'POST', body: JSON.stringify({ idToken: mock }),
+  }) })
+  assert.equal(post.status, 200)
+  const { sessionToken } = await post.json()
+  for (const [url, credential, markers] of [
+    ['http://localhost', mock, {}],
+    ['https://disposable.invalid', sessionToken, { CF_PAGES: '1' }],
+  ]) {
+    const request = new Request(`${url}/api/auth/session`, { headers: { Authorization: `Bearer ${credential}` } })
+    const bindings = { ...env, ...markers }
+    assert.equal((await session.onRequestGet({ request, env: bindings })).status, 200)
+    assert.equal((await core.authenticateUserRequest(request, bindings)).user?.id, user.id)
+    assert.equal((await core.authenticateAdminRequest(request, bindings)).user?.id, user.id)
+  }
 })

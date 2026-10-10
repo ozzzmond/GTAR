@@ -52,7 +52,11 @@ from frontend Vite variables:
 Wrangler supports a local `.dev.vars` file for bindings/secrets. `.dev.vars` and
 `.dev.vars.*` are repository-ignored by `web/.gitignore`. Real secret values must
 never be committed. Do not assume frontend `.env.local` configures the API.
-`TEST_MOCK_AUTH` is a test facility and must remain disabled in hosted environments.
+`TEST_MOCK_AUTH` is a local test facility and must remain disabled in hosted environments.
+Mock credentials require the exact flag `true`, an explicit request URL with a
+loopback hostname (`localhost`, `127.0.0.1`, or `[::1]`), and no Cloudflare Pages
+runtime markers. Missing request context and hosted URLs fail closed even when
+the flag is enabled. Request headers cannot enable the mock path.
 Disposable unit tests supply their own explicit signing key; mock identities do
 not bypass the signing-key requirement. Local API development requires a private
 `AUTH_SECRET` in ignored `.dev.vars`; Vite alone does not supply server bindings.

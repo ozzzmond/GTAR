@@ -35,6 +35,10 @@ export interface AuthEnv {
   BOOTSTRAP_ADMIN_EMAIL?: string
   AUTH_SECRET?: string
   TEST_MOCK_AUTH?: string
+  CF_PAGES?: string
+  CF_PAGES_URL?: string
+  CF_PAGES_BRANCH?: string
+  CF_PAGES_COMMIT_SHA?: string
 }
 
 export const JSON_HEADERS: Record<string, string> = {
@@ -114,6 +118,20 @@ async function getGoogleJwks(): Promise<Array<{ kid: string; n: string; e: strin
   return cachedJwks.keys
 }
 
+// Mock credentials are local-only. Never trust Host/Origin/forwarded headers.
+function allowsLocalMockAuth(env: AuthEnv, request?: Request): boolean {
+  if (env.TEST_MOCK_AUTH !== 'true' || !request ||
+      env.CF_PAGES !== undefined || env.CF_PAGES_URL !== undefined ||
+      env.CF_PAGES_BRANCH !== undefined || env.CF_PAGES_COMMIT_SHA !== undefined) return false
+  try {
+    const url = new URL(request.url)
+    return (url.protocol === 'http:' || url.protocol === 'https:') &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Server verifies Google identity credential (JWT ID Token)
  * Validates: Issuer, Audience, Signature, Expiration, and non-empty verified Google sub
@@ -121,14 +139,15 @@ async function getGoogleJwks(): Promise<Array<{ kid: string; n: string; e: strin
 export async function verifyGoogleIdToken(
   token: string,
   env: AuthEnv,
-  now = Date.now()
+  now = Date.now(),
+  request?: Request
 ): Promise<VerifiedGoogleProfile> {
   if (!token || typeof token !== 'string') {
     throw new Error('Credential token is missing or invalid')
   }
 
-  // Handle mock / test tokens in test environment
-  if (env.TEST_MOCK_AUTH === 'true' && token.startsWith('test_token:')) {
+  // Explicit test flag alone cannot enable mock identity on hosted requests.
+  if (allowsLocalMockAuth(env, request) && token.startsWith('test_token:')) {
     const parts = token.slice('test_token:'.length).split(':')
     const [sub, email, name] = parts
     return {
@@ -540,7 +559,7 @@ export async function authenticateAdminRequest(
   } else {
     // 2. Try Google ID token
     try {
-      const verified = await verifyGoogleIdToken(token, env)
+      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
         callerId = user.id
@@ -611,7 +630,7 @@ export async function authenticateUserRequest(
   } else {
     // 2. Try Google ID token
     try {
-      const verified = await verifyGoogleIdToken(token, env)
+      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
         callerId = user.id

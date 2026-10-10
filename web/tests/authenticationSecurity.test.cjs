@@ -146,7 +146,7 @@ test('admin endpoint uses D1 role, including demotion and valid existing admin s
 test('explicit local mock identity with explicit signing key remains compatible', async () => {
   const { env } = fixture()
   env.TEST_MOCK_AUTH = 'true'
-  const post = new Request('https://disposable.invalid/api/auth/session', {
+  const post = new Request('http://localhost/api/auth/session', {
     method: 'POST', body: JSON.stringify({ idToken: 'test_token:disposable-sub:user@example.invalid' }),
   })
   const response = await session.onRequestPost({ request: post, env })
