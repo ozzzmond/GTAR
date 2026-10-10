@@ -30,10 +30,21 @@ from frontend Vite variables:
   locally before backend use. Both BAT launchers run the local migration command.
 - `GOOGLE_CLIENT_ID`, or the supported `VITE_GOOGLE_CLIENT_ID` alias: the OAuth
   audience verified by the server; use the same client as the frontend.
-- `AUTH_SECRET`: a private session-signing secret. The implementation has a public
-  development fallback when this binding is absent; it is unsuitable for hosted
-  DEV/PROD. Configure a private server secret in each hosted environment before
-  exposing authenticated endpoints. Never use a `VITE_` variable for this secret.
+  This must be a non-empty Pages Functions runtime binding on `context.env`;
+  a frontend build variable alone is insufficient. Missing or invalid bindings
+  reject Google credentials; existing private-key sessions remain valid.
+  `GOOGLE_CLIENT_ID` takes precedence when configured, including invalid values.
+  Read-only Pages project configuration inspection on 2026-10-10 confirmed
+  `VITE_GOOGLE_CLIENT_ID` under `deployment_configs.preview.env_vars` (plain text)
+  and `deployment_configs.production.env_vars` (secret); `GOOGLE_CLIENT_ID` was
+  absent in both. Values were not inspected. Cloudflare documents both as runtime
+  bindings: [Pages environment variables and secrets](https://developers.cloudflare.com/pages/functions/bindings/#environment-variables).
+- `AUTH_SECRET`: a private HS256 session-signing secret, required locally and in
+  each Cloudflare Pages production and DEV preview environment. Missing, empty,
+  whitespace-only, non-string and retired public-fallback keys fail closed:
+  session signing fails, verification rejects tokens, and authentication handlers
+  return a generic 503 before identity lookup or database writes. There is no
+  automatic local or deployed key. Never use a `VITE_` variable for this secret.
 - `BOOTSTRAP_ADMIN_GOOGLE_SUB` or `BOOTSTRAP_ADMIN_EMAIL`: explicitly identify the
   intended first administrator on the server. First-login-wins is not supported.
   Other registrations start pending and require administrator approval.
@@ -41,7 +52,29 @@ from frontend Vite variables:
 Wrangler supports a local `.dev.vars` file for bindings/secrets. `.dev.vars` and
 `.dev.vars.*` are repository-ignored by `web/.gitignore`. Real secret values must
 never be committed. Do not assume frontend `.env.local` configures the API.
-`TEST_MOCK_AUTH` is a test facility and must remain disabled in hosted environments.
+`TEST_MOCK_AUTH` is a local test facility and must remain disabled in hosted environments.
+Mock credentials require the exact flag `true`, an explicit request URL with a
+loopback hostname (`localhost`, `127.0.0.1`, or `[::1]`), and no Cloudflare Pages
+runtime markers. Missing request context and hosted URLs fail closed even when
+the flag is enabled. Request headers cannot enable the mock path.
+Disposable unit tests supply their own explicit signing key; mock identities do
+not bypass the signing-key requirement. Local API development requires a private
+`AUTH_SECRET` in ignored `.dev.vars`; Vite alone does not supply server bindings.
+
+Before deployment, an operator must verify that Pages has the private server
+`AUTH_SECRET` binding in **both production and preview**, alongside the appropriate
+`DB` and Google OAuth audience bindings. `wrangler.jsonc` does not establish that
+hosted secrets exist. Live production/preview secret configuration and historical
+fallback exposure are **UNVERIFIED** by repository tests. This change does not
+inspect secret values, alter Cloudflare settings or rotate keys. Keep the existing
+private production key byte-for-byte unchanged to preserve existing HS256 sessions.
+Sessions signed with the retired public key cannot safely be preserved.
+
+Protected member/admin endpoints require an active authoritative D1 record and
+matching session `uid`/`sub`; admin endpoints also require the current D1 admin
+role. Session GET intentionally reports pending/denied approval status to the
+authenticated owner for the existing approval screen; that response grants no
+protected access. Session claims do not override D1 roles or approval status.
 
 For an existing local test identity, `npm run admin:bootstrap:local -- <email>`
 configures local D1 access only; its documented role/status and revert options

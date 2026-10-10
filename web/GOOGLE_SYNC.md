@@ -14,7 +14,7 @@ client secret belongs in the frontend. Drive API enablement and Drive AppData
 scope are not prerequisites for current server-backed songbook sync.
 
 The server also needs the matching `GOOGLE_CLIENT_ID` (or its supported
-`VITE_GOOGLE_CLIENT_ID` alias), a private `AUTH_SECRET`, a `DB` binding with the
+`VITE_GOOGLE_CLIENT_ID` alias) as a Pages Functions runtime binding, a private `AUTH_SECRET`, a `DB` binding with the
 tracked migrations applied, and an explicitly configured administrator bootstrap
 identity when establishing the first administrator. See [server and local
 prerequisites](README.md).

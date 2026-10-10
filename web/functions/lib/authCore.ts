@@ -1,5 +1,5 @@
 /**
- * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.1a)
+ * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.1b)
  * Cloudflare Pages Functions + D1 SQLite Core Library
  */
 
@@ -35,6 +35,10 @@ export interface AuthEnv {
   BOOTSTRAP_ADMIN_EMAIL?: string
   AUTH_SECRET?: string
   TEST_MOCK_AUTH?: string
+  CF_PAGES?: string
+  CF_PAGES_URL?: string
+  CF_PAGES_BRANCH?: string
+  CF_PAGES_COMMIT_SHA?: string
 }
 
 export const JSON_HEADERS: Record<string, string> = {
@@ -114,6 +118,20 @@ async function getGoogleJwks(): Promise<Array<{ kid: string; n: string; e: strin
   return cachedJwks.keys
 }
 
+// Mock credentials are local-only. Never trust Host/Origin/forwarded headers.
+function allowsLocalMockAuth(env: AuthEnv, request?: Request): boolean {
+  if (env.TEST_MOCK_AUTH !== 'true' || !request ||
+      env.CF_PAGES !== undefined || env.CF_PAGES_URL !== undefined ||
+      env.CF_PAGES_BRANCH !== undefined || env.CF_PAGES_COMMIT_SHA !== undefined) return false
+  try {
+    const url = new URL(request.url)
+    return (url.protocol === 'http:' || url.protocol === 'https:') &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Server verifies Google identity credential (JWT ID Token)
  * Validates: Issuer, Audience, Signature, Expiration, and non-empty verified Google sub
@@ -121,14 +139,15 @@ async function getGoogleJwks(): Promise<Array<{ kid: string; n: string; e: strin
 export async function verifyGoogleIdToken(
   token: string,
   env: AuthEnv,
-  now = Date.now()
+  now = Date.now(),
+  request?: Request
 ): Promise<VerifiedGoogleProfile> {
   if (!token || typeof token !== 'string') {
     throw new Error('Credential token is missing or invalid')
   }
 
-  // Handle mock / test tokens in test environment
-  if (env.TEST_MOCK_AUTH === 'true' && token.startsWith('test_token:')) {
+  // Explicit test flag alone cannot enable mock identity on hosted requests.
+  if (allowsLocalMockAuth(env, request) && token.startsWith('test_token:')) {
     const parts = token.slice('test_token:'.length).split(':')
     const [sub, email, name] = parts
     return {
@@ -171,14 +190,20 @@ export async function verifyGoogleIdToken(
   }
 
   // 2. Verify Expiration
-  if (typeof payload.exp !== 'number' || payload.exp * 1000 <= now) {
+  if (typeof payload.exp !== 'number' || !Number.isSafeInteger(payload.exp) || payload.exp * 1000 <= now) {
     throw new Error('Google ID token is expired')
   }
 
   // 3. Verify Audience
-  const expectedClientId = env.GOOGLE_CLIENT_ID || env.VITE_GOOGLE_CLIENT_ID
-  if (expectedClientId && payload.aud !== expectedClientId) {
-    throw new Error(`Token audience mismatch: expected ${expectedClientId}, got ${payload.aud}`)
+  // These are Pages runtime bindings; frontend Vite substitution is not sufficient.
+  // An explicitly configured canonical binding must not fall back when invalid.
+  const expectedClientId = env.GOOGLE_CLIENT_ID ?? env.VITE_GOOGLE_CLIENT_ID
+  if (typeof expectedClientId !== 'string' || !expectedClientId.trim() ||
+      expectedClientId !== expectedClientId.trim()) {
+    throw new Error('Google OAuth audience binding is missing or invalid')
+  }
+  if (typeof payload.aud !== 'string' || payload.aud !== expectedClientId) {
+    throw new Error('Token audience mismatch')
   }
 
   // 4. Verify Identity
@@ -241,8 +266,18 @@ export async function verifyGoogleIdToken(
         { signal: AbortSignal.timeout(10000) }
       )
       if (verifyRes.ok) {
-        const info = (await verifyRes.json()) as { sub?: string; email?: string; aud?: string; email_verified?: string }
-        if (info.sub === payload.sub) {
+        const info = (await verifyRes.json()) as {
+          sub?: string; email?: string; aud?: string; email_verified?: boolean | string
+          iss?: string; exp?: string | number
+        }
+        // Do not let the fallback validate only a subject while trusting other claims.
+        const verifiedExpiry = typeof info.exp === 'string' && /^\d+$/.test(info.exp)
+          ? Number(info.exp) : info.exp
+        if (info.sub === payload.sub && info.email === payload.email &&
+            info.aud === expectedClientId && info.iss === payload.iss &&
+            typeof verifiedExpiry === 'number' && Number.isSafeInteger(verifiedExpiry) &&
+            verifiedExpiry === payload.exp && verifiedExpiry * 1000 > now &&
+            (info.email_verified === true || info.email_verified === 'true')) {
           signatureValid = true
         }
       }
@@ -281,17 +316,21 @@ export function isBootstrapAdmin(profile: VerifiedGoogleProfile, env: AuthEnv): 
   return false
 }
 
-// Internal session token secret (default fallback or server env)
-const DEFAULT_AUTH_SECRET = 'gtar_d1_auth_internal_secret_dev_only'
+// Reject the retired public key even if explicitly configured. Never substitute a key.
+export function isValidAuthSecret(secret: unknown): secret is string {
+  return typeof secret === 'string' && secret.trim().length > 0 &&
+    secret.trim() !== 'gtar_d1_auth_internal_secret_dev_only'
+}
 
 /**
  * Generate HMAC-SHA256 session token
  */
 export async function createSessionToken(
   user: UserRecord,
-  secret = DEFAULT_AUTH_SECRET,
+  secret?: string,
   durationMs = 30 * 24 * 60 * 60 * 1000
 ): Promise<string> {
+  if (!isValidAuthSecret(secret)) throw new Error('Authentication service is unavailable')
   const header = { alg: 'HS256', typ: 'JWT' }
   const now = Date.now()
   const payload = {
@@ -336,12 +375,18 @@ export async function createSessionToken(
  */
 export async function verifySessionToken(
   token: string,
-  secret = DEFAULT_AUTH_SECRET,
+  secret?: string,
   now = Date.now()
 ): Promise<{ uid: string; sub: string; email: string; role: string; status: string } | null> {
-  if (!token || typeof token !== 'string') return null
+  if (!isValidAuthSecret(secret) || !token || typeof token !== 'string') return null
   const parts = token.trim().split('.')
-  if (parts.length !== 3) return null
+  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return null
+  try {
+    const header = JSON.parse(base64UrlDecode(parts[0]))
+    if (header?.alg !== 'HS256' || header?.typ !== 'JWT') return null
+  } catch {
+    return null
+  }
 
   const encoder = new TextEncoder()
   const message = `${parts[0]}.${parts[1]}`
@@ -370,8 +415,10 @@ export async function verifySessionToken(
       const cryptoNode = await import('node:crypto')
       const hmac = cryptoNode.createHmac('sha256', secret)
       hmac.update(message)
-      const expectedSig = hmac.digest('base64url')
-      validSig = parts[2] === expectedSig
+      const expectedSig = hmac.digest()
+      const suppliedSig = Buffer.from(parts[2], 'base64url')
+      validSig = suppliedSig.length === expectedSig.length &&
+        cryptoNode.timingSafeEqual(suppliedSig, expectedSig)
     } catch {
       return null
     }
@@ -381,10 +428,11 @@ export async function verifySessionToken(
 
   try {
     const payload = JSON.parse(base64UrlDecode(parts[1]))
-    if (typeof payload.exp === 'number' && payload.exp * 1000 <= now) {
+    if (!Number.isSafeInteger(payload?.exp) || payload.exp * 1000 <= now) {
       return null
     }
-    if (!payload.uid || !payload.sub) {
+    if (typeof payload.uid !== 'string' || !payload.uid.trim() ||
+        typeof payload.sub !== 'string' || !payload.sub.trim()) {
       return null
     }
     return {
@@ -488,6 +536,9 @@ export async function authenticateAdminRequest(
   if (!env.DB) {
     return { error: 'Database binding DB is missing', status: 500 }
   }
+  if (!isValidAuthSecret(env.AUTH_SECRET)) {
+    return { error: 'Authentication service is unavailable', status: 503 }
+  }
 
   const authHeader = request.headers.get('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -502,13 +553,13 @@ export async function authenticateAdminRequest(
   let callerId: string | null = null
 
   // 1. Try session token first
-  const sessionData = await verifySessionToken(token, env.AUTH_SECRET || DEFAULT_AUTH_SECRET)
+  const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
     callerId = sessionData.uid
   } else {
     // 2. Try Google ID token
     try {
-      const verified = await verifyGoogleIdToken(token, env)
+      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
         callerId = user.id
@@ -524,8 +575,8 @@ export async function authenticateAdminRequest(
 
   // 3. Query authoritative D1 user record
   const user = await findUserById(env.DB, callerId)
-  if (!user) {
-    return { error: 'User record not found in authoritative database', status: 401 }
+  if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
+    return { error: 'Invalid or expired session token', status: 401 }
   }
 
   if (user.role !== 'admin' || user.access_status !== 'active') {
@@ -556,6 +607,9 @@ export async function authenticateUserRequest(
   if (!env.DB) {
     return { error: 'Database binding DB is missing', status: 500 }
   }
+  if (!isValidAuthSecret(env.AUTH_SECRET)) {
+    return { error: 'Authentication service is unavailable', status: 503 }
+  }
 
   const authHeader = request.headers.get('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -570,13 +624,13 @@ export async function authenticateUserRequest(
   let callerId: string | null = null
 
   // 1. Try session token first
-  const sessionData = await verifySessionToken(token, env.AUTH_SECRET || DEFAULT_AUTH_SECRET)
+  const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
     callerId = sessionData.uid
   } else {
     // 2. Try Google ID token
     try {
-      const verified = await verifyGoogleIdToken(token, env)
+      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
         callerId = user.id
@@ -592,11 +646,11 @@ export async function authenticateUserRequest(
 
   // 3. Query authoritative D1 user record
   const user = await findUserById(env.DB, callerId)
-  if (!user) {
-    return { error: 'User record not found in authoritative database', status: 401 }
+  if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
+    return { error: 'Invalid or expired session token', status: 401 }
   }
 
-  if (user.access_status !== 'active') {
+  if (user.access_status !== 'active' || (user.role !== 'member' && user.role !== 'admin')) {
     return { error: 'Forbidden: Active account approval required', status: 403 }
   }
 

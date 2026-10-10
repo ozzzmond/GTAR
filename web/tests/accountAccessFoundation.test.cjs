@@ -168,7 +168,9 @@ test('TARGETED: AUTH_IDENTITY_VERIFICATION verifies issuer, audience, expiration
   // Valid test token
   const validProfile = await verifyGoogleIdToken(
     'test_token:sub_12345:musician@gmail.com:Musician Bob',
-    env
+    env,
+    Date.now(),
+    new Request('http://localhost/api/auth/session')
   )
   assert.equal(validProfile.sub, 'sub_12345')
   assert.equal(validProfile.email, 'musician@gmail.com')
