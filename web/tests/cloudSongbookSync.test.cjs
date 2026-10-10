@@ -48,12 +48,12 @@ const { normalizeSongbookIds, validateSongbookIntegrity } = require('../src/util
 
 function createMockD1() {
   const users = new Map()
-  const songbooks = new Map()
+  const songbookDb = require('./helpers/songbookSqlite.cjs').createSongbookSqlite()
 
   return {
     _users: users,
-    _songbooks: songbooks,
     prepare(sql) {
+      if (sql.includes('user_songbooks')) return songbookDb.prepare(sql)
       let bound = []
       return {
         bind(...args) {
@@ -72,10 +72,7 @@ function createMockD1() {
             }
             return null
           }
-          if (sql.includes('FROM user_songbooks WHERE user_id = ?')) {
-            const [userId] = bound
-            return songbooks.get(userId) || null
-          }
+
           return null
         },
         async all() {
@@ -98,17 +95,7 @@ function createMockD1() {
             })
             return { success: true }
           }
-          if (sql.includes('INSERT INTO user_songbooks')) {
-            const [userId, version, dataJson, checksum, updatedAt] = bound
-            songbooks.set(userId, {
-              user_id: userId,
-              version,
-              data_json: dataJson,
-              checksum,
-              updated_at: updatedAt,
-            })
-            return { success: true }
-          }
+
           return { success: true }
         },
       }
@@ -416,6 +403,8 @@ test('ENDPOINT: User A cannot access or overwrite User B cloud songbook (strict 
     },
     body: JSON.stringify({
       action: 'upload',
+      expectedVersion: 0,
+      expectedChecksum: null,
       data: { songs: [songA], setlists: [] },
     }),
   })

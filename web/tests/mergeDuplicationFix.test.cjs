@@ -2,9 +2,8 @@
  * GTAR_108_DEV_8B_MULTI_DEVICE_MERGE_DUPLICATION_FIX
  * Regression tests: multi-device merge must not triplicate (or duplicate) the song library.
  *
- * Root cause: reconcileSongbook created conflict copies for songs with matching IDs but
- * differing content even when no base snapshot existed, making it impossible to confirm
- * independent concurrent modification. Fix: require baseSong to emit a conflict copy.
+ * Identical revisions stay idempotent. Differing same-ID content without a base
+ * requires explicit conflict copies; absence of a base cannot justify discarding edits.
  */
 const { test } = require("node:test")
 const assert = require("node:assert/strict")
@@ -103,20 +102,23 @@ test("D: setlist conflict copy does not add songs to global song library", () =>
   assert.ok(result.merged.songs.length <= 3, "Setlist conflict copy must not inflate song count")
 })
 
-// E: No-base same-ID song divergence -> prefer remote, no conflict copy
-test("E: no-base same-ID song divergence -> prefer remote, no conflict copy created", () => {
+// E: No-base same-ID divergence preserves both edits
+test("E: no-base same-ID song divergence preserves both edits with explicit conflict", () => {
   const sharedId = generateUUID()
   const localSong = makeSong({ id: sharedId, rawContent: "[G]Local version of content" })
   const remoteSong = makeSong({ id: sharedId, rawContent: "[G]Remote version of content" })
   const result = reconcileSongbook({ songs: [localSong], setlists: [] }, { songs: [remoteSong], setlists: [] }, null)
-  assert.equal(result.merged.songs.length, 1, "No-base divergence must not create conflict copy (remote preferred)")
+  assert.equal(result.merged.songs.length, 2, "Both no-base edits must be preserved")
   assert.equal(result.merged.songs[0].id, sharedId)
-  assert.equal(result.merged.songs[0].rawContent, remoteSong.rawContent, "Remote content must be preferred when no base")
-  assert.equal(result.hasConflicts, false)
+  assert.equal(result.merged.songs[0].rawContent, localSong.rawContent)
+  assert.equal(result.merged.songs[1].rawContent, remoteSong.rawContent)
+  assert.ok(isValidUUID(result.merged.songs[1].id))
+  assert.notEqual(result.merged.songs[1].id, sharedId)
+  assert.equal(result.hasConflicts, true)
 })
 
-// E2: 395-song no-base merge -> exactly 395 results
-test("E2: 395-song no-base merge with minor content diffs -> exactly 395 in result", () => {
+// E2: Every differing edit survives even in a large library
+test("E2: 395-song no-base merge preserves all 790 differing versions", () => {
   const COUNT = 395
   const sharedSongs = Array.from({ length: COUNT }, (_, i) => ({
     id: generateUUID(),
@@ -132,18 +134,18 @@ test("E2: 395-song no-base merge with minor content diffs -> exactly 395 in resu
   }))
   const remoteSongs = sharedSongs.map(s => Object.assign({}, s, { rawContent: s.rawContent + "\n" }))
   const result = reconcileSongbook({ songs: sharedSongs, setlists: [] }, { songs: remoteSongs, setlists: [] }, null)
-  assert.equal(result.merged.songs.length, COUNT, "No-base merge of " + COUNT + " songs must yield exactly " + COUNT + " songs")
-  const uniqueIds = new Set(result.merged.songs.map(s => s.id))
-  assert.equal(uniqueIds.size, COUNT, "All song IDs must be unique")
-  for (const merged of result.merged.songs) {
-    const r = remoteSongs.find(x => x.id === merged.id)
-    assert.ok(r, "Song must exist in remote")
-    assert.equal(merged.rawContent, r.rawContent, "Remote content must be preferred")
+  assert.equal(result.merged.songs.length, COUNT * 2)
+  assert.equal(result.conflicts.length, COUNT)
+  assert.equal(new Set(result.merged.songs.map(s => s.id)).size, COUNT * 2)
+  for (const original of sharedSongs) {
+    const retained = result.merged.songs.find(s => s.id === original.id)
+    assert.equal(retained.rawContent, original.rawContent)
+    assert.ok(result.merged.songs.some(s => s.id !== original.id && s.rawContent === original.rawContent + "\n"))
   }
 })
 
 // F: Two-stage chained merge -> no triplication
-test("F: two-stage multi-device merge -> count stays at N (no triplication)", () => {
+test("F: two-stage multi-device merge retains conflict copies without triplication", () => {
   const COUNT = 10
   const sharedSongs = Array.from({ length: COUNT }, (_, i) => ({
     id: generateUUID(),
@@ -161,11 +163,13 @@ test("F: two-stage multi-device merge -> count stays at N (no triplication)", ()
   const local = { songs: sharedSongs, setlists: [] }
   const cloud = { songs: cloudSongs, setlists: [] }
   const stage1 = reconcileSongbook(local, cloud, null)
-  assert.equal(stage1.merged.songs.length, COUNT, "Stage 1 merge must yield exactly " + COUNT + " songs")
+  assert.equal(stage1.merged.songs.length, COUNT * 2, "Stage 1 must retain both differing versions")
   const stage2 = reconcileSongbook(local, stage1.merged, null)
-  assert.equal(stage2.merged.songs.length, COUNT, "Stage 2 merge must still yield exactly " + COUNT + " songs")
+  assert.equal(stage2.merged.songs.length, COUNT * 2, "Stage 2 must not create extra conflict copies")
   const uniqueIds = new Set(stage2.merged.songs.map(s => s.id))
-  assert.equal(uniqueIds.size, COUNT, "All song IDs must be unique after two-stage merge")
+  assert.equal(uniqueIds.size, COUNT * 2, "All song IDs must be unique after two-stage merge")
+  const ordered = library => [...library.songs].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  assert.deepEqual(ordered(stage2.merged), ordered(stage1.merged))
 })
 
 // G: Reload + resync -> no duplication

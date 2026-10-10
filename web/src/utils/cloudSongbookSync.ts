@@ -97,7 +97,11 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       transposeOffset: Number(s.transposeOffset || 0),
       rawContent: (s.rawContent || '').replace(/\r\n/g, '\n'),
       isDeleted: Boolean(s.isDeleted),
-      tags: Array.isArray(s.tags) ? [...s.tags].sort().join(',') : '',
+      tags: songTags(s),
+      isFavorite: Boolean(s.isFavorite),
+      createdAt: s.createdAt ?? null,
+      lastOpenedAt: s.lastOpenedAt ?? null,
+      isMissing: Boolean(s.isMissing),
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 
@@ -323,6 +327,11 @@ export function evaluateSyncDecision({
   }
 }
 
+// Preserve both the persisted string format and legacy array tags without collisions.
+function songTags(song: ActiveSongState): string | string[] {
+  return Array.isArray(song.tags) ? [...song.tags].sort() : (song.tags || '')
+}
+
 export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
   return (
     a.title === b.title &&
@@ -336,7 +345,12 @@ export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
     (a.format || 'PLAIN') === (b.format || 'PLAIN') &&
     Number(a.transposeOffset || 0) === Number(b.transposeOffset || 0) &&
     (a.rawContent || '').replace(/\r\n/g, '\n') === (b.rawContent || '').replace(/\r\n/g, '\n') &&
-    Boolean(a.isDeleted) === Boolean(b.isDeleted)
+    Boolean(a.isDeleted) === Boolean(b.isDeleted) &&
+    JSON.stringify(songTags(a)) === JSON.stringify(songTags(b)) &&
+    Boolean(a.isFavorite) === Boolean(b.isFavorite) &&
+    (a.createdAt ?? null) === (b.createdAt ?? null) &&
+    (a.lastOpenedAt ?? null) === (b.lastOpenedAt ?? null) &&
+    Boolean(a.isMissing) === Boolean(b.isMissing)
   )
 }
 
@@ -426,7 +440,11 @@ export function reconcileSongbook(
         const localTombstone = Boolean(localSong.isDeleted)
         const remoteTombstone = Boolean(remoteSong.isDeleted)
 
-        if (localTombstone && remoteTombstone) {
+        if (!baseSong) {
+          conflicts.push({ id, type: 'song', title: localSong.title,
+            reason: 'Different local and cloud versions share an ID without a common base' })
+          mergedSongs.push(localSong, { ...remoteSong, id: generateUUID(), title: `${remoteSong.title} (Cloud Copy)` })
+        } else if (localTombstone && remoteTombstone) {
           // Both sides marked it deleted -> keep tombstone without creating conflict copy
           mergedSongs.push({ ...localSong, isDeleted: true })
         } else if (localTombstone && !remoteTombstone) {
@@ -455,9 +473,8 @@ export function reconcileSongbook(
             reason: 'Song was modified locally while deleted in the cloud',
           })
           mergedSongs.push(localSong)
-        } else if (baseSong) {
-          // BOTH sides modified differently from a known common base: true concurrent conflict.
-          // A conflict copy is safe to create because baseSong confirms independent divergence.
+        } else {
+          // Differing live edits require preservation even without a common base item.
           conflicts.push({
             id,
             type: 'song',
@@ -473,11 +490,6 @@ export function reconcileSongbook(
             title: `${remoteSong.title} (Cloud Copy)`,
           }
           mergedSongs.push(conflictCopy)
-        } else {
-          // No common base snapshot available: cannot confirm independent concurrent modification.
-          // Prefer remote (last uploaded canonical state) to avoid spurious library duplication.
-          // Local edits without a base are superseded by the remote authoritative version.
-          mergedSongs.push(remoteSong)
         }
       }
     }
@@ -671,18 +683,20 @@ async function safeParseJsonResponse<T>(res: Response | { ok?: boolean; status?:
 /**
  * Executes Cloud Songbook Sync against the server API
  */
-export async function performCloudSongbookSync(
+async function executeCloudSongbookSync(
   token: string,
   options?: {
     forceAction?: 'upload' | 'download' | 'merge_preserve'
     localLibraryOverride?: SyncLibrary
     storage?: Storage
-  }
+  },
+  retry?: { attempt: number; base: SyncLibrary; userId: string | null }
 ): Promise<CloudSyncResult> {
   const targetStorage = options?.storage || (typeof localStorage !== 'undefined' ? localStorage : ({} as Storage))
 
   // 1. Read and normalize local library
-  const rawLocal = options?.localLibraryOverride || readPersistedLibrary(targetStorage)
+  const persistedAtStart = readPersistedLibrary(targetStorage)
+  const rawLocal = options?.localLibraryOverride || persistedAtStart
   if (!rawLocal) {
     return {
       success: false,
@@ -759,8 +773,41 @@ export async function performCloudSongbookSync(
     }
   }
 
+  if (retry && retry.userId !== currentUserId) {
+    return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
+      error: 'Account changed during reconciliation. Local data preserved; sign in again and export a backup.' }
+  }
+
+  // A rejected upload is reconciled against a fresh GET, never replayed blindly.
+  const recoverConflict = async (pending: SyncLibrary): Promise<CloudSyncResult> => {
+    try {
+      const key = `gtar_sync_recovery:concurrency:${Date.now()}:${generateUUID()}`
+      const snapshot = JSON.stringify({ local: pending, remote: cloudRecord?.data ?? null })
+      targetStorage.setItem(key, snapshot)
+      if (targetStorage.getItem(key) !== snapshot) throw new Error('Recovery snapshot unavailable')
+      if ((retry?.attempt ?? 0) >= 2) {
+        return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'CONFLICT_DETECTED',
+          error: 'Cloud keeps changing. Local edits and recovery snapshot preserved. Export a backup and retry sync when other devices are idle.' }
+      }
+      // Preserve edits made in this browser while the request was in flight.
+      const latest = readPersistedLibrary(targetStorage)
+      const preserved = latest && persistedAtStart && (retry || !options?.localLibraryOverride)
+        ? reconcileSongbook(latest, pending, persistedAtStart).merged : pending
+      const result = await executeCloudSongbookSync(token, {
+        storage: targetStorage, forceAction: 'merge_preserve', localLibraryOverride: preserved,
+      }, { attempt: (retry?.attempt ?? 0) + 1,
+        base: cloudRecord?.data ?? { songs: [], setlists: [] }, userId: currentUserId })
+      if (!result.success) result.error = `${result.error || 'Reconciliation incomplete'} Local edits and recovery snapshot preserved; reconnect and retry, or export a backup.`
+      return result
+    } catch (err) {
+      return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
+        error: `Cannot safely reconcile: ${err instanceof Error ? err.message : String(err)}. Local edits preserved; export a backup before retrying.` }
+    }
+  }
+
   // 3. Evaluate Decision
   let baseMeta = readCloudSyncMeta(targetStorage)
+  const baseOwnerMatches = baseMeta.lastSyncedUserId === currentUserId
   // Strict multi-user isolation: if baseMeta belonged to a different user, clear it from decision
   if (currentUserId && baseMeta.lastSyncedUserId && baseMeta.lastSyncedUserId !== currentUserId) {
     baseMeta = {
@@ -779,7 +826,8 @@ export async function performCloudSongbookSync(
   })
 
   // 4. Check for forceAction overrides or execute decided action
-  const actionToExecute = options?.forceAction
+  const actionToExecute = retry && decisionResult.decision === 'NOOP' ? 'NOOP'
+    : retry && !cloudRecord ? 'UPLOAD' : options?.forceAction
     ? options.forceAction === 'upload'
       ? 'UPLOAD'
       : options.forceAction === 'download'
@@ -788,29 +836,50 @@ export async function performCloudSongbookSync(
     : decisionResult.decision
 
   if (actionToExecute === 'NOOP') {
-    saveCloudSyncMeta(
-      {
-        lastSyncedChecksum: decisionResult.localChecksum,
-        lastSyncedAt: Date.now(),
-        cloudVersion: cloudRecord?.version ?? baseMeta.cloudVersion,
-        lastSyncedUserId: currentUserId || baseMeta.lastSyncedUserId,
-      },
-      targetStorage
-    )
-    saveCloudSyncBase(localLibrary, targetStorage)
-    return {
-      success: true,
-      status: 'IN_SYNC',
-      state: 'SAME_STATE',
-      actionTaken: 'NONE',
-      version: cloudRecord?.version,
-      checksum: decisionResult.localChecksum,
-      updatedLibrary: localLibrary,
+    try {
+      const latest = readPersistedLibrary(targetStorage)
+      const appliedLibrary = latest && persistedAtStart
+        ? reconcileSongbook(latest, localLibrary, persistedAtStart).merged : localLibrary
+      persistLibrary(appliedLibrary, targetStorage)
+      saveCloudSyncMeta(
+        {
+          lastSyncedChecksum: decisionResult.localChecksum,
+          lastSyncedAt: Date.now(),
+          cloudVersion: cloudRecord?.version ?? baseMeta.cloudVersion,
+          lastSyncedUserId: currentUserId || baseMeta.lastSyncedUserId,
+        },
+        targetStorage
+      )
+      saveCloudSyncBase(localLibrary, targetStorage)
+      return {
+        success: true,
+        status: 'IN_SYNC',
+        state: 'SAME_STATE',
+        actionTaken: 'NONE',
+        version: cloudRecord?.version,
+        checksum: decisionResult.localChecksum,
+        updatedLibrary: appliedLibrary,
+      }
+    } catch (err) {
+      return { success: false, status: 'ERROR', state: decisionResult.state, actionTaken: 'NONE',
+        error: `Cannot apply reconciled songbook: ${err instanceof Error ? err.message : String(err)}. Export a backup before retrying.` }
     }
   }
 
   if (actionToExecute === 'UPLOAD') {
     try {
+      // Explicit replacement must also retain the cloud revision being replaced.
+      if (options?.forceAction === 'upload' && cloudRecord) {
+        const recoveryKey = `gtar_sync_recovery:upload:${Date.now()}:${generateUUID()}`
+        const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: cloudRecord.data })
+        try {
+          targetStorage.setItem(recoveryKey, recoverySnapshot)
+          if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) throw new Error('Snapshot readback failed')
+        } catch {
+          return { success: false, status: 'ERROR', state: decisionResult.state, actionTaken: 'NONE',
+            error: 'Recovery snapshot could not be saved. Free browser storage or export a backup before replacing the cloud songbook.' }
+        }
+      }
       const uploadRes = await fetch('/api/songbook/sync', {
         method: 'POST',
         headers: {
@@ -821,6 +890,8 @@ export async function performCloudSongbookSync(
           action: 'upload',
           data: localLibrary,
           clientChecksum: decisionResult.localChecksum,
+          expectedVersion: cloudRecord?.version ?? 0,
+          expectedChecksum: cloudRecord?.checksum ?? null,
         }),
         signal: AbortSignal.timeout(15000),
       })
@@ -831,6 +902,8 @@ export async function performCloudSongbookSync(
         userId?: string
         error?: string
       }>(uploadRes)
+
+      if (uploadRes.status === 409) return recoverConflict(localLibrary)
 
       if (!uploadRes.ok) {
         let errStr = `Upload failed (${uploadRes.status})`
@@ -860,6 +933,10 @@ export async function performCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
+      const latest = readPersistedLibrary(targetStorage)
+      const appliedLibrary = latest && persistedAtStart
+        ? reconcileSongbook(latest, localLibrary, persistedAtStart).merged : localLibrary
+      persistLibrary(appliedLibrary, targetStorage)
 
       saveCloudSyncMeta(
         {
@@ -879,7 +956,7 @@ export async function performCloudSongbookSync(
         actionTaken: 'UPLOADED',
         version: uploadData.cloudRecord.version,
         checksum: uploadData.cloudRecord.checksum,
-        updatedLibrary: localLibrary,
+        updatedLibrary: appliedLibrary,
       }
     } catch (err) {
       return {
@@ -923,11 +1000,21 @@ export async function performCloudSongbookSync(
         }
       }
 
-      // Save safety snapshot of local data before replacing
+      // A download must not replace edits made while GET was in flight.
+      const latest = readPersistedLibrary(targetStorage)
+      if (JSON.stringify(latest) !== JSON.stringify(persistedAtStart)) {
+        return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'NONE',
+          error: 'Local library changed during cloud download. Current edits preserved. Retry sync and merge, or export a backup.' }
+      }
+
+      // Read back durable recovery before any destructive local replacement.
+      const recoveryKey = `gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`
+      const recoverySnapshot = JSON.stringify(latest ?? localLibrary)
       try {
-        targetStorage.setItem(`gtar_sync_recovery:${Date.now()}`, JSON.stringify(localLibrary))
-      } catch {
-        // quota
+        targetStorage.setItem(recoveryKey, recoverySnapshot)
+        if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) throw new Error('Snapshot readback failed')
+      } catch (err) {
+        throw new Error('Recovery snapshot could not be saved. Free browser storage or export a backup before retrying download.', { cause: err })
       }
 
       persistLibrary(downloadedLibrary, targetStorage)
@@ -963,7 +1050,9 @@ export async function performCloudSongbookSync(
     }
   }
 
-  const baseSnapshot = readCloudSyncBase(targetStorage)
+  const storedBase = readCloudSyncBase(targetStorage)
+  const baseSnapshot = retry?.base ?? (baseOwnerMatches && storedBase &&
+    computeSongbookChecksum(storedBase) === baseMeta.lastSyncedChecksum ? storedBase : null)
 
   if (actionToExecute === 'MERGE' && cloudRecord) {
     try {
@@ -978,6 +1067,10 @@ export async function performCloudSongbookSync(
         }
       }
 
+      if (!baseSnapshot) {
+        return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'CONFLICT_DETECTED',
+          error: 'Common sync snapshot unavailable. Local edits preserved. Export a backup before choosing upload or download.' }
+      }
       const reconciliation = reconcileSongbook(localLibrary, incoming, baseSnapshot)
       const mergedLib = reconciliation.merged
 
@@ -993,15 +1086,13 @@ export async function performCloudSongbookSync(
         }
       }
 
-      // Save safety snapshot before overwriting
-      try {
-        targetStorage.setItem(`gtar_sync_recovery:${Date.now()}`, JSON.stringify(localLibrary))
-      } catch {
-        // quota
+      // Require durable recovery before attempting a merge write.
+      const recoveryKey = `gtar_sync_recovery:merge:${Date.now()}:${generateUUID()}`
+      const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: incoming })
+      targetStorage.setItem(recoveryKey, recoverySnapshot)
+      if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) {
+        throw new Error('Recovery snapshot unavailable. Export a backup before retrying.')
       }
-
-      // Persist merged locally
-      persistLibrary(mergedLib, targetStorage)
 
       // Upload merged to cloud
       const uploadRes = await fetch('/api/songbook/sync', {
@@ -1014,6 +1105,8 @@ export async function performCloudSongbookSync(
           action: 'resolve',
           data: mergedLib,
           clientChecksum: computeSongbookChecksum(mergedLib),
+          expectedVersion: cloudRecord.version,
+          expectedChecksum: cloudRecord.checksum,
         }),
         signal: AbortSignal.timeout(15000),
       })
@@ -1024,6 +1117,8 @@ export async function performCloudSongbookSync(
         userId?: string
         error?: string
       }>(uploadRes)
+
+      if (uploadRes.status === 409) return recoverConflict(mergedLib)
 
       if (!uploadRes.ok) {
         let errStr = `Upload of merged songbook failed (${uploadRes.status})`
@@ -1053,6 +1148,12 @@ export async function performCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
+      const latest = readPersistedLibrary(targetStorage)
+      const appliedLibrary = latest && persistedAtStart && (retry || !options?.localLibraryOverride)
+        ? reconcileSongbook(latest, mergedLib, persistedAtStart).merged : mergedLib
+      // Persist before acknowledging sync metadata. The base remains the uploaded
+      // revision even if newer in-flight browser edits are still pending locally.
+      persistLibrary(appliedLibrary, targetStorage)
 
       saveCloudSyncMeta(
         {
@@ -1073,7 +1174,7 @@ export async function performCloudSongbookSync(
         version: uploadData.cloudRecord.version,
         checksum: uploadData.cloudRecord.checksum,
         conflicts: reconciliation.conflicts,
-        updatedLibrary: mergedLib,
+        updatedLibrary: appliedLibrary,
       }
     } catch (err) {
       return {
@@ -1096,4 +1197,15 @@ export async function performCloudSongbookSync(
     error: 'Conflicting edits detected between local device and cloud.',
     conflicts: reconciliation.conflicts,
   }
+}
+
+export function performCloudSongbookSync(
+  token: string,
+  options?: {
+    forceAction?: 'upload' | 'download' | 'merge_preserve'
+    localLibraryOverride?: SyncLibrary
+    storage?: Storage
+  }
+): Promise<CloudSyncResult> {
+  return executeCloudSongbookSync(token, options)
 }

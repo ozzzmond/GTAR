@@ -155,10 +155,11 @@ test('3: D1 migration 0002_songbook_sync.sql defines user_songbooks table and ca
 
 test('4: D1 schema operations support both Songbook and Setlist (DEV7) sync within user_songbooks payload', async () => {
   const users = new Map()
-  const songbooks = new Map()
+  const songbookDb = require('./helpers/songbookSqlite.cjs').createSongbookSqlite()
 
   const mockDb = {
     prepare(sql) {
+      if (sql.includes('user_songbooks')) return songbookDb.prepare(sql)
       let bound = []
       return {
         bind(...args) {
@@ -169,9 +170,7 @@ test('4: D1 schema operations support both Songbook and Setlist (DEV7) sync with
           if (sql.includes('FROM users WHERE id = ?')) {
             return users.get(bound[0]) || null
           }
-          if (sql.includes('FROM user_songbooks WHERE user_id = ?')) {
-            return songbooks.get(bound[0]) || null
-          }
+
           return null
         },
         async run() {
@@ -180,17 +179,7 @@ test('4: D1 schema operations support both Songbook and Setlist (DEV7) sync with
             users.set(id, { id, google_sub, email, display_name, picture_url, role, access_status, created_at, updated_at, last_login_at })
             return { success: true }
           }
-          if (sql.includes('INSERT INTO user_songbooks') || sql.includes('ON CONFLICT(user_id)')) {
-            const [userId, version, dataJson, checksum, updatedAt] = bound
-            songbooks.set(userId, {
-              user_id: userId,
-              version,
-              checksum,
-              data_json: dataJson,
-              updated_at: updatedAt,
-            })
-            return { success: true }
-          }
+
           return { success: true }
         },
       }
@@ -221,7 +210,7 @@ test('4: D1 schema operations support both Songbook and Setlist (DEV7) sync with
   }
   const checksum = computeSongbookChecksum(payload)
 
-  await upsertUserSongbook(mockDb, userId, JSON.stringify(payload), checksum, new Date().toISOString())
+  await upsertUserSongbook(mockDb, userId, JSON.stringify(payload), checksum, new Date().toISOString(), { version: 0, checksum: null })
 
   // Verify retrieval
   const retrieved = await findUserSongbook(mockDb, userId)

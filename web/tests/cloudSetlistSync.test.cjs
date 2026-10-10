@@ -53,12 +53,12 @@ const { resolveSetlistSong } = require('../src/utils/setlistSongs.ts')
 // Helper for Mock D1
 function createMockD1() {
   const users = new Map()
-  const songbooks = new Map()
+  const songbookDb = require('./helpers/songbookSqlite.cjs').createSongbookSqlite()
 
   return {
     _users: users,
-    _songbooks: songbooks,
     prepare(sql) {
+      if (sql.includes('user_songbooks')) return songbookDb.prepare(sql)
       let bound = []
       return {
         bind(...args) {
@@ -77,10 +77,7 @@ function createMockD1() {
             }
             return null
           }
-          if (sql.includes('FROM user_songbooks WHERE user_id = ?')) {
-            const [userId] = bound
-            return songbooks.get(userId) || null
-          }
+
           return null
         },
         async all() {
@@ -92,28 +89,8 @@ function createMockD1() {
             users.set(id, { id, google_sub, email, display_name, picture_url, role, access_status, created_at, updated_at, last_login_at })
             return { success: true }
           }
-          if (sql.includes('INSERT INTO user_songbooks')) {
-            const [userId, version, checksum, dataJson, updatedAt] = bound
-            songbooks.set(userId, {
-              user_id: userId,
-              version,
-              checksum,
-              data_json: dataJson,
-              updated_at: updatedAt,
-            })
-            return { success: true }
-          }
-          if (sql.includes('UPDATE user_songbooks')) {
-            const [version, checksum, dataJson, updatedAt, userId] = bound
-            songbooks.set(userId, {
-              user_id: userId,
-              version,
-              checksum,
-              data_json: dataJson,
-              updated_at: updatedAt,
-            })
-            return { success: true }
-          }
+
+
           return { success: true }
         },
       }
@@ -455,6 +432,8 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       action: 'upload',
+      expectedVersion: 0,
+      expectedChecksum: null,
       data: {
         songs: [{ id: generateUUID(), title: 'Test Song', rawContent: '[C]Chord' }],
         setlists: [{ id: generateUUID(), name: '', songs: [] }],
@@ -470,6 +449,8 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       action: 'upload',
+      expectedVersion: 0,
+      expectedChecksum: null,
       data: {
         songs: [{ id: generateUUID(), title: 'Test Song', rawContent: '[C]Chord' }],
         setlists: [{ id: generateUUID(), name: 'Set', songs: 'not-an-array' }],
@@ -485,6 +466,8 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       action: 'upload',
+      expectedVersion: 0,
+      expectedChecksum: null,
       data: {
         songs: [{ id: generateUUID(), title: 'Test Song', rawContent: '[C]Chord' }],
         setlists: [{ id: generateUUID(), name: 'Set', songs: [], isDeleted: 'yes' }],
@@ -502,6 +485,8 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       action: 'upload',
+      expectedVersion: 0,
+      expectedChecksum: null,
       data: {
         songs: [{ id: validSongId, title: 'Valid Song', rawContent: '[G]Chord' }],
         setlists: [

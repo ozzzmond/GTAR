@@ -154,6 +154,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     data?: unknown
     clientChecksum?: string
     clientVersion?: number
+    expectedVersion?: number
+    expectedChecksum?: string | null
   }
 
   try {
@@ -177,7 +179,22 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const serialized = JSON.stringify(body.data)
     const nowIso = new Date().toISOString()
 
-    const result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso)
+    // Legacy clientChecksum describes the uploaded content, not its cloud base.
+    // Missing/invalid bases fail closed, including on the first write.
+    const version = body.expectedVersion
+    const expectedChecksum = body.expectedChecksum
+    if (!Number.isSafeInteger(version) || typeof version !== 'number' || version < 0 ||
+        (version === 0 ? expectedChecksum !== null :
+          typeof expectedChecksum !== 'string' || !/^ck_[0-9a-f]{16}$/.test(expectedChecksum))) {
+      return jsonResponse({ success: false, code: 'SONGBOOK_REVISION_CONFLICT',
+        error: 'Missing or invalid cloud revision. Update the app, fetch cloud state and merge before retrying.' }, 409)
+    }
+    const result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso,
+      { version, checksum: expectedChecksum as string | null })
+    if (!result) {
+      return jsonResponse({ success: false, code: 'SONGBOOK_REVISION_CONFLICT',
+        error: 'Cloud songbook changed. Fetch cloud state and reconcile before retrying.' }, 409)
+    }
 
     return jsonResponse({
       success: true,
