@@ -6,8 +6,8 @@ import { isSongInSetlist } from '../utils/setlistSongs'
 interface Props {
   song: ActiveSongState
   setlists: WebSetlist[]
-  onMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => void
-  onCreate: (songId: string | number, name: string) => void
+  onMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
+  onCreate: (songId: string | number, name: string) => boolean
   onClose: () => void
 }
 
@@ -40,8 +40,14 @@ export function SongSetlistDialog({ song, setlists, onMembershipChange, onCreate
             checked={song.id !== undefined && isSongInSetlist(setlist, song.id)}
             onChange={event => {
               if (song.id === undefined) return
-              onMembershipChange(song.id, setlist.id, event.target.checked)
-              setFeedback(`${event.target.checked ? 'Added to' : 'Removed from'} ${setlist.name}`)
+              try {
+                const success = onMembershipChange(song.id, setlist.id, event.target.checked)
+                setFeedback(success === true
+                  ? `${event.target.checked ? 'Added to' : 'Removed from'} ${setlist.name}`
+                  : 'Could not update setlist. Please try again.')
+              } catch {
+                setFeedback('Could not update setlist. Please try again.')
+              }
             }} />
           <span className="text-sm break-words min-w-0">{setlist.name}</span>
         </label>)}
@@ -49,9 +55,16 @@ export function SongSetlistDialog({ song, setlists, onMembershipChange, onCreate
       <form className="border-t border-app-border mt-4 pt-4" onSubmit={event => {
         event.preventDefault()
         if (!name.trim() || song.id === undefined) return
-        onCreate(song.id, name.trim())
-        setFeedback(`Added to ${name.trim()}`)
-        setName('')
+        try {
+          if (onCreate(song.id, name.trim()) === true) {
+            setFeedback(`Added to ${name.trim()}`)
+            setName('')
+          } else {
+            setFeedback('Could not create setlist. Please try again.')
+          }
+        } catch {
+          setFeedback('Could not create setlist. Please try again.')
+        }
       }}>
         <label htmlFor="quick-setlist-name" className="text-xs font-semibold">Create New Setlist</label>
         <div className="flex gap-2 mt-2">

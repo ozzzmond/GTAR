@@ -29,8 +29,8 @@ import { SwipeableActionCard } from './SwipeableActionCard'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface SongbookHomeViewProps {
-  onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => void
-  onCreateSetlistForSong: (songId: string | number, name: string) => void
+  onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
+  onCreateSetlistForSong: (songId: string | number, name: string) => boolean
   songs: ActiveSongState[]
   activeSongIndex: number
   onSelectSong: (index: number) => void

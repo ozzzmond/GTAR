@@ -1297,20 +1297,28 @@ function LibraryApp() {
   const handleSongMembership = (songId: string | number, setlistId: string | number, included: boolean) => {
     const song = songs.find(item => String(item.id) === String(songId))
     const setlist = setlists.find(item => String(item.id) === String(setlistId))
-    if (!song || !setlist) return
-    setSetlists(previous => previous.map(item => String(item.id) === String(setlistId)
-      ? setSongMembership(item, song, included) : item))
+    if (!song || song.isDeleted || !setlist || setlist.isDeleted) return false
+    const nextSetlists = setlists.map(item => String(item.id) === String(setlistId)
+      ? setSongMembership(item, song, included) : item)
+    try { persistLibrary({ songs: [...songs, ...deletedSongs], setlists: nextSetlists }) }
+    catch (err) { handleStorageWriteFailure(err); return false }
+    setSetlists(nextSetlists)
     setToastMessage(`${included ? 'Added to' : 'Removed from'} ${setlist.name}`)
     setTimeout(() => setToastMessage(null), 3000)
+    return true
   }
 
   const handleCreateSetlistForSong = (songId: string | number, name: string) => {
     const song = songs.find(item => String(item.id) === String(songId))
-    if (!song || !name.trim()) return
+    if (!song || song.isDeleted || !name.trim()) return false
     const created = setSongMembership({ id: generateUUID(), name: name.trim(), createdAt: Date.now(), songs: [] }, song, true)
-    setSetlists(previous => [...previous, created])
+    const nextSetlists = [...setlists, created]
+    try { persistLibrary({ songs: [...songs, ...deletedSongs], setlists: nextSetlists }) }
+    catch (err) { handleStorageWriteFailure(err); return false }
+    setSetlists(nextSetlists)
     setToastMessage(`Added to ${created.name}`)
     setTimeout(() => setToastMessage(null), 3000)
+    return true
   }
 
   // Create a new setlist
@@ -1545,15 +1553,6 @@ function LibraryApp() {
     setIncomingSharedSetlist(null)
   }
 
-  // Filter songs if searchQuery is active
-  const filteredSongs = searchQuery.trim()
-    ? songs.filter(
-        (s) =>
-          s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.artist?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : songs
-
   return (
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
@@ -1563,7 +1562,7 @@ function LibraryApp() {
           onViewChange={(view) => navigateSafely(() => setActiveView(view))}
           song={currentSong}
           allSongs={songs}
-          songsCount={filteredSongs.length > 0 ? filteredSongs.length : songs.length}
+          songsCount={songs.length}
           deletedSongsCount={deletedSongs.length}
           activeSongIndex={activeSongIndex}
           queueMode={queueMode}
@@ -1677,7 +1676,7 @@ function LibraryApp() {
           <StageErrorBoundary onExitToSongbook={() => setActiveView('songbook')}>
             <StageView
               song={currentSong}
-              songs={filteredSongs.length > 0 ? filteredSongs : songs}
+              songs={songs}
               activeSongIndex={activeSongIndex}
               onSelectSongIndex={handleSelectLibrarySong}
               queueMode={queueMode}
@@ -1733,7 +1732,7 @@ function LibraryApp() {
             backdropStyle={backdropStyle}
             drawerTouchHandlers={drawerTouchHandlers}
             onClose={() => setIsSetlistDrawerOpen(false)}
-            songs={filteredSongs.length > 0 ? filteredSongs : songs}
+            songs={songs}
             activeSongIndex={activeSongIndex}
             onSelectSongIndex={(idx) => {
               navigateSafely(() => {
@@ -1756,6 +1755,8 @@ function LibraryApp() {
             onRemoveSetlistSong={handleRemoveSetlistSong}
             onDeleteSetlist={handleDeleteSetlist}
             onDeleteSong={handleDeleteSong}
+            onSongMembershipChange={handleSongMembership}
+            onCreateSetlistForSong={handleCreateSetlistForSong}
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}
             onImportSingleSetlist={handleImportSingleSetlist}

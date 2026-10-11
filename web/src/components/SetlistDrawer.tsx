@@ -43,8 +43,8 @@ interface SetlistDrawerProps {
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   onExportAllData?: () => void
   onShareSetlist?: (setlist: WebSetlist) => void
-  onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => void
-  onCreateSetlistForSong?: (songId: string | number, name: string) => void
+  onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => boolean
+  onCreateSetlistForSong?: (songId: string | number, name: string) => boolean
   initialTab?: 'songbook' | 'setlists'
   drawerStyle?: React.CSSProperties
   backdropStyle?: React.CSSProperties
@@ -85,7 +85,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 }) => {
   const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>(initialTab || 'songbook')
   const [searchQuery, setSearchQuery] = useState('')
-  const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const [expandedSetlistId, setExpandedSetlistId] = useState<string | number | null>(activeSetlistId)
   const [drawerToast, setDrawerToast] = useState<string | null>(null)
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
@@ -210,20 +210,21 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
     return matchName || matchSong
   })
 
-  const handleDeleteClick = (e: React.MouseEvent, index: number) => {
+  const handleDeleteClick = (e: React.MouseEvent, id: string | number) => {
     e.stopPropagation()
-    setConfirmDeleteIndex(index)
+    setConfirmDeleteId(id)
   }
 
-  const handleConfirmDelete = (e: React.MouseEvent, index: number) => {
+  const handleConfirmDelete = (e: React.MouseEvent, id: string | number) => {
     e.stopPropagation()
-    onDeleteSong(index)
-    setConfirmDeleteIndex(null)
+    const index = songs.findIndex(song => song.id !== undefined && String(song.id) === String(id))
+    if (index !== -1) onDeleteSong(index)
+    setConfirmDeleteId(null)
   }
 
   const handleCancelDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setConfirmDeleteIndex(null)
+    setConfirmDeleteId(null)
   }
 
   return (
@@ -243,7 +244,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         onTouchMove={drawerTouchHandlers?.onTouchMove}
         onTouchEnd={drawerTouchHandlers?.onTouchEnd}
         onTouchCancel={drawerTouchHandlers?.onTouchCancel}
-        onClick={() => setConfirmDeleteIndex(null)}
+        onClick={() => setConfirmDeleteId(null)}
       >
         {/* Drawer Header */}
         <div className="p-4 border-b border-app-border bg-app-base flex items-center justify-between">
@@ -308,7 +309,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             <Search className="w-3.5 h-3.5 text-app-muted" />
             <input
               type="text"
-              autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={drawerTab === 'setlists' ? 'Search setlists by name or track...' : 'Search by title or artist...'}
@@ -598,17 +598,18 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             </div>
           ) : (
             filteredSongs.map((item) => {
-              const originalIndex = songs.indexOf(item)
+              const originalIndex = item.id === undefined ? songs.indexOf(item)
+                : songs.findIndex(song => song.id !== undefined && String(song.id) === String(item.id))
               const isActive = originalIndex === activeSongIndex
-              const isDeleting = confirmDeleteIndex === originalIndex
+              const isDeleting = confirmDeleteId !== null && String(confirmDeleteId) === String(item.id)
               const metadataStatus = getSongMetadataStatus(item)
               const isMetaOk = metadataStatus.status === 'METADATA_OK'
 
               return (
                 <div
-                  key={item.id || originalIndex}
+                  key={item.id ?? originalIndex}
                   onClick={() => {
-                    onSelectSongIndex(originalIndex)
+                    if (originalIndex !== -1) onSelectSongIndex(originalIndex)
                     onClose()
                   }}
                   className={`relative p-3 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer select-none group ${
@@ -684,7 +685,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     {/* Inline Trash / Delete Button */}
                     <button
                       type="button"
-                      onClick={(e) => handleDeleteClick(e, originalIndex)}
+                      onClick={(e) => item.id !== undefined && handleDeleteClick(e, item.id)}
                       className="p-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5 focus:outline-none focus:ring-1 focus:ring-status-error"
                       title="Delete song from library"
                       aria-label="Delete song from library"
@@ -706,7 +707,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                       <div className="flex items-center gap-1.5 text-xs font-bold font-mono">
                         <button
                           type="button"
-                          onClick={(e) => handleConfirmDelete(e, originalIndex)}
+                          onClick={(e) => item.id !== undefined && handleConfirmDelete(e, item.id)}
                           className="px-2.5 py-1 rounded-lg bg-[#DC6E67] text-white hover:bg-[#DC6E67]/90 transition-colors cursor-pointer shadow-sm"
                         >
                           Confirm
@@ -766,13 +767,15 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
           setlists={activeSetlists}
           onMembershipChange={(songId, setlistId, included) => {
             if (onSongMembershipChange) {
-              onSongMembershipChange(songId, setlistId, included)
+              return onSongMembershipChange(songId, setlistId, included)
             }
+            return false
           }}
           onCreate={(songId, name) => {
             if (onCreateSetlistForSong) {
-              onCreateSetlistForSong(songId, name)
+              return onCreateSetlistForSong(songId, name)
             }
+            return false
           }}
           onClose={() => setMembershipSongId(null)}
         />
