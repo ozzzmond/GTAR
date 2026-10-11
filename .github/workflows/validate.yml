@@ -29,4 +29,5 @@ jobs:
       - run: node --test ../tests/*.test.cjs
       - run: npm test
       - run: npm run lint:sync
+      - run: npm run lint
       - run: npm run build
