@@ -102,6 +102,8 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       createdAt: s.createdAt ?? null,
       lastOpenedAt: s.lastOpenedAt ?? null,
       isMissing: Boolean(s.isMissing),
+      sharedSourceSongId: s.sharedSourceSongId || null,
+      sharedSourceRevision: s.sharedSourceRevision ?? null,
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 
