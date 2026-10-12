@@ -285,7 +285,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   const isHighContrast = chordScale >= 1.2 && fontWeight === 'bold'
 
   const renderAnchored = (segments: ChordSegment[], key: number) => (
-    <div key={key} className={`${fontClass} stage-anchored-line select-text`}
+    <div key={key} data-stage-line="true" className={`${fontClass} stage-anchored-line select-text`}
       style={{ fontSize: fontSizePx, padding: spacing.chordProPadding, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start' }}>
       {chordLyricWords(segments).map((word, wordIndex) => (
         <span key={wordIndex} className="stage-anchored-word" style={{ display: 'inline-flex', maxWidth: '100%', minWidth: 0 }}>
@@ -323,6 +323,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
           case 'SECTION_HEADER':
             return (
               <div key={idx} role="heading" aria-level={3}
+                data-stage-line="true"
                 data-stage-section="true"
                 data-section-title={line.title}
                 data-section-index={idx}
@@ -345,6 +346,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             return (
               <div
                 key={idx}
+                data-stage-line="true"
                 style={{
                   paddingTop: spacing.chordRowPt,
                   paddingBottom: spacing.chordRowPb,
@@ -370,6 +372,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
             return (
               <div
                 key={idx}
+                data-stage-line="true"
                 style={{
                   paddingTop: spacing.lyricRowPt,
                   paddingBottom: spacing.lyricRowPb,
@@ -394,6 +397,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               return (
                 <div
                   key={idx}
+                  data-stage-line="true"
                   style={{
                     paddingTop: '1.5px',
                     paddingBottom: '1.5px',

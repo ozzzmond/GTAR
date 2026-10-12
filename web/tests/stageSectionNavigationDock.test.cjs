@@ -360,3 +360,90 @@ test('EXISTING_STAGE_CONTINUITY_REGRESSION: PageUp/PageDown section shortcuts, L
   assert.ok(stageViewSource.includes('onOpenSetlistDrawer()'), 'Setlist drawer action preserved')
   assert.ok(stageViewSource.includes('TvPresentationModal'), 'TV Stage Cast modal preserved')
 })
+
+// =========================================================================
+// TEST 12: FONT_RESIZE_VIEWPORT_VISUAL_ANCHORING
+// =========================================================================
+test('FONT_RESIZE_VIEWPORT_VISUAL_ANCHORING: StageView and SongLineRenderer implement reflow visual anchoring without scroll jump', () => {
+  const stageViewSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  const songLineRendererSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SongLineRenderer.tsx'), 'utf8')
+
+  // SongLineRenderer attaches data-stage-line attribute to rendered lines
+  assert.ok(
+    songLineRendererSource.includes('data-stage-line="true"'),
+    'SongLineRenderer must mark rendered lines with data-stage-line="true" for anchor query'
+  )
+
+  // StageView tracks anchor prior to reflow
+  assert.ok(
+    stageViewSource.includes('fontResizeAnchorRef'),
+    'StageView must maintain fontResizeAnchorRef to preserve visible position across font reflow'
+  )
+  assert.ok(
+    stageViewSource.includes('captureFontResizeAnchor'),
+    'StageView must provide captureFontResizeAnchor function'
+  )
+  assert.ok(
+    stageViewSource.includes('[data-stage-line="true"]'),
+    'captureFontResizeAnchor must query [data-stage-line="true"] elements'
+  )
+
+  // StageView uses useLayoutEffect to synchronously adjust scrollTop before paint
+  assert.ok(
+    stageViewSource.includes('prevFontSizePxRef.current === fontSizePx'),
+    'StageView must compare previous and current fontSizePx in layout effect'
+  )
+  assert.ok(
+    stageViewSource.includes('accumulatedScrollRef.current = targetScrollTop'),
+    'StageView must synchronize subpixel autoscroll accumulator on font reflow'
+  )
+  assert.ok(
+    stageViewSource.includes('stageCast.broadcastScroll(targetScrollTop, fraction)'),
+    'StageView must broadcast corrected scroll to teleprompter cast on font reflow'
+  )
+})
+
+// =========================================================================
+// TEST 13: STAGE_OPTIONS_FONT_CONTROLS_AND_REDUNDANT_HEADER_STEPPER_REMOVAL
+// =========================================================================
+test('STAGE_OPTIONS_FONT_CONTROLS_AND_REDUNDANT_HEADER_STEPPER_REMOVAL: redundant top stepper removed while Stage Options modal preserves presets, steppers, and shortcuts', () => {
+  const stageViewSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
+
+  // Redundant top bar stepper outside Stage Options must NOT exist
+  assert.ok(
+    !stageViewSource.includes('Decrease Font Size (Hold for smooth resizing)'),
+    'Redundant top bar A- button must remain removed'
+  )
+  assert.ok(
+    !stageViewSource.includes('Increase Font Size (Hold for smooth resizing)'),
+    'Redundant top bar A+ button must remain removed'
+  )
+
+  // Stage Options Modal contains font size controls
+  assert.ok(
+    stageViewSource.includes('Decrease font size (Hold to adjust)'),
+    'Stage Options must preserve A- stepper'
+  )
+  assert.ok(
+    stageViewSource.includes('Increase font size (Hold to adjust)'),
+    'Stage Options must preserve A+ stepper'
+  )
+  assert.ok(
+    stageViewSource.includes("STAGE_SIZE_PRESETS[key]"),
+    'Stage Options must preserve S/M/L/XL size presets'
+  )
+  assert.ok(
+    stageViewSource.includes('handleNumericDoubleTap'),
+    'Stage Options must preserve numeric double-tap reset'
+  )
+
+  // Keyboard +/- shortcuts preserved
+  assert.ok(
+    stageViewSource.includes("e.key === '+' || e.key === '='"),
+    'Keyboard + shortcut preserved'
+  )
+  assert.ok(
+    stageViewSource.includes("e.key === '-'"),
+    'Keyboard - shortcut preserved'
+  )
+})

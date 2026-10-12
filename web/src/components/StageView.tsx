@@ -155,6 +155,52 @@ export const StageView: React.FC<StageViewProps> = ({
     return 20
   })
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const scrollAnimRef = useRef<number | null>(null)
+  // Sub-pixel accumulator: iOS Safari rounds scrollTop to integers, so we accumulate
+  // fractional pixels here and only commit whole-pixel increments.
+  const accumulatedScrollRef = useRef<number>(0)
+  // Timestamp of the last autoscroll activation, used to guard against touch-cancel
+  // events firing immediately after the FAB is tapped on iOS.
+  const autoScrollStartedAtRef = useRef<number>(0)
+
+  // Visual anchoring across font resize reflow:
+  // Tracks visible anchor line and viewport offset before reflow, restoring stable visual position
+  const prevFontSizePxRef = useRef<number>(fontSizePx)
+  const fontResizeAnchorRef = useRef<{
+    element: HTMLElement
+    offsetFromTop: number
+  } | null>(null)
+
+  // Capture anchor before DOM commit / when fontSizePx changes
+  const captureFontResizeAnchor = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    if (container.scrollTop <= 0) {
+      fontResizeAnchorRef.current = null
+      return
+    }
+    const containerRect = container.getBoundingClientRect()
+    const lineElements = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-stage-line="true"]')
+    )
+    let candidate = lineElements.find((el) => {
+      const rect = el.getBoundingClientRect()
+      return rect.bottom > containerRect.top + 2
+    })
+    if (!candidate && lineElements.length > 0) {
+      candidate = lineElements[0]
+    }
+    if (candidate) {
+      fontResizeAnchorRef.current = {
+        element: candidate,
+        offsetFromTop: candidate.getBoundingClientRect().top - containerRect.top,
+      }
+    } else {
+      fontResizeAnchorRef.current = null
+    }
+  }, [])
+
   // Device-level persistent Stage Typography preferences
   const [chordScale, setChordScaleState] = useState<StageChordScale>(() => {
     if (typeof window !== 'undefined') {
@@ -247,11 +293,12 @@ export const StageView: React.FC<StageViewProps> = ({
 
   const setStageFontSize = useCallback((size: number) => {
     const clamped = Math.max(12, Math.min(38, size))
+    captureFontResizeAnchor()
     setFontSizePx(clamped)
     if (typeof window !== 'undefined') {
       localStorage.setItem(SETTINGS_KEYS.fontSizePx, String(clamped))
     }
-  }, [])
+  }, [captureFontResizeAnchor])
 
   // Double tap detection on numeric font size display to reset to Stage default (L / 24px)
   const lastNumericTapRef = useRef<number>(0)
@@ -267,6 +314,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Continuous hold on A- / A+ stepper
   const holdStep = useCallback((delta: number) => {
+    captureFontResizeAnchor()
     setFontSizePx((prev) => {
       const next = Math.max(12, Math.min(38, prev + delta))
       if (typeof window !== 'undefined') {
@@ -274,7 +322,7 @@ export const StageView: React.FC<StageViewProps> = ({
       }
       return next
     })
-  }, [])
+  }, [captureFontResizeAnchor])
 
   const createHoldHandlers = useCallback((delta: number) => {
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -381,14 +429,17 @@ export const StageView: React.FC<StageViewProps> = ({
   useEffect(() => {
     const reloadSettings = () => {
       const stage = readBackupSettings().stageSettings
-      if (stage?.fontSizePx !== undefined) setFontSizePx(stage.fontSizePx)
+      if (stage?.fontSizePx !== undefined) {
+        captureFontResizeAnchor()
+        setFontSizePx(stage.fontSizePx)
+      }
       if (stage?.scrollSpeed !== undefined) setScrollSpeed(stage.scrollSpeed)
       if (stage?.fontStyle !== undefined) setLocalFontStyle(stage.fontStyle)
       if (stage?.isTwoColumn !== undefined) setLocalIsTwoColumn(stage.isTwoColumn)
     }
     window.addEventListener(SETTINGS_CHANGED, reloadSettings)
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
-  }, [])
+  }, [captureFontResizeAnchor])
 
   // Modals & Drawers
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
@@ -434,14 +485,39 @@ export const StageView: React.FC<StageViewProps> = ({
     return unsubscribe
   }, [])
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const scrollAnimRef = useRef<number | null>(null)
-  // Sub-pixel accumulator: iOS Safari rounds scrollTop to integers, so we accumulate
-  // fractional pixels here and only commit whole-pixel increments.
-  const accumulatedScrollRef = useRef<number>(0)
-  // Timestamp of the last autoscroll activation, used to guard against touch-cancel
-  // events firing immediately after the FAB is tapped on iOS.
-  const autoScrollStartedAtRef = useRef<number>(0)
+  useLayoutEffect(() => {
+    if (prevFontSizePxRef.current === fontSizePx) return
+    prevFontSizePxRef.current = fontSizePx
+
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // If viewport was at top, strictly keep it at top
+    if (container.scrollTop <= 0) {
+      return
+    }
+
+    const anchor = fontResizeAnchorRef.current
+    if (anchor && container.contains(anchor.element)) {
+      const containerRect = container.getBoundingClientRect()
+      const newDistance = anchor.element.getBoundingClientRect().top - containerRect.top
+      const delta = Math.round(newDistance - anchor.offsetFromTop)
+      if (Math.abs(delta) > 0) {
+        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+        const targetScrollTop = Math.max(0, Math.min(maxScroll, container.scrollTop + delta))
+        container.scrollTop = targetScrollTop
+        lastScrollTopRef.current = targetScrollTop
+        accumulatedScrollRef.current = targetScrollTop
+        const fraction = maxScroll > 0 ? targetScrollTop / maxScroll : 0
+        stageCast.broadcastScroll(targetScrollTop, fraction)
+        if (syncState.role === 'HOST' && maxScroll > 0) {
+          bandSync.broadcastScroll(fraction, targetScrollTop)
+        }
+      }
+    }
+    // Clean up anchor after reflow resolution
+    fontResizeAnchorRef.current = null
+  }, [fontSizePx, syncState.role])
 
   // Parse song with native v1.0.42 parser and active transpose offset
   const parsedSong = parseGtarSong(song.rawContent, transposeOffset)
@@ -867,6 +943,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
   const isPerformanceModeRef = useRef(inPerformanceMode)
   const triggerOverlaysShowRef = useRef(triggerOverlaysShow)
+  const captureFontResizeAnchorRef = useRef(captureFontResizeAnchor)
   // Publish committed values before input events; suspended renders cannot leak.
   useLayoutEffect(() => {
     executePrevSongRef.current = executePrevSong
@@ -876,7 +953,8 @@ export const StageView: React.FC<StageViewProps> = ({
     fontSizePxRef.current = fontSizePx
     isPerformanceModeRef.current = inPerformanceMode
     triggerOverlaysShowRef.current = triggerOverlaysShow
-  }, [executePrevSong, executeNextSong, canPrev, canNext, fontSizePx, inPerformanceMode, triggerOverlaysShow])
+    captureFontResizeAnchorRef.current = captureFontResizeAnchor
+  }, [executePrevSong, executeNextSong, canPrev, canNext, fontSizePx, inPerformanceMode, triggerOverlaysShow, captureFontResizeAnchor])
 
   const slideContentRef = useRef<HTMLDivElement>(null)
   const isAnimatingRef = useRef(false)
@@ -1058,6 +1136,7 @@ export const StageView: React.FC<StageViewProps> = ({
         const clamped = Math.max(12, Math.min(38, targetSize))
         if (clamped !== lastPinchSize) {
           lastPinchSize = clamped
+          captureFontResizeAnchorRef.current()
           setFontSizePx(clamped)
         }
         return
@@ -1331,8 +1410,10 @@ export const StageView: React.FC<StageViewProps> = ({
 
       // Font size steppers
       if (e.key === '+' || e.key === '=') {
+        captureFontResizeAnchor()
         setFontSizePx((prev) => Math.min(36, prev + 1))
       } else if (e.key === '-') {
+        captureFontResizeAnchor()
         setFontSizePx((prev) => Math.max(13, prev - 1))
       }
     }
@@ -1356,6 +1437,7 @@ export const StageView: React.FC<StageViewProps> = ({
     handleToggleAutoScroll,
     handleAdjustSpeed,
     isAnyOverlayActive,
+    captureFontResizeAnchor,
   ])
 
   // ---------------------------------------------------------------------------
@@ -1791,7 +1873,7 @@ export const StageView: React.FC<StageViewProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Font Family, Font Size A-/A+, Column Reflow, Transpose Stepper, Band Sync, Stage Tools, Fullscreen */}
+        {/* Right Side: Font Family, Column Reflow, Transpose Stepper, Band Sync, Stage Tools, Fullscreen */}
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
           {/* Font Family Selector (Mono / Sans / Serif matching Android SongFontStyle) */}
           <div className="flex items-center bg-app-base rounded-lg border border-app-border p-0.5 text-xs font-semibold">
@@ -1816,34 +1898,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 {label}
               </button>
             ))}
-          </div>
-
-          {/* A- / A+ Font Size Stepper (matching Compose onAdjustFontSize) */}
-          <div className="flex items-center bg-app-base rounded-lg border border-app-border p-0.5">
-            <button
-              type="button"
-              {...createHoldHandlers(-1)}
-              className="px-2 py-1 text-xs font-extrabold text-app-text hover:text-app-action rounded cursor-pointer select-none active:scale-95 transition-transform"
-              title="Decrease Font Size (Hold for smooth resizing)"
-            >
-              A-
-            </button>
-            <span
-              onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
-              onTouchStart={handleNumericDoubleTap}
-              className="text-[11px] font-mono text-app-muted px-1 font-semibold cursor-pointer select-none"
-              title="Double-tap to reset to Stage default (L / 24px)"
-            >
-              {fontSizePx}
-            </span>
-            <button
-              type="button"
-              {...createHoldHandlers(1)}
-              className="px-2 py-1 text-xs font-extrabold text-app-text hover:text-app-action rounded cursor-pointer select-none active:scale-95 transition-transform"
-              title="Increase Font Size (Hold for smooth resizing)"
-            >
-              A+
-            </button>
           </div>
 
           {/* Two-Column Reflow Toggle (Compose ViewStream vs ViewColumn) */}
