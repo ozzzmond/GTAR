@@ -65,6 +65,16 @@ function runValidation(rootDirOverride) {
     )
   }
 
+  // Fail-closed protection: explicitly reject any attempt to target production databases
+  const prodDb = config.d1_databases?.[0] || config.env?.production?.d1_databases?.[0]
+  if (prodDb && (devDb.database_id === prodDb.database_id || devDb.database_name === prodDb.database_name)) {
+    throw new Error('DEV database configuration cannot match PROD database name or ID')
+  }
+
+  if (process.env.CF_D1_TARGET === 'production' || process.env.ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production') {
+    throw new Error('Cannot execute DEV remote migration when production environment flag is set')
+  }
+
   return {
     databaseName: EXPECTED_DB_NAME,
     databaseId: EXPECTED_DB_UUID,
