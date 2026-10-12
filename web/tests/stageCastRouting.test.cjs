@@ -348,3 +348,136 @@ test('Stage Options integration: proves Sync to TV action exists inside Stage Op
   assert.match(content, /<Cast className="w-4 h-4" \/>/)
   assert.match(content, /onClick=\{handleTogglePresentation\}/)
 })
+test('Stage Cast Security: postMessage restricts targetOrigin and validates event origin', () => {
+  const oldWin = globalThis.window
+  try {
+    const postedMessages = []
+    const mockPopup = {
+      closed: false,
+      postMessage(msg, targetOrigin) {
+        postedMessages.push({ msg, targetOrigin })
+      },
+    }
+
+    const listeners = {}
+    globalThis.window = {
+      location: { origin: 'https://gtar.app', protocol: 'https:' },
+      addEventListener(type, fn) {
+        listeners[type] = fn
+      },
+      removeEventListener(type) {
+        delete listeners[type]
+      },
+      sessionStorage: {
+        getItem() { return null },
+        setItem() {},
+      },
+    }
+
+    // 1. Target origin restriction: valid origin
+    stageCast.setPopupWindow(mockPopup)
+    stageCast.broadcastState({
+      song: { id: 1, title: 'Security Test', rawContent: 'Hello' },
+      effectiveKey: 'C',
+      transposeOffset: 0,
+      fontSizePx: 28,
+      fontStyle: 'mono',
+      isTwoColumn: false,
+    })
+
+    assert.equal(postedMessages.length, 1)
+    assert.equal(postedMessages[0].targetOrigin, 'https://gtar.app', 'postMessage must target exact window origin, NOT wildcard *')
+
+    // 2. Target origin restriction: fail closed when origin is unavailable/null/*/empty
+    globalThis.window.location = { origin: '' }
+    stageCast.broadcastState({
+      song: { id: 2, title: 'Fail Closed Test', rawContent: 'World' },
+      effectiveKey: 'D',
+      transposeOffset: 0,
+      fontSizePx: 28,
+      fontStyle: 'mono',
+      isTwoColumn: false,
+    })
+    assert.equal(postedMessages.length, 1, 'Must not send postMessage when origin cannot be trusted')
+
+    globalThis.window.location = { origin: 'https://gtar.app' }
+
+    // 3. Window listener ignores messages from untrusted origins
+    let receivedState = null
+    const unsub = stageCast.subscribe((state) => {
+      receivedState = state
+    }, () => {})
+
+    assert.ok(listeners.message, 'window message listener registered')
+
+    // Untrusted origin: should be ignored
+    listeners.message({
+      origin: 'https://malicious.evil.com',
+      source: mockPopup,
+      data: {
+        source: 'GTAR_CAST',
+        message: {
+          type: 'STATE_UPDATE',
+          payload: {
+            song: { id: 999, title: 'Hijacked' },
+          },
+        },
+      },
+    })
+    assert.equal(receivedState, null, 'Untrusted origin message must be rejected')
+
+    // Untrusted sender source: should be ignored when popup is registered
+    const alienWindow = { closed: false }
+    listeners.message({
+      origin: 'https://gtar.app',
+      source: alienWindow,
+      data: {
+        source: 'GTAR_CAST',
+        message: {
+          type: 'STATE_UPDATE',
+          payload: {
+            song: { id: 888, title: 'Alien Window Hijack' },
+          },
+        },
+      },
+    })
+    assert.equal(receivedState, null, 'Untrusted sender source must be rejected')
+
+    // Non-GTAR envelope: should be ignored
+    listeners.message({
+      origin: 'https://gtar.app',
+      source: mockPopup,
+      data: {
+        source: 'SOME_OTHER_APP',
+        message: {
+          type: 'STATE_UPDATE',
+          payload: {
+            song: { id: 777, title: 'Foreign App Hijack' },
+          },
+        },
+      },
+    })
+    assert.equal(receivedState, null, 'Non-GTAR_CAST source envelope must be rejected')
+
+    // Trusted origin, trusted popup source, valid envelope: accepted
+    listeners.message({
+      origin: 'https://gtar.app',
+      source: mockPopup,
+      data: {
+        source: 'GTAR_CAST',
+        message: {
+          type: 'STATE_UPDATE',
+          payload: {
+            song: { id: 42, title: 'Legitimate Update' },
+          },
+        },
+      },
+    })
+    assert.ok(receivedState)
+    assert.equal(receivedState.song.title, 'Legitimate Update', 'Trusted origin and source message must be accepted')
+
+    unsub()
+  } finally {
+    globalThis.window = oldWin
+  }
+})

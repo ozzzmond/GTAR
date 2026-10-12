@@ -37,7 +37,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       users,
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return errorResponse(`Failed to list users: ${msg}`, 500)
+    console.error('Failed to list users:', err)
+    return errorResponse('Failed to list users', 500)
   }
 }

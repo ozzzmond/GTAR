@@ -247,3 +247,53 @@ test('EXISTING_DEV5A_INVARIANTS_PRESERVED: Deterministic transposition and metad
   assert.ok(synced.includes('{original_key: E}'), 'Metadata directive includes {original_key: E}')
   assert.ok(synced.includes('[G]You are here'), 'Original chords unaffected by directive sync')
 })
+
+// 11. DELIVERABLE 1: BACKEND ERROR SANITIZATION HIDES INTERNAL DETAILS
+test('BACKEND_ERROR_SANITIZATION: /api/setlist/share sanitizes errors and hides internal details/exceptions', async () => {
+  const shareApi = require(path.join(webDir, 'functions/api/setlist/share.ts'))
+
+  const sensitiveErrorMsg = 'FATAL: SQLite disk I/O error or constraint table shared_setlists corrupted /var/data.db'
+  const failingDb = {
+    prepare() {
+      throw new Error(sensitiveErrorMsg)
+    },
+  }
+
+  // 1. POST failure when database throws internal error
+  const postPayload = {
+    type: 'GTAR_SHARED_SETLIST',
+    name: 'Sanitization Test Setlist',
+    songs: [{ title: 'Sanitized Song', artist: 'Artist', rawContent: '[C]Chord' }],
+  }
+  const postReq = new Request('https://gtar.pages.dev/api/setlist/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(postPayload),
+  })
+
+  const postRes = await shareApi.onRequestPost({ request: postReq, env: { DB: failingDb } })
+  assert.equal(postRes.status, 500, 'Database failure on POST must return HTTP 500')
+  const postData = await postRes.json()
+  assert.equal(postData.error, 'FAILED_TO_CREATE_SHARE', 'Must return stable error code')
+  const rawPostJson = JSON.stringify(postData)
+  assert.equal(rawPostJson.includes('SQLite'), false, 'Response must not disclose SQLite details')
+  assert.equal(rawPostJson.includes('/var/data.db'), false, 'Response must not disclose internal paths')
+  assert.equal(rawPostJson.includes(sensitiveErrorMsg), false, 'Response must not disclose raw error message')
+  assert.equal(postData.details, undefined, 'Details field containing internal exceptions must not be present')
+
+  // 2. GET failure when database throws internal error
+  const validToken = '0123456789abcdef'
+  const getReq = new Request(`https://gtar.pages.dev/api/setlist/share?token=${validToken}`, {
+    method: 'GET',
+  })
+
+  const getRes = await shareApi.onRequestGet({ request: getReq, env: { DB: failingDb } })
+  assert.equal(getRes.status, 500, 'Database failure on GET must return HTTP 500')
+  const getData = await getRes.json()
+  assert.equal(getData.error, 'FAILED_TO_FETCH_SHARE', 'Must return stable error code')
+  const rawGetJson = JSON.stringify(getData)
+  assert.equal(rawGetJson.includes('SQLite'), false, 'Response must not disclose SQLite details')
+  assert.equal(rawGetJson.includes('/var/data.db'), false, 'Response must not disclose internal paths')
+  assert.equal(rawGetJson.includes(sensitiveErrorMsg), false, 'Response must not disclose raw error message')
+  assert.equal(getData.details, undefined, 'Details field containing internal exceptions must not be present')
+})

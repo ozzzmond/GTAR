@@ -65,8 +65,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
       expiresAt,
     });
   } catch (err: unknown) {
-    const details = err instanceof Error ? err.message : String(err);
-    return jsonResponse({ error: 'FAILED_TO_CREATE_SHARE', details }, 500);
+    console.error('Failed to create shared setlist:', err);
+    return jsonResponse({ error: 'FAILED_TO_CREATE_SHARE' }, 500);
   }
 };
 
@@ -100,7 +100,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     const payload = JSON.parse(row.payload_json);
     const validated = validateSharedSetlistPayload(payload);
     if (!validated.isValid) {
-      return jsonResponse({ error: 'CORRUPTED_SHARED_SETLIST', details: validated.error }, 500);
+      return jsonResponse({ error: 'CORRUPTED_SHARED_SETLIST' }, 500);
     }
 
     return jsonResponse({
@@ -108,7 +108,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
       token,
     });
   } catch (err: unknown) {
-    const details = err instanceof Error ? err.message : String(err);
-    return jsonResponse({ error: 'FAILED_TO_FETCH_SHARE', details }, 500);
+    console.error('Failed to fetch shared setlist:', err);
+    return jsonResponse({ error: 'FAILED_TO_FETCH_SHARE' }, 500);
   }
 };

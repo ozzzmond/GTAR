@@ -295,6 +295,17 @@ class StageCastEngine {
     if (this.lastState) this.broadcastState({ ...this.lastState, ...this.themeSnapshot })
   }
 
+  private getTrustedTargetOrigin(): string | null {
+    if (typeof window === 'undefined' || !window.location?.origin) {
+      return null
+    }
+    const origin = window.location.origin
+    if (origin === 'null' || origin === '*' || origin === '') {
+      return null
+    }
+    return origin
+  }
+
   public broadcastState(state: StageCastState) {
     // Song/scroll updates must retain the sender's canonical theme snapshot.
     state = { ...state, themeMode: state.themeMode ?? this.themeSnapshot.themeMode ?? this.lastState?.themeMode,
@@ -315,9 +326,14 @@ class StageCastEngine {
     }
 
     if (this.popupWindow && !this.popupWindow.closed) {
-      try {
-        this.popupWindow.postMessage({ source: 'GTAR_CAST', message: msg }, '*')
-      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
+      const targetOrigin = this.getTrustedTargetOrigin()
+      if (targetOrigin) {
+        try {
+          this.popupWindow.postMessage({ source: 'GTAR_CAST', message: msg }, targetOrigin)
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
+      } else {
+        appLogger.warn('StageCast', 'Refusing to postMessage Stage Cast state: trusted origin cannot be established.')
+      }
     }
 
     if (this.presentationConnection && this.presentationConnection.state === 'connected') {
@@ -343,9 +359,14 @@ class StageCastEngine {
     }
 
     if (this.popupWindow && !this.popupWindow.closed) {
-      try {
-        this.popupWindow.postMessage({ source: 'GTAR_CAST', message: msg }, '*')
-      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
+      const targetOrigin = this.getTrustedTargetOrigin()
+      if (targetOrigin) {
+        try {
+          this.popupWindow.postMessage({ source: 'GTAR_CAST', message: msg }, targetOrigin)
+        } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
+      } else {
+        appLogger.warn('StageCast', 'Refusing to postMessage Stage Cast scroll: trusted origin cannot be established.')
+      }
     }
 
     if (this.presentationConnection && this.presentationConnection.state === 'connected') {
@@ -600,21 +621,26 @@ class StageCastEngine {
           const injectPopupState = () => {
             try {
               if (win && !win.closed) {
-                win.postMessage(
-                  {
-                    source: 'GTAR_CAST',
-                    message: { type: 'STATE_UPDATE', payload: currentState },
-                  },
-                  '*'
-                )
-                if (this.lastScroll) {
+                const targetOrigin = this.getTrustedTargetOrigin()
+                if (targetOrigin) {
                   win.postMessage(
                     {
                       source: 'GTAR_CAST',
-                      message: { type: 'SCROLL_UPDATE', payload: this.lastScroll },
+                      message: { type: 'STATE_UPDATE', payload: currentState },
                     },
-                    '*'
+                    targetOrigin
                   )
+                  if (this.lastScroll) {
+                    win.postMessage(
+                      {
+                        source: 'GTAR_CAST',
+                        message: { type: 'SCROLL_UPDATE', payload: this.lastScroll },
+                      },
+                      targetOrigin
+                    )
+                  }
+                } else {
+                  appLogger.warn('StageCast', 'Refusing to inject state into popup: trusted origin cannot be established.')
                 }
               }
             } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
@@ -725,10 +751,40 @@ class StageCastEngine {
     }
 
     const windowListener = (e: MessageEvent) => {
-      if (e.data && e.data.source === 'GTAR_CAST' && e.data.message) {
-        handleMessage(e.data.message)
-      } else {
-        handleMessage(e.data)
+      // 1. Origin validation: fail closed if trusted origin cannot be established or does not match
+      const trustedOrigin = this.getTrustedTargetOrigin()
+      if (!trustedOrigin || !e.origin || e.origin !== trustedOrigin) {
+        return
+      }
+
+      // 2. Sender identity validation: if an active popup window exists, ensure event.source aligns
+      // When running in presenter/opener context, incoming messages from popup must originate from popupWindow
+      if (this.popupWindow && !this.popupWindow.closed) {
+        if (e.source && e.source !== this.popupWindow) {
+          return
+        }
+      } else if (typeof window !== 'undefined' && window.opener) {
+        // When running inside presentation popup, incoming messages must originate from opener
+        if (e.source && e.source !== window.opener) {
+          return
+        }
+      }
+
+      // 3. Message structure and payload validation
+      if (!e.data || typeof e.data !== 'object') {
+        return
+      }
+
+      const rawObj = e.data as Record<string, unknown>
+      // Require Stage Cast message envelope
+      if (rawObj.source !== 'GTAR_CAST') {
+        return
+      }
+
+      if (rawObj.message && typeof rawObj.message === 'object') {
+        handleMessage(rawObj.message)
+      } else if (typeof rawObj.type === 'string') {
+        handleMessage(rawObj)
       }
     }
 
