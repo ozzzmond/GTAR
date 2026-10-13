@@ -61,11 +61,12 @@ async function catalogFetch<T>(
   options: {
     method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
     token: string
+    body?: unknown
     signal?: AbortSignal
     timeoutMs?: number
   }
 ): Promise<T> {
-  const { method = 'GET', token, signal, timeoutMs = DEFAULT_CATALOG_TIMEOUT_MS } = options
+  const { method = 'GET', token, body: requestBody, signal, timeoutMs = DEFAULT_CATALOG_TIMEOUT_MS } = options
 
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -89,17 +90,23 @@ async function catalogFetch<T>(
   }
 
   try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    }
+    if (requestBody !== undefined) {
+      headers['Content-Type'] = 'application/json'
+    }
+
     const response = await fetch(url, {
       method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-      },
+      headers,
+      body: requestBody !== undefined ? JSON.stringify(requestBody) : undefined,
       signal: controller.signal,
     })
 
     let body: unknown
-    const contentType = response.headers.get('content-type') || ''
+    const contentType = (response.headers && typeof response.headers.get === 'function' ? response.headers.get('content-type') : '') || ''
     if (contentType.includes('application/json')) {
       try {
         body = await response.json()
@@ -109,11 +116,29 @@ async function catalogFetch<T>(
     }
 
     if (!response.ok) {
-      const errorMsg =
-        body && typeof body === 'object' && 'error' in body && typeof (body as Record<string, unknown>).error === 'string'
-          ? (body as Record<string, unknown>).error as string
-          : `HTTP ${response.status} ${response.statusText}`
-      throw new CatalogApiError(errorMsg, response.status)
+      let code: string | undefined = undefined
+      let errorMsg = `HTTP ${response.status} ${response.statusText}`
+
+      if (body && typeof body === 'object') {
+        const obj = body as Record<string, unknown>
+        if (typeof obj.message === 'string') {
+          errorMsg = obj.message
+        } else if (typeof obj.error === 'string') {
+          errorMsg = obj.error
+        } else if (obj.error && typeof obj.error === 'object' && typeof (obj.error as Record<string, unknown>).message === 'string') {
+          errorMsg = (obj.error as Record<string, unknown>).message as string
+        }
+
+        if (typeof obj.code === 'string') {
+          code = obj.code
+        } else if (obj.error === 'REVISION_CONFLICT' || response.status === 409) {
+          code = 'CONFLICT'
+        }
+      } else if (response.status === 409) {
+        code = 'CONFLICT'
+      }
+
+      throw new CatalogApiError(errorMsg, response.status, code)
     }
 
     return body as T
@@ -122,7 +147,6 @@ async function catalogFetch<T>(
       throw err
     }
 
-    // Check for abort or timeout
     // Check for abort or timeout
     const isTimedOut =
       (controller.signal.aborted && (!signal || !signal.aborted)) ||
@@ -202,4 +226,116 @@ export async function getSharedCatalogSong(
     song: res.song,
     revisions: res.revisions || [],
   }
+}
+
+export interface PublishSharedSongParams {
+  title: string
+  artist?: string | null
+  key?: string | null
+  original_key?: string | null
+  capo?: string | null
+  bpm?: string | null
+  time_signature?: string | null
+  year?: string | null
+  raw_content: string
+  format?: string
+  change_summary?: string
+  signal?: AbortSignal
+  timeoutMs?: number
+}
+
+export interface PublishSharedSongResponse {
+  success: boolean
+  song: SharedCatalogSongItem
+  deduplicated?: boolean
+}
+
+/**
+ * Publish a new song to the Shared Catalog (POST /api/catalog/songs).
+ */
+export async function publishSharedCatalogSong(
+  params: PublishSharedSongParams
+): Promise<PublishSharedSongResponse> {
+  const { signal, timeoutMs, ...payload } = params
+  if (!payload.title || !payload.title.trim()) {
+    throw new CatalogApiError('Title is required', 400, 'INVALID_INPUT')
+  }
+  if (!payload.raw_content || !payload.raw_content.trim()) {
+    throw new CatalogApiError('Song content is required', 400, 'INVALID_INPUT')
+  }
+
+  const { token } = getAuthenticatedSessionToken()
+  return catalogFetch<PublishSharedSongResponse>('/api/catalog/songs', {
+    method: 'POST',
+    token,
+    body: payload,
+    signal,
+    timeoutMs,
+  })
+}
+
+export interface UpdateSharedSongParams extends PublishSharedSongParams {
+  id: string
+  expected_revision: number
+}
+
+/**
+ * Update an existing song in the Shared Catalog with CAS (PUT /api/catalog/songs/:id).
+ */
+export async function updateSharedCatalogSong(
+  params: UpdateSharedSongParams
+): Promise<{ success: boolean; song: SharedCatalogSongItem }> {
+  const { id, expected_revision, signal, timeoutMs, ...payload } = params
+  if (!id || !id.trim()) {
+    throw new CatalogApiError('Song ID is required', 400, 'INVALID_ID')
+  }
+  if (!expected_revision || expected_revision < 1) {
+    throw new CatalogApiError('expected_revision is required', 400, 'INVALID_REVISION')
+  }
+
+  const { token } = getAuthenticatedSessionToken()
+  return catalogFetch<{ success: boolean; song: SharedCatalogSongItem }>(
+    `/api/catalog/songs/${encodeURIComponent(id.trim())}`,
+    {
+      method: 'PUT',
+      token,
+      body: {
+        ...payload,
+        expected_revision,
+      },
+      signal,
+      timeoutMs,
+    }
+  )
+}
+
+export interface UnpublishSharedSongParams {
+  id: string
+  expected_revision?: number
+  signal?: AbortSignal
+  timeoutMs?: number
+}
+
+/**
+ * Soft delete/unpublish a song from the Shared Catalog (DELETE /api/catalog/songs/:id).
+ */
+export async function unpublishSharedCatalogSong(
+  params: UnpublishSharedSongParams
+): Promise<{ success: boolean; message: string; id: string }> {
+  const { id, expected_revision, signal, timeoutMs } = params
+  if (!id || !id.trim()) {
+    throw new CatalogApiError('Song ID is required', 400, 'INVALID_ID')
+  }
+
+  const { token } = getAuthenticatedSessionToken()
+  const url = expected_revision
+    ? `/api/catalog/songs/${encodeURIComponent(id.trim())}?expected_revision=${encodeURIComponent(expected_revision)}`
+    : `/api/catalog/songs/${encodeURIComponent(id.trim())}`
+
+  return catalogFetch<{ success: boolean; message: string; id: string }>(url, {
+    method: 'DELETE',
+    token,
+    signal,
+    timeoutMs,
+  })
 }

@@ -97,6 +97,7 @@ export interface ActiveSongState {
   isMissing?: boolean
   sharedSourceSongId?: string
   sharedSourceRevision?: number
+  publishedCatalogSongId?: string
 }
 
 // Stage Lines Model matching Android SongLine.kt (v1.0.42)

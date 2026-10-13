@@ -17,13 +17,17 @@ import {
   QrCode,
   ListPlus,
   AlertCircle,
+  CloudCheck,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
+import { getConfirmedActiveCatalogIds } from '../utils/sharedCatalogService'
 import { SongSetlistDialog } from './SongSetlistDialog'
 
 interface SetlistDrawerProps {
+  confirmedCatalogIds?: Set<string>
+  freshCatalogIds?: Set<string>
   isOpen: boolean
   onClose: () => void
   songs: ActiveSongState[]
@@ -57,6 +61,8 @@ interface SetlistDrawerProps {
 }
 
 export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
+  confirmedCatalogIds: propConfirmedCatalogIds,
+  freshCatalogIds: propFreshCatalogIds,
   isOpen,
   onClose,
   songs,
@@ -83,6 +89,31 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   backdropStyle,
   drawerTouchHandlers,
 }) => {
+    const [localConfirmedCatalogIds, setLocalConfirmedCatalogIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (propConfirmedCatalogIds) return
+    let mounted = true
+    const refresh = async () => {
+      try {
+        const ids = await getConfirmedActiveCatalogIds()
+        if (mounted) setLocalConfirmedCatalogIds(ids)
+      } catch (err) {
+        void err
+      }
+    }
+    refresh()
+    const onCatalogUpdate = () => refresh()
+    window.addEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
+    window.addEventListener('storage', onCatalogUpdate)
+    return () => {
+      mounted = false
+      window.removeEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
+      window.removeEventListener('storage', onCatalogUpdate)
+    }
+  }, [propConfirmedCatalogIds])
+  const confirmedCatalogIds = propConfirmedCatalogIds ?? localConfirmedCatalogIds
+  const freshCatalogIds = propFreshCatalogIds ?? new Set<string>()
+
   const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>(initialTab || 'songbook')
   const [searchQuery, setSearchQuery] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
@@ -663,6 +694,22 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                         <AlertCircle className="w-3.5 h-3.5" />
                       )}
                     </span>
+
+                    {/* Confirmed Shared Cloud Publication Indicator */}
+                    {Boolean(item.publishedCatalogSongId && confirmedCatalogIds.has(item.publishedCatalogSongId)) && (() => {
+                      const isFresh = freshCatalogIds.has(item.publishedCatalogSongId!)
+                      return (
+                        <span
+                          data-testid={`drawer-song-published-status-${originalIndex}`}
+                          role="status"
+                          aria-label={isFresh ? "Published to Shared Catalog (Server Confirmed)" : "Published to Shared Catalog (Cached)"}
+                          title={isFresh ? "Published to Shared Catalog (Server Confirmed)" : "Published to Shared Catalog (Cached)"}
+                          className={isFresh ? "p-1 rounded flex items-center justify-center shrink-0 text-emerald-400 bg-emerald-500/10" : "p-1 rounded flex items-center justify-center shrink-0 text-amber-400 bg-amber-500/10"}
+                        >
+                          <CloudCheck className="w-3.5 h-3.5" />
+                        </span>
+                      )
+                    })()}
 
                     {/* Add to Setlist Action (Compact Icon Button) */}
                     <button

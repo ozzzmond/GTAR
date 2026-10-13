@@ -60,6 +60,7 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
     ...(s.lastOpenedAt !== undefined ? { lastOpenedAt: s.lastOpenedAt } : {}),
     ...(s.sharedSourceSongId !== undefined ? { sharedSourceSongId: s.sharedSourceSongId } : {}),
     ...(s.sharedSourceRevision !== undefined ? { sharedSourceRevision: s.sharedSourceRevision } : {}),
+    ...(s.publishedCatalogSongId !== undefined ? { publishedCatalogSongId: s.publishedCatalogSongId } : {}),
   }
 }
 

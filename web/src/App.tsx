@@ -1,4 +1,4 @@
-import {
+﻿import {
   persistLibrary,
   planDanglingReferenceRepair,
   applyDanglingReferenceRepair,
@@ -33,6 +33,7 @@ import { TrashView } from './components/TrashView'
 import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
+import { getConfirmedActiveCatalogIds, sharedCatalogService } from './utils/sharedCatalogService'
 import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
 import { EDGE_SWIPE_STORAGE_KEY } from './utils/edgeSwipe'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
@@ -655,6 +656,33 @@ function LibraryApp() {
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false)
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
+  const [confirmedCatalogIds, setConfirmedCatalogIds] = useState<Set<string>>(new Set())
+  const [freshCatalogIds, setFreshCatalogIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    let mounted = true
+    const refresh = async () => {
+      try {
+        const ids = await getConfirmedActiveCatalogIds()
+        if (mounted) {
+          setConfirmedCatalogIds(ids)
+          setFreshCatalogIds(sharedCatalogService.getFreshConfirmedCatalogIds())
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+    refresh()
+    const onCatalogUpdate = () => refresh()
+    window.addEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
+    window.addEventListener('storage', onCatalogUpdate)
+    return () => {
+      mounted = false
+      window.removeEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
+      window.removeEventListener('storage', onCatalogUpdate)
+    }
+  }, [])
+
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
   const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
@@ -1653,6 +1681,10 @@ function LibraryApp() {
             onBulkDeleteSetlists={handleBulkDeleteSetlists}
             onShareSetlist={(sl) => setSharingSetlist(sl)}
             onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
+            onImportSharedCatalogSong={handleSaveSongFromEditor}
+            onUpdateSong={handleUpdateSong}
+            confirmedCatalogIds={confirmedCatalogIds}
+            freshCatalogIds={freshCatalogIds}
           />
         ) : activeView === 'editor' ? (
           <DesktopEditor
@@ -1727,6 +1759,8 @@ function LibraryApp() {
         {({ drawerStyle, backdropStyle, drawerTouchHandlers }) => (
           <SetlistDrawer
             isOpen={isSetlistDrawerOpen}
+            confirmedCatalogIds={confirmedCatalogIds}
+            freshCatalogIds={freshCatalogIds}
             initialTab={drawerInitialTab}
             drawerStyle={drawerStyle}
             backdropStyle={backdropStyle}

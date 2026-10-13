@@ -15,6 +15,7 @@ import {
   type GoogleSession,
   type AccessStatus,
 } from '../utils/googleAuth'
+import { sharedCatalogService } from '../utils/sharedCatalogService'
 import devLogo from '../assets/dev-logo.png'
 import prodLogo from '../assets/prod-logo.png'
 import { isDevEnv } from '../utils/env'
@@ -79,6 +80,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     epoch.current++
     saveGoogleSession(null)
+    sharedCatalogService.setAccount(null)
     setSession(null)
     setBypass(false)
     setChecking(false)

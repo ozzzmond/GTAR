@@ -104,6 +104,7 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       isMissing: Boolean(s.isMissing),
       sharedSourceSongId: s.sharedSourceSongId || null,
       sharedSourceRevision: s.sharedSourceRevision ?? null,
+      publishedCatalogSongId: s.publishedCatalogSongId || null,
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 
@@ -352,7 +353,8 @@ export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
     Boolean(a.isFavorite) === Boolean(b.isFavorite) &&
     (a.createdAt ?? null) === (b.createdAt ?? null) &&
     (a.lastOpenedAt ?? null) === (b.lastOpenedAt ?? null) &&
-    Boolean(a.isMissing) === Boolean(b.isMissing)
+    Boolean(a.isMissing) === Boolean(b.isMissing) &&
+    (a.publishedCatalogSongId || null) === (b.publishedCatalogSongId || null)
   )
 }
 
