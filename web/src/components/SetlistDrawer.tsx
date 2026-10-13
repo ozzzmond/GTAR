@@ -18,7 +18,12 @@ import {
   ListPlus,
   AlertCircle,
   CloudCheck,
+  CloudDownload,
 } from 'lucide-react'
+import { SongStatusBadge } from './SongStatusBadge'
+import { resolvePublishedProvenance, resolveImportedProvenance, type CatalogSongMetadataLookup } from '../utils/sharedCatalogProvenance'
+import type { SharedCatalogSongItem } from '../types/sharedCatalog'
+import { useOptionalGoogleAuth } from '../utils/authContext'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
@@ -28,6 +33,7 @@ import { SongSetlistDialog } from './SongSetlistDialog'
 interface SetlistDrawerProps {
   confirmedCatalogIds?: Set<string>
   freshCatalogIds?: Set<string>
+  catalogMetadata?: Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>
   isOpen: boolean
   onClose: () => void
   songs: ActiveSongState[]
@@ -63,6 +69,7 @@ interface SetlistDrawerProps {
 export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   confirmedCatalogIds: propConfirmedCatalogIds,
   freshCatalogIds: propFreshCatalogIds,
+  catalogMetadata: propCatalogMetadata,
   isOpen,
   onClose,
   songs,
@@ -117,6 +124,27 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
     }
     return set
   }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
+  const auth = useOptionalGoogleAuth()
+  const [localCatalogMetadata, setLocalCatalogMetadata] = useState<Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>>(() => sharedCatalogService.getCatalogMetadataMap())
+  useEffect(() => {
+    const handleUpdate = () => setLocalCatalogMetadata(sharedCatalogService.getCatalogMetadataMap())
+    window.addEventListener('gtar-shared-catalog-cache-updated', handleUpdate)
+    window.addEventListener('storage', handleUpdate)
+    return () => {
+      window.removeEventListener('gtar-shared-catalog-cache-updated', handleUpdate)
+      window.removeEventListener('storage', handleUpdate)
+    }
+  }, [])
+  const catalogMetadataMap = useMemo(() => {
+    const map = new Map(localCatalogMetadata)
+    if (propCatalogMetadata) {
+      for (const [k, v] of propCatalogMetadata.entries()) {
+        map.set(k, v)
+      }
+    }
+    return map
+  }, [localCatalogMetadata, propCatalogMetadata])
+
   const freshCatalogIds = useMemo(() => {
     const serviceFresh = sharedCatalogService.getFreshConfirmedCatalogIds()
     const set = new Set(serviceFresh)
@@ -691,35 +719,123 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                   {/* Actions / Badges Cluster: Metadata Status + Add to Setlist */}
                   <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
                     {/* Metadata OK / Needs Metadata Compact Icon */}
-                    <span
-                      data-testid={`drawer-song-metadata-status-${originalIndex}`}
-                      role="status"
-                      aria-label={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
+                    <SongStatusBadge
+                      testId={`drawer-song-metadata-status-${originalIndex}`}
+                      ariaLabel={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
                       title={isMetaOk ? 'Metadata OK' : `Needs Metadata (${metadataStatus.missingFields.join(', ')})`}
                       className={`p-1 rounded flex items-center justify-center shrink-0 ${
                         isMetaOk ? 'text-status-success' : 'text-app-accent'
                       }`}
-                    >
-                      {isMetaOk ? (
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      ) : (
-                        <AlertCircle className="w-3.5 h-3.5" />
-                      )}
-                    </span>
+                      icon={isMetaOk ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                      zIndex={80}
+                      align="right"
+                      popoverContent={
+                        <div className="space-y-1">
+                          <div className="font-semibold text-app-heading flex items-center gap-1.5">
+                            {isMetaOk ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-status-success shrink-0" />
+                                <span>Metadata OK</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="w-3.5 h-3.5 text-app-accent shrink-0" />
+                                <span>Needs Metadata</span>
+                              </>
+                            )}
+                          </div>
+                          {!isMetaOk && metadataStatus.missingFields.length > 0 ? (
+                            <div className="text-[11px] text-app-text">
+                              Missing: <span className="font-medium text-app-accent">{metadataStatus.missingFields.join(', ')}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-app-muted">
+                              All essential metadata directives complete
+                            </div>
+                          )}
+                        </div>
+                      }
+                    />
+
+                    {/* Imported from Shared Catalog Provenance Indicator */}
+                    {Boolean(item.sharedSourceSongId) && (() => {
+                      const catalogItem = catalogMetadataMap.get(item.sharedSourceSongId!)
+                      const importedProv = resolveImportedProvenance(item.sharedSourceSongId!, {
+                        catalogItem,
+                        persistedPublisherId: item.sharedSourcePublisherId,
+                        persistedPublisherName: item.sharedSourcePublisherName,
+                        currentAccountId: auth?.session?.user?.id || auth?.session?.user?.email,
+                      })
+                      return (
+                        <SongStatusBadge
+                          testId={`drawer-song-imported-status-${originalIndex}`}
+                          ariaLabel="Imported from Shared Catalog"
+                          title={`Imported from Shared Catalog${importedProv.publisherText ? ` - Publisher: ${importedProv.publisherText}` : ''}`}
+                          className="p-1 rounded flex items-center justify-center shrink-0 text-sky-400 bg-sky-500/10 hover:bg-sky-500/20"
+                          icon={<CloudDownload className="w-3.5 h-3.5" />}
+                          zIndex={80}
+                          align="right"
+                          popoverContent={
+                            <div className="space-y-1">
+                              <div className="font-semibold text-app-heading flex items-center gap-1.5">
+                                <CloudDownload className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                <span>Imported from Shared Catalog</span>
+                              </div>
+                              <div className="text-[11px] text-app-text">
+                                {importedProv.publisherText ? (
+                                  <>
+                                    Publisher: <span className="font-medium text-app-heading">{importedProv.publisherText}</span>
+                                  </>
+                                ) : (
+                                  <span className="text-app-muted italic">Source unavailable</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-app-muted font-medium">
+                                Independent personal copy
+                              </div>
+                            </div>
+                          }
+                        />
+                      )
+                    })()}
 
                     {/* Confirmed Shared Cloud Publication Indicator */}
                     {Boolean(item.publishedCatalogSongId && confirmedCatalogIds.has(item.publishedCatalogSongId)) && (() => {
                       const isFresh = freshCatalogIds.has(item.publishedCatalogSongId!)
+                      const catalogItem = catalogMetadataMap.get(item.publishedCatalogSongId!)
+                      const publishedProv = resolvePublishedProvenance(item.publishedCatalogSongId!, {
+                        currentAccountId: auth?.session?.user?.id || auth?.session?.user?.email,
+                        catalogItem,
+                        isFresh,
+                        activeUserEmail: auth?.session?.user?.email,
+                      })
+                      const label = isFresh ? "Published to Shared Catalog (Server Confirmed)" : "Published to Shared Catalog (Cached)"
                       return (
-                        <span
-                          data-testid={`drawer-song-published-status-${originalIndex}`}
-                          role="status"
-                          aria-label={isFresh ? "Published to Shared Catalog (Server Confirmed)" : "Published to Shared Catalog (Cached)"}
-                          title={isFresh ? "Published to Shared Catalog (Server Confirmed)" : "Published to Shared Catalog (Cached)"}
-                          className={isFresh ? "p-1 rounded flex items-center justify-center shrink-0 text-emerald-400 bg-emerald-500/10" : "p-1 rounded flex items-center justify-center shrink-0 text-amber-400 bg-amber-500/10"}
-                        >
-                          <CloudCheck className="w-3.5 h-3.5" />
-                        </span>
+                        <SongStatusBadge
+                          testId={`drawer-song-published-status-${originalIndex}`}
+                          ariaLabel={label}
+                          title={label}
+                          className={isFresh ? "p-1 rounded flex items-center justify-center shrink-0 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20" : "p-1 rounded flex items-center justify-center shrink-0 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"}
+                          icon={<CloudCheck className="w-3.5 h-3.5" />}
+                          zIndex={80}
+                          align="right"
+                          popoverContent={
+                            <div className="space-y-1">
+                              <div className="font-semibold text-app-heading flex items-center gap-1.5">
+                                <CloudCheck className={isFresh ? "w-3.5 h-3.5 text-emerald-400 shrink-0" : "w-3.5 h-3.5 text-amber-400 shrink-0"} />
+                                <span>Published to Shared Catalog</span>
+                              </div>
+                              <div className="text-[11px] text-app-text">
+                                Publisher: <span className="font-medium text-app-heading">{publishedProv.publisherText}</span>
+                              </div>
+                              <div className="text-[11px] flex items-center gap-1 text-app-text">
+                                Status: <span className={isFresh ? "font-medium text-emerald-400" : "font-medium text-amber-400"}>
+                                  {publishedProv.statusText}
+                                </span>
+                              </div>
+                            </div>
+                          }
+                        />
                       )
                     })()}
 

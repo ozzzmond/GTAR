@@ -97,6 +97,8 @@ export interface ActiveSongState {
   isMissing?: boolean
   sharedSourceSongId?: string
   sharedSourceRevision?: number
+  sharedSourcePublisherId?: string
+  sharedSourcePublisherName?: string
   publishedCatalogSongId?: string
 }
 

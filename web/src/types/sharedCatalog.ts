@@ -18,6 +18,8 @@ export interface SharedCatalogSongItem {
   format: string
   checksum: string
   publisher_user_id: string
+  publisher_name?: string | null
+  publisher_display_name?: string | null
   last_editor_user_id: string
   current_revision: number
   created_at: string

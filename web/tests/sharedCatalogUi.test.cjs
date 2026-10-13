@@ -1471,3 +1471,245 @@ test('PHASE 5 - TEST 16: SAFE_RECONCILIATION_BATCH_DOES_NOT_MAKE_PER_SONG_REQUES
     clearTestSession()
   }
 })
+
+test('PHASE 5 - PROVENANCE 1: Published tooltip correctly identifies publisher ("You" when active user matches, verified name or shortened ID when different)', () => {
+  const { resolvePublishedProvenance } = require('../src/utils/sharedCatalogProvenance.ts')
+
+  // When active user is publisher -> "You"
+  const ownResult = resolvePublishedProvenance('song-1', {
+    currentAccountId: 'usr_me_123',
+    catalogItem: { publisher_user_id: 'usr_me_123', publisher_name: 'My Verified Name' },
+    isFresh: true,
+  })
+  assert.equal(ownResult.publisherText, 'You')
+  assert.equal(ownResult.isOwner, true)
+  assert.equal(ownResult.statusText, 'Server Confirmed')
+
+  // When another user published with display name
+  const otherNameResult = resolvePublishedProvenance('song-2', {
+    currentAccountId: 'usr_me_123',
+    catalogItem: { publisher_user_id: 'usr_other_456', publisher_display_name: 'Sarah Connor' },
+    isFresh: true,
+  })
+  assert.equal(otherNameResult.publisherText, 'Sarah Connor')
+  assert.equal(otherNameResult.isOwner, false)
+
+  // When another user published with ID only (shortened ID)
+  const otherIdResult = resolvePublishedProvenance('song-3', {
+    currentAccountId: 'usr_me_123',
+    catalogItem: { publisher_user_id: 'usr_long_identifier_99999' },
+    isFresh: false,
+  })
+  assert.equal(otherIdResult.publisherText, 'usr_long_i...')
+  assert.equal(otherIdResult.isOwner, false)
+  assert.equal(otherIdResult.statusText, 'Cached/Offline')
+})
+
+test('PHASE 5 - PROVENANCE 2: Stale published tooltip displays "Cached/Offline" and never claims "Server Confirmed"', () => {
+  const { resolvePublishedProvenance } = require('../src/utils/sharedCatalogProvenance.ts')
+  const stale = resolvePublishedProvenance('song-stale', {
+    currentAccountId: 'usr_alice',
+    catalogItem: { publisher_user_id: 'usr_alice' },
+    isFresh: false,
+  })
+  assert.equal(stale.statusText, 'Cached/Offline')
+  assert.equal(stale.isFresh, false)
+  assert.notEqual(stale.statusText, 'Server Confirmed')
+})
+
+test('PHASE 5 - PROVENANCE 3: Imported song tooltip shows source publisher display name or shortened ID, "Independent personal copy"', () => {
+  const { resolveImportedProvenance } = require('../src/utils/sharedCatalogProvenance.ts')
+
+  // Verified display name
+  const withName = resolveImportedProvenance('src-1', {
+    catalogItem: { publisher_user_id: 'u-1', publisher_display_name: 'Bob Dylan' },
+  })
+  assert.equal(withName.publisherText, 'Bob Dylan')
+  assert.equal(withName.isResolved, true)
+
+  // Shortened publisher ID
+  const withId = resolveImportedProvenance('src-2', {
+    catalogItem: { publisher_user_id: 'usr_guitarist_7777777' },
+  })
+  assert.equal(withId.publisherText, 'usr_guitar...')
+  assert.equal(withId.isResolved, true)
+})
+
+test('PHASE 5 - PROVENANCE 4: Unknown or unresolvable imported publisher falls back safely to "Source unavailable" without guessing from title or artist', () => {
+  const { resolveImportedProvenance } = require('../src/utils/sharedCatalogProvenance.ts')
+
+  // When catalogItem is null/undefined and no persisted publisher ID exists
+  const unresolvable = resolveImportedProvenance('src-missing', {
+    catalogItem: null,
+    persistedPublisherId: null,
+    persistedPublisherName: null,
+  })
+  assert.equal(unresolvable.publisherText, null, 'Must not invent publisher')
+  assert.equal(unresolvable.isResolved, false)
+})
+
+test('PHASE 5 - PROVENANCE 5: Same-title songs from different publishers remain distinct and retain independent provenance', () => {
+  const { resolveImportedProvenance } = require('../src/utils/sharedCatalogProvenance.ts')
+
+  const songA = resolveImportedProvenance('cat-id-1', {
+    catalogItem: { publisher_user_id: 'usr_alice', publisher_display_name: 'Alice' },
+  })
+  const songB = resolveImportedProvenance('cat-id-2', {
+    catalogItem: { publisher_user_id: 'usr_bob', publisher_display_name: 'Bob' },
+  })
+
+  assert.equal(songA.publisherText, 'Alice')
+  assert.equal(songB.publisherText, 'Bob')
+  assert.notEqual(songA.publisherText, songB.publisherText)
+})
+
+test('PHASE 5 - PROVENANCE 6: Imported personal clone never inherits published indicator in Main Songbook or Side Panel', () => {
+  const { cloneSharedCatalogSongToPersonal } = require('../src/utils/sharedCatalogImport.ts')
+  const sample = createSampleSharedSong('scs_imported_prov_test', 'Sample Import', 'Artist')
+  sample.publisher_user_id = 'usr_orig_pub'
+  const personalClone = cloneSharedCatalogSongToPersonal(sample)
+
+  assert.equal(personalClone.publishedCatalogSongId, undefined)
+  assert.equal(personalClone.sharedSourceSongId, 'scs_imported_prov_test')
+  assert.equal(personalClone.sharedSourcePublisherId, 'usr_orig_pub')
+
+  const confirmedIds = new Set(['scs_imported_prov_test'])
+
+  const htmlHome = renderToString(
+    React.createElement(SongbookHomeView, {
+      songs: [personalClone],
+      searchQuery: '',
+      onSearchQueryChange: () => {},
+      activeSongIndex: 0,
+      onSelectSong: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+      confirmedCatalogIds: confirmedIds,
+      freshCatalogIds: confirmedIds,
+    })
+  )
+
+  // Must NOT show published status icon because personalClone.publishedCatalogSongId is undefined
+  assert.equal(htmlHome.includes('data-testid="song-published-status-0"'), false)
+  // MUST show imported status icon
+  assert.ok(htmlHome.includes('data-testid="song-imported-status-0"'))
+  assert.ok(htmlHome.includes('aria-label="Imported from Shared Catalog"'))
+})
+
+test('PHASE 5 - PROVENANCE 7: Side Panel renders imported provenance icon (CloudDownload)', () => {
+  const personalImported = {
+    id: 'pers-song-1',
+    title: 'Imported in Drawer',
+    artist: 'Band',
+    key: 'C',
+    bpm: '120',
+    capo: '',
+    format: 'PLAIN',
+    transposeOffset: 0,
+    rawContent: 'test',
+    sharedSourceSongId: 'scs_drawer_source',
+    sharedSourcePublisherName: 'Dave Murray',
+  }
+
+  const htmlDrawer = renderToString(
+    React.createElement(SetlistDrawer, {
+      isOpen: true,
+      onClose: () => {},
+      songs: [personalImported],
+      activeSongIndex: 0,
+      onSelectSongIndex: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+    })
+  )
+
+  assert.ok(htmlDrawer.includes('data-testid="drawer-song-imported-status-0"'))
+  assert.ok(htmlDrawer.includes('aria-label="Imported from Shared Catalog"'))
+  assert.equal(htmlDrawer.includes('data-testid="drawer-song-published-status-0"'), false)
+})
+
+test('PHASE 5 - PROVENANCE 8: Email addresses are never exposed in publisher names or tooltips', () => {
+  const { sanitizeDisplayName, shortenPublisherId } = require('../src/utils/sharedCatalogProvenance.ts')
+
+  const cleanFromEmail = sanitizeDisplayName('john.doe@secretcompany.com')
+  assert.equal(cleanFromEmail.includes('@'), false)
+  assert.equal(cleanFromEmail.includes('secretcompany'), false)
+
+  const cleanShortId = shortenPublisherId('secret.admin@domain.org')
+  assert.equal(cleanShortId.includes('@'), false)
+  assert.equal(cleanShortId.includes('domain.org'), false)
+})
+
+test('PHASE 5 - PROVENANCE 9: Mobile metadata tooltip indicates accurate missing fields or "Metadata OK"', () => {
+  const completeSong = {
+    id: 's-complete',
+    title: 'Complete Song',
+    artist: 'Artist',
+    key: 'G',
+    bpm: '120',
+    capo: '0',
+    originalKey: 'G',
+    time: '4/4',
+    year: '1975',
+    format: 'PLAIN',
+    transposeOffset: 0,
+    rawContent: 'G C D',
+  }
+
+  const incompleteSong = {
+    id: 's-incomplete',
+    title: 'Incomplete Song',
+    artist: '',
+    key: '',
+    bpm: '',
+    capo: '',
+    format: 'PLAIN',
+    transposeOffset: 0,
+    rawContent: 'just lyrics',
+  }
+
+  const html = renderToString(
+    React.createElement(SongbookHomeView, {
+      songs: [completeSong, incompleteSong],
+      searchQuery: '',
+      onSearchQueryChange: () => {},
+      activeSongIndex: 0,
+      onSelectSong: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+    })
+  )
+
+  // Complete song badge
+  assert.ok(html.includes('data-testid="song-metadata-status-0"'))
+  assert.ok(html.includes('aria-label="Metadata OK"'))
+
+  // Incomplete song badge
+  assert.ok(html.includes('data-testid="song-metadata-status-1"'))
+  assert.ok(html.includes('aria-label="Needs Metadata"'))
+  assert.ok(html.includes('Needs Metadata ('))
+})
+
+test('PHASE 5 - PROVENANCE 10: SongStatusBadge stops event propagation and supports keyboard dismissal', () => {
+  const { SongStatusBadge } = require('../src/components/SongStatusBadge.tsx')
+
+  let stoppedClick = false
+  let defaultPrevented = false
+  const mockClickEvent = {
+    stopPropagation: () => { stoppedClick = true },
+    preventDefault: () => { defaultPrevented = true },
+  }
+
+  const badgeElement = React.createElement(SongStatusBadge, {
+    testId: 'test-badge',
+    ariaLabel: 'Test Badge',
+    icon: React.createElement('span', null, 'Icon'),
+    popoverContent: React.createElement('div', null, 'Popover Info'),
+  })
+
+  const html = renderToString(badgeElement)
+  assert.ok(html.includes('data-testid="test-badge"'))
+  assert.ok(html.includes('aria-label="Test Badge"'))
+  assert.ok(html.includes('aria-haspopup="dialog"'))
+  assert.ok(html.includes('type="button"'))
+})

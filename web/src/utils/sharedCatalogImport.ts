@@ -70,6 +70,8 @@ export function cloneSharedCatalogSongToPersonal(
     // Additive non-destructive lineage tracking
     sharedSourceSongId: sharedSong.id,
     sharedSourceRevision: sharedSong.current_revision,
+    ...(sharedSong.publisher_user_id ? { sharedSourcePublisherId: sharedSong.publisher_user_id } : {}),
+    ...((sharedSong.publisher_display_name || sharedSong.publisher_name) ? { sharedSourcePublisherName: (sharedSong.publisher_display_name || sharedSong.publisher_name)! } : {}),
   }
 
   return normalizeBackupSong(candidate)

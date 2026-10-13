@@ -49,6 +49,7 @@ export interface CatalogServiceOptions extends IDBCacheOptions {
 export class SharedCatalogService {
   private currentAccountId: string | null = null
   private freshConfirmedIds: Set<string> = new Set()
+  private catalogSongMetadataMap: Map<string, SharedCatalogSongItem> = new Map()
 
   /**
    * Set or switch active authenticated account identity.
@@ -60,6 +61,7 @@ export class SharedCatalogService {
     if (this.currentAccountId !== clean) {
       this.currentAccountId = clean
       this.freshConfirmedIds.clear()
+      this.catalogSongMetadataMap.clear()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
       }
@@ -87,6 +89,20 @@ export class SharedCatalogService {
   /**
    * Fetch catalog songs with automatic offline fallback and reconciliation.
    */
+  public getCatalogSong(id: string): SharedCatalogSongItem | undefined {
+    return this.catalogSongMetadataMap.get(id)
+  }
+
+  public getCatalogMetadataMap(): Map<string, SharedCatalogSongItem> {
+    return new Map(this.catalogSongMetadataMap)
+  }
+
+  public setCatalogSongMetadata(song: SharedCatalogSongItem): void {
+    if (song && song.id) {
+      this.catalogSongMetadataMap.set(song.id, song)
+    }
+  }
+
   public async getCatalogSongs(
     options: CatalogServiceOptions = {}
   ): Promise<CatalogQueryResult> {
@@ -124,6 +140,7 @@ export class SharedCatalogService {
 
       for (const song of serverSongs) {
         this.markCatalogIdLiveConfirmed(song.id)
+        this.catalogSongMetadataMap.set(song.id, song)
       }
 
       // Reconcile into IndexedDB cache without purging unseen paginated songs:
@@ -350,6 +367,7 @@ export class SharedCatalogService {
       const auth = getAuthenticatedSessionToken()
       await removeCachedSong(auth.accountId, params.id, options)
       this.unmarkCatalogId(params.id)
+      this.catalogSongMetadataMap.delete(params.id)
     } catch (cacheErr) {
       console.warn('[CatalogService] Post-unpublish cache removal degraded gracefully:', cacheErr)
     }
@@ -449,6 +467,7 @@ export class SharedCatalogService {
       const cached = await getCachedSongs(accountId, options)
       for (const s of cached) {
         result.add(s.id)
+        this.catalogSongMetadataMap.set(s.id, s)
       }
       return result
     } catch {
@@ -507,4 +526,8 @@ export async function getPublicationStatus(
   options?: IDBCacheOptions
 ): Promise<PublicationFreshnessStatus> {
   return sharedCatalogService.getPublicationStatus(catalogId, options)
+}
+
+export function getCatalogMetadataMap(): Map<string, SharedCatalogSongItem> {
+  return sharedCatalogService.getCatalogMetadataMap()
 }
