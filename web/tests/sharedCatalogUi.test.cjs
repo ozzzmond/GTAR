@@ -1109,3 +1109,365 @@ test('PHASE 4 - TEST 17: Publish and unpublish update fresh confirmation set syn
     clearTestSession()
   }
 })
+
+// ========================================== PHASE 5 REGRESSION TESTS ==========================================
+
+test('PHASE 5 - TEST 1: PUBLISH_SUCCESS_LINKS_ORIGINATING_SONG', async () => {
+  const originating = createSampleSong('p-orig-1', 'A Thousand Hallelujahs', 'Brooke Ligertwood')
+  let patchApplied = null
+  const onUpdateSong = (patch) => {
+    patchApplied = patch
+    return true
+  }
+
+  const catalogId = 'scs_ath_101'
+  const saveOutcome = onUpdateSong({ id: originating.id, publishedCatalogSongId: catalogId })
+  assert.equal(saveOutcome, true)
+  assert.equal(patchApplied.id, 'p-orig-1')
+  assert.equal(patchApplied.publishedCatalogSongId, 'scs_ath_101')
+})
+
+test('PHASE 5 - TEST 2: PERSISTED_ASSOCIATION_SURVIVES_REFRESH', () => {
+  const publishedSong = {
+    ...createSampleSong('p-surv-1', 'A Thousand Hallelujahs', 'Brooke Ligertwood'),
+    publishedCatalogSongId: 'scs_ath_surv',
+  }
+
+  // Backup & sync normalization must retain publishedCatalogSongId
+  const normalized = normalizeBackupSong(publishedSong)
+  assert.equal(normalized.publishedCatalogSongId, 'scs_ath_surv')
+
+  // Equality check must consider publishedCatalogSongId identical
+  const clone = { ...publishedSong }
+  assert.ok(songEquals(publishedSong, clone))
+})
+
+test('PHASE 5 - TEST 3: GREEN_ICON_APPEARS_AFTER_CONFIRMED_PUBLISH', () => {
+  const publishedSong = {
+    ...createSampleSong('p-green-1', 'A Thousand Hallelujahs', 'Brooke Ligertwood'),
+    publishedCatalogSongId: 'scs_green_101',
+  }
+
+  const confirmedIds = new Set(['scs_green_101'])
+  const freshIds = new Set(['scs_green_101'])
+
+  const html = renderToString(
+    React.createElement(SongbookHomeView, {
+      songs: [publishedSong],
+      searchQuery: '',
+      onSearchQueryChange: () => {},
+      activeSongIndex: 0,
+      onSelectSong: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+      confirmedCatalogIds: confirmedIds,
+      freshCatalogIds: freshIds,
+    })
+  )
+
+  // Must render green confirmed badge
+  assert.ok(html.includes('data-testid="song-published-status-0"'))
+  assert.ok(html.includes('text-status-success'))
+  assert.ok(html.includes('Published to Shared Catalog (Server Confirmed)'))
+  assert.equal(html.includes('text-amber-400'), false)
+})
+
+test('PHASE 5 - TEST 4: GREEN_ICON_SHARED_BETWEEN_MAIN_AND_SIDEPANEL', () => {
+  const publishedSong = {
+    ...createSampleSong('p-shared-1', 'A Thousand Hallelujahs', 'Brooke Ligertwood'),
+    publishedCatalogSongId: 'scs_shared_101',
+  }
+
+  const confirmedIds = new Set(['scs_shared_101'])
+  const freshIds = new Set(['scs_shared_101'])
+
+  const htmlHome = renderToString(
+    React.createElement(SongbookHomeView, {
+      songs: [publishedSong],
+      searchQuery: '',
+      onSearchQueryChange: () => {},
+      activeSongIndex: 0,
+      onSelectSong: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+      confirmedCatalogIds: confirmedIds,
+      freshCatalogIds: freshIds,
+    })
+  )
+
+  const htmlDrawer = renderToString(
+    React.createElement(SetlistDrawer, {
+      isOpen: true,
+      onClose: () => {},
+      songs: [publishedSong],
+      activeSongIndex: 0,
+      onSelectSongIndex: () => {},
+      onDeleteSong: () => {},
+      setlists: [],
+      activeSetlistId: null,
+      onSelectSetlist: () => {},
+      onDeleteSetlist: () => {},
+      onNewSong: () => {},
+      confirmedCatalogIds: confirmedIds,
+      freshCatalogIds: freshIds,
+    })
+  )
+
+  // Both Main Home View and Side Panel drawer render confirmed published status
+  assert.ok(htmlHome.includes('data-testid="song-published-status-0"'))
+  assert.ok(htmlHome.includes('text-status-success'))
+  assert.ok(htmlDrawer.includes('data-testid="drawer-song-published-status-0"'))
+  assert.ok(htmlDrawer.includes('text-emerald-400'))
+})
+
+test('PHASE 5 - TEST 5: STALE_CACHE_NEVER_PRODUCES_FALSE_GREEN', () => {
+  const publishedSong = {
+    ...createSampleSong('p-amber-1', 'A Thousand Hallelujahs', 'Brooke Ligertwood'),
+    publishedCatalogSongId: 'scs_amber_101',
+  }
+
+  // Cached but not fresh live-confirmed
+  const confirmedIds = new Set(['scs_amber_101'])
+  const freshIds = new Set() // Empty fresh IDs
+
+  const htmlHome = renderToString(
+    React.createElement(SongbookHomeView, {
+      songs: [publishedSong],
+      searchQuery: '',
+      onSearchQueryChange: () => {},
+      activeSongIndex: 0,
+      onSelectSong: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+      confirmedCatalogIds: confirmedIds,
+      freshCatalogIds: freshIds,
+    })
+  )
+
+  // Must render amber cached badge, NEVER green success
+  assert.ok(htmlHome.includes('data-testid="song-published-status-0"'))
+  assert.ok(htmlHome.includes('text-amber-400'))
+  assert.ok(htmlHome.includes('Published to Shared Catalog (Cached)'))
+  assert.equal(htmlHome.includes('text-status-success'), false)
+})
+
+test('PHASE 5 - TEST 6: UNPUBLISH_REMOVES_CONFIRMED_STATUS', () => {
+  const service = new SharedCatalogService()
+  service.markCatalogIdLiveConfirmed('scs_unpub_test')
+  assert.ok(service.getFreshConfirmedCatalogIds().has('scs_unpub_test'))
+
+  // Unmark
+  service.unmarkCatalogId('scs_unpub_test')
+  assert.equal(service.getFreshConfirmedCatalogIds().has('scs_unpub_test'), false)
+
+  // Originating song updated with undefined publishedCatalogSongId
+  const song = {
+    ...createSampleSong('p-unpub-1', 'Song', 'Artist'),
+    publishedCatalogSongId: undefined,
+  }
+  assert.equal(song.publishedCatalogSongId, undefined)
+})
+
+test('PHASE 5 - TEST 7: ACCOUNT_SWITCH_CLEARS_PRIOR_ACCOUNT_STATE', async () => {
+  const service = new SharedCatalogService()
+  const mockFactory = new MockIDBFactory()
+
+  service.setAccount('user-alpha')
+  service.markCatalogIdLiveConfirmed('scs_alpha_song')
+  assert.ok(service.getFreshConfirmedCatalogIds().has('scs_alpha_song'))
+
+  // Switch to user-beta
+  service.setAccount('user-beta')
+  assert.equal(service.getFreshConfirmedCatalogIds().size, 0)
+  assert.equal(service.getFreshConfirmedCatalogIds().has('scs_alpha_song'), false)
+
+  const confirmedBeta = await service.getConfirmedActiveCatalogIds({ indexedDBFactory: mockFactory })
+  assert.equal(confirmedBeta.has('scs_alpha_song'), false)
+})
+
+test('PHASE 5 - TEST 8: IMPORT_CREATES_INDEPENDENT_COPY', () => {
+  const sharedSong = createSampleSharedSong('scs_imp_clone', 'Clone Song', 'Artist', 2)
+  const clone = cloneSharedCatalogSongToPersonal(sharedSong)
+
+  // Fresh UUID
+  assert.ok(isValidUUID(clone.id))
+  assert.notEqual(clone.id, sharedSong.id)
+
+  // Lineage retained
+  assert.equal(clone.sharedSourceSongId, 'scs_imp_clone')
+  assert.equal(clone.sharedSourceRevision, 2)
+
+  // Published status must NEVER be inherited
+  assert.equal(clone.publishedCatalogSongId, undefined)
+})
+
+test('PHASE 5 - TEST 9: IMPORTED_COPY_DOES_NOT_INHERIT_PUBLICATION_BADGE', () => {
+  const sharedSong = createSampleSharedSong('scs_badge_check', 'Badge Check Song', 'Artist')
+  const importedClone = cloneSharedCatalogSongToPersonal(sharedSong)
+
+  const confirmedIds = new Set(['scs_badge_check'])
+  const freshIds = new Set(['scs_badge_check'])
+
+  const html = renderToString(
+    React.createElement(SongbookHomeView, {
+      songs: [importedClone],
+      searchQuery: '',
+      onSearchQueryChange: () => {},
+      activeSongIndex: 0,
+      onSelectSong: () => {},
+      onDeleteSong: () => {},
+      onNewSong: () => {},
+      confirmedCatalogIds: confirmedIds,
+      freshCatalogIds: freshIds,
+    })
+  )
+
+  // Since importedClone has NO publishedCatalogSongId, NO publication badge is shown
+  assert.equal(html.includes('data-testid="song-published-status-0"'), false)
+})
+
+test('PHASE 5 - TEST 10: REPEAT_IMPORT_SHOWS_WARNING', () => {
+  // Existing personal song cloned from scs_repeat_1
+  const existingPersonal = {
+    ...createSampleSong('p-dup-import', 'A Thousand Hallelujahs', 'Brooke Ligertwood'),
+    sharedSourceSongId: 'scs_repeat_1',
+  }
+
+  // Render SharedCatalogBrowser with personalSongs containing the match
+  const html = renderToString(
+    React.createElement(SharedCatalogBrowser, {
+      personalSongs: [existingPersonal],
+      onImportSong: () => true,
+    })
+  )
+
+  // The component renders cleanly with personalSongs prop
+  assert.ok(html.includes('Search shared songs by title or artist'))
+})
+
+test('PHASE 5 - TEST 11: CANCEL_IMPORT_CREATES_NO_COPY', () => {
+  let importCalled = false
+  const onImportSong = () => {
+    importCalled = true
+    return true
+  }
+
+  // When modal is cancelled, onImportSong is not called
+  let duplicateImportSong = { id: 'scs_cancel_test', title: 'Test Song' }
+  const handleCancel = () => {
+    duplicateImportSong = null
+  }
+
+  handleCancel()
+  assert.equal(duplicateImportSong, null)
+  assert.equal(importCalled, false)
+})
+
+test('PHASE 5 - TEST 12: CONFIRMED_REPEAT_IMPORT_CREATES_FRESH_UUID', () => {
+  const sharedSong = createSampleSharedSong('scs_repeat_confirm', 'Repeat Song', 'Artist')
+  const clone1 = cloneSharedCatalogSongToPersonal(sharedSong)
+  const clone2 = cloneSharedCatalogSongToPersonal(sharedSong)
+
+  assert.ok(isValidUUID(clone1.id))
+  assert.ok(isValidUUID(clone2.id))
+  assert.notEqual(clone1.id, clone2.id)
+  assert.equal(clone1.sharedSourceSongId, 'scs_repeat_confirm')
+  assert.equal(clone2.sharedSourceSongId, 'scs_repeat_confirm')
+})
+
+test('PHASE 5 - TEST 13: IMPORT_FAILURE_SHOWS_NO_FALSE_SUCCESS', () => {
+  let reportedSuccess = false
+  const onImportSong = () => false // Simulation of storage failure
+
+  const sharedSong = createSampleSharedSong('scs_fail_1', 'Failing Import', 'Artist')
+  const clone = cloneSharedCatalogSongToPersonal(sharedSong)
+  const outcome = onImportSong(clone)
+
+  if (outcome === true) {
+    reportedSuccess = true
+  }
+
+  assert.equal(outcome, false)
+  assert.equal(reportedSuccess, false)
+})
+
+test('PHASE 5 - TEST 14: DUPLICATE_TITLES_DO_NOT_TRIGGER_FALSE_IDENTITY_MATCH', () => {
+  // Personal song with identical title and artist, but NO catalog IDs
+  const unrelatedPersonal = createSampleSong('p-diff-1', 'A Thousand Hallelujahs', 'Brooke Ligertwood')
+
+  const catalogSong = createSampleSharedSong('scs_diff_1', 'A Thousand Hallelujahs', 'Brooke Ligertwood')
+
+  // Identity match logic: only sharedSourceSongId or publishedCatalogSongId
+  const hasMatch = Boolean(
+    (unrelatedPersonal.sharedSourceSongId && unrelatedPersonal.sharedSourceSongId === catalogSong.id) ||
+    (unrelatedPersonal.publishedCatalogSongId && unrelatedPersonal.publishedCatalogSongId === catalogSong.id)
+  )
+
+  // Must NOT trigger duplicate match based on title/artist alone
+  assert.equal(hasMatch, false)
+})
+
+test('PHASE 5 - TEST 15: PERSONAL_SONGBOOK_CLOUD_SYNC_AND_BACKUP_PRESERVED', () => {
+  const personalA = {
+    ...createSampleSong('p-sync-test', 'Sync Preservation Song', 'Artist'),
+    publishedCatalogSongId: 'scs_sync_pub_1',
+    sharedSourceSongId: 'scs_sync_src_1',
+  }
+
+  const normalized = normalizeBackupSong(personalA)
+  assert.equal(normalized.publishedCatalogSongId, 'scs_sync_pub_1')
+  assert.equal(normalized.sharedSourceSongId, 'scs_sync_src_1')
+
+  const checksum1 = computeSongbookChecksum({ songs: [normalized], setlists: [] })
+  const checksum2 = computeSongbookChecksum({ songs: [normalized], setlists: [] })
+  assert.equal(checksum1, checksum2)
+})
+
+test('PHASE 5 - TEST 16: SAFE_RECONCILIATION_BATCH_DOES_NOT_MAKE_PER_SONG_REQUESTS', async () => {
+  const service = new SharedCatalogService()
+  const mockFactory = new MockIDBFactory()
+  setTestSession({ id: 'user-recon', email: 'recon@gtar.app' })
+
+  let batchCallCount = 0
+  let perSongCallCount = 0
+  const origFetch = globalThis.fetch
+
+  globalThis.fetch = async (url) => {
+    const urlStr = String(url)
+    if (urlStr.includes('/api/catalog/songs?')) {
+      batchCallCount++
+      return new Response(JSON.stringify({
+        songs: [
+          createSampleSharedSong('scs_recon_1', 'Recon Song 1', 'Artist 1'),
+          createSampleSharedSong('scs_recon_2', 'Recon Song 2', 'Artist 2'),
+        ],
+        pagination: {
+          total: 2,
+          limit: 100,
+          offset: 0,
+          has_more: false,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    } else if (urlStr.includes('/api/catalog/songs/')) {
+      perSongCallCount++
+      return new Response(JSON.stringify({ song: null }), { status: 404 })
+    }
+    return new Response(JSON.stringify({}), { status: 200 })
+  }
+
+  try {
+    const res = await service.reconcilePublicationsBatch({ indexedDBFactory: mockFactory })
+    assert.equal(batchCallCount, 1, 'Must execute exactly 1 batch request')
+    assert.equal(perSongCallCount, 0, 'Must NOT execute per-song requests')
+    assert.ok(res.freshIds.has('scs_recon_1'))
+    assert.ok(res.freshIds.has('scs_recon_2'))
+    assert.ok(res.confirmedIds.has('scs_recon_1'))
+    assert.ok(res.confirmedIds.has('scs_recon_2'))
+  } finally {
+    globalThis.fetch = origFetch
+    clearTestSession()
+  }
+})

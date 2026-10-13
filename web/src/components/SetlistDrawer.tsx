@@ -1,5 +1,5 @@
 import { resolveSetlistSong } from '../utils/setlistSongs'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   X,
   ListMusic,
@@ -22,7 +22,7 @@ import {
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
-import { getConfirmedActiveCatalogIds } from '../utils/sharedCatalogService'
+import { getConfirmedActiveCatalogIds, sharedCatalogService } from '../utils/sharedCatalogService'
 import { SongSetlistDialog } from './SongSetlistDialog'
 
 interface SetlistDrawerProps {
@@ -89,9 +89,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   backdropStyle,
   drawerTouchHandlers,
 }) => {
-    const [localConfirmedCatalogIds, setLocalConfirmedCatalogIds] = useState<Set<string>>(new Set())
+  const [localConfirmedCatalogIds, setLocalConfirmedCatalogIds] = useState<Set<string>>(new Set())
   useEffect(() => {
-    if (propConfirmedCatalogIds) return
     let mounted = true
     const refresh = async () => {
       try {
@@ -110,9 +109,22 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
       window.removeEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
       window.removeEventListener('storage', onCatalogUpdate)
     }
-  }, [propConfirmedCatalogIds])
-  const confirmedCatalogIds = propConfirmedCatalogIds ?? localConfirmedCatalogIds
-  const freshCatalogIds = propFreshCatalogIds ?? new Set<string>()
+  }, [])
+  const confirmedCatalogIds = useMemo(() => {
+    const set = new Set(localConfirmedCatalogIds)
+    if (propConfirmedCatalogIds) {
+      for (const id of propConfirmedCatalogIds) set.add(id)
+    }
+    return set
+  }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
+  const freshCatalogIds = useMemo(() => {
+    const serviceFresh = sharedCatalogService.getFreshConfirmedCatalogIds()
+    const set = new Set(serviceFresh)
+    if (propFreshCatalogIds) {
+      for (const id of propFreshCatalogIds) set.add(id)
+    }
+    return set
+  }, [propFreshCatalogIds])
 
   const [drawerTab, setDrawerTab] = useState<'songbook' | 'setlists'>(initialTab || 'songbook')
   const [searchQuery, setSearchQuery] = useState('')

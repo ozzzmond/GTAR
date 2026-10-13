@@ -34,6 +34,7 @@ import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
 import { getConfirmedActiveCatalogIds, sharedCatalogService } from './utils/sharedCatalogService'
+import { getStoredSessionStatus } from './utils/googleAuth'
 import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
 import { EDGE_SWIPE_STORAGE_KEY } from './utils/edgeSwipe'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
@@ -672,7 +673,21 @@ function LibraryApp() {
         // non-blocking
       }
     }
-    refresh()
+    const reconcile = async () => {
+      try {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return
+        const auth = getStoredSessionStatus()
+        if (!auth.session || auth.isExpired) return
+        const result = await sharedCatalogService.reconcilePublicationsBatch()
+        if (mounted) {
+          setConfirmedCatalogIds(result.confirmedIds)
+          setFreshCatalogIds(result.freshIds)
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+    refresh().then(() => reconcile())
     const onCatalogUpdate = () => refresh()
     window.addEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
     window.addEventListener('storage', onCatalogUpdate)

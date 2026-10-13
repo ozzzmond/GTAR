@@ -38,6 +38,7 @@ import type { ActiveSongState } from '../types/gtar'
 import { useOptionalGoogleAuth } from '../utils/authContext'
 
 export interface SharedCatalogBrowserProps {
+  personalSongs?: ActiveSongState[]
   onSongUnpublished?: (catalogSongId: string) => void;
   onImportSong: (song: ActiveSongState) => boolean | void
   onSongImported?: (songTitle: string) => void
@@ -46,6 +47,7 @@ export interface SharedCatalogBrowserProps {
 }
 
 export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
+  personalSongs = [],
   onSongUnpublished,
   onImportSong,
   onSongImported,
@@ -97,6 +99,17 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
   const [importingSongIds, setImportingSongIds] = useState<Set<string>>(new Set())
   const [importedSuccessIds, setImportedSuccessIds] = useState<Set<string>>(new Set())
   const [importFeedback, setImportFeedback] = useState<string | null>(null)
+  const [duplicateImportSong, setDuplicateImportSong] = useState<SharedCatalogSongItem | null>(null)
+
+  // Find existing personal song matching catalog identity (sharedSourceSongId or publishedCatalogSongId)
+  const findMatchingPersonalSong = useCallback((catalogSongId: string): ActiveSongState | undefined => {
+    if (!catalogSongId || !personalSongs || personalSongs.length === 0) return undefined
+    return personalSongs.find(
+      (s) =>
+        Boolean(s.sharedSourceSongId && s.sharedSourceSongId === catalogSongId) ||
+        Boolean(s.publishedCatalogSongId && s.publishedCatalogSongId === catalogSongId)
+    )
+  }, [personalSongs])
 
   // Request race-condition guard
   const activeRequestIdRef = useRef<number>(0)
@@ -202,9 +215,7 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
     }
   }
 
-  // Handle Import to My Songs
-  const handleImport = (song: SharedCatalogSongItem, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation()
+  const executeImport = useCallback((song: SharedCatalogSongItem) => {
     if (importingSongIds.has(song.id)) return // Prevent double tap
 
     setImportingSongIds((prev) => new Set(prev).add(song.id))
@@ -236,7 +247,21 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
         return next
       })
     }
-  }
+  }, [importingSongIds, onImportSong, onSongImported])
+
+  // Handle Import to My Songs
+  const handleImport = useCallback((song: SharedCatalogSongItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    if (importingSongIds.has(song.id)) return // Prevent double tap
+
+    const existingMatch = findMatchingPersonalSong(song.id)
+    if (existingMatch) {
+      setDuplicateImportSong(song)
+      return
+    }
+
+    executeImport(song)
+  }, [findMatchingPersonalSong, executeImport, importingSongIds])
 
   // Check if current user is authorized to edit or unpublish
   const canUserModify = (song: SharedCatalogSongItem): boolean => {
@@ -453,8 +478,9 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="catalog-song-list">
               {filteredSongs.map((song) => {
+                const matchingPersonal = findMatchingPersonalSong(song.id)
                 const isImporting = importingSongIds.has(song.id)
-                const isImported = importedSuccessIds.has(song.id)
+                const isImported = importedSuccessIds.has(song.id) || Boolean(matchingPersonal)
                 const isAuthorOrAdmin = canUserModify(song)
 
                 return (
@@ -531,7 +557,7 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
                               ? 'bg-status-success/20 text-status-success border border-status-success/40'
                               : 'bg-app-action text-app-on-action hover:bg-app-action/90'
                           }`}
-                          title="Import copy to My Songs"
+                          title={matchingPersonal ? (matchingPersonal.publishedCatalogSongId === song.id ? "Already published from My Songs" : "Already in My Songs") : "Import copy to My Songs"}
                           aria-label={`Import ${song.title} to My Songs`}
                         >
                           <Download className="w-3 h-3" />
@@ -783,6 +809,48 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
               </button>
             </div>
           </form>
+        </dialog>
+      )}
+
+      {/* Duplicate Import Warning Modal */}
+      {duplicateImportSong && (
+        <dialog
+          open
+          data-testid="duplicate-import-modal"
+          onCancel={() => setDuplicateImportSong(null)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-amber-500/60 bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 text-amber-400 mb-3">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <h2 className="text-base font-bold text-app-heading">Already in My Songs</h2>
+            </div>
+            <p className="text-xs text-app-muted leading-relaxed mb-4">
+              A matching copy of &quot;{duplicateImportSong.title}&quot; is already in your songbook. Importing again will create another independent personal copy with its own edits.
+            </p>
+            <div className="flex justify-end gap-2 font-mono text-xs font-bold">
+              <button
+                type="button"
+                data-testid="cancel-duplicate-import-btn"
+                onClick={() => setDuplicateImportSong(null)}
+                className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-duplicate-import-btn"
+                onClick={() => {
+                  const songToImport = duplicateImportSong
+                  setDuplicateImportSong(null)
+                  executeImport(songToImport)
+                }}
+                className="px-4 py-2 rounded-lg bg-amber-500/90 text-black hover:bg-amber-400 transition-colors cursor-pointer"
+              >
+                Import Another Copy
+              </button>
+            </div>
+          </div>
         </dialog>
       )}
 

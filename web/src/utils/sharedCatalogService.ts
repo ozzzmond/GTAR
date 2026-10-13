@@ -55,11 +55,14 @@ export class SharedCatalogService {
    * If account identity changes, in-memory reference updates and previous account's
    * in-memory data is dropped.
    */
-  public setAccount(accountId: string | null) {
+  public setAccount(accountId: string | null): void {
     const clean = accountId ? accountId.trim().toLowerCase() : null
     if (this.currentAccountId !== clean) {
       this.currentAccountId = clean
       this.freshConfirmedIds.clear()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
+      }
     }
   }
 
@@ -74,6 +77,10 @@ export class SharedCatalogService {
     await clearAccountCatalogCache(accountId, options)
     if (this.currentAccountId === accountId.trim().toLowerCase()) {
       this.currentAccountId = null
+      this.freshConfirmedIds.clear()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
+      }
     }
   }
 
@@ -115,6 +122,10 @@ export class SharedCatalogService {
       // Successful authoritative server response
       const serverSongs = res.songs || []
 
+      for (const song of serverSongs) {
+        this.markCatalogIdLiveConfirmed(song.id)
+      }
+
       // Reconcile into IndexedDB cache without purging unseen paginated songs:
       try {
         // 1. Save freshly fetched songs to cache (upsert)
@@ -122,21 +133,22 @@ export class SharedCatalogService {
 
         // 2. Full first-page reconciliation: If fetching offset=0 with limit >= total,
         // server response is comprehensive; remove server-deleted songs from cache.
-        if (offset === 0 && (res.pagination.total <= res.songs.length || !res.pagination.has_more)) {
+        if (offset === 0 && res.pagination && (res.pagination.total <= res.songs.length || !res.pagination.has_more)) {
           const cached = await getCachedSongs(accountId, { indexedDBFactory })
           const serverIds = new Set(serverSongs.map((s) => s.id))
           for (const c of cached) {
             if (!serverIds.has(c.id)) {
               await removeCachedSong(accountId, c.id, { indexedDBFactory })
+              this.unmarkCatalogId(c.id)
             }
           }
         }
       } catch (cacheErr) {
         // Cache failure must not break online catalog access
-        console.warn("[CatalogService] Cache save/reconciliation degraded gracefully:", cacheErr)
+        console.warn('[CatalogService] Cache save/reconciliation degraded gracefully:', cacheErr)
       }
 
-      if (serverSongs.length === 0 && offset === 0 && res.pagination.total === 0) {
+      if (serverSongs.length === 0 && offset === 0 && (res.pagination ? res.pagination.total === 0 : true)) {
         return {
           songs: [],
           state: 'EMPTY',
@@ -150,8 +162,8 @@ export class SharedCatalogService {
         songs: serverSongs,
         state: 'ONLINE',
         isStale: false,
-        total: res.pagination.total,
-        hasMore: res.pagination.has_more,
+        total: res.pagination ? res.pagination.total : serverSongs.length,
+        hasMore: res.pagination ? res.pagination.has_more : false,
       }
     } catch (err) {
       if (err instanceof CatalogApiError) {
@@ -233,6 +245,7 @@ export class SharedCatalogService {
 
     try {
       const detail = await getSharedCatalogSong({ id, signal, timeoutMs })
+      this.markCatalogIdLiveConfirmed(detail.song.id)
       // Upsert into cache
       await saveSongsToCache(accountId, [detail.song], { indexedDBFactory })
       return {
@@ -280,6 +293,26 @@ export class SharedCatalogService {
   }
 
   /**
+   * Mark a newly published song as live confirmed, persist to local IDB cache,
+   * and notify listening UI components.
+   */
+  public async markPublishedSong(
+    song: SharedCatalogSongItem,
+    options?: IDBCacheOptions
+  ): Promise<void> {
+    this.markCatalogIdLiveConfirmed(song.id)
+    try {
+      const auth = getAuthenticatedSessionToken()
+      await saveSongsToCache(auth.accountId, [song], options)
+    } catch (cacheErr) {
+      console.warn('[CatalogService] Post-publish cache save degraded gracefully:', cacheErr)
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
+    }
+  }
+
+  /**
    * Publish a song to the shared catalog and cache it locally.
    */
   public async publishSong(
@@ -288,13 +321,7 @@ export class SharedCatalogService {
   ): Promise<SharedCatalogSongItem> {
     const res = await publishSharedCatalogSong(params)
     const song = res.song
-    this.markCatalogIdLiveConfirmed(song.id)
-    try {
-      const auth = getAuthenticatedSessionToken()
-      await saveSongsToCache(auth.accountId, [song], options)
-    } catch (cacheErr) {
-      console.warn('[CatalogService] Post-publish cache save degraded gracefully:', cacheErr)
-    }
+    await this.markPublishedSong(song, options)
     return song
   }
 
@@ -307,13 +334,7 @@ export class SharedCatalogService {
   ): Promise<SharedCatalogSongItem> {
     const res = await updateSharedCatalogSong(params)
     const song = res.song
-    this.markCatalogIdLiveConfirmed(song.id)
-    try {
-      const auth = getAuthenticatedSessionToken()
-      await saveSongsToCache(auth.accountId, [song], options)
-    } catch (cacheErr) {
-      console.warn('[CatalogService] Post-update cache save degraded gracefully:', cacheErr)
-    }
+    await this.markPublishedSong(song, options)
     return song
   }
 
@@ -331,6 +352,9 @@ export class SharedCatalogService {
       this.unmarkCatalogId(params.id)
     } catch (cacheErr) {
       console.warn('[CatalogService] Post-unpublish cache removal degraded gracefully:', cacheErr)
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
     }
     return res
   }
@@ -405,23 +429,51 @@ export class SharedCatalogService {
   }
 
   /**
-   * Returns a set of confirmed active shared catalog song IDs from authoritative local cache.
+   * Returns a set of confirmed active shared catalog song IDs from authoritative local cache
+   * and live in-memory server confirmations.
    */
   public async getConfirmedActiveCatalogIds(options?: IDBCacheOptions): Promise<Set<string>> {
     let accountId: string
     try {
       const auth = getAuthenticatedSessionToken()
       accountId = auth.accountId
-      this.currentAccountId = accountId
+      if (this.currentAccountId !== accountId) {
+        this.setAccount(accountId)
+      }
     } catch {
+      this.setAccount(null)
       return new Set<string>()
     }
+    const result = new Set<string>(this.freshConfirmedIds)
     try {
       const cached = await getCachedSongs(accountId, options)
-      return new Set(cached.map((s) => s.id))
+      for (const s of cached) {
+        result.add(s.id)
+      }
+      return result
     } catch {
-      return new Set<string>()
+      return result
     }
+  }
+
+  /**
+   * Reconciles publication status across active catalog songs without per-song requests.
+   */
+  public async reconcilePublicationsBatch(
+    options?: CatalogServiceOptions
+  ): Promise<{ confirmedIds: Set<string>; freshIds: Set<string> }> {
+    try {
+      const res = await this.getCatalogSongs({ limit: 100, ...options })
+      if (res.state === 'ONLINE') {
+        const fresh = this.getFreshConfirmedCatalogIds()
+        const allConfirmed = await this.getConfirmedActiveCatalogIds(options)
+        return { confirmedIds: allConfirmed, freshIds: fresh }
+      }
+    } catch {
+      // Degrade gracefully
+    }
+    const cachedConfirmed = await this.getConfirmedActiveCatalogIds(options)
+    return { confirmedIds: cachedConfirmed, freshIds: this.getFreshConfirmedCatalogIds() }
   }
 
   /**

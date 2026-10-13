@@ -155,8 +155,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Confirmed published catalog song IDs (server authoritative)
   const [localConfirmedCatalogIds, setLocalConfirmedCatalogIds] = useState<Set<string>>(() => new Set())
-  const confirmedCatalogIds = propConfirmedCatalogIds ?? localConfirmedCatalogIds
-  const freshCatalogIds = propFreshCatalogIds ?? sharedCatalogService.getFreshConfirmedCatalogIds()
+  const confirmedCatalogIds = useMemo(() => {
+    const set = new Set(localConfirmedCatalogIds)
+    if (propConfirmedCatalogIds) {
+      for (const id of propConfirmedCatalogIds) set.add(id)
+    }
+    return set
+  }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
+  const freshCatalogIds = useMemo(() => {
+    const serviceFresh = sharedCatalogService.getFreshConfirmedCatalogIds()
+    const set = new Set(serviceFresh)
+    if (propFreshCatalogIds) {
+      for (const id of propFreshCatalogIds) set.add(id)
+    }
+    return set
+  }, [propFreshCatalogIds])
 
 
   // Sync active account and refresh confirmed publication IDs
@@ -195,6 +208,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     if (saveOutcome === true) {
       setLocalConfirmedCatalogIds(prev => new Set(prev).add(publishRecoveryCatalogId))
       sharedCatalogService.markCatalogIdLiveConfirmed(publishRecoveryCatalogId)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
+      }
       setPublishSuccessNotice(`Published "${publishingSong.title}" to Shared Catalog!`)
       setPublishingSong(null)
       setPublishRecoveryCatalogId(null)
@@ -245,7 +261,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       const saveOutcome = onUpdateSong ? onUpdateSong({ id: publishingSong.id, publishedCatalogSongId: catalogId }) : false
       if (saveOutcome === true) {
         setLocalConfirmedCatalogIds(prev => new Set(prev).add(catalogId))
-        sharedCatalogService.markCatalogIdLiveConfirmed(catalogId)
+        await sharedCatalogService.markPublishedSong(res.song)
         setPublishSuccessNotice(
           res.deduplicated
             ? `Song "${publishingSong.title}" is already published in Shared Catalog`
@@ -259,7 +275,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         // Preserve recovery info and DO NOT show full success notice.
         setPublishRecoveryCatalogId(catalogId)
         setLocalConfirmedCatalogIds(prev => new Set(prev).add(catalogId))
-        sharedCatalogService.markCatalogIdLiveConfirmed(catalogId)
+        await sharedCatalogService.markPublishedSong(res.song)
         setPublishError(
           `Published to Shared Catalog (Catalog ID: ${catalogId}), but saving association to local songbook failed. Click "Retry Save Link" to link locally without re-publishing.`
         )
@@ -1147,6 +1163,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       {/* Tab Content: Shared Catalog Browser vs My Songs Personal Library */}
       {activeTab === 'shared_catalog' ? (
         <SharedCatalogBrowser
+          personalSongs={songs}
           onImportSong={(song) => {
             if (onImportSharedCatalogSong) {
               return onImportSharedCatalogSong(song)
