@@ -237,8 +237,8 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
     'Cast (Alt+4)',
     'Theme (Alt+5)',
     'Trash (Alt+6)',
-    'Side Panel',
     'More',
+    'Side Panel',
   ])
   for (const btn of toolbarButtons) {
     assert.ok(btn.classList.contains('shrink-0'))

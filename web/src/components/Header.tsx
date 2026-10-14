@@ -781,19 +781,19 @@ export const Header: React.FC<HeaderProps> = ({
               className="shrink-0"
             />
             <ToolbarIconButton
-              icon={Menu}
-              label="Side Panel"
-              onClick={onOpenSetlistDrawer || (() => {})}
-              className="shrink-0"
-              testId="canonical-sidepanel-toggle-btn"
-            />
-            <ToolbarIconButton
               buttonRef={moreButtonRef}
               icon={MoreVertical}
               label="More"
               isActive={showOverflowMenu}
               onClick={() => setShowOverflowMenu((prev) => !prev)}
               className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Menu}
+              label="Side Panel"
+              onClick={onOpenSetlistDrawer || (() => {})}
+              className="shrink-0"
+              testId="canonical-sidepanel-toggle-btn"
             />
           </div>
         </div>

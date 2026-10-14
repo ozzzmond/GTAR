@@ -1,5 +1,5 @@
 /**
- * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.2b)
+ * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.2c)
  * Cloudflare Pages Functions + D1 SQLite Core Library
  */
 

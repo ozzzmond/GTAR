@@ -1683,7 +1683,7 @@ export const StageView: React.FC<StageViewProps> = ({
               {song.title || 'Untitled Song'}
             </h1>
             {song.artist && (
-              <p className="text-[10px] sm:text-xs text-app-action font-semibold truncate leading-none mt-0.5">
+              <p className="text-[10px] sm:text-xs text-app-action font-semibold truncate leading-normal mt-0.5 pb-0.5">
                 {song.artist}
               </p>
             )}
@@ -1853,7 +1853,7 @@ export const StageView: React.FC<StageViewProps> = ({
               {song.title || 'Untitled Song'}
             </h1>
             {song.artist && (
-              <p className="text-[11px] sm:text-xs text-app-action font-semibold truncate leading-none mt-0.5">
+              <p className="text-[11px] sm:text-xs text-app-action font-semibold truncate leading-normal mt-0.5 pb-0.5">
                 {song.artist}
               </p>
             )}
