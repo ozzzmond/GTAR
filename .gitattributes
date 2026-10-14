@@ -1,0 +1,35 @@
+*.gitattributes text eol=lf
+# GTAR canonical line-ending policy
+# Source files use LF on every operating system.
+
+*.ts      text eol=lf
+*.tsx     text eol=lf
+*.js      text eol=lf
+*.jsx     text eol=lf
+*.cjs     text eol=lf
+*.mjs     text eol=lf
+*.json    text eol=lf
+*.jsonc   text eol=lf
+*.css     text eol=lf
+*.html    text eol=lf
+*.md      text eol=lf
+*.sql     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.sh      text eol=lf
+*.ps1     text eol=lf
+
+# Native Windows command scripts
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# Binary assets must never be normalized
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.ico     binary
+*.woff    binary
+*.woff2   binary
+*.pdf     binary
