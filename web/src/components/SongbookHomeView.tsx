@@ -5,7 +5,6 @@ import React, { useState, useMemo, useRef, useCallback } from 'react'
 import {
   ListPlus,
   Music,
-  Plus,
   Play,
   Trash2,
   AlertTriangle,
@@ -19,7 +18,6 @@ import {
   Check,
   CheckCircle2,
   AlertCircle,
-  Menu,
 } from 'lucide-react'
 import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
@@ -76,7 +74,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onNewSong,
   onNewSetlist,
   onOpenSetlists,
-  onOpenSongbook,
   onManageSetlist,
   onDeleteSong,
   onDeleteSetlist,
@@ -458,6 +455,24 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
     return 'ALL'
   })
+
+  const [optionsCollapsed, setOptionsCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('gtar_songbook_options_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  const toggleOptionsCollapsed = () => {
+    const next = !optionsCollapsed
+    setOptionsCollapsed(next)
+    try {
+      localStorage.setItem('gtar_songbook_options_collapsed', String(next))
+    } catch {
+      /* Session preference remains usable */
+    }
+  }
 
   // Recover safely if persisted filterSetlistId points to a deleted or nonexistent setlist
   React.useEffect(() => {
@@ -1116,7 +1131,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </dialog>
       )}
 
-      {/* 1. Compact Panel Header — title + New Setlist button, no hero */}
+      {/* 1. Compact Panel Header — title, no hero */}
       <div className="flex items-center justify-between mb-5 px-1">
         <div className="flex items-center gap-2.5">
           <div className="ui-section-icon w-8 h-8 rounded-xl bg-app-surface border border-app-border flex items-center justify-center text-app-action">
@@ -1126,15 +1141,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             Songbook &amp; Gig Library
           </h1>
         </div>
-        <button
-          type="button"
-          onClick={onNewSetlist || onOpenSetlists}
-          className="px-4 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
-          title="Create new empty gig setlist"
-        >
-          <Plus className="w-3.5 h-3.5 stroke-[3]" />
-          <span>New Setlist</span>
-        </button>
       </div>
 
       {/* Publish Success Toast */}
@@ -1265,17 +1271,28 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               ) : (
                 <>
                   {!setlistsCollapsed && (
-                    <button
-                      type="button"
-                      data-testid="toggle-setlist-selection-mode"
-                      onClick={() => {
-                        setIsSetlistSelectionMode(true)
-                        setSelectedSetlistIds(new Set())
-                      }}
-                      className="ui-action-text text-xs px-2 py-1 border border-app-action/40 rounded text-app-action hover:bg-app-action/10 cursor-pointer"
-                    >
-                      Select
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        data-testid="main-new-setlist-btn"
+                        onClick={onNewSetlist || onOpenSetlists}
+                        className="ui-action-text text-xs px-2.5 py-1 rounded-lg bg-app-button hover:bg-app-button text-app-button-text font-semibold transition-all cursor-pointer shadow-xs active:scale-95"
+                        title="Create new empty gig setlist"
+                      >
+                        New Setlist
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="toggle-setlist-selection-mode"
+                        onClick={() => {
+                          setIsSetlistSelectionMode(true)
+                          setSelectedSetlistIds(new Set())
+                        }}
+                        className="ui-action-text text-xs px-2 py-1 border border-app-action/40 rounded text-app-action hover:bg-app-action/10 cursor-pointer"
+                      >
+                        Select
+                      </button>
+                    </>
                   )}
                   <button
                     type="button"
@@ -1303,16 +1320,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   >
                     <Upload className="w-3 h-3" />
                     <span>Import</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="open-setlists-panel-btn"
-                    onClick={onOpenSetlists}
-                    className="p-1.5 rounded-lg border border-app-border bg-app-surface text-app-muted hover:text-app-heading hover:border-app-action/40 transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-app-action"
-                    title="Open Setlists panel"
-                    aria-label="Open Setlists panel"
-                  >
-                    <Menu className="w-3.5 h-3.5" />
                   </button>
                 </>
               )}
@@ -1611,27 +1618,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 {songs.length > 0 && (
                   <button
                     type="button"
-                    data-testid="toggle-song-selection-mode"
-                    onClick={() => {
-                      setIsSongSelectionMode(true)
-                      setSelectedSongIds(new Set())
-                    }}
-                    className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer"
-                    title="Manage song selection, setlist assignment, and batch actions"
+                    data-testid="toggle-sort-filter-options"
+                    aria-expanded={!optionsCollapsed}
+                    aria-controls="songbook-sort-filter-options"
+                    onClick={toggleOptionsCollapsed}
+                    className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer"
                   >
-                    Manage
-                  </button>
-                )}
-                {onOpenSongbook && (
-                  <button
-                    type="button"
-                    data-testid="open-songbook-panel-btn"
-                    onClick={onOpenSongbook}
-                    className="p-1.5 rounded-lg border border-app-border bg-app-surface text-app-muted hover:text-app-heading hover:border-app-action/40 transition-colors cursor-pointer flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-app-action"
-                    title="Open Songbook panel"
-                    aria-label="Open Songbook panel"
-                  >
-                    <Menu className="w-3.5 h-3.5" />
+                    {optionsCollapsed ? 'Show Options' : 'Hide Options'}
                   </button>
                 )}
               </>
@@ -1641,7 +1634,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
         {/* Sort & Filter Toolbar */}
         {songs.length > 0 && (
-          <div className="flex flex-wrap items-center justify-end gap-3 mb-4 p-3 rounded-2xl bg-app-filter border border-app-border shadow-sm">
+          <div
+            id="songbook-sort-filter-options"
+            hidden={optionsCollapsed}
+            className="flex flex-wrap items-center justify-end gap-3 mb-4 p-3 rounded-2xl bg-app-filter border border-app-border shadow-sm"
+          >
             <div className="flex items-center gap-2.5 flex-wrap">
               {/* Sort Dropdown */}
               <div className="flex items-center gap-1.5 text-xs font-mono">
@@ -1710,6 +1707,22 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     ))}
                   </select>
                 </div>
+              )}
+
+              {/* Songs Library Manage Control (Beside Setlist filter) */}
+              {!isSongSelectionMode && (
+                <button
+                  type="button"
+                  data-testid="toggle-song-selection-mode"
+                  onClick={() => {
+                    setIsSongSelectionMode(true)
+                    setSelectedSongIds(new Set())
+                  }}
+                  className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer shrink-0"
+                  title="Manage song selection, setlist assignment, and batch actions"
+                >
+                  Manage
+                </button>
               )}
             </div>
           </div>
@@ -1829,7 +1842,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         <SongStatusBadge
                           testId={`song-metadata-status-${originalIdx}`}
                           ariaLabel={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
-                          title={isMetaOk ? 'Metadata OK' : `Needs Metadata (${metadataStatus.missingFields.join(', ')})`}
                           className={`p-0.5 rounded flex items-center justify-center shrink-0 ${
                             isMetaOk ? 'text-status-success' : 'text-app-accent'
                           }`}
@@ -1845,7 +1857,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                 ) : (
                                   <>
                                     <AlertCircle className="w-3.5 h-3.5 text-app-accent shrink-0" />
-                                    <span>Needs Metadata</span>
+                                    <span>Needs Metadata{metadataStatus.missingFields.length > 0 ? ` (${metadataStatus.missingFields.join(', ')})` : ''}</span>
                                   </>
                                 )}
                               </div>
@@ -1873,7 +1885,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <SongStatusBadge
                               testId={`song-imported-status-${originalIdx}`}
                               ariaLabel="Imported from Shared Catalog"
-                              title={`Imported from Shared Catalog${importedProv.publisherText ? ` - Publisher: ${importedProv.publisherText}` : ''}`}
                               className="p-0.5 rounded flex items-center justify-center shrink-0 text-sky-400 hover:text-sky-300"
                               icon={<CloudDownload className="w-3.5 h-3.5" />}
                               popoverContent={
@@ -1913,7 +1924,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <SongStatusBadge
                               testId={`song-published-status-${originalIdx}`}
                               ariaLabel={label}
-                              title={label}
                               className={isFresh ? "p-0.5 rounded flex items-center justify-center shrink-0 text-status-success hover:text-emerald-300" : "p-0.5 rounded flex items-center justify-center shrink-0 text-amber-400 opacity-90 hover:opacity-100"}
                               icon={<CloudCheck className="w-3.5 h-3.5" />}
                               popoverContent={

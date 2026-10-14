@@ -97,19 +97,16 @@ test('DEV5C_QA_1_2: Side-panel cards render compact metadata status icon and com
   )
 })
 
-// 2. MAIN PAGE SIDEPANEL ENTRY CONTROLS (PANEL-MENU ICONS FOR SETLISTS & SONGBOOK)
-test('DEV5C_QA_3: Gig Setlists and Songs Library have matching Menu icon entry controls with accessible labels', () => {
-  let openedSetlists = false
-  let openedSongbook = false
-
+// 2. MAIN PAGE SIDEPANEL ENTRY CONTROLS (UNIFIED CANONICAL HEADER BUTTON)
+test('DEV5C_QA_3: Canonical hamburger button in Header replaces redundant section-header hamburger buttons', () => {
   const html = renderToString(
     React.createElement(SongbookHomeView, {
       songs: [sampleCompleteSong],
       activeSongIndex: 0,
       onSelectSong: () => {},
       onNewSong: () => {},
-      onOpenSetlists: () => { openedSetlists = true },
-      onOpenSongbook: () => { openedSongbook = true },
+      onOpenSetlists: () => {},
+      onOpenSongbook: () => {},
       onDeleteSong: () => {},
       setlists: sampleSetlists,
       onSongMembershipChange: () => {},
@@ -117,23 +114,18 @@ test('DEV5C_QA_3: Gig Setlists and Songs Library have matching Menu icon entry c
     })
   )
 
-  // 1. Gig Setlists section entry control
-  assert.ok(html.includes('data-testid="open-setlists-panel-btn"'), 'Gig Setlists must have open-setlists-panel-btn')
-  assert.ok(html.includes('aria-label="Open Setlists panel"'), 'Setlists panel button has aria-label="Open Setlists panel"')
-  assert.ok(html.includes('title="Open Setlists panel"'), 'Setlists panel button has title="Open Setlists panel"')
+  // 1. Redundant section entry controls are removed from SongbookHomeView
+  assert.ok(!html.includes('data-testid="open-setlists-panel-btn"'), 'Gig Setlists redundant open-setlists-panel-btn removed')
+  assert.ok(!html.includes('data-testid="open-songbook-panel-btn"'), 'Songs Library redundant open-songbook-panel-btn removed')
 
-  // 2. Songs Library section entry control
-  assert.ok(html.includes('data-testid="open-songbook-panel-btn"'), 'Songs Library must have open-songbook-panel-btn')
-  assert.ok(html.includes('aria-label="Open Songbook panel"'), 'Songbook panel button has aria-label="Open Songbook panel"')
-  assert.ok(html.includes('title="Open Songbook panel"'), 'Songbook panel button has title="Open Songbook panel"')
-
-  // 3. Existing bulk Songs Library "Manage" button remains separate
+  // 2. Existing bulk Songs Library "Manage" button remains present beside filters
   assert.ok(html.includes('data-testid="toggle-song-selection-mode"'), 'Bulk Songs Library Manage button preserved')
   assert.ok(html.includes('>Manage<'), 'Bulk Manage button retains text label Manage')
 
-  // Source code check: both use Menu icon from lucide-react
-  const songbookSource = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
-  assert.ok(songbookSource.includes('<Menu className="w-3.5 h-3.5" />'), 'Entry controls use compact Menu icon')
+  // 3. Header source verifies canonical Side Panel hamburger button
+  const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
+  assert.ok(headerSource.includes('testId="canonical-sidepanel-toggle-btn"'), 'Header renders canonical sidepanel button')
+  assert.ok(headerSource.includes('label="Side Panel"'), 'Canonical button has label Side Panel')
 })
 
 // 3. MAIN SONGS LIBRARY CARDS METADATA STATUS ICON
@@ -157,7 +149,7 @@ test('DEV5C_QA_4: Main Songs Library cards render compact canonical metadata sta
 
   // Complete song card
   assert.ok(html.includes('data-testid="song-metadata-status-0"'), 'Main card 0 renders metadata status container')
-  assert.ok(html.includes('title="Metadata OK"'), 'Main card 0 has title="Metadata OK"')
+  assert.ok(html.includes('aria-label="Metadata OK"'), 'Main card 0 has aria-label="Metadata OK"')
 
   // Incomplete song card
   assert.ok(html.includes('data-testid="song-metadata-status-1"'), 'Main card 1 renders metadata status container')

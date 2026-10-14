@@ -19,7 +19,6 @@ import {
   Plus,
   SkipBack,
   SkipForward,
-  ArrowLeft,
   Cast,
   Tv,
   SlidersHorizontal,
@@ -128,7 +127,6 @@ export const StageView: React.FC<StageViewProps> = ({
   onSelectFontStyle: externalOnSelectFontStyle,
   isTwoColumn: externalIsTwoColumn,
   onToggleTwoColumn: externalOnToggleTwoColumn,
-  onBack,
   onPerformanceModeChange,
 }) => {
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
@@ -1848,19 +1846,8 @@ export const StageView: React.FC<StageViewProps> = ({
           inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'opacity-100'
         }`}
       >
-        {/* Left Side: Back Navigation Button + Song Title & Artist */}
+        {/* Left Side: Song Title & Artist */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="p-2 hover:bg-app-accent/50 rounded-full transition-colors cursor-pointer text-app-text hover:text-app-action flex items-center justify-center -ml-1 select-none active:scale-95"
-              title="Back to Songbook Library"
-              aria-label="Back to Songbook Library"
-            >
-              <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
-            </button>
-          )}
           <div className="min-w-0">
             <h1 className="text-base sm:text-lg font-extrabold text-app-text tracking-tight leading-tight truncate max-w-[240px] sm:max-w-xs md:max-w-md">
               {song.title || 'Untitled Song'}

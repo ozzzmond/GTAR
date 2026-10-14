@@ -227,7 +227,7 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   assert.equal(layout.width, 'max-content')
   assert.match(css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0], /margin-inline:\s*auto;/)
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
-  assert.equal(toolbarButtons.length, 8)
+  assert.equal(toolbarButtons.length, 9)
   const labels = [...toolbarButtons].map(btn => btn.querySelector('.toolbar-tooltip')?.textContent)
   assert.deepEqual(labels, [
     'Back',
@@ -237,6 +237,7 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
     'Cast (Alt+4)',
     'Theme (Alt+5)',
     'Trash (Alt+6)',
+    'Side Panel',
     'More',
   ])
   for (const btn of toolbarButtons) {

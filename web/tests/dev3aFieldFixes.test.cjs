@@ -106,10 +106,18 @@ test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin (Basurahan) removed from More menu
 test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collapsed; restored when shown', () => {
   const songbookSource = readSource(path.join(webDir, 'src/components/SongbookHomeView.tsx'))
 
-  // Select button must be conditionally rendered on !setlistsCollapsed
+  // Select button must be conditionally rendered on !setlistsCollapsed alongside New Setlist
   assert.ok(
-    songbookSource.includes('{!setlistsCollapsed && (\n                    <button\n                      type="button"\n                      data-testid="toggle-setlist-selection-mode"'),
-    'Select button must be hidden when setlistsCollapsed is true'
+    songbookSource.includes('data-testid="main-new-setlist-btn"'),
+    'New Setlist button must be present in setlists action row'
+  )
+  assert.ok(
+    songbookSource.includes('data-testid="toggle-setlist-selection-mode"'),
+    'Select button must be present in setlists action row'
+  )
+  assert.ok(
+    songbookSource.indexOf('data-testid="main-new-setlist-btn"') < songbookSource.indexOf('data-testid="toggle-setlist-selection-mode"'),
+    'New Setlist button must precede Select button in setlists action row'
   )
 
   // toggleSetlists must exit selection mode when collapsing
@@ -122,11 +130,12 @@ test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collap
     'Clears selected setlist IDs when collapsing'
   )
 
-  // Preserves New Setlist, Open Setlists panel, and Import buttons
+  // Preserves New Setlist and Import buttons in setlists header; canonical Side Panel is in Header
   assert.ok(songbookSource.includes('title="Create new empty gig setlist"'), 'New Setlist button preserved')
-  assert.ok(songbookSource.includes('data-testid="open-setlists-panel-btn"'), 'Open Setlists panel button preserved')
   assert.ok(songbookSource.includes('title="Import single setlist (.json) into your library"'), 'Import setlist button preserved')
   assert.ok(songbookSource.includes("{setlistsCollapsed ? 'Show' : 'Hide'}"), 'Show/Hide toggle button preserved')
+  const headerSource = readSource(path.join(webDir, 'src/components/Header.tsx'))
+  assert.ok(headerSource.includes('testId="canonical-sidepanel-toggle-btn"'), 'Canonical Side Panel button in Header')
 })
 
 // =============================================================================

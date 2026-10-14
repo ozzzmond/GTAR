@@ -7,7 +7,6 @@ import {
   Play,
   CheckCircle2,
   Trash2,
-  Plus,
   AlertTriangle,
   ChevronUp,
   ChevronDown,
@@ -722,7 +721,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     <SongStatusBadge
                       testId={`drawer-song-metadata-status-${originalIndex}`}
                       ariaLabel={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
-                      title={isMetaOk ? 'Metadata OK' : `Needs Metadata (${metadataStatus.missingFields.join(', ')})`}
                       className={`p-1 rounded flex items-center justify-center shrink-0 ${
                         isMetaOk ? 'text-status-success' : 'text-app-accent'
                       }`}
@@ -740,7 +738,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             ) : (
                               <>
                                 <AlertCircle className="w-3.5 h-3.5 text-app-accent shrink-0" />
-                                <span>Needs Metadata</span>
+                                <span>Needs Metadata{metadataStatus.missingFields.length > 0 ? ` (${metadataStatus.missingFields.join(', ')})` : ''}</span>
                               </>
                             )}
                           </div>
@@ -770,7 +768,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                         <SongStatusBadge
                           testId={`drawer-song-imported-status-${originalIndex}`}
                           ariaLabel="Imported from Shared Catalog"
-                          title={`Imported from Shared Catalog${importedProv.publisherText ? ` - Publisher: ${importedProv.publisherText}` : ''}`}
                           className="p-1 rounded flex items-center justify-center shrink-0 text-sky-400 bg-sky-500/10 hover:bg-sky-500/20"
                           icon={<CloudDownload className="w-3.5 h-3.5" />}
                           zIndex={80}
@@ -814,7 +811,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                         <SongStatusBadge
                           testId={`drawer-song-published-status-${originalIndex}`}
                           ariaLabel={label}
-                          title={label}
                           className={isFresh ? "p-1 rounded flex items-center justify-center shrink-0 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20" : "p-1 rounded flex items-center justify-center shrink-0 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"}
                           icon={<CloudCheck className="w-3.5 h-3.5" />}
                           zIndex={80}
@@ -903,7 +899,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
           )}
         </div>
 
-        {/* Drawer Bottom Action Bar: Contextual (+ New Song vs + New Setlist) */}
+        {/* Drawer Bottom Action Bar: Contextual (New Song vs New Setlist) */}
         <div className="p-3 bg-app-base border-t border-app-border flex flex-col gap-2">
           {drawerTab === 'songbook' ? (
             <button
@@ -915,7 +911,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               className="w-full py-2.5 px-4 rounded-xl bg-app-action text-app-on-action font-bold text-xs flex items-center justify-center gap-2 hover:bg-app-action transition-all cursor-pointer shadow-md active:scale-95 select-none"
               title="Create a new blank song template in Desktop Editor"
             >
-              <Plus className="w-4 h-4 stroke-[3]" />
               <span>New Song</span>
             </button>
           ) : (
@@ -928,7 +923,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               className="w-full py-2.5 px-4 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95 select-none"
               title="Create new setlist"
             >
-              <Plus className="w-4 h-4 stroke-[3]" />
               <span>New Setlist</span>
             </button>
           )}

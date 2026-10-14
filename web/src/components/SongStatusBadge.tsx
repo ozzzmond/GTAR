@@ -22,7 +22,6 @@ export const SongStatusBadge: React.FC<SongStatusBadgeProps> = ({
   testId,
   role = 'status',
   ariaLabel,
-  title,
   className = '',
   icon,
   popoverContent,
@@ -47,7 +46,6 @@ export const SongStatusBadge: React.FC<SongStatusBadgeProps> = ({
         role={role}
         data-testid={testId}
         aria-label={ariaLabel}
-        title={title ?? ariaLabel}
         aria-expanded={isVisible}
         aria-haspopup="dialog"
         onClick={(e) => {

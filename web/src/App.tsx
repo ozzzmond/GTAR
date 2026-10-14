@@ -1,4 +1,4 @@
-﻿import {
+import {
   persistLibrary,
   planDanglingReferenceRepair,
   applyDanglingReferenceRepair,
@@ -1639,6 +1639,7 @@ function LibraryApp() {
           onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
           onPushSetlistToBandSync={handlePushSetlistToMembers}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
+          onImportSharedCatalogSong={handleSaveSongFromEditor}
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
           onCloudSyncApplied={(updated) => {

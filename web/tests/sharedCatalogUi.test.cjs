@@ -1687,7 +1687,7 @@ test('PHASE 5 - PROVENANCE 9: Mobile metadata tooltip indicates accurate missing
   // Incomplete song badge
   assert.ok(html.includes('data-testid="song-metadata-status-1"'))
   assert.ok(html.includes('aria-label="Needs Metadata"'))
-  assert.ok(html.includes('Needs Metadata ('))
+  assert.ok(!html.includes('title="Needs Metadata ('), 'Conflicting native HTML title tooltip removed from status icon')
 })
 
 test('PHASE 5 - PROVENANCE 10: SongStatusBadge stops event propagation and supports keyboard dismissal', () => {

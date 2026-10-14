@@ -3,7 +3,6 @@ import {
   Trash2,
   RotateCcw,
   AlertTriangle,
-  ArrowLeft,
 } from 'lucide-react'
 import type { ActiveSongState } from '../types/gtar'
 
@@ -27,17 +26,8 @@ export const TrashView: React.FC<TrashViewProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto bg-app-base px-4 sm:px-8 py-6 max-w-7xl mx-auto w-full select-none animate-fade-in">
-      {/* Top Breadcrumb / Back button */}
-      <div className="flex items-center justify-between mb-6">
-        <button
-          type="button"
-          onClick={onBackToSongbook}
-          className="inline-flex items-center gap-2 text-xs font-bold text-app-action hover:text-app-action cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Songbook</span>
-        </button>
-
+      {/* Top Header / Recycle Bin Count */}
+      <div className="flex items-center justify-end mb-6">
         <div className="text-xs font-mono text-app-muted">
           Recycle Bin ({deletedSongs.length})
         </div>
@@ -57,6 +47,7 @@ export const TrashView: React.FC<TrashViewProps> = ({
           </p>
           <button
             type="button"
+            data-testid="trash-empty-return-btn"
             onClick={onBackToSongbook}
             className="mt-6 px-4 py-2 rounded-xl bg-app-action text-app-on-action font-bold text-xs hover:bg-app-action transition-all cursor-pointer shadow-md"
           >

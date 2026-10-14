@@ -27,10 +27,14 @@ import {
   RotateCw,
   AlertTriangle,
   ArrowLeft,
+  Menu,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
 import type { CloudSyncStatus } from '../utils/cloudSongbookSync'
+import { sharedCatalogService } from '../utils/sharedCatalogService'
+import { cloneSharedCatalogSongToPersonal } from '../utils/sharedCatalogImport'
+import type { SharedCatalogSongItem } from '../types/sharedCatalog'
 import {
   searchOnlineChords,
   fetchOnlineChordSheet,
@@ -85,6 +89,7 @@ interface HeaderProps {
   onSelectSetlist?: (setlistId: string | number) => void
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
+  onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | Promise<boolean>
   onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
   onOpenCast?: () => void
   isCastActive?: boolean
@@ -142,10 +147,12 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStageSettings,
   onOpenImportModal,
   onOpenBackupRestoreModal,
+  onOpenSetlistDrawer,
   setlists = [],
   onSelectSetlistSong,
   onSelectSetlist,
   onDirectImportOnlineSong,
+  onImportSharedCatalogSong,
   onCloudSyncApplied,
   onOpenCast,
   isCastActive = false,
@@ -170,6 +177,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('IDLE')
   const [isCloudSyncProcessing, setIsCloudSyncProcessing] = useState(false)
+
+  // Shared Catalog search state
+  const [catalogResults, setCatalogResults] = useState<SharedCatalogSongItem[]>([])
+  const [isSearchingCatalog, setIsSearchingCatalog] = useState(false)
+  const [previewCatalogSong, setPreviewCatalogSong] = useState<SharedCatalogSongItem | null>(null)
+  const [importingCatalogId, setImportingCatalogId] = useState<string | null>(null)
+  const [importedCatalogIds, setImportedCatalogIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false)
@@ -330,7 +344,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Filter matching songs for real-time search dropdown overlay
   const matchingSearchSongs = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
+    const q = (searchQuery || '').trim().toLowerCase()
     if (!q) return []
     return allSongs
       .map((s, originalIdx) => ({ ...s, originalIdx }))
@@ -343,7 +357,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Matching setlists based on setlist name or track names within setlist
   const matchingSearchSetlists = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
+    const q = (searchQuery || '').trim().toLowerCase()
     if (!q || !setlists) return []
     return setlists.filter((sl) => {
       const matchName = sl.name.toLowerCase().includes(q)
@@ -385,6 +399,61 @@ export const Header: React.FC<HeaderProps> = ({
 
     return () => clearTimeout(timeout)
   }, [searchQuery])
+
+  // Shared Catalog Search (debounced 350ms, authenticated/cached via sharedCatalogService)
+  useEffect(() => {
+    const trimmed = searchQuery.trim().toLowerCase()
+    if (!trimmed || trimmed.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Invalid search queries synchronously clear prior remote results and request state.
+      setCatalogResults([])
+      setIsSearchingCatalog(false)
+      return
+    }
+
+    setIsSearchingCatalog(true)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => {
+      sharedCatalogService
+        .getCatalogSongs({ limit: 50, signal: controller.signal })
+        .then((res) => {
+          const songs = res.songs || []
+          const filtered = songs.filter((s) => {
+            const matchTitle = (s.title || '').toLowerCase().includes(trimmed)
+            const matchArtist = (s.artist || '').toLowerCase().includes(trimmed)
+            return matchTitle || matchArtist
+          })
+          setCatalogResults(filtered)
+          setIsSearchingCatalog(false)
+        })
+        .catch(() => {
+          setCatalogResults([])
+          setIsSearchingCatalog(false)
+        })
+    }, 350)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [searchQuery])
+
+  // Import Shared Catalog song to personal library
+  const handleImportCatalogSong = (e: React.MouseEvent, song: SharedCatalogSongItem) => {
+    e.stopPropagation()
+    if (importingCatalogId === song.id) return
+    setImportingCatalogId(song.id)
+    try {
+      const personalClone = cloneSharedCatalogSongToPersonal(song)
+      if (onImportSharedCatalogSong) {
+        onImportSharedCatalogSong(personalClone)
+      }
+      setImportedCatalogIds((prev) => new Set(prev).add(song.id))
+    } catch (err) {
+      console.error('Failed to import shared catalog song:', err)
+    } finally {
+      setTimeout(() => setImportingCatalogId(null), 1200)
+    }
+  }
 
   // Direct 1-Click Import from Online Results
   const handleDirectImportOnline = async (
@@ -712,6 +781,13 @@ export const Header: React.FC<HeaderProps> = ({
               className="shrink-0"
             />
             <ToolbarIconButton
+              icon={Menu}
+              label="Side Panel"
+              onClick={onOpenSetlistDrawer || (() => {})}
+              className="shrink-0"
+              testId="canonical-sidepanel-toggle-btn"
+            />
+            <ToolbarIconButton
               buttonRef={moreButtonRef}
               icon={MoreVertical}
               label="More"
@@ -821,7 +897,100 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
 
-                {/* B. GIG SETLISTS SECTION */}
+                {/* B. SHARED CATALOG SECTION */}
+                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-action uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
+                  <div className="flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-app-action" />
+                    <span>Shared Catalog ({catalogResults.length})</span>
+                  </div>
+                  {isSearchingCatalog && (
+                    <div className="flex items-center gap-1 text-app-action">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span className="text-[9px]">Searching Catalog...</span>
+                    </div>
+                  )}
+                </div>
+
+                {catalogResults.length > 0 ? (
+                  catalogResults.map((catSong) => {
+                    const isImporting = importingCatalogId === catSong.id
+                    const isImported = importedCatalogIds.has(catSong.id)
+                    return (
+                      <div
+                        key={`catalog-${catSong.id}`}
+                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-app-base ui-primary-text text-app-text group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-action truncate">
+                              {catSong.title}
+                            </span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent font-bold border border-app-accent/30 shrink-0">
+                              r{catSong.current_revision}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-[10px] ui-secondary-text text-app-muted mt-0.5 font-medium">
+                            <span className="truncate">{catSong.artist || 'Unknown Artist'}</span>
+                            {catSong.key && (
+                              <>
+                                <span>•</span>
+                                <span className="px-1 py-0.2 rounded bg-app-base text-app-action font-mono font-bold">
+                                  Key: {catSong.key}
+                                </span>
+                              </>
+                            )}
+                            {catSong.format && (
+                              <span className="text-[9px] font-mono opacity-70">
+                                {catSong.format}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Inline Actions: [Preview] and [+ Import] */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setIsSearchFocused(false)
+                              setPreviewCatalogSong(catSong)
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-border ui-primary-text text-app-text text-[11px] font-bold flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
+                            title="Preview Shared Catalog song"
+                          >
+                            <Eye className="w-3 h-3 text-app-action" />
+                            <span>Preview</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isImporting || isImported}
+                            onClick={(e) => handleImportCatalogSong(e, catSong)}
+                            className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                            title="Import song to personal library"
+                          >
+                            {isImporting ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : isImported ? (
+                              <Check className="w-3 h-3" />
+                            ) : (
+                              <Plus className="w-3 h-3 stroke-[3]" />
+                            )}
+                            <span>{isImporting ? 'Importing...' : isImported ? 'Imported' : 'Import'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : !isSearchingCatalog ? (
+                  <div className="px-3 py-1.5 text-center text-xs ui-secondary-text text-app-muted">
+                    No catalog songs matching &quot;{searchQuery}&quot;
+                  </div>
+                ) : null}
+
+                {/* C. GIG SETLISTS SECTION */}
                 {matchingSearchSetlists.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-accent uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
@@ -1125,6 +1294,73 @@ export const Header: React.FC<HeaderProps> = ({
           }
         }}
       />
+
+      {/* Shared Catalog Song Preview Modal */}
+      {previewCatalogSong && (
+        <dialog
+          open
+          data-testid="header-catalog-preview-modal"
+          onCancel={() => setPreviewCatalogSong(null)}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-xl max-h-[90vh] rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        >
+          <div className="p-4 sm:p-5 border-b border-app-border/60 flex items-center justify-between">
+            <div className="min-w-0 pr-3">
+              <h2 className="text-base font-bold text-app-heading truncate">{previewCatalogSong.title}</h2>
+              <p className="text-xs text-app-muted truncate mt-0.5">{previewCatalogSong.artist || 'Unknown Artist'}</p>
+            </div>
+            <button
+              type="button"
+              data-testid="close-header-catalog-preview"
+              onClick={() => setPreviewCatalogSong(null)}
+              className="p-1 rounded-lg hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer"
+              aria-label="Close Preview"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+            <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
+              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
+                Key: {previewCatalogSong.key || 'N/A'}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
+                Revision: r{previewCatalogSong.current_revision}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
+                Format: {previewCatalogSong.format}
+              </span>
+            </div>
+
+            <div className="rounded-xl border border-app-border bg-app-base p-3 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto select-text leading-relaxed">
+              {previewCatalogSong.raw_content}
+            </div>
+          </div>
+
+          <div className="p-4 border-t border-app-border/60 flex justify-end gap-2 font-mono text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setPreviewCatalogSong(null)}
+              className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              data-testid="header-catalog-preview-import-btn"
+              disabled={importingCatalogId === previewCatalogSong.id || importedCatalogIds.has(previewCatalogSong.id)}
+              onClick={(e) => {
+                handleImportCatalogSong(e, previewCatalogSong)
+                setPreviewCatalogSong(null)
+              }}
+              className="px-4 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{importedCatalogIds.has(previewCatalogSong.id) ? 'Already in My Songs' : 'Import to My Songs'}</span>
+            </button>
+          </div>
+        </dialog>
+      )}
 
       {/* In-Browser Debug Logs Modal */}
       <DebugLogsModal

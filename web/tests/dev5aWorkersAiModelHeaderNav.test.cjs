@@ -247,7 +247,7 @@ test('DEV5A_TOOLBAR_LAYOUT: action group centered as a whole and existing action
     assert.ok(scroll.classList.contains('overflow-x-auto'))
     assert.ok(group.classList.contains('justify-center'))
     const labels = [...group.querySelectorAll('.toolbar-icon-btn')].map(b => b.getAttribute('aria-label'))
-    assert.deepEqual(labels, ['Back', 'Stage Preview (Alt+1)', 'Editor (Alt+2)', 'Band Sync (Alt+3)', 'Cast (Alt+4)', 'Theme (Alt+5)', 'Trash (Alt+6)', 'More'])
+    assert.deepEqual(labels, ['Back', 'Stage Preview (Alt+1)', 'Editor (Alt+2)', 'Band Sync (Alt+3)', 'Cast (Alt+4)', 'Theme (Alt+5)', 'Trash (Alt+6)', 'Side Panel', 'More'])
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
   }
