@@ -291,14 +291,48 @@ test('STEP_6.13: Regression: untagged build is unaffected even when physical HEA
   assert.equal(untagged.promotable, false)
   assert.ok(!untagged.version.includes('dev.3'), 'Untagged resolution must not inherit DEV.3 tag')
 
-  // When physical HEAD has a tag (e.g. CI workflow checkout for v1.0.130-dev.3),
-  // verify un-mocked call resolves the live tag while isolated mock resolves untagged
+  // When physical HEAD has a tag (e.g. CI workflow checkout for v1.0.130-dev.4),
+  // verify un-mocked call resolves the live tag while isolated mock resolves untagged.
+  // Validate that live tag belongs to tags pointing at HEAD without assuming tag ordering.
   if (physicalTags) {
     const live = resolveDevIdentity(root)
     assert.equal(live.isTagged, true)
     assert.ok(live.tag)
-    assert.equal(live.tag, physicalTags.split('\n')[0].trim())
+    const validTags = physicalTags.split('\n').map(t => t.trim()).filter(Boolean)
+    assert.ok(validTags.includes(live.tag), `Resolved tag ${live.tag} must belong to tags pointing at HEAD: ${validTags.join(', ')}`)
+  } else {
+    const live = resolveDevIdentity(root)
+    assert.equal(live.isTagged, false)
+    assert.equal(live.tag, null)
+    assert.equal(live.version, `untagged-${shortSha}`)
   }
+
+  // Isolated tag contexts: verify behavior in DEV.4 and DEV.4a tag contexts
+  const dev4Git = (...args) => {
+    const cmd = args.join(' ')
+    if (cmd === 'rev-parse HEAD') return headSha
+    if (cmd === 'rev-parse --short HEAD') return shortSha
+    if (cmd === 'tag --points-at HEAD') return 'v1.0.130-dev.3c\nv1.0.130-dev.4'
+    if (cmd.startsWith('rev-parse --verify')) return headSha
+    return ''
+  }
+  const dev4Identity = resolveDevIdentity(root, {}, dev4Git)
+  assert.equal(dev4Identity.isTagged, true)
+  assert.equal(dev4Identity.tag, 'v1.0.130-dev.4')
+  assert.equal(dev4Identity.promotable, true)
+
+  const dev4aGit = (...args) => {
+    const cmd = args.join(' ')
+    if (cmd === 'rev-parse HEAD') return headSha
+    if (cmd === 'rev-parse --short HEAD') return shortSha
+    if (cmd === 'tag --points-at HEAD') return 'v1.0.130-dev.4a'
+    if (cmd.startsWith('rev-parse --verify')) return headSha
+    return ''
+  }
+  const dev4aIdentity = resolveDevIdentity(root, {}, dev4aGit)
+  assert.equal(dev4aIdentity.isTagged, true)
+  assert.equal(dev4aIdentity.tag, 'v1.0.130-dev.4a')
+  assert.equal(dev4aIdentity.promotable, false)
 })
 
 // STEP_6.14: Allowed same-commit DEV.3a and DEV.4 stabilization pair
