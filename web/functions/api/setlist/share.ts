@@ -28,12 +28,82 @@ export const onRequestOptions = async () => {
   });
 };
 
+export const MAX_SHARE_PAYLOAD_BYTES = 1024 * 1024; // 1 MB payload limit
+
+async function readBoundedJson(request: Request, maxBytes: number): Promise<{ data?: unknown; error?: string; status: number }> {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength) {
+    const parsedLength = parseInt(contentLength, 10);
+    if (!Number.isNaN(parsedLength) && parsedLength > maxBytes) {
+      return { error: 'PAYLOAD_TOO_LARGE', status: 413 };
+    }
+  }
+
+  if (!request.body) {
+    try {
+      const data = await request.json();
+      const stringified = JSON.stringify(data);
+      if (stringified.length > maxBytes) {
+        return { error: 'PAYLOAD_TOO_LARGE', status: 413 };
+      }
+      return { data, status: 200 };
+    } catch {
+      return { error: 'EMPTY_OR_MALFORMED_REQUEST_BODY', status: 400 };
+    }
+  }
+
+  const reader = request.body.getReader();
+  let receivedBytes = 0;
+  const chunks: Uint8Array[] = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        receivedBytes += value.byteLength;
+        if (receivedBytes > maxBytes) {
+          try {
+            await reader.cancel();
+          } catch { /* best effort */ }
+          return { error: 'PAYLOAD_TOO_LARGE', status: 413 };
+        }
+        chunks.push(value);
+      }
+    }
+  } catch {
+    return { error: 'STREAM_READ_ERROR', status: 400 };
+  }
+
+  const totalBuffer = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    totalBuffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  const text = new TextDecoder('utf-8').decode(totalBuffer);
+  try {
+    return { data: JSON.parse(text), status: 200 };
+  } catch {
+    return { error: 'MALFORMED_JSON_PAYLOAD', status: 400 };
+  }
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: Env }) => {
   try {
-    const rawBody = await request.json();
-    const validated = validateSharedSetlistPayload(rawBody);
+    const bodyResult = await readBoundedJson(request, MAX_SHARE_PAYLOAD_BYTES);
+    if (bodyResult.error || !bodyResult.data) {
+      return jsonResponse({ error: bodyResult.error }, bodyResult.status);
+    }
+
+    const validated = validateSharedSetlistPayload(bodyResult.data);
     if (!validated.isValid) {
       return jsonResponse({ error: 'INVALID_SHARED_SETLIST_PAYLOAD', details: validated.error }, 400);
+    }
+
+    if (!env.DB) {
+      return jsonResponse({ error: 'DATABASE_UNAVAILABLE' }, 503);
     }
 
     const sanitized = sanitizeSetlistForShare(validated.setlist);
@@ -49,14 +119,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     // Default TTL: 30 days
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    if (env.DB) {
-      await env.DB.prepare(
-        `INSERT INTO shared_setlists (share_token, setlist_name, payload_json, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?)`
-      )
-        .bind(token, sanitized.name, JSON.stringify(sanitized), now, expiresAt)
-        .run();
-    }
+    await env.DB.prepare(
+      `INSERT INTO shared_setlists (share_token, setlist_name, payload_json, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+      .bind(token, sanitized.name, JSON.stringify(sanitized), now, expiresAt)
+      .run();
 
     return jsonResponse({
       token,

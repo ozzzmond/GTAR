@@ -48,18 +48,20 @@ export interface CatalogServiceOptions extends IDBCacheOptions {
  */
 export class SharedCatalogService {
   private currentAccountId: string | null = null
+  private accountEpoch: number = 0
   private freshConfirmedIds: Set<string> = new Set()
   private catalogSongMetadataMap: Map<string, SharedCatalogSongItem> = new Map()
 
   /**
    * Set or switch active authenticated account identity.
-   * If account identity changes, in-memory reference updates and previous account's
-   * in-memory data is dropped.
+   * Advances monotonic account epoch. If account identity changes, in-memory reference
+   * updates and previous account's in-memory data is dropped.
    */
   public setAccount(accountId: string | null): void {
     const clean = accountId ? accountId.trim().toLowerCase() : null
     if (this.currentAccountId !== clean) {
       this.currentAccountId = clean
+      this.accountEpoch++
       this.freshConfirmedIds.clear()
       this.catalogSongMetadataMap.clear()
       if (typeof window !== 'undefined') {
@@ -72,17 +74,36 @@ export class SharedCatalogService {
     return this.currentAccountId
   }
 
+  public getAccountEpoch(): number {
+    return this.accountEpoch
+  }
+
+  public advanceAccountEpoch(): number {
+    this.accountEpoch++
+    return this.accountEpoch
+  }
+
   /**
    * Explicitly purge cache for an account (e.g. on logout or account revocation).
+   * Advances monotonic account epoch to invalidate all in-flight requests and writes.
+   * Clears in-memory state only if target account matches active account context.
    */
   public async clearAccountCache(accountId: string, options?: IDBCacheOptions): Promise<void> {
-    await clearAccountCatalogCache(accountId, options)
-    if (this.currentAccountId === accountId.trim().toLowerCase()) {
+    const clean = accountId ? accountId.trim().toLowerCase() : ''
+    if (!clean) return
+    this.accountEpoch++
+    if (this.currentAccountId === clean) {
       this.currentAccountId = null
       this.freshConfirmedIds.clear()
+      this.catalogSongMetadataMap.clear()
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
       }
+    }
+    try {
+      await clearAccountCatalogCache(clean, options)
+    } catch (err) {
+      console.warn('[CatalogService] Failed to clear account catalog cache:', err)
     }
   }
 
@@ -112,7 +133,10 @@ export class SharedCatalogService {
     try {
       const auth = getAuthenticatedSessionToken()
       accountId = auth.accountId
-      this.currentAccountId = accountId
+      const cleanAuthId = accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
+      }
     } catch (err) {
       if (err instanceof CatalogApiError && err.status === 401) {
         return {
@@ -130,39 +154,80 @@ export class SharedCatalogService {
       }
     }
 
+    const cleanAccountId = accountId.trim().toLowerCase()
+    const requestEpoch = this.accountEpoch
+
     // Try online fetch first if not forced offline
     let networkErrorMessage: string | undefined
     try {
       const res = await listSharedCatalogSongs({ limit, offset, signal, timeoutMs })
 
+      // Monotonic epoch and account switch protection:
+      // Drop delayed/stale responses from prior account or prior session of same account (A->B->A)
+      if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+        return {
+          songs: [],
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: 'Account context switched during request',
+        }
+      }
+
       // Successful authoritative server response
       const serverSongs = res.songs || []
-
-      for (const song of serverSongs) {
-        this.markCatalogIdLiveConfirmed(song.id)
-        this.catalogSongMetadataMap.set(song.id, song)
-      }
 
       // Reconcile into IndexedDB cache without purging unseen paginated songs:
       try {
         // 1. Save freshly fetched songs to cache (upsert)
-        await saveSongsToCache(accountId, serverSongs, { indexedDBFactory })
+        await saveSongsToCache(cleanAccountId, serverSongs, { indexedDBFactory })
 
-        // 2. Full first-page reconciliation: If fetching offset=0 with limit >= total,
+        // 2. Validate epoch post-write: if account transitioned or logged out during async write,
+        // purge written data immediately to prevent repopulating revoked/logged-out accounts.
+        if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+          try {
+            await clearAccountCatalogCache(cleanAccountId, { indexedDBFactory })
+          } catch { /* best effort */ }
+          return {
+            songs: [],
+            state: 'AUTH_REQUIRED',
+            isStale: false,
+            error: 'Account context switched during request',
+          }
+        }
+
+        // 3. Full first-page reconciliation: If fetching offset=0 with limit >= total,
         // server response is comprehensive; remove server-deleted songs from cache.
         if (offset === 0 && res.pagination && (res.pagination.total <= res.songs.length || !res.pagination.has_more)) {
-          const cached = await getCachedSongs(accountId, { indexedDBFactory })
-          const serverIds = new Set(serverSongs.map((s) => s.id))
-          for (const c of cached) {
-            if (!serverIds.has(c.id)) {
-              await removeCachedSong(accountId, c.id, { indexedDBFactory })
-              this.unmarkCatalogId(c.id)
+          const cached = await getCachedSongs(cleanAccountId, { indexedDBFactory })
+          if (this.accountEpoch === requestEpoch && this.currentAccountId === cleanAccountId) {
+            const serverIds = new Set(serverSongs.map((s) => s.id))
+            for (const c of cached) {
+              if (!serverIds.has(c.id)) {
+                await removeCachedSong(cleanAccountId, c.id, { indexedDBFactory })
+                this.unmarkCatalogId(c.id)
+                this.catalogSongMetadataMap.delete(c.id)
+              }
             }
           }
         }
       } catch (cacheErr) {
         // Cache failure must not break online catalog access
         console.warn('[CatalogService] Cache save/reconciliation degraded gracefully:', cacheErr)
+      }
+
+      // Check epoch before publishing authoritative in-memory metadata
+      if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+        return {
+          songs: [],
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: 'Account context switched during request',
+        }
+      }
+
+      for (const song of serverSongs) {
+        this.markCatalogIdLiveConfirmed(song.id)
+        this.catalogSongMetadataMap.set(song.id, song)
       }
 
       if (serverSongs.length === 0 && offset === 0 && (res.pagination ? res.pagination.total === 0 : true)) {
@@ -188,12 +253,28 @@ export class SharedCatalogService {
         if (err.code === 'ABORTED') {
           throw err
         }
-        if (err.status === 401) {
+        if (err.status === 401 || err.status === 403) {
+          // Invalidate relevant protected cache state, strictly scoped to affected account
+          try {
+            await clearAccountCatalogCache(cleanAccountId, { indexedDBFactory })
+          } catch { /* best effort */ }
+
+          // Only clear active account's in-memory metadata if failure belongs to current active session
+          if (this.accountEpoch === requestEpoch && this.currentAccountId === cleanAccountId) {
+            this.accountEpoch++
+            this.freshConfirmedIds.clear()
+            this.catalogSongMetadataMap.clear()
+            this.currentAccountId = null
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
+            }
+          }
+
           return {
             songs: [],
             state: 'AUTH_REQUIRED',
             isStale: false,
-            error: err.message,
+            error: err.message || (err.status === 403 ? 'Access denied' : 'Authentication required'),
           }
         }
         networkErrorMessage = err.message
@@ -204,8 +285,26 @@ export class SharedCatalogService {
 
     // If online fetch failed, attempt to fall back to IndexedDB offline cache
     if (!forceOnline) {
-      const cached = await getCachedSongs(accountId, { indexedDBFactory })
-      const meta = await getCachedMetadata(accountId, { indexedDBFactory })
+      if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+        return {
+          songs: [],
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: 'Account context switched during request',
+        }
+      }
+
+      const cached = await getCachedSongs(cleanAccountId, { indexedDBFactory })
+      const meta = await getCachedMetadata(cleanAccountId, { indexedDBFactory })
+
+      if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+        return {
+          songs: [],
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: 'Account context switched during request',
+        }
+      }
 
       if (cached.length > 0) {
         // Sort cached songs deterministically by title, artist, id
@@ -244,13 +343,16 @@ export class SharedCatalogService {
     id: string,
     options: CatalogServiceOptions = {}
   ): Promise<{ song: SharedCatalogSongItem | null; state: CatalogDataState; isStale: boolean; error?: string }> {
-    const { signal, timeoutMs, indexedDBFactory } = options
+    const { signal, timeoutMs, indexedDBFactory, forceOnline = false } = options
 
     let accountId: string
     try {
       const auth = getAuthenticatedSessionToken()
       accountId = auth.accountId
-      this.currentAccountId = accountId
+      const cleanAuthId = accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
+      }
     } catch (err) {
       return {
         song: null,
@@ -260,11 +362,44 @@ export class SharedCatalogService {
       }
     }
 
+    const cleanAccountId = accountId.trim().toLowerCase()
+    const requestEpoch = this.accountEpoch
+
     try {
       const detail = await getSharedCatalogSong({ id, signal, timeoutMs })
-      this.markCatalogIdLiveConfirmed(detail.song.id)
+
+      // Monotonic epoch and account switch protection
+      if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+        return {
+          song: null,
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: 'Account context switched during request',
+        }
+      }
+
       // Upsert into cache
-      await saveSongsToCache(accountId, [detail.song], { indexedDBFactory })
+      try {
+        await saveSongsToCache(cleanAccountId, [detail.song], { indexedDBFactory })
+      } catch (cacheErr) {
+        console.warn('[CatalogService] Detail cache save degraded gracefully:', cacheErr)
+      }
+
+      // Guard post-write against mid-write account transitions or logouts
+      if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+        try {
+          await removeCachedSong(cleanAccountId, detail.song.id, { indexedDBFactory })
+        } catch { /* best effort */ }
+        return {
+          song: null,
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: 'Account context switched during request',
+        }
+      }
+
+      this.markCatalogIdLiveConfirmed(detail.song.id)
+      this.catalogSongMetadataMap.set(detail.song.id, detail.song)
       return {
         song: detail.song,
         state: 'ONLINE',
@@ -275,11 +410,39 @@ export class SharedCatalogService {
         throw err
       }
 
+      // HTTP 401 and HTTP 403 are authorization failures — NOT offline fallback opportunities!
+      if (err instanceof CatalogApiError && (err.status === 401 || err.status === 403)) {
+        // Invalidate relevant protected cache state, strictly scoped to affected account
+        try {
+          await clearAccountCatalogCache(cleanAccountId, { indexedDBFactory })
+        } catch { /* best effort */ }
+
+        // Only clear active account's in-memory metadata if failure belongs to current active session
+        if (this.accountEpoch === requestEpoch && this.currentAccountId === cleanAccountId) {
+          this.accountEpoch++
+          this.freshConfirmedIds.clear()
+          this.catalogSongMetadataMap.clear()
+          this.currentAccountId = null
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
+          }
+        }
+
+        return {
+          song: null,
+          state: 'AUTH_REQUIRED',
+          isStale: false,
+          error: err.message || (err.status === 403 ? 'Access denied' : 'Authentication required'),
+        }
+      }
+
       // Check if song was deleted by server (404)
       if (err instanceof CatalogApiError && err.status === 404) {
-        // Reconcile: delete from cache and fresh live confirmations
-        this.unmarkCatalogId(id)
-        await removeCachedSong(accountId, id, { indexedDBFactory })
+        if (this.accountEpoch === requestEpoch && this.currentAccountId === cleanAccountId) {
+          this.unmarkCatalogId(id)
+          this.catalogSongMetadataMap.delete(id)
+        }
+        await removeCachedSong(cleanAccountId, id, { indexedDBFactory })
         return {
           song: null,
           state: 'ONLINE',
@@ -289,14 +452,34 @@ export class SharedCatalogService {
       }
 
       // Try offline cache fallback
-      const cached = await getCachedSongById(accountId, id, { indexedDBFactory })
-      if (cached) {
-        const isStale = Date.now() - cached.fetchedAt > CACHE_FRESHNESS_TTL_MS
-        return {
-          song: cached,
-          state: 'OFFLINE_CACHED',
-          isStale,
-          error: err instanceof Error ? err.message : 'Offline cached version',
+      if (!forceOnline) {
+        if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+          return {
+            song: null,
+            state: 'AUTH_REQUIRED',
+            isStale: false,
+            error: 'Account context switched during request',
+          }
+        }
+
+        const cached = await getCachedSongById(cleanAccountId, id, { indexedDBFactory })
+        if (this.accountEpoch !== requestEpoch || !this.currentAccountId || this.currentAccountId !== cleanAccountId) {
+          return {
+            song: null,
+            state: 'AUTH_REQUIRED',
+            isStale: false,
+            error: 'Account context switched during request',
+          }
+        }
+
+        if (cached) {
+          const isStale = Date.now() - cached.fetchedAt > CACHE_FRESHNESS_TTL_MS
+          return {
+            song: cached,
+            state: 'OFFLINE_CACHED',
+            isStale,
+            error: err instanceof Error ? err.message : 'Offline cached version',
+          }
         }
       }
 
@@ -317,13 +500,38 @@ export class SharedCatalogService {
     song: SharedCatalogSongItem,
     options?: IDBCacheOptions
   ): Promise<void> {
-    this.markCatalogIdLiveConfirmed(song.id)
+    let accountId: string
     try {
       const auth = getAuthenticatedSessionToken()
-      await saveSongsToCache(auth.accountId, [song], options)
+      accountId = auth.accountId.trim().toLowerCase()
+      if (this.currentAccountId !== accountId) {
+        this.setAccount(accountId)
+      }
+    } catch {
+      return
+    }
+
+    const requestEpoch = this.accountEpoch
+
+    if (this.accountEpoch !== requestEpoch || this.currentAccountId !== accountId) {
+      return
+    }
+
+    this.markCatalogIdLiveConfirmed(song.id)
+    this.catalogSongMetadataMap.set(song.id, song)
+
+    try {
+      await saveSongsToCache(accountId, [song], options)
+      if (this.accountEpoch !== requestEpoch || this.currentAccountId !== accountId) {
+        try {
+          await removeCachedSong(accountId, song.id, options)
+        } catch { /* best effort */ }
+        return
+      }
     } catch (cacheErr) {
       console.warn('[CatalogService] Post-publish cache save degraded gracefully:', cacheErr)
     }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
     }
@@ -336,9 +544,20 @@ export class SharedCatalogService {
     params: PublishSharedSongParams,
     options?: IDBCacheOptions
   ): Promise<SharedCatalogSongItem> {
+    try {
+      const auth = getAuthenticatedSessionToken()
+      const cleanAuthId = auth.accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
+      }
+    } catch { /* proceed to call */ }
+
+    const requestEpoch = this.accountEpoch
     const res = await publishSharedCatalogSong(params)
     const song = res.song
-    await this.markPublishedSong(song, options)
+    if (this.accountEpoch === requestEpoch && this.currentAccountId) {
+      await this.markPublishedSong(song, options)
+    }
     return song
   }
 
@@ -349,9 +568,20 @@ export class SharedCatalogService {
     params: UpdateSharedSongParams,
     options?: IDBCacheOptions
   ): Promise<SharedCatalogSongItem> {
+    try {
+      const auth = getAuthenticatedSessionToken()
+      const cleanAuthId = auth.accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
+      }
+    } catch { /* proceed to call */ }
+
+    const requestEpoch = this.accountEpoch
     const res = await updateSharedCatalogSong(params)
     const song = res.song
-    await this.markPublishedSong(song, options)
+    if (this.accountEpoch === requestEpoch && this.currentAccountId) {
+      await this.markPublishedSong(song, options)
+    }
     return song
   }
 
@@ -365,9 +595,12 @@ export class SharedCatalogService {
     const res = await unpublishSharedCatalogSong(params)
     try {
       const auth = getAuthenticatedSessionToken()
-      await removeCachedSong(auth.accountId, params.id, options)
-      this.unmarkCatalogId(params.id)
-      this.catalogSongMetadataMap.delete(params.id)
+      const cleanAccountId = auth.accountId.trim().toLowerCase()
+      await removeCachedSong(cleanAccountId, params.id, options)
+      if (this.currentAccountId === cleanAccountId) {
+        this.unmarkCatalogId(params.id)
+        this.catalogSongMetadataMap.delete(params.id)
+      }
     } catch (cacheErr) {
       console.warn('[CatalogService] Post-unpublish cache removal degraded gracefully:', cacheErr)
     }
@@ -425,12 +658,22 @@ export class SharedCatalogService {
     try {
       const auth = getAuthenticatedSessionToken()
       accountId = auth.accountId
+      const cleanAuthId = accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
+      }
     } catch {
       return 'UNCONFIRMED'
     }
 
+    const cleanAccountId = accountId.trim().toLowerCase()
+    const requestEpoch = this.accountEpoch
+
     try {
-      const cachedSong = await getCachedSongById(accountId, cleanId, options)
+      const cachedSong = await getCachedSongById(cleanAccountId, cleanId, options)
+      if (this.accountEpoch !== requestEpoch || this.currentAccountId !== cleanAccountId) {
+        return 'UNCONFIRMED'
+      }
       if (cachedSong) {
         const isFresh = Date.now() - cachedSong.fetchedAt < CACHE_FRESHNESS_TTL_MS
         if (isFresh) {
@@ -455,16 +698,23 @@ export class SharedCatalogService {
     try {
       const auth = getAuthenticatedSessionToken()
       accountId = auth.accountId
-      if (this.currentAccountId !== accountId) {
-        this.setAccount(accountId)
+      const cleanAuthId = accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
       }
     } catch {
       this.setAccount(null)
       return new Set<string>()
     }
+
+    const cleanAccountId = accountId.trim().toLowerCase()
+    const requestEpoch = this.accountEpoch
     const result = new Set<string>(this.freshConfirmedIds)
     try {
-      const cached = await getCachedSongs(accountId, options)
+      const cached = await getCachedSongs(cleanAccountId, options)
+      if (this.accountEpoch !== requestEpoch || this.currentAccountId !== cleanAccountId) {
+        return new Set<string>()
+      }
       for (const s of cached) {
         result.add(s.id)
         this.catalogSongMetadataMap.set(s.id, s)
@@ -482,7 +732,21 @@ export class SharedCatalogService {
     options?: CatalogServiceOptions
   ): Promise<{ confirmedIds: Set<string>; freshIds: Set<string> }> {
     try {
+      const auth = getAuthenticatedSessionToken()
+      const cleanAuthId = auth.accountId.trim().toLowerCase()
+      if (this.currentAccountId !== cleanAuthId) {
+        this.setAccount(cleanAuthId)
+      }
+    } catch {
+      // not authenticated
+    }
+
+    const requestEpoch = this.accountEpoch
+    try {
       const res = await this.getCatalogSongs({ limit: 100, ...options })
+      if (this.accountEpoch !== requestEpoch) {
+        return { confirmedIds: new Set(), freshIds: new Set() }
+      }
       if (res.state === 'ONLINE') {
         const fresh = this.getFreshConfirmedCatalogIds()
         const allConfirmed = await this.getConfirmedActiveCatalogIds(options)
@@ -490,6 +754,9 @@ export class SharedCatalogService {
       }
     } catch {
       // Degrade gracefully
+    }
+    if (this.accountEpoch !== requestEpoch) {
+      return { confirmedIds: new Set(), freshIds: new Set() }
     }
     const cachedConfirmed = await this.getConfirmedActiveCatalogIds(options)
     return { confirmedIds: cachedConfirmed, freshIds: this.getFreshConfirmedCatalogIds() }

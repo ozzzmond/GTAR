@@ -723,7 +723,6 @@ export function standardizeChordProBrackets(text: string): string {
   let result = text
   // Hyphenated bracketed chords
   result = result.replace(/<([A-G][b#]?[^>]*)-([A-G][b#]?[^>]*)>/g, '[$1]-[$2]')
-  result = result.replace(/<([A-G][b#]?[^>]*)>-<([A-G][b#]?[^>]*)>/g, '[$1]-[$2]')
   // Single angle bracket chords
   result = result.replace(/<([A-G][b#]?[^>]*)>/g, '[$1]')
   return result

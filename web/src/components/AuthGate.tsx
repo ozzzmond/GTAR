@@ -77,9 +77,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const isSuperAdmin = role === 'SUPER_ADMIN'
   const permitted = !!session && validSession(session) && accessStatus === 'active'
 
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+
   const signOut = useCallback(() => {
     epoch.current++
+    const cur = sessionRef.current
+    const oldAccountId = cur?.user?.id || (cur?.user?.email ? cur.user.email.trim().toLowerCase() : null) || sharedCatalogService.getAccount()
     saveGoogleSession(null)
+    if (oldAccountId) {
+      sharedCatalogService.clearAccountCache(oldAccountId).catch((err) => {
+        console.warn('[AuthGate] Failed to clear account catalog cache on signOut:', err)
+      })
+    }
     sharedCatalogService.setAccount(null)
     setSession(null)
     setBypass(false)
@@ -136,6 +146,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
             role: serverUser.role,
             access_status: serverUser.access_status,
             lastVerifiedAt: Date.now(),
+          }
+
+          if (current.access_status === 'active' && (serverUser.access_status === 'denied' || serverUser.access_status === 'pending')) {
+            const revokedAccountId = serverUser.id || current.user?.id || (current.user?.email ? current.user.email.trim().toLowerCase() : null)
+            if (revokedAccountId) {
+              sharedCatalogService.clearAccountCache(revokedAccountId).catch(() => {})
+            }
           }
 
           saveGoogleSession(updated)

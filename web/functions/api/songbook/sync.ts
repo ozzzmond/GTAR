@@ -94,6 +94,15 @@ function validateSongbookPayload(data: unknown): { isValid: boolean; error?: str
  * Retrieves the authenticated user's current cloud Songbook record.
  * Strictly scoped to the authenticated caller's user.id.
  */
+function sanitizeSyncError(prefix: string, err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  const isSensitive = /(?:d1_error|syntax error|constraint|unique|table\s|column\s|select\s|insert\s|update\s|delete\s|from\s|where\s|sqlite|\.tsx?|\.jsx?|[/\\]|auth_secret|bearer|password)/i.test(msg)
+  if (isSensitive) {
+    return prefix
+  }
+  return `${prefix}: ${msg}`
+}
+
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const { request, env } = context
 
@@ -131,8 +140,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       userId: auth.user.id,
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return errorResponse(`Failed to retrieve cloud songbook: ${msg}`, 500)
+    console.error('Failed to retrieve cloud songbook:', err)
+    return errorResponse(sanitizeSyncError('Failed to retrieve cloud songbook', err), 500)
   }
 }
 
@@ -207,7 +216,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       userId: auth.user.id,
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return errorResponse(`Failed to persist cloud songbook: ${msg}`, 500)
+    console.error('Failed to persist cloud songbook:', err)
+    return errorResponse(sanitizeSyncError('Failed to persist cloud songbook', err), 500)
   }
 }

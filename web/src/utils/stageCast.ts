@@ -219,7 +219,19 @@ class StageCastEngine {
         }
       } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     }
-    const code = Math.random().toString(36).substring(2, 6).toUpperCase()
+    const code = (() => {
+      const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+      if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(4)
+        crypto.getRandomValues(bytes)
+        let out = ''
+        for (let idx = 0; idx < 4; idx++) {
+          out += chars[bytes[idx] % chars.length]
+        }
+        return out
+      }
+      throw new Error('Cryptographically secure randomness is required for presentation pairing code')
+    })()
     this.sessionId = `GTAR-${code}`
     if (typeof window !== 'undefined') {
       try {

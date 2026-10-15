@@ -148,7 +148,7 @@ function renderInteractiveChordLine(
             elements.push(<span key={`sep-${start}-${sIdx}`}>{sub}</span>)
             continue
           }
-          const cleanSub = sub.replace(/^[[<({|,--:;~]+|[\]>)}|,--:;~]+$/g, '').trim()
+          const cleanSub = sub.replace(/^[[<({|,:;~-]+|[\]>)}|,:;~-]+$/g, '').trim()
           if (cleanSub && CHORD_TOKEN_REGEX.test(cleanSub)) {
             const displayToken = isNumbersMode ? chordTokenToNashville(cleanSub, referenceKey!) : cleanSub
             if (isNumbersMode) {
@@ -195,7 +195,7 @@ function renderInteractiveChordLine(
           }
         }
       } else {
-        const cleanToken = rawToken.replace(/^[[<({|,--:;~]+|[\]>)}|,--:;~]+$/g, '').trim()
+        const cleanToken = rawToken.replace(/^[[<({|,:;~-]+|[\]>)}|,:;~-]+$/g, '').trim()
         if (cleanToken && CHORD_TOKEN_REGEX.test(cleanToken)) {
           const displayToken = isNumbersMode ? chordTokenToNashville(cleanToken, referenceKey!) : cleanToken
           if (isNumbersMode) {

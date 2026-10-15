@@ -150,6 +150,21 @@ export interface UgStoreData {
   [key: string]: unknown
 }
 
+export function decodeHtmlEntities(raw: string): string {
+  if (!raw || typeof raw !== 'string') return ''
+  return raw.replace(/&(?:quot|amp|#39|apos|lt|gt);/g, (match) => {
+    switch (match) {
+      case '&quot;': return '"'
+      case '&amp;': return '&'
+      case '&#39;':
+      case '&apos;': return "'"
+      case '&lt;': return '<'
+      case '&gt;': return '>'
+      default: return match
+    }
+  })
+}
+
 export function extractJsStore(html: string): UgStoreData | null {
   if (!html || typeof html !== 'string') return null
 
@@ -162,12 +177,7 @@ export function extractJsStore(html: string): UgStoreData | null {
     const effectiveEnd = endIdx !== -1 ? endIdx : html.indexOf(quote, startIdx)
     if (effectiveEnd !== -1) {
       const rawStr = html.substring(startIdx, effectiveEnd)
-      const jsonStr = rawStr
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .replace(/&#39;/g, "'")
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
+      const jsonStr = decodeHtmlEntities(rawStr)
       try {
         return JSON.parse(jsonStr)
       } catch {
@@ -281,11 +291,8 @@ export function parseTabSheet(
   if (!rawContent) {
     const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i)
     if (preMatch && preMatch[1]) {
-      rawContent = preMatch[1]
-        .replace(/<[^>]+>/g, '')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
+      const stripped = preMatch[1].replace(/<[^>]+>/g, '')
+      rawContent = decodeHtmlEntities(stripped)
     }
   }
 

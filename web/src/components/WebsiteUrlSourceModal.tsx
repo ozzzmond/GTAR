@@ -51,18 +51,44 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
 
   if (!isOpen) return null
 
+  const validateAndNormalizeUrl = (rawUrl: string): { valid: boolean; url?: string; error?: string } => {
+    const trimmed = rawUrl.trim()
+    if (!trimmed) {
+      return { valid: false, error: 'URL cannot be empty' }
+    }
+    let formatted = trimmed
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(formatted)) {
+      formatted = `https://${formatted}`
+    }
+    try {
+      const parsed = new URL(formatted)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { valid: false, error: 'Forbidden protocol: Only HTTP and HTTPS URLs are permitted' }
+      }
+      return { valid: true, url: parsed.href }
+    } catch {
+      return { valid: false, error: 'Invalid URL format' }
+    }
+  }
+
   const handleAddSource = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!customUrl.trim()) return
+    const check = validateAndNormalizeUrl(customUrl)
+    if (!check.valid || !check.url) {
+      showToast(check.error || 'Invalid URL')
+      return
+    }
 
-    let formattedUrl = customUrl.trim()
-    if (!/^https?:\/\//i.test(formattedUrl)) {
-      formattedUrl = `https://${formattedUrl}`
+    let hostname = 'Custom Source'
+    try {
+      hostname = new URL(check.url).hostname
+    } catch {
+      // fallback
     }
 
     const newSource: ExternalSource = {
-      name: customName.trim() || new URL(formattedUrl).hostname,
-      url: formattedUrl,
+      name: customName.trim() || hostname,
+      url: check.url,
       desc: customDesc.trim() || 'Custom chord provider',
     }
 
@@ -81,10 +107,14 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
 
   const handleDirectFetch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!directUrl.trim()) return
-    onImportFromUrl?.(directUrl.trim())
+    const check = validateAndNormalizeUrl(directUrl)
+    if (!check.valid || !check.url) {
+      showToast(check.error || 'Invalid URL')
+      return
+    }
+    onImportFromUrl?.(check.url)
     showToast('Opening song link in new tab...')
-    window.open(directUrl.trim(), '_blank', 'noopener,noreferrer')
+    window.open(check.url, '_blank', 'noopener,noreferrer')
   }
 
   return (
