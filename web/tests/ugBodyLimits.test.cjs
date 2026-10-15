@@ -30,6 +30,9 @@ test('limits decoded stream bytes, rejects advertised oversize, accepts exact bo
 })
 for (const endpoint of ['ug-search','ug-tab']) test(`${endpoint} returns timeout and oversize errors through handler`,async()=>{
   const previous=global.fetch, oldTimer=global.setTimeout
+  const authCore=require('../functions/lib/authCore.ts')
+  const originalAuth=authCore.authenticateUserRequest
+  authCore.authenticateUserRequest=async()=>({user:{id:'usr_test',role:'member',access_status:'active'}})
   const {onRequestGet}=require(`../functions/api/${endpoint}.ts`)
   const url=endpoint==='ug-search'?'https://local/api/ug-search?q=hello':'https://local/api/ug-tab?url='+encodeURIComponent('https://tabs.ultimate-guitar.com/tab/radiohead/creep-chords-4169')
   try {
@@ -40,5 +43,5 @@ for (const endpoint of ['ug-search','ug-tab']) test(`${endpoint} returns timeout
     const response=await onRequestGet({request:new Request(url)})
     assert.equal(response.status,502)
     assert.match((await response.json()).error,/size limit/)
-  } finally {global.fetch=previous;global.setTimeout=oldTimer}
+  } finally {global.fetch=previous;global.setTimeout=oldTimer;authCore.authenticateUserRequest=originalAuth}
 })

@@ -2,6 +2,7 @@ import {
   jsonResponse,
   errorResponse,
   authenticateUserRequest,
+  readBoundedJson,
   JSON_HEADERS,
 } from '../../../lib/authCore.ts'
 import {
@@ -323,10 +324,13 @@ export async function onRequestDelete(context: PagesContext<{ id: string }>): Pr
   } else {
     // Check if body is supplied
     try {
-      const text = await request.text()
-      if (text.trim()) {
-        const body = JSON.parse(text)
-        if (body && typeof body.expected_revision === 'number') {
+      const readRes = await readBoundedJson(request, 64 * 1024)
+      if (readRes.status === 413) {
+        return errorResponse('Payload exceeds maximum allowed size of 64KB', 413)
+      }
+      if (readRes.data && typeof readRes.data === 'object') {
+        const body = readRes.data as Record<string, unknown>
+        if (typeof body.expected_revision === 'number') {
           if (!Number.isSafeInteger(body.expected_revision) || body.expected_revision < 1) {
             return errorResponse('Invalid expected_revision: must be a positive integer', 400)
           }

@@ -2,6 +2,7 @@ import {
   type AuthEnv,
   type D1Database,
   type UserRecord,
+  readBoundedJson,
 } from './authCore.ts'
 
 export interface CatalogEnv extends AuthEnv {
@@ -269,24 +270,17 @@ export function validateSongInput(body: unknown): { isValid: boolean; data?: Val
 }
 
 export async function readJsonBody(request: Request): Promise<{ body?: unknown; error?: string; status?: number }> {
-  const contentLength = request.headers.get('content-length')
-  if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
-    return { error: 'Payload exceeds maximum allowed size of 256KB', status: 413 }
-  }
-
-  try {
-    const text = await request.text()
-    if (text.length > MAX_PAYLOAD_BYTES) {
+  const readRes = await readBoundedJson(request, MAX_PAYLOAD_BYTES)
+  if (readRes.error) {
+    if (readRes.status === 413) {
       return { error: 'Payload exceeds maximum allowed size of 256KB', status: 413 }
     }
-    if (!text.trim()) {
+    if (readRes.error === 'EMPTY_BODY') {
       return { error: 'Request body cannot be empty', status: 400 }
     }
-    const body = JSON.parse(text)
-    return { body }
-  } catch {
     return { error: 'Malformed JSON payload', status: 400 }
   }
+  return { body: readRes.data }
 }
 
 export function canModifySong(song: SharedCatalogSongRecord, user: UserRecord): boolean {

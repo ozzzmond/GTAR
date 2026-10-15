@@ -2,10 +2,13 @@ import {
   jsonResponse,
   errorResponse,
   authenticateUserRequest,
+  readBoundedJson,
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
 import { normalizeMusicalKey } from '../../../src/utils/musicalKey.ts'
+
+export const MAX_METADATA_PAYLOAD_BYTES = 64 * 1024 // 64 KB
 
 /**
  * Single source of truth for the Workers AI metadata model.
@@ -415,13 +418,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   // 2. Parse and validate JSON input
-  let rawBody: unknown
-  try {
-    rawBody = await request.json()
-  } catch {
+  const readRes = await readBoundedJson(request, MAX_METADATA_PAYLOAD_BYTES)
+  if (readRes.error) {
+    if (readRes.status === 413) {
+      return errorResponse('Payload exceeds maximum allowed size of 64KB', 413)
+    }
     return errorResponse('Invalid JSON body', 400)
   }
 
+  const rawBody = readRes.data
   const validation = validateMetadataPayload(rawBody)
   if (!validation.isValid || !validation.data) {
     return errorResponse(validation.error || 'Validation failed', 400)
@@ -458,12 +463,17 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       max_tokens: 300,
     })
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Workers AI execution error'
+    const rawMsg = err instanceof Error ? err.message : ''
+    console.error('Workers AI execution failed:', err instanceof Error ? err.name : 'UnknownError')
+    const isSensitive = /(?:d1_error|syntax error|constraint|unique|table\s|column\s|select\s|insert\s|update\s|delete\s|from\s|where\s|sqlite|\.tsx?|\.jsx?|[/\\]|auth_secret|bearer|password|token|key|http:\/\/|https:\/\/|@)/i.test(rawMsg)
+    const sanitizedMsg = isSensitive || !rawMsg.trim()
+      ? 'Inference service error'
+      : rawMsg.replace(/[\r\n].*$/s, '').slice(0, 100).trim()
     return jsonResponse(
       {
         success: false,
         status: 'error',
-        error: `Workers AI execution failed: ${errorMsg}`,
+        error: `Workers AI execution failed: ${sanitizedMsg}`,
       },
       500
     )

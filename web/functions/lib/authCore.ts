@@ -694,3 +694,91 @@ export async function upsertUserSongbook(
       .bind(dataJson, checksum, updatedAt, userId, expected.version, expected.checksum)
   return statement.first<{ version: number; checksum: string; updated_at: string }>()
 }
+
+/**
+ * Reads request body as JSON with bounded byte size enforcement and streaming protection.
+ */
+export async function readBoundedJson(
+  request: Request,
+  maxBytes: number
+): Promise<{ data?: unknown; error?: 'PAYLOAD_TOO_LARGE' | 'EMPTY_BODY' | 'MALFORMED_JSON' | 'STREAM_READ_ERROR'; status: number }> {
+  const contentLength = request.headers.get('content-length')
+  if (contentLength) {
+    const parsedLength = parseInt(contentLength, 10)
+    if (!Number.isNaN(parsedLength) && parsedLength > maxBytes) {
+      return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
+    }
+  }
+
+  if (!request.body) {
+    try {
+      if (typeof request.text === 'function') {
+        const text = await request.text()
+        if (!text.trim()) {
+          return { error: 'EMPTY_BODY', status: 400 }
+        }
+        if (new TextEncoder().encode(text).byteLength > maxBytes) {
+          return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
+        }
+        return { data: JSON.parse(text), status: 200 }
+      } else if (typeof request.json === 'function') {
+        const data = await request.json()
+        const text = JSON.stringify(data)
+        if (new TextEncoder().encode(text).byteLength > maxBytes) {
+          return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
+        }
+        return { data, status: 200 }
+      }
+      return { error: 'EMPTY_BODY', status: 400 }
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        return { error: 'MALFORMED_JSON', status: 400 }
+      }
+      return { error: 'EMPTY_BODY', status: 400 }
+    }
+  }
+
+  const reader = request.body.getReader()
+  let receivedBytes = 0
+  const chunks: Uint8Array[] = []
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        receivedBytes += value.byteLength
+        if (receivedBytes > maxBytes) {
+          try {
+            await reader.cancel()
+          } catch { /* best effort */ }
+          return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
+        }
+        chunks.push(value)
+      }
+    }
+  } catch {
+    return { error: 'STREAM_READ_ERROR', status: 400 }
+  }
+
+  if (receivedBytes === 0) {
+    return { error: 'EMPTY_BODY', status: 400 }
+  }
+
+  const totalBuffer = new Uint8Array(receivedBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    totalBuffer.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+
+  const text = new TextDecoder('utf-8').decode(totalBuffer)
+  if (!text.trim()) {
+    return { error: 'EMPTY_BODY', status: 400 }
+  }
+  try {
+    return { data: JSON.parse(text), status: 200 }
+  } catch {
+    return { error: 'MALFORMED_JSON', status: 400 }
+  }
+}

@@ -1,8 +1,14 @@
 import { fetchUg } from '../ugFetch.ts'
 import { parseTabSheet, validateTabUrl } from '../../src/utils/ugCore.ts'
+import {
+  authenticateUserRequest,
+  JSON_HEADERS as BASE_JSON_HEADERS,
+  type AuthEnv,
+} from '../lib/authCore.ts'
 
 interface CloudflarePagesContext {
   request: Request
+  env: AuthEnv
 }
 
 const UG_HEADERS = {
@@ -20,13 +26,26 @@ const UG_HEADERS = {
 }
 
 const JSON_HEADERS = {
-  'Content-Type': 'application/json; charset=utf-8',
-  'Access-Control-Allow-Origin': '*',
+  ...BASE_JSON_HEADERS,
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Cache-Control': 'no-store',
+}
+
+export async function onRequestOptions(): Promise<Response> {
+  return new Response(null, {
+    status: 204,
+    headers: JSON_HEADERS,
+  })
 }
 
 export async function onRequestGet(context: CloudflarePagesContext): Promise<Response> {
+  const auth = await authenticateUserRequest(context.request, context.env)
+  if ('error' in auth) {
+    return new Response(JSON.stringify({ success: false, error: auth.error }), {
+      status: auth.status,
+      headers: JSON_HEADERS,
+    })
+  }
+
   const reqUrl = new URL(context.request.url)
   const validation = validateTabUrl(reqUrl.searchParams.get('url'))
 
@@ -138,10 +157,25 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
       )
     }
 
+    if (error?.message?.includes('size limit')) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Ultimate Guitar response body exceeds size limit',
+        }),
+        {
+          status: 502,
+          headers: JSON_HEADERS,
+        }
+      )
+    }
+
+    console.error('UG tab proxy error:', error?.name || 'UnknownError')
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: error?.message || 'Internal proxy error',
+        error: 'Failed to fetch chord sheet from Ultimate Guitar',
       }),
       {
         status: 502,
@@ -152,5 +186,20 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
 }
 
 export async function onRequest(context: CloudflarePagesContext): Promise<Response> {
+  if (context.request.method === 'OPTIONS') {
+    return onRequestOptions()
+  }
+  if (context.request.method !== 'GET') {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Method Not Allowed' }),
+      {
+        status: 405,
+        headers: {
+          ...JSON_HEADERS,
+          Allow: 'GET, OPTIONS',
+        },
+      }
+    )
+  }
   return onRequestGet(context)
 }

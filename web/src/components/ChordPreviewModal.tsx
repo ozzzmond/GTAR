@@ -12,6 +12,7 @@ import type { OnlineChordResult, FetchedChordSheet } from '../utils/onlineSearch
 import { fetchOnlineChordSheet } from '../utils/onlineSearch'
 import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong } from '../utils/songParser'
+import { validateTabUrl } from '../utils/ugCore'
 
 interface ChordPreviewModalProps {
   isOpen: boolean
@@ -66,6 +67,14 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
   if (!isOpen || !result) return null
 
   const parsed = sheet ? parseGtarSong(sheet.rawContent, 0) : null
+  const tabValidation = result?.tabUrl ? validateTabUrl(result.tabUrl) : null
+  const safeTabUrl = tabValidation?.valid && tabValidation.parsedUrl ? tabValidation.parsedUrl.toString() : null
+
+  const handleOpenExternal = () => {
+    if (safeTabUrl) {
+      window.open(safeTabUrl, '_blank', 'noopener,noreferrer')
+    }
+  }
 
   const handleImport = (openInStage = false) => {
     if (!sheet) return
@@ -130,14 +139,16 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
           ) : error ? (
             <div className="py-12 text-center text-xs text-status-error">
               <p className="font-bold">{error}</p>
-              <button
-                type="button"
-                onClick={() => window.open(result.tabUrl, '_blank')}
-                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-app-surface text-app-action border border-app-border font-bold hover:underline"
-              >
-                <span>Open original web page</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
+              {safeTabUrl && (
+                <button
+                  type="button"
+                  onClick={handleOpenExternal}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-app-surface text-app-action border border-app-border font-bold hover:underline"
+                >
+                  <span>Open original web page</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           ) : sheet && parsed ? (
             <div>
@@ -158,15 +169,17 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
                     {sheet.bpm} BPM
                   </span>
                 )}
-                <a
-                  href={result.tabUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-auto inline-flex items-center gap-1 text-[11px] text-app-action hover:underline"
-                >
-                  <span>Source Web Link</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                {safeTabUrl && (
+                  <a
+                    href={safeTabUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto inline-flex items-center gap-1 text-[11px] text-app-action hover:underline"
+                  >
+                    <span>Source Web Link</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
 
               {/* Rendered Live Chords */}

@@ -4,11 +4,14 @@ import {
   authenticateUserRequest,
   findUserSongbook,
   upsertUserSongbook,
+  readBoundedJson,
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
 import { computeSongbookChecksum } from '../../../src/utils/cloudSongbookSync.ts'
 import type { SyncLibrary } from '../../../src/utils/syncMerge.ts'
+
+export const MAX_SONGBOOK_PAYLOAD_BYTES = 2 * 1024 * 1024 // 2 MB
 
 interface PagesContext {
   request: Request
@@ -158,19 +161,21 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorResponse(auth.error, auth.status)
   }
 
-  let body: {
+  const readRes = await readBoundedJson(request, MAX_SONGBOOK_PAYLOAD_BYTES)
+  if (readRes.error) {
+    if (readRes.status === 413) {
+      return errorResponse('Payload exceeds maximum allowed size of 2MB', 413)
+    }
+    return errorResponse('Malformed JSON request body', 400)
+  }
+
+  const body = (readRes.data || {}) as {
     action?: string
     data?: unknown
     clientChecksum?: string
     clientVersion?: number
     expectedVersion?: number
     expectedChecksum?: string | null
-  }
-
-  try {
-    body = await request.json()
-  } catch {
-    return errorResponse('Malformed JSON request body', 400)
   }
 
   if (!body || !body.data) {
