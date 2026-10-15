@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
   X,
-  Plus,
-  Play,
   Check,
   Globe,
   Loader2,
@@ -152,35 +150,20 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
             </div>
           ) : sheet && parsed ? (
             <div>
-              {/* Metadata Badges */}
-              <div className="flex flex-wrap items-center gap-2 mb-5 pb-4 border-b border-app-border/60 text-xs font-mono">
-                {sheet.key && (
-                  <span className="px-2.5 py-1 rounded-lg bg-app-surface border border-app-border text-app-accent font-bold">
-                    Key: {sheet.key}
-                  </span>
-                )}
-                {sheet.capo && (
-                  <span className="px-2.5 py-1 rounded-lg bg-app-surface border border-app-border text-app-action">
-                    {sheet.capo}
-                  </span>
-                )}
-                {sheet.bpm && (
-                  <span className="px-2.5 py-1 rounded-lg bg-app-surface border border-app-border text-app-muted">
-                    {sheet.bpm} BPM
-                  </span>
-                )}
-                {safeTabUrl && (
+              {/* External Source Web Link */}
+              {safeTabUrl && (
+                <div className="flex items-center justify-end mb-5 pb-4 border-b border-app-border/60 text-xs font-mono">
                   <a
                     href={safeTabUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-auto inline-flex items-center gap-1 text-[11px] text-app-action hover:underline"
+                    className="inline-flex items-center gap-1 text-[11px] text-app-action hover:underline"
                   >
                     <span>Source Web Link</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Rendered Live Chords */}
               <div className="font-mono text-sm leading-relaxed overflow-x-auto select-text">
@@ -222,8 +205,7 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
               onClick={() => handleImport(false)}
               className="px-4 py-2.5 rounded-xl bg-app-base border border-app-action/40 hover:border-app-action text-app-action font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-40"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Import to Songbook</span>
+              <span>Import to Songbook</span>
             </button>
 
             <button
@@ -232,7 +214,6 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
               onClick={() => handleImport(true)}
               className="px-4 py-2.5 rounded-xl bg-app-action text-app-on-action font-bold text-xs flex items-center gap-2 hover:bg-app-action transition-all cursor-pointer shadow-lg disabled:opacity-40 active:scale-95"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
               <span>Import & Open Stage</span>
             </button>
           </div>
