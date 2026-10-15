@@ -63,6 +63,7 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   must(parsed.promotable, 'Lettered checkpoint is not promotable')
   must(parsed.prodTag !== ABANDONED_PROD.tag && expectedSha !== ABANDONED_PROD.sha, 'Abandoned PROD release cannot be reused; new identity required')
   const checkpoint = inspectCheckpoint(root, tag)
+  must(checkpoint.promotable, 'Checkpoint metadata mismatch is not promotable')
   must(checkpoint.sha === expectedSha, 'Exact tag must equal expected_sha')
   const devSha = git('rev-parse', 'refs/remotes/origin/dev^{commit}')
   const mainSha = git('rev-parse', 'refs/remotes/origin/main^{commit}')

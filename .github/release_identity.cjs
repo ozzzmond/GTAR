@@ -32,4 +32,77 @@ function resolveReleaseIdentity(root, env = process.env, gitOverride) {
   if (!tags.includes(checkpoint.prodTag) || git('rev-parse', 'refs/tags/' + checkpoint.prodTag + '^{commit}') !== sha) throw new Error('Atomic PROD tag missing/mismatched at build SHA')
   return { version: checkpoint.prodTag.slice(1), sourceTag: checkpoint.tag, sha }
 }
-module.exports = { resolveReleaseIdentity, CANONICAL_REPOSITORY, ABANDONED_PROD }
+
+function resolveDevIdentity(root, env = process.env, gitOverride) {
+  const git = gitOverride || ((...args) => {
+    try {
+      return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    } catch {
+      return null
+    }
+  })
+  try {
+    const headSha = git('rev-parse', 'HEAD')
+    if (!headSha || !/^[0-9a-f]{40}$/.test(headSha)) {
+      return { version: 'untagged-dev', tag: null, sha: null, shortSha: null, isTagged: false, promotable: false }
+    }
+    const shortSha = git('rev-parse', '--short', 'HEAD') || headSha.slice(0, 7)
+
+    // Check tags pointing at HEAD
+    const tagsOutput = git('tag', '--points-at', 'HEAD')
+    const tags = tagsOutput ? tagsOutput.split('\n').map(t => t.trim()).filter(Boolean) : []
+    const candidates = tags.flatMap(t => {
+      try {
+        const p = parseDevTag(t)
+        return [p]
+      } catch {
+        return []
+      }
+    })
+
+    if (candidates.length === 1) {
+      const selected = candidates[0]
+      return {
+        version: selected.tag.slice(1),
+        tag: selected.tag,
+        sha: headSha,
+        shortSha,
+        isTagged: true,
+        promotable: selected.promotable
+      }
+    }
+
+    // Check environment if REQUESTED_TAG was passed explicitly (e.g. CI preview checkout)
+    const requested = env.REQUESTED_TAG || env.RELEASE_TAG
+    if (requested) {
+      try {
+        const p = parseDevTag(requested)
+        const tagSha = git('rev-parse', '--verify', `refs/tags/${requested}^{commit}`)
+        if (tagSha === headSha) {
+          return {
+            version: p.tag.slice(1),
+            tag: p.tag,
+            sha: headSha,
+            shortSha,
+            isTagged: true,
+            promotable: p.promotable
+          }
+        }
+      } catch {}
+    }
+
+    // Untagged DEV commit
+    return {
+      version: `untagged-${shortSha}`,
+      tag: null,
+      sha: headSha,
+      shortSha,
+      isTagged: false,
+      promotable: false
+    }
+  } catch {
+    return { version: 'untagged-dev', tag: null, sha: null, shortSha: null, isTagged: false, promotable: false }
+  }
+}
+
+module.exports = { resolveReleaseIdentity, resolveDevIdentity, CANONICAL_REPOSITORY, ABANDONED_PROD }

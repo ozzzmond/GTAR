@@ -18,7 +18,7 @@ test('PROD_SOURCE_VERSION: package permits DEV source or PROD identity', () => {
   const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'))
   const validVersions = [GTAR_DEV_VERSION, GTAR_APP_VERSION]
   assert.ok(
-    validVersions.includes(pkg.version),
+    validVersions.includes(pkg.version) || (GTAR_DEV_VERSION === 'untagged-dev' && /^1\.0\.\d+-dev\./.test(pkg.version)),
     `package.json version (${pkg.version}) must match GTAR_DEV_VERSION (${GTAR_DEV_VERSION}) or GTAR_APP_VERSION (${GTAR_APP_VERSION})`
   )
 })

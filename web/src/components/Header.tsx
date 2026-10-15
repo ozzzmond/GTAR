@@ -531,7 +531,9 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
                 <span className="text-[10px] font-mono header-secondary-text text-app-muted font-semibold tracking-tight">
-                  v{isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION}
+                  {isDevEnv
+                    ? (GTAR_DEV_VERSION.startsWith('untagged') ? GTAR_DEV_VERSION : `v${GTAR_DEV_VERSION.replace(/^v/, '')}`)
+                    : `v${GTAR_APP_VERSION.replace(/^v/, '')}`}
                 </span>
               </div>
             </div>

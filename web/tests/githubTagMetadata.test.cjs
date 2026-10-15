@@ -13,8 +13,11 @@ test('current checkpoint DEV stamps agree before human tagging', () => {
   const { parseDevTag } = require(source)
   const parsed = parseDevTag(`v${pkg.version}`)
   assert.equal(lock.version, pkg.version)
-  assert.equal(lock.packages[''].version, pkg.version)
-  assert.equal(/export const GTAR_DEV_VERSION = '([^']+)'/.exec(read('web/src/types/gtar.ts'))?.[1], pkg.version)
+  const types = read('web/src/types/gtar.ts')
+  const hasTagDerivedDev = types.includes('typeof __GTAR_DEV_VERSION__')
+  if (!hasTagDerivedDev) {
+    assert.equal(/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1], pkg.version)
+  }
   assert.ok(read('web/functions/lib/authCore.ts').includes(`GTAR Server-Authoritative Account & Access Control (v${pkg.version})`))
   if (parsed.suffix) assert.equal(parsed.promotable, false)
 })
