@@ -260,5 +260,3 @@ test('STEP_6.12: Future DEV.3 rejected mismatches fail closed across checkpoint 
     relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.4')
   }, /Checkpoint version metadata mismatch/)
 })
-
-
