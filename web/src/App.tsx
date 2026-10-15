@@ -35,6 +35,7 @@ import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
 import { getConfirmedActiveCatalogIds, sharedCatalogService } from './utils/sharedCatalogService'
 import { getStoredSessionStatus } from './utils/googleAuth'
+import { useOptionalGoogleAuth } from './utils/authContext'
 import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
 import { EDGE_SWIPE_STORAGE_KEY } from './utils/edgeSwipe'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
@@ -705,38 +706,143 @@ function LibraryApp() {
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
 
-  // Handle incoming ?share=<token> parameter on load
+  const authContext = useOptionalGoogleAuth()
+  // Track in-flight and successfully processed tokens to prevent duplicate requests or retry loops
+  const inFlightShareRef = useRef<string | null>(null)
+  const resolvedShareRef = useRef<string | null>(null)
+
+  // Handle incoming ?share=<token> parameter on load or restored after authentication
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search)
-      const shareToken = urlParams.get('share')
-      if (shareToken && /^[a-f0-9]{16}$/i.test(shareToken)) {
-        fetch(`/api/setlist/share?token=${shareToken}`)
-          .then((res) => {
-            if (!res.ok) throw new Error('Shared setlist not found or expired')
-            return res.json()
-          })
-          .then((data) => {
-            if (data?.setlist) {
-              setIncomingSharedSetlist(data.setlist)
-            }
-          })
-          .catch((err) => {
-            console.warn('[Share] Failed to load shared setlist:', err)
-            setToastMessage('Could not load shared setlist: link may be expired or invalid.')
-            setTimeout(() => setToastMessage(null), 4000)
-          })
-          .finally(() => {
-            // Clean up share parameter from URL without page reload
-            const cleanUrl = new URL(window.location.href)
+      let shareToken = urlParams.get('share')
+      if (!shareToken) {
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            shareToken = sessionStorage.getItem('gtar_pending_share_token')
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!shareToken) return
+
+      // Safe handling for malformed tokens: purge immediately fail-closed
+      if (!/^[a-f0-9]{16}$/i.test(shareToken)) {
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.removeItem('gtar_pending_share_token')
+          }
+          const cleanUrl = new URL(window.location.href)
+          if (cleanUrl.searchParams.has('share')) {
             cleanUrl.searchParams.delete('share')
             window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
-          })
+          }
+        } catch { /* ignore */ }
+        return
       }
+
+      const tokenToFetch = shareToken.toLowerCase()
+
+      // Prevent duplicate concurrent requests or repeated execution for already resolved token
+      if (inFlightShareRef.current === tokenToFetch || resolvedShareRef.current === tokenToFetch) {
+        return
+      }
+
+      const auth = getStoredSessionStatus()
+      const authToken = authContext?.session
+        ? (authContext.session.sessionToken || authContext.session.idToken || authContext.session.token)
+        : (auth.session ? (auth.session.sessionToken || auth.session.idToken || auth.session.token) : null)
+
+      // If unauthenticated or session expired, retain pending token in sessionStorage for restoration
+      if (!authToken || auth.isExpired) {
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('gtar_pending_share_token', tokenToFetch)
+          }
+        } catch { /* ignore */ }
+        return
+      }
+
+      inFlightShareRef.current = tokenToFetch
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      }
+
+      fetch(`/api/setlist/share?token=${encodeURIComponent(tokenToFetch)}`, { headers })
+        .then(async (res) => {
+          inFlightShareRef.current = null
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}))
+            if (res.status === 401) {
+              // Recoverable auth failure: token must survive in sessionStorage
+              throw { type: 'RECOVERABLE_AUTH', message: 'Authentication required to view shared setlist.' }
+            }
+            if (res.status === 403) {
+              // Recoverable access approval failure: token survives for when admin approves
+              throw { type: 'RECOVERABLE_AUTH', message: 'Active account approval required to view shared setlist.' }
+            }
+            if (res.status === 410) {
+              // Terminal expired token outcome
+              throw { type: 'TERMINAL_EXPIRED', message: 'This shared setlist link has expired.' }
+            }
+            if (res.status === 404) {
+              // Terminal not-found outcome
+              throw { type: 'TERMINAL_NOT_FOUND', message: 'Shared setlist not found.' }
+            }
+            if (res.status === 400) {
+              // Terminal invalid token outcome
+              throw { type: 'TERMINAL_INVALID', message: 'Invalid shared setlist link.' }
+            }
+            throw { type: 'RECOVERABLE_SERVER', message: errData?.error || 'Could not load shared setlist: link may be expired or invalid.' }
+          }
+          return res.json()
+        })
+        .then((data) => {
+          if (data?.setlist) {
+            resolvedShareRef.current = tokenToFetch
+            // Successful share resolution: clear pending token
+            try {
+              if (typeof sessionStorage !== 'undefined') {
+                sessionStorage.removeItem('gtar_pending_share_token')
+              }
+            } catch { /* ignore */ }
+            setIncomingSharedSetlist(data.setlist)
+          }
+        })
+        .catch((err) => {
+          console.warn('[Share] Failed to load shared setlist:', err)
+          const isTerminal = err?.type === 'TERMINAL_EXPIRED' || err?.type === 'TERMINAL_NOT_FOUND' || err?.type === 'TERMINAL_INVALID'
+          if (isTerminal) {
+            resolvedShareRef.current = tokenToFetch
+            try {
+              if (typeof sessionStorage !== 'undefined') {
+                sessionStorage.removeItem('gtar_pending_share_token')
+              }
+            } catch { /* ignore */ }
+          }
+          const msg = typeof err?.message === 'string'
+            ? err.message
+            : (err instanceof Error ? err.message : 'Could not load shared setlist.')
+          setToastMessage(msg)
+          setTimeout(() => setToastMessage(null), 4000)
+        })
+        .finally(() => {
+          inFlightShareRef.current = null
+          // Clean up share parameter from URL without page reload once processed
+          try {
+            const cleanUrl = new URL(window.location.href)
+            if (cleanUrl.searchParams.has('share')) {
+              cleanUrl.searchParams.delete('share')
+              window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
+            }
+          } catch { /* ignore */ }
+        })
     } catch {
       /* ignore */
     }
-  }, [])
+  }, [authContext?.session, authContext?.accessStatus])
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())

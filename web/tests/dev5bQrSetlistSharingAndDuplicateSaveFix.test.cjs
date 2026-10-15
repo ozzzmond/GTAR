@@ -251,13 +251,37 @@ test('EXISTING_DEV5A_INVARIANTS_PRESERVED: Deterministic transposition and metad
 // 11. DELIVERABLE 1: BACKEND ERROR SANITIZATION HIDES INTERNAL DETAILS
 test('BACKEND_ERROR_SANITIZATION: /api/setlist/share sanitizes errors and hides internal details/exceptions', async () => {
   const shareApi = require(path.join(webDir, 'functions/api/setlist/share.ts'))
+  const { createSessionToken } = require(path.join(webDir, 'functions/lib/authCore.ts'))
+
+  const authSecret = 'disposable-test-secret-dev5b'
+  const activeUser = {
+    id: 'user-error-sanitization-1',
+    google_sub: 'sub-error-1',
+    email: 'errorsan@example.com',
+    role: 'member',
+    access_status: 'active',
+  }
+  const token = await createSessionToken(activeUser, authSecret)
 
   const sensitiveErrorMsg = 'FATAL: SQLite disk I/O error or constraint table shared_setlists corrupted /var/data.db'
   const failingDb = {
-    prepare() {
+    prepare(sql) {
+      if (sql && sql.includes('users')) {
+        return {
+          bind() {
+            return {
+              async first() {
+                return activeUser
+              },
+            }
+          },
+        }
+      }
       throw new Error(sensitiveErrorMsg)
     },
   }
+
+  const testEnv = { DB: failingDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' }
 
   // 1. POST failure when database throws internal error
   const postPayload = {
@@ -267,11 +291,14 @@ test('BACKEND_ERROR_SANITIZATION: /api/setlist/share sanitizes errors and hides 
   }
   const postReq = new Request('https://gtar.pages.dev/api/setlist/share', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(postPayload),
   })
 
-  const postRes = await shareApi.onRequestPost({ request: postReq, env: { DB: failingDb } })
+  const postRes = await shareApi.onRequestPost({ request: postReq, env: testEnv })
   assert.equal(postRes.status, 500, 'Database failure on POST must return HTTP 500')
   const postData = await postRes.json()
   assert.equal(postData.error, 'FAILED_TO_CREATE_SHARE', 'Must return stable error code')
@@ -285,9 +312,12 @@ test('BACKEND_ERROR_SANITIZATION: /api/setlist/share sanitizes errors and hides 
   const validToken = '0123456789abcdef'
   const getReq = new Request(`https://gtar.pages.dev/api/setlist/share?token=${validToken}`, {
     method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   })
 
-  const getRes = await shareApi.onRequestGet({ request: getReq, env: { DB: failingDb } })
+  const getRes = await shareApi.onRequestGet({ request: getReq, env: testEnv })
   assert.equal(getRes.status, 500, 'Database failure on GET must return HTTP 500')
   const getData = await getRes.json()
   assert.equal(getData.error, 'FAILED_TO_FETCH_SHARE', 'Must return stable error code')

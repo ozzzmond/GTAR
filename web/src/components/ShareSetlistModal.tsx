@@ -3,6 +3,7 @@ import { generateQrSvgDataUri } from '../utils/qrCode';
 import { sanitizeSetlistForShare } from '../utils/sharedSetlist';
 import type { SharedSetlistPayload } from '../utils/sharedSetlist';
 import type { WebSetlist, ActiveSongState } from '../types/gtar';
+import { getStoredSessionStatus } from '../utils/googleAuth';
 
 interface ShareSetlistModalProps {
   setlist: WebSetlist;
@@ -29,17 +30,36 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
       setError(null);
 
       try {
+        const { session, isExpired } = getStoredSessionStatus();
+        if (!session || isExpired) {
+          throw new Error('Authentication required to share setlist');
+        }
+        const authToken = session.sessionToken || session.idToken || session.token;
+        if (!authToken) {
+          throw new Error('Authentication token missing');
+        }
+        const userStatus = session.access_status || session.user?.access_status || 'active';
+        if (userStatus !== 'active') {
+          throw new Error('Active account approval required to share setlist');
+        }
+
         const payload: SharedSetlistPayload = sanitizeSetlistForShare(setlist, allSongs);
 
-        // Request share token from backend
+        // Request share token from backend with active session authorization
         const res = await fetch('/api/setlist/share', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`,
+          },
           body: JSON.stringify(payload),
         });
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
+          if (res.status === 429) {
+            throw new Error('Share creation limit reached — please wait a moment');
+          }
           throw new Error(errData.error || `HTTP ${res.status}`);
         }
 

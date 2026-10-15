@@ -33,6 +33,7 @@ import { SharedCatalogBrowser } from './SharedCatalogBrowser'
 import { publishSharedCatalogSong } from '../utils/sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { useOptionalGoogleAuth } from '../utils/authContext'
+import { getStoredSessionStatus } from '../utils/googleAuth'
 
 interface SongbookHomeViewProps {
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
@@ -623,9 +624,33 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
     setIsResolvingLink(true)
     try {
-      const res = await fetch(`/api/setlist/share?token=${extracted.token}`)
+      const { session, isExpired } = getStoredSessionStatus()
+      const authToken = auth?.session?.sessionToken || auth?.session?.idToken || auth?.session?.token || session?.sessionToken || session?.idToken || session?.token
+      if (!authToken || isExpired) {
+        throw new Error('Authentication required to view shared setlist.')
+      }
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      }
+
+      const res = await fetch(`/api/setlist/share?token=${encodeURIComponent(extracted.token)}`, { headers })
       if (!res.ok) {
-        throw new Error('Shared setlist not found or expired.')
+        const errData = await res.json().catch(() => ({}))
+        if (res.status === 401) {
+          throw new Error('Authentication required to view shared setlist.')
+        }
+        if (res.status === 403) {
+          throw new Error('Active account approval required to view shared setlist.')
+        }
+        if (res.status === 410) {
+          throw new Error('This shared setlist link has expired.')
+        }
+        if (res.status === 404) {
+          throw new Error('Shared setlist not found.')
+        }
+        throw new Error(errData?.error || 'Shared setlist not found or expired.')
       }
       const data = await res.json()
       if (data?.setlist) {

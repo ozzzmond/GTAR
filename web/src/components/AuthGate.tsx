@@ -270,6 +270,31 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   // Mount session initialization
   useEffect(() => {
+    // Preserve incoming QR / deep-link share token during authentication workflow
+    try {
+      if (typeof window !== 'undefined' && window.location?.search) {
+        const urlParams = new URLSearchParams(window.location.search)
+        const shareParam = urlParams.get('share')
+        if (shareParam) {
+          if (/^[a-f0-9]{16}$/i.test(shareParam)) {
+            if (typeof sessionStorage !== 'undefined') {
+              sessionStorage.setItem('gtar_pending_share_token', shareParam.toLowerCase())
+            }
+          } else {
+            // Malformed token: clear any stored pending token and clean URL
+            if (typeof sessionStorage !== 'undefined') {
+              sessionStorage.removeItem('gtar_pending_share_token')
+            }
+            try {
+              const cleanUrl = new URL(window.location.href)
+              cleanUrl.searchParams.delete('share')
+              window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
+            } catch { /* ignore */ }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
     const generation = ++epoch.current
     const status = getStoredSessionStatus()
 

@@ -204,48 +204,31 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
 
   assert.equal(MAX_SHARE_PAYLOAD_BYTES, 1024 * 1024)
 
-  // 1. Advertised Content-Length exceeding 1MB rejected with 413
-  const oversizedHeaderReq = new Request('https://gtar.local/api/setlist/share', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': String(2 * 1024 * 1024),
-    },
-    body: JSON.stringify({ test: 'data' }),
-  })
-
-  const res1 = await onRequestPost({ request: oversizedHeaderReq, env: {} })
-  assert.equal(res1.status, 413)
-  const body1 = await res1.json()
-  assert.equal(body1.error, 'PAYLOAD_TOO_LARGE')
-
-  // 2. Missing DB binding fails closed with 503 DATABASE_UNAVAILABLE, never false success
-  const validPayload = {
-    version: 1,
-    type: 'GTAR_SHARED_SETLIST',
-    name: 'Sunday Worship',
-    createdAt: new Date().toISOString(),
-    songs: [{ title: 'Build My Life', rawContent: '[G]Worthy of every song' }],
+  const { createSessionToken } = require('../functions/lib/authCore.ts')
+  const authSecret = 'test-auth-secret-disposable-123'
+  const testUser = {
+    id: 'user-share-test-1',
+    google_sub: 'sub-share-1',
+    email: 'sharetest@example.com',
+    role: 'member',
+    access_status: 'active',
   }
+  const token = await createSessionToken(testUser, authSecret)
 
-  const validReq = new Request('https://gtar.local/api/setlist/share', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': String(JSON.stringify(validPayload).length),
-    },
-    body: JSON.stringify(validPayload),
-  })
-
-  const res2 = await onRequestPost({ request: validReq, env: {} })
-  assert.equal(res2.status, 503)
-  const body2 = await res2.json()
-  assert.equal(body2.error, 'DATABASE_UNAVAILABLE')
-
-  // 3. With DB available, valid payload succeeds with 16-hex token
   let inserted = false
   const mockDb = {
     prepare(sql) {
+      if (sql.includes('users')) {
+        return {
+          bind() {
+            return {
+              async first() {
+                return testUser
+              },
+            }
+          },
+        }
+      }
       return {
         bind(...args) {
           return {
@@ -259,7 +242,48 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
     },
   }
 
-  const validReq2 = new Request('https://gtar.local/api/setlist/share', {
+  // 1. Advertised Content-Length exceeding 1MB rejected with 413 for authenticated caller
+  const oversizedHeaderReq = new Request('https://gtar.local/api/setlist/share', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': String(2 * 1024 * 1024),
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ test: 'data' }),
+  })
+
+  const res1 = await onRequestPost({ request: oversizedHeaderReq, env: { DB: mockDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
+  assert.equal(res1.status, 413)
+  const body1 = await res1.json()
+  assert.equal(body1.error, 'PAYLOAD_TOO_LARGE')
+
+  // 2. Missing DB binding fails closed with 503 DATABASE_UNAVAILABLE for authenticated caller
+  const validPayload = {
+    version: 1,
+    type: 'GTAR_SHARED_SETLIST',
+    name: 'Sunday Worship',
+    createdAt: new Date().toISOString(),
+    songs: [{ title: 'Build My Life', rawContent: '[G]Worthy of every song' }],
+  }
+
+  const validReq = new Request('https://gtar.local/api/setlist/share', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': String(JSON.stringify(validPayload).length),
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(validPayload),
+  })
+
+  const res2 = await onRequestPost({ request: validReq, env: { AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
+  assert.equal(res2.status, 503)
+  const body2 = await res2.json()
+  assert.equal(body2.error, 'DATABASE_UNAVAILABLE')
+
+  // 3. Anonymous caller rejected with 401 without revealing DB status
+  const anonReq = new Request('https://gtar.local/api/setlist/share', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -268,7 +292,24 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
     body: JSON.stringify(validPayload),
   })
 
-  const res3 = await onRequestPost({ request: validReq2, env: { DB: mockDb } })
+  const anonRes = await onRequestPost({ request: anonReq, env: { DB: mockDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
+  assert.equal(anonRes.status, 401, 'Anonymous share request must be rejected with 401')
+
+  const anonNoDbRes = await onRequestPost({ request: anonReq, env: { AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
+  assert.equal(anonNoDbRes.status, 401, 'Anonymous caller must never see protected D1 details')
+
+  // 4. With active authenticated user and DB available, valid payload succeeds with 16-hex token
+  const validReq2 = new Request('https://gtar.local/api/setlist/share', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': String(JSON.stringify(validPayload).length),
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(validPayload),
+  })
+
+  const res3 = await onRequestPost({ request: validReq2, env: { DB: mockDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
   assert.equal(res3.status, 200)
   const body3 = await res3.json()
   assert.match(body3.token, /^[0-9a-f]{16}$/)
