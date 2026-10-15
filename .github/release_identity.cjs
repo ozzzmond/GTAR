@@ -72,6 +72,23 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
       }
     }
 
+    if (candidates.length === 2) {
+      const clean = candidates.find(p => p.promotable)
+      const lettered = candidates.find(p => !p.promotable)
+      if (clean && lettered && clean.base === lettered.base && clean.iteration === lettered.iteration + 1) {
+        const req = env.REQUESTED_TAG || env.RELEASE_TAG
+        const chosen = (req && candidates.find(p => p.tag === req)) || clean
+        return {
+          version: chosen.tag.slice(1),
+          tag: chosen.tag,
+          sha: headSha,
+          shortSha,
+          isTagged: true,
+          promotable: chosen.promotable
+        }
+      }
+    }
+
     // Check environment if REQUESTED_TAG was passed explicitly (e.g. CI preview checkout)
     const requested = env.REQUESTED_TAG || env.RELEASE_TAG
     if (requested) {

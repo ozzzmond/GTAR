@@ -22,6 +22,28 @@ const HISTORICAL_TAG_EXCEPTIONS = Object.freeze({
   }),
 })
 
+function verifyStabilizationPair(git, targetTag, candidateVersion, sha) {
+  const parsed = parseDevTag(targetTag)
+  if (parsed.suffix !== '') return null
+  const companionTag = 'v' + candidateVersion
+  let companion
+  try { companion = parseDevTag(companionTag) } catch { return null }
+  if (companion.suffix === '' || companion.base !== parsed.base || companion.iteration + 1 !== parsed.iteration) {
+    return null
+  }
+  let companionSha
+  try {
+    git('show-ref', '--verify', `refs/tags/${companionTag}`)
+    companionSha = git('rev-parse', '--verify', `refs/tags/${companionTag}^{commit}`)
+  } catch {
+    throw new Error('Missing companion hotfix tag for stabilization')
+  }
+  if (companionSha !== sha) {
+    throw new Error('Companion hotfix tag moved; identical commit required')
+  }
+  return { companionTag, companion }
+}
+
 // Reads committed files at the selected checkpoint, never the working tree.
 function inspectCheckpoint(root, tag) {
   const parsed = parseDevTag(tag)
@@ -52,8 +74,23 @@ function inspectCheckpoint(root, tag) {
   const dev = hasTagDerivedDev ? version : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
   const runtimeProd = /export const GTAR_APP_VERSION = '([^']+)'/.exec(types)?.[1]
   const auth = read('web/functions/lib/authCore.ts')
-  if ([pkg.version, lock.version, lock.packages?.['']?.version, dev].some(v => v !== version) ||
-      !auth.includes(`GTAR Server-Authoritative Account & Access Control (${tag})`)) throw new Error('Checkpoint version metadata mismatch')
+  const directMatch = [pkg.version, lock.version, lock.packages?.['']?.version, dev].every(v => v === version) &&
+    auth.includes(`GTAR Server-Authoritative Account & Access Control (${tag})`)
+  if (!directMatch) {
+    let pair
+    try {
+      pair = verifyStabilizationPair(git, tag, pkg.version, sha)
+    } catch (error) {
+      throw new Error(`Checkpoint version metadata mismatch: ${error.message}`)
+    }
+    if (!pair) throw new Error('Checkpoint version metadata mismatch')
+    const companionVersion = pair.companionTag.slice(1)
+    const companionDev = hasTagDerivedDev ? companionVersion : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
+    if ([pkg.version, lock.version, lock.packages?.['']?.version, companionDev].some(v => v !== companionVersion) ||
+        !auth.includes(`GTAR Server-Authoritative Account & Access Control (${pair.companionTag})`)) {
+      throw new Error('Checkpoint version metadata mismatch')
+    }
+  }
   return { ...parsed, sha, runtimeProd }
 }
 
@@ -79,7 +116,15 @@ function main(args = process.argv.slice(2)) {
       statusLine = `METADATA_STATUS=${legacy.classification}\n`
     } else {
       const version = JSON.parse(readFileSync(path.join(root, 'web/package.json'), 'utf8')).version
-      if (version !== tag.slice(1)) throw new Error('web/package.json version must equal tag without leading v')
+      if (version !== tag.slice(1)) {
+        let pair
+        try {
+          pair = verifyStabilizationPair(git, tag, version, taggedCommit)
+        } catch (error) {
+          throw new Error(error.message)
+        }
+        if (!pair) throw new Error('web/package.json version must equal tag without leading v')
+      }
     }
     const output = `RELEASE_TAG=${tag}\nRELEASE_TITLE=GTAR ${tag}\nIS_PRERELEASE=true\nIS_PROMOTABLE=${promotable}\n${statusLine}`
     // No metadata is emitted or appended until every validation above succeeds.
@@ -92,4 +137,4 @@ function main(args = process.argv.slice(2)) {
   }
 }
 if (require.main === module) process.exitCode = main()
-module.exports = { main, parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS }
+module.exports = { main, parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS, verifyStabilizationPair }
