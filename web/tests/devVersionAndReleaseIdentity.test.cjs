@@ -367,7 +367,7 @@ test('STEP_6.14: Allowed same-commit DEV.3a hotfix and DEV.4 stabilization tag p
   assert.equal(identReq4.isTagged, true)
 
   // Without explicit requested tag, defaults to clean stabilization tag
-  const identDefault = relIdent.resolveDevIdentity(repo)
+  const identDefault = relIdent.resolveDevIdentity(repo, {})
   assert.equal(identDefault.version, '1.0.130-dev.4')
   assert.equal(identDefault.tag, 'v1.0.130-dev.4')
   assert.equal(identDefault.promotable, true)
