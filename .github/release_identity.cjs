@@ -1,11 +1,60 @@
 // Build identity only: never edits source. Transport origin is not release authority.
 const { execFileSync } = require('node:child_process')
+const fs = require('node:fs')
+const path = require('node:path')
 const { parseDevTag, inspectCheckpoint } = require('./release_metadata.cjs')
 const CANONICAL_REPOSITORY = 'https://github.com/ozzzmond/GTAR.git'
 const ABANDONED_PROD = Object.freeze({
   tag: 'v1.1.122', sha: 'c254195e6dfc946138336551e4ce8a87520baf7f',
   sourceTag: 'v1.0.108-dev.14', tree: '59ca0769cee12f5d73f03e067c5b54be9a848de0'
 })
+
+function getCommittedDevVersion(root) {
+  try {
+    const pkgPaths = [
+      path.join(root, 'web/package.json'),
+      path.join(root, 'package.json')
+    ]
+    for (const p of pkgPaths) {
+      if (fs.existsSync(p)) {
+        const content = JSON.parse(fs.readFileSync(p, 'utf8'))
+        if (content && typeof content.version === 'string' && content.version.trim()) {
+          return content.version.trim()
+        }
+      }
+    }
+  } catch {}
+  return '1.0.130-dev.4a'
+}
+
+function resolveDeploymentId(env, headSha, shortSha, tagName) {
+  const direct = env.CF_PAGES_DEPLOYMENT_ID || env.DEPLOYMENT_ID
+  if (direct && typeof direct === 'string') {
+    const trimmed = direct.trim()
+    if (trimmed && trimmed !== headSha && trimmed !== shortSha && trimmed !== tagName && trimmed !== env.CF_PAGES_BRANCH) {
+      return trimmed
+    }
+  }
+
+  const urlStr = env.CF_PAGES_URL
+  if (urlStr && typeof urlStr === 'string') {
+    try {
+      const url = new URL(urlStr)
+      if (url.hostname.endsWith('.pages.dev')) {
+        const subdomain = url.hostname.split('.')[0]
+        const isBranchAlias = subdomain === (env.CF_PAGES_BRANCH || 'dev') || subdomain === 'main'
+        const isSha = subdomain === headSha || subdomain === shortSha
+        const isTag = tagName && (subdomain === tagName || subdomain === tagName.replace(/^v/, ''))
+        if (!isBranchAlias && !isSha && !isTag && /^[0-9a-f]{7,32}$/i.test(subdomain)) {
+          return subdomain
+        }
+      }
+    } catch {}
+  }
+
+  return null
+}
+
 function resolveReleaseIdentity(root, env = process.env, gitOverride) {
   const production = env.CF_PAGES_BRANCH === 'main'
   const validation = Object.hasOwn(env, 'GTAR_VALIDATE_SHA')
@@ -41,58 +90,43 @@ function selectCandidate(candidates, headSha, shortSha, env, getTagSha) {
       const tagSha = getTagSha(requested)
       if (tagSha === headSha) {
         return {
-          version: p.tag.slice(1),
           tag: p.tag,
-          sha: headSha,
-          shortSha,
-          isTagged: true,
           promotable: p.promotable
         }
       }
     } catch {}
-    return {
-      version: `untagged-${shortSha}`,
-      tag: null,
-      sha: headSha,
-      shortSha,
-      isTagged: false,
-      promotable: false
-    }
+    return null
   }
+
+  if (candidates.length === 0) return null
 
   if (candidates.length === 1) {
-    const selected = candidates[0]
     return {
-      version: selected.tag.slice(1),
-      tag: selected.tag,
-      sha: headSha,
-      shortSha,
-      isTagged: true,
-      promotable: selected.promotable
+      tag: candidates[0].tag,
+      promotable: candidates[0].promotable
     }
   }
 
-  if (candidates.length === 2) {
-    const clean = candidates.find(p => p.promotable)
-    const lettered = candidates.find(p => !p.promotable)
-    if (clean && lettered && clean.base === lettered.base && clean.iteration === lettered.iteration + 1) {
-      return {
-        version: clean.tag.slice(1),
-        tag: clean.tag,
-        sha: headSha,
-        shortSha,
-        isTagged: true,
-        promotable: clean.promotable
-      }
+  // Multiple candidates: deterministically prefer clean numeric stabilization tag
+  const cleanCandidates = candidates.filter(p => p.promotable)
+  if (cleanCandidates.length > 0) {
+    cleanCandidates.sort((a, b) => {
+      if (b.base !== a.base) return b.base - a.base
+      return b.iteration - a.iteration
+    })
+    return {
+      tag: cleanCandidates[0].tag,
+      promotable: true
     }
   }
 
+  const sorted = [...candidates].sort((a, b) => {
+    if (b.base !== a.base) return b.base - a.base
+    if (b.iteration !== a.iteration) return b.iteration - a.iteration
+    return (b.suffix || '').localeCompare(a.suffix || '')
+  })
   return {
-    version: `untagged-${shortSha}`,
-    tag: null,
-    sha: headSha,
-    shortSha,
-    isTagged: false,
+    tag: sorted[0].tag,
     promotable: false
   }
 }
@@ -107,9 +141,20 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
   })
   try {
     if (env.CF_PAGES_BRANCH === 'main') return null
+    const committedVersion = getCommittedDevVersion(root)
     const headSha = git('rev-parse', 'HEAD')
     if (!headSha || !/^[0-9a-f]{40}$/.test(headSha)) {
-      return { version: 'untagged-dev', tag: null, sha: null, shortSha: null, isTagged: false, promotable: false }
+      const deploymentId = resolveDeploymentId(env, null, 'unknown', null)
+      return {
+        version: committedVersion,
+        tagStatus: 'UNVERIFIED',
+        tag: null,
+        sha: null,
+        shortSha: 'unknown',
+        deploymentId,
+        isTagged: false,
+        promotable: false
+      }
     }
     const shortSha = git('rev-parse', '--short', 'HEAD') || headSha.slice(0, 7)
 
@@ -118,7 +163,17 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
 
     if (isCloudflare) {
       if (env.CF_PAGES_COMMIT_SHA && (!/^[0-9a-f]{40}$/.test(env.CF_PAGES_COMMIT_SHA) || env.CF_PAGES_COMMIT_SHA !== headSha)) {
-        return { version: `untagged-${shortSha}`, tag: null, sha: headSha, shortSha, isTagged: false, promotable: false }
+        const deploymentId = resolveDeploymentId(env, headSha, shortSha, null)
+        return {
+          version: committedVersion,
+          tagStatus: 'UNVERIFIED',
+          tag: null,
+          sha: headSha,
+          shortSha,
+          deploymentId,
+          isTagged: false,
+          promotable: false
+        }
       }
 
       try {
@@ -141,13 +196,25 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
               canonicalTagMap.set(ref.slice('refs/tags/'.length), objSha)
             }
           }
+        } else if (typeof lsOutput === 'string' && lsOutput.trim() === '') {
+          canonicalTagMap = new Map()
         }
       } catch {
         canonicalTagMap = null
       }
 
-      if (!canonicalTagMap) {
-        return { version: `untagged-${shortSha}`, tag: null, sha: headSha, shortSha, isTagged: false, promotable: false }
+      if (canonicalTagMap === null) {
+        const deploymentId = resolveDeploymentId(env, headSha, shortSha, null)
+        return {
+          version: committedVersion,
+          tagStatus: 'UNVERIFIED',
+          tag: null,
+          sha: headSha,
+          shortSha,
+          deploymentId,
+          isTagged: false,
+          promotable: false
+        }
       }
 
       const verifiedTags = []
@@ -157,32 +224,124 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
 
       const candidates = verifiedTags.flatMap(t => {
         try {
-          const p = parseDevTag(t)
-          return [p]
+          return [parseDevTag(t)]
         } catch {
           return []
         }
       })
 
-      return selectCandidate(candidates, headSha, shortSha, env, tag => canonicalTagMap.get(tag))
+      const selected = selectCandidate(candidates, headSha, shortSha, env, tag => canonicalTagMap.get(tag))
+      if (selected) {
+        const deploymentId = resolveDeploymentId(env, headSha, shortSha, selected.tag)
+        return {
+          version: committedVersion,
+          tagStatus: 'TAGGED',
+          tag: selected.tag,
+          sha: headSha,
+          shortSha,
+          deploymentId,
+          isTagged: true,
+          promotable: selected.promotable
+        }
+      }
+
+      const deploymentId = resolveDeploymentId(env, headSha, shortSha, null)
+      return {
+        version: committedVersion,
+        tagStatus: 'UNTAGGED',
+        tag: null,
+        sha: headSha,
+        shortSha,
+        deploymentId,
+        isTagged: false,
+        promotable: false
+      }
     }
 
     // Local / unverified fallback path
-    const tagsOutput = git('tag', '--points-at', 'HEAD')
+    let tagsOutput
+    try {
+      tagsOutput = git('tag', '--points-at', 'HEAD')
+    } catch {
+      tagsOutput = null
+    }
+
+    if (tagsOutput === null) {
+      const deploymentId = resolveDeploymentId(env, headSha, shortSha, null)
+      return {
+        version: committedVersion,
+        tagStatus: 'UNVERIFIED',
+        tag: null,
+        sha: headSha,
+        shortSha,
+        deploymentId,
+        isTagged: false,
+        promotable: false
+      }
+    }
+
     const tags = tagsOutput ? tagsOutput.split('\n').map(t => t.trim()).filter(Boolean) : []
     const candidates = tags.flatMap(t => {
       try {
-        const p = parseDevTag(t)
-        return [p]
+        return [parseDevTag(t)]
       } catch {
         return []
       }
     })
 
-    return selectCandidate(candidates, headSha, shortSha, env, tag => git('rev-parse', '--verify', `refs/tags/${tag}^{commit}`))
+    const selected = selectCandidate(candidates, headSha, shortSha, env, tag => {
+      try {
+        return git('rev-parse', '--verify', `refs/tags/${tag}^{commit}`)
+      } catch {
+        return null
+      }
+    })
+
+    if (selected) {
+      const deploymentId = resolveDeploymentId(env, headSha, shortSha, selected.tag)
+      return {
+        version: committedVersion,
+        tagStatus: 'TAGGED',
+        tag: selected.tag,
+        sha: headSha,
+        shortSha,
+        deploymentId,
+        isTagged: true,
+        promotable: selected.promotable
+      }
+    }
+
+    const deploymentId = resolveDeploymentId(env, headSha, shortSha, null)
+    return {
+      version: committedVersion,
+      tagStatus: 'UNTAGGED',
+      tag: null,
+      sha: headSha,
+      shortSha,
+      deploymentId,
+      isTagged: false,
+      promotable: false
+    }
   } catch {
-    return { version: 'untagged-dev', tag: null, sha: null, shortSha: null, isTagged: false, promotable: false }
+    const committedVersion = getCommittedDevVersion(root)
+    return {
+      version: committedVersion,
+      tagStatus: 'UNVERIFIED',
+      tag: null,
+      sha: null,
+      shortSha: 'unknown',
+      deploymentId: null,
+      isTagged: false,
+      promotable: false
+    }
   }
 }
 
-module.exports = { resolveReleaseIdentity, resolveDevIdentity, CANONICAL_REPOSITORY, ABANDONED_PROD }
+module.exports = {
+  resolveReleaseIdentity,
+  resolveDevIdentity,
+  resolveDeploymentId,
+  getCommittedDevVersion,
+  CANONICAL_REPOSITORY,
+  ABANDONED_PROD
+}

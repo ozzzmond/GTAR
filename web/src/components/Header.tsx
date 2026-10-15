@@ -30,7 +30,17 @@ import {
   Menu,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
-import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
+import {
+  GTAR_APP_VERSION,
+  GTAR_DEV_VERSION,
+  GTAR_DEV_PROVENANCE,
+} from '../types/gtar'
+
+import {
+  formatDevDiagLine1,
+  formatDevDiagLine2,
+  formatHeaderVersion,
+} from '../utils/headerFormatters'
 import type { CloudSyncStatus } from '../utils/cloudSongbookSync'
 import { sharedCatalogService } from '../utils/sharedCatalogService'
 import { cloneSharedCatalogSongToPersonal } from '../utils/sharedCatalogImport'
@@ -506,11 +516,11 @@ export const Header: React.FC<HeaderProps> = ({
       {/* TIER 1 (Top Bar): Branding & User Profile Avatar                   */}
       {/* =================================================================== */}
       <div className="h-12 sm:h-14 px-3 sm:px-5 flex items-center justify-between w-full">
-        {/* Left: Logo + App Title ("GTAR-Dev") + DEV Badge + Version Badge */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Left: Logo + App Title ("GTAR-Dev") + DEV Badge + PROD Version Badge + DEV Diagnostics */}
+        <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
           <div
             onClick={onNavigateHome}
-            className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95"
+            className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95 shrink-0"
             title="Return to Songbook Library Home (Alt+0)"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-app-base border border-app-border flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-app-action group-hover:scale-105 transition-all">
@@ -525,20 +535,34 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="font-mono font-bold text-sm sm:text-base tracking-wider header-primary-text text-app-heading">
                   {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
                 </span>
-                {isDevEnv && (
+                {isDevEnv ? (
                   <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">
                     DEV
                   </span>
+                ) : (
+                  <span className="text-[10px] font-mono header-secondary-text text-app-muted font-semibold tracking-tight">
+                    {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
+                  </span>
                 )}
-                <span className="text-[10px] font-mono header-secondary-text text-app-muted font-semibold tracking-tight">
-                  {isDevEnv
-                    ? (GTAR_DEV_VERSION.startsWith('untagged') ? GTAR_DEV_VERSION : `v${GTAR_DEV_VERSION.replace(/^v/, '')}`)
-                    : `v${GTAR_APP_VERSION.replace(/^v/, '')}`}
-                </span>
               </div>
             </div>
           </div>
 
+          {/* Right Block: TAG_AND_DEPLOYMENT_DIAGNOSTICS (DEV-only, visible on mobile and desktop) */}
+          {isDevEnv && (
+            <div
+              data-testid="dev-header-diagnostics"
+              className="flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight text-app-muted/80 tracking-tight select-none min-w-0"
+              title={`${formatDevDiagLine1(GTAR_DEV_PROVENANCE)} | ${formatDevDiagLine2(GTAR_DEV_PROVENANCE)}`}
+            >
+              <div data-testid="dev-header-diag-line1" className="truncate whitespace-nowrap">
+                {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
+              </div>
+              <div data-testid="dev-header-diag-line2" className="truncate whitespace-nowrap text-app-muted/70">
+                {formatDevDiagLine2(GTAR_DEV_PROVENANCE)}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Action Icons & User Avatar */}

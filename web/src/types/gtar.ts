@@ -8,7 +8,24 @@ export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string'
   ? __GTAR_PROD_VERSION__ : '1.1.108';
 declare const __GTAR_DEV_VERSION__: string | null
 export const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string'
-  ? __GTAR_DEV_VERSION__ : 'untagged-dev';
+  ? __GTAR_DEV_VERSION__ : '1.0.130-dev.4a';
+
+export interface DevBuildProvenance {
+  tagStatus: 'TAGGED' | 'UNTAGGED' | 'UNVERIFIED'
+  tagName: string | null
+  commitSha: string
+  deploymentId: string | null
+}
+
+declare const __GTAR_DEV_PROVENANCE__: DevBuildProvenance | null | undefined
+export const GTAR_DEV_PROVENANCE: DevBuildProvenance = typeof __GTAR_DEV_PROVENANCE__ === 'object' && __GTAR_DEV_PROVENANCE__ !== null
+  ? __GTAR_DEV_PROVENANCE__
+  : {
+      tagStatus: 'UNVERIFIED',
+      tagName: null,
+      commitSha: 'unknown',
+      deploymentId: null,
+    };
 export const GTAR_SETLIST_VERSION = 1
 export const GTAR_SETLIST_TYPE = 'GTAR_SETLIST'
 
