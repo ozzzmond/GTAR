@@ -425,7 +425,7 @@ test('DEV8_SETLIST_02: Dual deletion of song keeps song deleted without conflict
   assert.equal(reconciliation.merged.songs[0].isDeleted, true)
 })
 
-test('DEV8_SETLIST_03: Local edit vs remote delete preserves local edit safely', () => {
+test('DEV8_SETLIST_03: Local edit vs remote delete keeps tombstone and preserves local edit as copy (symmetric)', () => {
   const songId = generateUUID()
   const baseSong = { id: songId, title: 'Active Song', rawContent: '[G]Original', isDeleted: false }
   const localSong = { id: songId, title: 'Active Song (New Verse)', rawContent: '[G]Updated', isDeleted: false }
@@ -437,10 +437,12 @@ test('DEV8_SETLIST_03: Local edit vs remote delete preserves local edit safely',
 
   const reconciliation = reconcileSongbook(local, remote, base)
   assert.equal(reconciliation.hasConflicts, true)
-  assert.equal(reconciliation.merged.songs.length, 1)
-  assert.equal(reconciliation.merged.songs[0].id, songId)
-  assert.equal(reconciliation.merged.songs[0].isDeleted, false)
-  assert.equal(reconciliation.merged.songs[0].rawContent, '[G]Updated')
+  assert.equal(reconciliation.merged.songs.length, 2)
+  const tomb = reconciliation.merged.songs.find((s) => s.id === songId)
+  const copy = reconciliation.merged.songs.find((s) => s.id !== songId)
+  assert.equal(tomb.isDeleted, true)
+  assert.equal(copy.isDeleted, false)
+  assert.equal(copy.rawContent, '[G]Updated')
 })
 
 test('DEV8_SETLIST_04: Remote edit vs local delete preserves remote edit as conflict copy', () => {
