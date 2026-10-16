@@ -85,11 +85,13 @@ export interface GtarBackup {
   metadata: GtarBackupMetadata
   songs: SongEntity[]
   setlists?: Array<{
+    id?: string | number
     name: string
     createdAt: number
     songs: Array<{
       title: string
       artist: string
+      id?: string | number
       position: number
     }>
   }>

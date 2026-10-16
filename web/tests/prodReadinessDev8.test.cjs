@@ -308,7 +308,7 @@ test('DEV8_DATA_02: Cloud payload failing referential integrity check is rejecte
     const result = await performCloudSongbookSync('token_1', { storage, forceAction: 'download' })
     assert.equal(result.success, false)
     assert.equal(result.status, 'ERROR')
-    assert.match(result.error, /failed referential integrity check/i)
+    assert.match(result.error, /canonical ID collision/i)
 
     // Local library remains untouched
     const preserved = readPersistedLibrary(storage)
@@ -475,7 +475,7 @@ test('DEV8_FRESH_01: Clean environment empty storage initializes with valid RFC4
     { title: 'El Bimbo', rawContent: '[G]Chords' },
   ]
   const rawSetlists = [
-    { name: 'Default Setlist', songs: [{ title: 'Stand By Me' }] },
+    { id: generateUUID(), name: 'Default Setlist', songs: [{ title: 'Stand By Me' }] },
   ]
 
   const normalized = normalizeSongbookIds(rawSongs, rawSetlists)

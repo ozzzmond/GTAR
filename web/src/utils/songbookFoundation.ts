@@ -1,4 +1,5 @@
-import { generateUUID, isValidUUID } from './uuid'
+import { assertImportIds, canonicalImportId } from './importIdentity'
+import { generateUUID } from './uuid'
 import type { ActiveSongState, SongEntity, WebSetlist } from '../types/gtar'
 import { resolveSetlistSong, bindLegacySetlists } from './setlistSongs'
 import { transposeKey, CHORD_TOKEN_REGEX } from './chordTransposer'
@@ -32,20 +33,8 @@ export interface NormalizationResult {
   idMap: Map<string, string>
 }
 
-/**
- * Normalizes an offline library's song IDs to immutable string UUIDs (RFC4122 v4).
- * Rebinds all setlist references to the new canonical song IDs.
- *
- * Invariants:
- * - If a song already has a valid string UUID, its ID is preserved without modification.
- * - If a song has a numeric ID, Date.now() style ID, undefined, null, or non-UUID string,
- *   it receives a new canonical string UUID.
- * - Setlists preserve existing valid stable IDs. If a setlist lacks an ID, a UUID is assigned.
- * - Rebinds every setlist reference to the canonical song UUID.
- * - Preserves song content, title, artist, key, transposeOffset, and all metadata.
- * - Preserves setlist membership, order, and position.
- * - Idempotent: repeated calls on already normalized data produce identical output with migrated=false.
- * - Never duplicates library items and never drops data.
+/** Preserve stable legacy IDs and UUIDs; reject canonical collisions before rebinding.
+ * Only ID-less local songs receive new IDs. Import boundaries reject ID-less records.
  */
 export function normalizeSongbookIds(
   songs: ActiveSongState[],
@@ -55,10 +44,15 @@ export function normalizeSongbookIds(
   let migrated = false
   let remappedCount = 0
 
+  assertImportIds(setlists, 'Stored setlists')
+  assertImportIds(songs.filter(song => song.id !== undefined && song.id !== null), 'Stored songs')
+
   // Phase 1: Normalize song IDs
   const normalizedSongs: ActiveSongState[] = songs.map((song) => {
-    if (isValidUUID(song.id)) {
-      return { ...song }
+    if (song.id !== undefined && song.id !== null) {
+      const id = canonicalImportId(song.id)
+      if (id !== song.id) { migrated = true; remappedCount++; idMap.set(String(song.id), id) }
+      return { ...song, id }
     }
 
     const newId = generateUUID()
@@ -72,14 +66,8 @@ export function normalizeSongbookIds(
 
   // Phase 2: Normalize setlist IDs and rebind song references
   const normalizedSetlists: WebSetlist[] = setlists.map((setlist) => {
-    let setlistId = setlist.id
-    if (typeof setlistId === 'string' && setlistId.trim().length > 0) {
-      // Preserve valid existing UUID or non-empty string ID
-      setlistId = setlistId.trim()
-    } else {
-      setlistId = generateUUID()
-      migrated = true
-    }
+    const setlistId = canonicalImportId(setlist.id)
+    if (setlistId !== setlist.id) migrated = true
 
     const updatedRefs = setlist.songs.map((ref) => {
       // Direct ID remap
@@ -89,15 +77,15 @@ export function normalizeSongbookIds(
         return { ...ref, id: newRefId }
       }
 
-      // If ref already points to a valid UUID among normalized songs, keep it
-      if (ref.id !== undefined && isValidUUID(ref.id)) {
+      // Preserve an explicit stable reference when its target exists.
+      if (ref.id !== undefined) {
         const target = normalizedSongs.find((s) => s.id === ref.id)
         if (target) {
           return { ...ref, id: target.id, title: target.title, artist: target.artist }
         }
       }
 
-      // Fallback: match by title and artist if ref.id was undefined or unmatched
+      // Legacy title/artist binding applies only to ID-less references.
       const resolved = resolveSetlistSong(ref, normalizedSongs)
       if (resolved && resolved.id) {
         if (ref.id !== resolved.id) {
@@ -174,17 +162,13 @@ export function validateSongbookIntegrity(
       continue
     }
 
-    if (typeof song.id !== 'string') {
-      nonStringSongIds.push({ id: song.id, title: song.title })
-      errors.push(`Song "${song.title}" has non-string ID: ${String(song.id)}`)
-    }
-
-    if (!isValidUUID(song.id)) {
+    if (typeof song.id !== 'string') nonStringSongIds.push({ id: song.id, title: song.title })
+    try { canonicalImportId(song.id) } catch {
       invalidSongUuids.push({ id: song.id, title: song.title })
-      errors.push(`Song "${song.title}" has invalid UUID: ${String(song.id)}`)
+      errors.push(`Song "${song.title}" has invalid ID: ${String(song.id)}`)
     }
 
-    const idKey = String(song.id)
+    const idKey = String(song.id).trim()
     if (seenSongIds.has(idKey)) {
       duplicateSongIds.push(idKey)
       errors.push(`Duplicate canonical song ID found: ${idKey}`)
@@ -199,7 +183,7 @@ export function validateSongbookIntegrity(
       errors.push(`Setlist "${sl.name}" is missing an ID`)
       continue
     }
-    const slKey = String(sl.id)
+    const slKey = String(sl.id).trim()
     if (seenSetlistIds.has(slKey)) {
       duplicateSetlistIds.push(slKey)
       errors.push(`Duplicate setlist ID found: ${slKey}`)

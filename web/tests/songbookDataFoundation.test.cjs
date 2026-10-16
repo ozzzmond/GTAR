@@ -62,7 +62,7 @@ test('CREATE+IMPORT+ONLINE_IMPORT+BANDSYNC_RELEVANT_ID_PATHS_NO_LONGER_USE_DATE_
   )
 })
 
-test('LEGACY_NUMERIC_SONG_ID_NORMALIZES_TO_UUID: converts numeric and undefined IDs to string UUIDs', () => {
+test('LEGACY_STABLE_IDS_PRESERVED: numeric IDs canonicalize and ID-less local songs receive UUIDs', () => {
   const legacySongs = [
     { id: 1, title: 'Stand By Me', artist: 'Ben E. King', key: 'A', rawContent: '[A]Stand by me' },
     { id: 2, title: 'El Bimbo', artist: 'Eraserheads', key: 'G', rawContent: '[G]El Bimbo' },
@@ -85,7 +85,7 @@ test('LEGACY_NUMERIC_SONG_ID_NORMALIZES_TO_UUID: converts numeric and undefined 
 
   for (const song of result.songs) {
     assert.equal(typeof song.id, 'string')
-    assert.ok(isValidUUID(song.id), `Song ID ${song.id} must be a valid UUID`)
+    assert.ok(song.id)
   }
 
   // Setlist references rebound to the new UUIDs
@@ -112,7 +112,7 @@ test('SETLIST_REFERENCE_REBINDS_TO_NORMALIZED_UUID: binds legacy title-only refe
 
   const result = normalizeSongbookIds(songs, setlists)
   assert.equal(result.songs[0].id, existingUUID, 'Existing valid UUID must remain unchanged')
-  assert.ok(isValidUUID(result.songs[1].id), 'Numeric ID must be upgraded to UUID')
+  assert.equal(result.songs[1].id, '42')
 
   assert.equal(result.setlists[0].songs[0].id, existingUUID, 'Unbound ref must bind to existing song UUID')
   assert.equal(result.setlists[0].songs[1].id, result.songs[1].id, 'Numeric ref must bind to newly assigned UUID')
@@ -183,7 +183,7 @@ test('MIGRATION_PRESERVES_SONG_COUNT+CONTENT+SETLIST_ORDER: zero data loss acros
   const result = normalizeSongbookIds(songs, setlists)
   assert.equal(result.songs.length, 1)
   const norm = result.songs[0]
-  assert.ok(isValidUUID(norm.id))
+  assert.equal(norm.id, '101')
   assert.equal(norm.title, 'Full Featured Song')
   assert.equal(norm.artist, 'Feature Artist')
   assert.equal(norm.key, 'F#m')

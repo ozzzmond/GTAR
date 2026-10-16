@@ -101,23 +101,17 @@ function createMockD1() {
 // ---------------------------------------------------------------------------
 // 1. SETLIST UUID NORMALIZATION
 // ---------------------------------------------------------------------------
-test('1: setlist_uuid_normalization preserves valid UUIDs and assigns UUID to missing/invalid setlists', () => {
+test('1: setlist normalization preserves stable legacy IDs and rejects ID-less records', () => {
   const existingUUID = generateUUID()
-  const songs = [
-    { id: generateUUID(), title: 'Track 1', artist: 'Artist 1', rawContent: '[A]Lyrics' },
-  ]
-  const setlists = [
-    { id: existingUUID, name: 'Valid Setlist', songs: [{ id: songs[0].id, title: 'Track 1' }] },
-    { id: undefined, name: 'Missing ID Setlist', songs: [{ id: songs[0].id, title: 'Track 1' }] },
-    { id: '', name: 'Empty String ID Setlist', songs: [{ id: songs[0].id, title: 'Track 1' }] },
-    { id: 12345, name: 'Numeric ID Setlist', songs: [{ id: songs[0].id, title: 'Track 1' }] },
-  ]
-
+  const songs = [{ id: generateUUID(), title: 'Track 1', artist: 'Artist 1', rawContent: '[A]Lyrics' }]
+  const ref = { id: songs[0].id, title: 'Track 1' }
+  const setlists = [{ id: existingUUID, name: 'Valid', songs: [ref] }, { id: 12345, name: 'Numeric', songs: [ref] }]
   const result = normalizeSongbookIds(songs, setlists)
-  assert.equal(result.setlists[0].id, existingUUID, 'Valid UUID setlist ID must remain unchanged')
-  assert.ok(isValidUUID(result.setlists[1].id), 'Missing ID must receive valid UUID')
-  assert.ok(isValidUUID(result.setlists[2].id), 'Empty string ID must receive valid UUID')
-  assert.ok(isValidUUID(result.setlists[3].id), 'Numeric ID must receive valid UUID')
+  assert.equal(result.setlists[0].id, existingUUID)
+  assert.equal(result.setlists[1].id, '12345')
+  for (const id of [undefined, '']) {
+    assert.throws(() => normalizeSongbookIds(songs, [{ id, name: 'Ambiguous', songs: [ref] }]), /Stable ID required/)
+  }
 })
 
 // ---------------------------------------------------------------------------

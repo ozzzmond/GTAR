@@ -1,3 +1,5 @@
+import { parseBandSetlist } from './utils/bandSetlistImport'
+import { mergeImportedSetlists } from './utils/importIdentity'
 import {
   LIBRARY_KEY,
   persistLibrary,
@@ -18,7 +20,7 @@ import {
   setupCrossTabLibraryConflictGuard,
 } from './utils/syncJournal'
 import { deduplicateLibrary } from './utils/syncMerge'
-import { generateUUID, isValidUUID } from './utils/uuid'
+import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
@@ -1023,6 +1025,28 @@ function LibraryApp() {
     currentSong?.title,
   ])
 
+  // Consecutive transport messages can arrive before React renders the first
+  // committed merge. Keep that complete state available to the next reception.
+  const importStateRef = useRef({ songs: [...songs, ...deletedSongs], setlists })
+  importStateRef.current = { songs: [...songs, ...deletedSongs], setlists }
+
+  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
+    const existingSongs = importStateRef.current.songs
+    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }), { mode: 'merge', existingSongs })
+    if (!parsed.isValid) throw new Error(parsed.error)
+    const merged = mergeBackupLibrary(existingSongs, parsed.songs, parsed.setlists)
+    const partition = partitionSongs(merged.songs)
+    const nextSetlists = mergeImportedSetlists(importStateRef.current.setlists, merged.setlists)
+    // A merge based on stale React state must never replace a newer tab's data.
+    persistLibrary({ songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
+    persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+    importStateRef.current = { songs: merged.songs, setlists: nextSetlists }
+    setCrossTabConflict(null)
+    setSongs(partition.active)
+    setDeletedSongs(partition.deleted)
+    setSetlists(nextSetlists)
+  }, [])
+
   // Band Sync: listen to leader song sync events when client
   // Transpose handler
   const handleTransposeChange = useCallback((newOffset: number) => {
@@ -1155,63 +1179,14 @@ function LibraryApp() {
             handleTransposeChange(transpose)
           }
         } else if (msg.type === 'SETLIST_SYNC' && msg.payload) {
-          const incomingSetlistName = msg.payload.setlistName || 'Band Setlist'
-          const incomingSongs: Array<Partial<ActiveSongState>> = Array.isArray(msg.payload.songs) ? msg.payload.songs : []
-
-          // Smart Merge: do not overwrite or duplicate existing (match title + artist)
-          const songMap = new Map(
-            songs.map((s) => [
-              `${s.title.trim().toLowerCase()}::${(s.artist || '').trim().toLowerCase()}`,
-              s,
-            ])
-          )
-
-          const newSongsToAppend: ActiveSongState[] = []
-          for (const item of incomingSongs) {
-            const key = `${(item.title || '').trim().toLowerCase()}::${(item.artist || '').trim().toLowerCase()}`
-            if (!songMap.has(key)) {
-              const newSong: ActiveSongState = {
-                id: generateUUID(),
-                title: item.title || 'Untitled Song',
-                artist: item.artist || '',
-                key: item.key || detectSongKey(item.rawContent || ''),
-                capo: item.capo || 'No Capo',
-                bpm: item.bpm || '120',
-                format: item.format || 'CHORD_PRO',
-                transposeOffset: 0,
-                rawContent: item.rawContent || '',
-              }
-              songMap.set(key, newSong)
-              newSongsToAppend.push(newSong)
-            }
+          try {
+            const parsed = parseBandSetlist(msg.payload, importStateRef.current.songs)
+            handleSmartMerge(parsed.songs, parsed.setlists)
+            setActiveSetlistId(parsed.setlists[0].id)
+          } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : 'Setlist reception aborted; resolve import conflict explicitly.')
+            return
           }
-          if (newSongsToAppend.length > 0) {
-            setSongs((prev) => [...prev, ...newSongsToAppend])
-          }
-
-          // Reconstruct/activate received setlist on Member device immediately
-          const newSetlistId = generateUUID()
-          const syncedSetlist: WebSetlist = {
-            id: newSetlistId,
-            name: incomingSetlistName,
-            songs: incomingSongs.map((s) => {
-              const matchedSong = songMap.get(`${(s.title || '').trim().toLowerCase()}::${(s.artist || '').trim().toLowerCase()}`)
-              return {
-                id: matchedSong?.id || (s.id && isValidUUID(s.id) ? s.id : undefined),
-                title: s.title || 'Untitled Song',
-                artist: s.artist,
-              }
-            }),
-          }
-
-          setSetlists((prevSetlists) => {
-            const filtered = prevSetlists.filter(
-              (sl) => sl.name.trim().toLowerCase() !== incomingSetlistName.trim().toLowerCase()
-            )
-            return [...filtered, syncedSetlist]
-          })
-
-          setActiveSetlistId(newSetlistId)
           setActiveSetlistSongIndex(0)
           setQueueMode('setlist')
           setActiveView('stage')
@@ -1223,7 +1198,7 @@ function LibraryApp() {
       }
     })
     return unsub
-  }, [songs, activeSetlist, activeSetlistSongs, setlists, handleTransposeChange])
+  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge])
 
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
@@ -1372,7 +1347,7 @@ function LibraryApp() {
       return { success: false, message }
     }
 
-    bandSync.broadcastSetlist(targetSetlist.name, payloadSongs)
+    bandSync.broadcastSetlist(targetSetlist.name, payloadSongs, targetSetlist.id)
     const successMsg = `Pushed setlist '${targetSetlist.name}' (${payloadSongs.length} songs) to band members via BandSync!`
     setToastMessage(successMsg)
     setTimeout(() => setToastMessage(null), 4000)
@@ -1785,27 +1760,6 @@ function LibraryApp() {
     setActiveSongIndex(0)
     setActiveSetlistSongIndex(0)
     setQueueMode('library')
-  }
-
-  const handleSmartMerge = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
-    const existingSongs = [...songs, ...deletedSongs]
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }), { mode: 'merge', existingSongs })
-    if (!parsed.isValid) throw new Error(parsed.error)
-    const merged = mergeBackupLibrary(existingSongs, parsed.songs, parsed.setlists)
-    const partition = partitionSongs(merged.songs)
-    const nextSetlists = [...setlists]
-    for (const setlist of merged.setlists) {
-      const index = nextSetlists.findIndex(item => String(item.id) === String(setlist.id))
-      if (index >= 0) nextSetlists[index] = setlist
-      else nextSetlists.push(setlist)
-    }
-    // A merge based on stale React state must never replace a newer tab's data.
-    persistLibrary({ songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
-    persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
-    setCrossTabConflict(null)
-    setSongs(partition.active)
-    setDeletedSongs(partition.deleted)
-    setSetlists(nextSetlists)
   }
 
   const handleImportSingleSetlist = (setlist: WebSetlist, newSongs: ActiveSongState[]) => {
@@ -2236,6 +2190,7 @@ function LibraryApp() {
         onImportSingleSetlist={handleImportSingleSetlist}
         onSmartMerge={handleSmartMerge}
         existingSongs={[...songs, ...deletedSongs]}
+        existingSetlists={setlists}
       />
 
       {/* Backup & Restore Modal Dialog (Export Backup & Restore Backup Smart Merge) */}
@@ -2290,6 +2245,8 @@ function LibraryApp() {
       <JsonBridgeModal
         isOpen={isJsonModalOpen}
         initialTab="export"
+        setlists={setlists}
+        onSmartMerge={handleSmartMerge}
         onClose={() => setIsJsonModalOpen(false)}
         song={currentSong}
         allSongs={[...songs, ...deletedSongs]}
