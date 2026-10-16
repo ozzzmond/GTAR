@@ -1,3 +1,4 @@
+import { LIBRARY_KEY } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { readPersistedLibrary, persistLibrary } from './syncJournal'
@@ -795,7 +796,7 @@ async function executeCloudSongbookSync(
       }
       // Preserve edits made in this browser while the request was in flight.
       const latest = readPersistedLibrary(targetStorage)
-      const preserved = latest && persistedAtStart && (retry || !options?.localLibraryOverride)
+      const preserved = latest && persistedAtStart
         ? reconcileSongbook(latest, pending, persistedAtStart).merged : pending
       const result = await executeCloudSongbookSync(token, {
         storage: targetStorage, forceAction: 'merge_preserve', localLibraryOverride: preserved,
@@ -841,10 +842,13 @@ async function executeCloudSongbookSync(
 
   if (actionToExecute === 'NOOP') {
     try {
+      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
       const latest = readPersistedLibrary(targetStorage)
+      if (persistedAtStart && !latest) throw new Error('Local library removed during sync. Retry before replacing it.')
+      if (!persistedAtStart && latest) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
       const appliedLibrary = latest && persistedAtStart
         ? reconcileSongbook(latest, localLibrary, persistedAtStart).merged : localLibrary
-      persistLibrary(appliedLibrary, targetStorage)
+      persistLibrary(appliedLibrary, targetStorage, { expectedRaw })
       saveCloudSyncMeta(
         {
           lastSyncedChecksum: decisionResult.localChecksum,
@@ -937,10 +941,13 @@ async function executeCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
+      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
       const latest = readPersistedLibrary(targetStorage)
+      if (persistedAtStart && !latest) throw new Error('Local library removed during sync. Retry before replacing it.')
+      if (!persistedAtStart && latest) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
       const appliedLibrary = latest && persistedAtStart
         ? reconcileSongbook(latest, localLibrary, persistedAtStart).merged : localLibrary
-      persistLibrary(appliedLibrary, targetStorage)
+      persistLibrary(appliedLibrary, targetStorage, { expectedRaw })
 
       saveCloudSyncMeta(
         {
@@ -1005,6 +1012,7 @@ async function executeCloudSongbookSync(
       }
 
       // A download must not replace edits made while GET was in flight.
+      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
       const latest = readPersistedLibrary(targetStorage)
       if (JSON.stringify(latest) !== JSON.stringify(persistedAtStart)) {
         return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'NONE',
@@ -1021,7 +1029,7 @@ async function executeCloudSongbookSync(
         throw new Error('Recovery snapshot could not be saved. Free browser storage or export a backup before retrying download.', { cause: err })
       }
 
-      persistLibrary(downloadedLibrary, targetStorage)
+      persistLibrary(downloadedLibrary, targetStorage, { expectedRaw })
 
       saveCloudSyncMeta(
         {
@@ -1152,12 +1160,15 @@ async function executeCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
+      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
       const latest = readPersistedLibrary(targetStorage)
-      const appliedLibrary = latest && persistedAtStart && (retry || !options?.localLibraryOverride)
+      if (persistedAtStart && !latest) throw new Error('Local library removed during sync. Retry before replacing it.')
+      if (!persistedAtStart && latest) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
+      const appliedLibrary = latest && persistedAtStart
         ? reconcileSongbook(latest, mergedLib, persistedAtStart).merged : mergedLib
       // Persist before acknowledging sync metadata. The base remains the uploaded
       // revision even if newer in-flight browser edits are still pending locally.
-      persistLibrary(appliedLibrary, targetStorage)
+      persistLibrary(appliedLibrary, targetStorage, { expectedRaw })
 
       saveCloudSyncMeta(
         {

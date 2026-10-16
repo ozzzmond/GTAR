@@ -1,9 +1,15 @@
 import {
+  LIBRARY_KEY,
   persistLibrary,
   planDanglingReferenceRepair,
   applyDanglingReferenceRepair,
   type DanglingReferenceRepair,
   readPersistedLibrary,
+  getPersistedLibraryRaw,
+  saveCrossTabConflictSnapshot,
+  preserveStoredLibrary,
+  same,
+  isStaleWriteConflictError,
   isQuotaError,
   performStorageHousekeeping,
   recoveryData,
@@ -464,6 +470,22 @@ function LibraryApp() {
   // Custom Setlists (persisted in localStorage)
   const [setlists, setSetlists] = useState<WebSetlist[]>(initialLibrary.setlists)
 
+  const persistedBaselineRef = useRef<string | null>(getPersistedLibraryRaw())
+  const [crossTabConflict, setCrossTabConflict] = useState<{ remoteRaw: string | null; detectedAt: number } | null>(null)
+
+  const [conflictRecoverySaved, setConflictRecoverySaved] = useState(false)
+  const editorRecoveryDraftRef = useRef<(() => ActiveSongState | null) | null>(null)
+  const getConflictDraft = () => {
+    const librarySongs = [...songs, ...deletedSongs]
+    const editorDraft = editorRecoveryDraftRef.current?.()
+    if (!editorDraft) return { songs: librarySongs, setlists }
+    const found = librarySongs.some(song => String(song.id) === String(editorDraft.id))
+    return {
+      songs: found ? librarySongs.map(song => String(song.id) === String(editorDraft.id) ? editorDraft : song) : [...librarySongs, editorDraft],
+      setlists,
+    }
+  }
+
   // Stage Color Theme (persisted in localStorage)
   const [stageTheme, setStageTheme] = useState<ThemeMode>(() => hydrateThemeSettings().mode)
 
@@ -537,6 +559,18 @@ function LibraryApp() {
   const lastStorageWarningTimeRef = useRef<number>(0)
 
   const handleStorageWriteFailure = useCallback((err: unknown) => {
+    if (isStaleWriteConflictError(err)) {
+      console.warn('[Storage] Stale write rejected: library updated externally.', err)
+      const currentRaw = getPersistedLibraryRaw()
+      setCrossTabConflict({ remoteRaw: currentRaw, detectedAt: Date.now() })
+      try {
+        saveCrossTabConflictSnapshot({ songs: [...songs, ...deletedSongs], setlists })
+        setConflictRecoverySaved(true)
+      } catch { setConflictRecoverySaved(false) }
+      setToastMessage('Conflict detected: Another tab modified the library. Local edits remain in memory; keep this tab open and export your draft.')
+      return
+    }
+
     const isQuota = isQuotaError(err)
     const warnMsg = isQuota
       ? 'Storage quota reached: changes may not be saved to device storage.'
@@ -549,36 +583,83 @@ function LibraryApp() {
       setToastMessage(warnMsg)
       setTimeout(() => setToastMessage(null), 5000)
     }
-  }, [])
+  }, [songs, deletedSongs, setlists])
 
   // Best-effort non-blocking durable storage request (Gap 2)
   useEffect(() => {
     requestDurableStorage().catch(() => {})
   }, [])
 
-  // Cross-tab storage conflict protection for gtar_library_v1 (Gap 3)
+  // Cross-tab storage conflict protection for gtar_library_v1
   useEffect(() => {
-    let lastConflictWarning = 0
-    const cleanup = setupCrossTabLibraryConflictGuard(() => {
-      console.warn('[Storage] gtar_library_v1 was updated in another tab. In-memory state preserved.')
-      const now = Date.now()
-      if (now - lastConflictWarning > 10000) {
-        lastConflictWarning = now
-        setToastMessage('Songbook library updated in another tab. Current active edits are preserved.')
-        setTimeout(() => setToastMessage(null), 5000)
+    const cleanup = setupCrossTabLibraryConflictGuard((externalRaw) => {
+      const currentLocal = { songs: [...songs, ...deletedSongs], setlists }
+      const baselineRaw = persistedBaselineRef.current
+      let hasLocalChanges = true
+      if (baselineRaw) {
+        try {
+          const parsedBase = JSON.parse(baselineRaw)
+          if (same(parsedBase, currentLocal)) {
+            hasLocalChanges = false
+          }
+        } catch {
+          hasLocalChanges = true
+        }
+      }
+
+      if (hasLocalChanges) {
+        console.warn('[Storage] Cross-tab conflict: external write while local has unsaved edits.')
+        setCrossTabConflict({ remoteRaw: externalRaw, detectedAt: Date.now() })
+        try {
+          saveCrossTabConflictSnapshot(currentLocal)
+          setConflictRecoverySaved(true)
+        } catch { setConflictRecoverySaved(false) }
+        setToastMessage('Songbook library updated in another tab while you have unsaved edits. Draft remains in memory; keep this tab open and export it.')
+      } else {
+        console.info('[Storage] External library update adopted into clean tab.')
+        if (externalRaw) {
+          try {
+            const parsed = JSON.parse(externalRaw)
+            persistedBaselineRef.current = externalRaw
+            const partitioned = partitionSongs(parsed.songs)
+            setSongs(partitioned.active)
+            setDeletedSongs(partitioned.deleted)
+            setSetlists(parsed.setlists)
+            setToastMessage('Songbook library updated from another tab.')
+            setTimeout(() => setToastMessage(null), 4000)
+          } catch {
+            // Malformed external data safely ignored
+          }
+        }
       }
     })
     return cleanup
-  }, [])
+  }, [songs, deletedSongs, setlists])
 
   // Persist canonical library on any songs, trash, or setlists change (with quota relief)
   useEffect(() => {
-    try {
-      persistLibrary({ songs: [...songs, ...deletedSongs], setlists })
-    } catch (err) {
-      handleStorageWriteFailure(err)
+    if (crossTabConflict) {
+      return
     }
-  }, [songs, deletedSongs, setlists, handleStorageWriteFailure])
+    const candidate = { songs: [...songs, ...deletedSongs], setlists }
+    const baselineRaw = persistedBaselineRef.current
+    if (baselineRaw) {
+      try {
+        const parsedBase = JSON.parse(baselineRaw)
+        if (same(parsedBase, candidate)) {
+          return
+        }
+      } catch { /* proceed to persist */ }
+    }
+    try {
+      persistLibrary(candidate, localStorage, { expectedRaw: persistedBaselineRef.current })
+      persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+    } catch (err) {
+      setTimeout(() => {
+        handleStorageWriteFailure(err)
+      }, 0)
+    }
+  }, [songs, deletedSongs, setlists, handleStorageWriteFailure, crossTabConflict])
 
   // Save active setlist ID
   useEffect(() => {
@@ -1342,8 +1423,22 @@ function LibraryApp() {
 
   // Persist the validated complete candidate before scheduling any state partition.
   const commitSongLifecycle = (operation: SongLifecycleOperation) => {
+    if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
+      setToastMessage('Cannot modify library while a cross-tab conflict is unresolved.')
+      return null
+    }
     const next = transitionSongLibrary({ active: songs, deleted: deletedSongs, setlists }, operation)
-    try { persistLibrary({ songs: [...next.active, ...next.deleted], setlists: next.setlists }) }
+    try {
+      const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
+      persistLibrary(
+        { songs: [...next.active, ...next.deleted], setlists: next.setlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      if (typeof persistedBaselineRef !== 'undefined') {
+        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      }
+    }
     catch (err) { handleStorageWriteFailure(err); return null }
     setSongs(next.active)
     setDeletedSongs(next.deleted)
@@ -1444,12 +1539,26 @@ function LibraryApp() {
   }
 
   const handleSongMembership = (songId: string | number, setlistId: string | number, included: boolean) => {
+    if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
+      setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
+      return false
+    }
     const song = songs.find(item => String(item.id) === String(songId))
     const setlist = setlists.find(item => String(item.id) === String(setlistId))
     if (!song || song.isDeleted || !setlist || setlist.isDeleted) return false
     const nextSetlists = setlists.map(item => String(item.id) === String(setlistId)
       ? setSongMembership(item, song, included) : item)
-    try { persistLibrary({ songs: [...songs, ...deletedSongs], setlists: nextSetlists }) }
+    try {
+      const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
+      persistLibrary(
+        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      if (typeof persistedBaselineRef !== 'undefined') {
+        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      }
+    }
     catch (err) { handleStorageWriteFailure(err); return false }
     setSetlists(nextSetlists)
     setToastMessage(`${included ? 'Added to' : 'Removed from'} ${setlist.name}`)
@@ -1458,11 +1567,25 @@ function LibraryApp() {
   }
 
   const handleCreateSetlistForSong = (songId: string | number, name: string) => {
+    if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
+      setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
+      return false
+    }
     const song = songs.find(item => String(item.id) === String(songId))
     if (!song || song.isDeleted || !name.trim()) return false
     const created = setSongMembership({ id: generateUUID(), name: name.trim(), createdAt: Date.now(), songs: [] }, song, true)
     const nextSetlists = [...setlists, created]
-    try { persistLibrary({ songs: [...songs, ...deletedSongs], setlists: nextSetlists }) }
+    try {
+      const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
+      persistLibrary(
+        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      if (typeof persistedBaselineRef !== 'undefined') {
+        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      }
+    }
     catch (err) { handleStorageWriteFailure(err); return false }
     setSetlists(nextSetlists)
     setToastMessage(`Added to ${created.name}`)
@@ -1562,8 +1685,21 @@ function LibraryApp() {
       // Do not auto-save unpersisted new blank song to library
       return false
     }
+    if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
+      return false
+    }
     const nextSongs = songs.map(s => String(s.id) === String(targetId) ? { ...s, ...updated, id: s.id } : s)
-    try { persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists }) }
+    try {
+      const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
+      persistLibrary(
+        { songs: [...nextSongs, ...deletedSongs], setlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      if (typeof persistedBaselineRef !== 'undefined') {
+        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      }
+    }
     catch (err) { handleStorageWriteFailure(err); return false }
     setSongs(nextSongs)
     return true
@@ -1576,7 +1712,21 @@ function LibraryApp() {
     const nextSongs = isExisting
       ? songs.map(s => String(s.id) === String(targetId) ? { ...s, ...updatedSong, id: s.id } : s)
       : [updatedSong, ...songs]
-    try { persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists }) }
+    if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
+      setToastMessage('Conflict active: Cannot save to storage. Draft remains in memory; export it before closing this tab.')
+      return false
+    }
+    try {
+      const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
+      persistLibrary(
+        { songs: [...nextSongs, ...deletedSongs], setlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      if (typeof persistedBaselineRef !== 'undefined') {
+        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      }
+    }
     catch (err) { handleStorageWriteFailure(err); return false }
     setSongs(nextSongs)
     if (!isExisting) {
@@ -1604,8 +1754,13 @@ function LibraryApp() {
     const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }))
     if (!parsed.isValid) throw new Error(parsed.error)
     const partition = partitionSongs(parsed.songs)
-    // Synchronously commit to canonical storage; throws if quota/write fails
-    persistLibrary({ songs: parsed.songs, setlists: parsed.setlists })
+    // Full restore is explicitly confirmed by the restore dialog; preserve the
+    // current stored revision too, which may differ from the dialog's local state.
+    const expectedRaw = localStorage.getItem(LIBRARY_KEY)
+    preserveStoredLibrary(expectedRaw)
+    persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
+    persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+    setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(parsed.setlists)
@@ -1627,8 +1782,10 @@ function LibraryApp() {
       if (index >= 0) nextSetlists[index] = setlist
       else nextSetlists.push(setlist)
     }
-    // Synchronously commit to canonical storage; throws if quota/write fails
-    persistLibrary({ songs: merged.songs, setlists: nextSetlists })
+    // A merge based on stale React state must never replace a newer tab's data.
+    persistLibrary({ songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
+    persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+    setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(nextSetlists)
@@ -1702,6 +1859,70 @@ function LibraryApp() {
     setIncomingSharedSetlist(null)
   }
 
+  const handleExportConflictDraft = () => {
+    try {
+      const backupData = JSON.stringify(getConflictDraft(), null, 2)
+      const blob = new Blob([backupData], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `gtar-conflict-draft-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setToastMessage('Local draft backup exported successfully.')
+    } catch {
+      setToastMessage('Failed to export draft backup.')
+    }
+  }
+
+  const handleReloadPersistedLibrary = () => {
+    try {
+      // Re-verify the exact current draft at discard time; an old snapshot or
+      // a download being initiated does not prove that this draft is recoverable.
+      saveCrossTabConflictSnapshot(getConflictDraft())
+      setConflictRecoverySaved(true)
+      const raw = localStorage.getItem(LIBRARY_KEY)
+      const reloaded = readPersistedLibrary()
+      if (!reloaded || localStorage.getItem(LIBRARY_KEY) !== raw) throw new Error('Latest library unavailable or changed. Retry reload.')
+      persistedBaselineRef.current = raw
+      setCrossTabConflict(null)
+      const partitioned = partitionSongs(reloaded.songs)
+      setSongs(partitioned.active)
+      setDeletedSongs(partitioned.deleted)
+      setSetlists(reloaded.setlists)
+      setToastMessage('Loaded latest library; local draft recovery copy verified.')
+    } catch {
+      setToastMessage('Reload cancelled: recovery copy or latest library could not be verified. Keep this tab open and export your draft.')
+    }
+    setTimeout(() => setToastMessage(null), 4000)
+  }
+
+  const handleForceOverwriteStorage = () => {
+    if (!window.confirm("Replace the current stored library with this tab's edits? The stored version will be preserved in recovery first.")) return
+    try {
+      const candidate = getConflictDraft()
+      const expectedRaw = localStorage.getItem(LIBRARY_KEY)
+      preserveStoredLibrary(expectedRaw)
+      persistLibrary(
+        candidate,
+        localStorage,
+        { expectedRaw }
+      )
+      persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      const partitioned = partitionSongs(candidate.songs)
+      setSongs(partitioned.active)
+      setDeletedSongs(partitioned.deleted)
+      setSetlists(candidate.setlists)
+      setCrossTabConflict(null)
+      setToastMessage('Storage overwritten with local edits.')
+      setTimeout(() => setToastMessage(null), 4000)
+    } catch (err) {
+      handleStorageWriteFailure(err)
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
@@ -1749,6 +1970,8 @@ function LibraryApp() {
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
           onCloudSyncApplied={(updated) => {
+            persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+            setCrossTabConflict(null)
             const partition = partitionSongs(updated.songs)
             setSongs(partition.active)
             setDeletedSongs(partition.deleted)
@@ -1757,6 +1980,48 @@ function LibraryApp() {
             setTimeout(() => setToastMessage(null), 3500)
           }}
         />
+      )}
+
+      {crossTabConflict && (
+        <aside
+          role="alert"
+          aria-label="Cross-tab conflict alert"
+          data-testid="cross-tab-conflict-alert"
+          className="bg-amber-500 text-black px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md z-40 sticky top-0"
+        >
+          <div className="flex-1 min-w-[280px]">
+            <strong className="block font-semibold">Cross-Tab Storage Conflict:</strong>
+            <span className="text-sm">
+              The songbook library was updated by another tab. Saving is paused to prevent silent overwrite. Your local edits remain in memory. {conflictRecoverySaved ? 'A recovery snapshot was verified.' : 'Recovery snapshot unavailable; keep this tab open and export your draft.'}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              type="button"
+              data-testid="conflict-export-draft-button"
+              className="bg-black/10 hover:bg-black/20 text-black px-3 py-1.5 rounded font-medium border border-black/20 cursor-pointer"
+              onClick={handleExportConflictDraft}
+            >
+              Export Local Draft
+            </button>
+            <button
+              type="button"
+              data-testid="conflict-reload-button"
+              className="bg-black/10 hover:bg-black/20 text-black px-3 py-1.5 rounded font-medium border border-black/20 cursor-pointer"
+              onClick={handleReloadPersistedLibrary}
+            >
+              Reload Other Tab's Version
+            </button>
+            <button
+              type="button"
+              data-testid="conflict-overwrite-button"
+              className="bg-black text-amber-300 hover:bg-black/80 px-3 py-1.5 rounded font-medium cursor-pointer"
+              onClick={handleForceOverwriteStorage}
+            >
+              Overwrite Storage With Local Edits
+            </button>
+          </div>
+        </aside>
       )}
 
       {/* Main Workspace: Songbook Library vs Split Desktop Editor vs Trash vs 1:1 Stage View */}
@@ -1815,6 +2080,7 @@ function LibraryApp() {
             onSaveSong={handleSaveSongFromEditor}
             onClose={() => setActiveView('stage')}
             navigationGuardRef={editorNavigationGuard}
+            recoveryDraftRef={editorRecoveryDraftRef}
             transposeOffset={currentSong.transposeOffset || 0}
             onNewSong={handleNewSong}
           />

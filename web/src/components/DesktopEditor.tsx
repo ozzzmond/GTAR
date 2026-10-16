@@ -53,6 +53,7 @@ interface DesktopEditorProps {
   onSaveSong?: (updated: ActiveSongState) => boolean | void
   onClose?: () => void
   navigationGuardRef?: React.RefObject<((next: () => void) => void) | null>
+  recoveryDraftRef?: React.RefObject<(() => ActiveSongState | null) | null>
   transposeOffset: number
   onNewSong?: () => void
 }
@@ -67,6 +68,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   onClose,
   transposeOffset,
   navigationGuardRef,
+  recoveryDraftRef,
   onNewSong,
 }) => {
   const [editingSong, setEditingSong] = useState<ActiveSongState>(song)
@@ -169,6 +171,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     rawContent: localRawContent,
   }
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
+  useEffect(() => {
+    if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft }
+    return () => { if (recoveryDraftRef) recoveryDraftRef.current = null }
+  })
   const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
   const autosave = (updated: Partial<ActiveSongState>) => {
     const next = { ...updated, id: editingSong.id }

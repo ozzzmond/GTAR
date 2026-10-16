@@ -56,8 +56,8 @@ test('8e recovery: healthy canonical data, retained represented snapshots, uniqu
  localStorage.setItem('gtar_sync_recovery:plain','unknown raw');assert.equal(hasActionableRecovery(),true);assert.equal(recoveryData()['gtar_sync_recovery:plain'],'unknown raw')
 })
 test('8e editor: autosave truth, text shortcuts, metadata dirty reversion, navigation choices and failure guard',async()=>{
- localStorage.clear();let persisted={...song},fail=false,closed=0;const guard={current:null}
- const props={song: persisted,transposeOffset:0,navigationGuardRef:guard,onClose:()=>closed++,onUpdateSong:update=>{if(fail)return false;persisted={...persisted,...update};return true},onSaveSong:update=>{if(fail)return false;persisted=update;return true}}
+ localStorage.clear();let persisted={...song},fail=false,closed=0;const guard={current:null},recovery={current:null}
+ const props={song: persisted,transposeOffset:0,navigationGuardRef:guard,recoveryDraftRef:recovery,onClose:()=>closed++,onUpdateSong:update=>{if(fail)return false;persisted={...persisted,...update};return true},onSaveSong:update=>{if(fail)return false;persisted=update;return true}}
  const root=createRoot(document.getElementById('root'))
  try {
   await act(async()=>root.render(React.createElement(DesktopEditor,props)))
@@ -82,8 +82,8 @@ test('8e editor: autosave truth, text shortcuts, metadata dirty reversion, navig
   const keyInput=document.querySelector('input[placeholder="e.g. G"]');await change(keyInput,'bb');assert.equal(keyInput.value,'Bb');assert.equal(persisted.key,'Bb')
   await change(keyInput,'H');assert.equal(persisted.key,'Bb');assert.match(document.body.textContent,/Unsaved/)
   const saveButton=document.querySelector('[aria-label="Save changes"]');await act(async()=>saveButton.click());assert.equal(persisted.key,'Bb');assert.match(document.body.textContent,/Enter a valid key/)
-  await change(keyInput,'A#');fail=true;await change(textarea,'failed text');assert.match(document.body.textContent,/Unsaved/);assert.notEqual(persisted.rawContent,'failed text')
-  await change(textarea,persisted.rawContent);assert.doesNotMatch(document.body.textContent,/Unsaved/)
+  await change(keyInput,'A#');fail=true;await change(textarea,'failed text');assert.match(document.body.textContent,/Unsaved/);assert.notEqual(persisted.rawContent,'failed text');assert.equal(recovery.current().rawContent,'failed text')
+  await change(textarea,persisted.rawContent);assert.doesNotMatch(document.body.textContent,/Unsaved/);assert.equal(recovery.current(),null)
   const title=document.querySelector('input[placeholder="Song Title *"]');fail=false;await change(title,'Renamed');await act(async()=>root.render(React.createElement(DesktopEditor,{...props,song:{...persisted,title:'Renamed'}})));assert.equal(textarea.value,persisted.rawContent)
  } finally {await act(async()=>root.unmount())}
 })

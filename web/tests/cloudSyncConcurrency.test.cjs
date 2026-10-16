@@ -561,3 +561,56 @@ test('F6: explicit cloud replacement requires verified recovery of both librarie
     else assert.ok(Object.values(recoveryData(store)).some(raw => JSON.parse(raw).remote?.songs[0]?.rawContent === 'remote'))
   }
 })
+
+
+test('CLIENT: merge with local override preserves newer browser edits during POST', async () => {
+  const { db, request } = await fixture()
+  const base = library('base'), local = library('local')
+  await write(db, library('remote'), emptyRevision)
+  const store = seedStorage(local, base)
+  await withFetch(async (url, opts) => {
+    if (opts.method === 'GET') return request('GET')
+    persistLibrary(library('newer browser edit'), store)
+    return request('POST', JSON.parse(opts.body))
+  }, async () => {
+    const result = await sync.performCloudSongbookSync('token', {
+      storage: store, forceAction: 'merge_preserve', localLibraryOverride: library('override draft'),
+    })
+    assert.equal(result.success, true)
+    assert.ok(readPersistedLibrary(store).songs.some(s => s.rawContent === 'newer browser edit'))
+    assert.ok(readPersistedLibrary(store).songs.some(s => s.rawContent === 'override draft'))
+  })
+})
+
+test('CLIENT: download rejects a revision changed during recovery snapshot verification', async () => {
+  const { db, request } = await fixture()
+  await write(db, library('remote'), emptyRevision)
+  const store = seedStorage(library('local'))
+  const original = store.setItem
+  store.setItem = (key, value) => {
+    original(key, value)
+    if (key.includes('recovery:download:')) original('gtar_library_v1', JSON.stringify(library('newer tab edit')))
+  }
+  await withFetch((url, opts) => request(opts.method), async () => {
+    const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction: 'download' })
+    assert.equal(result.success, false)
+    assert.match(result.error, /updated in another tab/)
+    assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'newer tab edit')
+    assert.equal(sync.readCloudSyncMeta(store).cloudVersion, null)
+  })
+})
+
+test('CLIENT: sync cannot resurrect a local library removed during GET', async () => {
+  const { db, request } = await fixture()
+  const local = library('local')
+  await write(db, local, emptyRevision)
+  const store = seedStorage(local)
+  await withFetch(async (url, opts) => {
+    store.removeItem('gtar_library_v1')
+    return request(opts.method)
+  }, async () => {
+    const result = await sync.performCloudSongbookSync('token', { storage: store })
+    assert.equal(result.success, false)
+    assert.equal(readPersistedLibrary(store), null)
+  })
+})

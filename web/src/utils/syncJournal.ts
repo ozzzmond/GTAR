@@ -99,7 +99,7 @@ export function pruneAllRecoverySnapshots(storage: Storage, maxAllowed = 0) {
 }
 
 const legacyKeys = ['gtar_songs_store', 'gtar_trash_songs_store', 'gtar_setlists_store']
-const same = (a: unknown, b: unknown): boolean => {
+export const same = (a: unknown, b: unknown): boolean => {
   if (a === b) return true
   if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
   const x = a as Record<string, unknown>, y = b as Record<string, unknown>
@@ -225,6 +225,7 @@ export function hasActionableRecovery(storage: Storage = localStorage): boolean 
 
 export function retireDriveSyncState(storage: Storage = localStorage): boolean {
   try {
+    const expectedRaw = storage.getItem(LIBRARY_KEY)
     let library = readPersistedLibrary(storage)
     if (!library) return false
     const superseded: SyncLibrary[] = []
@@ -265,12 +266,83 @@ export function retireDriveSyncState(storage: Storage = localStorage): boolean {
       absorb({ songs: [...songs, ...trash.map(song => ({ ...song, isDeleted: true }))], setlists })
     }
     // Commit and read back before deleting anything, including the retirement marker.
-    persistLibrary(library, storage)
+    persistLibrary(library, storage, { expectedRaw })
     if (!same(readPersistedLibrary(storage), library)) return false
     storage.setItem(SYNC_RETIRED_KEY, 'true')
     for (const k of [...keys, ownerKey]) if (storage.getItem(k) !== null) storage.removeItem(k)
     return true
   } catch { return false }
+}
+
+export class StaleWriteConflictError extends Error {
+  readonly code = 'STALE_WRITE_CONFLICT' as const
+  readonly currentPersistedRaw: string | null
+  readonly localLibrary: SyncLibrary
+
+  constructor(message: string, currentPersistedRaw: string | null, localLibrary: SyncLibrary) {
+    super(message)
+    this.name = 'StaleWriteConflictError'
+    this.currentPersistedRaw = currentPersistedRaw
+    this.localLibrary = localLibrary
+  }
+}
+
+export function isStaleWriteConflictError(err: unknown): err is StaleWriteConflictError {
+  if (!err || typeof err !== 'object') return false
+  return (
+    err instanceof StaleWriteConflictError ||
+    (err as { code?: string }).code === 'STALE_WRITE_CONFLICT' ||
+    (err as { name?: string }).name === 'StaleWriteConflictError'
+  )
+}
+
+export interface PersistLibraryOptions {
+  expectedRaw?: string | null
+  force?: boolean
+}
+
+const lastKnownLibraryRawByStorage = new WeakMap<Storage, string | null>()
+
+export function getPersistedLibraryRaw(storage: Storage = localStorage): string | null {
+  try {
+    return storage.getItem(LIBRARY_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function getLastKnownPersistedLibraryRaw(storage: Storage = localStorage): string | null | undefined {
+  return lastKnownLibraryRawByStorage.get(storage)
+}
+
+export function setLastKnownPersistedLibraryRaw(raw: string | null, storage: Storage = localStorage): void {
+  lastKnownLibraryRawByStorage.set(storage, raw)
+}
+
+export function saveCrossTabConflictSnapshot(draft: SyncLibrary, storage: Storage = localStorage): string {
+  validateLibrary(draft)
+  const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
+  const key = `gtar_sync_recovery:cross-tab-conflict:${Date.now()}:${id}`
+  const payload = JSON.stringify(draft)
+  try {
+    storage.setItem(key, payload)
+  } catch (err) {
+    if (isQuotaError(err)) {
+      prunePersistedLogs(storage, 10)
+      storage.setItem(key, payload)
+    } else throw err
+  }
+  if (storage.getItem(key) !== payload) throw new Error('Recovery snapshot could not be verified. Keep this tab open and export your draft.')
+  return key
+}
+
+// Preserve exact stored bytes, including damaged data, before an authorized replacement.
+export function preserveStoredLibrary(raw: string | null, storage: Storage = localStorage): void {
+  if (raw === null) return
+  const key = `gtar_sync_recovery:replacement:${Date.now()}:${Math.random().toString(36).slice(2)}`
+  const payload = JSON.stringify({ raw })
+  storage.setItem(key, payload)
+  if (storage.getItem(key) !== payload) throw new Error('Current stored version could not be preserved. Replacement cancelled.')
 }
 
 // Cloud download/merge saves plain-library snapshots, unlike legacy Drive envelopes.
@@ -300,24 +372,66 @@ export function performStorageHousekeeping(storage: Storage = localStorage) {
   return retired
 }
 
-export function persistLibrary(library: SyncLibrary, storage: Storage = localStorage) {
+export function persistLibrary(
+  library: SyncLibrary,
+  storage: Storage = localStorage,
+  options?: PersistLibraryOptions
+) {
   validateLibrary(library)
-  library = { ...library, songs: library.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) })) }
+  const canonicalized: SyncLibrary = {
+    ...library,
+    songs: library.songs.map(song => ({
+      ...song,
+      ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) })
+    }))
+  }
+
+  const currentRaw = storage.getItem(LIBRARY_KEY)
+  const hasExpected = options?.expectedRaw !== undefined
+  const expectedRaw = options?.expectedRaw
+
+  if (!options?.force && hasExpected) {
+    if (currentRaw !== expectedRaw) {
+      let isIdentical = false
+      if (currentRaw !== null) {
+        try {
+          const parsed = JSON.parse(currentRaw)
+          if (same(parsed, canonicalized)) {
+            isIdentical = true
+          }
+        } catch {
+          // Unparseable external storage must not be overwritten
+        }
+      }
+      if (!isIdentical) {
+        throw new StaleWriteConflictError(
+          'Songbook library was updated in another tab or instance. Persistence rejected to prevent data loss.',
+          currentRaw,
+          canonicalized
+        )
+      }
+    }
+  }
+
+  const payload = JSON.stringify(canonicalized)
   try {
-    storage.setItem(LIBRARY_KEY, JSON.stringify(library))
+    storage.setItem(LIBRARY_KEY, payload)
   } catch (err) {
     if (!isQuotaError(err)) throw err
     // Logs are disposable. Journals, snapshots and legacy stores are not.
     prunePersistedLogs(storage, 10)
-    try { storage.setItem(LIBRARY_KEY, JSON.stringify(library)) }
+    try { storage.setItem(LIBRARY_KEY, payload) }
     catch (retryErr) { throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr }) }
   }
+
+  lastKnownLibraryRawByStorage.set(storage, payload)
   retireRepresentedCloudSnapshots(storage)
   if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
 }
 
 export function readPersistedLibrary(storage: Storage = localStorage): SyncLibrary | null {
   const raw = storage.getItem(LIBRARY_KEY)
+  lastKnownLibraryRawByStorage.set(storage, raw)
   if (!raw) return null
   const library: unknown = JSON.parse(raw)
   validateLibrary(library)
