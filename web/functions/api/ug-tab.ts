@@ -1,3 +1,4 @@
+import { enforceAbuseLimit } from '../lib/abuseProtection.ts'
 import { fetchUg } from '../ugFetch.ts'
 import { parseTabSheet, validateTabUrl } from '../../src/utils/ugCore.ts'
 import {
@@ -55,6 +56,9 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
       headers: JSON_HEADERS,
     })
   }
+
+  const rejection = await enforceAbuseLimit(context.env, 'ug-fetch', auth.user.id)
+  if (rejection) return rejection
 
   try {
     const ugRes = await fetchUg(validation.parsedUrl.toString(), UG_HEADERS)

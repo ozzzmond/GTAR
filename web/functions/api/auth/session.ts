@@ -1,3 +1,4 @@
+import { enforceAbuseLimit } from '../../lib/abuseProtection.ts'
 import {
   jsonResponse,
   errorResponse,
@@ -45,6 +46,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorResponse('Authentication service is unavailable', 503)
   }
 
+  const rejection = await enforceAbuseLimit(env, 'session-issue')
+  if (rejection) return rejection
+
   const readRes = await readBoundedJson(request, MAX_SESSION_PAYLOAD_BYTES, { requireObject: true })
   if (readRes.error) {
     if (readRes.status === 413) {
@@ -66,6 +70,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   try {
     const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
+    const rejection = await enforceAbuseLimit(env, 'session-account', verified.sub)
+    if (rejection) return rejection
     const nowIso = new Date().toISOString()
 
     let user = await findUserByGoogleSub(env.DB, verified.sub)
@@ -172,6 +178,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   if (!token) {
     return errorResponse('Empty bearer token', 401)
   }
+
+  const rejection = await enforceAbuseLimit(env, 'session-read')
+  if (rejection) return rejection
 
   let user: UserRecord | null = null
 

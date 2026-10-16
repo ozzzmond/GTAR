@@ -1,3 +1,4 @@
+import { enforceAbuseLimit, abuseResponse } from '../../lib/abuseProtection.ts'
 import { validateSharedSetlistPayload, sanitizeSetlistForShare } from '../../../src/utils/sharedSetlist';
 import { authenticateUserRequest, isValidAuthSecret, verifySessionToken } from '../../lib/authCore';
 import type { D1Database, AuthEnv } from '../../lib/authCore';
@@ -173,8 +174,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
       return jsonResponse({ error: authResult.error }, authResult.status);
     }
 
+    const rejection = await enforceAbuseLimit(env, 'share-create', authResult.user.id);
+    if (rejection) return rejection;
+
     if (!checkUserRateLimit(authResult.user.id)) {
-      return jsonResponse({ error: 'RATE_LIMIT_EXCEEDED' }, 429);
+      return abuseResponse(429, 60);
     }
 
     const bodyResult = await readBoundedJson(request, MAX_SHARE_PAYLOAD_BYTES);
@@ -240,6 +244,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     if (!env.DB) {
       return jsonResponse({ error: 'DATABASE_UNAVAILABLE' }, 503);
     }
+
+    const rejection = await enforceAbuseLimit(env, 'share-read', authResult.user.id);
+    if (rejection) return rejection;
 
     const row = await env.DB.prepare(
       `SELECT payload_json, expires_at FROM shared_setlists WHERE share_token = ?`
