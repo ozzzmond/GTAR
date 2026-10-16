@@ -63,6 +63,7 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   must(parsed.promotable, 'Lettered checkpoint is not promotable')
   must(parsed.prodTag !== ABANDONED_PROD.tag && expectedSha !== ABANDONED_PROD.sha, 'Abandoned PROD release cannot be reused; new identity required')
   const checkpoint = inspectCheckpoint(root, tag)
+  must(checkpoint.promotable, 'Checkpoint metadata mismatch is not promotable')
   must(checkpoint.sha === expectedSha, 'Exact tag must equal expected_sha')
   const devSha = git('rev-parse', 'refs/remotes/origin/dev^{commit}')
   const mainSha = git('rev-parse', 'refs/remotes/origin/main^{commit}')
@@ -85,20 +86,24 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   // Legacy PROD uses committed package. Future exact-source PROD uses tag/build identity.
   const derived = sha => {
     const candidates = tags.flatMap(t => { try { const p = inspectCheckpoint(root, t); return p.sha === sha && p.promotable && p.prodTag === baseline ? [p] : [] } catch { return [] } })
-    return candidates.length === 1 && runtimeContract(root, sha)
+    return candidates.length === 1 && runtimeContract(root, sha, false)
   }
   must(abandoned || pkg(baselineSha) === baseline.slice(1) || derived(baselineSha), 'Baseline tagged metadata conflicts with release identity')
-  must(pkg(mainSha) === baseline.slice(1) || (runtimeContract(root, mainSha) && (abandoned || derived(baselineSha))) ||
+  must(pkg(mainSha) === baseline.slice(1) || (runtimeContract(root, mainSha, false) && (abandoned || derived(baselineSha))) ||
     legacyReconciliation(root, baseline, baselineSha, mainSha), 'main package/baseline discrepancy requires reviewed reconciliation')
   must(runtimeContract(root, expectedSha), 'Tag-derived runtime identity contract missing/different from controller')
   return { ...parsed, sha: expectedSha, devSha, mainSha, baseline, baselineSha, controllerSha }
 }
-function runtimeContract(root, sha) {
+function runtimeContract(root, sha, exact = true) {
   const git = gitAt(root)
   try {
     for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs']) {
-      const canonical = text => text.replace(/\r\n/g, '\n').trim()
-      if (canonical(git('show', `${sha}:${file}`)) !== canonical(readFileSync(path.join(__dirname, path.basename(file)), 'utf8'))) return false
+      const content = git('show', `${sha}:${file}`)
+      if (!content || !content.trim()) return false
+      if (exact) {
+        const canonical = text => text.replace(/\r\n/g, '\n').trim()
+        if (canonical(content) !== canonical(readFileSync(path.join(__dirname, path.basename(file)), 'utf8'))) return false
+      }
     }
     return git('show', `${sha}:web/vite.config.ts`).includes('resolveReleaseIdentity') &&
       git('show', `${sha}:web/src/types/gtar.ts`).includes('typeof __GTAR_PROD_VERSION__')
