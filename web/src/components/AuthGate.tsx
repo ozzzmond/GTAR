@@ -8,6 +8,7 @@ import {
   requestGoogleCredential,
   authenticateWithServer,
   recheckServerSession,
+  logoutFromServer,
   renewDurableSession,
   saveGoogleSession,
   validSession,
@@ -83,6 +84,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     epoch.current++
     const cur = sessionRef.current
+    const token = cur?.sessionToken || cur?.idToken
     const oldAccountId = cur?.user?.id || (cur?.user?.email ? cur.user.email.trim().toLowerCase() : null) || sharedCatalogService.getAccount()
     saveGoogleSession(null)
     if (oldAccountId) {
@@ -99,6 +101,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setError('')
     setStatusMessage('')
     setIsExpiredOffline(false)
+
+    if (token) {
+      logoutFromServer(token).catch((err) => {
+        console.warn('[AuthGate] Remote session revocation failed or network error:', err)
+      })
+    }
   }, [])
 
   // Asynchronous non-blocking background recheck with authoritative server D1

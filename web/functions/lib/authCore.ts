@@ -16,6 +16,18 @@ export interface UserRecord {
   created_at: string
   updated_at: string
   last_login_at: string
+  sessions_revoked_at?: string | null
+}
+
+export interface SessionRecord {
+  id: string
+  user_id: string
+  session_token_hash: string
+  created_at: string
+  expires_at: string
+  last_seen_at: string
+  is_revoked: number
+  revoked_at: string | null
 }
 
 export interface D1PreparedStatement {
@@ -332,12 +344,13 @@ export function isValidAuthSecret(secret: unknown): secret is string {
 export async function createSessionToken(
   user: UserRecord,
   secret?: string,
-  durationMs = 30 * 24 * 60 * 60 * 1000
+  durationMs = 30 * 24 * 60 * 60 * 1000,
+  sessionId?: string
 ): Promise<string> {
   if (!isValidAuthSecret(secret)) throw new Error('Authentication service is unavailable')
   const header = { alg: 'HS256', typ: 'JWT' }
   const now = Date.now()
-  const payload = {
+  const payload: Record<string, unknown> = {
     uid: user.id,
     sub: user.google_sub,
     email: user.email,
@@ -345,6 +358,9 @@ export async function createSessionToken(
     status: user.access_status,
     iat: Math.floor(now / 1000),
     exp: Math.floor((now + durationMs) / 1000),
+  }
+  if (sessionId) {
+    payload.sid = sessionId
   }
 
   const encoder = new TextEncoder()
@@ -381,7 +397,16 @@ export async function verifySessionToken(
   token: string,
   secret?: string,
   now = Date.now()
-): Promise<{ uid: string; sub: string; email: string; role: string; status: string } | null> {
+): Promise<{
+  uid: string
+  sub: string
+  email: string
+  role: string
+  status: string
+  sid?: string
+  iat?: number
+  exp?: number
+} | null> {
   if (!isValidAuthSecret(secret) || !token || typeof token !== 'string') return null
   const parts = token.trim().split('.')
   if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return null
@@ -445,10 +470,184 @@ export async function verifySessionToken(
       email: String(payload.email || ''),
       role: String(payload.role || 'member'),
       status: String(payload.status || 'pending'),
+      sid: typeof payload.sid === 'string' && payload.sid ? String(payload.sid) : undefined,
+      iat: typeof payload.iat === 'number' && Number.isSafeInteger(payload.iat) ? payload.iat : undefined,
+      exp: typeof payload.exp === 'number' && Number.isSafeInteger(payload.exp) ? payload.exp : undefined,
     }
   } catch {
     return null
   }
+}
+
+/**
+ * Hash session token with SHA-256 (never store or log raw bearer tokens)
+ */
+export async function hashSessionToken(token: string): Promise<string> {
+  const encoder = new TextEncoder()
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(token))
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  const cryptoNode = await import('node:crypto')
+  return cryptoNode.createHash('sha256').update(token).digest('hex')
+}
+
+export const LEGACY_SESSION_MAX_AGE_SECONDS = 7 * 24 * 3600 // 7-day legacy transition window
+
+export async function createSessionRecord(
+  db: D1Database,
+  session: {
+    id: string
+    user_id: string
+    session_token_hash: string
+    created_at: string
+    expires_at: string
+    last_seen_at?: string
+  }
+): Promise<void> {
+  const lastSeen = session.last_seen_at || session.created_at
+  const stmt = db
+    .prepare(
+      `INSERT INTO sessions (id, user_id, session_token_hash, created_at, expires_at, last_seen_at, is_revoked, revoked_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, NULL)`
+    )
+    .bind(session.id, session.user_id, session.session_token_hash, session.created_at, session.expires_at, lastSeen)
+  await stmt.run()
+}
+
+export async function findSessionByTokenHash(
+  db: D1Database,
+  tokenHash: string
+): Promise<SessionRecord | null> {
+  const stmt = db
+    .prepare(
+      `SELECT id, user_id, session_token_hash, created_at, expires_at, last_seen_at, is_revoked, revoked_at
+       FROM sessions
+       WHERE session_token_hash = ?
+       LIMIT 1`
+    )
+    .bind(tokenHash)
+  return (await stmt.first<SessionRecord>()) || null
+}
+
+export async function revokeSessionByTokenHash(
+  db: D1Database,
+  tokenHash: string,
+  nowIso: string,
+  extra?: { userId?: string; createdAt?: string; expiresAt?: string }
+): Promise<boolean> {
+  const stmt = db
+    .prepare(`UPDATE sessions SET is_revoked = 1, revoked_at = ? WHERE session_token_hash = ?`)
+    .bind(nowIso, tokenHash)
+  const res = await stmt.run()
+  const rowsUpdated = (res?.meta as { changes?: number })?.changes ?? (res.success ? 1 : 0)
+  if (rowsUpdated > 0) return true
+
+  // If not found in sessions table (e.g. legacy token during logout):
+  if (extra?.userId) {
+    try {
+      const legacyId = 'legacy_' + tokenHash.slice(0, 24)
+      const createdAt = extra.createdAt || nowIso
+      const expiresAt = extra.expiresAt || new Date(Date.now() + 30 * 86400 * 1000).toISOString()
+      const insertStmt = db
+        .prepare(
+          `INSERT INTO sessions (id, user_id, session_token_hash, created_at, expires_at, last_seen_at, is_revoked, revoked_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+           ON CONFLICT(session_token_hash) DO UPDATE SET is_revoked = 1, revoked_at = excluded.revoked_at`
+        )
+        .bind(legacyId, extra.userId, tokenHash, createdAt, expiresAt, nowIso, nowIso)
+      await insertStmt.run()
+      return true
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+export async function revokeAllUserSessions(
+  db: D1Database,
+  userId: string,
+  nowIso: string
+): Promise<boolean> {
+  try {
+    await db
+      .prepare(`UPDATE sessions SET is_revoked = 1, revoked_at = ? WHERE user_id = ? AND is_revoked = 0`)
+      .bind(nowIso, userId)
+      .run()
+  } catch {
+    // best effort if table missing
+  }
+  try {
+    await db
+      .prepare(`UPDATE users SET sessions_revoked_at = ? WHERE id = ?`)
+      .bind(nowIso, userId)
+      .run()
+  } catch {
+    // best effort if column missing
+  }
+  return true
+}
+
+export async function validateSessionWithDb(
+  db: D1Database,
+  token: string,
+  sessionData: { uid: string; sub: string; sid?: string; iat?: number; exp?: number },
+  now = Date.now()
+): Promise<{ valid: boolean; reason?: string; isSchemaMissing?: boolean }> {
+  // If modern token with sid: must be validated against sessions table
+  if (sessionData.sid) {
+    let tokenHash: string
+    try {
+      tokenHash = await hashSessionToken(token)
+    } catch {
+      return { valid: false, reason: 'Cryptographic hashing failed' }
+    }
+
+    try {
+      const sessionRow = await findSessionByTokenHash(db, tokenHash)
+      if (!sessionRow) {
+        return { valid: false, reason: 'Session not found or revoked' }
+      }
+      if (sessionRow.is_revoked === 1) {
+        return { valid: false, reason: 'Session has been revoked' }
+      }
+      if (sessionRow.expires_at && new Date(sessionRow.expires_at).getTime() <= now) {
+        return { valid: false, reason: 'Session has expired' }
+      }
+      if (sessionRow.user_id && sessionRow.user_id !== sessionData.uid) {
+        return { valid: false, reason: 'Session ownership mismatch' }
+      }
+      return { valid: true }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/no such table/i.test(msg)) {
+        return { valid: false, reason: 'Database schema migration required', isSchemaMissing: true }
+      }
+      throw err
+    }
+  }
+
+  // Legacy token handling (no sid in payload):
+  // Check bounded legacy transition window first
+  if (sessionData.iat && (Math.floor(now / 1000) - sessionData.iat > LEGACY_SESSION_MAX_AGE_SECONDS)) {
+    return { valid: false, reason: 'Legacy session expired. Please sign in again' }
+  }
+
+  // Check users.sessions_revoked_at
+  try {
+    const user = await findUserById(db, sessionData.uid)
+    if (user?.sessions_revoked_at) {
+      const revokedTime = new Date(user.sessions_revoked_at).getTime()
+      if (sessionData.iat && sessionData.iat * 1000 <= revokedTime) {
+        return { valid: false, reason: 'Session has been revoked' }
+      }
+    }
+  } catch {
+    // Best-effort if column missing
+  }
+
+  return { valid: true }
 }
 
 /**
@@ -523,6 +722,29 @@ export async function updateUserAccessStatus(
   status: 'active' | 'denied',
   nowIso: string
 ): Promise<boolean> {
+  if (status === 'denied') {
+    // Revoke all active sessions for this denied user
+    try {
+      await db
+        .prepare(`UPDATE sessions SET is_revoked = 1, revoked_at = ? WHERE user_id = ? AND is_revoked = 0`)
+        .bind(nowIso, id)
+        .run()
+    } catch {
+      // Best-effort if sessions table does not exist
+    }
+
+    try {
+      await db
+        .prepare(`UPDATE users SET sessions_revoked_at = ? WHERE id = ?`)
+        .bind(nowIso, id)
+        .run()
+    } catch {
+      // Best-effort if sessions_revoked_at column does not exist yet
+    }
+  }
+
+  // Restoring user to active: do NOT unrevoke previously revoked sessions!
+  // Do NOT clear sessions_revoked_at.
   const stmt = db
     .prepare(`UPDATE users SET access_status = ?, updated_at = ? WHERE id = ?`)
     .bind(status, nowIso, id)
@@ -559,13 +781,32 @@ export async function authenticateAdminRequest(
   // 1. Try session token first
   const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
-    callerId = sessionData.uid
+    try {
+      const validation = await validateSessionWithDb(env.DB, token, sessionData)
+      if (!validation.valid) {
+        if (validation.isSchemaMissing) {
+          return { error: 'Database schema migration required', status: 500 }
+        }
+        return { error: validation.reason || 'Invalid or expired session token', status: 401 }
+      }
+      callerId = sessionData.uid
+    } catch (err) {
+      console.error('Admin session validation error:', err instanceof Error ? err.name : 'UnknownError')
+      return { error: 'Authentication lookup failed', status: 500 }
+    }
   } else {
     // 2. Try Google ID token
     try {
       const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
+        if (user.sessions_revoked_at) {
+          const revokedTime = new Date(user.sessions_revoked_at).getTime()
+          const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
+          if (!tokenIat || tokenIat <= revokedTime) {
+            return { error: 'Session has been revoked', status: 401 }
+          }
+        }
         callerId = user.id
       }
     } catch {
@@ -635,13 +876,32 @@ export async function authenticateUserRequest(
   // 1. Try session token first
   const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
   if (sessionData) {
-    callerId = sessionData.uid
+    try {
+      const validation = await validateSessionWithDb(env.DB, token, sessionData)
+      if (!validation.valid) {
+        if (validation.isSchemaMissing) {
+          return { error: 'Database schema migration required', status: 500 }
+        }
+        return { error: validation.reason || 'Invalid or expired session token', status: 401 }
+      }
+      callerId = sessionData.uid
+    } catch (err) {
+      console.error('User session validation error:', err instanceof Error ? err.name : 'UnknownError')
+      return { error: 'Authentication lookup failed', status: 500 }
+    }
   } else {
     // 2. Try Google ID token
     try {
       const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
+        if (user.sessions_revoked_at) {
+          const revokedTime = new Date(user.sessions_revoked_at).getTime()
+          const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
+          if (!tokenIat || tokenIat <= revokedTime) {
+            return { error: 'Session has been revoked', status: 401 }
+          }
+        }
         callerId = user.id
       }
     } catch {

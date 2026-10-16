@@ -427,6 +427,33 @@ export async function recheckServerSession(
   return data.user
 }
 
+/**
+ * Revoke session on Cloudflare Pages Functions server (/api/auth/logout).
+ * Idempotent. Returns true if remote server confirmed revocation, false otherwise.
+ */
+export async function logoutFromServer(sessionTokenOrIdToken: string): Promise<boolean> {
+  if (!sessionTokenOrIdToken || typeof sessionTokenOrIdToken !== 'string') {
+    return false
+  }
+  try {
+    const res = await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${sessionTokenOrIdToken.trim()}`,
+      },
+      signal: AbortSignal.timeout(10000),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      return false
+    }
+    const data = (await res.json()) as { success?: boolean; revoked?: boolean }
+    return data?.success === true && data?.revoked === true
+  } catch {
+    return false
+  }
+}
+
 let loading: Promise<void> | undefined
 export function loadGoogleIdentity(): Promise<void> {
   if (window.google) return Promise.resolve()
