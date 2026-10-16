@@ -1,3 +1,4 @@
+import { enforceAbuseLimit } from '../../lib/abuseProtection.ts'
 import {
   jsonResponse,
   errorResponse,
@@ -444,6 +445,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       },
       503
     )
+  }
+
+  for (const policy of ['metadata', 'metadata-budget'] as const) {
+    const rejection = await enforceAbuseLimit(env, policy, authResult.user.id)
+    if (rejection) return rejection
   }
 
   // 4. Query Workers AI

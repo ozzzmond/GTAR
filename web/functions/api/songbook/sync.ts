@@ -1,3 +1,4 @@
+import { enforceAbuseLimit } from '../../lib/abuseProtection.ts'
 import {
   jsonResponse,
   errorResponse,
@@ -106,6 +107,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   }
 
   try {
+    const rejection = await enforceAbuseLimit(env, 'sync-read', auth.user.id)
+    if (rejection) return rejection
     const record = await findUserSongbook(env.DB!, auth.user.id)
     if (!record) {
       return jsonResponse({
@@ -151,6 +154,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   if ('error' in auth) {
     return errorResponse(auth.error, auth.status)
   }
+
+  const rejection = await enforceAbuseLimit(env, 'sync-write', auth.user.id)
+  if (rejection) return rejection
 
   const readRes = await readBoundedJson(request, MAX_SONGBOOK_PAYLOAD_BYTES, { requireObject: true })
   if (readRes.error) {

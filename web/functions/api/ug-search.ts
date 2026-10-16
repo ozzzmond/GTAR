@@ -1,3 +1,4 @@
+import { enforceAbuseLimit } from '../lib/abuseProtection.ts'
 import { fetchUg } from '../ugFetch.ts'
 import { parseSearchResults, validateSearchQuery } from '../../src/utils/ugCore.ts'
 import {
@@ -62,6 +63,9 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
       headers: JSON_HEADERS,
     })
   }
+
+  const rejection = await enforceAbuseLimit(context.env, 'ug-fetch', auth.user.id)
+  if (rejection) return rejection
 
   const target = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(validation.query)}`
 

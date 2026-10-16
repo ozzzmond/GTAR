@@ -1,3 +1,4 @@
+import type { AbuseEnv } from './abuseProtection.ts'
 /**
  * GTAR Server-Authoritative Account & Access Control (v1.0.136-dev.1)
  * Cloudflare Pages Functions + D1 SQLite Core Library
@@ -28,7 +29,7 @@ export interface D1Database {
   batch?<T = unknown>(statements: D1PreparedStatement[]): Promise<{ results: T[]; success: boolean; meta?: unknown }[]>
 }
 
-export interface AuthEnv {
+export interface AuthEnv extends AbuseEnv {
   DB?: D1Database
   GOOGLE_CLIENT_ID?: string
   VITE_GOOGLE_CLIENT_ID?: string
