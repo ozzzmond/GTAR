@@ -373,9 +373,73 @@ export function setlistEquals(a: WebSetlist, b: WebSetlist): boolean {
   return true
 }
 
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record)
+    .filter((k) => record[k] !== undefined)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
+    .join(',')}}`
+}
+
+/**
+ * Deterministic RFC 4122 v4-shaped UUID derived from a seed. Used for conflict
+ * copies so repeated reconciliation of the same alternatives yields the same ID.
+ */
+function deterministicUuid(seed: string): string {
+  const seeds = [0x811c9dc5, 0x01000193, 0x9e3779b1, 0x85ebca6b]
+  const bytes = new Uint8Array(16)
+  seeds.forEach((init, part) => {
+    let h = init >>> 0
+    for (let i = 0; i < seed.length; i++) {
+      h ^= seed.charCodeAt(i) + part
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+    h ^= h >>> 15
+    h = Math.imul(h, 0x2c1b3c6d) >>> 0
+    h ^= h >>> 12
+    for (let b = 0; b < 4; b++) bytes[part * 4 + b] = (h >>> (b * 8)) & 0xff
+  })
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** Identity = kind + stable source ID + canonical revision content (never the display name alone). */
+function conflictCopyId(kind: 'song' | 'setlist', sourceId: string, item: unknown): string {
+  const { id: _ignored, ...content } = item as Record<string, unknown>
+  void _ignored
+  return deterministicUuid(`gtar-conflict-copy:${kind}:${sourceId}:${stableStringify(content)}`)
+}
+
+type SongIdRemap = Map<string, string>
+
+/** Rebind only references carrying a stable ID that has an explicit resolved mapping. Never guesses by title/artist. */
+function rebindSetlist(sl: WebSetlist, remap: SongIdRemap): WebSetlist {
+  if (remap.size === 0) return sl
+  let changed = false
+  const songs = sl.songs.map((ref) => {
+    const mapped = ref.id !== undefined && ref.id !== null ? remap.get(String(ref.id)) : undefined
+    if (mapped === undefined) return ref
+    changed = true
+    return { ...ref, id: mapped }
+  })
+  return changed ? { ...sl, songs } : sl
+}
+
+/** Direction-independent winner for two tombstones with differing content. */
+function pickTombstoneWinner<T>(a: T, b: T): T {
+  return stableStringify(a) <= stableStringify(b) ? a : b
+}
+
 /**
  * Reconciles local and remote songbooks deterministically by stable UUID.
- * Never silently destroys differing edits: generates non-destructive conflict copies.
+ * Never silently destroys differing edits: generates non-destructive conflict copies
+ * whose IDs are derived from source ID + revision content, so repeated reconciliation
+ * of the same unresolved alternatives is idempotent.
  */
 export function reconcileSongbook(
   local: SyncLibrary,
@@ -408,6 +472,25 @@ export function reconcileSongbook(
 
   const allSongIds = new Set<string>([...localSongsMap.keys(), ...remoteSongsMap.keys()])
   const mergedSongs: ActiveSongState[] = []
+  // Source song ID -> resolved copy ID, per origin side, for setlist provenance.
+  const localRemap: SongIdRemap = new Map()
+  const remoteRemap: SongIdRemap = new Map()
+
+  // A copy that already exists on either side is handled by its own iteration (idempotent, keeps user edits).
+  const pushSongCopy = (copy: ActiveSongState) => {
+    if (localSongsMap.has(String(copy.id)) || remoteSongsMap.has(String(copy.id))) return
+    if (mergedSongs.some((s) => s.id === copy.id)) return
+    mergedSongs.push(copy)
+  }
+  const songCopy = (id: string, source: ActiveSongState, origin: 'Cloud' | 'Local', live: boolean) => {
+    const copy: ActiveSongState = {
+      ...source,
+      id: conflictCopyId('song', id, source),
+      title: `${source.title} (${origin} Copy)`,
+    }
+    if (live) copy.isDeleted = false
+    return copy
+  }
 
   for (const id of allSongIds) {
     const localSong = localSongsMap.get(id)
@@ -441,43 +524,49 @@ export function reconcileSongbook(
         // Remote unchanged, local modified -> accept local
         mergedSongs.push(localSong)
       } else {
-        // True concurrent divergence or deletion asymmetry
         const localTombstone = Boolean(localSong.isDeleted)
         const remoteTombstone = Boolean(remoteSong.isDeleted)
 
-        if (!baseSong) {
+        if (localTombstone && remoteTombstone && !baseSong) {
+          // No common base: retain both tombstoned revisions until explicit resolution
           conflicts.push({ id, type: 'song', title: localSong.title,
             reason: 'Different local and cloud versions share an ID without a common base' })
-          mergedSongs.push(localSong, { ...remoteSong, id: generateUUID(), title: `${remoteSong.title} (Cloud Copy)` })
+          mergedSongs.push(localSong)
+          pushSongCopy(songCopy(id, remoteSong, 'Cloud', false))
         } else if (localTombstone && remoteTombstone) {
-          // Both sides marked it deleted -> keep tombstone without creating conflict copy
-          mergedSongs.push({ ...localSong, isDeleted: true })
-        } else if (localTombstone && !remoteTombstone) {
-          // Local deleted it, remote edited it -> Conflict! Keep tombstone, preserve remote edit as active conflict copy
+          // Both deleted: keep one tombstone, direction-independent; both revisions stay in recovery snapshots
+          mergedSongs.push({ ...pickTombstoneWinner(localSong, remoteSong), isDeleted: true })
+        } else if (localTombstone !== remoteTombstone) {
+          // Delete vs edit is handled identically in both directions, with or without a common base:
+          // keep the tombstone and preserve the edited revision as a recoverable copy.
+          const deleted = localTombstone ? localSong : remoteSong
+          const edited = localTombstone ? remoteSong : localSong
+          const origin = localTombstone ? 'Cloud' : 'Local'
           conflicts.push({
             id,
             type: 'song',
-            title: remoteSong.title,
-            reason: 'Song was deleted locally while modified in the cloud',
+            title: edited.title,
+            reason: localTombstone
+              ? 'Song was deleted locally while modified in the cloud'
+              : 'Song was modified locally while deleted in the cloud',
           })
-          mergedSongs.push(localSong)
-          const conflictCopyId = generateUUID()
-          const conflictCopy: ActiveSongState = {
-            ...remoteSong,
-            id: conflictCopyId,
-            title: `${remoteSong.title} (Cloud Copy)`,
-            isDeleted: false,
+          const copy = songCopy(id, edited, origin, true)
+          // Local-origin revision first so ordering is stable regardless of direction
+          if (localTombstone) {
+            mergedSongs.push({ ...deleted, isDeleted: true })
+            pushSongCopy(copy)
+          } else {
+            pushSongCopy(copy)
+            mergedSongs.push({ ...deleted, isDeleted: true })
           }
-          mergedSongs.push(conflictCopy)
-        } else if (!localTombstone && remoteTombstone) {
-          // Remote deleted it, local modified it -> Conflict! Keep edited local
-          conflicts.push({
-            id,
-            type: 'song',
-            title: localSong.title,
-            reason: 'Song was modified locally while deleted in the cloud',
-          })
+          ;(localTombstone ? remoteRemap : localRemap).set(id, String(copy.id))
+        } else if (!baseSong) {
+          conflicts.push({ id, type: 'song', title: localSong.title,
+            reason: 'Different local and cloud versions share an ID without a common base' })
+          const copy = songCopy(id, remoteSong, 'Cloud', false)
           mergedSongs.push(localSong)
+          pushSongCopy(copy)
+          remoteRemap.set(id, String(copy.id))
         } else {
           // Differing live edits require preservation even without a common base item.
           conflicts.push({
@@ -487,14 +576,10 @@ export function reconcileSongbook(
             reason: 'Both local and cloud versions were edited independently',
           })
           // Safe non-destructive preservation: keep local, duplicate remote as conflict copy
+          const copy = songCopy(id, remoteSong, 'Cloud', false)
           mergedSongs.push(localSong)
-          const conflictCopyId = generateUUID()
-          const conflictCopy: ActiveSongState = {
-            ...remoteSong,
-            id: conflictCopyId,
-            title: `${remoteSong.title} (Cloud Copy)`,
-          }
-          mergedSongs.push(conflictCopy)
+          pushSongCopy(copy)
+          remoteRemap.set(id, String(copy.id))
         }
       }
     }
@@ -527,6 +612,23 @@ export function reconcileSongbook(
   const allSetlistIds = new Set<string>([...localSetlistsMap.keys(), ...remoteSetlistsMap.keys()])
   const mergedSetlists: WebSetlist[] = []
 
+  const pushSetlistCopy = (copy: WebSetlist) => {
+    if (localSetlistsMap.has(String(copy.id)) || remoteSetlistsMap.has(String(copy.id))) return
+    if (mergedSetlists.some((s) => s.id === copy.id)) return
+    mergedSetlists.push(copy)
+  }
+  const setlistCopy = (id: string, source: WebSetlist, origin: 'Cloud' | 'Local', remap: SongIdRemap, live: boolean) => {
+    const rebound = rebindSetlist(source, remap)
+    const copy: WebSetlist = {
+      ...rebound,
+      id: conflictCopyId('setlist', id, source),
+      name: `${source.name} (${origin} Copy)`,
+      songs: rebound.songs.map((ref) => ({ ...ref })),
+    }
+    if (live) copy.isDeleted = false
+    return copy
+  }
+
   for (const id of allSetlistIds) {
     const localSl = localSetlistsMap.get(id)
     const remoteSl = remoteSetlistsMap.get(id)
@@ -537,79 +639,62 @@ export function reconcileSongbook(
       if (baseSl && setlistEquals(localSl, baseSl)) {
         // Was deleted remotely, unchanged locally -> accept remote deletion
       } else {
-        // Added locally or modified locally -> keep local
-        mergedSetlists.push(localSl)
+        // Added locally or modified locally -> keep local, bound to its own resolved charts
+        mergedSetlists.push(rebindSetlist(localSl, localRemap))
       }
     } else if (!localSl && remoteSl) {
       // Exists only remotely
       if (baseSl && setlistEquals(remoteSl, baseSl)) {
         // Was deleted locally, unchanged remotely -> accept local deletion
       } else {
-        // Added remotely or modified remotely -> keep remote
-        mergedSetlists.push(remoteSl)
+        // Added remotely or modified remotely -> keep remote, bound to the remote chart revisions
+        mergedSetlists.push(rebindSetlist(remoteSl, remoteRemap))
       }
     } else if (localSl && remoteSl) {
       // Exists in both
-      if (setlistEquals(localSl, remoteSl)) {
-        mergedSetlists.push(localSl)
+      const reboundRemote = rebindSetlist(remoteSl, remoteRemap)
+      const reboundLocal = rebindSetlist(localSl, localRemap)
+      if (setlistEquals(localSl, remoteSl) || setlistEquals(reboundLocal, reboundRemote)) {
+        // Identical references bind to the surviving original IDs; a prior resolution is idempotent
+        mergedSetlists.push(setlistEquals(localSl, remoteSl) ? localSl : reboundLocal)
       } else if (baseSl && setlistEquals(localSl, baseSl)) {
         // Local unchanged from base, remote modified -> accept remote
-        mergedSetlists.push(remoteSl)
+        mergedSetlists.push(reboundRemote)
       } else if (baseSl && setlistEquals(remoteSl, baseSl)) {
         // Remote unchanged from base, local modified -> accept local
-        mergedSetlists.push(localSl)
-      } else if (!baseSl) {
-        // No common base and different: concurrent addition under same ID!
-        conflicts.push({
-          id,
-          type: 'setlist',
-          title: localSl.name,
-          reason: 'Both local and cloud setlists were added independently with the same ID',
-        })
-        mergedSetlists.push(localSl)
-        const conflictCopyId = generateUUID()
-        const conflictCopy: WebSetlist = {
-          ...remoteSl,
-          id: conflictCopyId,
-          name: `${remoteSl.name} (Cloud Copy)`,
-          songs: remoteSl.songs.map((ref) => ({ ...ref })),
-        }
-        mergedSetlists.push(conflictCopy)
+        mergedSetlists.push(reboundLocal)
       } else {
-        // Both modified from base! Check if one side was tombstoned vs edited, or both edited
         const localTombstone = Boolean(localSl.isDeleted)
         const remoteTombstone = Boolean(remoteSl.isDeleted)
 
         if (localTombstone && remoteTombstone) {
-          // Both sides marked it deleted -> keep tombstone without creating conflict copy
-          mergedSetlists.push({ ...localSl, isDeleted: true })
-        } else if (localTombstone && !remoteTombstone) {
-          // Local deleted it, remote edited it -> Conflict! Keep tombstone locally or conflict copy of remote
+          // Both sides marked it deleted -> keep one tombstone without creating conflict copy
+          mergedSetlists.push({ ...pickTombstoneWinner(localSl, remoteSl), isDeleted: true })
+        } else if (localTombstone !== remoteTombstone) {
+          // Symmetric delete vs edit, with or without a common base
+          const deleted = localTombstone ? localSl : remoteSl
+          const edited = localTombstone ? remoteSl : localSl
           conflicts.push({
             id,
             type: 'setlist',
-            title: remoteSl.name,
-            reason: 'Setlist was deleted locally while modified in the cloud',
+            title: edited.name,
+            reason: localTombstone
+              ? 'Setlist was deleted locally while modified in the cloud'
+              : 'Setlist was modified locally while deleted in the cloud',
           })
-          mergedSetlists.push(localSl)
-          const conflictCopyId = generateUUID()
-          const conflictCopy: WebSetlist = {
-            ...remoteSl,
-            id: conflictCopyId,
-            name: `${remoteSl.name} (Cloud Copy)`,
-            isDeleted: false,
-            songs: remoteSl.songs.map((ref) => ({ ...ref })),
-          }
-          mergedSetlists.push(conflictCopy)
-        } else if (!localTombstone && remoteTombstone) {
-          // Remote deleted it, local edited it -> Conflict! Keep edited local, tombstone copy
+          mergedSetlists.push({ ...deleted, isDeleted: true })
+          pushSetlistCopy(setlistCopy(id, edited, localTombstone ? 'Cloud' : 'Local',
+            localTombstone ? remoteRemap : localRemap, true))
+        } else if (!baseSl) {
+          // No common base and different: concurrent addition under same ID!
           conflicts.push({
             id,
             type: 'setlist',
             title: localSl.name,
-            reason: 'Setlist was modified locally while deleted in the cloud',
+            reason: 'Both local and cloud setlists were added independently with the same ID',
           })
-          mergedSetlists.push(localSl)
+          mergedSetlists.push(reboundLocal)
+          pushSetlistCopy(setlistCopy(id, remoteSl, 'Cloud', remoteRemap, false))
         } else {
           // True concurrent divergence: both edited name, order, or songs
           conflicts.push({
@@ -619,15 +704,8 @@ export function reconcileSongbook(
             reason: 'Both local and cloud setlists were edited independently',
           })
           // Deterministic non-destructive rule: keep local setlist, duplicate remote with (Cloud Copy)
-          mergedSetlists.push(localSl)
-          const conflictCopyId = generateUUID()
-          const conflictCopy: WebSetlist = {
-            ...remoteSl,
-            id: conflictCopyId,
-            name: `${remoteSl.name} (Cloud Copy)`,
-            songs: remoteSl.songs.map((ref) => ({ ...ref })),
-          }
-          mergedSetlists.push(conflictCopy)
+          mergedSetlists.push(reboundLocal)
+          pushSetlistCopy(setlistCopy(id, remoteSl, 'Cloud', remoteRemap, false))
         }
       }
     }
