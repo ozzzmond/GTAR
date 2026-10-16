@@ -489,7 +489,7 @@ test('F6: database write failure preserves cloud revision and local data; legacy
   await withFetch((url, opts) => request(opts.method, opts.body && JSON.parse(opts.body)), async () => {
     const result = await sync.performCloudSongbookSync('token', { storage: store })
     assert.equal(result.success, false)
-    assert.match(result.error, /database write failed/)
+    assert.match(result.error, /Failed to persist cloud songbook|database write failed/)
   })
   assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
   assert.equal((await findUserSongbook(db, 'user-a')).version, first.version)

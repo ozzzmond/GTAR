@@ -13,7 +13,11 @@ import {
   type AuthEnv,
   type UserRecord,
   JSON_HEADERS,
+  readBoundedJson,
+  MAX_SESSION_PAYLOAD_BYTES,
 } from '../../lib/authCore.ts'
+
+export { MAX_SESSION_PAYLOAD_BYTES }
 
 interface PagesContext {
   request: Request
@@ -41,15 +45,22 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorResponse('Authentication service is unavailable', 503)
   }
 
-  let body: { idToken?: string; credential?: string }
-  try {
-    body = await request.json()
-  } catch {
+  const readRes = await readBoundedJson(request, MAX_SESSION_PAYLOAD_BYTES, { requireObject: true })
+  if (readRes.error) {
+    if (readRes.status === 413) {
+      return errorResponse('Request body exceeds allowed size', 413)
+    }
     return errorResponse('Malformed JSON body', 400)
   }
 
-  const token = body.idToken || body.credential
-  if (!token || typeof token !== 'string') {
+  const body = (readRes.data || {}) as Record<string, unknown>
+  const token = typeof body.idToken === 'string' && body.idToken.trim()
+    ? body.idToken.trim()
+    : typeof body.credential === 'string' && body.credential.trim()
+      ? body.credential.trim()
+      : null
+
+  if (!token) {
     return errorResponse('Missing required Google identity token in request body', 400)
   }
 
@@ -164,19 +175,24 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   let user: UserRecord | null = null
 
-  // 1. Session token
-  const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
-  if (sessionData) {
-    user = await findUserById(env.DB, sessionData.uid)
-    if (user && user.google_sub !== sessionData.sub) user = null
-  } else {
-    // 2. Google ID token fallback
-    try {
-      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
-      user = await findUserByGoogleSub(env.DB, verified.sub)
-    } catch {
-      // Invalid
+  try {
+    // 1. Session token
+    const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
+    if (sessionData) {
+      user = await findUserById(env.DB, sessionData.uid)
+      if (user && user.google_sub !== sessionData.sub) user = null
+    } else {
+      // 2. Google ID token fallback
+      try {
+        const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
+        user = await findUserByGoogleSub(env.DB, verified.sub)
+      } catch {
+        // Invalid
+      }
     }
+  } catch (err) {
+    console.error('Session retrieval error:', err instanceof Error ? err.name : 'UnknownError')
+    return errorResponse('Session expired or user not found', 401)
   }
 
   if (!user) {
