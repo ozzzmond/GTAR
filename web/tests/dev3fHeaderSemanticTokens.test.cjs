@@ -12,10 +12,11 @@ const json = require('../src/utils/customPaletteJson.ts')
 const backup = require('../src/utils/backupSettings.ts')
 const { CustomPaletteEditor } = require('../src/components/CustomPaletteEditor.tsx')
 // Render the real header without loading unrelated auth, search or modal implementations.
+const env = { isDevEnv: true }
 const Module = require('node:module'), originalLoad = Module._load
 Module._load = function (request, parent, ...args) {
   if (parent?.filename && /[\\/]components[\\/]Header\.tsx$/.test(parent.filename)) {
-    if (request === '../utils/env') return { isDevEnv: true }
+    if (request === '../utils/env') return env
     if (request === './AuthGate') return { useGoogleAuth: () => ({ session: null }) }
     if (request.endsWith('.png')) return 'logo.png'
     if (request === '../utils/onlineSearch') return {}
@@ -96,7 +97,31 @@ test('Real header roles resolve independently from body, with neutral icons scop
   const root = createRoot(document.getElementById('root'))
   try {
     const noop = () => {}
-    await act(async () => root.render(React.createElement(Header, { activeView: 'editor', song: {}, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, onOpenBackupRestoreModal: noop })))
+    const props = { activeView: 'editor', song: {}, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, onOpenBackupRestoreModal: noop }
+    env.isDevEnv = true
+    await act(async () => root.render(React.createElement(Header, props)))
+
+    // DEV V2 header: GTAR-Dev title, DEV badge, and tag/deployment diagnostics banner without removed version element
+    const devTitle = document.querySelector('.header-primary-text')
+    assert.equal(devTitle.textContent.trim(), 'GTAR-Dev')
+    assert.ok(!devTitle.classList.contains('ui-primary-text'))
+    const devBadge = [...document.querySelectorAll('span')].find(el => el.textContent === 'DEV')
+    assert.ok(devBadge, 'DEV badge must be rendered in DEV mode')
+    assert.ok(!devBadge.classList.contains('header-primary-text'))
+
+    const devDiagnostics = document.querySelector('[data-testid="dev-header-diagnostics"]')
+    assert.ok(devDiagnostics, 'DEV diagnostic banner must be rendered in DEV mode')
+    const diagLine1 = document.querySelector('[data-testid="dev-header-diag-line1"]')
+    const diagLine2 = document.querySelector('[data-testid="dev-header-diag-line2"]')
+    assert.ok(diagLine1 && diagLine1.textContent.trim().length > 0, 'Diagnostic line 1 must be rendered')
+    assert.ok(diagLine2 && diagLine2.textContent.trim().length > 0, 'Diagnostic line 2 must be rendered')
+    assert.equal(document.querySelector('.header-secondary-text'), null, 'DEV Header must not contain removed secondary version element')
+
+    // Switch to PROD mode: preserves production header behavior, version badge, and headerSecondaryText role
+    env.isDevEnv = false
+    await act(async () => root.render(React.createElement(Header, props)))
+    assert.equal(document.querySelector('[data-testid="dev-header-diagnostics"]'), null, 'DEV diagnostics must be excluded in production header')
+
     // jsdom does not resolve CSS custom properties. Resolve only the exact production
     // role declarations using the variables emitted by the real theme application.
     const css = fs.readFileSync(require.resolve('../src/index.css'), 'utf8')
@@ -109,8 +134,8 @@ test('Real header roles resolve independently from body, with neutral icons scop
     }
     const color = selector => window.getComputedStyle(document.querySelector(selector)).color
     const title = document.querySelector('.header-primary-text'), version = document.querySelector('.header-secondary-text')
-    assert.equal(title.textContent.trim(), 'GTAR-Dev')
-    assert.match(version.textContent, /(?:v1\.0\.\d+-dev\.|untagged-)/)
+    assert.equal(title.textContent.trim(), 'GTAR')
+    assert.match(version.textContent, /^v\d+\.\d+\.\d+/)
     assert.ok(!title.classList.contains('ui-primary-text'))
     assert.ok(!version.classList.contains('ui-secondary-text'))
     apply(target)
@@ -137,11 +162,11 @@ test('Real header roles resolve independently from body, with neutral icons scop
       assert.equal(sync.querySelectorAll('.header-neutral-icon').length, 0)
       assert.ok(sync.querySelector('svg').getAttribute('class').includes(state === 'ERROR' || state === 'CONFLICT' ? 'text-status-error' : 'text-app-action'))
     }
-    assert.ok(![...document.querySelectorAll('span')].find(el => el.textContent === 'DEV').classList.contains('header-primary-text'))
     assert.ok(!document.querySelector('.auth-dot').classList.contains('header-neutral-icon'))
     document.body.className = 'theme-paper-light'
     assert.notEqual(color('.header-primary-text'), rgb(target.headerPrimaryText))
   } finally {
+    env.isDevEnv = true
     await act(async () => root.unmount()); dom.window.close()
     delete global.document; delete global.window; delete global.IS_REACT_ACT_ENVIRONMENT
   }
