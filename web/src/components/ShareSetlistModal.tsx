@@ -18,9 +18,13 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareToken, setShareToken] = useState<string>('');
   const [shareUrl, setShareUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [qrDataUri, setQrDataUri] = useState<string>('');
+  const [revoked, setRevoked] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -66,6 +70,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
         const data = await res.json();
         if (isCancelled) return;
 
+        setShareToken(data.token);
         const origin = window.location.origin;
         const generatedUrl = `${origin}?share=${data.token}`;
         setShareUrl(generatedUrl);
@@ -115,6 +120,46 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
       });
     } catch {
       // User cancelled or share failed
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!shareToken || revoking) return;
+    if (
+      !window.confirm(
+        'Revoke this share link? Once revoked, anyone with the QR code or link will no longer be able to view or import this setlist.'
+      )
+    ) {
+      return;
+    }
+    setRevoking(true);
+    setRevokeError(null);
+    try {
+      const { session } = getStoredSessionStatus();
+      const authToken = session?.sessionToken || session?.idToken || session?.token;
+      if (!authToken) {
+        throw new Error('Authentication required to revoke link');
+      }
+      const res = await fetch('/api/setlist/revoke', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ token: shareToken }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
+      setRevoked(true);
+      setShareUrl('');
+      setQrDataUri('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setRevokeError(msg || 'Failed to revoke share link');
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -168,7 +213,21 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           </div>
         )}
 
-        {!loading && !error && qrDataUri && (
+        {revoked && (
+          <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm space-y-2 text-center animate-fade-in">
+            <p className="font-semibold flex items-center justify-center gap-1.5">
+              <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              Share Link Revoked
+            </p>
+            <p className="text-xs text-slate-400">
+              This snapshot has been revoked and can no longer be accessed or imported by anyone.
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && !revoked && qrDataUri && (
           <div className="flex flex-col items-center space-y-4">
             <div className="p-3 bg-white rounded-xl shadow-inner border border-slate-200">
               <img
@@ -222,6 +281,21 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
                 Share Link
               </button>
             )}
+
+            {revokeError && (
+              <p className="text-xs text-rose-400 text-center">{revokeError}</p>
+            )}
+
+            <button
+              onClick={handleRevoke}
+              disabled={revoking}
+              className="w-full py-1.5 px-3 rounded-lg border border-rose-500/30 hover:bg-rose-500/10 text-rose-400 text-xs font-medium transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+              <span>{revoking ? 'Revoking Link...' : 'Revoke Share Link'}</span>
+            </button>
           </div>
         )}
 

@@ -228,7 +228,7 @@ test('enabled QR round trip, Sync CAS conflict, body limits, and AI budgets rema
     const created = await share.onRequestPost({ env: f.env, request: f.request('POST', payload) })
     assert.equal(created.status, 200)
     const { token } = await created.json()
-    assert.match(token, /^[a-f0-9]{16}$/)
+    assert.match(token, /^[a-f0-9]{16,32}$/)
     assert.equal((await share.onRequestGet({ env: f.env, request: f.request('GET', undefined, `https://example.invalid?token=${token}`) })).status, 200)
     const data = { songs: [], setlists: [] }
     const body = { data, expectedVersion: 0, expectedChecksum: null }

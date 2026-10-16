@@ -1,9 +1,9 @@
-import { enforceAbuseLimit, abuseResponse } from '../../lib/abuseProtection.ts'
+import { enforceAbuseLimit, abuseResponse } from '../../lib/abuseProtection.ts';
 import { validateSharedSetlistPayload, sanitizeSetlistForShare } from '../../../src/utils/sharedSetlist';
-import { authenticateUserRequest, isValidAuthSecret, verifySessionToken } from '../../lib/authCore';
-import type { D1Database, AuthEnv } from '../../lib/authCore';
+import { authenticateUserRequest, isValidAuthSecret, verifySessionToken, findUserById } from '../../lib/authCore';
+import type { D1Database, AuthEnv, UserRecord } from '../../lib/authCore';
 
-interface Env extends AuthEnv {
+export interface Env extends AuthEnv {
   DB?: D1Database;
 }
 
@@ -35,13 +35,13 @@ export function _resetRateLimitsForTesting(): void {
   userShareTimestamps.clear();
 }
 
-function jsonResponse(data: unknown, status = 200) {
+export function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Cache-Control': 'no-store',
     },
@@ -53,7 +53,7 @@ export const onRequestOptions = async () => {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Cache-Control': 'no-store',
     },
@@ -62,7 +62,10 @@ export const onRequestOptions = async () => {
 
 export const MAX_SHARE_PAYLOAD_BYTES = 1024 * 1024; // 1 MB payload limit
 
-async function readBoundedJson(request: Request, maxBytes: number): Promise<{ data?: unknown; error?: string; status: number }> {
+export async function readBoundedJson(
+  request: Request,
+  maxBytes: number
+): Promise<{ data?: unknown; error?: string; status: number }> {
   const contentLength = request.headers.get('content-length');
   if (contentLength) {
     const parsedLength = parseInt(contentLength, 10);
@@ -97,7 +100,9 @@ async function readBoundedJson(request: Request, maxBytes: number): Promise<{ da
         if (receivedBytes > maxBytes) {
           try {
             await reader.cancel();
-          } catch { /* best effort */ }
+          } catch {
+            /* best effort */
+          }
           return { error: 'PAYLOAD_TOO_LARGE', status: 413 };
         }
         chunks.push(value);
@@ -122,10 +127,10 @@ async function readBoundedJson(request: Request, maxBytes: number): Promise<{ da
   }
 }
 
-async function authenticateShareCaller(
+export async function authenticateShareCaller(
   request: Request,
   env: Env
-): Promise<{ user: { id: string } } | { error: string; status: number }> {
+): Promise<{ user: UserRecord } | { error: string; status: number }> {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return { error: 'Missing or malformed Authorization header', status: 401 };
@@ -197,23 +202,45 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
 
     const sanitized = sanitizeSetlistForShare(validated.setlist);
 
-    // Generate secure random 16-hex token (8 bytes)
-    const randomBytes = new Uint8Array(8);
-    crypto.getRandomValues(randomBytes);
-    const token = Array.from(randomBytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-
     const now = new Date().toISOString();
     // Default TTL: 30 days
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    await env.DB.prepare(
-      `INSERT INTO shared_setlists (share_token, setlist_name, payload_json, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-      .bind(token, sanitized.name, JSON.stringify(sanitized), now, expiresAt)
-      .run();
+    // Generate secure random 128-bit token (16 bytes = 32 hex chars)
+    // Retry loop handles extremely rare collisions safely without overwriting existing records
+    let token = '';
+    let inserted = false;
+    const maxCollisionAttempts = 3;
+
+    for (let attempt = 0; attempt < maxCollisionAttempts; attempt++) {
+      const randomBytes = new Uint8Array(16);
+      crypto.getRandomValues(randomBytes);
+      const candidateToken = Array.from(randomBytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      try {
+        await env.DB.prepare(
+          `INSERT INTO shared_setlists (share_token, setlist_name, payload_json, created_at, expires_at, creator_user_id, is_revoked)
+           VALUES (?, ?, ?, ?, ?, ?, 0)`
+        )
+          .bind(candidateToken, sanitized.name, JSON.stringify(sanitized), now, expiresAt, authResult.user.id)
+          .run();
+        token = candidateToken;
+        inserted = true;
+        break;
+      } catch (insertErr: unknown) {
+        const msg = String(insertErr);
+        if (msg.includes('UNIQUE constraint failed') || msg.includes('PRIMARY KEY')) {
+          continue;
+        }
+        throw insertErr;
+      }
+    }
+
+    if (!inserted) {
+      return jsonResponse({ error: 'FAILED_TO_CREATE_SHARE' }, 500);
+    }
 
     return jsonResponse({
       token,
@@ -237,7 +264,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     const url = new URL(request.url);
     const token = url.searchParams.get('token');
 
-    if (!token || !/^[a-f0-9]{16}$/i.test(token)) {
+    if (!token || !/^[a-f0-9]{16,64}$/i.test(token)) {
       return jsonResponse({ error: 'INVALID_OR_MISSING_TOKEN' }, 400);
     }
 
@@ -249,17 +276,34 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     if (rejection) return rejection;
 
     const row = await env.DB.prepare(
-      `SELECT payload_json, expires_at FROM shared_setlists WHERE share_token = ?`
+      `SELECT payload_json, expires_at, creator_user_id, is_revoked FROM shared_setlists WHERE share_token = ?`
     )
       .bind(token.toLowerCase())
-      .first<{ payload_json: string; expires_at: string | null }>();
+      .first<{
+        payload_json: string;
+        expires_at: string | null;
+        creator_user_id?: string | null;
+        is_revoked?: number | null;
+      }>();
 
     if (!row) {
       return jsonResponse({ error: 'SHARED_SETLIST_NOT_FOUND' }, 404);
     }
 
+    if (row.is_revoked === 1) {
+      return jsonResponse({ error: 'SHARED_SETLIST_REVOKED' }, 410);
+    }
+
     if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
       return jsonResponse({ error: 'SHARED_SETLIST_EXPIRED' }, 410);
+    }
+
+    // If the share has an authoritative creator, check that the creator has not been denied
+    if (row.creator_user_id) {
+      const creator = await findUserById(env.DB, row.creator_user_id);
+      if (creator && creator.access_status === 'denied') {
+        return jsonResponse({ error: 'CREATOR_ACCESS_DENIED' }, 403);
+      }
     }
 
     const payload = JSON.parse(row.payload_json);
@@ -276,4 +320,100 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     console.error('Failed to fetch shared setlist:', err);
     return jsonResponse({ error: 'FAILED_TO_FETCH_SHARE' }, 500);
   }
+};
+
+export async function handleRevokeShare(request: Request, env: Env): Promise<Response> {
+  try {
+    const authResult = await authenticateShareCaller(request, env);
+    if ('error' in authResult) {
+      return jsonResponse({ error: authResult.error }, authResult.status);
+    }
+
+    const rejection = await enforceAbuseLimit(env, 'share-revoke', authResult.user.id);
+    if (rejection) return rejection;
+
+    if (!checkUserRateLimit(authResult.user.id)) {
+      return abuseResponse(429, 60);
+    }
+
+    let token: string | null = null;
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get('token');
+
+    if (request.method === 'POST' || request.method === 'DELETE') {
+      const bodyResult = await readBoundedJson(request, 16 * 1024);
+      if (bodyResult.data && typeof bodyResult.data === 'object' && !Array.isArray(bodyResult.data)) {
+        const rawToken = (bodyResult.data as Record<string, unknown>).token;
+        if (typeof rawToken === 'string') {
+          token = rawToken.trim();
+        }
+      }
+    }
+    if (!token && queryToken) {
+      token = queryToken.trim();
+    }
+
+    if (!token || !/^[a-f0-9]{16,64}$/i.test(token)) {
+      return jsonResponse({ error: 'INVALID_OR_MISSING_TOKEN' }, 400);
+    }
+
+    if (!env.DB) {
+      return jsonResponse({ error: 'DATABASE_UNAVAILABLE' }, 503);
+    }
+
+    const normalizedToken = token.toLowerCase();
+    const row = await env.DB.prepare(
+      `SELECT share_token, creator_user_id, is_revoked, expires_at FROM shared_setlists WHERE share_token = ?`
+    )
+      .bind(normalizedToken)
+      .first<{
+        share_token: string;
+        creator_user_id: string | null;
+        is_revoked: number | null;
+        expires_at: string | null;
+      }>();
+
+    if (!row) {
+      return jsonResponse({ error: 'SHARED_SETLIST_NOT_FOUND' }, 404);
+    }
+
+    const isAdmin = authResult.user.role === 'admin';
+    const isOwner = Boolean(row.creator_user_id && row.creator_user_id === authResult.user.id);
+
+    if (!isAdmin && !isOwner) {
+      return jsonResponse({ error: 'FORBIDDEN_NOT_SHARE_OWNER' }, 403);
+    }
+
+    // Idempotent: already revoked shares return success cleanly
+    if (row.is_revoked === 1) {
+      return jsonResponse({
+        success: true,
+        revoked: true,
+        token: row.share_token,
+        alreadyRevoked: true,
+      });
+    }
+
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `UPDATE shared_setlists
+       SET is_revoked = 1, revoked_at = ?, revoked_by_user_id = ?
+       WHERE share_token = ?`
+    )
+      .bind(now, authResult.user.id, row.share_token)
+      .run();
+
+    return jsonResponse({
+      success: true,
+      revoked: true,
+      token: row.share_token,
+    });
+  } catch (err: unknown) {
+    console.error('Failed to revoke shared setlist:', err);
+    return jsonResponse({ error: 'FAILED_TO_REVOKE_SHARE' }, 500);
+  }
+}
+
+export const onRequestDelete = async ({ request, env }: { request: Request; env: Env }) => {
+  return handleRevokeShare(request, env);
 };
