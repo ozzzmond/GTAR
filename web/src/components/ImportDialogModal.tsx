@@ -1,3 +1,4 @@
+import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
 import React, { useRef, useState } from 'react'
 import { FolderOpen, FileText, FolderUp, X, Check, AlertCircle } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -13,6 +14,7 @@ interface ImportDialogModalProps {
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   existingSongs?: ActiveSongState[]
+  existingSetlists?: WebSetlist[]
 }
 
 export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
@@ -23,6 +25,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
   onImportSingleSetlist,
   onSmartMerge,
   existingSongs = [],
+  existingSetlists = [],
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -99,8 +102,21 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
       const text = await file.text()
       // 1. First check if it's a valid GTAR JSON file (single setlist, backup package, or song list)
       if (file.name.toLowerCase().endsWith('.json')) {
-        try {
+        {
           const parsed = parseBackupJson(text, { mode: 'merge', existingSongs })
+          if (!parsed.isValid) {
+            const preview = previewBackupImport(text)
+            if (!preview.isValid || !preview.importAsNew) throw new Error(preview.error || parsed.error)
+            if (!onSmartMerge) throw new Error('Import as New requires library merge support.')
+            const imported = confirmImportAsNew(preview, { songs: existingSongs, setlists: existingSetlists }, message => window.confirm(message))
+            if (imported) {
+              if (!imported.isValid) throw new Error(imported.error)
+              onSmartMerge(imported.songs, imported.setlists)
+              showFeedback('success', `Imported as new: ${imported.songs.length} songs, ${imported.setlists.length} setlists`)
+            }
+            e.target.value = ''
+            return
+          }
           if (parsed.isValid) {
             // A. Single Setlist package (.json)
             if (parsed.isSingleSetlist && parsed.setlists.length > 0) {
@@ -138,8 +154,6 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               return
             }
           }
-        } catch {
-          // Fall through to loose file content parsing
         }
       }
 

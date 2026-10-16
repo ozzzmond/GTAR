@@ -2190,6 +2190,7 @@ function LibraryApp() {
         onImportSingleSetlist={handleImportSingleSetlist}
         onSmartMerge={handleSmartMerge}
         existingSongs={[...songs, ...deletedSongs]}
+        existingSetlists={setlists}
       />
 
       {/* Backup & Restore Modal Dialog (Export Backup & Restore Backup Smart Merge) */}
@@ -2244,6 +2245,8 @@ function LibraryApp() {
       <JsonBridgeModal
         isOpen={isJsonModalOpen}
         initialTab="export"
+        setlists={setlists}
+        onSmartMerge={handleSmartMerge}
         onClose={() => setIsJsonModalOpen(false)}
         song={currentSong}
         allSongs={[...songs, ...deletedSongs]}

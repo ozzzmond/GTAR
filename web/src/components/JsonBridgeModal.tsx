@@ -1,5 +1,5 @@
 import { generateUUID } from '../utils/uuid'
-import { parseBackupJson } from '../utils/jsonBackup'
+import { previewBackupImport, confirmImportAsNew, type ImportPreview } from '../utils/legacyImport'
 import { readBackupSettings } from '../utils/backupSettings'
 import React, { useState, useRef, useMemo } from 'react'
 import {
@@ -19,6 +19,7 @@ import {
   GTAR_SETLIST_VERSION,
   GTAR_SETLIST_TYPE,
   type ActiveSongState,
+  type WebSetlist,
   type SongEntity,
   type GtarSetlist,
   type GtarBackup,
@@ -30,6 +31,8 @@ interface JsonBridgeModalProps {
   onClose: () => void
   song: ActiveSongState
   allSongs?: ActiveSongState[]
+  setlists?: WebSetlist[]
+  onSmartMerge?: (songs: ActiveSongState[], setlists: WebSetlist[]) => void
   onImportSong: (imported: Partial<ActiveSongState>) => void
   onImportAllSongs?: (importedList: Array<Partial<ActiveSongState>>) => void
 }
@@ -40,6 +43,8 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
   onClose,
   song,
   allSongs,
+  setlists = [],
+  onSmartMerge,
   onImportSong,
   onImportAllSongs,
 }) => {
@@ -52,6 +57,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
   const [importJsonText, setImportJsonText] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
   const [detectedSongs, setDetectedSongs] = useState<Array<Partial<ActiveSongState> & { title: string; content: string }>>([])
+  const [legacyPreview, setLegacyPreview] = useState<ImportPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [exportSetlistId] = useState(generateUUID)
@@ -182,6 +188,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
   const parseJsonData = (text: string) => {
     setImportError(null)
     setDetectedSongs([])
+    setLegacyPreview(null)
 
     const trimmed = text.trim()
     if (!trimmed) {
@@ -202,14 +209,15 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
         }
       }
       const payload = data?.type === 'GTAR_SETLIST' && Array.isArray(data.songs)
-        ? { songs: data.songs.map(adaptSong) }
+        ? { exportType: 'SINGLE_SETLIST', setlist: { ...data, createdAt: typeof data.createdAt === 'string' ? Date.parse(data.createdAt) : data.createdAt, songs: data.songs.map(adaptSong) } }
         : Array.isArray(data) ? data.map(adaptSong)
         : data?.title ? adaptSong(data) : data
-      const parsed = parseBackupJson(JSON.stringify(payload), { mode: 'merge', existingSongs: allSongs ?? [] })
+      const parsed = previewBackupImport(JSON.stringify(payload), { mode: 'merge', existingSongs: allSongs ?? [] })
       if (!parsed.isValid) {
         setImportError(parsed.error || 'Invalid backup')
         return
       }
+      if (parsed.importAsNew) setLegacyPreview(parsed)
       setDetectedSongs(parsed.songs.map(song => ({ ...song, content: song.rawContent })))
     } catch (err: unknown) {
       setImportError(`JSON syntax error: ${err instanceof Error ? err.message : 'Invalid JSON'}`)
@@ -227,6 +235,20 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
       parseJsonData(content)
     }
     reader.readAsText(file)
+  }
+
+  const handleLegacyImport = () => {
+    if (!legacyPreview) return
+    try {
+      if (!onSmartMerge) throw new Error('Import as New requires library merge support. Use Backup & Restore.')
+      const imported = confirmImportAsNew(legacyPreview, { songs: allSongs ?? [], setlists }, message => window.confirm(message))
+      if (!imported) return
+      if (!imported.isValid) throw new Error(imported.error)
+      onSmartMerge(imported.songs, imported.setlists)
+      setLegacyPreview(null)
+      setDetectedSongs([])
+      onClose()
+    } catch (error) { setImportError(error instanceof Error ? error.message : 'Import failed; original data retained.') }
   }
 
   const handleSelectSongToLoad = (item: Partial<ActiveSongState> & { title: string; content: string }) => {
@@ -451,7 +473,13 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
                 </div>
               )}
 
-              {detectedSongs.length > 0 && (
+              {legacyPreview && (
+                <div className="space-y-2">
+                  <p>Legacy backup: {legacyPreview.songs.length} songs, {legacyPreview.setlists.length} setlists. Import as New preserves existing records and trash.</p>
+                  <button type="button" onClick={handleLegacyImport} className="px-3 py-2 rounded-lg bg-app-action text-app-on-action font-bold">Import as New</button>
+                </div>
+              )}
+              {!legacyPreview && detectedSongs.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-app-muted font-mono text-[11px] uppercase">

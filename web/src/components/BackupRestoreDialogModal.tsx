@@ -1,3 +1,4 @@
+import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
 import React, { useRef, useState } from 'react'
 import { CloudUpload, CloudDownload, Download, Copy, Check, AlertCircle, AlertTriangle, X, Database } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -136,7 +137,19 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
       const text = await file.text()
       const parsed = parseBackupJson(text, { mode: isWipeAndReplace ? 'replace' : 'merge', existingSongs: allSongs })
       if (!parsed.isValid) {
-        showFeedback('error', parsed.error || 'Invalid GTAR backup.')
+        const preview = previewBackupImport(text)
+        if (preview.isValid && preview.importAsNew) {
+          if (!onSmartMerge) throw new Error('Import as New requires library merge support.')
+          const imported = confirmImportAsNew(preview, { songs: allSongs, setlists }, message => window.confirm(message))
+          if (imported) {
+            if (!imported.isValid) throw new Error(imported.error)
+            await onSmartMerge(imported.songs, imported.setlists)
+            showFeedback('success', `Imported as new: ${imported.songs.length} songs, ${imported.setlists.length} setlists`)
+          }
+          e.target.value = ''
+          return
+        }
+        showFeedback('error', preview.error || parsed.error || 'Invalid GTAR backup.')
         if (e.target) e.target.value = ''
         return
       }
