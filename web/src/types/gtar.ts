@@ -8,7 +8,7 @@ export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string'
   ? __GTAR_PROD_VERSION__ : '1.1.108';
 declare const __GTAR_DEV_VERSION__: string | null
 export const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string'
-  ? __GTAR_DEV_VERSION__ : '1.0.130-dev.6';
+  ? __GTAR_DEV_VERSION__ : '1.0.136-dev.1';
 
 export interface DevBuildProvenance {
   tagStatus: 'TAGGED' | 'UNTAGGED' | 'UNVERIFIED'
