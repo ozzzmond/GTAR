@@ -252,7 +252,8 @@ test('snapshot succeeds after storage becomes writable without evicting recovery
   for (const [key, raw] of before) {
     if (key !== RESTORE_SNAPSHOT_KEY) assert.equal(storage.getItem(key), raw)
   }
-  assert.equal(map.size, before.length)
+  assert.equal(map.size, before.length + 1)
+  assert.ok([...map].some(([key, raw]) => key.startsWith('gtar_sync_recovery:restore-snapshot:') && raw === new Map(before).get(RESTORE_SNAPSHOT_KEY)))
   assert.equal(calls.removals, 0)
 })
 
@@ -352,7 +353,7 @@ test('wipe & replace flow requires explicit preview confirmation; cancel causes 
   assert.match(document.body.textContent, /Backup & Restore/) // Back to main modal menu
 }))
 
-test('confirmed wipe & replace creates safety snapshot before restore, and clears it on success', withJsdom(async ({ dom, root }) => {
+test('confirmed wipe & replace creates safety snapshot before restore, and retains it on success', withJsdom(async ({ dom, root }) => {
   let fullRestoreCalled = false
   let snapshotExistedDuringRestore = false
   const backupData = JSON.stringify(createBackupPayload([mockSong1, mockTrash], [mockSetlist]))
@@ -391,8 +392,8 @@ test('confirmed wipe & replace creates safety snapshot before restore, and clear
 
   assert.equal(fullRestoreCalled, true)
   assert.equal(snapshotExistedDuringRestore, true, 'Safety snapshot must exist before restore begins')
-  // After restore succeeds, snapshot was handled according to minimum safe recovery policy (cleared)
-  assert.equal(dom.window.localStorage.getItem(RESTORE_SNAPSHOT_KEY), null)
+  // Successful restoration must retain recovery data.
+  assert.equal(getRestoreSafetySnapshot().library.songs[0].id, mockSong2.id)
   assert.match(document.body.textContent, /Backup restored/)
 }))
 
@@ -513,4 +514,188 @@ test('snapshot quota failure is visible and aborts restore without changing reco
     assert.equal(JSON.stringify(library), input)
   }
   assert.equal(calls.removals, 0)
+}))
+
+
+const settingsApi = require('../src/utils/backupSettings.ts')
+const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
+
+async function mountRestore(root, props = {}) {
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    isOpen: true, onClose: () => {}, allSongs: [mockSong2], setlists: [],
+    onImportAllSongs: () => assert.fail('Unexpected fallback import'), ...props,
+  })))
+}
+async function selectBackup(dom, payload, destructive = true) {
+  const label = destructive ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)'
+  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes(label)).click())
+  const input = document.querySelector('input[type="file"]')
+  Object.defineProperty(input, 'files', { configurable: true, value: [{ text: async () => JSON.stringify(payload) }] })
+  await act(async () => input.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
+}
+async function confirmRestore() {
+  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes('Confirm Wipe & Replace')).click())
+}
+function lifecycleSetlists(active) {
+  return Array.from({ length: 21 }, (_, i) => ({
+    ...mockSetlist, id: `set-${i}`, name: `Gig ${i}`, ...(i >= active ? { isDeleted: true } : i % 2 ? { isDeleted: false } : {}),
+  }))
+}
+for (const active of [3, 4, 21, 0]) {
+  test(`preview and roundtrip preserve 21 total / ${active} active / ${21 - active} deleted setlists`, withJsdom(async ({ dom, root }) => {
+    const setlists = lifecycleSetlists(active)
+    const before = JSON.stringify(setlists)
+    const payload = createBackupPayload([mockSong1, mockTrash], setlists)
+    // Metadata supplied by the file must not override actual lifecycle totals.
+    payload.setlistCount = 999
+    const parsed = parseBackupJson(JSON.stringify(payload))
+    assert.equal(parsed.isValid, true, parsed.error)
+    assert.equal(parsed.metadata.setlistCount, 21)
+    assert.equal(parsed.metadata.activeSetlistCount, active)
+    assert.equal(parsed.metadata.deletedSetlistCount, 21 - active)
+    assert.equal(parsed.metadata.activeSetlistCount + parsed.metadata.deletedSetlistCount, parsed.metadata.setlistCount)
+    assert.deepEqual(parsed.setlists, setlists)
+    assert.equal(JSON.stringify(setlists), before)
+    assert.equal(createBackupPayload(parsed.songs, parsed.setlists).setlists.filter(sl => sl.isDeleted).length, 21 - active)
+    await mountRestore(root, { onFullRestore: () => assert.fail('Preview wrote library') })
+    await selectBackup(dom, payload)
+    for (const [label, count] of [['Total Setlists', 21], ['Active Setlists', active], ['Deleted Setlists', 21 - active], ['Active Songs', 1], ['Trash Bin (Archived Songs)', 1]]) {
+      const element = [...document.querySelectorAll('div, span')].find(el => el.textContent === label)
+      assert.ok(element, label)
+      assert.equal(element.parentElement.textContent.replace(label, '').trim(), String(count))
+    }
+  }))
+}
+
+test('search-filtered visible setlists do not change full backup preview totals', withJsdom(async ({ dom, root }) => {
+  const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
+  const setlists = lifecycleSetlists(3)
+  await act(async () => root.render(React.createElement(SongbookHomeView, {
+    songs: [mockSong1], setlists, searchQuery: 'Gig 1', activeSongIndex: 0,
+    onSongMembershipChange: () => true, onCreateSetlistForSong: () => true,
+    onSelectSong: () => {}, onNewSong: () => {}, onOpenSetlists: () => {}, onDeleteSong: () => {},
+  })))
+  assert.match(document.body.textContent, /Gig Setlists \(1 of 21\)/)
+  const payload = createBackupPayload([mockSong1], setlists)
+  await mountRestore(root)
+  await selectBackup(dom, payload)
+  assert.match(document.body.textContent, /Total Setlists21/)
+  assert.match(document.body.textContent, /Active Setlists3/)
+  assert.match(document.body.textContent, /Deleted Setlists18/)
+}))
+
+for (const destructive of [true, false]) {
+  test(`recovery archive rejected without any writes in destructive=${destructive} flow`, withJsdom(async ({ dom, root }) => {
+    let writes = 0
+    const storage = { getItem: () => null, setItem: () => { writes++ }, removeItem: () => assert.fail('Recovery deleted') }
+    await mountRestore(root, { storage, onFullRestore: () => assert.fail('Library replaced'), onSmartMerge: () => assert.fail('Library merged') })
+    // Even a recovery archive with otherwise valid top-level backup arrays is unsupported.
+    await selectBackup(dom, { exportType: 'RECOVERY_ARCHIVE', data: { songs: [mockSong1] }, songs: [mockSong1], setlists: [] }, destructive)
+    assert.match(document.body.textContent, /Recovery archive.*not a supported restore-ready backup/)
+    assert.doesNotMatch(document.body.textContent, /Ready to restore|Confirm Wipe & Replace|Backup restored:/)
+    assert.equal(writes, 0)
+  }))
+}
+
+function completeSettings() {
+  const colors = { bgHex: '#123456', textHex: '#ffffff', chordHex: '#abcdef', sectionHex: '#654321',
+    headerBg: '#112233', actionColor: '#223344', uiLinkText: '#334455',
+    fonts: { ui: { source: 'builtin', family: 'Inter' }, stage: { source: 'builtin', family: 'Fira Code' }, heading: { source: 'system' } } }
+  return { themeMode: 'paper-light', customThemeColors: colors,
+    factoryThemeOverrides: {
+      'paper-light': { ...colors, identity: { factoryId: 'paper-light', displayName: 'My Paper' } },
+      'azure-stage': { ...colors, bgHex: '#445566', identity: { factoryId: 'azure-stage', displayName: 'My Azure' } },
+    }, stageSettings: { fontStyle: 'serif', fontSizePx: 25, isTwoColumn: false, scrollSpeed: 90 } }
+}
+for (const destructive of [true, false]) {
+  test(`modal restores every supported setting and reloads customized factory slots; destructive=${destructive}`, withJsdom(async ({ dom, root }) => {
+    const settings = completeSettings()
+    settingsApi.restoreBackupSettings(settings)
+    const payload = createBackupPayload([mockSong1, mockTrash], [mockSetlist])
+    localStorage.clear()
+    const recoveryKey = 'gtar_sync_recovery:unique'
+    localStorage.setItem(recoveryKey, 'unique recovery bytes')
+    const save = (songs, setlists) => persistLibrary({ songs, setlists })
+    await mountRestore(root, { onFullRestore: save, onSmartMerge: save })
+    await selectBackup(dom, payload, destructive)
+    if (destructive) await confirmRestore()
+    assert.match(document.body.textContent, /Backup restored:/)
+    assert.deepEqual(settingsApi.readBackupSettings(), settings)
+    assert.deepEqual(readPersistedLibrary().setlists, payload.setlists)
+    assert.equal(localStorage.getItem(recoveryKey), 'unique recovery bytes')
+    // Remount from persisted storage and exercise the same theme hydration used on reload.
+    await act(async () => root.render(null))
+    const theme = require('../src/components/ThemeModal.tsx')
+    const hydrated = theme.hydrateThemeSettings()
+    assert.equal(hydrated.mode, settings.themeMode)
+    for (const [slot, palette] of Object.entries(settings.factoryThemeOverrides)) {
+      const resolved = theme.resolveThemePalette(slot, hydrated.standalone)
+      assert.equal(resolved.bgHex, palette.bgHex)
+      assert.deepEqual(resolved.identity, palette.identity)
+      assert.deepEqual(resolved.fonts, palette.fonts)
+    }
+    assert.deepEqual(settingsApi.readBackupSettings(), settings)
+    assert.equal(readPersistedLibrary().songs.length, 2)
+  }))
+}
+
+for (const settings of [{ factoryThemeOverrides: {}, stageSettings: {} }, {}]) {
+  test(`modal preserves intentional empty overrides and legacy absent settings: ${JSON.stringify(settings)}`, withJsdom(async ({ dom, root }) => {
+    const previous = completeSettings()
+    settingsApi.restoreBackupSettings(previous)
+    await mountRestore(root, { onFullRestore: () => {} })
+    await selectBackup(dom, { songs: [mockSong1], setlists: [], ...settings })
+    await confirmRestore()
+    assert.match(document.body.textContent, /Backup restored:/)
+    assert.deepEqual(settingsApi.readBackupSettings(), { ...previous, ...('factoryThemeOverrides' in settings ? { factoryThemeOverrides: {} } : {}) })
+  }))
+}
+
+for (const destructive of [true, false]) {
+  for (const quota of [true, false]) {
+    test(`settings failure after library save reports partial restore; destructive=${destructive}, quota=${quota}`, withJsdom(async ({ dom, root }) => {
+      const map = new Map([['gtar_sync_recovery:unique', 'only copy']])
+      let closed = false
+      let events = 0
+      window.addEventListener(settingsApi.SETTINGS_CHANGED, () => { events++ })
+      const storage = {
+        getItem: key => map.get(key) ?? null,
+        setItem: (key, value) => {
+          if (key === settingsApi.SETTINGS_KEYS.themeMode) throw quota ? new DOMException('Storage full', 'QuotaExceededError') : new Error('Access denied')
+          map.set(key, String(value))
+        },
+        removeItem: () => assert.fail('Recovery data deleted'),
+      }
+      const save = (songs, setlists) => persistLibrary({ songs, setlists }, storage)
+      await mountRestore(root, { storage, onClose: () => { closed = true }, onFullRestore: save, onSmartMerge: save })
+      await selectBackup(dom, { songs: [mockSong1], setlists: [], ...completeSettings() }, destructive)
+      if (destructive) await confirmRestore()
+      assert.match(document.body.textContent, /Partial restore: library saved, but settings restoration failed/)
+      assert.match(document.body.textContent, /Some settings may have been applied/)
+      assert.doesNotMatch(document.body.textContent, /Backup restored:|restore aborted|Confirm Wipe & Replace/)
+      assert.equal(closed, false)
+      assert.equal(events, 0)
+      assert.equal(readPersistedLibrary(storage).songs[0].id, mockSong1.id)
+      assert.deepEqual(JSON.parse(storage.getItem(settingsApi.SETTINGS_KEYS.factoryThemeOverrides)), completeSettings().factoryThemeOverrides)
+      assert.equal(storage.getItem('gtar_sync_recovery:unique'), 'only copy')
+      if (destructive) assert.equal(getRestoreSafetySnapshot(storage).library.songs[0].id, mockSong2.id)
+    }))
+  }
+}
+
+test('stale library write rejects restore before settings change and retains snapshots', withJsdom(async ({ dom, root }) => {
+  persistLibrary({ songs: [mockSong2], setlists: [] })
+  const baseline = localStorage.getItem(LIBRARY_KEY)
+  const external = JSON.stringify({ songs: [mockTrash], setlists: [] })
+  await mountRestore(root, { onFullRestore: (songs, setlists) => {
+    localStorage.setItem(LIBRARY_KEY, external)
+    persistLibrary({ songs, setlists }, localStorage, { expectedRaw: baseline })
+  } })
+  await selectBackup(dom, { songs: [mockSong1], setlists: [], ...completeSettings() })
+  await confirmRestore()
+  assert.match(document.body.textContent, /Persistence rejected to prevent data loss/)
+  assert.doesNotMatch(document.body.textContent, /Backup restored:|Partial restore:/)
+  assert.equal(localStorage.getItem(LIBRARY_KEY), external)
+  assert.deepEqual(settingsApi.readBackupSettings(), {})
+  assert.equal(getRestoreSafetySnapshot().library.songs[0].id, mockSong2.id)
 }))
