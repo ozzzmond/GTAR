@@ -11,7 +11,9 @@ const root = path.resolve(__dirname, '../..')
 const webDir = path.resolve(__dirname, '..')
 
 const { parseDevTag, inspectCheckpoint, main: releaseMetadataMain, HISTORICAL_TAG_EXCEPTIONS } = require('../../.github/release_metadata.cjs')
-const { resolveReleaseIdentity, resolveDevIdentity, resolveDeploymentId } = require('../../.github/release_identity.cjs')
+const { resolveReleaseIdentity, resolveDevIdentity, resolveDeploymentId, getCommittedDevVersion } = require('../../.github/release_identity.cjs')
+const canonicalDevVersion = getCommittedDevVersion(root)
+assert.equal(canonicalDevVersion, '1.0.130-dev.6', 'Canonical DEV metadata must match target DEV.6 release')
 
 const ts = require('typescript')
 for (const ext of ['.ts', '.tsx']) {
@@ -71,7 +73,7 @@ test('STEP_6.2: Exact clean numeric DEV tag resolves exact version and promotabl
     return ''
   }
   const identity = resolveDevIdentity(root, {}, gitMock)
-  assert.equal(identity.version, '1.0.130-dev.4a')
+  assert.equal(identity.version, canonicalDevVersion)
   assert.equal(identity.tag, 'v1.0.130-dev.3')
   assert.equal(identity.tagStatus, 'TAGGED')
   assert.equal(identity.isTagged, true)
@@ -93,7 +95,7 @@ test('STEP_6.3: Lettered DEV tag resolves identity but is non-promotable', () =>
       return ''
     }
     const identity = resolveDevIdentity(root, {}, gitMock)
-    assert.equal(identity.version, '1.0.130-dev.4a')
+    assert.equal(identity.version, canonicalDevVersion)
     assert.equal(identity.tag, tag)
     assert.equal(identity.tagStatus, 'TAGGED')
     assert.equal(identity.isTagged, true)
@@ -115,7 +117,7 @@ test('STEP_6.4: Untagged DEV HEAD resolves version with committed metadata and U
   }
 
   const untaggedIdentity = resolveDevIdentity(root, {}, untaggedGit)
-  assert.equal(untaggedIdentity.version, '1.0.130-dev.4a')
+  assert.equal(untaggedIdentity.version, canonicalDevVersion)
   assert.equal(untaggedIdentity.tagStatus, 'UNTAGGED')
   assert.equal(untaggedIdentity.shortSha, shortSha)
   assert.equal(untaggedIdentity.sha, headSha)
@@ -129,7 +131,7 @@ test('STEP_6.4: Untagged DEV HEAD resolves version with committed metadata and U
 test('STEP_6.5: Missing Git metadata returns deterministic fallback with UNVERIFIED status', () => {
   const failingGit = () => { throw new Error('git not found') }
   const fallback = resolveDevIdentity(root, {}, failingGit)
-  assert.equal(fallback.version, '1.0.130-dev.4a')
+  assert.equal(fallback.version, canonicalDevVersion)
   assert.equal(fallback.tagStatus, 'UNVERIFIED')
   assert.equal(fallback.isTagged, false)
   assert.equal(fallback.tag, null)
@@ -315,7 +317,7 @@ test('STEP_6.13: Regression: untagged build is unaffected even when physical HEA
   assert.equal(untagged.isTagged, false)
   assert.equal(untagged.tagStatus, 'UNTAGGED')
   assert.equal(untagged.tag, null)
-  assert.equal(untagged.version, '1.0.130-dev.4a')
+  assert.equal(untagged.version, canonicalDevVersion)
   assert.equal(untagged.promotable, false)
   assert.ok(!untagged.version.includes('untagged-'), 'Untagged resolution uses deterministic committed version')
 
@@ -329,13 +331,13 @@ test('STEP_6.13: Regression: untagged build is unaffected even when physical HEA
     assert.ok(live.tag)
     const validTags = physicalTags.split('\n').map(t => t.trim()).filter(Boolean)
     assert.ok(validTags.includes(live.tag), `Resolved tag ${live.tag} must belong to tags pointing at HEAD: ${validTags.join(', ')}`)
-    assert.equal(live.version, '1.0.130-dev.4a')
+    assert.equal(live.version, canonicalDevVersion)
   } else {
     const live = resolveDevIdentity(root)
     assert.equal(live.isTagged, false)
     assert.equal(live.tagStatus, 'UNTAGGED')
     assert.equal(live.tag, null)
-    assert.equal(live.version, '1.0.130-dev.4a')
+    assert.equal(live.version, canonicalDevVersion)
   }
 
   // Isolated tag contexts: verify behavior in DEV.4 and DEV.4a tag contexts
@@ -566,7 +568,7 @@ test('STEP_6.17: Cloudflare DEV build with missing local Git tags resolves verif
     CF_PAGES_COMMIT_SHA: sha
   }, gitMock)
 
-  assert.equal(identity.version, '1.0.130-dev.4a')
+  assert.equal(identity.version, canonicalDevVersion)
   assert.equal(identity.tagStatus, 'TAGGED')
   assert.equal(identity.tag, 'v1.0.130-dev.3b')
   assert.equal(identity.sha, sha)
@@ -595,7 +597,7 @@ test('STEP_6.18: Cloudflare DEV build on genuinely untagged commit falls back to
     CF_PAGES_COMMIT_SHA: untaggedSha
   }, gitMock)
 
-  assert.equal(identity.version, '1.0.130-dev.4a')
+  assert.equal(identity.version, canonicalDevVersion)
   assert.equal(identity.tagStatus, 'UNTAGGED')
   assert.equal(identity.tag, null)
   assert.equal(identity.sha, untaggedSha)
@@ -625,7 +627,7 @@ test('STEP_6.19: Cloudflare DEV build with stabilization pair prefers clean nume
     CF_PAGES_COMMIT_SHA: stabSha
   }, gitMock)
 
-  assert.equal(identDefault.version, '1.0.130-dev.4a')
+  assert.equal(identDefault.version, canonicalDevVersion)
   assert.equal(identDefault.tagStatus, 'TAGGED')
   assert.equal(identDefault.tag, 'v1.0.130-dev.4')
   assert.equal(identDefault.isTagged, true)
@@ -639,7 +641,7 @@ test('STEP_6.19: Cloudflare DEV build with stabilization pair prefers clean nume
     REQUESTED_TAG: 'v1.0.130-dev.3a'
   }, gitMock)
 
-  assert.equal(identReq.version, '1.0.130-dev.4a')
+  assert.equal(identReq.version, canonicalDevVersion)
   assert.equal(identReq.tagStatus, 'TAGGED')
   assert.equal(identReq.tag, 'v1.0.130-dev.3a')
   assert.equal(identReq.isTagged, true)
@@ -666,7 +668,7 @@ test('STEP_6.20: Untrusted or mismatched tag or SHA fails closed with UNVERIFIED
     CF_PAGES_BRANCH: 'dev',
     CF_PAGES_COMMIT_SHA: '0000000000000000000000000000000000000000'
   }, gitMock)
-  assert.equal(mismatchSha.version, '1.0.130-dev.4a')
+  assert.equal(mismatchSha.version, canonicalDevVersion)
   assert.equal(mismatchSha.tagStatus, 'UNVERIFIED')
   assert.equal(mismatchSha.tag, null)
   assert.equal(mismatchSha.isTagged, false)
@@ -678,7 +680,7 @@ test('STEP_6.20: Untrusted or mismatched tag or SHA fails closed with UNVERIFIED
     CF_PAGES_COMMIT_SHA: headSha,
     REQUESTED_TAG: 'v1.0.130-dev.1' // Points to different SHA
   }, gitMock)
-  assert.equal(mismatchReq.version, '1.0.130-dev.4a')
+  assert.equal(mismatchReq.version, canonicalDevVersion)
   assert.equal(mismatchReq.tagStatus, 'UNTAGGED')
   assert.equal(mismatchReq.tag, null)
   assert.equal(mismatchReq.isTagged, false)
@@ -701,7 +703,7 @@ test('STEP_6.21: Unavailable GitHub verification gracefully falls back to UNVERI
     CF_PAGES_COMMIT_SHA: headSha
   }, gitMock)
 
-  assert.equal(identity.version, '1.0.130-dev.4a')
+  assert.equal(identity.version, canonicalDevVersion)
   assert.equal(identity.tagStatus, 'UNVERIFIED')
   assert.equal(identity.isTagged, false)
   assert.equal(identity.tag, null)
@@ -745,7 +747,7 @@ test('STEP_6.23: Header formatting helpers format diagnostics and versions accur
 // STEP_6.24: Live un-mocked canonical verification for current HEAD
 test('STEP_6.24: Live un-mocked canonical verification for current HEAD', () => {
   const live = resolveDevIdentity(root)
-  assert.equal(live.version, '1.0.130-dev.4a')
+  assert.equal(live.version, canonicalDevVersion)
   assert.ok(['TAGGED', 'UNTAGGED', 'UNVERIFIED'].includes(live.tagStatus))
 })
 
@@ -786,11 +788,11 @@ test('STEP_8.2: Deployment identity is independent of application version', () =
   }
 
   const withDep = resolveDevIdentity(root, { CF_PAGES_DEPLOYMENT_ID: '55d0cc6b' }, gitMock)
-  assert.equal(withDep.version, '1.0.130-dev.4a')
+  assert.equal(withDep.version, canonicalDevVersion)
   assert.equal(withDep.deploymentId, '55d0cc6b')
 
   const withoutDep = resolveDevIdentity(root, {}, gitMock)
-  assert.equal(withoutDep.version, '1.0.130-dev.4a')
+  assert.equal(withoutDep.version, canonicalDevVersion)
   assert.equal(withoutDep.deploymentId, null)
 })
 
