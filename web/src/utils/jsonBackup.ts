@@ -1,3 +1,4 @@
+import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION } from '../types/gtar'
@@ -47,7 +48,7 @@ export interface ParsedBackupResult extends BackupSettings {
 export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: string }): ActiveSongState {
   const rawContent = s.rawContent ?? s.content ?? ''
   return {
-    id: s.id ?? generateUUID(), title: s.title!, artist: s.artist ?? '',
+    id: s.id === undefined ? generateUUID() : (typeof s.id === 'string' ? s.id.trim() : s.id), title: s.title!, artist: s.artist ?? '',
     key: canonicalSongKey(s.key ?? detectSongKey(rawContent)),
     ...(s.originalKey !== undefined && s.originalKey !== null ? { originalKey: canonicalSongKey(s.originalKey) } : {}),
     capo: s.capo ?? '', bpm: s.bpm ?? '120',
@@ -199,7 +200,7 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     const setlistIds = new Set<string>()
     sourceSetlists.forEach((sl, i) => {
       if (sl && typeof sl === 'object' && 'id' in sl && sl.id !== undefined && sl.id !== null) {
-        const idStr = String(sl.id)
+        const idStr = canonicalImportId(sl.id)
         if (setlistIds.has(idStr)) {
           errors.push(`setlists[${i}].id: duplicate setlist ID`)
         }
@@ -207,19 +208,38 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       }
     })
     if (errors.length) return invalid(errors, single)
+    if (single) {
+      // Embedded exports may repeat an ordered song reference. Share the song
+      // only when both the original ID representation and complete chart agree.
+      const unique = new Map<string, Partial<ActiveSongState>>()
+      for (const song of sourceSongs) {
+        const id = canonicalImportId(song.id)
+        const previous = unique.get(id)
+        if (previous && (previous.id !== song.id || JSON.stringify(normalizeBackupSong(previous)) !== JSON.stringify(normalizeBackupSong(song)))) {
+          return invalid([`Embedded song canonical ID collision (${id}); conflicting chart revisions require explicit resolution.`], true)
+        }
+        unique.set(id, song)
+      }
+      sourceSongs = [...unique.values()]
+    }
+    assertImportIds(sourceSongs, 'Imported songs')
+    assertImportIds(single ? [data.setlist] : sourceSetlists, 'Imported setlists')
     const songs = sourceSongs.map(normalizeBackupSong)
     const ids = new Set<string>()
     songs.forEach((song, i) => {
       if (ids.has(String(song.id))) errors.push(`songs[${i}].id: duplicate song ID`)
       ids.add(String(song.id))
     })
-    const setlists: WebSetlist[] = single ? [{ ...data.setlist, id: data.setlist.id ?? generateUUID(),
+    const setlists: WebSetlist[] = single ? [{ ...data.setlist, id: canonicalImportId(data.setlist.id),
       ...(data.setlist.isDeleted !== undefined ? { isDeleted: Boolean(data.setlist.isDeleted) } : {}),
-      songs: songs.map(song => ({ id: song.id, title: song.title, artist: song.artist })) }] : sourceSetlists.map(setlist => ({
+      songs: (data.setlist.songs as ActiveSongState[]).map(ref => {
+        const song = songs.find(item => canonicalImportId(item.id) === canonicalImportId(ref.id))!
+        return { id: song.id, title: song.title, artist: song.artist }
+      }) }] : sourceSetlists.map(setlist => ({
         ...setlist,
-        id: setlist.id ?? generateUUID(),
+        id: canonicalImportId(setlist.id),
         ...(setlist.isDeleted !== undefined ? { isDeleted: Boolean(setlist.isDeleted) } : {}),
-        songs: setlist.songs.map(ref => ({ ...ref })) }))
+        songs: setlist.songs.map(ref => ({ ...ref, ...(ref.id !== undefined ? { id: canonicalImportId(ref.id) } : {}) })) }))
     const combined = options.mode === 'merge'
       ? [...songs, ...(options.existingSongs ?? []).filter(song => !ids.has(String(song.id)))] : songs
     // Resolve title-only legacy references within the incoming backup first, so

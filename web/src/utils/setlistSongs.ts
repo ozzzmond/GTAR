@@ -1,3 +1,4 @@
+import { assertSongLifecycle } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
@@ -36,8 +37,9 @@ export function partitionSongs(songs: ActiveSongState[]) {
   return { active: songs.filter(song => !song.isDeleted), deleted: songs.filter(song => song.isDeleted) }
 }
 
-/** Reserve exact IDs first; legacy identity matches may only use unclaimed slots. */
+/** Stable IDs alone select merge targets; lifecycle disagreements abort. */
 export function mergeBackupLibrary(existing: ActiveSongState[], incoming: ActiveSongState[], setlists: WebSetlist[]) {
+  assertSongLifecycle(existing, incoming)
   const original = ensureSongIds(existing)
   const imported = ensureSongIds(incoming)
   const existingById = new Map<string, number>()
@@ -55,35 +57,13 @@ export function mergeBackupLibrary(existing: ActiveSongState[], incoming: Active
 
   // Phase 1: reserve every exact-ID target before looking at titles or artists.
   const targets = new Map<number, number>()
-  const reserved = new Set<number>()
   imported.forEach((song, index) => {
     const target = existingById.get(String(song.id))
     if (target !== undefined) {
       targets.set(index, target)
-      reserved.add(target)
     }
   })
 
-  // Phase 2: compare immutable snapshots. Only unique, unbound identities dedupe.
-  const unboundByIdentity = new Map<string, number[]>()
-  imported.forEach((song, index) => {
-    if (targets.has(index)) return
-    const key = songIdentity(song)
-    unboundByIdentity.set(key, [...(unboundByIdentity.get(key) ?? []), index])
-  })
-  const availableByIdentity = new Map<string, number[]>()
-  original.forEach((song, index) => {
-    if (reserved.has(index)) return
-    const key = songIdentity(song)
-    availableByIdentity.set(key, [...(availableByIdentity.get(key) ?? []), index])
-  })
-  for (const [identity, indices] of unboundByIdentity) {
-    const available = availableByIdentity.get(identity) ?? []
-    if (indices.length === 1 && available.length === 1) {
-      targets.set(indices[0], available[0])
-      reserved.add(available[0])
-    }
-  }
   let nextSlot = original.length
   imported.forEach((_, index) => {
     if (!targets.has(index)) targets.set(index, nextSlot++)

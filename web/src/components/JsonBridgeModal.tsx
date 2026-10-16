@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid'
 import { parseBackupJson } from '../utils/jsonBackup'
 import { readBackupSettings } from '../utils/backupSettings'
 import React, { useState, useRef, useMemo } from 'react'
@@ -53,6 +54,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
   const [detectedSongs, setDetectedSongs] = useState<Array<Partial<ActiveSongState> & { title: string; content: string }>>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [exportSetlistId] = useState(generateUUID)
   const [exportTimestamp] = useState(() => Date.now())
 
   // Generate Song Room Entity, Setlist, and Full GTAR Backup payloads matching Android v1.0.42
@@ -62,7 +64,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
 
     // 1. Native SongEntity (.json)
     const songEntity: SongEntity = {
-      id: song.id || 0,
+      id: song.id ?? 0,
       title: song.title || 'Untitled Song',
       artist: song.artist || '',
       key: song.key || '',
@@ -102,7 +104,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
         exportTimestamp,
       },
       songs: songList.map((s, idx) => ({
-        id: s.id || idx + 1,
+        id: s.id ?? idx + 1,
         title: s.title || 'Untitled Song',
         artist: s.artist || '',
         key: s.key || '',
@@ -118,9 +120,11 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
       })),
       setlists: [
         {
+          id: exportSetlistId,
           name: setlistName.trim() || 'GTAR Setlist',
           createdAt: exportTimestamp,
           songs: songList.map((s, idx) => ({
+            id: s.id,
             title: s.title || 'Untitled Song',
             artist: s.artist || '',
             position: idx,
@@ -130,7 +134,7 @@ export const JsonBridgeModal: React.FC<JsonBridgeModalProps> = ({
     }
 
     return { songRoomPayload: songEntity, setlistPayload: gtarSetlist, backupPayload: gtarBackup }
-  }, [song, allSongs, setlistName, exportTimestamp, isOpen])
+  }, [song, allSongs, setlistName, exportTimestamp, exportSetlistId, isOpen])
 
   if (!isOpen) return null
 

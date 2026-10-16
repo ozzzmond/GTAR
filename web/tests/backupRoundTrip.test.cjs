@@ -42,7 +42,8 @@ test('download/clipboard payload, normalization and merge preserve metadata and 
   const result = parse(exported)
   assert.equal(result.isValid, true, result.error)
   for (const key of ['id', 'tags', 'isFavorite', 'isDeleted', 'createdAt', 'lastOpenedAt']) assert.equal(result.songs[0][key], metadata[key])
-  const merged = mergeBackupLibrary([normalizeBackupSong(song)], result.songs, result.setlists)
+  assert.throws(() => mergeBackupLibrary([normalizeBackupSong(song)], result.songs, result.setlists), /lifecycle conflict/)
+  const merged = mergeBackupLibrary([], result.songs, result.setlists)
   assert.equal(partitionSongs(merged.songs).active.length, 0)
   assert.equal(partitionSongs(merged.songs).deleted[0].isFavorite, true)
   assert.equal(parse(createSingleSetlistPayload(setlist, result.songs)).songs[0].tags, metadata.tags)
@@ -66,11 +67,11 @@ test('legacy binding survives title/artist edits and preserves queue order and c
   assert.equal(createSingleSetlistPayload(again[0], [renamed, other]).setlist.songs[0].rawContent, renamed.rawContent)
 })
 
-test('merge rebinds incoming IDs when an existing legacy identity is deduplicated', () => {
+test('merge preserves distinct IDs despite identical names', () => {
   const incoming = { ...song, id: 'import-id', tags: 'preserved' }
   const merged = mergeBackupLibrary([song], [incoming], [{ ...setlist, songs: [{ ...setlist.songs[0], id: incoming.id }] }])
-  assert.equal(merged.songs.length, 1)
-  assert.equal(merged.setlists[0].songs[0].id, song.id)
+  assert.equal(merged.songs.length, 2)
+  assert.equal(merged.setlists[0].songs[0].id, incoming.id)
   assert.equal(resolveSetlistSong(merged.setlists[0].songs[0], merged.songs).tags, 'preserved')
 })
 
@@ -136,14 +137,11 @@ test('network failure never selects a substring-matched song or unrelated source
   }
 })
 
-test('legacy Android merge resolves incoming references before matching existing library', () => {
-  const incoming = { title: song.title, artist: song.artist, rawContent: '[G]Backup', tags: 'Imported' }
-  const result = parse({ songs: [incoming], setlists: [{ ...setlist, songs: [{ title: song.title }] }] }, { mode: 'merge', existingSongs: [song] })
-  assert.equal(result.isValid, true, result.error)
-  const merged = mergeBackupLibrary([song], result.songs, result.setlists)
-  assert.equal(merged.songs.length, 1)
-  assert.equal(merged.setlists[0].songs[0].id, song.id)
-  assert.equal(resolveSetlistSong(merged.setlists[0].songs[0], merged.songs).rawContent, '[G]Backup')
+test('ID-less Android backup requires explicit identity resolution', () => {
+  const incoming = { title: song.title, artist: song.artist, rawContent: '[G]Backup' }
+  const result = parse({ songs: [incoming], setlists: [setlist] }, { mode: 'merge', existingSongs: [song] })
+  assert.equal(result.isValid, false)
+  assert.match(result.error, /Stable ID required/)
 })
 
 test('distinct incoming IDs with the same name stay distinct during merge', () => {

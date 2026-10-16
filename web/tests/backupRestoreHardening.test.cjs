@@ -125,7 +125,7 @@ test('existing duplicate song ID and setlist reference validation remain enforce
     setlists: [],
   }))
   assert.equal(dupSong.isValid, false)
-  assert.match(dupSong.error, /songs\[1\]\.id: duplicate song ID/)
+  assert.match(dupSong.error, /canonical ID collision/)
 
   // Missing setlist reference
   const missingRef = parseBackupJson(JSON.stringify({

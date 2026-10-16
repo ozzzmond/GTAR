@@ -27,6 +27,8 @@ export interface BandSyncPayload extends Partial<ActiveSongState> {
   isAutoScrolling?: boolean
   scrollSpeed?: number
   disconnecting?: boolean
+  setlistId?: string | number
+  setlistDeleted?: boolean
   setlistName?: string
   songs?: Array<Partial<ActiveSongState>>
 }
@@ -484,6 +486,8 @@ class BandSyncEngine {
         senderId: 'android_leader',
         role: 'HOST',
         payload: {
+          setlistId: data.setlistId,
+          setlistDeleted: data.setlistDeleted,
           setlistName: data.setlistName || 'Band Setlist',
           songs: Array.isArray(data.songs) ? data.songs : [],
         },
@@ -666,13 +670,14 @@ class BandSyncEngine {
     }
   }
 
-  public broadcastSetlist(setlistName: string, songs: Array<Partial<ActiveSongState> & { content?: string }>) {
+  public broadcastSetlist(setlistName: string, songs: Array<Partial<ActiveSongState> & { content?: string }>, setlistId?: string | number) {
     // Members must purely be receivers/followers and never broadcast setlists to the Leader over WebSocket
     if (this.role !== 'HOST') {
       console.warn('BandSync: Followers/members cannot broadcast setlists to the Leader.')
       return
     }
     const formattedSongs = songs.map((s) => ({
+      id: s.id,
       title: s.title || '',
       artist: s.artist || '',
       key: s.key || '',
@@ -683,6 +688,7 @@ class BandSyncEngine {
     }))
     const payload = {
       type: 'SETLIST_SYNC',
+      setlistId,
       setlistName: setlistName || 'Band Setlist',
       songs: formattedSongs,
     }

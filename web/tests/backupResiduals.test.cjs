@@ -35,14 +35,14 @@ for (const reverse of [false, true]) {
   })
 }
 
-test('legacy deduplication claims only unreserved slots and never applies updates to its lookup snapshot', () => {
+test('independent IDs never claim same-name slots', () => {
   const a = makeSong('A', 'First', 'old A')
   const c = makeSong('C', 'Second', 'old C')
   const incoming = [makeSong('B', 'Second', 'new C'), makeSong('A', 'Second', 'new A')]
   const merged = mergeBackupLibrary([a, c], incoming, [{ id: 'gig', name: 'Gig', songs: incoming.map(ref) }])
-  assert.deepEqual(merged.setlists[0].songs.map(item => item.id), ['C', 'A'])
-  assert.deepEqual(merged.songs.map(song => song.rawContent), ['new A', 'new C'])
-  assert.throws(() => mergeBackupLibrary([a], [a, a], []), /duplicate song ID/)
+  assert.deepEqual(merged.setlists[0].songs.map(item => item.id), ['B', 'A'])
+  assert.deepEqual(merged.songs.map(song => song.rawContent), ['new A', 'old C', 'new C'])
+  assert.throws(() => mergeBackupLibrary([a], [a, a], []), /canonical ID collision/)
 })
 
 test('full backup rejects unresolved references and preserves originals until songs are restored', () => {
@@ -81,7 +81,7 @@ test('UUID helper uses native randomUUID with the correct receiver', () => {
   withCrypto(source, () => assert.equal(generateUUID(), 'native-id'))
 })
 
-test('LAN HTTP without randomUUID uses random bytes and imports songs and setlists', () => {
+test('LAN HTTP without randomUUID uses random bytes; ID-less imports abort', () => {
   let count = 0
   const source = { getRandomValues(bytes) {
     assert.equal(this, source)
@@ -94,14 +94,11 @@ test('LAN HTTP without randomUUID uses random bytes and imports songs and setlis
     assert.match(uuid, uuidV4)
     assert.equal(uuid, '01ffffff-ffff-4fff-bfff-ffffffffffff')
     const parsed = parseBackupJson(JSON.stringify({ songs: [{ title: 'LAN', rawContent: 'chart' }], setlists: [{ name: 'LAN Gig', songs: [{ title: 'LAN' }] }] }))
-    assert.equal(parsed.isValid, true, parsed.error)
-    assert.match(parsed.songs[0].id, uuidV4)
-    assert.match(parsed.setlists[0].id, uuidV4)
-    assert.equal(parsed.setlists[0].songs[0].id, parsed.songs[0].id)
-    assert.notEqual(parsed.setlists[0].id, parsed.songs[0].id)
+    assert.equal(parsed.isValid, false)
+    assert.match(parsed.error, /Stable ID required/)
     assert.match(ensureSongIds([{ title: 'Legacy', rawContent: '' }])[0].id, uuidV4)
     const single = parseBackupJson('{"exportType":"SINGLE_SETLIST","setlist":{"name":"Gig","songs":[{"title":"Song","rawContent":"chart"}]}}')
-    assert.equal(single.isValid, true, single.error)
+    assert.equal(single.isValid, false)
   })
 })
 
