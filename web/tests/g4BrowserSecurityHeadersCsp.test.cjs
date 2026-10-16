@@ -51,6 +51,17 @@ function parseHeadersFile(content) {
   return rules
 }
 
+function parseCspSources(csp) {
+  const directives = new Map()
+  for (const directive of csp.split(';')) {
+    const [name, ...sources] = directive.trim().split(/\s+/)
+    if (!name) continue
+    assert.ok(!directives.has(name), `Duplicate CSP directive: ${name}`)
+    directives.set(name, new Set(sources))
+  }
+  return directives
+}
+
 function createMockDb(users = [], shares = new Map(), songbooks = new Map()) {
   return {
     prepare(sql) {
@@ -130,25 +141,27 @@ test('1. STATIC_HEADERS_FILE_COVERAGE: Cloudflare Pages _headers definition inte
   const csp = globalHeaders['Content-Security-Policy-Report-Only']
   assert.ok(csp, 'Content-Security-Policy-Report-Only must be defined')
 
+  const directives = parseCspSources(csp)
+
   // Check required directives
-  assert.ok(csp.includes("default-src 'self'"), 'default-src must be self')
-  assert.ok(csp.includes("script-src 'self' https://accounts.google.com https://apis.google.com"), 'script-src must explicitly permit GIS')
-  assert.ok(csp.includes("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com"), 'style-src must allow inline CSS variables and Google Fonts')
-  assert.ok(csp.includes("font-src 'self' data: https://fonts.gstatic.com"), 'font-src must permit Google Fonts CDN and data URIs')
-  assert.ok(csp.includes("img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com https://ssl.gstatic.com"), 'img-src must permit data QR, blobs, and Google avatars')
-  assert.ok(csp.includes("connect-src 'self' https://accounts.google.com https://www.googleapis.com ws: wss:"), 'connect-src must permit GIS, OAuth userinfo, and BandSync WebSockets')
-  assert.ok(csp.includes("frame-src https://accounts.google.com"), 'frame-src must permit GIS One-Tap/FedCM iframes')
-  assert.ok(csp.includes("frame-ancestors 'none'"), "frame-ancestors must be 'none'")
-  assert.ok(csp.includes("object-src 'none'"), "object-src must be 'none'")
-  assert.ok(csp.includes("base-uri 'self'"), "base-uri must be 'self'")
-  assert.ok(csp.includes("form-action 'self'"), "form-action must be 'self'")
-  assert.ok(csp.includes("worker-src 'self' blob:"), "worker-src must allow service worker and blobs")
-  assert.ok(csp.includes("manifest-src 'self'"), "manifest-src must allow web app manifest")
+  assert.deepEqual(directives.get('default-src'), new Set(["'self'"]), 'default-src must be self')
+  assert.deepEqual(directives.get('script-src'), new Set(["'self'", 'https://accounts.google.com', 'https://apis.google.com']), 'script-src must explicitly permit GIS')
+  assert.deepEqual(directives.get('style-src'), new Set(["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com']), 'style-src must allow inline CSS variables and Google Fonts')
+  assert.deepEqual(directives.get('font-src'), new Set(["'self'", 'data:', 'https://fonts.gstatic.com']), 'font-src must permit Google Fonts CDN and data URIs')
+  assert.deepEqual(directives.get('img-src'), new Set(["'self'", 'data:', 'blob:', 'https://*.googleusercontent.com', 'https://accounts.google.com', 'https://ssl.gstatic.com']), 'img-src must permit data QR, blobs, and Google avatars')
+  assert.deepEqual(directives.get('connect-src'), new Set(["'self'", 'https://accounts.google.com', 'https://www.googleapis.com', 'ws:', 'wss:']), 'connect-src must permit GIS, OAuth userinfo, and BandSync WebSockets')
+  assert.deepEqual(directives.get('frame-src'), new Set(['https://accounts.google.com']), 'frame-src must permit GIS One-Tap/FedCM iframes')
+  assert.deepEqual(directives.get('frame-ancestors'), new Set(["'none'"]), "frame-ancestors must be 'none'")
+  assert.deepEqual(directives.get('object-src'), new Set(["'none'"]), "object-src must be 'none'")
+  assert.deepEqual(directives.get('base-uri'), new Set(["'self'"]), "base-uri must be 'self'")
+  assert.deepEqual(directives.get('form-action'), new Set(["'self'"]), "form-action must be 'self'")
+  assert.deepEqual(directives.get('worker-src'), new Set(["'self'", 'blob:']), "worker-src must allow service worker and blobs")
+  assert.deepEqual(directives.get('manifest-src'), new Set(["'self'"]), "manifest-src must allow web app manifest")
 
   // Strictness guards
-  assert.ok(!csp.includes("'unsafe-eval'"), 'Must NOT contain unsafe-eval')
-  assert.ok(!csp.includes("script-src *"), 'Must NOT wildcard script-src')
-  assert.ok(!csp.includes("connect-src *"), 'Must NOT wildcard connect-src')
+  assert.ok(![...directives.values()].some((sources) => sources.has("'unsafe-eval'")), 'Must NOT contain unsafe-eval')
+  assert.ok(!directives.get('script-src').has('*'), 'Must NOT wildcard script-src')
+  assert.ok(!directives.get('connect-src').has('*'), 'Must NOT wildcard connect-src')
 
   // Cache-Control for PWA lifecycle assets
   assert.ok(rules.has('/index.html'), 'Must configure /index.html')
@@ -436,23 +449,24 @@ test('6. COMPATIBILITY_GUARDS: Preserves Google Auth, QR, StageCast, and BandSyn
   const content = fs.readFileSync(headersPath, 'utf8')
   const rules = parseHeadersFile(content)
   const csp = rules.get('/*')['Content-Security-Policy-Report-Only']
-  assert.ok(csp.includes('img-src') && csp.includes('data:'), 'CSP must allow data: in img-src for QR codes')
+  const directives = parseCspSources(csp)
+  assert.ok(directives.get('img-src').has('data:'), 'CSP must allow data: in img-src for QR codes')
 
   // 2. Google Identity Services script & frame compatibility
-  assert.ok(csp.includes('script-src') && csp.includes('https://accounts.google.com'), 'CSP must allow accounts.google.com in script-src')
-  assert.ok(csp.includes('frame-src') && csp.includes('https://accounts.google.com'), 'CSP must allow accounts.google.com in frame-src')
-  assert.ok(csp.includes('connect-src') && csp.includes('https://accounts.google.com'), 'CSP must allow accounts.google.com in connect-src')
-  assert.ok(csp.includes('connect-src') && csp.includes('https://www.googleapis.com'), 'CSP must allow www.googleapis.com in connect-src')
+  assert.ok(directives.get('script-src').has('https://accounts.google.com'), 'CSP must allow accounts.google.com in script-src')
+  assert.ok(directives.get('frame-src').has('https://accounts.google.com'), 'CSP must allow accounts.google.com in frame-src')
+  assert.ok(directives.get('connect-src').has('https://accounts.google.com'), 'CSP must allow accounts.google.com in connect-src')
+  assert.ok(directives.get('connect-src').has('https://www.googleapis.com'), 'CSP must allow www.googleapis.com in connect-src')
 
   // 3. BandSync WebSocket compatibility
-  assert.ok(csp.includes('connect-src') && csp.includes('ws:') && csp.includes('wss:'), 'CSP must allow ws: and wss: for local leader BandSync')
+  assert.ok(directives.get('connect-src').has('ws:') && directives.get('connect-src').has('wss:'), 'CSP must allow ws: and wss: for local leader BandSync')
 
   // 4. Google Fonts CDN compatibility
-  assert.ok(csp.includes('style-src') && csp.includes('https://fonts.googleapis.com'), 'CSP must allow fonts.googleapis.com in style-src')
-  assert.ok(csp.includes('font-src') && csp.includes('https://fonts.gstatic.com'), 'CSP must allow fonts.gstatic.com in font-src')
+  assert.ok(directives.get('style-src').has('https://fonts.googleapis.com'), 'CSP must allow fonts.googleapis.com in style-src')
+  assert.ok(directives.get('font-src').has('https://fonts.gstatic.com'), 'CSP must allow fonts.gstatic.com in font-src')
 
   // 5. Google Avatar photos compatibility
-  assert.ok(csp.includes('img-src') && csp.includes('https://*.googleusercontent.com'), 'CSP must allow *.googleusercontent.com in img-src')
+  assert.ok(directives.get('img-src').has('https://*.googleusercontent.com'), 'CSP must allow *.googleusercontent.com in img-src')
 
   // 6. Stage teleprompter fullscreen and screen wake-lock permissions
   const perm = rules.get('/*')['Permissions-Policy']
@@ -461,5 +475,5 @@ test('6. COMPATIBILITY_GUARDS: Preserves Google Auth, QR, StageCast, and BandSyn
 
   // 7. Clickjacking frame protection
   assert.equal(rules.get('/*')['X-Frame-Options'], 'DENY')
-  assert.ok(csp.includes("frame-ancestors 'none'"), "CSP must set frame-ancestors 'none'")
+  assert.deepEqual(directives.get('frame-ancestors'), new Set(["'none'"]), "CSP must set frame-ancestors 'none'")
 })
