@@ -95,6 +95,19 @@ test('App lifecycle commits valid complete libraries and rejected persistence ke
  try{
   const App=require('../src/App.tsx').default
   await actCall(()=>root.render(React.createElement(App)))
+  const unload = () => { const event=new window.Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented }
+  assert.equal(unload(),false)
+  const durableBefore=localStorage.getItem('gtar_library_v1')
+  window.Storage.prototype.setItem=function(k,v){if(k==='gtar_library_v1')throw Object.assign(Error('full'),{name:'QuotaExceededError'});return storageSet.call(this,k,v)}
+  await actCall(()=>home.onRenameSetlist(setlists[0].id,'Unsaved gig'))
+  assert.equal(home.setlists[0].name,'Unsaved gig','Failed effect persistence must retain the in-memory edit')
+  assert.equal(localStorage.getItem('gtar_library_v1'),durableBefore)
+  assert.equal(unload(),true,'Refresh must warn for failed persistence outside the editor')
+  window.Storage.prototype.setItem=storageSet
+  await actCall(()=>home.onRenameSetlist(setlists[0].id,'Saved gig'))
+  assert.equal(valid().setlists[0].name,'Saved gig')
+  assert.equal(unload(),false,'A verified retry clears the refresh guard')
+  await actCall(()=>home.onRenameSetlist(setlists[0].id,setlists[0].name))
   await actCall(()=>home.onDeleteSong(0))
   assert.deepEqual(valid().setlists,setlists)
   assert.equal(home.songs.length,1);assert.equal(header.deletedSongsCount,1)

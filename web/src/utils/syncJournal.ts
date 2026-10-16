@@ -366,7 +366,6 @@ export function retireRepresentedCloudSnapshots(storage: Storage = localStorage)
 }
 
 export function performStorageHousekeeping(storage: Storage = localStorage) {
-  retireRepresentedCloudSnapshots(storage)
   const retired = retireDriveSyncState(storage)
   try { prunePersistedLogs(storage, 30) } catch { /* Storage unavailable */ }
   return retired
@@ -386,47 +385,59 @@ export function persistLibrary(
     }))
   }
 
+  const payload = JSON.stringify(canonicalized)
   const currentRaw = storage.getItem(LIBRARY_KEY)
   const hasExpected = options?.expectedRaw !== undefined
   const expectedRaw = options?.expectedRaw
-
-  if (!options?.force && hasExpected) {
-    if (currentRaw !== expectedRaw) {
-      let isIdentical = false
-      if (currentRaw !== null) {
-        try {
-          const parsed = JSON.parse(currentRaw)
-          if (same(parsed, canonicalized)) {
-            isIdentical = true
-          }
-        } catch {
-          // Unparseable external storage must not be overwritten
-        }
-      }
-      if (!isIdentical) {
-        throw new StaleWriteConflictError(
-          'Songbook library was updated in another tab or instance. Persistence rejected to prevent data loss.',
-          currentRaw,
-          canonicalized
-        )
-      }
-    }
+  let isIdentical = currentRaw === payload
+  if (!isIdentical && currentRaw !== null) {
+    try {
+      // Compare the persisted representation: optional undefined fields are omitted.
+      isIdentical = same(JSON.parse(currentRaw), JSON.parse(payload))
+    } catch { /* Unparseable external storage must not bypass the revision gate. */ }
   }
 
-  const payload = JSON.stringify(canonicalized)
+  if (!options?.force && hasExpected && currentRaw !== expectedRaw && !isIdentical) {
+    throw new StaleWriteConflictError(
+      'Songbook library was updated in another tab or instance. Persistence rejected to prevent data loss.',
+      currentRaw,
+      canonicalized
+    )
+  }
+
+  // Compare after the revision gate: identical saves need neither a write nor cleanup.
+  if (isIdentical) {
+    lastKnownLibraryRawByStorage.set(storage, currentRaw)
+    return
+  }
+
   try {
     storage.setItem(LIBRARY_KEY, payload)
   } catch (err) {
     if (!isQuotaError(err)) throw err
     // Logs are disposable. Journals, snapshots and legacy stores are not.
-    prunePersistedLogs(storage, 10)
+    try { prunePersistedLogs(storage, 10) } catch { /* Log cleanup must not mask the write error. */ }
+    const retryRaw = storage.getItem(LIBRARY_KEY)
+    if (retryRaw !== currentRaw) {
+      throw new StaleWriteConflictError('Songbook library changed while retrying persistence.', retryRaw, canonicalized)
+    }
     try { storage.setItem(LIBRARY_KEY, payload) }
-    catch (retryErr) { throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr }) }
+    catch (retryErr) {
+      if (!isQuotaError(retryErr)) throw retryErr
+      throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr })
+    }
   }
 
+  if (storage.getItem(LIBRARY_KEY) !== payload) {
+    throw new Error('Songbook save could not be verified. Keep this tab open and export your draft.')
+  }
   lastKnownLibraryRawByStorage.set(storage, payload)
-  retireRepresentedCloudSnapshots(storage)
-  if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
+  // Recovery archives remain exportable even when represented by the saved library.
+  if (typeof window !== 'undefined') {
+    try {
+      if (storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
+    } catch { /* Notification failure cannot invalidate a verified save. */ }
+  }
 }
 
 export function readPersistedLibrary(storage: Storage = localStorage): SyncLibrary | null {
