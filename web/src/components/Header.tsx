@@ -552,13 +552,13 @@ export const Header: React.FC<HeaderProps> = ({
           {isDevEnv && (
             <div
               data-testid="dev-header-diagnostics"
-              className="flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight text-app-muted/80 tracking-tight select-none min-w-0"
+              className="flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0"
               title={`${formatDevDiagLine1(GTAR_DEV_PROVENANCE)} | ${formatDevDiagLine2(GTAR_DEV_PROVENANCE)}`}
             >
               <div data-testid="dev-header-diag-line1" className="truncate whitespace-nowrap">
                 {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
               </div>
-              <div data-testid="dev-header-diag-line2" className="truncate whitespace-nowrap text-app-muted/70">
+              <div data-testid="dev-header-diag-line2" className="truncate whitespace-nowrap">
                 {formatDevDiagLine2(GTAR_DEV_PROVENANCE)}
               </div>
             </div>

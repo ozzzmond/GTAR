@@ -111,6 +111,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
 
     const devDiagnostics = document.querySelector('[data-testid="dev-header-diagnostics"]')
     assert.ok(devDiagnostics, 'DEV diagnostic banner must be rendered in DEV mode')
+    assert.ok(devDiagnostics.classList.contains('header-primary-text'), 'DEV diagnostics must use header-primary-text for readability matching GTAR-Dev title')
     const diagLine1 = document.querySelector('[data-testid="dev-header-diag-line1"]')
     const diagLine2 = document.querySelector('[data-testid="dev-header-diag-line2"]')
     assert.ok(diagLine1 && diagLine1.textContent.trim().length > 0, 'Diagnostic line 1 must be rendered')
