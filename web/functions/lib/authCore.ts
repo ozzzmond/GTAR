@@ -575,16 +575,21 @@ export async function authenticateAdminRequest(
   }
 
   // 3. Query authoritative D1 user record
-  const user = await findUserById(env.DB, callerId)
-  if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
-    return { error: 'Invalid or expired session token', status: 401 }
-  }
+  try {
+    const user = await findUserById(env.DB, callerId)
+    if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
+      return { error: 'Invalid or expired session token', status: 401 }
+    }
 
-  if (user.role !== 'admin' || user.access_status !== 'active') {
-    return { error: 'Forbidden: Admin access required', status: 403 }
-  }
+    if (user.role !== 'admin' || user.access_status !== 'active') {
+      return { error: 'Forbidden: Admin access required', status: 403 }
+    }
 
-  return { user }
+    return { user }
+  } catch (err) {
+    console.error('Admin authentication lookup error:', err instanceof Error ? err.name : 'UnknownError')
+    return { error: 'Authentication lookup failed', status: 500 }
+  }
 }
 
 /**
@@ -646,16 +651,21 @@ export async function authenticateUserRequest(
   }
 
   // 3. Query authoritative D1 user record
-  const user = await findUserById(env.DB, callerId)
-  if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
-    return { error: 'Invalid or expired session token', status: 401 }
-  }
+  try {
+    const user = await findUserById(env.DB, callerId)
+    if (!user || (sessionData && user.google_sub !== sessionData.sub)) {
+      return { error: 'Invalid or expired session token', status: 401 }
+    }
 
-  if (user.access_status !== 'active' || (user.role !== 'member' && user.role !== 'admin')) {
-    return { error: 'Forbidden: Active account approval required', status: 403 }
-  }
+    if (user.access_status !== 'active' || (user.role !== 'member' && user.role !== 'admin')) {
+      return { error: 'Forbidden: Active account approval required', status: 403 }
+    }
 
-  return { user }
+    return { user }
+  } catch (err) {
+    console.error('User authentication lookup error:', err instanceof Error ? err.name : 'UnknownError')
+    return { error: 'Authentication lookup failed', status: 500 }
+  }
 }
 
 export async function findUserSongbook(db: D1Database, userId: string): Promise<UserSongbookRecord | null> {
@@ -696,18 +706,47 @@ export async function upsertUserSongbook(
 }
 
 /**
+ * Request payload constants and validation utilities
+ */
+export const MAX_SESSION_PAYLOAD_BYTES = 32 * 1024 // 32 KB
+export const MAX_ADMIN_PAYLOAD_BYTES = 16 * 1024 // 16 KB
+
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export interface ReadBoundedJsonOptions {
+  requireObject?: boolean
+}
+
+export type ReadBoundedJsonError =
+  | 'PAYLOAD_TOO_LARGE'
+  | 'EMPTY_BODY'
+  | 'MALFORMED_JSON'
+  | 'STREAM_READ_ERROR'
+  | 'INVALID_JSON_OBJECT'
+
+/**
  * Reads request body as JSON with bounded byte size enforcement and streaming protection.
  */
 export async function readBoundedJson(
   request: Request,
-  maxBytes: number
-): Promise<{ data?: unknown; error?: 'PAYLOAD_TOO_LARGE' | 'EMPTY_BODY' | 'MALFORMED_JSON' | 'STREAM_READ_ERROR'; status: number }> {
+  maxBytes: number,
+  options?: ReadBoundedJsonOptions
+): Promise<{ data?: unknown; error?: ReadBoundedJsonError; status: number }> {
   const contentLength = request.headers.get('content-length')
   if (contentLength) {
-    const parsedLength = parseInt(contentLength, 10)
+    const parsedLength = parseInt(contentLength.trim(), 10)
     if (!Number.isNaN(parsedLength) && parsedLength > maxBytes) {
       return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
     }
+  }
+
+  const validateParsed = (val: unknown): { data?: unknown; error?: ReadBoundedJsonError; status: number } => {
+    if (options?.requireObject && (val === null || typeof val !== 'object' || Array.isArray(val))) {
+      return { error: 'INVALID_JSON_OBJECT', status: 400 }
+    }
+    return { data: val, status: 200 }
   }
 
   if (!request.body) {
@@ -720,14 +759,14 @@ export async function readBoundedJson(
         if (new TextEncoder().encode(text).byteLength > maxBytes) {
           return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
         }
-        return { data: JSON.parse(text), status: 200 }
+        return validateParsed(JSON.parse(text))
       } else if (typeof request.json === 'function') {
         const data = await request.json()
         const text = JSON.stringify(data)
         if (new TextEncoder().encode(text).byteLength > maxBytes) {
           return { error: 'PAYLOAD_TOO_LARGE', status: 413 }
         }
-        return { data, status: 200 }
+        return validateParsed(data)
       }
       return { error: 'EMPTY_BODY', status: 400 }
     } catch (err) {
@@ -777,7 +816,7 @@ export async function readBoundedJson(
     return { error: 'EMPTY_BODY', status: 400 }
   }
   try {
-    return { data: JSON.parse(text), status: 200 }
+    return validateParsed(JSON.parse(text))
   } catch {
     return { error: 'MALFORMED_JSON', status: 400 }
   }

@@ -86,7 +86,7 @@ export async function onRequestOptions(): Promise<Response> {
  * Validates request payload boundary
  */
 export function validateMetadataPayload(body: unknown): { isValid: boolean; data?: SongMetadataRequest; error?: string } {
-  if (!body || typeof body !== 'object') {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { isValid: false, error: 'Request body must be a valid JSON object' }
   }
   const obj = body as Record<string, unknown>
@@ -418,7 +418,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   // 2. Parse and validate JSON input
-  const readRes = await readBoundedJson(request, MAX_METADATA_PAYLOAD_BYTES)
+  const readRes = await readBoundedJson(request, MAX_METADATA_PAYLOAD_BYTES, { requireObject: true })
   if (readRes.error) {
     if (readRes.status === 413) {
       return errorResponse('Payload exceeds maximum allowed size of 64KB', 413)
@@ -463,17 +463,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       max_tokens: 300,
     })
   } catch (err: unknown) {
-    const rawMsg = err instanceof Error ? err.message : ''
     console.error('Workers AI execution failed:', err instanceof Error ? err.name : 'UnknownError')
-    const isSensitive = /(?:d1_error|syntax error|constraint|unique|table\s|column\s|select\s|insert\s|update\s|delete\s|from\s|where\s|sqlite|\.tsx?|\.jsx?|[/\\]|auth_secret|bearer|password|token|key|http:\/\/|https:\/\/|@)/i.test(rawMsg)
-    const sanitizedMsg = isSensitive || !rawMsg.trim()
-      ? 'Inference service error'
-      : rawMsg.replace(/[\r\n].*$/s, '').slice(0, 100).trim()
     return jsonResponse(
       {
         success: false,
         status: 'error',
-        error: `Workers AI execution failed: ${sanitizedMsg}`,
+        error: 'Workers AI execution failed: Inference service error',
       },
       500
     )
