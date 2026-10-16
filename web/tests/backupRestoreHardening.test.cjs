@@ -184,78 +184,76 @@ test('snapshot write failure aborts restore and preserves current state', () => 
   }, /Pre-restore safety snapshot creation failed/)
 })
 
-// REGRESSION: GTAR_108_DEV_8B_PRE_RESTORE_SAFETY_SNAPSHOT_FIX
-// Root cause: QuotaExceededError on first setItem when localStorage near-full with ~1182 songs.
-// Fix: evict stale RESTORE_SNAPSHOT_KEY + gtar_sync_recovery: keys, then retry.
-test('snapshot creation succeeds after quota eviction of stale snapshot and recovery keys', () => {
-  const map = new Map()
-  // Pre-populate: stale previous safety snapshot + 3 recovery entries + unrelated key
-  map.set(RESTORE_SNAPSHOT_KEY, JSON.stringify({ createdAt: '2026-01-01T00:00:00Z', library: { songs: [], setlists: [] } }))
-  map.set('gtar_sync_recovery:2026-01-01T01:00:00Z', JSON.stringify({ local: {}, remote: {} }))
-  map.set('gtar_sync_recovery:2026-01-01T02:00:00Z', JSON.stringify({ local: {}, remote: {} }))
-  map.set('gtar_sync_recovery:2026-01-01T03:00:00Z', JSON.stringify({ local: {}, remote: {} }))
-  map.set('unrelated_user_key', 'user data that must not be deleted')
-
-  let writeCount = 0
-  const quotaStorage = {
+// Recovery archives can be the only surviving copy of a song or chart.
+function recoveryStorage(error, includeSnapshot = true) {
+  const previousLibrary = { songs: [{ ...mockTrash, rawContent: '[D]Unique\r\n\uD83C\uDFB8 caf\u00e9' }], setlists: [] }
+  const map = new Map([
+    [LIBRARY_KEY, JSON.stringify({ songs: [mockSong1], setlists: [mockSetlist] })],
+    ['gtar_sync_recovery:2026-01-01T01:00:00Z', ' { "songs": [{"id":"unique","title":"Only copy","rawContent":"[C]\uD83C\uDFB5"}], "setlists": [] }\n'],
+    ['gtar_sync_recovery:2026-01-01T02:00:00Z', JSON.stringify({ local: { songs: [mockSong2] }, remote: { songs: [mockTrash] } })],
+    ['gtar_sync_recovery:unknown', 'unparseable recovery bytes\r\n'],
+    ['unrelated_user_key', 'user data'],
+  ])
+  if (includeSnapshot) map.set(RESTORE_SNAPSHOT_KEY, JSON.stringify({ createdAt: '2026-01-01T00:00:00Z', library: previousLibrary }, null, 2))
+  const before = [...map]
+  const calls = { writes: 0, removals: 0 }
+  let failure = error
+  const storage = {
     getItem: k => map.get(k) ?? null,
     setItem: (k, v) => {
-      writeCount++
-      // First write throws QuotaExceededError (simulates near-full storage)
-      if (writeCount === 1) {
-        const err = new Error('QuotaExceededError: storage quota exceeded')
-        err.name = 'QuotaExceededError'
-        throw err
-      }
+      calls.writes++
+      if (failure) throw failure
       map.set(k, String(v))
     },
-    removeItem: k => map.delete(k),
+    removeItem: k => { calls.removals++; map.delete(k) },
     key: i => [...map.keys()][i] ?? null,
     get length() { return map.size },
   }
+  return { storage, map, before, calls, previousLibrary, allowWrites: () => { failure = null } }
+}
 
-  // Build a library comparable to 1182-song real state
-  const bigSong = { id: 'x', title: 'X', artist: 'A', rawContent: 'a'.repeat(4096), isDeleted: false }
-  const largeSongs = Array.from({ length: 200 }, (_, i) => ({ ...bigSong, id: `song-${i}` }))
-  const library = { songs: largeSongs, setlists: [mockSetlist] }
-
-  // Must NOT throw — quota relief path succeeds on retry
-  assert.doesNotThrow(() => createRestoreSafetySnapshot(library, quotaStorage))
-
-  // Snapshot was written
-  const raw = quotaStorage.getItem(RESTORE_SNAPSHOT_KEY)
-  assert.ok(raw, 'Snapshot must be persisted after eviction')
-  const parsed = JSON.parse(raw)
-  assert.equal(parsed.library.songs.length, 200)
-
-  // Recovery keys evicted (stale GTAR-owned non-canonical keys)
-  assert.equal(quotaStorage.getItem('gtar_sync_recovery:2026-01-01T01:00:00Z'), null, 'oldest recovery key must be evicted')
-  assert.equal(quotaStorage.getItem('gtar_sync_recovery:2026-01-01T02:00:00Z'), null, 'recovery key must be evicted')
-  assert.equal(quotaStorage.getItem('gtar_sync_recovery:2026-01-01T03:00:00Z'), null, 'recovery key must be evicted')
-
-  // Unrelated user key MUST NOT be removed
-  assert.equal(quotaStorage.getItem('unrelated_user_key'), 'user data that must not be deleted',
-    'unrelated storage keys must never be deleted by snapshot eviction')
-})
-
-test('snapshot creation fails closed when quota persists after eviction', () => {
-  // Simulates: even after clearing stale keys, storage is still full
-  let removeCount = 0
-  const alwaysQuotaStorage = {
-    getItem: () => null,
-    setItem: () => {
-      const err = new Error('QuotaExceededError: storage quota exceeded')
-      err.name = 'QuotaExceededError'
-      throw err
-    },
-    removeItem: () => { removeCount++ },
-    key: () => null,
-    length: 0,
+for (const [label, error] of [
+  ['standard quota', new DOMException('Storage full', 'QuotaExceededError')],
+  ['Firefox quota', new DOMException('Storage full', 'NS_ERROR_DOM_QUOTA_REACHED')],
+  ['legacy quota', Object.assign(new Error('storage quota exceeded'), { name: 'QuotaExceededError' })],
+  ['non-quota', new Error('Storage access denied')],
+]) {
+  for (const includeSnapshot of [true, false]) {
+    test(`repeated ${label} failures retain every archive byte with prior snapshot=${includeSnapshot}`, () => {
+      const { storage, map, before, calls, previousLibrary } = recoveryStorage(error, includeSnapshot)
+      const library = { songs: [mockSong2], setlists: [] }
+      const input = JSON.stringify(library)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        assert.throws(() => createRestoreSafetySnapshot(library, storage), err => {
+          assert.match(err.message, /Pre-restore safety snapshot creation failed/)
+          assert.equal(err.cause, error)
+          return true
+        })
+        assert.deepEqual([...map], before, 'All keys and exact stored strings must survive each failure')
+        for (const [key, raw] of before) assert.deepEqual(Buffer.from(storage.getItem(key)), Buffer.from(raw), key)
+        assert.deepEqual(restoreFromSafetySnapshot(storage), includeSnapshot ? previousLibrary : null)
+        assert.equal(JSON.stringify(library), input)
+      }
+      assert.equal(calls.removals, 0)
+      assert.equal(calls.writes, 3, 'One atomic write per attempt; no destructive retry')
+    })
   }
+}
 
-  assert.throws(() => {
-    createRestoreSafetySnapshot({ songs: [mockSong1], setlists: [] }, alwaysQuotaStorage)
-  }, /Pre-restore safety snapshot creation failed/, 'Must fail closed when retry still exceeds quota')
+test('snapshot succeeds after storage becomes writable without evicting recovery archives', () => {
+  const { storage, map, before, calls, allowWrites } = recoveryStorage(new DOMException('Storage full', 'QuotaExceededError'))
+  const library = { songs: [mockSong1, mockTrash], setlists: [mockSetlist] }
+  assert.throws(() => createRestoreSafetySnapshot(library, storage), /Pre-restore safety snapshot creation failed/)
+  assert.deepEqual([...map], before)
+  allowWrites()
+  createRestoreSafetySnapshot(library, storage)
+  assert.deepEqual(restoreFromSafetySnapshot(storage), library)
+  assert.ok(getRestoreSafetySnapshot(storage).createdAt)
+  for (const [key, raw] of before) {
+    if (key !== RESTORE_SNAPSHOT_KEY) assert.equal(storage.getItem(key), raw)
+  }
+  assert.equal(map.size, before.length)
+  assert.equal(calls.removals, 0)
 })
 
 function withJsdom(fn) {
@@ -475,4 +473,44 @@ test('smart merge flow does not prompt for destructive confirmation and coordina
   assert.equal(smartMergeCalled, true, 'Smart merge executes without prompting destructive confirmation')
   assert.doesNotMatch(document.body.textContent, /Confirm Wipe & Replace/)
   assert.match(document.body.textContent, /Backup restored/)
+}))
+
+
+test('snapshot quota failure is visible and aborts restore without changing recovery bytes', withJsdom(async ({ dom, root }) => {
+  const { storage, map, before, calls } = recoveryStorage(new DOMException('Storage full', 'QuotaExceededError'))
+  const library = { songs: [mockSong2], setlists: [] }
+  const input = JSON.stringify(library)
+  const backupData = JSON.stringify(createBackupPayload([mockSong1], []))
+  const file = new dom.window.File([backupData], 'backup.json', { type: 'application/json' })
+  let closed = false
+  let restoreCalls = 0
+  await act(async () => {
+    root.render(React.createElement(BackupRestoreDialogModal, {
+      isOpen: true,
+      onClose: () => { closed = true },
+      allSongs: library.songs,
+      setlists: library.setlists,
+      storage,
+      onImportAllSongs: () => { restoreCalls++ },
+      onFullRestore: () => { restoreCalls++ },
+    }))
+  })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Full Restore (Wipe & Replace)'))
+    await act(async () => wipeButton.click())
+    const fileInput = document.querySelector('input[type="file"]')
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    await act(async () => fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
+    const confirmButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Confirm Wipe & Replace'))
+    assert.ok(confirmButton)
+    await act(async () => confirmButton.click())
+    assert.match(document.body.textContent, /Restore aborted: pre-restore safety snapshot failed to save/)
+    assert.match(document.body.textContent, /Current library preserved/)
+    assert.doesNotMatch(document.body.textContent, /Backup restored:/)
+    assert.equal(restoreCalls, 0)
+    assert.equal(closed, false)
+    assert.deepEqual([...map], before)
+    assert.equal(JSON.stringify(library), input)
+  }
+  assert.equal(calls.removals, 0)
 }))
