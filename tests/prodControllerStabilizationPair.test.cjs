@@ -232,8 +232,17 @@ test('dry-run readiness against the actual expected DEV.5 checkpoint in local re
   // Read-only verify runtime contract against controller
   assert.equal(C.runtimeContract(root, expectedSha), true)
 
-  // Read-only verify plan output with origin/main as controller
+  // Read-only verify plan output with origin/main as controller.
+  // DEV.5 is a historical fixture: once main gains commits not on DEV.5 (e.g. controller PR #62),
+  // it is no longer currently promotable, and the controller must fail closed on ancestry.
   const mainSha = git('rev-parse', 'refs/remotes/origin/main^{commit}')
+  if (tryGit('merge-base', '--is-ancestor', mainSha, expectedSha) === null) {
+    assert.throws(
+      () => C.plan(root, targetTag, expectedSha, 'refs/heads/main', mainSha),
+      /merge-base --is-ancestor/
+    )
+    return
+  }
   const planned = C.plan(root, targetTag, expectedSha, 'refs/heads/main', mainSha)
   assert.equal(planned.tag, targetTag)
   assert.equal(planned.sha, expectedSha)
