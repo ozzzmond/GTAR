@@ -9,7 +9,6 @@ import {
   exportAllDataJson,
   parseBackupJson,
   createRestoreSafetySnapshot,
-  clearRestoreSafetySnapshot,
   type ParsedBackupResult,
 } from '../utils/jsonBackup'
 import { restoreBackupSettings } from '../utils/backupSettings'
@@ -108,19 +107,19 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
         onImportAllSongs(parsed.songs)
       }
 
-      // Parsing and reference validation have succeeded before the first write.
-      const { themeMode, customThemeColors, stageSettings } = parsed
-      restoreBackupSettings({
-        ...(themeMode !== undefined ? { themeMode } : {}),
-        ...(customThemeColors !== undefined ? { customThemeColors } : {}),
-        ...(stageSettings !== undefined ? { stageSettings } : {}),
-      }, targetStorage)
-
-      // Minimum safe recovery policy: delete snapshot only after new library persistence is confirmed
-      if (isDestructive) {
-        clearRestoreSafetySnapshot(targetStorage)
+      // The parsed result already contains the complete validated settings projection.
+      // Library persistence and settings writes are separate operations; never claim
+      // an aborted library write when settings fail after the library has been saved.
+      try {
+        restoreBackupSettings(parsed, targetStorage)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setPendingRestore(null)
+        showFeedback('error', `Partial restore: library saved, but settings restoration failed (${msg}). Some settings may have been applied. Reload to inspect the saved state before retrying. Recovery data retained.`)
+        return
       }
 
+      // Keep recovery snapshots after success too; they may contain unique data.
       setPendingRestore(null)
       showFeedback('success', `Backup restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists`)
     } finally {
@@ -292,9 +291,21 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                     </div>
                   </div>
                   <div className="p-2 rounded-lg bg-app-surface border border-app-border">
-                    <div className="text-[10px] text-app-muted">Setlists</div>
+                    <div className="text-[10px] text-app-muted">Total Setlists</div>
                     <div className="text-sm font-bold text-app-action">
                       {pendingRestore.parsed.metadata?.setlistCount ?? 0}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-app-surface border border-app-border">
+                    <div className="text-[10px] text-app-muted">Active Setlists</div>
+                    <div className="text-sm font-bold text-app-action">
+                      {pendingRestore.parsed.metadata?.activeSetlistCount ?? 0}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-app-surface border border-app-border">
+                    <div className="text-[10px] text-app-muted">Deleted Setlists</div>
+                    <div className="text-sm font-bold text-app-heading">
+                      {pendingRestore.parsed.metadata?.deletedSetlistCount ?? 0}
                     </div>
                   </div>
                   <div className="col-span-2 p-2 rounded-lg bg-app-surface border border-app-border flex justify-between items-center">

@@ -15,6 +15,8 @@ export interface BackupMetadata {
   exportedAt?: string
   songCount: number
   setlistCount: number
+  activeSetlistCount: number
+  deletedSetlistCount: number
   trashCount: number
 }
 
@@ -160,6 +162,7 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
   try {
     const data = JSON.parse(rawText)
     if (!data || typeof data !== 'object') return invalid(['Expected a backup object or song array'])
+    if (data.exportType === 'RECOVERY_ARCHIVE') return invalid(['Recovery archive: preserves raw data for manual recovery; not a supported restore-ready backup'])
     const single = data.exportType === 'SINGLE_SETLIST' || 'setlist' in data
     const settings: BackupSettings = {}
     for (const field of ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const) {
@@ -234,6 +237,8 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       exportedAt: typeof data.exportedAt === 'string' ? data.exportedAt : undefined,
       songCount: partition.active.length,
       setlistCount: setlists.length,
+      activeSetlistCount: setlists.filter(setlist => !setlist.isDeleted).length,
+      deletedSetlistCount: setlists.filter(setlist => setlist.isDeleted).length,
       trashCount: partition.deleted.length,
     }
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
@@ -266,7 +271,15 @@ export function createRestoreSafetySnapshot(
   // setItem replaces atomically: a failed write leaves the previous value intact.
   // Recovery archives may be unique copies; never evict them to make room.
   try {
+    const previous = storage.getItem(RESTORE_SNAPSHOT_KEY)
+    if (previous !== null && previous !== serialized) {
+      // Retain the previous recovery bytes before replacing the current snapshot.
+      const archiveKey = `gtar_sync_recovery:restore-snapshot:${generateUUID()}`
+      storage.setItem(archiveKey, previous)
+      if (storage.getItem(archiveKey) !== previous) throw new Error('Previous safety snapshot archive could not be verified')
+    }
     storage.setItem(RESTORE_SNAPSHOT_KEY, serialized)
+    if (storage.getItem(RESTORE_SNAPSHOT_KEY) !== serialized) throw new Error('Safety snapshot write could not be verified')
   } catch (err) {
     throw new Error('Pre-restore safety snapshot creation failed', { cause: err })
   }
