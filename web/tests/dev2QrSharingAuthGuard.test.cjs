@@ -240,7 +240,7 @@ test('AUTHENTICATED_SHARE_LIFECYCLE: Active member can create and retrieve share
   assert.equal(postRes.status, 200, 'Active member share creation must succeed')
   const postData = await postRes.json()
 
-  assert.match(postData.token, /^[0-9a-f]{16}$/, 'Token must be 16-hex characters')
+  assert.match(postData.token, /^[0-9a-f]{16,32}$/, 'Token must be valid hex characters')
   assert.equal(postData.name, 'Easter Sunday')
   assert.equal(postData.songCount, 2)
   assert.ok(postData.expiresAt)

@@ -312,7 +312,7 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
   const res3 = await onRequestPost({ request: validReq2, env: { DB: mockDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
   assert.equal(res3.status, 200)
   const body3 = await res3.json()
-  assert.match(body3.token, /^[0-9a-f]{16}$/)
+  assert.match(body3.token, /^[0-9a-f]{16,32}$/)
   assert.equal(body3.name, 'Sunday Worship')
   assert.equal(body3.songCount, 1)
   assert.equal(inserted, true)

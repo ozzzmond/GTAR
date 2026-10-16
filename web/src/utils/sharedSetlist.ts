@@ -200,8 +200,8 @@ export function extractShareToken(input: string): { isValid: true; token: string
     return { isValid: false, error: 'Share link cannot be empty.' }
   }
 
-  // If it's a raw 16-hex token:
-  if (/^[a-f0-9]{16}$/i.test(trimmed)) {
+  // If it's a raw 16-hex or 32-hex token:
+  if (/^[a-f0-9]{16,64}$/i.test(trimmed)) {
     return { isValid: true, token: trimmed.toLowerCase() }
   }
 
@@ -220,12 +220,12 @@ export function extractShareToken(input: string): { isValid: true; token: string
       const base = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost'
       url = new URL(trimmed, base)
     } else {
-      return { isValid: false, error: 'Invalid share link format. Must be a GTAR share URL or 16-character token.' }
+      return { isValid: false, error: 'Invalid share link format. Must be a GTAR share URL or valid share token.' }
     }
 
     const token = url.searchParams.get('share')
-    if (!token || !/^[a-f0-9]{16}$/i.test(token)) {
-      return { isValid: false, error: 'The pasted URL does not contain a valid 16-character GTAR share token.' }
+    if (!token || !/^[a-f0-9]{16,64}$/i.test(token)) {
+      return { isValid: false, error: 'The pasted URL does not contain a valid GTAR share token.' }
     }
 
     return { isValid: true, token: token.toLowerCase() }

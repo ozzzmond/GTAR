@@ -827,7 +827,7 @@ function LibraryApp() {
       if (!shareToken) return
 
       // Safe handling for malformed tokens: purge immediately fail-closed
-      if (!/^[a-f0-9]{16}$/i.test(shareToken)) {
+      if (!/^[a-f0-9]{16,64}$/i.test(shareToken)) {
         try {
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.removeItem('gtar_pending_share_token')
@@ -884,8 +884,14 @@ function LibraryApp() {
               throw { type: 'RECOVERABLE_AUTH', message: 'Active account approval required to view shared setlist.' }
             }
             if (res.status === 410) {
-              // Terminal expired token outcome
-              throw { type: 'TERMINAL_EXPIRED', message: 'This shared setlist link has expired.' }
+              // Terminal expired or revoked token outcome
+              const isRevoked = errData?.error === 'SHARED_SETLIST_REVOKED'
+              throw {
+                type: 'TERMINAL_EXPIRED',
+                message: isRevoked
+                  ? 'This shared setlist link has been revoked.'
+                  : 'This shared setlist link has expired.',
+              }
             }
             if (res.status === 404) {
               // Terminal not-found outcome

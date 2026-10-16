@@ -276,7 +276,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         const urlParams = new URLSearchParams(window.location.search)
         const shareParam = urlParams.get('share')
         if (shareParam) {
-          if (/^[a-f0-9]{16}$/i.test(shareParam)) {
+          if (/^[a-f0-9]{16,64}$/i.test(shareParam)) {
             if (typeof sessionStorage !== 'undefined') {
               sessionStorage.setItem('gtar_pending_share_token', shareParam.toLowerCase())
             }
