@@ -1,4 +1,5 @@
 import type { AbuseEnv } from './abuseProtection.ts'
+import { API_SECURITY_HEADERS } from './securityHeaders.ts'
 /**
  * GTAR Server-Authoritative Account & Access Control (v1.0.136-dev.1)
  * Cloudflare Pages Functions + D1 SQLite Core Library
@@ -49,6 +50,7 @@ export const JSON_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Cache-Control': 'no-store',
+  ...API_SECURITY_HEADERS,
 }
 
 export function jsonResponse(data: unknown, status = 200): Response {
