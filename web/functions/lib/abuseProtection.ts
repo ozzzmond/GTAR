@@ -1,4 +1,6 @@
 /** Dormant until an operator approves and configures the external DO namespace. */
+import { API_SECURITY_HEADERS } from './securityHeaders.ts'
+
 export const ABUSE_POLICIES = {
   'session-issue': { limit: 300, windowMs: 60_000, identity: 'anonymous' },
   'session-read': { limit: 600, windowMs: 60_000, identity: 'anonymous' },
@@ -44,6 +46,7 @@ export function abuseResponse(status: 429 | 503, retryAfter: number): Response {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Expose-Headers': 'Retry-After',
       'Retry-After': String(Math.max(1, Math.ceil(retryAfter))),
+      ...API_SECURITY_HEADERS,
     },
   })
 }

@@ -1,4 +1,5 @@
 import { enforceAbuseLimit, abuseResponse } from '../../lib/abuseProtection.ts';
+import { API_SECURITY_HEADERS } from '../../lib/securityHeaders.ts';
 import { validateSharedSetlistPayload, sanitizeSetlistForShare } from '../../../src/utils/sharedSetlist';
 import { authenticateUserRequest, isValidAuthSecret, verifySessionToken, findUserById } from '../../lib/authCore';
 import type { D1Database, AuthEnv, UserRecord } from '../../lib/authCore';
@@ -44,6 +45,7 @@ export function jsonResponse(data: unknown, status = 200) {
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Cache-Control': 'no-store',
+      ...API_SECURITY_HEADERS,
     },
   });
 }
@@ -56,6 +58,7 @@ export const onRequestOptions = async () => {
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Cache-Control': 'no-store',
+      ...API_SECURITY_HEADERS,
     },
   });
 };
