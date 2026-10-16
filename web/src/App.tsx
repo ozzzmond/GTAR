@@ -475,7 +475,7 @@ function LibraryApp() {
 
   const [conflictRecoverySaved, setConflictRecoverySaved] = useState(false)
   const editorRecoveryDraftRef = useRef<(() => ActiveSongState | null) | null>(null)
-  const getConflictDraft = () => {
+  const getConflictDraft = useCallback(() => {
     const librarySongs = [...songs, ...deletedSongs]
     const editorDraft = editorRecoveryDraftRef.current?.()
     if (!editorDraft) return { songs: librarySongs, setlists }
@@ -484,7 +484,7 @@ function LibraryApp() {
       songs: found ? librarySongs.map(song => String(song.id) === String(editorDraft.id) ? editorDraft : song) : [...librarySongs, editorDraft],
       setlists,
     }
-  }
+  }, [songs, deletedSongs, setlists])
 
   // Stage Color Theme (persisted in localStorage)
   const [stageTheme, setStageTheme] = useState<ThemeMode>(() => hydrateThemeSettings().mode)
@@ -564,7 +564,7 @@ function LibraryApp() {
       const currentRaw = getPersistedLibraryRaw()
       setCrossTabConflict({ remoteRaw: currentRaw, detectedAt: Date.now() })
       try {
-        saveCrossTabConflictSnapshot({ songs: [...songs, ...deletedSongs], setlists })
+        saveCrossTabConflictSnapshot(getConflictDraft())
         setConflictRecoverySaved(true)
       } catch { setConflictRecoverySaved(false) }
       setToastMessage('Conflict detected: Another tab modified the library. Local edits remain in memory; keep this tab open and export your draft.')
@@ -583,7 +583,7 @@ function LibraryApp() {
       setToastMessage(warnMsg)
       setTimeout(() => setToastMessage(null), 5000)
     }
-  }, [songs, deletedSongs, setlists])
+  }, [getConflictDraft])
 
   // Best-effort non-blocking durable storage request (Gap 2)
   useEffect(() => {
@@ -595,11 +595,12 @@ function LibraryApp() {
     const cleanup = setupCrossTabLibraryConflictGuard((externalRaw) => {
       const currentLocal = { songs: [...songs, ...deletedSongs], setlists }
       const baselineRaw = persistedBaselineRef.current
+      // Match JSON storage semantics, including omitted optional editor fields.
       let hasLocalChanges = true
       if (baselineRaw) {
         try {
           const parsedBase = JSON.parse(baselineRaw)
-          if (same(parsedBase, currentLocal)) {
+          if (same(parsedBase, JSON.parse(JSON.stringify(currentLocal)))) {
             hasLocalChanges = false
           }
         } catch {
@@ -607,11 +608,13 @@ function LibraryApp() {
         }
       }
 
+      if (editorRecoveryDraftRef.current?.()) hasLocalChanges = true
+
       if (hasLocalChanges) {
         console.warn('[Storage] Cross-tab conflict: external write while local has unsaved edits.')
         setCrossTabConflict({ remoteRaw: externalRaw, detectedAt: Date.now() })
         try {
-          saveCrossTabConflictSnapshot(currentLocal)
+          saveCrossTabConflictSnapshot(getConflictDraft())
           setConflictRecoverySaved(true)
         } catch { setConflictRecoverySaved(false) }
         setToastMessage('Songbook library updated in another tab while you have unsaved edits. Draft remains in memory; keep this tab open and export it.')
@@ -634,6 +637,20 @@ function LibraryApp() {
       }
     })
     return cleanup
+  }, [songs, deletedSongs, setlists, getConflictDraft])
+
+  // State-only mutations can outlive a failed save outside the editor.
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => {
+      try {
+        const raw = persistedBaselineRef.current
+        if (raw !== null && same(JSON.parse(raw), JSON.parse(JSON.stringify({ songs: [...songs, ...deletedSongs], setlists })))) return
+      } catch { /* An unreadable baseline cannot establish durability. */ }
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
   }, [songs, deletedSongs, setlists])
 
   // Persist canonical library on any songs, trash, or setlists change (with quota relief)
@@ -646,7 +663,7 @@ function LibraryApp() {
     if (baselineRaw) {
       try {
         const parsedBase = JSON.parse(baselineRaw)
-        if (same(parsedBase, candidate)) {
+        if (same(parsedBase, JSON.parse(JSON.stringify(candidate)))) {
           return
         }
       } catch { /* proceed to persist */ }

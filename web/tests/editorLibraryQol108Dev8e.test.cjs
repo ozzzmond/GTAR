@@ -77,6 +77,7 @@ test('8e editor: autosave truth, text shortcuts, metadata dirty reversion, navig
   await click('OPM');assert.doesNotMatch(document.body.textContent,/Unsaved/)
   await click('OPM');await act(async()=>guard.current(()=>closed++));await click('Cancel');assert.equal(closed,1)
   await act(async()=>guard.current(()=>closed++));fail=true;await click('Save');assert.equal(closed,1);assert.ok(document.querySelector('[aria-label="Unsaved changes"]'))
+  unload=new window.Event('beforeunload',{cancelable:true});window.dispatchEvent(unload);assert.equal(unload.defaultPrevented,true);assert.equal(recovery.current().tags,'OPM')
   fail=false;const actions=[];await act(async()=>{guard.current(()=>actions.push('select'));guard.current(()=>actions.push('view'))});await click('Save');assert.deepEqual(actions,['select','view']);assert.equal(closed,2);assert.equal(persisted.tags,'OPM');assert.doesNotMatch(document.body.textContent,/Unsaved/)
   await click('Rock');await act(async()=>guard.current(()=>closed++));await click('Discard');assert.equal(closed,3);assert.equal(persisted.tags,'OPM');assert.doesNotMatch(document.body.textContent,/Unsaved/)
   const keyInput=document.querySelector('input[placeholder="e.g. G"]');await change(keyInput,'bb');assert.equal(keyInput.value,'Bb');assert.equal(persisted.key,'Bb')
@@ -107,6 +108,6 @@ test('8e startup banner refreshes when recovery becomes represented; raw archive
  try {
   await act(async()=>root.render(React.createElement(App)));assert.match(document.querySelector('aside[role="alert"]').textContent,/Recovery data is available/)
   await click('Export recovery data');assert.equal(JSON.parse(await blob.text())['gtar_sync_recovery:plain'],archive)
-  await act(async()=>persistLibrary({songs:[song,lost],setlists:[]}));assert.equal(document.querySelector('aside[role="alert"]'),null);assert.equal(localStorage.getItem('gtar_sync_recovery:plain'),null)
+  await act(async()=>persistLibrary({songs:[song,lost],setlists:[]}));assert.equal(document.querySelector('aside[role="alert"]'),null);assert.equal(localStorage.getItem('gtar_sync_recovery:plain'),archive)
  } finally {await act(async()=>root.unmount());URL.createObjectURL=create;URL.revokeObjectURL=revoke}
 })

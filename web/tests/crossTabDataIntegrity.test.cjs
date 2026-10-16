@@ -313,6 +313,30 @@ test('9. React App: cross-tab conflict detection, alert UI rendering, and recove
     assert.equal(home.songs.length, 2, 'Clean tab must adopt external update')
     assert.equal(document.querySelector('[data-testid="cross-tab-conflict-alert"]'), null)
 
+    // A synchronous editor save plus the React persistence effect writes once.
+    await act(async () => header.onViewChange('editor'))
+    const countPrototype = Object.getPrototypeOf(localStorage)
+    const countedSetItem = countPrototype.setItem
+    let libraryWrites = 0
+    countPrototype.setItem = function (key, value) {
+      if (key === LIBRARY_KEY) libraryWrites++
+      return countedSetItem.call(this, key, value)
+    }
+    try {
+      await act(async () => assert.equal(editor.onSaveSong({ ...songA, title: 'Temporary title', originalKey: undefined, time: undefined, year: undefined }), true))
+      assert.equal(libraryWrites, 1)
+      await act(async () => assert.equal(editor.onSaveSong({ ...songA, title: 'Temporary title', originalKey: undefined, time: undefined, year: undefined }), true))
+      assert.equal(libraryWrites, 1, 'Identical explicit save must not write again')
+      const cleanUnload = new window.Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(cleanUnload)
+      assert.equal(cleanUnload.defaultPrevented, false, 'Omitted optional fields must not leave a saved library dirty')
+      await act(async () => window.dispatchEvent(new window.StorageEvent('storage', { key: LIBRARY_KEY, newValue: localStorage.getItem(LIBRARY_KEY) })))
+      assert.equal(document.querySelector('[data-testid="cross-tab-conflict-alert"]'), null, 'Omitted optional fields must not create a false cross-tab conflict')
+      await act(async () => assert.equal(editor.onSaveSong(songA), true))
+      assert.equal(libraryWrites, 2)
+    } finally { countPrototype.setItem = countedSetItem }
+    await act(async () => header.onViewChange('songbook'))
+
     // 2. External tab modifies storage to externalRaw3 behind Tab B's back
     const externalLib3 = {
       songs: [songA, songB, { id: '33333333-3333-4333-8333-333333333333', title: 'External New Song', artist: '', key: 'A', capo: 'No Capo', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0, rawContent: '{title: External New Song}' }],
@@ -403,7 +427,8 @@ test('9. React App: cross-tab conflict detection, alert UI rendering, and recove
       const editorDraft = { ...songA, title: 'Unsaved editor title', rawContent: '[D]Unsaved editor text' }
       editor.recoveryDraftRef.current = () => editorDraft
       localStorage.setItem(LIBRARY_KEY, replacementRaw)
-      await act(async () => editor.onSaveSong({ ...songA, title: 'attempt' }))
+      await act(async () => window.dispatchEvent(new window.StorageEvent('storage', { key: LIBRARY_KEY, newValue: replacementRaw })))
+      assert.ok(Object.entries(recoveryData()).some(([key, value]) => key.includes('cross-tab-conflict:') && JSON.parse(value).songs.some(song => song.rawContent === editorDraft.rawContent)), 'Storage events must preserve the private editor draft immediately')
       assert.ok(document.querySelector('[data-testid="cross-tab-conflict-alert"]'))
       await act(async () => document.querySelector('[data-testid="conflict-reload-button"]').click())
       assert.ok(Object.entries(recoveryData()).some(([key, value]) => key.includes('cross-tab-conflict:') && JSON.parse(value).songs.some(song => song.rawContent === editorDraft.rawContent)))
