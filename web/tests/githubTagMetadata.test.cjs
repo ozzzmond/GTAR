@@ -5,8 +5,8 @@ const os = require('node:os')
 const path = require('node:path')
 const { execFileSync, spawnSync } = require('node:child_process')
 const source = path.resolve(__dirname, '../../.github/release_metadata.cjs')
+const root = path.resolve(__dirname, '../..')
 test('current checkpoint DEV stamps agree before human tagging', () => {
-  const root = path.resolve(__dirname, '../..')
   const read = file => fs.readFileSync(path.join(root, file), 'utf8')
   const pkg = JSON.parse(read('web/package.json'))
   const lock = JSON.parse(read('web/package-lock.json'))
@@ -90,3 +90,41 @@ test('preview workflow binds exact tag checkout and validates before npm operati
   assert.ok(yaml.indexOf('run: node .github/release_metadata.cjs') < yaml.indexOf('run: npm ci'))
   assert.match(yaml, /name: \$\{\{ env.RELEASE_TAG \}\}/)
 })
+
+test('REGRESSION: v1.0.136-dev.1a lettered tag validates against committed 1.0.136-dev.1 base version as non-promotable', t => {
+  const f = fixture(t, '1.0.136-dev.1')
+  f.git('tag', '-a', 'v1.0.136-dev.1a', '-m', 'GTAR DEV.1a - Save Status P3 and PWA hardening')
+  const r = f.run('--tag', 'v1.0.136-dev.1a')
+  assert.equal(r.status, 0, r.stderr)
+  const expected = 'RELEASE_TAG=v1.0.136-dev.1a\nRELEASE_TITLE=GTAR v1.0.136-dev.1a\nIS_PRERELEASE=true\nIS_PROMOTABLE=false\n'
+  assert.equal(r.stdout, expected)
+  assert.equal(fs.readFileSync(f.envFile, 'utf8'), 'EXISTING=preserved\n' + expected)
+
+  // Rejects lettered tag when committed base version is wrong iteration or base
+  fs.writeFileSync(f.envFile, 'EXISTING=preserved\n')
+  rejected(f, '--tag', 'v1.0.136-dev.2a')
+  rejected(f, '--tag', 'v1.0.137-dev.1a')
+
+  // Rejects clean numeric tag when package version is lettered unless stabilization pair companion exists
+  rejected(f, '--tag', 'v1.0.136-dev.2')
+})
+
+test('REGRESSION: live v1.0.136-dev.1a tag in actual repository validates cleanly and binds exact peeled SHA', () => {
+  const expectedTagSha = 'b73490ebd6616e762b95bc95bbbace753d341d92'
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
+  const tagSha = git('rev-parse', '--verify', 'refs/tags/v1.0.136-dev.1a^{commit}')
+  assert.equal(tagSha, expectedTagSha, 'Live peeled tag commit must equal expected immutable SHA')
+
+  const { inspectCheckpoint } = require(source)
+  const cp = inspectCheckpoint(root, 'v1.0.136-dev.1a')
+  assert.equal(cp.sha, expectedTagSha)
+  assert.equal(cp.tag, 'v1.0.136-dev.1a')
+  assert.equal(cp.promotable, false)
+  assert.equal(cp.prodTag, 'v1.1.137')
+
+  // Prod promotion planner strictly rejects lettered DEV checkpoint
+  const { plan } = require(path.join(root, '.github/prod_controller.cjs'))
+  assert.throws(() => plan(root, 'v1.0.136-dev.1a', expectedTagSha, 'refs/heads/main', '1111111111111111111111111111111111111111'),
+    /Lettered checkpoint is not promotable/)
+})
+

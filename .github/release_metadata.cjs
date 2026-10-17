@@ -77,18 +77,27 @@ function inspectCheckpoint(root, tag) {
   const directMatch = [pkg.version, lock.version, lock.packages?.['']?.version, dev].every(v => v === version) &&
     auth.includes(`GTAR Server-Authoritative Account & Access Control (${tag})`)
   if (!directMatch) {
-    let pair
-    try {
-      pair = verifyStabilizationPair(git, tag, pkg.version, sha)
-    } catch (error) {
-      throw new Error(`Checkpoint version metadata mismatch: ${error.message}`)
-    }
-    if (!pair) throw new Error('Checkpoint version metadata mismatch')
-    const companionVersion = pair.companionTag.slice(1)
-    const companionDev = hasTagDerivedDev ? companionVersion : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
-    if ([pkg.version, lock.version, lock.packages?.['']?.version, companionDev].some(v => v !== companionVersion) ||
-        !auth.includes(`GTAR Server-Authoritative Account & Access Control (${pair.companionTag})`)) {
-      throw new Error('Checkpoint version metadata mismatch')
+    const expectedBase = `1.0.${parsed.base}-dev.${parsed.iteration}`
+    const expectedBaseTag = `v${expectedBase}`
+    const letteredDev = hasTagDerivedDev ? version : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
+    const isLetteredDevMatch = parsed.suffix !== '' &&
+      [pkg.version, lock.version, lock.packages?.['']?.version].every(v => v === expectedBase) &&
+      (hasTagDerivedDev || letteredDev === expectedBase) &&
+      auth.includes(`GTAR Server-Authoritative Account & Access Control (${expectedBaseTag})`)
+    if (!isLetteredDevMatch) {
+      let pair
+      try {
+        pair = verifyStabilizationPair(git, tag, pkg.version, sha)
+      } catch (error) {
+        throw new Error(`Checkpoint version metadata mismatch: ${error.message}`)
+      }
+      if (!pair) throw new Error('Checkpoint version metadata mismatch')
+      const companionVersion = pair.companionTag.slice(1)
+      const companionDev = hasTagDerivedDev ? companionVersion : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
+      if ([pkg.version, lock.version, lock.packages?.['']?.version, companionDev].some(v => v !== companionVersion) ||
+          !auth.includes(`GTAR Server-Authoritative Account & Access Control (${pair.companionTag})`)) {
+        throw new Error('Checkpoint version metadata mismatch')
+      }
     }
   }
   return { ...parsed, sha, runtimeProd }
@@ -116,7 +125,10 @@ function main(args = process.argv.slice(2)) {
       statusLine = `METADATA_STATUS=${legacy.classification}\n`
     } else {
       const version = JSON.parse(readFileSync(path.join(root, 'web/package.json'), 'utf8')).version
-      if (version !== tag.slice(1)) {
+      const expectedBase = `1.0.${parsed.base}-dev.${parsed.iteration}`
+      const isDirectMatch = version === tag.slice(1)
+      const isLetteredDevMatch = parsed.suffix !== '' && version === expectedBase
+      if (!isDirectMatch && !isLetteredDevMatch) {
         let pair
         try {
           pair = verifyStabilizationPair(git, tag, version, taggedCommit)

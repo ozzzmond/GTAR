@@ -286,7 +286,9 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),
       __GTAR_PROD_VERSION__: JSON.stringify(releaseIdentity?.version ?? null),
-      __GTAR_DEV_VERSION__: JSON.stringify(devIdentity?.version ?? '1.0.130-dev.4a'),
+      __GTAR_DEV_VERSION__: JSON.stringify(
+        devIdentity?.tag ? devIdentity.tag.replace(/^v/, '') : (devIdentity?.version ?? '1.0.130-dev.4a')
+      ),
       __GTAR_DEV_PROVENANCE__: JSON.stringify(isDev && devIdentity ? {
         tagStatus: devIdentity.tagStatus || 'UNVERIFIED',
         tagName: devIdentity.tag || null,
