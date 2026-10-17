@@ -158,6 +158,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }, [localRawContent, editingSong.id])
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
 
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const draft = {
     title: localTitle,
     artist: localArtist,
@@ -171,12 +173,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     rawContent: localRawContent,
   }
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
+  const saveStatus: 'SAVING' | 'SAVED' | 'FAILED' | 'UNSAVED' =
+    isSaving ? 'SAVING' : saveFailed && !isSaved ? 'FAILED' : isSaved ? 'SAVED' : 'UNSAVED'
   useEffect(() => {
     if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft }
     return () => { if (recoveryDraftRef) recoveryDraftRef.current = null }
   })
   const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
   const autosave = (updated: Partial<ActiveSongState>) => {
+    const isRedundant = Object.entries(updated).every(
+      ([key, val]) => persisted[key as keyof typeof persisted] === val
+    )
+    if (isRedundant && updated.rawContent !== undefined) {
+      return
+    }
+
     const next = { ...updated, id: editingSong.id }
     if (updated.rawContent === undefined) {
       const canonical: CanonicalMetadata = {}
@@ -190,8 +201,17 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       }
     }
     try {
-      if (onUpdateSong(next) === true) setPersisted(previous => ({ ...previous, ...next }))
-    } catch { showToast('Changes are not saved. Retry saving before leaving.') }
+      const res = onUpdateSong(next)
+      if (res === true) {
+        setPersisted(previous => ({ ...previous, ...next }))
+        setSaveFailed(false)
+      } else {
+        setSaveFailed(true)
+      }
+    } catch {
+      setSaveFailed(true)
+      showToast('Changes are not saved. Retry saving before leaving.')
+    }
   }
   const requestNavigation = (next: () => void) => {
     if (isSaved) next()
@@ -347,6 +367,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalTags(song.tags || '')
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
+    setSaveFailed(false)
+    setIsSaving(false)
     history.current = new TextHistory()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Same-ID updates must not erase the unsaved draft or undo history.
   }, [song.id])
@@ -377,6 +399,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalTags('')
       setLocalRawContent(blank.rawContent || '')
       setPersisted(fields(blank))
+      setSaveFailed(false)
+      setIsSaving(false)
       history.current = new TextHistory()
       showToast('New blank song started')
       onNewSong?.()
@@ -423,9 +447,16 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       transposeOffset: editingSong.transposeOffset || 0,
     }
 
+    setIsSaving(true)
+    setSaveFailed(false)
     try {
       const saved = onSaveSong ? onSaveSong(updatedSong) : onUpdateSong(updatedSong)
-      if (saved !== true) { showToast('Changes are not saved. Retry saving before leaving.'); return false }
+      if (saved !== true) {
+        setSaveFailed(true)
+        showToast('Changes are not saved. Retry saving before leaving.')
+        return false
+      }
+      setSaveFailed(false)
       setEditingSong(updatedSong)
       setLocalTitle(updatedSong.title)
       setLocalArtist(updatedSong.artist || '')
@@ -439,7 +470,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setPersisted(fields(updatedSong))
       showToast('Songbook saved!')
       return true
-    } catch { showToast('Changes are not saved. Retry saving before leaving.'); return false }
+    } catch {
+      setSaveFailed(true)
+      showToast('Changes are not saved. Retry saving before leaving.')
+      return false
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const saveRef = useRef(handleSave)
@@ -724,12 +761,36 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <span className="font-bold text-xs sm:text-sm text-app-heading tracking-wide">
                   Editor
                 </span>
-                {!isSaved ? (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent border border-app-accent/30">
+                {saveStatus === 'SAVING' ? (
+                  <span
+                    data-testid="editor-save-status"
+                    data-save-status="SAVING"
+                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-surface text-app-muted border border-app-border animate-pulse"
+                  >
+                    Saving...
+                  </span>
+                ) : saveStatus === 'FAILED' ? (
+                  <span
+                    data-testid="editor-save-status"
+                    data-save-status="FAILED"
+                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-status-error/20 text-status-error border border-status-error/30"
+                  >
+                    Failed (Unsaved)
+                  </span>
+                ) : saveStatus === 'UNSAVED' ? (
+                  <span
+                    data-testid="editor-save-status"
+                    data-save-status="UNSAVED"
+                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent border border-app-accent/30"
+                  >
                     Unsaved
                   </span>
                 ) : (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30">
+                  <span
+                    data-testid="editor-save-status"
+                    data-save-status="SAVED"
+                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30"
+                  >
                     Saved
                   </span>
                 )}
@@ -871,11 +932,16 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="p-1.5 sm:p-2 rounded-lg bg-app-button hover:bg-app-button text-app-button-text shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
-                  title="Save changes"
-                  aria-label="Save changes"
+                  disabled={isSaving}
+                  className={`p-1.5 sm:p-2 rounded-lg ${
+                    saveStatus === 'FAILED'
+                      ? 'bg-status-error/20 text-status-error border border-status-error/40 hover:bg-status-error/30'
+                      : 'bg-app-button hover:bg-app-button text-app-button-text'
+                  } shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-60`}
+                  title={isSaving ? 'Saving...' : saveStatus === 'FAILED' ? 'Save failed — click to retry' : 'Save changes'}
+                  aria-label={isSaving ? 'Saving...' : 'Save changes'}
                 >
-                  <Save className="w-4 h-4 text-app-button-text stroke-[2.5]" />
+                  <Save className={`w-4 h-4 ${saveStatus === 'FAILED' ? 'text-status-error' : 'text-app-button-text'} stroke-[2.5] ${isSaving ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>

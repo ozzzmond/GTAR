@@ -283,7 +283,13 @@ export const Header: React.FC<HeaderProps> = ({
       }
     }
 
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true)
+      setDeferredInstallPrompt(null)
+    }
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleAppInstalled)
 
     if (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialize from the browser display mode after installing the prompt listener.
@@ -292,6 +298,7 @@ export const Header: React.FC<HeaderProps> = ({
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleAppInstalled)
     }
   }, [])
 

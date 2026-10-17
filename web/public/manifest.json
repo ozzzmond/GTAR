@@ -4,6 +4,7 @@
   "description": "Professional Live Stage Teleprompter, Chord Transposer, BandSync, and Setlist Companion for Musicians",
   "start_url": "/",
   "id": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#002B36",
