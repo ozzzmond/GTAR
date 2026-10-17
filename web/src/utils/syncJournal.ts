@@ -2,6 +2,7 @@ import type { SyncLibrary } from './syncMerge'
 import { prunePersistedLogs } from './logger'
 import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 import { canonicalSongKey } from './musicalKey'
+import { validateCloudThemeSettings } from './backupSettings'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -30,6 +31,8 @@ export const CANONICAL_STORAGE_PREFIXES = [
   'gtar_theme_store',
   'gtar_theme_mode',
   'gtar_custom_theme_colors',
+  'gtar_factory_theme_overrides',
+  'gtar_standalone_custom_theme_colors',
   'gtar_font_style_store',
   'gtar_font_style',
   'gtar_twocolumn_store',
@@ -126,6 +129,7 @@ export function validateLibrary(value: unknown): asserts value is SyncLibrary {
     }
   }
   if (lib.allowedUsers !== undefined && (!Array.isArray(lib.allowedUsers) || !lib.allowedUsers.every(x => typeof x === 'string'))) return fail()
+  if (lib.themeSettings !== undefined && validateCloudThemeSettings(lib.themeSettings).length > 0) return fail()
 }
 
 // Only choose a changed record when the other side still equals the known base.
@@ -377,8 +381,10 @@ export function persistLibrary(
   options?: PersistLibraryOptions
 ) {
   validateLibrary(library)
+  const { themeSettings: _ignoredTheme, ...libraryWithoutTheme } = library
+  void _ignoredTheme
   const canonicalized: SyncLibrary = {
-    ...library,
+    ...libraryWithoutTheme,
     songs: library.songs.map(song => ({
       ...song,
       ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) })

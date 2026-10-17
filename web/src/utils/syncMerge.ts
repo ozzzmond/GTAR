@@ -1,10 +1,12 @@
 import { bindLegacySetlists, ensureSongIds, resolveSetlistSong } from './setlistSongs'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { CloudThemeSettings } from './backupSettings'
 
 export interface SyncLibrary {
   songs: ActiveSongState[]
   setlists: WebSetlist[]
   allowedUsers?: string[]
+  themeSettings?: CloudThemeSettings
 }
 
 // Stable IDs are authoritative. Legacy names resolve only references without IDs;

@@ -1,9 +1,23 @@
-import { LIBRARY_KEY } from './syncJournal'
+import { LIBRARY_KEY, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
-import { readPersistedLibrary, persistLibrary } from './syncJournal'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
 import { generateUUID } from './uuid'
+import {
+  CLOUD_THEME_SETTINGS_VERSION,
+  DEFAULT_CUSTOM_COLORS,
+  THEME_MODES,
+  validateCloudThemeSettings,
+  normalizeCloudThemeSettings,
+  readCloudThemeSettings,
+  persistCloudThemeSettings,
+  cloudThemeSettingsEquals,
+  isCustomizedThemeSettings,
+  type CloudThemeSettings,
+  type ThemeMode,
+  type FactoryThemeOverrides,
+  type CustomThemeColors,
+} from './backupSettings'
 
 export const CLOUD_SYNC_META_KEY = 'gtar_cloud_sync_meta'
 export const CLOUD_SYNC_BASE_KEY = 'gtar_cloud_sync_base'
@@ -55,7 +69,7 @@ export interface SyncDecisionResult {
 
 export interface ConflictingItem {
   id: string
-  type: 'song' | 'setlist'
+  type: 'song' | 'setlist' | 'theme'
   title: string
   reason: string
 }
@@ -81,6 +95,7 @@ export interface CloudSyncResult {
 /**
  * Deterministic checksum of a canonical songbook library.
  * Orders songs and setlists deterministically and digests canonical properties.
+ * Preserves exact legacy checksum semantics when themeSettings is absent.
  */
 export function computeSongbookChecksum(library: SyncLibrary): string {
   const songs = [...library.songs]
@@ -122,7 +137,11 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 
-  const canonicalString = JSON.stringify({ songs, setlists })
+  const canonicalPayload =
+    library.themeSettings !== undefined
+      ? { songs, setlists, themeSettings: normalizeCloudThemeSettings(library.themeSettings) }
+      : { songs, setlists }
+  const canonicalString = JSON.stringify(canonicalPayload)
 
   let h1 = 0x811c9dc5
   for (let i = 0; i < canonicalString.length; i++) {
@@ -197,9 +216,17 @@ export function readCloudSyncBase(storage?: Storage): SyncLibrary | null {
     if (!parsed || !Array.isArray(parsed.songs) || !Array.isArray(parsed.setlists)) {
       return null
     }
+    let themeSettings: CloudThemeSettings | undefined
+    if (parsed.themeSettings !== undefined) {
+      if (validateCloudThemeSettings(parsed.themeSettings).length > 0) {
+        return null
+      }
+      themeSettings = normalizeCloudThemeSettings(parsed.themeSettings)
+    }
     return {
       songs: parsed.songs,
       setlists: parsed.setlists,
+      ...(themeSettings !== undefined ? { themeSettings } : {}),
     }
   } catch {
     return null
@@ -248,9 +275,13 @@ export function evaluateSyncDecision({
     }
   }
 
+  const hasLocalSongsOrSetlists = localData.songs.length > 0 || localData.setlists.length > 0
+  const hasLocalTheme = localData.themeSettings !== undefined
+  const hasLocalCustomTheme = isCustomizedThemeSettings(localData.themeSettings)
+
   // 1. Cloud has no record
   if (!cloudRecord) {
-    if (localData.songs.length === 0 && localData.setlists.length === 0) {
+    if (!hasLocalSongsOrSetlists && !hasLocalTheme) {
       return {
         decision: 'NOOP',
         state: 'SAME_STATE',
@@ -282,17 +313,109 @@ export function evaluateSyncDecision({
     }
   }
 
-  // 3. Local is completely empty or pristine initial state, while cloud has songs
-  const isLocalEmpty = localData.songs.length === 0 && localData.setlists.length === 0
-  const hasCloudContent = cloudRecord.data.songs.length > 0 || cloudRecord.data.setlists.length > 0
-  if (isLocalEmpty && hasCloudContent && !baseChecksum) {
-    return {
-      decision: 'DOWNLOAD',
-      state: 'CLOUD_ONLY',
-      reason: 'Local library is empty and cloud has songs; download cloud songbook',
-      localChecksum,
-      cloudChecksum,
-      baseChecksum,
+  const isValidCloudArrays = Boolean(
+    cloudRecord.data &&
+      Array.isArray(cloudRecord.data.songs) &&
+      Array.isArray(cloudRecord.data.setlists)
+  )
+  const hasCloudSongsOrSetlists =
+    isValidCloudArrays &&
+    (cloudRecord.data.songs.length > 0 || cloudRecord.data.setlists.length > 0)
+  const cloudTheme = isValidCloudArrays ? cloudRecord.data.themeSettings : undefined
+  const hasCloudTheme = cloudTheme !== undefined
+  const hasCloudCustomTheme = isCustomizedThemeSettings(cloudTheme)
+  const localSongsSetlistsChecksum = computeSongbookChecksum({
+    songs: localData.songs,
+    setlists: localData.setlists,
+  })
+  const cloudSongsSetlistsChecksum = isValidCloudArrays
+    ? computeSongbookChecksum({
+        songs: cloudRecord.data.songs,
+        setlists: cloudRecord.data.setlists,
+      })
+    : null
+  const songsSetlistsEqual =
+    cloudSongsSetlistsChecksum !== null && localSongsSetlistsChecksum === cloudSongsSetlistsChecksum
+
+  // 3. First sync (no baseChecksum)
+  if (!baseChecksum) {
+    if (
+      !hasLocalSongsOrSetlists &&
+      (!hasLocalCustomTheme || !hasCloudCustomTheme || cloudThemeSettingsEquals(localData.themeSettings, cloudTheme)) &&
+      (hasCloudSongsOrSetlists || (hasCloudTheme && !hasLocalCustomTheme))
+    ) {
+      return {
+        decision: 'DOWNLOAD',
+        state: 'CLOUD_ONLY',
+        reason: 'Local library is empty and cloud has songs; download cloud songbook',
+        localChecksum,
+        cloudChecksum,
+        baseChecksum,
+      }
+    }
+    if (!hasCloudSongsOrSetlists && !hasCloudCustomTheme && (hasLocalSongsOrSetlists || hasLocalCustomTheme)) {
+      return {
+        decision: 'UPLOAD',
+        state: 'LOCAL_NEWER',
+        reason: 'Local songbook or theme customization exists while cloud is empty/default; upload local data',
+        localChecksum,
+        cloudChecksum,
+        baseChecksum,
+      }
+    }
+    if (songsSetlistsEqual) {
+      if (cloudThemeSettingsEquals(localData.themeSettings, cloudTheme)) {
+        return {
+          decision: 'NOOP',
+          state: 'SAME_STATE',
+          reason: 'Local and cloud songbooks and themes are identical',
+          localChecksum,
+          cloudChecksum,
+          baseChecksum,
+        }
+      }
+      if (hasLocalCustomTheme && !hasCloudCustomTheme) {
+        return {
+          decision: 'UPLOAD',
+          state: 'LOCAL_NEWER',
+          reason: 'Local theme customization preserved over default/absent cloud theme',
+          localChecksum,
+          cloudChecksum,
+          baseChecksum,
+        }
+      }
+      if (hasCloudCustomTheme && !hasLocalCustomTheme) {
+        return {
+          decision: 'DOWNLOAD',
+          state: 'CLOUD_NEWER',
+          reason: 'Cloud theme customization downloaded over default/absent local theme',
+          localChecksum,
+          cloudChecksum,
+          baseChecksum,
+        }
+      }
+      if (!hasLocalCustomTheme && !hasCloudCustomTheme) {
+        if (hasLocalTheme && !hasCloudTheme) {
+          return {
+            decision: 'UPLOAD',
+            state: 'LOCAL_NEWER',
+            reason: 'Local theme settings uploaded to legacy cloud record',
+            localChecksum,
+            cloudChecksum,
+            baseChecksum,
+          }
+        }
+        if (!hasLocalTheme && hasCloudTheme) {
+          return {
+            decision: 'DOWNLOAD',
+            state: 'CLOUD_NEWER',
+            reason: 'Cloud theme settings downloaded to local device',
+            localChecksum,
+            cloudChecksum,
+            baseChecksum,
+          }
+        }
+      }
     }
   }
 
@@ -308,8 +431,14 @@ export function evaluateSyncDecision({
     }
   }
 
-  // 5. Cloud has changed since base, but local is unchanged from base
-  if (baseChecksum && localChecksum === baseChecksum && cloudChecksum !== baseChecksum) {
+  // 5. Cloud has changed since base, but local is unchanged from base (or legacy base where local songs/setlists are unchanged)
+  if (
+    baseChecksum &&
+    (localChecksum === baseChecksum ||
+      (localSongsSetlistsChecksum === baseChecksum &&
+        (!hasLocalCustomTheme || !hasCloudTheme))) &&
+    cloudChecksum !== baseChecksum
+  ) {
     return {
       decision: 'DOWNLOAD',
       state: 'CLOUD_NEWER',
@@ -711,14 +840,150 @@ export function reconcileSongbook(
     }
   }
 
+  const mergedThemeSettings = reconcileThemeSettings(local.themeSettings, remote.themeSettings, base, conflicts)
+
   return {
     merged: {
       songs: mergedSongs,
       setlists: mergedSetlists,
+      ...(mergedThemeSettings !== undefined ? { themeSettings: mergedThemeSettings } : {}),
     },
     conflicts,
     hasConflicts: conflicts.length > 0,
   }
+}
+
+function reconcileThemeSettings(
+  localTheme: CloudThemeSettings | undefined,
+  remoteTheme: CloudThemeSettings | undefined,
+  base: SyncLibrary | null | undefined,
+  conflicts: ConflictingItem[]
+): CloudThemeSettings | undefined {
+  if (localTheme === undefined && remoteTheme === undefined) {
+    return undefined
+  }
+  // Missing legacy remote themeSettings never resets local themes
+  if (remoteTheme === undefined) {
+    return localTheme ? normalizeCloudThemeSettings(localTheme) : undefined
+  }
+  if (localTheme === undefined) {
+    return normalizeCloudThemeSettings(remoteTheme)
+  }
+
+  const normLocal = normalizeCloudThemeSettings(localTheme)
+  const normRemote = normalizeCloudThemeSettings(remoteTheme)
+
+  if (cloudThemeSettingsEquals(normLocal, normRemote)) {
+    return normLocal
+  }
+
+  if (!base) {
+    const localCustom = isCustomizedThemeSettings(normLocal)
+    const remoteCustom = isCustomizedThemeSettings(normRemote)
+    if (!localCustom && remoteCustom) {
+      return normRemote
+    }
+    if (localCustom && !remoteCustom) {
+      return normLocal
+    }
+    conflicts.push({
+      id: 'theme:settings',
+      type: 'theme',
+      title: 'Stage Color Theme',
+      reason: 'Local and cloud theme customizations diverged without a common sync base',
+    })
+    return normLocal
+  }
+
+  const normBase = normalizeCloudThemeSettings(
+    base.themeSettings ?? {
+      version: CLOUD_THEME_SETTINGS_VERSION,
+      themeMode: 'solarized-dark',
+      customThemeColors: DEFAULT_CUSTOM_COLORS,
+      factoryThemeOverrides: {},
+    }
+  )
+
+  if (cloudThemeSettingsEquals(normLocal, normBase)) {
+    return normRemote
+  }
+  if (cloudThemeSettingsEquals(normRemote, normBase)) {
+    return normLocal
+  }
+
+  const localMode = normLocal.themeMode ?? 'solarized-dark'
+  const remoteMode = normRemote.themeMode ?? 'solarized-dark'
+  const baseMode = normBase.themeMode ?? 'solarized-dark'
+  let mergedMode: ThemeMode
+  if (localMode === remoteMode) {
+    mergedMode = localMode
+  } else if (localMode === baseMode) {
+    mergedMode = remoteMode
+  } else if (remoteMode === baseMode) {
+    mergedMode = localMode
+  } else {
+    mergedMode = localMode
+    conflicts.push({
+      id: 'theme:mode',
+      type: 'theme',
+      title: 'Active Theme Mode',
+      reason: 'Active theme mode was changed differently on this device and in the cloud',
+    })
+  }
+
+  const localPaletteJson = JSON.stringify(normLocal.customThemeColors)
+  const remotePaletteJson = JSON.stringify(normRemote.customThemeColors)
+  const basePaletteJson = JSON.stringify(normBase.customThemeColors)
+  let mergedCustomPalette: CustomThemeColors
+  if (localPaletteJson === remotePaletteJson) {
+    mergedCustomPalette = normLocal.customThemeColors!
+  } else if (localPaletteJson === basePaletteJson) {
+    mergedCustomPalette = normRemote.customThemeColors!
+  } else if (remotePaletteJson === basePaletteJson) {
+    mergedCustomPalette = normLocal.customThemeColors!
+  } else {
+    mergedCustomPalette = normLocal.customThemeColors!
+    conflicts.push({
+      id: 'theme:custom-palette',
+      type: 'theme',
+      title: 'Custom Theme Palette',
+      reason: 'Standalone custom palette was edited differently on this device and in the cloud',
+    })
+  }
+
+  const mergedOverrides: FactoryThemeOverrides = {}
+  for (const slot of THEME_MODES) {
+    if (slot === 'custom') continue
+    const lSlot = normLocal.factoryThemeOverrides?.[slot]
+    const rSlot = normRemote.factoryThemeOverrides?.[slot]
+    const bSlot = normBase.factoryThemeOverrides?.[slot]
+    const lStr = lSlot ? JSON.stringify(lSlot) : null
+    const rStr = rSlot ? JSON.stringify(rSlot) : null
+    const bStr = bSlot ? JSON.stringify(bSlot) : null
+
+    if (lStr === rStr) {
+      if (lSlot) mergedOverrides[slot] = lSlot
+    } else if (lStr === bStr) {
+      if (rSlot) mergedOverrides[slot] = rSlot
+    } else if (rStr === bStr) {
+      if (lSlot) mergedOverrides[slot] = lSlot
+    } else {
+      if (lSlot) mergedOverrides[slot] = lSlot
+      conflicts.push({
+        id: `theme:factory:${slot}`,
+        type: 'theme',
+        title: `Factory Theme (${slot})`,
+        reason: `Factory theme "${slot}" was customized differently on this device and in the cloud`,
+      })
+    }
+  }
+
+  return normalizeCloudThemeSettings({
+    version: CLOUD_THEME_SETTINGS_VERSION,
+    themeMode: mergedMode,
+    customThemeColors: mergedCustomPalette,
+    factoryThemeOverrides: mergedOverrides,
+  })
 }
 
 /**
@@ -777,7 +1042,7 @@ async function executeCloudSongbookSync(
 ): Promise<CloudSyncResult> {
   const targetStorage = options?.storage || (typeof localStorage !== 'undefined' ? localStorage : ({} as Storage))
 
-  // 1. Read and normalize local library
+  // 1. Read and normalize local library and theme settings
   const persistedAtStart = readPersistedLibrary(targetStorage)
   const rawLocal = options?.localLibraryOverride || persistedAtStart
   if (!rawLocal) {
@@ -790,10 +1055,76 @@ async function executeCloudSongbookSync(
     }
   }
 
+  let themeAtStart: CloudThemeSettings | undefined
+  try {
+    themeAtStart = readCloudThemeSettings(targetStorage)
+  } catch (err) {
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: `Local theme settings failed validation: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+
+  let localThemeSettings = themeAtStart
+  if (options?.localLibraryOverride && 'themeSettings' in options.localLibraryOverride) {
+    if (options.localLibraryOverride.themeSettings !== undefined) {
+      const themeErrors = validateCloudThemeSettings(options.localLibraryOverride.themeSettings)
+      if (themeErrors.length > 0) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'OFFLINE_OR_CLOUD_FAILURE',
+          actionTaken: 'NONE',
+          error: `Local theme settings failed validation: ${themeErrors.join('; ')}`,
+        }
+      }
+      localThemeSettings = normalizeCloudThemeSettings(options.localLibraryOverride.themeSettings)
+    } else {
+      localThemeSettings = undefined
+    }
+  }
+
   const normalized = normalizeSongbookIds(rawLocal.songs, rawLocal.setlists)
   const localLibrary: SyncLibrary = {
     songs: normalized.songs,
     setlists: normalized.setlists,
+    ...(localThemeSettings !== undefined ? { themeSettings: localThemeSettings } : {}),
+  }
+  const startSnapshot: SyncLibrary | null = persistedAtStart
+    ? { ...persistedAtStart, ...(themeAtStart !== undefined ? { themeSettings: themeAtStart } : {}) }
+    : null
+
+  const readLatestWithTheme = (): SyncLibrary | null => {
+    const latest = readPersistedLibrary(targetStorage)
+    if (!latest) return null
+    const latestTheme = readCloudThemeSettings(targetStorage)
+    return {
+      ...latest,
+      ...(latestTheme !== undefined ? { themeSettings: latestTheme } : {}),
+    }
+  }
+
+  const persistLibraryAndThemeAtomically = (
+    libraryToApply: SyncLibrary,
+    expectedRaw: string | null,
+    shouldPersistTheme = true
+  ) => {
+    persistLibrary(libraryToApply, targetStorage, { expectedRaw })
+    if (shouldPersistTheme && libraryToApply.themeSettings !== undefined) {
+      try {
+        persistCloudThemeSettings(libraryToApply.themeSettings, targetStorage)
+      } catch (themeErr) {
+        try {
+          if (expectedRaw === null) targetStorage.removeItem(LIBRARY_KEY)
+          else targetStorage.setItem(LIBRARY_KEY, expectedRaw)
+          setLastKnownPersistedLibraryRaw(expectedRaw, targetStorage)
+        } catch { /* Recovery snapshot already saved */ }
+        throw themeErr
+      }
+    }
   }
 
   // 2. Fetch remote cloud songbook record
@@ -861,6 +1192,33 @@ async function executeCloudSongbookSync(
       error: 'Account changed during reconciliation. Local data preserved; sign in again and export a backup.' }
   }
 
+  // Validate remote themeSettings at client boundary before evaluation or application
+  if (
+    cloudRecord &&
+    cloudRecord.data &&
+    typeof cloudRecord.data === 'object' &&
+    'themeSettings' in cloudRecord.data &&
+    cloudRecord.data.themeSettings !== undefined
+  ) {
+    const remoteThemeErrors = validateCloudThemeSettings(cloudRecord.data.themeSettings)
+    if (remoteThemeErrors.length > 0) {
+      return {
+        success: false,
+        status: 'ERROR',
+        state: 'OFFLINE_OR_CLOUD_FAILURE',
+        actionTaken: 'NONE',
+        error: `Cloud theme settings failed validation: ${remoteThemeErrors.join('; ')}`,
+      }
+    }
+    cloudRecord = {
+      ...cloudRecord,
+      data: {
+        ...cloudRecord.data,
+        themeSettings: normalizeCloudThemeSettings(cloudRecord.data.themeSettings),
+      },
+    }
+  }
+
   // A rejected upload is reconciled against a fresh GET, never replayed blindly.
   const recoverConflict = async (pending: SyncLibrary): Promise<CloudSyncResult> => {
     try {
@@ -873,9 +1231,9 @@ async function executeCloudSongbookSync(
           error: 'Cloud keeps changing. Local edits and recovery snapshot preserved. Export a backup and retry sync when other devices are idle.' }
       }
       // Preserve edits made in this browser while the request was in flight.
-      const latest = readPersistedLibrary(targetStorage)
-      const preserved = latest && persistedAtStart
-        ? reconcileSongbook(latest, pending, persistedAtStart).merged : pending
+      const latestFull = readLatestWithTheme()
+      const preserved = latestFull && startSnapshot
+        ? reconcileSongbook(latestFull, pending, startSnapshot).merged : pending
       const result = await executeCloudSongbookSync(token, {
         storage: targetStorage, forceAction: 'merge_preserve', localLibraryOverride: preserved,
       }, { attempt: (retry?.attempt ?? 0) + 1,
@@ -901,12 +1259,32 @@ async function executeCloudSongbookSync(
     }
   }
 
+  const storedBase = readCloudSyncBase(targetStorage)
+  const storedBaseFullChecksum = storedBase ? computeSongbookChecksum(storedBase) : null
+  const storedBaseLegacyChecksum = storedBase
+    ? computeSongbookChecksum({ songs: storedBase.songs, setlists: storedBase.setlists })
+    : null
+  const baseChecksumMatches =
+    Boolean(storedBase && (storedBaseFullChecksum === baseMeta.lastSyncedChecksum || storedBaseLegacyChecksum === baseMeta.lastSyncedChecksum))
+  const baseSnapshot = retry?.base ?? (baseOwnerMatches && baseChecksumMatches ? storedBase : null)
+
   const decisionResult = evaluateSyncDecision({
     localData: localLibrary,
     cloudRecord,
     baseMeta,
     isOffline: false,
   })
+
+  // Support safe disjoint factory-theme-slot edits when a valid common base snapshot exists
+  const canAutoMergeDisjointThemeEdits =
+    !options?.forceAction &&
+    !retry &&
+    decisionResult.decision === 'CONFLICT' &&
+    Boolean(cloudRecord && Array.isArray(cloudRecord.data?.songs) && Array.isArray(cloudRecord.data?.setlists)) &&
+    Boolean(baseSnapshot) &&
+    localLibrary.themeSettings !== undefined &&
+    cloudRecord?.data?.themeSettings !== undefined &&
+    !reconcileSongbook(localLibrary, cloudRecord.data, baseSnapshot).hasConflicts
 
   // 4. Check for forceAction overrides or execute decided action
   const actionToExecute = retry && decisionResult.decision === 'NOOP' ? 'NOOP'
@@ -916,17 +1294,23 @@ async function executeCloudSongbookSync(
       : options.forceAction === 'download'
       ? 'DOWNLOAD'
       : 'MERGE'
+    : canAutoMergeDisjointThemeEdits
+    ? 'MERGE'
     : decisionResult.decision
 
   if (actionToExecute === 'NOOP') {
     try {
       const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
-      const latest = readPersistedLibrary(targetStorage)
-      if (persistedAtStart && !latest) throw new Error('Local library removed during sync. Retry before replacing it.')
-      if (!persistedAtStart && latest) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
-      const appliedLibrary = latest && persistedAtStart
-        ? reconcileSongbook(latest, localLibrary, persistedAtStart).merged : localLibrary
-      persistLibrary(appliedLibrary, targetStorage, { expectedRaw })
+      const latestFull = readLatestWithTheme()
+      if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
+      if (!persistedAtStart && latestFull) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
+      const appliedLibrary = latestFull && startSnapshot
+        ? reconcileSongbook(latestFull, localLibrary, startSnapshot).merged : localLibrary
+      persistLibraryAndThemeAtomically(
+        appliedLibrary,
+        expectedRaw,
+        appliedLibrary.themeSettings !== undefined && !cloudThemeSettingsEquals(appliedLibrary.themeSettings, latestFull?.themeSettings)
+      )
       saveCloudSyncMeta(
         {
           lastSyncedChecksum: decisionResult.localChecksum,
@@ -1020,12 +1404,16 @@ async function executeCloudSongbookSync(
 
       const uploadData = uploadParsed
       const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
-      const latest = readPersistedLibrary(targetStorage)
-      if (persistedAtStart && !latest) throw new Error('Local library removed during sync. Retry before replacing it.')
-      if (!persistedAtStart && latest) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
-      const appliedLibrary = latest && persistedAtStart
-        ? reconcileSongbook(latest, localLibrary, persistedAtStart).merged : localLibrary
-      persistLibrary(appliedLibrary, targetStorage, { expectedRaw })
+      const latestFull = readLatestWithTheme()
+      if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
+      if (!persistedAtStart && latestFull) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
+      const appliedLibrary = latestFull && startSnapshot
+        ? reconcileSongbook(latestFull, localLibrary, startSnapshot).merged : localLibrary
+      persistLibraryAndThemeAtomically(
+        appliedLibrary,
+        expectedRaw,
+        appliedLibrary.themeSettings !== undefined && !cloudThemeSettingsEquals(appliedLibrary.themeSettings, latestFull?.themeSettings)
+      )
 
       saveCloudSyncMeta(
         {
@@ -1072,13 +1460,16 @@ async function executeCloudSongbookSync(
       }
 
       const normalizedIncoming = normalizeSongbookIds(incoming.songs, incoming.setlists)
-      const downloadedLibrary: SyncLibrary = {
+      const incomingTheme =
+        incoming.themeSettings !== undefined ? normalizeCloudThemeSettings(incoming.themeSettings) : undefined
+      const canonicalRemoteLibrary: SyncLibrary = {
         songs: normalizedIncoming.songs,
         setlists: normalizedIncoming.setlists,
+        ...(incomingTheme !== undefined ? { themeSettings: incomingTheme } : {}),
       }
 
       // Safety check referential integrity before committing downloaded library
-      const integrity = validateSongbookIntegrity(downloadedLibrary.songs, downloadedLibrary.setlists)
+      const integrity = validateSongbookIntegrity(canonicalRemoteLibrary.songs, canonicalRemoteLibrary.setlists)
       if (!integrity.isValid) {
         return {
           success: false,
@@ -1089,17 +1480,51 @@ async function executeCloudSongbookSync(
         }
       }
 
+      const expectedCloudChecksum = computeSongbookChecksum(canonicalRemoteLibrary)
+      if (cloudRecord.checksum !== expectedCloudChecksum) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: decisionResult.state,
+          actionTaken: 'NONE',
+          error: `Cloud songbook checksum mismatch: expected ${cloudRecord.checksum}, computed ${expectedCloudChecksum}`,
+        }
+      }
+
+      // Preserve local theme when remote is a legacy payload lacking themeSettings,
+      // or on automatic first-sync download when remote theme is default and local is customized.
+      const preserveLocalTheme =
+        incomingTheme === undefined ||
+        (!options?.forceAction &&
+          !baseMeta.lastSyncedChecksum &&
+          isCustomizedThemeSettings(localLibrary.themeSettings) &&
+          !isCustomizedThemeSettings(incomingTheme))
+
+      const effectiveTheme = preserveLocalTheme ? localLibrary.themeSettings : incomingTheme
+      const downloadedLibrary: SyncLibrary = {
+        songs: canonicalRemoteLibrary.songs,
+        setlists: canonicalRemoteLibrary.setlists,
+        ...(effectiveTheme !== undefined ? { themeSettings: effectiveTheme } : {}),
+      }
+
       // A download must not replace edits made while GET was in flight.
       const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
       const latest = readPersistedLibrary(targetStorage)
-      if (JSON.stringify(latest) !== JSON.stringify(persistedAtStart)) {
+      const latestTheme = readCloudThemeSettings(targetStorage)
+      if (
+        JSON.stringify(latest) !== JSON.stringify(persistedAtStart) ||
+        !cloudThemeSettingsEquals(latestTheme, themeAtStart)
+      ) {
         return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'NONE',
           error: 'Local library changed during cloud download. Current edits preserved. Retry sync and merge, or export a backup.' }
       }
 
       // Read back durable recovery before any destructive local replacement.
       const recoveryKey = `gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`
-      const recoverySnapshot = JSON.stringify(latest ?? localLibrary)
+      const recoveryCandidate: SyncLibrary = latest
+        ? { ...latest, ...(themeAtStart !== undefined ? { themeSettings: themeAtStart } : {}) }
+        : localLibrary
+      const recoverySnapshot = JSON.stringify(recoveryCandidate)
       try {
         targetStorage.setItem(recoveryKey, recoverySnapshot)
         if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) throw new Error('Snapshot readback failed')
@@ -1107,7 +1532,11 @@ async function executeCloudSongbookSync(
         throw new Error('Recovery snapshot could not be saved. Free browser storage or export a backup before retrying download.', { cause: err })
       }
 
-      persistLibrary(downloadedLibrary, targetStorage, { expectedRaw })
+      persistLibraryAndThemeAtomically(
+        downloadedLibrary,
+        expectedRaw,
+        !preserveLocalTheme && incomingTheme !== undefined
+      )
 
       saveCloudSyncMeta(
         {
@@ -1118,7 +1547,7 @@ async function executeCloudSongbookSync(
         },
         targetStorage
       )
-      saveCloudSyncBase(downloadedLibrary, targetStorage)
+      saveCloudSyncBase(canonicalRemoteLibrary, targetStorage)
 
       return {
         success: true,
@@ -1140,10 +1569,6 @@ async function executeCloudSongbookSync(
     }
   }
 
-  const storedBase = readCloudSyncBase(targetStorage)
-  const baseSnapshot = retry?.base ?? (baseOwnerMatches && storedBase &&
-    computeSongbookChecksum(storedBase) === baseMeta.lastSyncedChecksum ? storedBase : null)
-
   if (actionToExecute === 'MERGE' && cloudRecord) {
     try {
       const incoming = cloudRecord.data
@@ -1161,7 +1586,47 @@ async function executeCloudSongbookSync(
         return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'CONFLICT_DETECTED',
           error: 'Common sync snapshot unavailable. Local edits preserved. Export a backup before choosing upload or download.' }
       }
-      const reconciliation = reconcileSongbook(localLibrary, incoming, baseSnapshot)
+
+      const normalizedIncoming = normalizeSongbookIds(incoming.songs, incoming.setlists)
+      const incomingTheme =
+        incoming.themeSettings !== undefined ? normalizeCloudThemeSettings(incoming.themeSettings) : undefined
+      const canonicalRemoteLibrary: SyncLibrary = {
+        songs: normalizedIncoming.songs,
+        setlists: normalizedIncoming.setlists,
+        ...(incomingTheme !== undefined ? { themeSettings: incomingTheme } : {}),
+      }
+      const remoteIntegrity = validateSongbookIntegrity(canonicalRemoteLibrary.songs, canonicalRemoteLibrary.setlists)
+      if (!remoteIntegrity.isValid) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'CONFLICT',
+          actionTaken: 'NONE',
+          error: `Cloud songbook failed referential integrity check: ${remoteIntegrity.errors.join('; ')}`,
+        }
+      }
+      const expectedRemoteChecksum = computeSongbookChecksum(canonicalRemoteLibrary)
+      if (cloudRecord.checksum !== expectedRemoteChecksum) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'CONFLICT',
+          actionTaken: 'NONE',
+          error: `Cloud songbook checksum mismatch: expected ${cloudRecord.checksum}, computed ${expectedRemoteChecksum}`,
+        }
+      }
+
+      const reconciliation = reconcileSongbook(localLibrary, canonicalRemoteLibrary, baseSnapshot)
+      if (retry && reconciliation.conflicts.some((c) => c.type === 'theme')) {
+        return {
+          success: false,
+          status: 'CONFLICT',
+          state: 'CONFLICT',
+          actionTaken: 'CONFLICT_DETECTED',
+          error: 'Conflicting theme edits detected between local device and cloud.',
+          conflicts: reconciliation.conflicts,
+        }
+      }
       const mergedLib = reconciliation.merged
 
       // Referential check on merged library before persisting or uploading
@@ -1239,14 +1704,18 @@ async function executeCloudSongbookSync(
 
       const uploadData = uploadParsed
       const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
-      const latest = readPersistedLibrary(targetStorage)
-      if (persistedAtStart && !latest) throw new Error('Local library removed during sync. Retry before replacing it.')
-      if (!persistedAtStart && latest) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
-      const appliedLibrary = latest && persistedAtStart
-        ? reconcileSongbook(latest, mergedLib, persistedAtStart).merged : mergedLib
+      const latestFull = readLatestWithTheme()
+      if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
+      if (!persistedAtStart && latestFull) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
+      const appliedLibrary = latestFull && startSnapshot
+        ? reconcileSongbook(latestFull, mergedLib, startSnapshot).merged : mergedLib
       // Persist before acknowledging sync metadata. The base remains the uploaded
       // revision even if newer in-flight browser edits are still pending locally.
-      persistLibrary(appliedLibrary, targetStorage, { expectedRaw })
+      persistLibraryAndThemeAtomically(
+        appliedLibrary,
+        expectedRaw,
+        appliedLibrary.themeSettings !== undefined
+      )
 
       saveCloudSyncMeta(
         {
