@@ -346,6 +346,8 @@ export default defineConfig(({ mode }) => {
           'dev-logo.png',
         ],
         manifest: {
+          id: '/',
+          scope: '/',
           name: isDev ? 'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion',
           short_name: isDev ? 'GTAR-Dev' : 'GTAR',
           description: 'Professional Live Stage Teleprompter, Chord Transposer, BandSync, and Setlist Companion for Musicians',
