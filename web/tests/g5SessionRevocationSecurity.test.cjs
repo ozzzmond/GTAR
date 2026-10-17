@@ -809,3 +809,266 @@ test('23. NO_RAW_TOKENS_STORED_OR_LOGGED: Only token hashes are stored, errors d
   const errBody = await errRes.text()
   assert.ok(!errBody.includes(token), 'Error response must not disclose bearer token')
 })
+
+test('24. REGRESSION_MISSING_TOKEN_HASHES: Missing or empty token hashes fail closed', async () => {
+  const { sqlite, db } = createTestSqliteDb()
+  const user = await seedUser(sqlite, { id: 'usr_nohash' })
+  const nowIso = new Date().toISOString()
+
+  // Empty, null, undefined or whitespace tokenHash to revokeSessionByTokenHash
+  assert.equal(await authCore.revokeSessionByTokenHash(db, '', nowIso), false)
+  assert.equal(await authCore.revokeSessionByTokenHash(db, '   ', nowIso), false)
+  assert.equal(await authCore.revokeSessionByTokenHash(db, null, nowIso), false)
+  assert.equal(await authCore.revokeSessionByTokenHash(db, undefined, nowIso), false)
+
+  // Empty or whitespace token to validateSessionWithDb
+  const emptyRes = await authCore.validateSessionWithDb(db, '', { uid: user.id, sub: user.google_sub })
+  assert.equal(emptyRes.valid, false)
+  assert.match(emptyRes.reason, /invalid or missing/i)
+
+  const spaceRes = await authCore.validateSessionWithDb(db, '   ', { uid: user.id, sub: user.google_sub })
+  assert.equal(spaceRes.valid, false)
+
+  // Modern token whose token hash is completely missing from D1 sessions table
+  const token = await authCore.createSessionToken(user, TEST_SECRET, 3600000, 'sid_unregistered')
+  const missingRes = await authCore.validateSessionWithDb(db, token, {
+    uid: user.id,
+    sub: user.google_sub,
+    sid: 'sid_unregistered',
+  })
+  assert.equal(missingRes.valid, false)
+  assert.match(missingRes.reason, /not found or revoked/i)
+})
+
+test('25. REGRESSION_FAILED_D1_WRITES: Failed D1 writes fail closed without silent success', async () => {
+  const { db } = createTestSqliteDb()
+  const user = makeUser({ id: 'usr_failwrite' })
+  const nowIso = new Date().toISOString()
+
+  // 1. Mock D1 where UPDATE returns { success: false }
+  const failingUpdateDb = {
+    prepare(sql) {
+      return {
+        bind() { return this },
+        async run() {
+          return { success: false }
+        },
+        async first() {
+          return null
+        },
+      }
+    },
+  }
+  const updateRes = await authCore.revokeSessionByTokenHash(failingUpdateDb, 'some_hash', nowIso)
+  assert.equal(updateRes, false, 'Failed D1 UPDATE must return false')
+
+  // 2. Mock D1 where legacy INSERT returns { success: false }
+  const failingInsertDb = {
+    prepare(sql) {
+      return {
+        bind() { return this },
+        async run() {
+          if (sql.trim().startsWith('UPDATE')) return { success: true, meta: { changes: 0 } }
+          return { success: false }
+        },
+        async first() {
+          return null
+        },
+      }
+    },
+  }
+  const insertRes = await authCore.revokeSessionByTokenHash(failingInsertDb, 'some_hash', nowIso, { userId: user.id })
+  assert.equal(insertRes, false, 'Failed D1 legacy INSERT must return false')
+
+  // 3. createSessionRecord throws when D1 run returns { success: false }
+  await assert.rejects(
+    async () => {
+      await authCore.createSessionRecord(failingUpdateDb, {
+        id: 'sid_fail',
+        user_id: user.id,
+        session_token_hash: 'hash_fail',
+        created_at: nowIso,
+        expires_at: nowIso,
+      })
+    },
+    /Failed to insert session record/
+  )
+
+  // 4. Logout endpoint returns HTTP 500 when D1 write fails, never silent 200
+  const env = { DB: failingUpdateDb, AUTH_SECRET: TEST_SECRET }
+  const token = await authCore.createSessionToken(user, TEST_SECRET, 3600000, 'sid_fail_logout')
+  const req = new Request('http://localhost/api/auth/logout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const logoutRes = await logoutApi.onRequestPost({ request: req, env })
+  assert.equal(logoutRes.status, 500, 'Logout must fail with 500 when D1 write fails')
+  const logoutBody = await logoutRes.json()
+  assert.equal(logoutBody.success, false)
+  assert.match(logoutBody.error, /failed/i)
+})
+
+test('26. REGRESSION_MALFORMED_AND_MISSING_IAT: Legacy tokens require trustworthy iat', async () => {
+  const { sqlite, db } = createTestSqliteDb()
+  const user = await seedUser(sqlite, { id: 'usr_iat' })
+  const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
+
+  // 1. Missing iat claim entirely
+  const noIatToken = createLegacyToken(user, TEST_SECRET, { iat: undefined })
+  const noIatRes = await authCore.validateSessionWithDb(db, noIatToken, {
+    uid: user.id,
+    sub: user.google_sub,
+    iat: undefined,
+  })
+  assert.equal(noIatRes.valid, false)
+  assert.match(noIatRes.reason, /valid issuance timestamp/i)
+
+  const noIatReq = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${noIatToken}` } })
+  const noIatAuth = await authCore.authenticateUserRequest(noIatReq, env)
+  assert.equal(noIatAuth.status, 401)
+
+  // 2. Non-number or invalid iat
+  const stringIatToken = createLegacyToken(user, TEST_SECRET, { iat: 'invalid_string' })
+  const stringIatReq = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${stringIatToken}` } })
+  const stringIatAuth = await authCore.authenticateUserRequest(stringIatReq, env)
+  assert.equal(stringIatAuth.status, 401)
+
+  // 3. Negative / non-positive iat
+  const negativeIatToken = createLegacyToken(user, TEST_SECRET, { iat: -500 })
+  const negativeIatReq = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${negativeIatToken}` } })
+  const negativeIatAuth = await authCore.authenticateUserRequest(negativeIatReq, env)
+  assert.equal(negativeIatAuth.status, 401)
+
+  // 4. Future iat (clock skew beyond 60s)
+  const futureIatToken = createLegacyToken(user, TEST_SECRET, { iat: Math.floor(Date.now() / 1000) + 7200 })
+  const futureIatReq = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${futureIatToken}` } })
+  const futureIatAuth = await authCore.authenticateUserRequest(futureIatReq, env)
+  assert.equal(futureIatAuth.status, 401)
+  assert.match(futureIatAuth.error, /future/i)
+
+  // 5. Expired legacy transition window (older than 7 days)
+  const staleIatToken = createLegacyToken(user, TEST_SECRET, { iat: Math.floor(Date.now() / 1000) - 8 * 86400 })
+  const staleIatReq = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${staleIatToken}` } })
+  const staleIatAuth = await authCore.authenticateUserRequest(staleIatReq, env)
+  assert.equal(staleIatAuth.status, 401)
+  assert.match(staleIatAuth.error, /expired/i)
+})
+
+test('27. REGRESSION_REPEATED_LOGOUT: Repeated logout on both modern and legacy sessions confirms durable revocation', async () => {
+  const { sqlite, db } = createTestSqliteDb()
+  const user = await seedUser(sqlite, { id: 'usr_repeat_both' })
+  const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
+
+  // Modern session repeated logout
+  const modernToken = await authCore.createSessionToken(user, TEST_SECRET, 3600000, 'sid_rep_mod')
+  const modernHash = createHash('sha256').update(modernToken).digest('hex')
+  await authCore.createSessionRecord(db, {
+    id: 'sid_rep_mod',
+    user_id: user.id,
+    session_token_hash: modernHash,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 86400 * 1000).toISOString(),
+  })
+
+  for (let i = 0; i < 3; i++) {
+    const req = new Request('http://localhost/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${modernToken}` },
+    })
+    const res = await logoutApi.onRequestPost({ request: req, env })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.success, true)
+    assert.equal(body.revoked, true)
+
+    const row = sqlite.prepare('SELECT is_revoked, revoked_at FROM sessions WHERE session_token_hash = ?').get(modernHash)
+    assert.equal(row.is_revoked, 1)
+    assert.ok(row.revoked_at)
+  }
+
+  // Legacy session repeated logout
+  const legacyToken = createLegacyToken(user, TEST_SECRET)
+  const legacyHash = createHash('sha256').update(legacyToken).digest('hex')
+
+  for (let i = 0; i < 3; i++) {
+    const req = new Request('http://localhost/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${legacyToken}` },
+    })
+    const res = await logoutApi.onRequestPost({ request: req, env })
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.equal(body.success, true)
+    assert.equal(body.revoked, true)
+
+    const row = sqlite.prepare('SELECT is_revoked, revoked_at FROM sessions WHERE session_token_hash = ?').get(legacyHash)
+    assert.equal(row.is_revoked, 1)
+    assert.ok(row.revoked_at)
+  }
+})
+
+test('28. REGRESSION_COPIED_LEGACY_TOKENS_AND_ISOLATED_MODERN_SESSIONS: Direct D1 validation blocks copied legacy tokens while preserving modern sessions', async () => {
+  const { sqlite, db } = createTestSqliteDb()
+  const user = await seedUser(sqlite, { id: 'usr_copied_legacy' })
+  const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
+
+  // 1. User has modern session on laptop
+  const modernToken = await authCore.createSessionToken(user, TEST_SECRET, 3600000, 'sid_laptop')
+  const modernHash = createHash('sha256').update(modernToken).digest('hex')
+  await authCore.createSessionRecord(db, {
+    id: 'sid_laptop',
+    user_id: user.id,
+    session_token_hash: modernHash,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 86400 * 1000).toISOString(),
+  })
+
+  // 2. User has legacy session on old phone
+  const legacyToken = createLegacyToken(user, TEST_SECRET)
+  const legacyHash = createHash('sha256').update(legacyToken).digest('hex')
+
+  // Both tokens work initially
+  const modReq1 = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${modernToken}` } })
+  const modRes1 = await authCore.authenticateUserRequest(modReq1, env)
+  assert.equal(modRes1.user?.id, user.id)
+
+  const legReq1 = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${legacyToken}` } })
+  const legRes1 = await authCore.authenticateUserRequest(legReq1, env)
+  assert.equal(legRes1.user?.id, user.id)
+
+  // 3. Attacker copies the legacy token
+  const copiedLegacyToken = legacyToken
+
+  // 4. User logs out the legacy session from old phone
+  const logoutReq = new Request('http://localhost/api/auth/logout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${legacyToken}` },
+  })
+  const logoutRes = await logoutApi.onRequestPost({ request: logoutReq, env })
+  assert.equal(logoutRes.status, 200)
+
+  // 5. Attacker attempts to use copied legacy token -> REJECTED directly via D1 hash check
+  const attackerReq = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${copiedLegacyToken}` } })
+  const attackerRes = await authCore.authenticateUserRequest(attackerReq, env)
+  assert.equal(attackerRes.status, 401)
+  assert.match(attackerRes.error, /revoked/i)
+
+  // 6. User's independent modern session on laptop REMAINS FULLY ACTIVE
+  const modReq2 = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${modernToken}` } })
+  const modRes2 = await authCore.authenticateUserRequest(modReq2, env)
+  assert.equal(modRes2.user?.id, user.id, 'Modern session must remain active after legacy session logout')
+
+  // 7. When user eventually logs out modern session, only modern session is revoked
+  const logoutModReq = new Request('http://localhost/api/auth/logout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${modernToken}` },
+  })
+  const logoutModRes = await logoutApi.onRequestPost({ request: logoutModReq, env })
+  assert.equal(logoutModRes.status, 200)
+
+  const modReq3 = new Request('http://localhost/api/auth/session', { headers: { Authorization: `Bearer ${modernToken}` } })
+  const modRes3 = await authCore.authenticateUserRequest(modReq3, env)
+  assert.equal(modRes3.status, 401)
+  assert.match(modRes3.error, /revoked/i)
+})
+

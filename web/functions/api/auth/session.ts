@@ -231,7 +231,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         if (user?.sessions_revoked_at) {
           const revokedTime = new Date(user.sessions_revoked_at).getTime()
           const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
-          if (tokenIat > 0 && tokenIat <= revokedTime) {
+          if (!tokenIat || tokenIat <= revokedTime) {
             user = null
           }
         }

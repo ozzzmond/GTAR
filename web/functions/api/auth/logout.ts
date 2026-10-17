@@ -6,6 +6,7 @@ import {
   isValidAuthSecret,
   hashSessionToken,
   revokeSessionByTokenHash,
+  findSessionByTokenHash,
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
@@ -60,18 +61,24 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const nowIso = new Date().toISOString()
   try {
     const tokenHash = await hashSessionToken(token)
-    await revokeSessionByTokenHash(env.DB, tokenHash, nowIso, {
+    if (!tokenHash || typeof tokenHash !== 'string' || !tokenHash.trim()) {
+      return errorResponse('Session revocation failed', 500)
+    }
+
+    const revoked = await revokeSessionByTokenHash(env.DB, tokenHash, nowIso, {
       userId: sessionData.uid,
       createdAt: sessionData.iat ? new Date(sessionData.iat * 1000).toISOString() : nowIso,
       expiresAt: sessionData.exp ? new Date(sessionData.exp * 1000).toISOString() : undefined,
     })
 
-    if (!sessionData.sid) {
-      try {
-        await env.DB.prepare(`UPDATE users SET sessions_revoked_at = ? WHERE id = ?`).bind(nowIso, sessionData.uid).run()
-      } catch {
-        // best-effort if column missing
-      }
+    if (!revoked) {
+      return errorResponse('Session revocation failed', 500)
+    }
+
+    // Durably confirm revocation via authoritative D1 lookup before reporting success
+    const verifiedSession = await findSessionByTokenHash(env.DB, tokenHash)
+    if (!verifiedSession || verifiedSession.is_revoked !== 1) {
+      return errorResponse('Session revocation failed', 500)
     }
 
     return jsonResponse({
@@ -88,3 +95,4 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorResponse('Session revocation failed', 500)
   }
 }
+

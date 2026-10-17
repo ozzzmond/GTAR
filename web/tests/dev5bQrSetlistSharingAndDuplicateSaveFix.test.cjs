@@ -266,12 +266,12 @@ test('BACKEND_ERROR_SANITIZATION: /api/setlist/share sanitizes errors and hides 
   const sensitiveErrorMsg = 'FATAL: SQLite disk I/O error or constraint table shared_setlists corrupted /var/data.db'
   const failingDb = {
     prepare(sql) {
-      if (sql && sql.includes('users')) {
+      if (sql && (sql.includes('users') || sql.includes('sessions'))) {
         return {
           bind() {
             return {
               async first() {
-                return activeUser
+                return sql.includes('users') ? activeUser : null
               },
             }
           },

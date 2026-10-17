@@ -512,7 +512,10 @@ export async function createSessionRecord(
        VALUES (?, ?, ?, ?, ?, ?, 0, NULL)`
     )
     .bind(session.id, session.user_id, session.session_token_hash, session.created_at, session.expires_at, lastSeen)
-  await stmt.run()
+  const res = await stmt.run()
+  if (res && res.success === false) {
+    throw new Error('Failed to insert session record')
+  }
 }
 
 export async function findSessionByTokenHash(
@@ -536,11 +539,18 @@ export async function revokeSessionByTokenHash(
   nowIso: string,
   extra?: { userId?: string; createdAt?: string; expiresAt?: string }
 ): Promise<boolean> {
+  if (!tokenHash || typeof tokenHash !== 'string' || !tokenHash.trim()) {
+    return false
+  }
+
   const stmt = db
     .prepare(`UPDATE sessions SET is_revoked = 1, revoked_at = ? WHERE session_token_hash = ?`)
     .bind(nowIso, tokenHash)
   const res = await stmt.run()
-  const rowsUpdated = (res?.meta as { changes?: number })?.changes ?? (res.success ? 1 : 0)
+  if (res && res.success === false) {
+    return false
+  }
+  const rowsUpdated = (res?.meta as { changes?: number })?.changes ?? (res?.success ? 1 : 0)
   if (rowsUpdated > 0) return true
 
   // If not found in sessions table (e.g. legacy token during logout):
@@ -556,12 +566,26 @@ export async function revokeSessionByTokenHash(
            ON CONFLICT(session_token_hash) DO UPDATE SET is_revoked = 1, revoked_at = excluded.revoked_at`
         )
         .bind(legacyId, extra.userId, tokenHash, createdAt, expiresAt, nowIso, nowIso)
-      await insertStmt.run()
+      const insertRes = await insertStmt.run()
+      if (insertRes && insertRes.success === false) {
+        return false
+      }
       return true
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/no such table/i.test(msg)) {
+        throw err
+      }
       return false
     }
   }
+
+  // If no row was updated and no insert was possible, verify if already revoked in D1
+  const existing = await findSessionByTokenHash(db, tokenHash)
+  if (existing && existing.is_revoked === 1) {
+    return true
+  }
+
   return false
 }
 
@@ -571,20 +595,32 @@ export async function revokeAllUserSessions(
   nowIso: string
 ): Promise<boolean> {
   try {
-    await db
+    const res = await db
       .prepare(`UPDATE sessions SET is_revoked = 1, revoked_at = ? WHERE user_id = ? AND is_revoked = 0`)
       .bind(nowIso, userId)
       .run()
-  } catch {
-    // best effort if table missing
+    if (res && res.success === false) {
+      return false
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!/no such table/i.test(msg)) {
+      throw err
+    }
   }
   try {
-    await db
+    const userRes = await db
       .prepare(`UPDATE users SET sessions_revoked_at = ? WHERE id = ?`)
       .bind(nowIso, userId)
       .run()
-  } catch {
-    // best effort if column missing
+    if (userRes && userRes.success === false) {
+      return false
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!/no such column/i.test(msg)) {
+      throw err
+    }
   }
   return true
 }
@@ -595,7 +631,12 @@ export async function validateSessionWithDb(
   sessionData: { uid: string; sub: string; sid?: string; iat?: number; exp?: number },
   now = Date.now()
 ): Promise<{ valid: boolean; reason?: string; isSchemaMissing?: boolean }> {
-  // If modern token with sid: must be validated against sessions table
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    return { valid: false, reason: 'Invalid or missing session token' }
+  }
+
+  // Modern token handling (sid present in payload):
+  // Must be registered in sessions table and active
   if (sessionData.sid) {
     let tokenHash: string
     try {
@@ -629,17 +670,57 @@ export async function validateSessionWithDb(
   }
 
   // Legacy token handling (no sid in payload):
-  // Check bounded legacy transition window first
-  if (sessionData.iat && (Math.floor(now / 1000) - sessionData.iat > LEGACY_SESSION_MAX_AGE_SECONDS)) {
+  // 1. Authoritative D1 check: directly consult persisted revoked token hash (F1)
+  let sessionRow: SessionRecord | null = null
+  try {
+    const tokenHash = await hashSessionToken(token)
+    sessionRow = await findSessionByTokenHash(db, tokenHash)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!/no such table/i.test(msg)) {
+      throw err
+    }
+    // If sessions table does not exist yet (pre-migration 0006), fall through to iat & users checks
+  }
+
+  if (sessionRow) {
+    if (sessionRow.is_revoked === 1) {
+      return { valid: false, reason: 'Session has been revoked' }
+    }
+    if (sessionRow.user_id && sessionRow.user_id !== sessionData.uid) {
+      return { valid: false, reason: 'Session ownership mismatch' }
+    }
+    if (sessionRow.expires_at && new Date(sessionRow.expires_at).getTime() <= now) {
+      return { valid: false, reason: 'Session has expired' }
+    }
+  }
+
+  // 2. Trustworthy iat validation (F3)
+  if (
+    typeof sessionData.iat !== 'number' ||
+    !Number.isSafeInteger(sessionData.iat) ||
+    sessionData.iat <= 0
+  ) {
+    return { valid: false, reason: 'Legacy session requires valid issuance timestamp' }
+  }
+
+  const nowSeconds = Math.floor(now / 1000)
+  // Clock skew tolerance: reject if issued in the future beyond 60s
+  if (sessionData.iat > nowSeconds + 60) {
+    return { valid: false, reason: 'Legacy session issuance timestamp in the future' }
+  }
+
+  // Bounded legacy transition window (7 days)
+  if (nowSeconds - sessionData.iat > LEGACY_SESSION_MAX_AGE_SECONDS) {
     return { valid: false, reason: 'Legacy session expired. Please sign in again' }
   }
 
-  // Check users.sessions_revoked_at
+  // 3. Check users.sessions_revoked_at (bulk revocation / account denial)
   try {
     const user = await findUserById(db, sessionData.uid)
     if (user?.sessions_revoked_at) {
       const revokedTime = new Date(user.sessions_revoked_at).getTime()
-      if (sessionData.iat && sessionData.iat * 1000 <= revokedTime) {
+      if (!Number.isNaN(revokedTime) && sessionData.iat * 1000 <= revokedTime) {
         return { valid: false, reason: 'Session has been revoked' }
       }
     }
@@ -725,21 +806,33 @@ export async function updateUserAccessStatus(
   if (status === 'denied') {
     // Revoke all active sessions for this denied user
     try {
-      await db
+      const sessRes = await db
         .prepare(`UPDATE sessions SET is_revoked = 1, revoked_at = ? WHERE user_id = ? AND is_revoked = 0`)
         .bind(nowIso, id)
         .run()
-    } catch {
-      // Best-effort if sessions table does not exist
+      if (sessRes && sessRes.success === false) {
+        return false
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/no such table/i.test(msg)) {
+        throw err
+      }
     }
 
     try {
-      await db
+      const userRevRes = await db
         .prepare(`UPDATE users SET sessions_revoked_at = ? WHERE id = ?`)
         .bind(nowIso, id)
         .run()
-    } catch {
-      // Best-effort if sessions_revoked_at column does not exist yet
+      if (userRevRes && userRevRes.success === false) {
+        return false
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/no such column/i.test(msg)) {
+        throw err
+      }
     }
   }
 
@@ -749,7 +842,7 @@ export async function updateUserAccessStatus(
     .prepare(`UPDATE users SET access_status = ?, updated_at = ? WHERE id = ?`)
     .bind(status, nowIso, id)
   const res = await stmt.run()
-  return res.success !== false
+  return res && res.success !== false
 }
 
 /**
