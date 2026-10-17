@@ -16,11 +16,11 @@ test('owner gate unmounts real presentation on expiry and offline reload remains
   const originalNow=Date.now
   const now=originalNow()
   let mounted=0,unmounted=0
-  global.fetch=async()=>new Response(JSON.stringify({sub:'owner',email:'jlopez3rd@gmail.com',email_verified:true}))
+  global.fetch=async()=>new Response(JSON.stringify({success:true,user:{id:'owner-id',google_sub:'owner',email:'jlopez3rd@gmail.com',display_name:'Owner',picture_url:null,role:'admin',access_status:'active'}}))
   const {AuthGate}=require('../src/components/AuthGate.tsx')
   const {StagePresentationView}=require('../src/components/StagePresentationView.tsx')
   function Presentation(){React.useEffect(()=>{mounted++;return()=>{unmounted++}},[]);return React.createElement(StagePresentationView)}
-  sessionStorage.setItem('gtar_google_session',JSON.stringify({token:'test',expiresAt:now+60000,user:{sub:'owner',email:'jlopez3rd@gmail.com'}}))
+  sessionStorage.setItem('gtar_google_session',JSON.stringify({sessionToken:'test-session-token',role:'admin',access_status:'active',expiresAt:now+60000,user:{id:'owner-id',sub:'owner',email:'jlopez3rd@gmail.com',role:'admin',access_status:'active'}}))
   let root=createRoot(document.getElementById('root'))
   try {
     await act(async()=>{root.render(React.createElement(AuthGate,null,React.createElement(Presentation)))})
@@ -39,12 +39,14 @@ test('owner gate unmounts real presentation on expiry and offline reload remains
     Date.now = originalNow
     sessionStorage.setItem('gtar_google_session', JSON.stringify({
       version: 1,
-      token: 'test',
+      sessionToken: 'test-session-token',
+      role: 'admin',
+      access_status: 'active',
       authenticatedAt: now,
       lastVerifiedAt: now,
       localExpiresAt: now + 30 * 24 * 60 * 60 * 1000,
       expiresAt: now + 30 * 24 * 60 * 60 * 1000,
-      user: { sub: 'owner', email: 'jlopez3rd@gmail.com' }
+      user: { id: 'owner-id', sub: 'owner', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' }
     }))
     global.fetch = async () => { throw Error('offline') }
     root = createRoot(document.getElementById('root'))

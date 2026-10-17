@@ -3,6 +3,7 @@ import {
   jsonResponse,
   errorResponse,
   verifyGoogleIdToken,
+  isGoogleTokenRevokedForUser,
   isBootstrapAdmin,
   createSessionToken,
   verifySessionToken,
@@ -226,14 +227,11 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     } else {
       // 2. Google ID token fallback
       try {
-        const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
+        const now = Date.now()
+        const verified = await verifyGoogleIdToken(token, env, now, request)
         user = await findUserByGoogleSub(env.DB, verified.sub)
-        if (user?.sessions_revoked_at) {
-          const revokedTime = new Date(user.sessions_revoked_at).getTime()
-          const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
-          if (!tokenIat || tokenIat <= revokedTime) {
-            user = null
-          }
+        if (user?.sessions_revoked_at && isGoogleTokenRevokedForUser(verified, user, now)) {
+          user = null
         }
       } catch {
         // Invalid

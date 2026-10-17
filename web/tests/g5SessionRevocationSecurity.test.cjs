@@ -9,12 +9,13 @@ const { createHmac, createHash } = require('node:crypto')
 for (const ext of ['.ts', '.tsx']) {
   require.extensions[ext] = (module, filename) =>
     module._compile(
-      ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true },
+      ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false,VITE_GOOGLE_CLIENT_ID:"test-client-id"})'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
       }).outputText,
       filename
     )
 }
+require.extensions['.png'] = (module) => { module.exports = '/assets/dev-logo.png' }
 
 const webDir = path.resolve(__dirname, '..')
 const authCore = require(path.join(webDir, 'functions/lib/authCore.ts'))
@@ -22,7 +23,8 @@ const sessionApi = require(path.join(webDir, 'functions/api/auth/session.ts'))
 const logoutApi = require(path.join(webDir, 'functions/api/auth/logout.ts'))
 const syncApi = require(path.join(webDir, 'functions/api/songbook/sync.ts'))
 const shareApi = require(path.join(webDir, 'functions/api/setlist/share.ts'))
-const { logoutFromServer } = require(path.join(webDir, 'src/utils/googleAuth.ts'))
+const googleAuth = require(path.join(webDir, 'src/utils/googleAuth.ts'))
+const { logoutFromServer } = googleAuth
 
 const TEST_SECRET = 'disposable-test-secret-gtar-g5-session-revocation-key-32'
 
@@ -1071,4 +1073,624 @@ test('28. REGRESSION_COPIED_LEGACY_TOKENS_AND_ISOLATED_MODERN_SESSIONS: Direct D
   assert.equal(modRes3.status, 401)
   assert.match(modRes3.error, /revoked/i)
 })
+
+test('29. REGRESSION_HOTFIX_FAILED_LOGIN_NO_OAUTH_FALLBACK: Failed server login never falls back to client-only OAuth; valid server-approved login unlocks AuthGate', async () => {
+  const { JSDOM } = require('jsdom')
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const { AuthGate } = require(path.join(webDir, 'src/components/AuthGate.tsx'))
+
+  // Static verification: AuthGate.tsx does not reference requestGoogleSession
+  const authGateSource = fs.readFileSync(path.join(webDir, 'src/components/AuthGate.tsx'), 'utf8')
+  assert.ok(!authGateSource.includes('requestGoogleSession'), 'AuthGate must not import or call requestGoogleSession')
+
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
+  const prev = {
+    window: global.window,
+    document: global.document,
+    localStorage: global.localStorage,
+    sessionStorage: global.sessionStorage,
+    fetch: global.fetch,
+    IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT,
+  }
+
+  let oauthFallbackCalled = false
+  let serverMode = 'fail_500'
+
+  try {
+    Object.assign(global, {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      sessionStorage: dom.window.sessionStorage,
+      IS_REACT_ACT_ENVIRONMENT: true,
+    })
+
+    dom.window.google = {
+      accounts: {
+        id: {
+          initialize(cfg) {
+            this._cb = cfg.callback
+          },
+          prompt() {
+            if (this._cb) this._cb({ credential: 'mock-id-token-jwt' })
+          },
+          renderButton() {},
+          cancel() {},
+        },
+        oauth2: {
+          initTokenClient() {
+            oauthFallbackCalled = true
+            return {
+              requestAccessToken() {
+                oauthFallbackCalled = true
+              },
+            }
+          },
+        },
+      },
+    }
+
+    global.fetch = async (url, init) => {
+      if (String(url).includes('/api/auth/session') && init?.method === 'POST') {
+        if (serverMode === 'fail_500') {
+          return new Response(JSON.stringify({ success: false, error: 'Server authentication unavailable' }), { status: 500 })
+        }
+        if (serverMode === 'approve') {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              sessionToken: 'server-issued-session-token-abc',
+              user: {
+                id: 'usr-approved-1',
+                google_sub: 'sub-approved-1',
+                email: 'jlopez3rd@gmail.com',
+                display_name: 'J Lopez',
+                picture_url: null,
+                role: 'admin',
+                access_status: 'active',
+              },
+            }),
+            { status: 200 }
+          )
+        }
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          user: {
+            id: 'usr-approved-1',
+            google_sub: 'sub-approved-1',
+            email: 'jlopez3rd@gmail.com',
+            display_name: 'J Lopez',
+            picture_url: null,
+            role: 'admin',
+            access_status: 'active',
+          },
+        }),
+        { status: 200 }
+      )
+    }
+
+    function ProtectedApp() {
+      return React.createElement('div', { id: 'protected-app' }, 'Protected Songbook Unlocked')
+    }
+
+    const root = createRoot(dom.window.document.getElementById('root'))
+    await act(async () => {
+      root.render(React.createElement(AuthGate, null, React.createElement(ProtectedApp)))
+    })
+
+    // 1. Trigger sign-in when server fails -> must NOT invoke OAuth fallback, must remain locked
+    const signInBtn = Array.from(dom.window.document.querySelectorAll('button')).find((b) =>
+      /Sign in with Google/i.test(b.textContent || '')
+    )
+    assert.ok(signInBtn, 'Sign in button must be rendered while locked')
+
+    await act(async () => {
+      signInBtn.click()
+    })
+
+    assert.equal(oauthFallbackCalled, false, 'Client-only OAuth fallback must never be called on failed server login')
+    assert.equal(dom.window.document.getElementById('protected-app'), null, 'Protected app must remain locked after failed server login')
+    assert.equal(dom.window.localStorage.getItem(googleAuth.SESSION_STORAGE_KEY), null, 'Failed login must not persist a session')
+    assert.match(dom.window.document.body.textContent, /Server authentication unavailable/)
+
+    // 2. Trigger sign-in when server approves -> unlocks AuthGate and stores server-backed session
+    serverMode = 'approve'
+    const retryBtn = Array.from(dom.window.document.querySelectorAll('button')).find((b) =>
+      /Sign in with Google/i.test(b.textContent || '')
+    )
+    await act(async () => {
+      retryBtn.click()
+    })
+
+    assert.equal(oauthFallbackCalled, false)
+    assert.ok(dom.window.document.getElementById('protected-app'), 'Server-approved login must unlock AuthGate')
+    const saved = JSON.parse(dom.window.localStorage.getItem(googleAuth.SESSION_STORAGE_KEY))
+    assert.equal(saved.sessionToken, 'server-issued-session-token-abc')
+    assert.equal(saved.access_status, 'active')
+
+    await act(async () => root.unmount())
+  } finally {
+    dom.window.close()
+    Object.assign(global, prev)
+  }
+})
+
+test('30. REGRESSION_HOTFIX_REJECT_LEGACY_STORED_SESSIONS_PRESERVE_SONGBOOK: Rejects locally stored sessions lacking server credentials or server approval while preserving songbook data', async () => {
+  const { JSDOM } = require('jsdom')
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const { AuthGate } = require(path.join(webDir, 'src/components/AuthGate.tsx'))
+
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
+  const prev = {
+    window: global.window,
+    document: global.document,
+    localStorage: global.localStorage,
+    sessionStorage: global.sessionStorage,
+    fetch: global.fetch,
+    IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT,
+  }
+
+  try {
+    Object.assign(global, {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      sessionStorage: dom.window.sessionStorage,
+      IS_REACT_ACT_ENVIRONMENT: true,
+    })
+
+    // Seed local songbook, draft, recovery snapshot, and tombstones
+    const libraryPayload = JSON.stringify({ version: 1, songs: [{ id: 's1', title: 'Wonderwall' }] })
+    const draftPayload = JSON.stringify({ songId: 's1', content: '[Em7] Today is gonna be the day' })
+    const recoveryPayload = JSON.stringify({ snapshotAt: Date.now(), songs: 1 })
+    const tombstonesPayload = JSON.stringify([{ id: 'deleted-song-1', deletedAt: Date.now() }])
+
+    dom.window.localStorage.setItem('gtar_library_v1', libraryPayload)
+    dom.window.localStorage.setItem('gtar_editor_draft_s1', draftPayload)
+    dom.window.localStorage.setItem('gtar_recovery_snapshot_v1', recoveryPayload)
+    dom.window.localStorage.setItem('gtar_tombstones_v1', tombstonesPayload)
+
+    const now = Date.now()
+    const invalidSessions = [
+      // Case 1: Legacy client-only OAuth fallback session (has token & access_status='active', but no sessionToken/idToken/user.id)
+      {
+        version: 1,
+        token: 'ya29.client-only-oauth-token',
+        access_status: 'active',
+        role: 'admin',
+        authenticatedAt: now,
+        lastVerifiedAt: now,
+        localExpiresAt: now + 86400000,
+        expiresAt: now + 86400000,
+        user: { sub: 'sub-1', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' },
+      },
+      // Case 2: Stored session with sessionToken but missing server access_status
+      {
+        version: 1,
+        sessionToken: 'server-token-without-status',
+        authenticatedAt: now,
+        lastVerifiedAt: now,
+        localExpiresAt: now + 86400000,
+        expiresAt: now + 86400000,
+        user: { id: 'usr-1', sub: 'sub-1', email: 'jlopez3rd@gmail.com' },
+      },
+      // Case 3: Stored session with raw idToken but no server user.id and no sessionToken
+      {
+        version: 1,
+        idToken: 'raw-google-id-token-only',
+        access_status: 'active',
+        authenticatedAt: now,
+        lastVerifiedAt: now,
+        localExpiresAt: now + 86400000,
+        expiresAt: now + 86400000,
+        user: { sub: 'sub-1', email: 'jlopez3rd@gmail.com', access_status: 'active' },
+      },
+    ]
+
+    for (const badSession of invalidSessions) {
+      dom.window.localStorage.setItem(googleAuth.SESSION_STORAGE_KEY, JSON.stringify(badSession))
+      dom.window.localStorage.setItem(googleAuth.LEGACY_STORAGE_KEY, JSON.stringify(badSession))
+
+      let childRendered = false
+      function ProtectedChild() {
+        childRendered = true
+        return React.createElement('div', { id: 'protected-child' }, 'Unlocked')
+      }
+
+      const root = createRoot(dom.window.document.getElementById('root'))
+      await act(async () => {
+        root.render(React.createElement(AuthGate, null, React.createElement(ProtectedChild)))
+      })
+
+      assert.equal(childRendered, false, 'Unverifiable stored session must not unlock AuthGate')
+      assert.equal(dom.window.localStorage.getItem(googleAuth.SESSION_STORAGE_KEY), null, 'Rejected session must be purged')
+      assert.equal(dom.window.localStorage.getItem(googleAuth.LEGACY_STORAGE_KEY), null, 'Rejected legacy session key must be purged')
+      assert.match(dom.window.document.body.textContent, /requires server verification/i)
+
+      // Verify all local songbook data is preserved
+      assert.equal(dom.window.localStorage.getItem('gtar_library_v1'), libraryPayload)
+      assert.equal(dom.window.localStorage.getItem('gtar_editor_draft_s1'), draftPayload)
+      assert.equal(dom.window.localStorage.getItem('gtar_recovery_snapshot_v1'), recoveryPayload)
+      assert.equal(dom.window.localStorage.getItem('gtar_tombstones_v1'), tombstonesPayload)
+
+      await act(async () => root.unmount())
+    }
+  } finally {
+    dom.window.close()
+    Object.assign(global, prev)
+  }
+})
+
+test('31. REGRESSION_HOTFIX_LOCK_ON_REVOKED_EXPIRED_DENIED_OR_INVALID_SERVER_SESSION: AuthGate locks on 401/403 or denied/pending recheck', async () => {
+  const { JSDOM } = require('jsdom')
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const { AuthGate } = require(path.join(webDir, 'src/components/AuthGate.tsx'))
+
+  const scenarios = [
+    {
+      name: '401 revoked session',
+      fetchResponder: async () =>
+        new Response(JSON.stringify({ success: false, error: 'Session has been revoked' }), { status: 401 }),
+      expectPurged: true,
+      expectedText: /Session has been revoked|Owner Access/i,
+    },
+    {
+      name: '403 forbidden session',
+      fetchResponder: async () =>
+        new Response(JSON.stringify({ success: false, error: 'Forbidden: Active account approval required' }), { status: 403 }),
+      expectPurged: true,
+      expectedText: /Forbidden|Owner Access/i,
+    },
+    {
+      name: '200 server access_status changed to denied',
+      fetchResponder: async () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            user: {
+              id: 'usr-active-1',
+              google_sub: 'sub-active-1',
+              email: 'jlopez3rd@gmail.com',
+              display_name: 'J Lopez',
+              picture_url: null,
+              role: 'member',
+              access_status: 'denied',
+            },
+          }),
+          { status: 200 }
+        ),
+      expectPurged: false,
+      expectedText: /Access Denied/i,
+    },
+    {
+      name: '200 server identity mismatch',
+      fetchResponder: async () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            user: {
+              id: 'usr-other',
+              google_sub: 'sub-different',
+              email: 'different@example.com',
+              display_name: 'Other',
+              picture_url: null,
+              role: 'member',
+              access_status: 'active',
+            },
+          }),
+          { status: 200 }
+        ),
+      expectPurged: true,
+      expectedText: /Session identity mismatch|Owner Access/i,
+    },
+  ]
+
+  for (const scenario of scenarios) {
+    const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
+    const prev = {
+      window: global.window,
+      document: global.document,
+      localStorage: global.localStorage,
+      sessionStorage: global.sessionStorage,
+      fetch: global.fetch,
+      IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT,
+    }
+
+    try {
+      Object.assign(global, {
+        window: dom.window,
+        document: dom.window.document,
+        localStorage: dom.window.localStorage,
+        sessionStorage: dom.window.sessionStorage,
+        fetch: scenario.fetchResponder,
+        IS_REACT_ACT_ENVIRONMENT: true,
+      })
+
+      const activeSession = googleAuth.createDurableSession(
+        {
+          id: 'usr-active-1',
+          sub: 'sub-active-1',
+          email: 'jlopez3rd@gmail.com',
+          role: 'admin',
+          access_status: 'active',
+        },
+        undefined,
+        Date.now(),
+        { sessionToken: 'valid-looking-local-token', role: 'admin', access_status: 'active' }
+      )
+      dom.window.localStorage.setItem(googleAuth.SESSION_STORAGE_KEY, JSON.stringify(activeSession))
+      dom.window.localStorage.setItem('gtar_library_v1', JSON.stringify({ version: 1, songs: [{ id: 'keep' }] }))
+
+      function ProtectedContent() {
+        return React.createElement('div', { id: 'protected-view' }, 'Unlocked Content')
+      }
+
+      const root = createRoot(dom.window.document.getElementById('root'))
+      await act(async () => {
+        root.render(React.createElement(AuthGate, null, React.createElement(ProtectedContent)))
+      })
+      // Flush microtask & async backgroundRecheck
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20))
+      })
+
+      assert.equal(
+        dom.window.document.getElementById('protected-view'),
+        null,
+        `AuthGate must lock on ${scenario.name}`
+      )
+      assert.match(dom.window.document.body.textContent, scenario.expectedText)
+      if (scenario.expectPurged) {
+        assert.equal(
+          dom.window.localStorage.getItem(googleAuth.SESSION_STORAGE_KEY),
+          null,
+          `Session must be purged on ${scenario.name}`
+        )
+      }
+      assert.ok(dom.window.localStorage.getItem('gtar_library_v1'), 'Songbook data must remain intact')
+
+      await act(async () => root.unmount())
+    } finally {
+      dom.window.close()
+      Object.assign(global, prev)
+    }
+  }
+})
+
+test('32. REGRESSION_HOTFIX_TRANSIENT_NETWORK_ERRORS_PRESERVE_SESSION: Transient network, timeout, 5xx, and 429 errors do not lock AuthGate', async () => {
+  const { JSDOM } = require('jsdom')
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const { AuthGate } = require(path.join(webDir, 'src/components/AuthGate.tsx'))
+
+  const transientFailures = [
+    async () => {
+      throw new TypeError('Failed to fetch')
+    },
+    async () => {
+      throw new Error('The operation was aborted due to timeout')
+    },
+    async () => new Response(JSON.stringify({ error: 'Database temporarily unavailable' }), { status: 503 }),
+    async () => new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 }),
+  ]
+
+  for (const responder of transientFailures) {
+    const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
+    const prev = {
+      window: global.window,
+      document: global.document,
+      localStorage: global.localStorage,
+      sessionStorage: global.sessionStorage,
+      fetch: global.fetch,
+      IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT,
+    }
+
+    try {
+      Object.assign(global, {
+        window: dom.window,
+        document: dom.window.document,
+        localStorage: dom.window.localStorage,
+        sessionStorage: dom.window.sessionStorage,
+        fetch: responder,
+        IS_REACT_ACT_ENVIRONMENT: true,
+      })
+
+      const activeSession = googleAuth.createDurableSession(
+        {
+          id: 'usr-Stage-1',
+          sub: 'sub-stage-1',
+          email: 'jlopez3rd@gmail.com',
+          role: 'admin',
+          access_status: 'active',
+        },
+        undefined,
+        Date.now(),
+        { sessionToken: 'durable-stage-session-token', role: 'admin', access_status: 'active' }
+      )
+      dom.window.localStorage.setItem(googleAuth.SESSION_STORAGE_KEY, JSON.stringify(activeSession))
+
+      function ProtectedStage() {
+        return React.createElement('div', { id: 'protected-stage' }, 'Stage Active')
+      }
+
+      const root = createRoot(dom.window.document.getElementById('root'))
+      await act(async () => {
+        root.render(React.createElement(AuthGate, null, React.createElement(ProtectedStage)))
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20))
+      })
+
+      assert.ok(
+        dom.window.document.getElementById('protected-stage'),
+        'AuthGate must stay unlocked during transient failure'
+      )
+      const persisted = JSON.parse(dom.window.localStorage.getItem(googleAuth.SESSION_STORAGE_KEY))
+      assert.equal(persisted.sessionToken, 'durable-stage-session-token')
+
+      await act(async () => root.unmount())
+    } finally {
+      dom.window.close()
+      Object.assign(global, prev)
+    }
+  }
+})
+
+test('33. REGRESSION_HOTFIX_GOOGLE_ID_TOKEN_IAT_PROPAGATION_AND_FAIL_CLOSED_REVOCATION: verifyGoogleIdToken propagates iat and revocation checks fail closed on missing/stale/invalid iat while allowing post-revocation iat', async () => {
+  const { sqlite, db } = createTestSqliteDb()
+  const nowMs = Date.now()
+  const nowSec = Math.floor(nowMs / 1000)
+  const revokedAtSec = nowSec - 120
+  const revokedAtIso = new Date(revokedAtSec * 1000).toISOString()
+
+  const user = await seedUser(sqlite, {
+    id: 'usr_iat_hotfix',
+    google_sub: 'sub_iat_hotfix',
+    email: 'iat_hotfix@example.com',
+    role: 'admin',
+    access_status: 'active',
+  })
+  sqlite.prepare('UPDATE users SET sessions_revoked_at = ? WHERE id = ?').run(revokedAtIso, user.id)
+
+  const env = {
+    DB: db,
+    AUTH_SECRET: TEST_SECRET,
+    TEST_MOCK_AUTH: 'true',
+    GOOGLE_CLIENT_ID: 'gtar-client-id.apps.googleusercontent.com',
+  }
+
+  // 1. Mock token with post-revocation iat -> verifyGoogleIdToken propagates iat and requests succeed
+  const postRevocationIat = revokedAtSec + 30
+  const validPostToken = `test_token:${user.google_sub}:${user.email}:Iat User:${postRevocationIat}`
+  const dummyReq = new Request('http://localhost/api/auth/session', {
+    headers: { Authorization: `Bearer ${validPostToken}` },
+  })
+  const verifiedProfile = await authCore.verifyGoogleIdToken(validPostToken, env, nowMs, dummyReq)
+  assert.equal(verifiedProfile.iat, postRevocationIat, 'verifyGoogleIdToken must propagate numeric iat')
+
+  const userAuthOk = await authCore.authenticateUserRequest(dummyReq, env)
+  assert.equal(userAuthOk.user?.id, user.id, 'Post-revocation Google ID token must pass authenticateUserRequest')
+
+  const adminAuthOk = await authCore.authenticateAdminRequest(dummyReq, env)
+  assert.equal(adminAuthOk.user?.id, user.id, 'Post-revocation Google ID token must pass authenticateAdminRequest')
+
+  const sessionGetOk = await sessionApi.onRequestGet({ request: dummyReq, env })
+  assert.equal(sessionGetOk.status, 200, 'Post-revocation Google ID token must pass GET /api/auth/session')
+
+  // 2. Pre-revocation iat -> fails closed with 401 across all endpoints
+  const preRevocationIat = revokedAtSec - 10
+  const staleToken = `test_token:${user.google_sub}:${user.email}:Iat User:${preRevocationIat}`
+  const staleReq = new Request('http://localhost/api/auth/session', {
+    headers: { Authorization: `Bearer ${staleToken}` },
+  })
+  assert.equal((await authCore.authenticateUserRequest(staleReq, env)).status, 401)
+  assert.equal((await authCore.authenticateAdminRequest(staleReq, env)).status, 401)
+  assert.equal((await sessionApi.onRequestGet({ request: staleReq, env })).status, 401)
+
+  // 3. Missing iat when sessions_revoked_at is set -> fails closed with 401
+  const missingIatToken = `test_token:${user.google_sub}:${user.email}:Iat User`
+  const missingIatReq = new Request('http://localhost/api/auth/session', {
+    headers: { Authorization: `Bearer ${missingIatToken}` },
+  })
+  assert.equal((await authCore.authenticateUserRequest(missingIatReq, env)).status, 401)
+  assert.equal((await authCore.authenticateAdminRequest(missingIatReq, env)).status, 401)
+  assert.equal((await sessionApi.onRequestGet({ request: missingIatReq, env })).status, 401)
+
+  // 4. Malformed or future iat -> fails closed with 401
+  for (const badIat of ['not_a_number', '-100', '0', String(nowSec + 3600)]) {
+    const badToken = `test_token:${user.google_sub}:${user.email}:Iat User:${badIat}`
+    const badReq = new Request('http://localhost/api/auth/session', {
+      headers: { Authorization: `Bearer ${badToken}` },
+    })
+    await assert.rejects(
+      async () => authCore.verifyGoogleIdToken(badToken, env, nowMs, badReq),
+      /Invalid token issuance timestamp/
+    )
+    assert.equal((await authCore.authenticateUserRequest(badReq, env)).status, 401)
+    assert.equal((await sessionApi.onRequestGet({ request: badReq, env })).status, 401)
+  }
+
+  // 5. Real RS256 JWT path propagates payload.iat through verifyGoogleIdToken
+  const { publicKey, privateKey } = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify']
+  )
+  const publicJwk = await crypto.subtle.exportKey('jwk', publicKey)
+  const kid = 'test-google-kid-' + Date.now()
+
+  const signJwt = async (claims) => {
+    const headerB64 = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid })).toString('base64url')
+    const payloadB64 = Buffer.from(JSON.stringify(claims)).toString('base64url')
+    const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`)
+    const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, data)
+    const sigB64 = Buffer.from(new Uint8Array(sig)).toString('base64url')
+    return `${headerB64}.${payloadB64}.${sigB64}`
+  }
+
+  const origFetch = globalThis.fetch
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('googleapis.com/oauth2/v3/certs')) {
+      return new Response(
+        JSON.stringify({
+          keys: [{ ...publicJwk, kid, kty: 'RSA', alg: 'RS256' }],
+        }),
+        { status: 200 }
+      )
+    }
+    throw new Error('Unexpected fetch URL: ' + url)
+  }
+
+  try {
+    const jwtPostRevoke = await signJwt({
+      iss: 'https://accounts.google.com',
+      aud: env.GOOGLE_CLIENT_ID,
+      sub: user.google_sub,
+      email: user.email,
+      email_verified: true,
+      iat: postRevocationIat,
+      exp: nowSec + 3600,
+    })
+    const verifiedJwt = await authCore.verifyGoogleIdToken(jwtPostRevoke, env, nowMs)
+    assert.equal(verifiedJwt.iat, postRevocationIat)
+
+    const jwtReqOk = new Request('https://gtar-web.pages.dev/api/auth/session', {
+      headers: { Authorization: `Bearer ${jwtPostRevoke}` },
+    })
+    const jwtAuthOk = await authCore.authenticateUserRequest(jwtReqOk, env)
+    assert.equal(jwtAuthOk.user?.id, user.id)
+
+    // Real JWT without iat must fail closed when sessions_revoked_at is set
+    const jwtMissingIat = await signJwt({
+      iss: 'https://accounts.google.com',
+      aud: env.GOOGLE_CLIENT_ID,
+      sub: user.google_sub,
+      email: user.email,
+      email_verified: true,
+      exp: nowSec + 3600,
+    })
+    const jwtReqMissing = new Request('https://gtar-web.pages.dev/api/auth/session', {
+      headers: { Authorization: `Bearer ${jwtMissingIat}` },
+    })
+    assert.equal((await authCore.authenticateUserRequest(jwtReqMissing, env)).status, 401)
+    assert.equal((await sessionApi.onRequestGet({ request: jwtReqMissing, env })).status, 401)
+  } finally {
+    globalThis.fetch = origFetch
+  }
+})
+
 

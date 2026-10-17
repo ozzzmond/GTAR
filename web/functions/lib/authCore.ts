@@ -109,6 +109,36 @@ export interface VerifiedGoogleProfile {
   name?: string
   picture?: string
   email_verified: boolean
+  iat?: number
+}
+
+/**
+ * Evaluates whether a verified Google ID token was issued at or before the user's
+ * sessions_revoked_at cutoff. Fails closed when sessions_revoked_at is set and
+ * iat or sessions_revoked_at is missing, malformed, or in the future.
+ */
+export function isGoogleTokenRevokedForUser(
+  verified: { iat?: unknown },
+  user: Pick<UserRecord, 'sessions_revoked_at'>,
+  now = Date.now()
+): boolean {
+  if (!user.sessions_revoked_at) {
+    return false
+  }
+  const revokedTime = new Date(user.sessions_revoked_at).getTime()
+  if (!Number.isFinite(revokedTime)) {
+    return true
+  }
+  const rawIat = verified.iat
+  if (
+    typeof rawIat !== 'number' ||
+    !Number.isSafeInteger(rawIat) ||
+    rawIat <= 0 ||
+    rawIat > Math.floor(now / 1000) + 60
+  ) {
+    return true
+  }
+  return rawIat * 1000 <= revokedTime
 }
 
 /**
@@ -165,13 +195,29 @@ export async function verifyGoogleIdToken(
   // Explicit test flag alone cannot enable mock identity on hosted requests.
   if (allowsLocalMockAuth(env, request) && token.startsWith('test_token:')) {
     const parts = token.slice('test_token:'.length).split(':')
-    const [sub, email, name] = parts
+    const [sub, email, name, rawIat] = parts
+    let parsedIat: number | undefined
+    if (rawIat !== undefined) {
+      const trimmedIat = rawIat.trim()
+      const numIat = Number(trimmedIat)
+      if (
+        !trimmedIat ||
+        !/^\d+$/.test(trimmedIat) ||
+        !Number.isSafeInteger(numIat) ||
+        numIat <= 0 ||
+        numIat > Math.floor(now / 1000) + 60
+      ) {
+        throw new Error('Invalid token issuance timestamp')
+      }
+      parsedIat = numIat
+    }
     return {
       sub: sub || 'test_sub',
       email: (email || 'test@example.com').toLowerCase().trim(),
       name: name || 'Test User',
       picture: undefined,
       email_verified: true,
+      ...(parsedIat !== undefined ? { iat: parsedIat } : {}),
     }
   }
 
@@ -190,6 +236,7 @@ export async function verifyGoogleIdToken(
     picture?: string
     email_verified?: boolean | string
     exp?: number
+    iat?: unknown
   }
 
   try {
@@ -208,6 +255,21 @@ export async function verifyGoogleIdToken(
   // 2. Verify Expiration
   if (typeof payload.exp !== 'number' || !Number.isSafeInteger(payload.exp) || payload.exp * 1000 <= now) {
     throw new Error('Google ID token is expired')
+  }
+
+  // 2b. Verify Issuance Timestamp (iat) when present
+  let verifiedPayloadIat: number | undefined
+  if (payload.iat !== undefined) {
+    if (
+      typeof payload.iat !== 'number' ||
+      !Number.isSafeInteger(payload.iat) ||
+      payload.iat <= 0 ||
+      payload.iat > Math.floor(now / 1000) + 60 ||
+      payload.iat > payload.exp
+    ) {
+      throw new Error('Invalid token issuance timestamp')
+    }
+    verifiedPayloadIat = payload.iat
   }
 
   // 3. Verify Audience
@@ -284,15 +346,24 @@ export async function verifyGoogleIdToken(
       if (verifyRes.ok) {
         const info = (await verifyRes.json()) as {
           sub?: string; email?: string; aud?: string; email_verified?: boolean | string
-          iss?: string; exp?: string | number
+          iss?: string; exp?: string | number; iat?: string | number
         }
         // Do not let the fallback validate only a subject while trusting other claims.
         const verifiedExpiry = typeof info.exp === 'string' && /^\d+$/.test(info.exp)
           ? Number(info.exp) : info.exp
+        const verifiedInfoIat = typeof info.iat === 'string' && /^\d+$/.test(info.iat)
+          ? Number(info.iat) : info.iat
+        const iatMatches =
+          verifiedPayloadIat === undefined ||
+          info.iat === undefined ||
+          (typeof verifiedInfoIat === 'number' &&
+            Number.isSafeInteger(verifiedInfoIat) &&
+            verifiedInfoIat === verifiedPayloadIat)
         if (info.sub === payload.sub && info.email === payload.email &&
             info.aud === expectedClientId && info.iss === payload.iss &&
             typeof verifiedExpiry === 'number' && Number.isSafeInteger(verifiedExpiry) &&
             verifiedExpiry === payload.exp && verifiedExpiry * 1000 > now &&
+            iatMatches &&
             (info.email_verified === true || info.email_verified === 'true')) {
           signatureValid = true
         }
@@ -312,6 +383,7 @@ export async function verifyGoogleIdToken(
     name: payload.name,
     picture: payload.picture,
     email_verified: true,
+    ...(verifiedPayloadIat !== undefined ? { iat: verifiedPayloadIat } : {}),
   }
 }
 
@@ -890,15 +962,12 @@ export async function authenticateAdminRequest(
   } else {
     // 2. Try Google ID token
     try {
-      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
+      const now = Date.now()
+      const verified = await verifyGoogleIdToken(token, env, now, request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
-        if (user.sessions_revoked_at) {
-          const revokedTime = new Date(user.sessions_revoked_at).getTime()
-          const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
-          if (!tokenIat || tokenIat <= revokedTime) {
-            return { error: 'Session has been revoked', status: 401 }
-          }
+        if (user.sessions_revoked_at && isGoogleTokenRevokedForUser(verified, user, now)) {
+          return { error: 'Session has been revoked', status: 401 }
         }
         callerId = user.id
       }
@@ -985,15 +1054,12 @@ export async function authenticateUserRequest(
   } else {
     // 2. Try Google ID token
     try {
-      const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
+      const now = Date.now()
+      const verified = await verifyGoogleIdToken(token, env, now, request)
       const user = await findUserByGoogleSub(env.DB, verified.sub)
       if (user) {
-        if (user.sessions_revoked_at) {
-          const revokedTime = new Date(user.sessions_revoked_at).getTime()
-          const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
-          if (!tokenIat || tokenIat <= revokedTime) {
-            return { error: 'Session has been revoked', status: 401 }
-          }
+        if (user.sessions_revoked_at && isGoogleTokenRevokedForUser(verified, user, now)) {
+          return { error: 'Session has been revoked', status: 401 }
         }
         callerId = user.id
       }
