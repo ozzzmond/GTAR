@@ -325,7 +325,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-app-heading">
-                  {drawerTab === 'songbook' ? 'Songbook Library' : 'Gig Setlists'}
+                  {drawerTab === 'songbook' ? 'Songbook Library' : 'Song Setlists'}
                 </h2>
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-action/20 text-app-action border border-app-action/30">
                   {drawerTab === 'songbook'
@@ -422,7 +422,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               {/* Setlists Control Bar: Import Setlist (.json) & Export All (JSON) */}
               <div className="flex items-center justify-between gap-1.5 pb-2 border-b border-app-border/60 mb-2">
                 <span className="text-[10px] font-mono font-bold text-app-muted uppercase tracking-wider">
-                  Gig Setlists ({activeSetlists.length})
+                  Song Setlists ({activeSetlists.length})
                 </span>
                 <div className="flex items-center gap-1">
                   <button
