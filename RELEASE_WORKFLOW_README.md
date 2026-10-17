@@ -15,10 +15,11 @@ node .github/release_metadata.cjs --tag "$REQUESTED_TAG"
 ```
 
 The helper requires the exact tag to exist, its peeled commit to equal HEAD,
-and `web/package.json` version to equal the tag without its leading `v`.
-Only after all checks pass does it print and append to `GITHUB_ENV`:
+and `web/package.json` version to equal the tag without its leading `v` (or for
+canonical lettered DEV checkpoints, to equal the base numeric DEV version without
+leading `v`). Only after all checks pass does it print and append to `GITHUB_ENV`:
 `RELEASE_TAG`, `RELEASE_TITLE` (`GTAR <tag>`), `IS_PRERELEASE=true`, and
-`IS_PROMOTABLE`. The artifact name is exactly `RELEASE_TAG`.
+`IS_PROMOTABLE` (`false` for lettered checkpoints). The artifact name is exactly `RELEASE_TAG`.
 
 This flow creates build artifacts only. It does not tag, push branches, deploy,
 or promote to production. No stage environment is included. The separate production planner below is fail-closed. Existing application versions and historical GitHub tags are unchanged.

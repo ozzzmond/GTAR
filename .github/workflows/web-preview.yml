@@ -30,6 +30,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.REQUESTED_TAG }}
           fetch-depth: 0
+      - name: Use trusted workflow controller metadata validator
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git checkout "${{ github.sha }}" -- .github/release_metadata.cjs .github/release_identity.cjs web/vite.config.ts
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
