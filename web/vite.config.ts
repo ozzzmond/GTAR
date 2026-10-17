@@ -313,9 +313,6 @@ export default defineConfig(({ mode }) => {
           if (isDev) {
             return html
               .replace(/<title>.*?<\/title>/, '<title>GTAR-Dev Live Stage Companion</title>')
-              .replace(/href="\/favicon\.png"/, 'href="/favicon.png"')
-              .replace(/href="\/apple-touch-icon\.png"/, 'href="/apple-touch-icon.png"')
-              .replace(/href="\/favicon\.ico"/, 'href="/favicon.ico"')
           } else {
             return html
               .replace(/<title>.*?<\/title>/, '<title>GTAR Live Stage Companion</title>')

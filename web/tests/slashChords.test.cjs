@@ -189,3 +189,33 @@ test('stage view typography engine supports independent chord scaling, weights a
   assert.deepEqual([...document.querySelectorAll('[data-chord]')].map(el => el.dataset.chord), ['G', 'D/F#', 'Em'])
 })
 
+
+
+test('UG fallback and structured payloads remain inert text in the shared song renderer', () => {
+  const { parseTabSheet } = require('../src/utils/ugCore.ts')
+  const { JSDOM } = require('jsdom')
+  const payloads = [
+    '<pre><<img src=x onerror=alert(1)> [C]Sing &lt;img src=x onerror=alert(2)&gt;</pre>',
+    '<pre>&lt;script&gt;alert(3)&lt;/script&gt; [D/F#]Sing</pre>',
+    `<div data-content='${JSON.stringify({ data: { tab: {
+      song_name: '<img src=x onerror=alert(4)>',
+      content: '[G]Sing <svg onload=alert(5)> & <iframe src=javascript:alert(6)>',
+    } } })}'></div>`,
+  ]
+  for (const payload of payloads) {
+    const result = parseTabSheet(payload, 'https://tabs.ultimate-guitar.com/tab/test-chords-1')
+    assert.equal(result.success, true)
+    const html = renderToStaticMarkup(React.createElement(SongLineRenderer, {
+      lines: parseGtarSong(result.sheet.rawContent).lines, fontSizePx: 24,
+    }))
+    const dom = new JSDOM(html)
+    const body = dom.window.document.body
+    assert.equal(body.querySelector('script, img, svg, iframe, [onerror], [onload]'), null)
+    assert.match(body.textContent, /Sing/)
+    // Decoded and reconstructed angle brackets survive extraction as text;
+    // the React renderer, rather than the extraction regex, escapes them.
+    assert.match(body.textContent, /</)
+    assert.match(html, /&lt;/)
+    dom.window.close()
+  }
+})
