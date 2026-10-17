@@ -87,7 +87,7 @@ apply local migrations; they do not apply remote DEV/PROD migrations or deploy.
 
 ## Development checks
 
-- `npm test` — Web/PWA regression tests.
+- `npm test` — Web/PWA regression tests; see the [test catalog](tests/README.md) for subsystem groups and individual-file commands.
 - `npm run lint` — whole-tree ESLint checks.
 - `npm run lint:sync` — focused sync and storage utility lint checks.
 - `npm run build` — TypeScript checks and production Web/PWA build.
