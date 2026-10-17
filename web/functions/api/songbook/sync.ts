@@ -10,6 +10,10 @@ import {
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
 import { computeSongbookChecksum } from '../../../src/utils/cloudSongbookSync.ts'
+import {
+  validateCloudThemeSettings,
+  normalizeCloudThemeSettings,
+} from '../../../src/utils/backupSettings.ts'
 import type { SyncLibrary } from '../../../src/utils/syncMerge.ts'
 
 export const MAX_SONGBOOK_PAYLOAD_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -33,7 +37,7 @@ function validateSongbookPayload(data: unknown): { isValid: boolean; error?: str
   if (!data || typeof data !== 'object') {
     return { isValid: false, error: 'Songbook payload must be a non-empty object' }
   }
-  const obj = data as { songs?: unknown; setlists?: unknown }
+  const obj = data as { songs?: unknown; setlists?: unknown; themeSettings?: unknown }
   if (!Array.isArray(obj.songs)) {
     return { isValid: false, error: 'Songbook payload missing songs array' }
   }
@@ -86,6 +90,14 @@ function validateSongbookPayload(data: unknown): { isValid: boolean; error?: str
     }
     if (setlist.isDeleted !== undefined && typeof setlist.isDeleted !== 'boolean') {
       return { isValid: false, error: `Setlist "${setlist.name}" has non-boolean isDeleted flag` }
+    }
+  }
+
+  const recordObj = data as Record<string, unknown>
+  if ('themeSettings' in recordObj && recordObj.themeSettings !== undefined) {
+    const themeErrors = validateCloudThemeSettings(recordObj.themeSettings)
+    if (themeErrors.length > 0) {
+      return { isValid: false, error: themeErrors.join('; ') }
     }
   }
 
@@ -185,9 +197,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   try {
-    const libraryData = body.data as SyncLibrary
+    const rawLibrary = body.data as SyncLibrary
+    const libraryData: SyncLibrary =
+      rawLibrary.themeSettings !== undefined
+        ? { ...rawLibrary, themeSettings: normalizeCloudThemeSettings(rawLibrary.themeSettings) }
+        : rawLibrary
     const checksum = computeSongbookChecksum(libraryData)
-    const serialized = JSON.stringify(body.data)
+    const serialized = JSON.stringify(libraryData)
     const nowIso = new Date().toISOString()
 
     // Legacy clientChecksum describes the uploaded content, not its cloud base.
@@ -199,6 +215,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           typeof expectedChecksum !== 'string' || !/^ck_[0-9a-f]{16}$/.test(expectedChecksum))) {
       return jsonResponse({ success: false, code: 'SONGBOOK_REVISION_CONFLICT',
         error: 'Missing or invalid cloud revision. Update the app, fetch cloud state and merge before retrying.' }, 409)
+    }
+    if (body.clientChecksum !== undefined && body.clientChecksum !== checksum) {
+      return errorResponse('Client checksum does not match canonical payload checksum', 400)
     }
     const result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso,
       { version, checksum: expectedChecksum as string | null })

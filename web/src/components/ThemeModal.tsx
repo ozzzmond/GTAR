@@ -1,5 +1,5 @@
 import { normalizeFontSettings, applyFontSettings } from '../utils/customFonts'
-import { SETTINGS_KEYS, validateBackupSettings, THEME_MODES, type FactoryThemeOverrides } from '../utils/backupSettings'
+import { SETTINGS_KEYS, SETTINGS_CHANGED, validateBackupSettings, THEME_MODES, type FactoryThemeOverrides } from '../utils/backupSettings'
 import React, { useState, useEffect } from 'react'
 import {
   X,
@@ -643,7 +643,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
 
-  // Synchronize internal staged state whenever modal opens
+  // Synchronize internal staged state whenever modal opens or synchronized settings arrive
   useEffect(() => {
     if (isOpen) {
       const saved = loadFactoryThemeOverrides()
@@ -658,6 +658,21 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       setStagedTheme(currentTheme === 'custom' && customColors?.identity ? customColors.identity.factoryId : currentTheme)
       setStagedCustomColors(normalizeCustomThemeColors(customColors))
       setIsCustomPaletteEditorOpen(false)
+
+      const handleSettingsChanged = () => {
+        const nextSaved = loadFactoryThemeOverrides()
+        const rawMode = localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null
+        const nextMode = rawMode && (THEME_MODES as readonly string[]).includes(rawMode) ? rawMode : currentTheme
+        const nextStandalone = loadStandalonePalette(customColors)
+        setStandaloneColors(nextStandalone)
+        setOverrides(nextSaved)
+        setStagedTheme(nextMode)
+        setStagedCustomColors(nextMode === 'custom' ? nextStandalone : (nextSaved[nextMode] || nextStandalone))
+      }
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener(SETTINGS_CHANGED, handleSettingsChanged)
+        return () => window.removeEventListener(SETTINGS_CHANGED, handleSettingsChanged)
+      }
     }
   }, [isOpen, currentTheme, customColors])
 

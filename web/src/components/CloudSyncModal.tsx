@@ -13,6 +13,7 @@ import {
   Shield,
   Layers,
   FileText,
+  Palette,
 } from 'lucide-react'
 import { useOptionalGoogleAuth } from '../utils/authContext'
 import {
@@ -24,6 +25,7 @@ import {
   type ConflictingItem,
 } from '../utils/cloudSongbookSync'
 import { readPersistedLibrary } from '../utils/syncJournal'
+import { tryReadCloudThemeSettings } from '../utils/backupSettings'
 import type { SyncLibrary } from '../utils/syncMerge'
 
 interface CloudSyncModalProps {
@@ -67,17 +69,35 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
       if (result.success) {
         if (result.updatedLibrary) onSyncAppliedRef.current?.(result.updatedLibrary)
+        const hasTheme = Boolean(result.updatedLibrary?.themeSettings)
         if (result.actionTaken === 'NONE') {
           setStatusMessage('')
         } else if (result.actionTaken === 'UPLOADED') {
-          setStatusMessage('Local songbook uploaded to cloud successfully.')
+          setStatusMessage(
+            hasTheme
+              ? 'Local songbook and theme settings uploaded to cloud successfully.'
+              : 'Local songbook uploaded to cloud successfully.'
+          )
         } else if (result.actionTaken === 'DOWNLOADED') {
-          setStatusMessage('Newer cloud songbook downloaded to this device.')
+          setStatusMessage(
+            hasTheme
+              ? 'Newer cloud songbook and theme settings downloaded to this device.'
+              : 'Newer cloud songbook downloaded to this device.'
+          )
         } else if (result.actionTaken === 'MERGED') {
-          setStatusMessage('Songbooks merged safely. All changes preserved.')
+          setStatusMessage(
+            hasTheme
+              ? 'Songbooks and theme settings merged safely. All changes preserved.'
+              : 'Songbooks merged safely. All changes preserved.'
+          )
         }
       } else if (result.status === 'CONFLICT') {
-        setStatusMessage('Conflicting edits detected between this device and the cloud.')
+        const hasThemeConflict = (result.conflicts || []).some((c) => c.type === 'theme')
+        setStatusMessage(
+          hasThemeConflict
+            ? 'Conflicting songbook or theme edits detected between this device and the cloud.'
+            : 'Conflicting edits detected between this device and the cloud.'
+        )
         setErrorMessage(result.error || '')
         setConflicts(result.conflicts || [])
       } else {
@@ -154,7 +174,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   }
 
   const currentLocal = typeof localStorage !== 'undefined' ? readPersistedLibrary() : null
-  const localChecksum = currentLocal ? computeSongbookChecksum(currentLocal) : null
+  const currentTheme = typeof localStorage !== 'undefined' ? tryReadCloudThemeSettings(localStorage) : undefined
+  const localChecksum = currentLocal
+    ? computeSongbookChecksum({
+        ...currentLocal,
+        ...(currentTheme ? { themeSettings: currentTheme } : {}),
+      })
+    : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in">
@@ -322,7 +348,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 {conflicts.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex items-center justify-between text-xs py-0.5">
                     <span className="text-app-heading font-semibold truncate flex items-center gap-1.5">
-                      {item.type === 'song' ? <FileText className="w-3 h-3 text-app-action" /> : <Layers className="w-3 h-3 text-app-accent" />}
+                      {item.type === 'song' ? (
+                        <FileText className="w-3 h-3 text-app-action" />
+                      ) : item.type === 'theme' ? (
+                        <Palette className="w-3 h-3 text-app-accent" />
+                      ) : (
+                        <Layers className="w-3 h-3 text-app-accent" />
+                      )}
                       {item.title}
                     </span>
                     <span className="text-[10px] text-status-error font-mono shrink-0">Diverged</span>
