@@ -218,12 +218,12 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
   let inserted = false
   const mockDb = {
     prepare(sql) {
-      if (sql.includes('users')) {
+      if (sql.includes('users') || sql.includes('sessions')) {
         return {
           bind() {
             return {
               async first() {
-                return testUser
+                return sql.includes('users') ? testUser : null
               },
             }
           },

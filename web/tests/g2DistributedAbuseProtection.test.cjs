@@ -135,6 +135,7 @@ async function fixture(ns = namespace()) {
   const shares = new Map()
   db.prepare = sql => {
     if (sql.includes('FROM users WHERE id = ?')) return { bind: () => ({ first: async () => user }) }
+    if (sql.includes('sessions')) return { bind: () => ({ first: async () => null }) }
     operations.push(sql)
     if (sql.includes('shared_setlists')) return { bind(...args) { return {
       run: async () => { shares.set(args[0], { payload_json: args[2], expires_at: args[4] }); return { success: true } },

@@ -11,6 +11,9 @@ import {
   findUserById,
   insertUser,
   updateUserLoginProfile,
+  createSessionRecord,
+  hashSessionToken,
+  validateSessionWithDb,
   type AuthEnv,
   type UserRecord,
   JSON_HEADERS,
@@ -132,7 +135,30 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
     }
 
-    const sessionToken = await createSessionToken(user, env.AUTH_SECRET)
+    const sid = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : (await import('node:crypto')).randomUUID()
+
+    const sessionToken = await createSessionToken(user, env.AUTH_SECRET, undefined, sid)
+    const tokenHash = await hashSessionToken(sessionToken)
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+
+    try {
+      await createSessionRecord(env.DB, {
+        id: sid,
+        user_id: user.id,
+        session_token_hash: tokenHash,
+        created_at: nowIso,
+        expires_at: expiresAt,
+        last_seen_at: nowIso,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/no such table/i.test(msg)) {
+        return errorResponse('Database schema migration required', 500)
+      }
+      throw err
+    }
 
     return jsonResponse({
       success: true,
@@ -188,6 +214,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     // 1. Session token
     const sessionData = await verifySessionToken(token, env.AUTH_SECRET)
     if (sessionData) {
+      const validation = await validateSessionWithDb(env.DB, token, sessionData)
+      if (!validation.valid) {
+        if (validation.isSchemaMissing) {
+          return errorResponse('Database schema migration required', 500)
+        }
+        return errorResponse('Session expired or user not found', 401)
+      }
       user = await findUserById(env.DB, sessionData.uid)
       if (user && user.google_sub !== sessionData.sub) user = null
     } else {
@@ -195,6 +228,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       try {
         const verified = await verifyGoogleIdToken(token, env, Date.now(), request)
         user = await findUserByGoogleSub(env.DB, verified.sub)
+        if (user?.sessions_revoked_at) {
+          const revokedTime = new Date(user.sessions_revoked_at).getTime()
+          const tokenIat = (verified as { iat?: number }).iat ? (verified as { iat?: number }).iat! * 1000 : 0
+          if (!tokenIat || tokenIat <= revokedTime) {
+            user = null
+          }
+        }
       } catch {
         // Invalid
       }

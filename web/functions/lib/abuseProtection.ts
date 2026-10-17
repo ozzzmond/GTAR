@@ -5,6 +5,7 @@ export const ABUSE_POLICIES = {
   'session-issue': { limit: 300, windowMs: 60_000, identity: 'anonymous' },
   'session-read': { limit: 600, windowMs: 60_000, identity: 'anonymous' },
   'session-account': { limit: 20, windowMs: 60_000, identity: 'account' },
+  'session-revoke': { limit: 60, windowMs: 60_000, identity: 'account' },
   'share-create': { limit: 30, windowMs: 60_000, identity: 'account' },
   'share-read': { limit: 120, windowMs: 60_000, identity: 'account' },
   'share-revoke': { limit: 30, windowMs: 60_000, identity: 'account' },
