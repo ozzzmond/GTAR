@@ -23,6 +23,7 @@ const {
   getCanonicalReferenceKey,
   computePlaybackKey,
   normalizeTitleForTransposeComparison,
+  extractNormalizedLyrics,
 } = require('../src/utils/songbookFoundation.ts')
 const { createBackupPayload, parseBackupJson } = require('../src/utils/jsonBackup.ts')
 const { chordTokenToNashville, getTrustworthySongKey } = require('../src/utils/nashvilleNotation.ts')
@@ -359,4 +360,21 @@ test('REFERENTIAL_VALIDATOR_REPORTS_INVALID_STATE_WITHOUT_MUTATION', () => {
   // Verify ZERO silent mutation
   assert.equal(JSON.stringify(songs), originalSongsSnapshot, 'Validator must not mutate input songs')
   assert.equal(JSON.stringify(setlists), originalSetlistsSnapshot, 'Validator must not mutate input setlists')
+})
+
+
+test('lyric comparison normalizes adversarial delimiters without changing source content', () => {
+  assert.equal(extractNormalizedLyrics('{title: Original}\n[Verse 1]\n[C]Sing <G>out [D/F#]loud'), 'sing out loud')
+  for (const rawContent of [
+    'Sing <b<d>>out [C]loud',
+    'Sing <<script>alert(1)</script> [G]out',
+    'Sing [C[G]]out <img src=x onerror=alert(2)>',
+    'Sing &lt;script&gt;alert(3)&lt;/script&gt; out',
+  ]) {
+    const song = Object.freeze({ rawContent })
+    const normalized = extractNormalizedLyrics(song.rawContent)
+    assert.match(normalized, /^[a-z0-9 ]+$/)
+    assert.match(normalized, /sing/)
+    assert.equal(song.rawContent, rawContent)
+  }
 })
