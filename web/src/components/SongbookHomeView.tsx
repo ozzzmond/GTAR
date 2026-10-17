@@ -33,7 +33,7 @@ import { SharedCatalogBrowser } from './SharedCatalogBrowser'
 import { publishSharedCatalogSong } from '../utils/sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { useOptionalGoogleAuth } from '../utils/authContext'
-import { getStoredSessionStatus } from '../utils/googleAuth'
+import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
 
 interface SongbookHomeViewProps {
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
@@ -154,7 +154,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
-  const isAuthActive = !!auth?.session && auth.accessStatus === 'active'
+  const storedAuthStatus = getStoredSessionStatus()
+  const isAuthActive = auth
+    ? !!auth.session && auth.accessStatus === 'active'
+    : !storedAuthStatus.isExpired && hasServerApproval(storedAuthStatus.session)
+
+  const onUpdateSongRef = useRef(onUpdateSong)
+  React.useEffect(() => {
+    onUpdateSongRef.current = onUpdateSong
+  }, [onUpdateSong])
 
   // Confirmed published catalog song IDs (server authoritative)
   const [localConfirmedCatalogIds, setLocalConfirmedCatalogIds] = useState<Set<string>>(() => new Set())
@@ -227,7 +235,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   const handleRetrySaveLink = () => {
     if (!publishingSong || !publishRecoveryCatalogId) return
-    const saveOutcome = onUpdateSong ? onUpdateSong({ id: publishingSong.id, publishedCatalogSongId: publishRecoveryCatalogId }) : false
+    const saveOutcome = onUpdateSongRef.current ? onUpdateSongRef.current({ id: publishingSong.id, publishedCatalogSongId: publishRecoveryCatalogId }) : false
     if (saveOutcome === true) {
       setLocalConfirmedCatalogIds(prev => new Set(prev).add(publishRecoveryCatalogId))
       sharedCatalogService.markCatalogIdLiveConfirmed(publishRecoveryCatalogId)
@@ -281,7 +289,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       }
 
       // Authoritative remote publication succeeded. Verify personal song save.
-      const saveOutcome = onUpdateSong ? onUpdateSong({ id: publishingSong.id, publishedCatalogSongId: catalogId }) : false
+      const saveOutcome = onUpdateSongRef.current ? onUpdateSongRef.current({ id: publishingSong.id, publishedCatalogSongId: catalogId }) : false
       if (saveOutcome === true) {
         setLocalConfirmedCatalogIds(prev => new Set(prev).add(catalogId))
         await sharedCatalogService.markPublishedSong(res.song)
@@ -325,6 +333,40 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [selectedSongIds, setSelectedSongIds] = useState<Set<string | number>>(() => new Set())
   const [isBulkDeleteSongsConfirmOpen, setIsBulkDeleteSongsConfirmOpen] = useState(false)
   const [isBulkAddToSetlistModalOpen, setIsBulkAddToSetlistModalOpen] = useState(false)
+
+  // Prune deleted song IDs if library shrinks while keeping selection stable across filter/sort
+  React.useEffect(() => {
+    queueMicrotask(() => {
+      setSelectedSongIds(prev => {
+        if (prev.size === 0) return prev
+        const validKeys = new Set(songs.map((s, idx) => s.id ?? idx))
+        let changed = false
+        const next = new Set<string | number>()
+        for (const id of prev) {
+          if (validKeys.has(id)) next.add(id)
+          else changed = true
+        }
+        return changed ? next : prev
+      })
+    })
+  }, [songs])
+
+  // Prune deleted setlist IDs if activeSetlists shrinks while keeping selection stable across filter/sort
+  React.useEffect(() => {
+    queueMicrotask(() => {
+      setSelectedSetlistIds(prev => {
+        if (prev.size === 0) return prev
+        const validKeys = new Set(activeSetlists.map(sl => sl.id))
+        let changed = false
+        const next = new Set<string | number>()
+        for (const id of prev) {
+          if (validKeys.has(id)) next.add(id)
+          else changed = true
+        }
+        return changed ? next : prev
+      })
+    })
+  }, [activeSetlists])
 
   // Membership popover state
   const [membershipPopoverSongId, setMembershipPopoverSongId] = useState<string | number | null>(null)
@@ -604,6 +646,216 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       return matchName || matchSong
     })
   }, [activeSetlists, searchQuery, songs])
+
+  type SetlistSortOption = 'manual' | 'title_asc' | 'title_desc' | 'newest' | 'oldest'
+  const [setlistSortBy, setSetlistSortBy] = useState<SetlistSortOption>('manual')
+
+  const hasReliableSetlistTimestamps = useMemo(() => {
+    return (
+      activeSetlists.length > 0 &&
+      activeSetlists.every(
+        (sl) => typeof sl.createdAt === 'number' && Number.isFinite(sl.createdAt) && sl.createdAt > 0
+      )
+    )
+  }, [activeSetlists])
+
+  const effectiveSetlistSortBy: SetlistSortOption =
+    (setlistSortBy === 'newest' || setlistSortBy === 'oldest') && !hasReliableSetlistTimestamps
+      ? 'manual'
+      : setlistSortBy
+
+  // Display-only sorting for Song Setlists; never mutates or persists reordered setlists
+  const sortedSetlists = useMemo(() => {
+    if (effectiveSetlistSortBy === 'manual') return filteredSetlists
+    const indexed = filteredSetlists.map((sl, idx) => ({ sl, idx }))
+    indexed.sort((a, b) => {
+      if (effectiveSetlistSortBy === 'title_asc') {
+        const cmp = (a.sl.name || '').localeCompare(b.sl.name || '')
+        return cmp !== 0 ? cmp : a.idx - b.idx
+      }
+      if (effectiveSetlistSortBy === 'title_desc') {
+        const cmp = (b.sl.name || '').localeCompare(a.sl.name || '')
+        return cmp !== 0 ? cmp : a.idx - b.idx
+      }
+      if (effectiveSetlistSortBy === 'newest') {
+        const diff = (b.sl.createdAt ?? 0) - (a.sl.createdAt ?? 0)
+        return diff !== 0 ? diff : a.idx - b.idx
+      }
+      if (effectiveSetlistSortBy === 'oldest') {
+        const diff = (a.sl.createdAt ?? 0) - (b.sl.createdAt ?? 0)
+        return diff !== 0 ? diff : a.idx - b.idx
+      }
+      return a.idx - b.idx
+    })
+    return indexed.map((entry) => entry.sl)
+  }, [filteredSetlists, effectiveSetlistSortBy])
+
+  const handleSelectAllSongs = () => {
+    setSelectedSongIds((prev) => {
+      const next = new Set(prev)
+      for (const { song, originalIdx } of sortedIndexedSongs) {
+        next.add(song.id ?? originalIdx)
+      }
+      return next
+    })
+  }
+
+  const handleSelectNoneSongs = () => {
+    setSelectedSongIds(new Set())
+  }
+
+  const handleBulkPublishSongs = async () => {
+    if (selectedSongIds.size === 0 || isSubmittingPublish) return
+
+    setPublishError(null)
+    setPublishSuccessNotice(null)
+
+    if (!isAuthActive) {
+      setPublishError('Authentication required: Active approved account needed to publish to the Shared Catalog.')
+      return
+    }
+
+    const selectedEntries = indexedSongs.filter(({ song, originalIdx }) =>
+      selectedSongIds.has(song.id ?? originalIdx)
+    )
+    if (selectedEntries.length === 0) return
+
+    setIsSubmittingPublish(true)
+
+    const failedIds = new Set<string | number>()
+    const newlyConfirmedCatalogIds: string[] = []
+    let publishedCount = 0
+    let skippedDuplicateCount = 0
+    let lastPublishedTitle = ''
+    let lastErrorMsg = ''
+
+    try {
+      for (const { song, originalIdx } of selectedEntries) {
+        const selectionKey = song.id ?? originalIdx
+
+        // Prevent accidental duplicate publication
+        if (song.publishedCatalogSongId && confirmedCatalogIds.has(song.publishedCatalogSongId)) {
+          skippedDuplicateCount++
+          continue
+        }
+
+        const title = (song.title || '').trim()
+        const content = (
+          song.rawContent ||
+          (song as unknown as { rawText?: string }).rawText ||
+          ''
+        ).trim()
+        if (!title || !content) {
+          failedIds.add(selectionKey)
+          lastErrorMsg = `Invalid song "${title || 'Untitled'}": Title and chord chart content are required.`
+          continue
+        }
+
+        try {
+          const res = await publishSharedCatalogSong({
+            title,
+            artist: song.artist || null,
+            key: song.key || null,
+            original_key: song.originalKey || null,
+            capo: song.capo || null,
+            bpm: song.bpm || null,
+            time_signature: song.time || null,
+            year: song.year || null,
+            raw_content: content,
+            format: song.format || 'CHORD_PRO',
+          })
+
+          const catalogId = res.song?.id
+          if (!catalogId) {
+            throw new Error('Authoritative server catalog ID was not returned by publication API.')
+          }
+          await sharedCatalogService.markPublishedSong(res.song)
+          newlyConfirmedCatalogIds.push(catalogId)
+
+          let persistedOk = false
+          if (song.id !== undefined && onUpdateSongRef.current) {
+            try {
+              const maybeResult = await onUpdateSongRef.current({
+                id: song.id,
+                publishedCatalogSongId: catalogId,
+              })
+              persistedOk = maybeResult !== false
+            } catch {
+              persistedOk = false
+            }
+          }
+
+          if (persistedOk) {
+            if (res.deduplicated) {
+              skippedDuplicateCount++
+            } else {
+              publishedCount++
+              lastPublishedTitle = title
+            }
+          } else {
+            failedIds.add(selectionKey)
+            lastErrorMsg = `Published "${title}" (ID: ${catalogId}), but saving link to local songbook failed.`
+          }
+        } catch (err: unknown) {
+          failedIds.add(selectionKey)
+          if (err instanceof CatalogApiError) {
+            if (err.status === 401) {
+              lastErrorMsg = 'Authentication required. Please sign in to publish songs.'
+            } else if (err.status === 403) {
+              lastErrorMsg = 'Permission denied: Only active members can publish to the Shared Catalog.'
+            } else {
+              lastErrorMsg = err.message || `Failed to publish "${title}".`
+            }
+          } else {
+            lastErrorMsg = err instanceof Error ? err.message : `Network error publishing "${title}".`
+          }
+        }
+      }
+
+      if (newlyConfirmedCatalogIds.length > 0) {
+        setLocalConfirmedCatalogIds((prev) => {
+          const next = new Set(prev)
+          for (const cid of newlyConfirmedCatalogIds) next.add(cid)
+          return next
+        })
+      }
+
+      if (failedIds.size === 0 && publishedCount > 0) {
+        const dupSuffix =
+          skippedDuplicateCount > 0 ? ` (${skippedDuplicateCount} already published skipped)` : ''
+        const msg =
+          publishedCount === 1 && skippedDuplicateCount === 0
+            ? `Published "${lastPublishedTitle}" to Shared Catalog`
+            : `Published ${publishedCount} ${publishedCount === 1 ? 'song' : 'songs'} to Shared Catalog${dupSuffix}`
+        setPublishSuccessNotice(msg)
+        setSelectedSongIds(new Set())
+        setIsSongSelectionMode(false)
+        setTimeout(() => setPublishSuccessNotice(null), 4000)
+      } else if (failedIds.size === 0 && publishedCount === 0 && skippedDuplicateCount > 0) {
+        setPublishError(
+          skippedDuplicateCount === 1
+            ? 'Selected song is already published to the Shared Catalog.'
+            : `All ${skippedDuplicateCount} selected songs are already published to the Shared Catalog.`
+        )
+      } else if (publishedCount > 0 && failedIds.size > 0) {
+        const dupPart =
+          skippedDuplicateCount > 0 ? `, ${skippedDuplicateCount} already published skipped` : ''
+        setPublishError(
+          `Partial publish: ${publishedCount} published, ${failedIds.size} failed${dupPart}. ${lastErrorMsg}`
+        )
+        setSelectedSongIds(failedIds)
+      } else if (failedIds.size > 0) {
+        setPublishError(
+          failedIds.size === 1 && lastErrorMsg
+            ? lastErrorMsg
+            : `Failed to publish ${failedIds.size} selected ${failedIds.size === 1 ? 'song' : 'songs'}. ${lastErrorMsg}`.trim()
+        )
+        setSelectedSongIds(failedIds)
+      }
+    } finally {
+      setIsSubmittingPublish(false)
+    }
+  }
 
   const handleMainShareSetlist = () => {
     if (activeSetlists.length === 0) return
@@ -1181,6 +1433,30 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </div>
       )}
 
+      {/* Bulk Publish Error Banner */}
+      {publishError && !publishingSong && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          data-testid="songbook-publish-error"
+          className="mb-4 p-3 bg-app-surface border border-[#DC6E67]/50 rounded-xl text-xs font-mono font-bold text-status-error flex items-center justify-between gap-2 shadow-lg animate-in fade-in duration-150"
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <AlertTriangle className="w-4 h-4 text-status-error shrink-0" />
+            <span className="flex-1 break-words">{publishError}</span>
+          </div>
+          <button
+            type="button"
+            data-testid="dismiss-publish-error"
+            aria-label="Dismiss publish error"
+            onClick={() => setPublishError(null)}
+            className="p-1 rounded hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Navigation Tab Bar: My Songs (Default) vs Shared Catalog */}
       <div className="flex items-center gap-2 mb-5 px-1 border-b border-app-border/60 pb-2">
         <button
@@ -1245,7 +1521,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         />
       ) : (
         <>
-          {/* 2. Gig Setlists Grid */}
+          {/* 2. Song Setlists Grid */}
       {setlists.length > 0 && (
         <div className="mb-6">
           {/* Hidden file input for Setlist .json import */}
@@ -1257,16 +1533,38 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             className="hidden"
           />
 
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-2">
-              <Layers className="ui-section-icon w-4 h-4 text-app-accent" />
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <Layers className="ui-section-icon w-4 h-4 text-app-accent shrink-0" />
               <h2 className="ui-section-text text-xs font-bold ui-primary-text text-app-heading uppercase tracking-wider font-mono">
-                Gig Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
+                Song Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
               </h2>
+              {!setlistsCollapsed && (
+                <div className="flex items-center gap-1.5 text-xs font-mono ml-1">
+                  <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Sort:</span>
+                  <select
+                    data-testid="setlist-sort-select"
+                    aria-label="Sort setlists"
+                    value={effectiveSetlistSortBy}
+                    onChange={(e) => setSetlistSortBy(e.target.value as SetlistSortOption)}
+                    className="bg-app-base border border-app-border ui-primary-text text-app-text rounded-lg px-2 py-0.5 text-xs font-mono outline-none cursor-pointer hover:border-app-action transition-colors"
+                  >
+                    <option value="manual">Manual Order</option>
+                    <option value="title_asc">Title A-Z</option>
+                    <option value="title_desc">Title Z-A</option>
+                    {hasReliableSetlistTimestamps && (
+                      <>
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
               {isSetlistSelectionMode ? (
-                <div data-testid="setlist-selection-bar" className="flex items-center gap-2">
+                <div data-testid="setlist-selection-bar" className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
                   <span data-testid="setlist-selection-count" className="ui-action-text text-xs font-mono font-bold text-app-action">
                     {selectedSetlistIds.size} selected
                   </span>
@@ -1275,7 +1573,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     data-testid="bulk-delete-setlists"
                     disabled={selectedSetlistIds.size === 0}
                     onClick={() => setIsBulkDeleteSetlistsConfirmOpen(true)}
-                    className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                     title="Delete selected setlists"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1288,50 +1586,48 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       setIsSetlistSelectionMode(false)
                       setSelectedSetlistIds(new Set())
                     }}
-                    className="text-xs font-mono ui-secondary-text text-app-muted hover:text-app-heading px-2 py-1 rounded cursor-pointer"
+                    className="text-xs font-mono ui-secondary-text text-app-muted hover:text-app-heading px-2 py-1 rounded cursor-pointer shrink-0"
                   >
                     Cancel
                   </button>
                 </div>
               ) : (
-                <>
-                  {!setlistsCollapsed && (
-                    <>
-                      <button
-                        type="button"
-                        data-testid="main-new-setlist-btn"
-                        onClick={onNewSetlist || onOpenSetlists}
-                        className="ui-action-text text-xs px-2.5 py-1 rounded-lg bg-app-button hover:bg-app-button text-app-button-text font-semibold transition-all cursor-pointer shadow-xs active:scale-95"
-                        title="Create new empty gig setlist"
-                      >
-                        New Setlist
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="toggle-setlist-selection-mode"
-                        onClick={() => {
-                          setIsSetlistSelectionMode(true)
-                          setSelectedSetlistIds(new Set())
-                        }}
-                        className="ui-action-text text-xs px-2 py-1 border border-app-action/40 rounded text-app-action hover:bg-app-action/10 cursor-pointer"
-                      >
-                        Select
-                      </button>
-                    </>
-                  )}
+                <div data-testid="setlist-toolbar" className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
+                  <button
+                    type="button"
+                    data-testid="main-new-setlist-btn"
+                    onClick={onNewSetlist || onOpenSetlists}
+                    className="ui-action-text text-xs px-2.5 py-1 rounded-lg bg-app-button hover:bg-app-button text-app-button-text font-semibold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                    title="Create new empty gig setlist"
+                  >
+                    New Setlist
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="toggle-setlist-selection-mode"
+                    onClick={() => {
+                      if (setlistsCollapsed) {
+                        setSetlistsCollapsed(false)
+                        try { localStorage.setItem('gtar_songbook_setlists_collapsed', 'false') } catch { /* Session preference remains usable. */ }
+                      }
+                      setIsSetlistSelectionMode(true)
+                      setSelectedSetlistIds(new Set())
+                    }}
+                    className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer shrink-0"
+                    title="Manage setlists"
+                  >
+                    Manage
+                  </button>
                   <button
                     type="button"
                     data-testid="main-share-setlist-btn"
                     disabled={activeSetlists.length === 0}
                     onClick={handleMainShareSetlist}
                     aria-label="Share Setlist"
-                    className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent"
+                    className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
                     title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share Setlist'}
                   >
                     <QrCode className="w-3.5 h-3.5" />
-                  </button>
-                  <button type="button" onClick={toggleSetlists} aria-expanded={!setlistsCollapsed} aria-controls="gig-setlist-cards" className="ui-action-text text-xs px-2 py-1 border border-app-action/40 rounded text-app-action">
-                    {setlistsCollapsed ? 'Show' : 'Hide'}
                   </button>
                   <button
                     type="button"
@@ -1340,20 +1636,30 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       setImportLinkError(null)
                       setIsImportModalOpen(true)
                     }}
-                    className="ui-action-text text-[10px] font-bold text-app-action hover:bg-app-action/15 px-2 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer"
+                    className="ui-action-text text-[10px] font-bold text-app-action hover:bg-app-action/15 px-2 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
                     title="Import single setlist (.json) into your library"
                   >
                     <Upload className="w-3 h-3" />
                     <span>Import</span>
                   </button>
-                </>
+                  <button
+                    type="button"
+                    data-testid="toggle-setlists-collapse"
+                    onClick={toggleSetlists}
+                    aria-expanded={!setlistsCollapsed}
+                    aria-controls="gig-setlist-cards"
+                    className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer shrink-0"
+                  >
+                    {setlistsCollapsed ? 'Show' : 'Hide'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
 
           <div id="gig-setlist-cards" hidden={setlistsCollapsed}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
-            {filteredSetlists.map((sl) => {
+            {sortedSetlists.map((sl) => {
               const isDeletingSetlist = confirmDeleteSetlistId === sl.id
               const isMenuOpen = activeMenuSetlistId === sl.id
               const isSetlistChosen = selectedSetlistIds.has(sl.id)
@@ -1591,25 +1897,61 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       {/* 3. Main Songs Grid / List */}
       <div>
-        <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
           <div className="flex items-center gap-2">
-            <Music className="ui-section-icon w-4 h-4 text-app-action" />
+            <Music className="ui-section-icon w-4 h-4 text-app-action shrink-0" />
             <h2 className="ui-section-text text-sm font-bold ui-primary-text text-app-heading uppercase tracking-wider font-mono">
               Songs Library ({filteredIndexedSongs.length} of {songs.length})
             </h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 max-w-full">
             {songs.length > 0 && isSongSelectionMode ? (
-              <div data-testid="song-selection-bar" className="flex items-center gap-2">
-                <span data-testid="song-selection-count" className="ui-action-text text-xs font-mono font-bold text-app-action">
+              <div data-testid="song-selection-bar" className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
+                <span data-testid="song-selection-count" className="ui-action-text text-xs font-mono font-bold text-app-action shrink-0">
                   {selectedSongIds.size} selected
                 </span>
+                <button
+                  type="button"
+                  data-testid="select-all-songs"
+                  disabled={sortedIndexedSongs.length === 0}
+                  onClick={handleSelectAllSongs}
+                  className="ui-action-text text-xs font-mono font-semibold text-app-action hover:bg-app-action/15 px-2 py-1 rounded-lg border border-app-action/40 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  title="Select all currently visible songs"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  data-testid="select-none-songs"
+                  disabled={selectedSongIds.size === 0}
+                  onClick={handleSelectNoneSongs}
+                  className="ui-action-text text-xs font-mono font-semibold text-app-muted hover:text-app-heading hover:bg-app-surface px-2 py-1 rounded-lg border border-app-border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  title="Clear song selection"
+                >
+                  Select None
+                </button>
+                <button
+                  type="button"
+                  data-testid="bulk-publish-to-shared"
+                  disabled={selectedSongIds.size === 0 || isSubmittingPublish}
+                  aria-disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
+                  onClick={handleBulkPublishSongs}
+                  className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  title={
+                    !isAuthActive
+                      ? 'Sign in with an active approved account to publish to the Shared Catalog'
+                      : 'Publish selected songs to Shared Catalog'
+                  }
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Publish to Shared</span>
+                </button>
                 <button
                   type="button"
                   data-testid="bulk-add-to-setlist"
                   disabled={selectedSongIds.size === 0}
                   onClick={() => setIsBulkAddToSetlistModalOpen(true)}
-                  className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   title="Add selected songs to setlist"
                 >
                   <ListPlus className="w-3.5 h-3.5" />
@@ -1620,7 +1962,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   data-testid="bulk-delete-songs"
                   disabled={selectedSongIds.size === 0}
                   onClick={() => setIsBulkDeleteSongsConfirmOpen(true)}
-                  className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   title="Delete selected songs"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -1633,7 +1975,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     setIsSongSelectionMode(false)
                     setSelectedSongIds(new Set())
                   }}
-                  className="text-xs font-mono ui-secondary-text text-app-muted hover:text-app-heading px-2 py-1 rounded cursor-pointer"
+                  className="text-xs font-mono ui-secondary-text text-app-muted hover:text-app-heading px-2 py-1 rounded cursor-pointer shrink-0"
                 >
                   Cancel
                 </button>
@@ -1647,9 +1989,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-expanded={!optionsCollapsed}
                     aria-controls="songbook-sort-filter-options"
                     onClick={toggleOptionsCollapsed}
-                    className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer"
+                    className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer shrink-0"
                   >
-                    {optionsCollapsed ? 'Show Options' : 'Hide Options'}
+                    {optionsCollapsed ? 'Show' : 'Hide'}
                   </button>
                 )}
               </>

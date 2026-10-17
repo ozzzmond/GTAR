@@ -1023,13 +1023,13 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 ) : null}
 
-                {/* C. GIG SETLISTS SECTION */}
+                {/* C. SONG SETLISTS SECTION */}
                 {matchingSearchSetlists.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-accent uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
                       <div className="flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5 text-app-accent" />
-                        <span>Gig Setlists ({matchingSearchSetlists.length})</span>
+                        <span>Song Setlists ({matchingSearchSetlists.length})</span>
                       </div>
                       <span className="text-app-accent">Click to Open Setlist</span>
                     </div>

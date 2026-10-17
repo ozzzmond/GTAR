@@ -1678,7 +1678,15 @@ function LibraryApp() {
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
     const targetId = updated.id ?? currentSong?.id
-    const isExisting = songs.some(s => String(s.id) === String(targetId))
+    const currentPartition =
+      typeof importStateRef !== 'undefined' && typeof partitionSongs !== 'undefined'
+        ? partitionSongs(importStateRef.current.songs)
+        : { active: songs, deleted: deletedSongs }
+    const activeSongs = currentPartition.active
+    const currentDeletedSongs = currentPartition.deleted
+    const currentSetlists =
+      typeof importStateRef !== 'undefined' ? importStateRef.current.setlists : setlists
+    const isExisting = activeSongs.some(s => String(s.id) === String(targetId))
     if (!isExisting) {
       // Do not auto-save unpersisted new blank song to library
       return false
@@ -1686,16 +1694,19 @@ function LibraryApp() {
     if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
       return false
     }
-    const nextSongs = songs.map(s => String(s.id) === String(targetId) ? { ...s, ...updated, id: s.id } : s)
+    const nextSongs = activeSongs.map(s => String(s.id) === String(targetId) ? { ...s, ...updated, id: s.id } : s)
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { songs: [...nextSongs, ...deletedSongs], setlists },
+        { songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       if (typeof persistedBaselineRef !== 'undefined') {
         persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      }
+      if (typeof importStateRef !== 'undefined') {
+        importStateRef.current = { songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists }
       }
     }
     catch (err) { handleStorageWriteFailure(err); return false }

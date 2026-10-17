@@ -357,7 +357,7 @@ test('EDGE_SWIPE_18: Songbook and Setlists tabs switch cleanly', () => {
       setlists: [{ id: 'sl1', name: 'Sunday Service', songs: [] }],
     })
   )
-  assert.ok(htmlSetlists.includes('Gig Setlists'))
+  assert.ok(htmlSetlists.includes('Song Setlists'))
 })
 
 // -------------------------------------------------------------------------

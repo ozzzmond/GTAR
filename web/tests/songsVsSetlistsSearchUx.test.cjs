@@ -61,7 +61,7 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
     onDeleteSong: () => {},
   }))
 
-  assert.match(htmlAcoustic, /Gig Setlists.*1 of 2/)
+  assert.match(htmlAcoustic, /Song Setlists.*1 of 2/)
   assert.match(htmlAcoustic, /Acoustic Classics/)
 
   // Query matching song inside setlist "Wonderwall"
@@ -78,7 +78,7 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
     onDeleteSong: () => {},
   }))
 
-  assert.match(htmlSongInSetlist, /Gig Setlists.*1 of 2/)
+  assert.match(htmlSongInSetlist, /Song Setlists.*1 of 2/)
   assert.match(htmlSongInSetlist, /Rock Night/)
 })
 

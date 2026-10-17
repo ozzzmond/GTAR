@@ -94,7 +94,7 @@ test('8e setlists: collapse is presentation-only, preference survives remount, e
  const root=createRoot(document.getElementById('root'))
  try {
   await act(async()=>root.render(React.createElement(SongbookHomeView,props)))
-  await click('Hide');assert.equal(document.getElementById('gig-setlist-cards').hidden,true);assert.match(document.body.textContent,/Gig Setlists \(1\)/)
+  await click('Hide');assert.equal(document.getElementById('gig-setlist-cards').hidden,true);assert.match(document.body.textContent,/Song Setlists \(1\)/)
   assert.equal(localStorage.getItem('gtar_songbook_setlists_collapsed'),'true');assert.equal(JSON.stringify(lists),snapshot);assert.match(document.body.textContent,/Songs Library/)
   await act(async()=>root.render(null));await act(async()=>root.render(React.createElement(SongbookHomeView,props)))
   assert.equal(document.getElementById('gig-setlist-cards').hidden,true);await click('Show');assert.equal(document.getElementById('gig-setlist-cards').hidden,false)
