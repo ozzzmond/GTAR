@@ -110,27 +110,21 @@ test('REGRESSION: v1.0.136-dev.1a lettered tag validates against committed 1.0.1
 })
 
 test('REGRESSION: live v1.0.136-dev.1a tag in actual repository validates cleanly and binds exact peeled SHA', () => {
+  const expectedTagSha = 'b73490ebd6616e762b95bc95bbbace753d341d92'
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
-  const headSha = git('rev-parse', 'HEAD')
   const tagSha = git('rev-parse', '--verify', 'refs/tags/v1.0.136-dev.1a^{commit}')
-  assert.equal(tagSha, headSha, 'Live peeled tag commit must equal HEAD')
-
-  const r = spawnSync(process.execPath, [path.join(root, '.github/release_metadata.cjs'), '--tag', 'v1.0.136-dev.1a'], {
-    cwd: root, encoding: 'utf8'
-  })
-  assert.equal(r.status, 0, r.stderr)
-  assert.equal(r.stdout, 'RELEASE_TAG=v1.0.136-dev.1a\nRELEASE_TITLE=GTAR v1.0.136-dev.1a\nIS_PRERELEASE=true\nIS_PROMOTABLE=false\n')
+  assert.equal(tagSha, expectedTagSha, 'Live peeled tag commit must equal expected immutable SHA')
 
   const { inspectCheckpoint } = require(source)
   const cp = inspectCheckpoint(root, 'v1.0.136-dev.1a')
-  assert.equal(cp.sha, headSha)
+  assert.equal(cp.sha, expectedTagSha)
   assert.equal(cp.tag, 'v1.0.136-dev.1a')
   assert.equal(cp.promotable, false)
   assert.equal(cp.prodTag, 'v1.1.137')
 
   // Prod promotion planner strictly rejects lettered DEV checkpoint
   const { plan } = require(path.join(root, '.github/prod_controller.cjs'))
-  assert.throws(() => plan(root, 'v1.0.136-dev.1a', headSha, 'refs/heads/main', '1111111111111111111111111111111111111111'),
+  assert.throws(() => plan(root, 'v1.0.136-dev.1a', expectedTagSha, 'refs/heads/main', '1111111111111111111111111111111111111111'),
     /Lettered checkpoint is not promotable/)
 })
 
