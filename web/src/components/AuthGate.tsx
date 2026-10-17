@@ -4,15 +4,16 @@ import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolic
 import {
   loadGoogleIdentity,
   getStoredSessionStatus,
-  requestGoogleSession,
   requestGoogleCredential,
   authenticateWithServer,
   recheckServerSession,
   logoutFromServer,
-  renewDurableSession,
   saveGoogleSession,
   validSession,
-  verifyGoogleSession,
+  isServerBackedSession,
+  hasServerApproval,
+  isDefinitiveAuthError,
+  isTransientAuthError,
   type GoogleSession,
   type AccessStatus,
 } from '../utils/googleAuth'
@@ -60,7 +61,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const accessStatus: AccessStatus = useMemo(() => {
     if (bypass && canBypass) return 'active'
     if (!session) return 'pending'
-    return session.access_status || session.user.access_status || 'active'
+    if (session.access_status === 'denied' || session.user?.access_status === 'denied') return 'denied'
+    if (hasServerApproval(session)) return 'active'
+    return 'pending'
   }, [bypass, canBypass, session])
 
   const role: UserRole = useMemo(() => {
@@ -76,7 +79,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [session, bypass, canBypass, configuredEmails])
 
   const isSuperAdmin = role === 'SUPER_ADMIN'
-  const permitted = !!session && validSession(session) && accessStatus === 'active'
+  const permitted = !!session && validSession(session) && hasServerApproval(session) && accessStatus === 'active'
 
   const sessionRef = useRef(session)
   sessionRef.current = session
@@ -129,98 +132,113 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     try {
       const token = current.sessionToken || current.idToken
-      if (token) {
-        try {
-          const serverUser = await recheckServerSession(token)
-          if (generation !== epoch.current) return
-
-          const isIdentical =
-            current.access_status === serverUser.access_status &&
-            current.role === serverUser.role &&
-            current.user.id === serverUser.id &&
-            current.user.name === (serverUser.display_name || current.user.name) &&
-            current.user.picture === (serverUser.picture_url || current.user.picture)
-
-          const updated: GoogleSession = {
-            ...current,
-            user: {
-              ...current.user,
-              id: serverUser.id,
-              role: serverUser.role,
-              access_status: serverUser.access_status,
-              name: serverUser.display_name || current.user.name,
-              picture: serverUser.picture_url || current.user.picture,
-            },
-            role: serverUser.role,
-            access_status: serverUser.access_status,
-            lastVerifiedAt: Date.now(),
-          }
-
-          if (current.access_status === 'active' && (serverUser.access_status === 'denied' || serverUser.access_status === 'pending')) {
-            const revokedAccountId = serverUser.id || current.user?.id || (current.user?.email ? current.user.email.trim().toLowerCase() : null)
-            if (revokedAccountId) {
-              sharedCatalogService.clearAccountCache(revokedAccountId).catch(() => {})
-            }
-          }
-
-          saveGoogleSession(updated)
-          if (!isIdentical) {
-            setSession(updated)
-          }
-          return
-        } catch (err) {
-          if (generation !== epoch.current) return
-          const msg = err instanceof Error ? err.message : String(err)
-          if (/network|failed to fetch|load failed|timeout/i.test(msg)) {
-            void import('../utils/logger').then(({ appLogger }) => {
-              appLogger.warn('AuthGate', 'Background server recheck deferred due to transient network error.', msg)
-            })
-            return
-          }
-        }
-      }
-
-      const currentRole = getUserRole(current.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-      if (currentRole === 'NONE' && configuredEmails !== undefined) {
+      if (!token || !isServerBackedSession(current)) {
         if (generation === epoch.current) {
-          signOut()
-          setError('Access revoked. Your account is not on the authorized whitelist.')
+          const invalidAccountId =
+            current.user?.id ||
+            (current.user?.email ? current.user.email.trim().toLowerCase() : null) ||
+            sharedCatalogService.getAccount()
+          saveGoogleSession(null)
+          if (invalidAccountId) {
+            sharedCatalogService.clearAccountCache(invalidAccountId).catch(() => {})
+          }
+          sharedCatalogService.setAccount(null)
+          setSession(null)
+          setBypass(false)
+          setError('Your session requires server verification. Please sign in again.')
         }
         return
       }
 
-      // Fallback: verify Google session if token exists
-      if (current.token) {
-        try {
-          const verified = await verifyGoogleSession(current)
-          if (generation !== epoch.current) return
-          if (verified.user.email.toLowerCase() !== current.user.email.toLowerCase()) {
-            signOut()
-            setError('Session identity mismatch. Please sign in again.')
-            return
+      try {
+        const serverUser = await recheckServerSession(token)
+        if (generation !== epoch.current) return
+
+        if (
+          (serverUser.google_sub && current.user?.sub && serverUser.google_sub.trim() !== current.user.sub.trim()) ||
+          (serverUser.email && current.user?.email && serverUser.email.trim().toLowerCase() !== current.user.email.trim().toLowerCase())
+        ) {
+          const mismatchedAccountId =
+            current.user?.id ||
+            (current.user?.email ? current.user.email.trim().toLowerCase() : null) ||
+            sharedCatalogService.getAccount()
+          saveGoogleSession(null)
+          if (mismatchedAccountId) {
+            sharedCatalogService.clearAccountCache(mismatchedAccountId).catch(() => {})
           }
-          const renewed = renewDurableSession(verified)
-          saveGoogleSession(renewed)
-          setSession(renewed)
+          sharedCatalogService.setAccount(null)
+          setSession(null)
+          setBypass(false)
+          setError('Session identity mismatch. Please sign in again.')
           return
-        } catch (err) {
-          if (generation !== epoch.current) return
-          const msg = err instanceof Error ? err.message : String(err)
-          if (/network|failed to fetch|load failed|timeout/i.test(msg)) {
-            return
-          }
-          const sessionWithoutToken: GoogleSession = {
-            ...current,
-            token: undefined,
-          }
-          saveGoogleSession(sessionWithoutToken)
-          setSession(sessionWithoutToken)
         }
+
+        const isIdentical =
+          current.access_status === serverUser.access_status &&
+          current.role === serverUser.role &&
+          current.user.id === serverUser.id &&
+          current.user.name === (serverUser.display_name || current.user.name) &&
+          current.user.picture === (serverUser.picture_url || current.user.picture)
+
+        const updated: GoogleSession = {
+          ...current,
+          user: {
+            ...current.user,
+            id: serverUser.id,
+            role: serverUser.role,
+            access_status: serverUser.access_status,
+            name: serverUser.display_name || current.user.name,
+            picture: serverUser.picture_url || current.user.picture,
+          },
+          role: serverUser.role,
+          access_status: serverUser.access_status,
+          lastVerifiedAt: Date.now(),
+        }
+
+        if (current.access_status === 'active' && (serverUser.access_status === 'denied' || serverUser.access_status === 'pending')) {
+          const revokedAccountId = serverUser.id || current.user?.id || (current.user?.email ? current.user.email.trim().toLowerCase() : null)
+          if (revokedAccountId) {
+            sharedCatalogService.clearAccountCache(revokedAccountId).catch(() => {})
+          }
+          sharedCatalogService.setAccount(null)
+          setBypass(false)
+        }
+
+        saveGoogleSession(updated)
+        if (!isIdentical) {
+          setSession(updated)
+        }
+        return
+      } catch (err) {
+        if (generation !== epoch.current) return
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!isDefinitiveAuthError(err) && isTransientAuthError(err)) {
+          void import('../utils/logger').then(({ appLogger }) => {
+            appLogger.warn('AuthGate', 'Background server recheck deferred due to transient network error.', msg)
+          })
+          return
+        }
+        if (isDefinitiveAuthError(err)) {
+          const revokedAccountId =
+            current.user?.id ||
+            (current.user?.email ? current.user.email.trim().toLowerCase() : null) ||
+            sharedCatalogService.getAccount()
+          saveGoogleSession(null)
+          if (revokedAccountId) {
+            sharedCatalogService.clearAccountCache(revokedAccountId).catch(() => {})
+          }
+          sharedCatalogService.setAccount(null)
+          setSession(null)
+          setBypass(false)
+          setError(msg || 'Your session is no longer valid. Please sign in again.')
+          return
+        }
+        return
       }
     } finally {
       refreshing.current = false
     }
-  }, [signOut, configuredEmails])
+  }, [])
 
   // Explicit check status for pending users
   const checkStatus = useCallback(async () => {
@@ -237,7 +255,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setError('')
     try {
       const token = session.sessionToken || session.idToken
-      if (token) {
+      if (token && isServerBackedSession(session)) {
         const serverUser = await recheckServerSession(token)
         if (generation !== epoch.current) return
         const updated: GoogleSession = {
@@ -263,11 +281,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
           setStatusMessage('Your account is still awaiting approval.')
         }
       } else {
-        setStatusMessage('No active server token. Please sign in again to verify.')
+        saveGoogleSession(null)
+        sharedCatalogService.setAccount(null)
+        setSession(null)
+        setBypass(false)
+        setStatusMessage('')
+        setError('No active server token. Please sign in again to verify.')
       }
     } catch (err) {
       if (generation !== epoch.current) return
       const msg = err instanceof Error ? err.message : 'Unable to check status. Network unavailable.'
+      if (isDefinitiveAuthError(err)) {
+        saveGoogleSession(null)
+        sharedCatalogService.setAccount(null)
+        setSession(null)
+        setBypass(false)
+        setStatusMessage('')
+        setError(msg || 'Your session is no longer valid. Please sign in again.')
+        return
+      }
       setError(msg)
       setStatusMessage('')
     } finally {
@@ -341,6 +373,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
 
     const candidate = status.session
+    if (!isServerBackedSession(candidate)) {
+      saveGoogleSession(null)
+      if (generation === epoch.current) {
+        setSession(null)
+        setError('Your session requires server verification. Please sign in again.')
+        setChecking(false)
+      }
+      return
+    }
+
     if (candidate.access_status !== 'denied' && candidate.access_status !== 'pending') {
       const candidateRole = getUserRole(candidate.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
       if (candidateRole === 'NONE' && configuredEmails !== undefined) {
@@ -353,7 +395,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       }
     }
 
-    // Unlock immediately from local durable session
+    // Unlock immediately from local server-backed durable session
     if (generation === epoch.current) {
       setSession(candidate)
       setChecking(false)
@@ -411,12 +453,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (now - lastRecheckTimestamp.current < 60_000) return
 
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
-      if (!validSession(session)) {
-        if (isOffline) {
+      if (!validSession(session) || !isServerBackedSession(session)) {
+        if (isOffline && validSession(session)) {
           return
         }
-        if (isPresentationRoute) {
+        if (!isOffline || !isServerBackedSession(session) || isPresentationRoute) {
           signOut()
+          setError('Your session has expired. Please sign in again.')
         }
       } else if (!isOffline) {
         void backgroundRecheck(session, epoch.current)
@@ -454,21 +497,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setIsExpiredOffline(false)
 
     try {
-      let serverSession: GoogleSession | null = null
-
-      // Prefer GIS ID Token flow for server verification
-      try {
-        const idToken = await requestGoogleCredential(clientId)
-        if (generation !== epoch.current) return
-        serverSession = await authenticateWithServer(idToken)
-      } catch {
-        // Fallback to GIS oauth2 flow if idToken prompt was dismissed or unhandled
-        const legacySession = await requestGoogleSession(clientId)
-        if (generation !== epoch.current) return
-        serverSession = legacySession
-      }
-
+      const idToken = await requestGoogleCredential(clientId)
+      if (generation !== epoch.current) return
+      const serverSession = await authenticateWithServer(idToken)
       if (generation !== epoch.current || !serverSession) return
+      if (!isServerBackedSession(serverSession)) {
+        saveGoogleSession(null)
+        throw new Error('Server authentication did not return a verifiable session.')
+      }
 
       saveGoogleSession(serverSession)
       setBypass(false)

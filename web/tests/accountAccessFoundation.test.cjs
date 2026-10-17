@@ -293,7 +293,9 @@ test('TARGETED: ACTIVE_ACCESS allows application rendering for users with access
       role: 'admin',
       access_status: 'active',
     },
-    'token-xyz'
+    undefined,
+    Date.now(),
+    { sessionToken: 'token-xyz', role: 'admin', access_status: 'active' }
   )
 
   const prevWindow = global.window
@@ -348,9 +350,9 @@ test('TARGETED: DENIED_ACCESS renders access denied state and blocks app access'
       role: 'member',
       access_status: 'denied',
     },
-    'token-xyz',
+    undefined,
     Date.now(),
-    { access_status: 'denied', role: 'member' }
+    { sessionToken: 'token-xyz', access_status: 'denied', role: 'member' }
   )
 
   const prevWindow = global.window

@@ -80,6 +80,57 @@ declare global {
   }
 }
 
+function isValidAccessStatus(value: unknown): value is AccessStatus {
+  return value === 'active' || value === 'pending' || value === 'denied'
+}
+
+function normalizeAccessStatus(primary: unknown, secondary?: unknown): AccessStatus | undefined {
+  if (isValidAccessStatus(primary) && isValidAccessStatus(secondary) && primary !== secondary) {
+    return undefined
+  }
+  if (isValidAccessStatus(primary)) return primary
+  if (isValidAccessStatus(secondary)) return secondary
+  return undefined
+}
+
+export class ServerSessionError extends Error {
+  status?: number
+  isDefinitiveAuthFailure: boolean
+  isTransient: boolean
+
+  constructor(
+    message: string,
+    options: { status?: number; isDefinitiveAuthFailure: boolean; isTransient: boolean }
+  ) {
+    super(message)
+    this.name = 'ServerSessionError'
+    this.status = options.status
+    this.isDefinitiveAuthFailure = options.isDefinitiveAuthFailure
+    this.isTransient = options.isTransient
+  }
+}
+
+export function isDefinitiveAuthError(err: unknown): boolean {
+  if (err instanceof ServerSessionError) {
+    return err.isDefinitiveAuthFailure
+  }
+  if (err && typeof err === 'object' && 'isDefinitiveAuthFailure' in err) {
+    return (err as { isDefinitiveAuthFailure?: unknown }).isDefinitiveAuthFailure === true
+  }
+  return false
+}
+
+export function isTransientAuthError(err: unknown): boolean {
+  if (err instanceof ServerSessionError) {
+    return err.isTransient
+  }
+  if (err && typeof err === 'object' && 'isTransient' in err) {
+    return (err as { isTransient?: unknown }).isTransient === true
+  }
+  const msg = err instanceof Error ? err.message : String(err)
+  return /network|failed to fetch|fetch failed|load failed|timeout|abort|offline|temporarily unavailable/i.test(msg)
+}
+
 export function parseStoredSession(raw: unknown): { session: GoogleSession | null; isExpired: boolean } {
   if (!raw || typeof raw !== 'object') return { session: null, isExpired: false }
   const obj = raw as Record<string, unknown>
@@ -108,18 +159,13 @@ export function parseStoredSession(raw: unknown): { session: GoogleSession | nul
       ? obj.lastVerifiedAt
       : authenticatedAt
 
-  // Authoritative role and access status mapping (backward-compatible: defaults to active for existing sessions)
+  // Authoritative role and access status mapping (never defaults missing access_status to active)
   const role: UserRole =
     u.role === 'admin' || obj.role === 'admin'
       ? 'admin'
       : 'member'
 
-  const access_status: AccessStatus =
-    u.access_status === 'denied' || obj.access_status === 'denied'
-      ? 'denied'
-      : u.access_status === 'pending' || obj.access_status === 'pending'
-      ? 'pending'
-      : 'active'
+  const access_status: AccessStatus | undefined = normalizeAccessStatus(obj.access_status, u.access_status)
 
   const session: GoogleSession = {
     version: 1,
@@ -155,6 +201,43 @@ export function validSession(session: GoogleSession | null): session is GoogleSe
   if (!session) return false
   const parsed = parseStoredSession(session)
   return parsed.session !== null && !parsed.isExpired
+}
+
+/**
+ * Returns true if the session carries a server-verifiable credential:
+ * either an issued GTAR sessionToken or a Google idToken paired with a server-assigned user.id.
+ * Client-only OAuth access tokens (session.token) are NOT server-verifiable.
+ */
+export function hasServerCredentials(session: GoogleSession | null | undefined): boolean {
+  if (!session || typeof session !== 'object') return false
+  const hasSessionToken = typeof session.sessionToken === 'string' && session.sessionToken.trim().length > 0
+  const hasIdTokenWithServerId =
+    typeof session.idToken === 'string' &&
+    session.idToken.trim().length > 0 &&
+    typeof session.user?.id === 'string' &&
+    session.user.id.trim().length > 0
+  return hasSessionToken || hasIdTokenWithServerId
+}
+
+/**
+ * Returns true if the session was issued/verified by the GTAR server and contains
+ * explicit server access status metadata (never a legacy client-only OAuth fallback session).
+ */
+export function isServerBackedSession(session: GoogleSession | null | undefined): session is GoogleSession {
+  if (!session || !validSession(session)) return false
+  if (!hasServerCredentials(session)) return false
+  const resolvedStatus = normalizeAccessStatus(session.access_status, session.user?.access_status)
+  return resolvedStatus !== undefined
+}
+
+/**
+ * Returns true only when the session has server-verifiable credentials AND explicit
+ * server approval (access_status === 'active').
+ */
+export function hasServerApproval(session: GoogleSession | null | undefined): boolean {
+  if (!isServerBackedSession(session)) return false
+  const resolvedStatus = normalizeAccessStatus(session.access_status, session.user?.access_status)
+  return resolvedStatus === 'active'
 }
 
 export function isSessionExpired(session: GoogleSession | null): boolean {
@@ -214,7 +297,7 @@ export function createDurableSession(
 ): GoogleSession {
   const localExpiresAt = now + DURABLE_SESSION_DURATION_MS
   const role: UserRole = extras?.role || user.role || 'member'
-  const access_status: AccessStatus = extras?.access_status || user.access_status || 'active'
+  const access_status: AccessStatus | undefined = normalizeAccessStatus(extras?.access_status, user.access_status)
 
   return {
     version: 1,
@@ -324,15 +407,29 @@ export async function authenticateWithServer(
   idToken: string,
   now = Date.now()
 ): Promise<GoogleSession> {
-  const res = await fetch('/api/auth/session', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ idToken }),
-    signal: AbortSignal.timeout(15000),
-    cache: 'no-store',
-  })
+  if (!idToken || typeof idToken !== 'string' || !idToken.trim()) {
+    throw new ServerSessionError('Google credential token is required', {
+      status: 400,
+      isDefinitiveAuthFailure: true,
+      isTransient: false,
+    })
+  }
+
+  let res: Response
+  try {
+    res = await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ idToken }),
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store',
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Network error during server authentication'
+    throw new ServerSessionError(msg, { isDefinitiveAuthFailure: false, isTransient: true })
+  }
 
   if (!res.ok) {
     let errMessage = 'Server authentication failed'
@@ -340,24 +437,60 @@ export async function authenticateWithServer(
       const errData = await res.json()
       if (errData?.error) errMessage = errData.error
     } catch { /* ignore */ }
-    throw new Error(errMessage)
+    const isDefinitive = res.status === 401 || res.status === 403 || res.status === 400
+    throw new ServerSessionError(errMessage, {
+      status: res.status,
+      isDefinitiveAuthFailure: isDefinitive,
+      isTransient: !isDefinitive,
+    })
   }
 
-  const data = (await res.json()) as {
-    success: boolean
-    user: {
-      id: string
-      google_sub: string
-      email: string
-      display_name: string | null
-      picture_url: string | null
-      role: UserRole
-      access_status: AccessStatus
+  let data: {
+    success?: boolean
+    user?: {
+      id?: string
+      google_sub?: string
+      email?: string
+      display_name?: string | null
+      picture_url?: string | null
+      role?: UserRole
+      access_status?: AccessStatus
     }
-    sessionToken: string
+    sessionToken?: string
+    error?: string
+  }
+  try {
+    data = await res.json()
+  } catch {
+    throw new ServerSessionError('Malformed server authentication response', {
+      status: res.status,
+      isDefinitiveAuthFailure: false,
+      isTransient: true,
+    })
   }
 
-  const u = data.user
+  const u = data?.user
+  if (
+    data?.success === false ||
+    !u ||
+    typeof u.id !== 'string' ||
+    !u.id.trim() ||
+    typeof u.google_sub !== 'string' ||
+    !u.google_sub.trim() ||
+    typeof u.email !== 'string' ||
+    !u.email.trim() ||
+    (u.role !== 'admin' && u.role !== 'member') ||
+    !isValidAccessStatus(u.access_status) ||
+    typeof data.sessionToken !== 'string' ||
+    !data.sessionToken.trim()
+  ) {
+    throw new ServerSessionError(data?.error || 'Invalid server authentication response', {
+      status: res.status,
+      isDefinitiveAuthFailure: true,
+      isTransient: false,
+    })
+  }
+
   return createDurableSession(
     {
       id: u.id,
@@ -394,13 +527,27 @@ export async function recheckServerSession(
   role: UserRole
   access_status: AccessStatus
 }> {
-  const res = await fetch('/api/auth/session', {
-    headers: {
-      Authorization: `Bearer ${sessionTokenOrIdToken}`,
-    },
-    signal: AbortSignal.timeout(15000),
-    cache: 'no-store',
-  })
+  if (!sessionTokenOrIdToken || typeof sessionTokenOrIdToken !== 'string' || !sessionTokenOrIdToken.trim()) {
+    throw new ServerSessionError('Missing server session token', {
+      status: 401,
+      isDefinitiveAuthFailure: true,
+      isTransient: false,
+    })
+  }
+
+  let res: Response
+  try {
+    res = await fetch('/api/auth/session', {
+      headers: {
+        Authorization: `Bearer ${sessionTokenOrIdToken}`,
+      },
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store',
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Network error during server recheck'
+    throw new ServerSessionError(msg, { isDefinitiveAuthFailure: false, isTransient: true })
+  }
 
   if (!res.ok) {
     let errMessage = 'Server recheck failed'
@@ -408,23 +555,81 @@ export async function recheckServerSession(
       const errData = await res.json()
       if (errData?.error) errMessage = errData.error
     } catch { /* ignore */ }
-    throw new Error(errMessage)
+    const isDefinitive = res.status === 401 || res.status === 403
+    throw new ServerSessionError(errMessage, {
+      status: res.status,
+      isDefinitiveAuthFailure: isDefinitive,
+      isTransient: !isDefinitive,
+    })
   }
 
-  const data = (await res.json()) as {
-    success: boolean
-    user: {
-      id: string
-      google_sub: string
-      email: string
-      display_name: string | null
-      picture_url: string | null
-      role: UserRole
-      access_status: AccessStatus
+  let data: {
+    success?: boolean
+    user?: {
+      id?: string
+      google_sub?: string
+      email?: string
+      display_name?: string | null
+      picture_url?: string | null
+      role?: UserRole
+      access_status?: AccessStatus
     }
+    error?: string
+  }
+  try {
+    data = await res.json()
+  } catch {
+    throw new ServerSessionError('Malformed server recheck response', {
+      status: res.status,
+      isDefinitiveAuthFailure: false,
+      isTransient: true,
+    })
   }
 
-  return data.user
+  if (data?.success === false) {
+    throw new ServerSessionError(data?.error || 'Session rejected by server', {
+      status: res.status,
+      isDefinitiveAuthFailure: true,
+      isTransient: false,
+    })
+  }
+
+  if (!data || typeof data !== 'object' || !('user' in data)) {
+    throw new ServerSessionError('Incomplete server recheck response', {
+      status: res.status,
+      isDefinitiveAuthFailure: false,
+      isTransient: true,
+    })
+  }
+
+  const u = data.user
+  if (
+    !u ||
+    typeof u.id !== 'string' ||
+    !u.id.trim() ||
+    typeof u.google_sub !== 'string' ||
+    !u.google_sub.trim() ||
+    typeof u.email !== 'string' ||
+    !u.email.trim() ||
+    (u.role !== 'admin' && u.role !== 'member') ||
+    !isValidAccessStatus(u.access_status)
+  ) {
+    throw new ServerSessionError('Invalid server session user record', {
+      status: res.status,
+      isDefinitiveAuthFailure: true,
+      isTransient: false,
+    })
+  }
+
+  return {
+    id: u.id,
+    google_sub: u.google_sub,
+    email: u.email,
+    display_name: u.display_name ?? null,
+    picture_url: u.picture_url ?? null,
+    role: u.role,
+    access_status: u.access_status,
+  }
 }
 
 /**

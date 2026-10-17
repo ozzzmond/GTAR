@@ -164,7 +164,7 @@ test('4. Storage targets, dual-key migration, and malformed JSON resilience', ()
   }
 })
 
-test('5. App mount with valid session unlocks immediately and renders songbook children', async () => {
+test('5. App mount with valid server-backed session unlocks immediately and renders songbook children', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
   const prevWindow = global.window
   const prevDoc = global.document
@@ -180,10 +180,26 @@ test('5. App mount with valid session unlocks immediately and renders songbook c
       localStorage: dom.window.localStorage,
       sessionStorage: dom.window.sessionStorage,
       IS_REACT_ACT_ENVIRONMENT: true,
-      fetch: async () => new Response(JSON.stringify({ sub: 'admin-sub', email: 'jlopez3rd@gmail.com', email_verified: true })),
+      fetch: async () => new Response(JSON.stringify({
+        success: true,
+        user: {
+          id: 'admin-id',
+          google_sub: 'admin-sub',
+          email: 'jlopez3rd@gmail.com',
+          display_name: 'Admin',
+          picture_url: null,
+          role: 'admin',
+          access_status: 'active',
+        },
+      })),
     })
 
-    const session = createDurableSession({ sub: 'admin-sub', email: 'jlopez3rd@gmail.com' })
+    const session = createDurableSession(
+      { id: 'admin-id', sub: 'admin-sub', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' },
+      undefined,
+      Date.now(),
+      { sessionToken: 'server-session-token-123', role: 'admin', access_status: 'active' }
+    )
     dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
 
     function SongbookApp() {
@@ -227,7 +243,12 @@ test('6. Whitelist revocation locks gate and purges unauthorized session', async
     })
 
     // Session exists for unapproved outsider
-    const outsiderSession = createDurableSession({ sub: 'outsider-sub', email: 'stranger@example.com' })
+    const outsiderSession = createDurableSession(
+      { id: 'outsider-id', sub: 'outsider-sub', email: 'stranger@example.com', role: 'member', access_status: 'active' },
+      undefined,
+      Date.now(),
+      { sessionToken: 'server-token-outsider', role: 'member', access_status: 'active' }
+    )
     dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(outsiderSession))
 
     function SongbookApp() {
@@ -324,7 +345,7 @@ test('8. Existing dev loopback bypass remains strictly intact on loopback hosts 
   assert.equal(allowLocalBypass(true, '192.168.1.50'), false)
 })
 
-test('9. Long idle background recheck with expired OAuth token retires token without GIS prompt', async () => {
+test('9. Background recheck preserves server-backed durable session on transient errors and locks on definitive 401 without GIS prompt', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
   const prevWindow = global.window
   const prevDoc = global.document
@@ -357,11 +378,16 @@ test('9. Long idle background recheck with expired OAuth token retires token wit
       localStorage: dom.window.localStorage,
       sessionStorage: dom.window.sessionStorage,
       IS_REACT_ACT_ENVIRONMENT: true,
-      fetch: async () => new Response('', { status: 401 }), // Expired Google OAuth token returns 401
+      fetch: async () => new Response('Service Unavailable', { status: 503 }),
     })
 
-    // Valid 30-day durable session with an expired OAuth access token (idle for > 1 hour)
-    const validDurable = createDurableSession({ sub: 'user-sub', email: 'jlopez3rd@gmail.com' }, 'expired-token-123')
+    // Valid 30-day server-backed durable session encountering transient 503
+    const validDurable = createDurableSession(
+      { id: 'user-id-1', sub: 'user-sub', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' },
+      undefined,
+      Date.now(),
+      { sessionToken: 'server-session-token-123', role: 'admin', access_status: 'active' }
+    )
     dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(validDurable))
 
     function SongbookApp() {
@@ -373,15 +399,15 @@ test('9. Long idle background recheck with expired OAuth token retires token wit
       root.render(React.createElement(AuthGate, null, React.createElement(SongbookApp)))
     })
 
-    // App remains unlocked and functional
+    // App remains unlocked and functional during transient server/network failure
     assert.match(dom.window.document.body.textContent, /Stage Ready/)
     // Must NOT call GIS requestAccessToken
     assert.equal(gisPromptInvoked, false)
 
-    // Token was cleanly retired, durable session is preserved
+    // Durable session is preserved
     const stored = JSON.parse(dom.window.localStorage.getItem(SESSION_STORAGE_KEY))
     assert.equal(stored.user.email, 'jlopez3rd@gmail.com')
-    assert.equal(stored.token, undefined)
+    assert.equal(stored.sessionToken, 'server-session-token-123')
     assert.equal(validSession(stored), true)
 
     await act(async () => root.unmount())
@@ -395,4 +421,5 @@ test('9. Long idle background recheck with expired OAuth token retires token wit
     global.fetch = prevFetch
   }
 })
+
 
