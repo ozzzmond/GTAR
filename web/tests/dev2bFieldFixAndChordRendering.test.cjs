@@ -220,7 +220,7 @@ test('SCOPE 4: KeyPickerModal displays "Select Transpose Key:" and enharmonic la
     const props = {
       isOpen: true,
       onClose: () => {},
-      originalKey: 'C',
+      song: { key: 'C', originalKey: 'C' },
       currentOffset: 1, // +1 -> C# / Db
       onSelectOffset: offset => { selectedOffset = offset },
       onReset: () => {},
@@ -231,7 +231,7 @@ test('SCOPE 4: KeyPickerModal displays "Select Transpose Key:" and enharmonic la
     // 1. Verify updated label text
     const label = document.querySelector('label')
     assert.ok(label, 'Modal must render a label')
-    assert.equal(label.textContent.trim(), 'Select Transpose Key:')
+    assert.equal(label.textContent.trim(), 'Select Transpose Key: relative to Original Key')
 
     // 2. Verify Transposed Key header displays enharmonic pair "C# / Db"
     assert.match(document.body.textContent, /C# \/ Db/)

@@ -214,5 +214,5 @@ test('AUTHORED_CHORDS_UNCHANGED_ON_ORIGINAL_KEY_EDIT: no automatic chord alignme
   const editorTsx = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
   assert.doesNotMatch(editorTsx, /alignChartKey/, 'DesktopEditor must not invoke alignChartKey')
   assert.doesNotMatch(editorTsx, /acceptOriginalKey/, 'DesktopEditor must not invoke acceptOriginalKey')
-  assert.doesNotMatch(editorTsx, /Chart Key/, 'DesktopEditor must not render Chart Key UI')
+  assert.match(editorTsx, /Chart Key/, 'DesktopEditor must distinguish stored chart key from original provenance')
 })

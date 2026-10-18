@@ -4,12 +4,13 @@ import {
   Music,
   RotateCcw
 } from 'lucide-react'
+import { transposeContext, type SongKeySource } from '../utils/songKeySemantics'
 import { transposeKey, formatTransposeOffset, formatEnharmonicKey } from '../utils/chordTransposer'
 
 interface KeyPickerModalProps {
   isOpen: boolean
   onClose: () => void
-  originalKey: string
+  song: SongKeySource
   currentOffset: number
   onSelectOffset: (offset: number) => void
   onReset: () => void
@@ -18,15 +19,16 @@ interface KeyPickerModalProps {
 export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
   isOpen,
   onClose,
-  originalKey,
+  song,
   currentOffset,
   onSelectOffset,
   onReset,
 }) => {
   if (!isOpen) return null
 
-  const baseKey = originalKey || 'C'
-  const effectiveTransposedKey = transposeKey(baseKey, currentOffset)
+  const context = transposeContext(song, currentOffset)
+  const { baseKey, displayOffset } = context
+  const effectiveTransposedKey = context.performanceKey
 
   // Offsets list matching Android SongViewerScreen (-6 to +6)
   const offsets = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]
@@ -61,7 +63,8 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
                 Original Key
               </span>
               <span className="text-xl font-black text-app-heading font-mono">
-                {baseKey}
+                {context.originalConflict ? 'Conflicting' : context.originalKey || 'Unknown'}
+                <small className="block text-xs">Chart Key: {context.chartKey || 'Unknown'}{context.chartEstimated ? ' (estimated)' : ''}</small>
               </span>
             </div>
 
@@ -69,15 +72,15 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
 
             <div>
               <span className="text-[10px] font-mono text-app-action uppercase tracking-wider block">
-                Transposed Key
+                Performance Key
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-black text-app-accent font-mono">
                   {formatEnharmonicKey(effectiveTransposedKey)}
                 </span>
-                {currentOffset !== 0 && (
+                {displayOffset !== 0 && (
                   <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-app-accent/20 text-app-accent border border-app-accent/40">
-                    {formatTransposeOffset(currentOffset)}
+                    {formatTransposeOffset(displayOffset)}
                   </span>
                 )}
               </div>
@@ -85,10 +88,10 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
           </div>
 
           {/* Quick Reset to Original Key Button */}
-          {currentOffset !== 0 && (
+          {displayOffset !== 0 && (
             <button
               type="button"
-              onClick={onReset}
+              onClick={() => { onReset(); onClose() }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#DC6E67]/50 bg-app-base text-status-error hover:bg-[#DC6E67]/20 text-xs font-bold transition-all cursor-pointer shadow-sm"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -100,20 +103,22 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
         {/* Semitone Shift Selector Grid (-6 to +6) */}
         <div className="p-5 overflow-y-auto flex-1">
           <label className="block text-app-muted font-mono text-[11px] uppercase mb-3">
-            Select Transpose Key:
+            {context.chartConflict || context.originalConflict ? 'Conflicting key metadata. ' : ''}
+            Select Transpose Key: {context.originalRelative ? 'relative to Original Key' : 'relative to Chart Key'}
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {offsets.map((offset) => {
               const targetKey = transposeKey(baseKey, offset)
-              const isSelected = offset === currentOffset
+              const isSelected = offset === displayOffset
               const offsetLabel = formatTransposeOffset(offset)
 
               return (
                 <button
                   key={offset}
                   type="button"
+                  disabled={!baseKey}
                   onClick={() => {
-                    onSelectOffset(offset)
+                    onSelectOffset(context.toStoredOffset(offset))
                     onClose()
                   }}
                   className={`px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
@@ -136,7 +141,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
                       <span className="font-bold text-sm font-mono text-app-heading">{formatEnharmonicKey(targetKey)}</span>
                       {offset === 0 && (
                         <span className="ml-1.5 text-[10px] text-app-action font-mono uppercase">
-                          (Original)
+                          {context.originalRelative ? '(Original)' : '(Chart)'}
                         </span>
                       )}
                     </div>

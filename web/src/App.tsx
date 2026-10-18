@@ -1,3 +1,4 @@
+import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
 import { mergeImportedSetlists } from './utils/importIdentity'
 import {
@@ -2275,10 +2276,10 @@ function LibraryApp() {
       <KeyPickerModal
         isOpen={isHeaderKeyPickerOpen}
         onClose={() => setIsHeaderKeyPickerOpen(false)}
-        originalKey={currentSong.key}
+        song={currentSong}
         currentOffset={currentSong.transposeOffset || 0}
         onSelectOffset={handleTransposeChange}
-        onReset={() => handleTransposeChange(0)}
+        onReset={() => handleTransposeChange(transposeContext(currentSong, currentSong.transposeOffset || 0).resetOffset)}
       />
 
       {/* Wireless TV / External Display Presentation Pairing Modal */}
