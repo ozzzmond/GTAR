@@ -1,3 +1,4 @@
+import { transposeContext } from '../utils/songKeySemantics'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
 import React, { useState, useLayoutEffect, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
@@ -25,13 +26,12 @@ import {
 } from 'lucide-react'
 import { StageControlDock } from './StageControlDock'
 import { STAGE_CONTROLS_AUTO_HIDE_KEY } from '../utils/syncJournal'
-import { transposeKey, formatTransposeOffset } from '../utils/chordTransposer'
+import { formatTransposeOffset } from '../utils/chordTransposer'
 import {
   type StageNotationMode,
   NOTATION_STORAGE_KEY,
-  isValidMusicalKey,
 } from '../utils/nashvilleNotation'
-import { parseGtarSong, splitSongLinesForColumns, detectSongKey } from '../utils/songParser'
+import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
 import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
@@ -1475,15 +1475,10 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Single source of truth for base reference key:
   // Explicit song key, parsed directive, detected tonic chord progression, or manual key override
-  const detectedKey = detectSongKey(song.rawContent || '')
-  const effectiveBaseKey =
-    (isValidMusicalKey(song.key) ? song.key : null) ||
-    (isValidMusicalKey(parsedSong.key) ? parsedSong.key : null) ||
-    (isValidMusicalKey(detectedKey) ? detectedKey : null) ||
-    ''
-  const effectivePerformanceKey = effectiveBaseKey ? transposeKey(effectiveBaseKey, transposeOffset) : ''
+  const keyContext = transposeContext(song, transposeOffset)
+  const effectivePerformanceKey = keyContext.performanceKey
   const effectiveKey = effectivePerformanceKey
-  const offsetStr = formatTransposeOffset(transposeOffset)
+  const offsetStr = formatTransposeOffset(keyContext.displayOffset)
 
   // Two-column split calculation matching splitSongLinesForColumns in Android SongViewerScreen.kt
   const [col1Lines, col2Lines] = isTwoColumn
@@ -1771,7 +1766,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     triggerOverlaysShow()
                   }}
                   className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-app-surface transition-colors cursor-pointer ${
-                    transposeOffset !== 0 ? 'text-app-accent' : 'text-app-text'
+                    keyContext.displayOffset !== 0 ? 'text-app-accent' : 'text-app-text'
                   }`}
                   title="Choose Target Key"
                   aria-label={`Transpose: ${offsetStr}, Tap to choose key`}
@@ -1929,13 +1924,13 @@ export const StageView: React.FC<StageViewProps> = ({
                 <ChevronDown className="w-3 h-3 opacity-75" />
               </button>
 
-              {transposeOffset !== 0 && effectivePerformanceKey && (
+              {keyContext.displayOffset !== 0 && effectivePerformanceKey && (
                 <button
                   type="button"
-                  onClick={() => onTransposeChange(0)}
+                  onClick={() => onTransposeChange(keyContext.resetOffset)}
                   className="p-1 text-app-muted hover:text-status-error cursor-pointer"
-                  title="Reset Key to Original Key"
-                  aria-label="Reset Key to Original Key"
+                  title={keyContext.originalRelative ? "Reset Key to Original Key" : "Reset Key to Chart Key"}
+                  aria-label={keyContext.originalRelative ? "Reset Key to Original Key" : "Reset Key to Chart Key"}
                 >
                   <RotateCcw className="w-3 h-3" />
                 </button>
@@ -1956,7 +1951,7 @@ export const StageView: React.FC<StageViewProps> = ({
             /* Standard Transpose Stepper: [ - ] Key: G (+1) [ + ] (Compose lines 523-589) */
             <div
               className={`flex items-center rounded-lg border transition-colors p-0.5 ${
-                transposeOffset !== 0
+                keyContext.displayOffset !== 0
                   ? 'bg-app-accent/15 border-app-accent'
                   : 'bg-app-base border-app-border'
               }`}
@@ -1974,7 +1969,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 type="button"
                 onClick={() => setIsKeyPickerOpen(true)}
                 className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
-                  transposeOffset !== 0 ? 'text-app-accent' : 'text-app-text hover:bg-app-surface'
+                  keyContext.displayOffset !== 0 ? 'text-app-accent' : 'text-app-text hover:bg-app-surface'
                 }`}
                 title="Select Target Key"
               >
@@ -1984,12 +1979,12 @@ export const StageView: React.FC<StageViewProps> = ({
                 <ChevronDown className="w-3 h-3 opacity-75" />
               </button>
 
-              {transposeOffset !== 0 && (
+              {keyContext.displayOffset !== 0 && (
                 <button
                   type="button"
-                  onClick={() => onTransposeChange(0)}
+                  onClick={() => onTransposeChange(keyContext.resetOffset)}
                   className="p-1 text-app-muted hover:text-status-error cursor-pointer"
-                  title="Reset Transposition to Original Key"
+                  title={keyContext.originalRelative ? "Reset Transposition to Original Key" : "Reset Transposition to Chart Key"}
                 >
                   <RotateCcw className="w-3 h-3" />
                 </button>
@@ -2385,7 +2380,7 @@ export const StageView: React.FC<StageViewProps> = ({
               <div className={`flex items-center rounded-xl border p-0.5 flex-1 ${
                 notation === 'numbers'
                   ? effectivePerformanceKey ? 'bg-app-base border-app-border' : 'bg-[#DC6E67]/10 border-[#DC6E67]/50'
-                  : transposeOffset !== 0 ? 'bg-app-accent/10 border-app-accent' : 'bg-app-base border-app-border'
+                  : keyContext.displayOffset !== 0 ? 'bg-app-accent/10 border-app-accent' : 'bg-app-base border-app-border'
               }`}>
                 <button
                   type="button"
@@ -2402,19 +2397,19 @@ export const StageView: React.FC<StageViewProps> = ({
                   className={`flex-1 text-center text-sm font-mono font-extrabold cursor-pointer ${
                     notation === 'numbers'
                       ? effectivePerformanceKey ? 'text-app-accent' : 'text-status-error'
-                      : transposeOffset !== 0 ? 'text-app-accent' : 'text-app-text'
+                      : keyContext.displayOffset !== 0 ? 'text-app-accent' : 'text-app-text'
                   }`}
                 >
                   {notation === 'numbers'
                     ? `Key: ${effectivePerformanceKey || 'Not Set'}`
                     : `Transpose: ${offsetStr}`}
                 </button>
-                {transposeOffset !== 0 && (
+                {keyContext.displayOffset !== 0 && (
                   <button
                     type="button"
-                    onClick={() => onTransposeChange(0)}
+                    onClick={() => onTransposeChange(keyContext.resetOffset)}
                     className="p-2 text-app-muted hover:text-status-error cursor-pointer"
-                    title={notation === 'numbers' ? 'Reset Key to Original' : 'Reset Transposition'}
+                    title={keyContext.originalRelative ? 'Reset to Original Key' : 'Reset to Chart Key'}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -2713,10 +2708,10 @@ export const StageView: React.FC<StageViewProps> = ({
       <KeyPickerModal
         isOpen={isKeyPickerOpen}
         onClose={() => setIsKeyPickerOpen(false)}
-        originalKey={effectiveBaseKey || 'C'}
+        song={song}
         currentOffset={transposeOffset}
         onSelectOffset={(offset) => onTransposeChange(offset)}
-        onReset={() => onTransposeChange(0)}
+        onReset={() => onTransposeChange(keyContext.resetOffset)}
       />
 
       {/* Stage Tools & Band Sync Modal */}

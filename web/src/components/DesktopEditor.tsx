@@ -24,10 +24,11 @@ import {
 } from 'lucide-react'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
-import { parseGtarSong, standardizeChordProBrackets, detectSongKey } from '../utils/songParser'
+import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
 import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
+import { declaredKey, resolveSongKeys, transposeContext } from '../utils/songKeySemantics'
 import { transposeCanonicalSong } from '../utils/chartKeyAlignment'
 import { lookupSongMetadata, type SongMetadataResult } from '../utils/songMetadataClient'
 import { generateUUID } from '../utils/uuid'
@@ -79,8 +80,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Local editor state initialized from active song
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
-  const [localKey, setLocalKey] = useState(canonicalSongKey(song.key || ''))
-  const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey ? canonicalSongKey(song.originalKey) : '')
+  const [localKey, setLocalKey] = useState(normalizeMusicalKey(song.key || '') ?? song.key ?? '')
+  const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey || declaredKey(song.rawContent || '', true).key)
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
   const [localYear, setLocalYear] = useState(song.year || '')
@@ -179,7 +180,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft }
     return () => { if (recoveryDraftRef) recoveryDraftRef.current = null }
   })
-  const displayKey = normalizeMusicalKey(localKey) ?? persisted.key
+  const keyContext = transposeContext({ key: localKey, originalKey: localOriginalKey, rawContent: localRawContent }, transposeOffset)
+  const keyConflict = keyContext.chartConflict || keyContext.originalConflict
   const autosave = (updated: Partial<ActiveSongState>) => {
     const isRedundant = Object.entries(updated).every(
       ([key, val]) => persisted[key as keyof typeof persisted] === val
@@ -200,6 +202,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         setLocalRawContent(rawContent)
       }
     }
+    const keys = resolveSongKeys({ ...draft, ...next })
+    if (keys.chartConflict || keys.originalConflict) { setSaveFailed(true); return }
     try {
       const res = onUpdateSong(next)
       if (res === true) {
@@ -325,6 +329,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       return
     }
     const currentKey = normalizeMusicalKey(localKey)
+    if (keyConflict || (currentKey && currentKey.endsWith('m') !== validated.endsWith('m'))) {
+      showToast('Resolve key metadata and matching major/minor modes before transposing')
+      return
+    }
     if (!currentKey) {
       showToast('Set current key before transposing')
       return
@@ -341,12 +349,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const transposed = transposeCanonicalSong(localRawContent, currentKey, validated)
     setLocalKey(transposed.key)
     setLocalOriginalKey(validated)
-    setLocalRawContent(transposed.rawContent)
+    const alignedContent = syncCanonicalDirectives(transposed.rawContent, { originalKey: validated })
+    setLocalRawContent(alignedContent)
 
     autosave({
       key: transposed.key,
       originalKey: validated,
-      rawContent: transposed.rawContent,
+      rawContent: alignedContent,
     })
     showToast(`Chart transposed from ${currentKey} to Original Key ${validated} (${transposed.semitones > 0 ? '+' : ''}${transposed.semitones} semitones)`)
   }
@@ -358,9 +367,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
     setLocalTitle(song.title || parsedMeta.title || '')
     setLocalArtist(song.artist || parsedMeta.artist || '')
-    const initKey = canonicalSongKey(song.key || parsedMeta.key || '')
+    const initKey = normalizeMusicalKey(song.key || parsedMeta.key || '') ?? song.key ?? parsedMeta.key ?? ''
     setLocalKey(initKey)
-    setLocalOriginalKey(song.originalKey ? canonicalSongKey(song.originalKey) : '')
+    setLocalOriginalKey(song.originalKey || declaredKey(song.rawContent || '', true).key)
     setLocalBpm(song.bpm || (parsedMeta.tempo ? String(parsedMeta.tempo) : ''))
     setLocalTime(song.time || parsedMeta.time || '')
     setLocalYear(song.year || (parsedMeta.year ? String(parsedMeta.year) : ''))
@@ -412,9 +421,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const currentMeta = parseChordProDirectives(localRawContent).metadata
     const resolvedTitle = localTitle.trim() || currentMeta.title || 'Untitled Song'
     const resolvedArtist = localArtist.trim() || currentMeta.artist || ''
-    const rawKey = localKey.trim() || currentMeta.key || detectSongKey(localRawContent)
+    const rawKey = localKey.trim() || currentMeta.key || ''
     const effectiveKey = normalizeMusicalKey(rawKey)
     if (effectiveKey === null) { showToast('Enter a valid key, such as G, F#m or Bb.'); return false }
+    if (keyConflict) { showToast('Resolve conflicting or invalid key metadata before saving.'); return false }
 
     const resolvedBpm = localBpm.trim() || (currentMeta.tempo ? String(currentMeta.tempo) : '')
     const resolvedTime = localTime.trim() || currentMeta.time || ''
@@ -424,7 +434,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const canonicalMetadata: CanonicalMetadata = {
       title: resolvedTitle,
       artist: resolvedArtist,
-      key: effectiveKey,
+      // A removed raw chart directive stays absent; the entity retains its chart key.
+      ...(declaredKey(localRawContent).present ? { key: effectiveKey } : {}),
       tempo: resolvedBpm || undefined,
       time: resolvedTime || undefined,
       year: resolvedYear || undefined,
@@ -520,9 +531,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const cleaned = standardizeChordProBrackets(newText)
     if (remember) history.current.record({ text: localRawContent, ...selection.current }, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
     setLocalRawContent(cleaned)
-    const metadata = parseChordProDirectives(cleaned).metadata
+    const nextDirectives = parseChordProDirectives(cleaned)
+    const previousDirectives = parseChordProDirectives(localRawContent)
+    const metadata = nextDirectives.metadata
     const updated: Partial<ActiveSongState> = { rawContent: cleaned }
-    if (metadata.artist !== undefined || parseChordProDirectives(localRawContent).metadata.artist !== undefined) {
+    if (metadata.artist !== undefined || previousDirectives.metadata.artist !== undefined) {
       const artist = metadata.artist ?? ''
       setLocalArtist(artist)
       updated.artist = artist
@@ -531,10 +544,19 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalTitle(metadata.title)
       updated.title = metadata.title
     }
-    if (metadata.key !== undefined) {
-      const normKey = canonicalSongKey(metadata.key)
+    const rawChart = declaredKey(cleaned)
+    if (rawChart.present && !rawChart.conflict && metadata.key !== previousDirectives.metadata.key) {
+      const normKey = rawChart.key
       setLocalKey(normKey)
       updated.key = normKey
+    }
+    const previousOriginal = previousDirectives.directives.filter(d => ['original_key', 'originalkey'].includes(d.name))
+    const nextOriginal = nextDirectives.directives.filter(d => ['original_key', 'originalkey'].includes(d.name))
+    const originalChanged = JSON.stringify(previousOriginal.map(d => [d.name, d.value])) !== JSON.stringify(nextOriginal.map(d => [d.name, d.value]))
+    const rawOriginal = declaredKey(cleaned, true)
+    if (originalChanged && !rawOriginal.conflict) {
+      setLocalOriginalKey(rawOriginal.key)
+      updated.originalKey = rawOriginal.key
     }
     if (metadata.tempo !== undefined) {
       const t = String(metadata.tempo)
@@ -997,7 +1019,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 </h2>
                 <div className="text-xs text-app-muted mt-0.5">
                   {localArtist || 'Unknown Artist'}
-                  {displayKey ? ` • Original Key: ${displayKey}` : ''}
+                  {` • Original Key: ${keyContext.originalConflict ? 'Conflicting' : keyContext.originalKey || 'Unknown'}`}
+                  {` • Chart Key: ${keyContext.chartKey || 'Unknown'}${keyContext.chartEstimated ? ' (estimated)' : ''} • Performance Key: ${keyContext.performanceKey || 'Unknown'}`}
+                  {keyConflict && <span role="alert"> Resolve conflicting or invalid key metadata before saving.</span>}
                   {localTime ? ` • ${localTime}` : ''}
                 </div>
               </div>
@@ -1196,11 +1220,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
             {/* Canonical Metadata Inputs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {/* Original Key (Sole Key Input) */}
+              {/* Chart key describes stored chord text */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
                   <Music className="w-3 h-3 text-app-action" />
-                  <span>Original Key</span>
+                  <span>Chart Key</span>
                 </label>
                 <div className="flex items-center bg-app-base px-2 py-1.5 rounded-lg border border-app-border focus-within:border-app-action transition-colors">
                   <input
@@ -1221,10 +1245,27 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     }}
                     placeholder="e.g. G"
                     className="w-full bg-transparent text-app-action font-bold font-mono focus:outline-none text-center text-xs"
-                    title="Original Key of the song"
+                    title="Chart Key of stored chords"
                   />
                 </div>
               </div>
+
+              <label className="flex flex-col gap-1 text-[11px] font-mono text-app-muted">
+                Original Key
+                <input aria-label="Original Key" value={localOriginalKey} placeholder="Unknown"
+                  onChange={e => {
+                    const value = e.target.value
+                    setLocalOriginalKey(value)
+                    const normalized = normalizeMusicalKey(value)
+                    if (normalized !== null) {
+                      setLocalOriginalKey(normalized)
+                      const rawContent = syncCanonicalDirectives(localRawContent, { originalKey: normalized })
+                      setLocalRawContent(rawContent)
+                      autosave({ originalKey: normalized, rawContent })
+                    }
+                  }}
+                  className="bg-app-base p-2 rounded-lg border border-app-border text-app-text" />
+              </label>
 
               {/* Tempo / BPM */}
               <div className="flex flex-col gap-1">

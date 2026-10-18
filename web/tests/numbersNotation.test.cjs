@@ -410,13 +410,13 @@ test('TEST:STAGE_VIEW_NO_INDEPENDENT_KEY_STATE_AND_SINGLE_TRANSPOSE_BINDING (FIX
     'KeyPickerModal must pass offset directly to onTransposeChange'
   )
   assert.ok(
-    stageSrc.includes('onReset={() => onTransposeChange(0)}'),
-    'KeyPickerModal reset must directly call onTransposeChange(0)'
+    stageSrc.includes('onReset={() => onTransposeChange(keyContext.resetOffset)}'),
+    'KeyPickerModal reset must use the original-relative adapter'
   )
 
   // Verify single source of truth for effectivePerformanceKey
   assert.ok(
-    stageSrc.includes("const effectivePerformanceKey = effectiveBaseKey ? transposeKey(effectiveBaseKey, transposeOffset) : ''"),
+    stageSrc.includes("const effectivePerformanceKey = keyContext.performanceKey"),
     'effectivePerformanceKey must be derived from effectiveBaseKey and transposeOffset'
   )
 })
