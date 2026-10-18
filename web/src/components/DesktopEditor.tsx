@@ -80,7 +80,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Local editor state initialized from active song
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
-  const [localKey, setLocalKey] = useState(normalizeMusicalKey(song.key || '') ?? song.key ?? '')
+  const [localKey, setLocalKey] = useState(song.rawContent && !declaredKey(song.rawContent).present ? '' : normalizeMusicalKey(song.key || '') ?? song.key ?? '')
   const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey || declaredKey(song.rawContent || '', true).key)
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
@@ -95,7 +95,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const fields = (value: ActiveSongState) => ({
     title: value.title || '',
     artist: value.artist || '',
-    key: value.key || '',
+    // Compare the same raw-authoritative chart state used by the draft initializer.
+    key: value.rawContent && !declaredKey(value.rawContent).present ? '' : value.key || '',
     originalKey: value.originalKey || '',
     capo: value.capo || '',
     bpm: value.bpm || '',
@@ -367,7 +368,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
     setLocalTitle(song.title || parsedMeta.title || '')
     setLocalArtist(song.artist || parsedMeta.artist || '')
-    const initKey = normalizeMusicalKey(song.key || parsedMeta.key || '') ?? song.key ?? parsedMeta.key ?? ''
+    const initKey = song.rawContent && !declaredKey(song.rawContent).present ? '' : normalizeMusicalKey(song.key || parsedMeta.key || '') ?? song.key ?? parsedMeta.key ?? ''
     setLocalKey(initKey)
     setLocalOriginalKey(song.originalKey || declaredKey(song.rawContent || '', true).key)
     setLocalBpm(song.bpm || (parsedMeta.tempo ? String(parsedMeta.tempo) : ''))
@@ -434,7 +435,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const canonicalMetadata: CanonicalMetadata = {
       title: resolvedTitle,
       artist: resolvedArtist,
-      // A removed raw chart directive stays absent; the entity retains its chart key.
+      // A removed raw chart directive stays absent; cached chart metadata is cleared.
       ...(declaredKey(localRawContent).present ? { key: effectiveKey } : {}),
       tempo: resolvedBpm || undefined,
       time: resolvedTime || undefined,
@@ -455,7 +456,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       tags: localTags.trim(),
       rawContent: standardized,
       format: 'CHORD_PRO',
-      transposeOffset: editingSong.transposeOffset || 0,
+      transposeOffset,
     }
 
     setIsSaving(true)
@@ -545,7 +546,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       updated.title = metadata.title
     }
     const rawChart = declaredKey(cleaned)
-    if (rawChart.present && !rawChart.conflict && metadata.key !== previousDirectives.metadata.key) {
+    if (!rawChart.conflict && (rawChart.present || declaredKey(localRawContent).present) && metadata.key !== previousDirectives.metadata.key) {
       const normKey = rawChart.key
       setLocalKey(normKey)
       updated.key = normKey

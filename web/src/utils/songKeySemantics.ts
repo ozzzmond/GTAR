@@ -25,12 +25,15 @@ export function resolveSongKeys(song: SongKeySource) {
     Boolean(entityChart && chart.present && !keysArePitchEquivalent(entityChart, chart.key))
   const originalConflict = original.conflict || Boolean(song.originalKey && !entityOriginal) ||
     Boolean(entityOriginal && original.present && !keysArePitchEquivalent(entityOriginal, original.key))
-  // Detection remains a legacy chart fallback, never verified provenance.
-  const chartKey = entityChart || chart.key || detectSongKey(raw) || ''
+  // Once raw chart text exists, an absent directive cannot validate a cached
+  // entity key. Use the same estimate as the renderer, never as provenance or
+  // as authority for converting original-relative offsets.
+  const chartEstimated = raw ? !chart.key : !entityChart
+  const chartKey = raw ? chart.key || detectSongKey(raw) : entityChart || ''
   const originalKey = originalConflict ? '' : entityOriginal || original.key
-  const compatible = Boolean(originalKey && (entityChart || chart.key) && !chartConflict &&
+  const compatible = Boolean(originalKey && chartKey && !chartEstimated && !chartConflict &&
     originalKey.endsWith('m') === chartKey.endsWith('m'))
-  return { chartKey, originalKey, chartConflict, originalConflict, chartEstimated: !entityChart && !chart.key, originalRelative: compatible }
+  return { chartKey, originalKey, chartConflict, originalConflict, chartEstimated, originalRelative: compatible }
 }
 
 export function wrapKeyOffset(value: number): number {
