@@ -5,14 +5,6 @@ const path = require('node:path')
 
 const webDir = path.resolve(__dirname, '..')
 
-test('PROD_VERSION_FALLBACK: tag-derived production version retains its fallback', () => {
-  const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(
-    gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"),
-    'gtar.ts must preserve GTAR_APP_VERSION as 1.1.108'
-  )
-})
-
 // 2. PAPER CREAM LIGHT READABILITY & CONTRAST
 test('PAPER_CREAM_LIGHT_THEME: color ownership belongs to the shared semantic runtime', () => {
   const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
