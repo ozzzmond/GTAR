@@ -252,3 +252,41 @@ test('DEV5A_TOOLBAR_LAYOUT: action group centered as a whole and existing action
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
   }
 })
+
+test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement dismissal preserve actions', () => {
+  const { dom, root, viewChanges } = renderHeader()
+  const viewport = new window.EventTarget()
+  Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true })
+  const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
+  const button = scroll.querySelectorAll('button')[1]
+  const tooltip = () => document.querySelector('[role="tooltip"]')
+  const focus = () => act(() => button.focus())
+  const blur = () => act(() => button.blur())
+  try {
+    assert.equal(tooltip(), null, 'hidden tooltips are absent, not transparent overflow descendants')
+    focus()
+    assert.equal(tooltip().parentElement, document.body)
+    assert.equal(tooltip().textContent, button.getAttribute('aria-label'))
+    assert.equal(button.getAttribute('aria-describedby'), tooltip().id)
+    assert.equal(scroll.querySelector('.toolbar-tooltip'), null)
+    act(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' })))
+    assert.equal(tooltip(), null)
+    assert.equal(document.activeElement, button, 'Escape preserves keyboard focus')
+    for (const [target, event] of [[scroll, 'scroll'], [window, 'resize'], [viewport, 'resize'], [viewport, 'scroll']]) {
+      blur(); focus(); assert.ok(tooltip())
+      act(() => target.dispatchEvent(new window.Event(event)))
+      assert.equal(tooltip(), null, `${event} dismisses stale anchor`)
+    }
+    blur()
+    act(() => button.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })))
+    assert.ok(tooltip())
+    act(() => button.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true })))
+    assert.equal(tooltip(), null)
+    focus()
+    act(() => button.click())
+    assert.deepEqual(viewChanges, ['stage'])
+    assert.equal(tooltip(), null)
+  } finally {
+    act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
+  }
+})

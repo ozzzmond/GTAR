@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Search,
   X,
@@ -125,19 +126,83 @@ function ToolbarIconButton({
   buttonRef?: React.Ref<HTMLButtonElement>
   testId?: string
 }) {
+  const tooltipId = useId()
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const interaction = useRef({ hovered: false, focused: false })
+
+  useEffect(() => {
+    if (!anchor) return
+    const dismiss = () => setAnchor(null)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismiss()
+    }
+    // Any viewport/ancestor movement invalidates the fixed anchor, including
+    // horizontal toolbar scrolling and the mobile visual viewport.
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('keydown', onKeyDown)
+    window.visualViewport?.addEventListener('resize', dismiss)
+    window.visualViewport?.addEventListener('scroll', dismiss)
+    return () => {
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('keydown', onKeyDown)
+      window.visualViewport?.removeEventListener('resize', dismiss)
+      window.visualViewport?.removeEventListener('scroll', dismiss)
+    }
+  }, [anchor])
+
   return (
-    <button
-      ref={buttonRef}
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      data-testid={testId}
-      className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
-    >
-      <Icon className="w-4 h-4" />
-      <span className="active-dot" />
-      <span className="toolbar-tooltip">{label}</span>
-    </button>
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => { setAnchor(null); onClick() }}
+        onMouseEnter={(event) => {
+          interaction.current.hovered = true
+          setAnchor(event.currentTarget.getBoundingClientRect())
+        }}
+        onMouseLeave={() => {
+          interaction.current.hovered = false
+          if (!interaction.current.focused) setAnchor(null)
+        }}
+        onFocus={(event) => {
+          interaction.current.focused = true
+          setAnchor(event.currentTarget.getBoundingClientRect())
+        }}
+        onBlur={() => {
+          interaction.current.focused = false
+          if (!interaction.current.hovered) setAnchor(null)
+        }}
+        aria-label={label}
+        aria-describedby={anchor ? tooltipId : undefined}
+        data-testid={testId}
+        className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
+      >
+        <Icon className="w-4 h-4" />
+        <span className="active-dot" />
+      </button>
+      {anchor && createPortal(
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="toolbar-tooltip"
+          ref={(node) => {
+            if (!node) return
+            const viewport = window.visualViewport
+            const left = viewport?.offsetLeft ?? 0
+            const top = viewport?.offsetTop ?? 0
+            const width = viewport?.width ?? window.innerWidth
+            const height = viewport?.height ?? window.innerHeight
+            node.style.maxWidth = `${Math.max(0, width - 16)}px`
+            const bounds = node.getBoundingClientRect()
+            node.style.left = `${Math.max(left + 8, Math.min(anchor.left + anchor.width / 2 - bounds.width / 2, left + width - bounds.width - 8))}px`
+            node.style.top = `${Math.max(top + 8, Math.min(anchor.bottom + 6, top + height - bounds.height - 8))}px`
+          }}
+        >{label}</span>,
+        document.body,
+      )}
+    </>
   )
 }
 

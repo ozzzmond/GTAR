@@ -349,12 +349,9 @@ body.theme-custom .chord-sheet-container .comment {
   opacity: 1;
 }
 
-/* Tooltip on hover */
-.toolbar-icon-btn .toolbar-tooltip {
-  position: absolute;
-  bottom: -30px;
-  left: 50%;
-  transform: translateX(-50%);
+/* Mounted only while visible, outside the horizontal toolbar scroller. */
+.toolbar-tooltip {
+  position: fixed;
   padding: 3px 8px;
   border-radius: 6px;
   background: var(--custom-stage-bg);
@@ -362,15 +359,10 @@ body.theme-custom .chord-sheet-container .comment {
   color: var(--custom-uiPrimaryText);
   font-size: 10px;
   font-weight: 600;
-  white-space: nowrap;
-  opacity: 0;
+  width: max-content;
+  overflow-wrap: anywhere;
   pointer-events: none;
-  transition: opacity 0.15s;
   z-index: 60;
-}
-.toolbar-icon-btn:hover .toolbar-tooltip,
-.toolbar-icon-btn:focus-visible .toolbar-tooltip {
-  opacity: 1;
 }
 
 /* Avatar auth-status dot */
