@@ -33,10 +33,10 @@ const { computeSemanticSongFingerprint } = require('../src/utils/songbookFoundat
 
 const webDir = path.resolve(__dirname, '..')
 
-test('CHORDPRO_SIX_CANONICAL_DIRECTIVES: parseChordProDirectives parses title, artist, key, tempo, time, year and retains unknown', () => {
+test('CHORDPRO_SIX_CANONICAL_DIRECTIVES: parseChordProDirectives parses title, artist, original_key, tempo, time, year and retains unknown', () => {
   const content = `{title: Amazing Grace}
 {artist: John Newton}
-{key: Eb}
+{original_key: Eb}
 {tempo: 96 BPM}
 {time: 3/4}
 {year: 1779}
@@ -47,7 +47,7 @@ test('CHORDPRO_SIX_CANONICAL_DIRECTIVES: parseChordProDirectives parses title, a
   const parsed = parseChordProDirectives(content)
   assert.equal(parsed.metadata.title, 'Amazing Grace')
   assert.equal(parsed.metadata.artist, 'John Newton')
-  assert.equal(parsed.metadata.key, 'Eb')
+  assert.equal(parsed.metadata.originalKey, 'Eb')
   assert.equal(parsed.metadata.tempo, '96 BPM')
   assert.equal(parsed.metadata.time, '3/4')
   assert.equal(parsed.metadata.year, '1779')
@@ -62,7 +62,7 @@ test('TEMPO_FORMATTING: supports 120 and 120 BPM cleanly', () => {
   assert.equal(formatCanonicalTempo(undefined), undefined)
 })
 
-test('METADATA_SYNC_BOUNDARY: syncCanonicalDirectives writes six canonical directives and preserves unknown and body', () => {
+test('METADATA_SYNC_BOUNDARY: syncCanonicalDirectives writes canonical original_key while preserving legacy key and preserves unknown and body', () => {
   const original = `{title: Old Title}
 {key: C}
 {custom: keep_me}
@@ -71,7 +71,7 @@ test('METADATA_SYNC_BOUNDARY: syncCanonicalDirectives writes six canonical direc
   const synced = syncCanonicalDirectives(original, {
     title: 'New Title',
     artist: 'New Artist',
-    key: 'Bb',
+    originalKey: 'Bb',
     bpm: '128',
     time: '6/8',
     year: '2024'
@@ -79,13 +79,13 @@ test('METADATA_SYNC_BOUNDARY: syncCanonicalDirectives writes six canonical direc
 
   assert.match(synced, /\{title: New Title\}/)
   assert.match(synced, /\{artist: New Artist\}/)
-  assert.match(synced, /\{key: Bb\}/)
+  assert.match(synced, /\{original_key: Bb\}/)
+  assert.match(synced, /\{key: C\}/)
   assert.match(synced, /\{tempo: 128 BPM\}/)
   assert.match(synced, /\{time: 6\/8\}/)
   assert.match(synced, /\{year: 2024\}/)
   assert.match(synced, /\{custom: keep_me\}/)
   assert.match(synced, /\[C\]Old chord line/)
-  assert.doesNotMatch(synced, /\{original_key/)
   assert.doesNotMatch(synced, /\{capo/)
 })
 
@@ -124,7 +124,7 @@ test('TRANSPOSE_OFFSETS_AND_FLAT_EXTENSIONS: offsets -11 to +11 transpose cleanl
   }
 })
 
-test('LEGACY_READ_COMPATIBILITY: parseGtarSong reads legacy original_key, capo, and time directive', () => {
+test('LEGACY_READ_COMPATIBILITY: parseGtarSong reads independent original_key, legacy key, capo, and time directive', () => {
   const legacyChordPro = `{title: Legacy Song}
 {artist: Heritage Band}
 {key: G}

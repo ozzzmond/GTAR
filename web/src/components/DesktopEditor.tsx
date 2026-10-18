@@ -39,12 +39,12 @@ export function createBlankCanonicalSong(): ActiveSongState {
     id: generateUUID(),
     title: 'New Song',
     artist: '',
-    key: 'G',
+    key: '',
     capo: 'No Capo',
     bpm: '120',
     format: 'CHORD_PRO',
     transposeOffset: 0,
-    rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
+    rawContent: `{title: New Song}\n{artist: }\n{original_key: }\n{tempo: 120 BPM}\n{time: 4/4}\n{year: }\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
   }
 }
 
@@ -80,6 +80,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const transposeOffset = pendingOffset?.source === suppliedOffset ? pendingOffset.value : suppliedOffset
   const [confirmedChartKey, setConfirmedChartKey] = useState(song.confirmedChartKey || '')
   const [chartConfirmation, setChartConfirmation] = useState('')
+  const [keyDeletion, setKeyDeletion] = useState<{ text: string; key: string } | null>(null)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- A new external selection supersedes a pending text-transform offset.
     setPendingOffset(null)
@@ -91,7 +92,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Local editor state initialized from active song
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
-  const [localKey, setLocalKey] = useState(song.rawContent && !declaredKey(song.rawContent).present ? song.confirmedChartKey || '' : normalizeMusicalKey(song.key || '') ?? song.key ?? '')
+  const [localKey, setLocalKey] = useState(song.rawContent && !declaredKey(song.rawContent).present ? song.confirmedChartKey || '' : declaredKey(song.rawContent || '').key || normalizeMusicalKey(song.key || '') || song.key || '')
   const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey || declaredKey(song.rawContent || '', true).key)
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
@@ -389,10 +390,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setPendingOffset(null)
     setConfirmedChartKey(song.confirmedChartKey || '')
     setChartConfirmation('')
+    setKeyDeletion(null)
     const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
     setLocalTitle(song.title || parsedMeta.title || '')
     setLocalArtist(song.artist || parsedMeta.artist || '')
-    const initKey = song.rawContent && !declaredKey(song.rawContent).present ? song.confirmedChartKey || '' : normalizeMusicalKey(song.key || parsedMeta.key || '') ?? song.key ?? parsedMeta.key ?? ''
+    const initKey = song.rawContent && !declaredKey(song.rawContent).present ? song.confirmedChartKey || '' : declaredKey(song.rawContent || '').key || normalizeMusicalKey(song.key || parsedMeta.key || '') || song.key || parsedMeta.key || ''
     setLocalKey(initKey)
     setLocalOriginalKey(song.originalKey || declaredKey(song.rawContent || '', true).key)
     setLocalBpm(song.bpm || (parsedMeta.tempo ? String(parsedMeta.tempo) : ''))
@@ -445,6 +447,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Handle saving changes
   const handleSave = () => {
+    if (keyDeletion) return false
     const currentMeta = parseChordProDirectives(localRawContent).metadata
     const resolvedTitle = localTitle.trim() || currentMeta.title || 'Untitled Song'
     const resolvedArtist = localArtist.trim() || currentMeta.artist || ''
@@ -462,7 +465,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       title: resolvedTitle,
       artist: resolvedArtist,
       // A removed raw chart directive stays absent; cached chart metadata is cleared.
-      ...(declaredKey(localRawContent).present ? { key: effectiveKey } : {}),
+      ...(declaredKey(localRawContent).key ? { key: effectiveKey } : {}),
       tempo: resolvedBpm || undefined,
       time: resolvedTime || undefined,
       year: resolvedYear || undefined,
@@ -555,15 +558,32 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }
 
   // Raw text change handler (eliminates erratic angle brackets on the fly)
-  const handleRawContentChange = (newText: string, remember = true, restored?: ChartTextEdit['chartState']) => {
+  const handleRawContentChange = (newText: string, remember = true, restored?: ChartTextEdit['chartState'], deletionChoice?: string) => {
     const cleaned = standardizeChordProBrackets(newText)
-    if (remember) history.current.record({ text: localRawContent, ...selection.current }, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
+    const previousChart = declaredKey(localRawContent)
+    const nextChart = declaredKey(cleaned)
+    const nextOriginalKey = declaredKey(cleaned, true)
+    if (remember && previousChart.conflict && !nextChart.present) {
+      showToast('Resolve conflicting key directives before removing Chart Key.')
+      return
+    }
+    if (remember && deletionChoice === undefined && previousChart.key && !previousChart.conflict &&
+      !nextChart.key && !nextChart.conflict && nextOriginalKey.key && !nextOriginalKey.conflict &&
+      !keysArePitchEquivalent(previousChart.key, nextOriginalKey.key)) {
+      setKeyDeletion({ text: cleaned, key: previousChart.key })
+      return
+    }
+    const chartState = { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset }
+    const previousEdit: ChartTextEdit = { text: localRawContent, ...selection.current, chartState }
+    if (remember) history.current.record(previousEdit, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
     setLocalRawContent(cleaned)
     const nextDirectives = parseChordProDirectives(cleaned)
     const previousDirectives = parseChordProDirectives(localRawContent)
     const metadata = nextDirectives.metadata
-    const updated: Partial<ActiveSongState> = { rawContent: cleaned, confirmedChartKey: '' }
-    setConfirmedChartKey('')
+    // A recorded deletion choice survives subsequent lyric/metadata edits.
+    const nextConfirmed = deletionChoice ?? (nextChart.key ? '' : confirmedChartKey)
+    const updated: Partial<ActiveSongState> = { rawContent: cleaned, confirmedChartKey: nextConfirmed }
+    setConfirmedChartKey(nextConfirmed)
     if (metadata.artist !== undefined || previousDirectives.metadata.artist !== undefined) {
       const artist = metadata.artist ?? ''
       setLocalArtist(artist)
@@ -575,7 +595,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     }
     const rawChart = declaredKey(cleaned)
     if (!rawChart.conflict && (rawChart.present || declaredKey(localRawContent).present) && rawChart.key !== localKey) {
-      const normKey = rawChart.key
+      const normKey = rawChart.key || nextConfirmed
       setLocalKey(normKey)
       updated.key = normKey
     }
@@ -1230,6 +1250,23 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
         </div>
       )}
 
+      {keyDeletion && (
+        <div role="dialog" aria-modal="true" aria-label="Removed Chart Key" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
+          <div className="bg-app-surface border border-app-border rounded-2xl max-w-md p-5 text-app-heading">
+            <p>The removed Chart Key was {keyDeletion.key}. Choose the basis of the authored chords. Current playback and chord text stay unchanged.</p>
+            <button type="button" data-testid="key-deletion-original" className="block w-full p-3 mt-3 rounded-lg border border-app-border text-left" onClick={() => {
+              handleRawContentChange(keyDeletion.text, true, undefined, '')
+              setKeyDeletion(null)
+            }}>Authored chords are now aligned with Original Key</button>
+            <button type="button" data-testid="key-deletion-legacy" className="block w-full p-3 mt-2 rounded-lg border border-app-border text-left" onClick={() => {
+              handleRawContentChange(keyDeletion.text, true, undefined, keyDeletion.key)
+              setKeyDeletion(null)
+            }}>Authored chords remain in {keyDeletion.key}</button>
+            <button type="button" data-testid="key-deletion-cancel" className="block p-3 mt-2 text-app-muted" onClick={() => setKeyDeletion(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {/* Song Metadata & Details Modal */}
       {isMetadataModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
@@ -1255,6 +1292,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             </div>
 
             <div className="mb-3 text-xs text-app-muted">
+              {(keyContext.chartEstimated || declaredKey(localRawContent).present || confirmedChartKey) && <>
               <p>Confirm the key of the authored chords to enable Original Key zero. Confirmation preserves current playback; selecting zero changes playback.</p>
               <input aria-label="Confirm authored Chart Key" value={chartConfirmation}
                 onChange={e => setChartConfirmation(e.target.value)} placeholder="e.g. E or F#m"
@@ -1272,6 +1310,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   setLocalKey(key)
                   autosave({ key, confirmedChartKey: key, rawContent: localRawContent })
                 }} className="p-2 text-app-action">Confirm Chart Key</button>
+              </>}
               {keyContext.originalRelative && <button type="button" data-testid="transpose-chart-to-original"
                 onClick={() => handleConfirmTransposeToOriginalKey(localOriginalKey)} className="p-2 text-app-action">
                 Transpose chord text to Original Key (preserve playback)
@@ -1297,12 +1336,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                         setLocalKey(canonical)
                         setConfirmedChartKey('')
                         autosave({ key: canonical, confirmedChartKey: '' })
+                      } else if (val.trim() === '') {
+                        handleRawContentChange(syncCanonicalDirectives(localRawContent, { key: '' }))
                       } else {
                         setLocalKey(val)
-                        if (val.trim() === '') {
-                          setConfirmedChartKey('')
-                          autosave({ key: '', confirmedChartKey: '' })
-                        }
                       }
                     }}
                     placeholder="e.g. G"

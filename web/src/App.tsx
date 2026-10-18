@@ -1411,12 +1411,12 @@ function LibraryApp() {
       id: generateUUID(),
       title: 'New Song',
       artist: '',
-      key: 'G',
+      key: '',
       capo: 'No Capo',
       bpm: '120',
       format: 'CHORD_PRO',
       transposeOffset: 0,
-      rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
+      rawContent: `{title: New Song}\n{artist: }\n{original_key: }\n{tempo: 120 BPM}\n{time: 4/4}\n{year: }\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
     }
   }
 
@@ -1523,12 +1523,12 @@ function LibraryApp() {
       id: generateUUID(),
       title: 'New Song',
       artist: '',
-      key: 'G',
+      key: '',
       capo: 'No Capo',
       bpm: '120',
       format: 'CHORD_PRO',
       transposeOffset: 0,
-      rawContent: `{title: New Song}\n{artist: }\n{key: G}\n{tempo: 120}\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
+      rawContent: `{title: New Song}\n{artist: }\n{original_key: }\n{tempo: 120 BPM}\n{time: 4/4}\n{year: }\n\n[Intro]\n\n[Verse 1]\n\n[Chorus]\n`,
     }
     setSongs((prev) => [blankSong, ...prev])
     setActiveSongIndex(0)

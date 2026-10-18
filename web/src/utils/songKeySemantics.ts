@@ -22,16 +22,15 @@ export function resolveSongKeys(song: SongKeySource) {
   const entityChart = normalizeMusicalKey(song.key)
   const confirmedChart = normalizeMusicalKey(song.confirmedChartKey)
   const entityOriginal = normalizeMusicalKey(song.originalKey)
-  const chartConflict = chart.conflict || Boolean(song.confirmedChartKey && !confirmedChart) ||
-    Boolean(confirmedChart && chart.present && !keysArePitchEquivalent(confirmedChart, chart.key)) || Boolean(song.key && !entityChart) ||
-    Boolean(entityChart && chart.present && !keysArePitchEquivalent(entityChart, chart.key))
+  // Raw legacy declarations take precedence over cached entity/confirmation state.
+  const chartConflict = chart.conflict || (!chart.present && Boolean(song.confirmedChartKey && !confirmedChart))
   const originalConflict = original.conflict || Boolean(song.originalKey && !entityOriginal) ||
     Boolean(entityOriginal && original.present && !keysArePitchEquivalent(entityOriginal, original.key))
-  // Legacy entity keys and chord estimates cannot authorize conversion.
-  // An explicit chart confirmation is independent of optional raw directives.
-  const chartEstimated = raw ? !chart.key && !confirmedChart : !entityChart && !confirmedChart
-  const chartKey = confirmedChart || (raw ? chart.key || detectSongKey(raw) : entityChart || '')
-  const originalKey = originalConflict ? '' : entityOriginal || original.key
+  const originalKey = originalConflict ? '' : original.key || entityOriginal || ''
+  const canonicalChart = !originalConflict ? original.key : ''
+  const chartKey = chart.key || confirmedChart || canonicalChart ||
+    (raw ? detectSongKey(raw) : entityChart || '')
+  const chartEstimated = raw ? !chart.key && !confirmedChart && !canonicalChart : !confirmedChart && !entityChart
   const compatible = Boolean(originalKey && chartKey && !chartEstimated && !chartConflict &&
     originalKey.endsWith('m') === chartKey.endsWith('m'))
   return { chartKey, originalKey, chartConflict, originalConflict, chartEstimated, originalRelative: compatible }

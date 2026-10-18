@@ -9,21 +9,22 @@ const {DesktopEditor}=require('../src/components/DesktopEditor.tsx'),{KeyPickerM
 const {transposeContext,resolveSongKeys}=require('../src/utils/songKeySemantics.ts'),{keysArePitchEquivalent}=require('../src/utils/musicalKey.ts'),{transposeChordToken}=require('../src/utils/chordTransposer.ts'),{parseGtarSong}=require('../src/utils/songParser.ts')
 const {persistLibrary,readPersistedLibrary,getLastKnownPersistedLibraryRaw}=require('../src/utils/syncJournal.ts')
 const song={id:'109',title:'Fixture',artist:'Artist',key:'G',originalKey:'E',rawContent:'{title: Fixture}\n{key: G}\n{original_key: E}\n[G]My [D/F#]song',format:'CHORD_PRO',transposeOffset:0,capo:'',bpm:'',tags:''}
-const change=async(el,value)=>act(async()=>{Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new window.Event('input',{bubbles:true}))})
+const input=async(el,value)=>act(async()=>{Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new window.Event('input',{bubbles:true}))})
+const change=async(el,value,choice='original')=>{await input(el,value);if(document.querySelector('[data-testid="key-deletion-'+choice+'"]'))await click('[data-testid="key-deletion-'+choice+'"]')}
 const shortcut=async(key,el=window)=>act(async()=>el.dispatchEvent(new window.KeyboardEvent('keydown',{key,ctrlKey:true,bubbles:true})))
 const click=async selector=>act(async()=>{assert.ok(document.querySelector(selector));document.querySelector(selector).click()})
 
-test('109: deletion autosaves and Save/reload preserve absent directive, cleared chart metadata, original E and chord body',async()=>{
+test('109: deletion autosaves and Save/reload preserve absent directive, confirmed legacy chart metadata, original E and chord body',async()=>{
  localStorage.clear();persistLibrary({songs:[song],setlists:[]});let stored=readPersistedLibrary().songs[0]
  const update=partial=>{stored={...stored,...partial};persistLibrary({songs:[stored],setlists:[]});return true}
  let root=createRoot(document.getElementById('root'))
  try{
   await act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:0,onUpdateSong:update,onSaveSong:update})))
-  await change(document.querySelector('textarea'),song.rawContent.replace('{key: G}\n',''));assert.doesNotMatch(stored.rawContent,/\{key:/)
-  await shortcut('s');assert.equal(stored.key,'');assert.equal(stored.originalKey,'E');assert.doesNotMatch(stored.rawContent,/\{key:/);assert.match(stored.rawContent,/\[G\]My \[D\/F#\]song/)
+  await change(document.querySelector('textarea'),song.rawContent.replace('{key: G}\n',''),'legacy');assert.doesNotMatch(stored.rawContent,/\{key:/)
+  await shortcut('s');assert.equal(stored.key,'G');assert.equal(stored.confirmedChartKey,'G');assert.equal(stored.originalKey,'E');assert.doesNotMatch(stored.rawContent,/\{key:/);assert.match(stored.rawContent,/\[G\]My \[D\/F#\]song/)
   await act(async()=>root.unmount());root=createRoot(document.getElementById('root'))
   await act(async()=>root.render(React.createElement(DesktopEditor,{song:readPersistedLibrary().songs[0],transposeOffset:0,onUpdateSong:update})))
-  assert.doesNotMatch(document.querySelector('textarea').value,/\{key:/);assert.match(document.body.textContent,/Original Key: E.*Chart Key: G \(estimated\).*Performance Key: G/)
+  assert.doesNotMatch(document.querySelector('textarea').value,/\{key:/);assert.match(document.body.textContent,/Original Key: E.*Chart Key: G.*Performance Key: G/)
  }finally{await act(async()=>root.unmount())}
 })
 test('109: raw original edit/remove/undo/redo and explicit form edit synchronize without chord mutation',async()=>{
@@ -120,7 +121,7 @@ test('109 field QA: raw E without key G reconciles preview, Save/reload, picker 
   try{
    await mount();await change(document.querySelector('textarea'),raw.replace('{key: G}\n',''))
    assert.equal(stored.key,'');assert.equal(stored.originalKey,'E');assert.equal(stored.transposeOffset,offset)
-   assert.match(document.body.textContent,/Original Key: E.*Chart Key: E \(estimated\)/)
+   assert.match(document.body.textContent,/Original Key: E.*Chart Key: E/)
    const displayed=document.body.textContent.match(/Performance Key: ([A-G][#b]?m?)/)[1];assert.ok(keysArePitchEquivalent(displayed,expected.get(offset)[0]))
    assert.deepEqual(rendered(),expected.get(offset))
    // Undo/redo must reconcile both raw and entity chart metadata.
@@ -135,8 +136,8 @@ test('109 field QA: raw E without key G reconciles preview, Save/reload, picker 
    await mount();assert.deepEqual(rendered(),expected.get(offset));assert.equal(stored.transposeOffset,offset)
    // Exercise the real picker adapter against the saved song, then the editor renderer.
    await act(async()=>root.render(React.createElement(KeyPickerModal,{isOpen:true,song:stored,currentOffset:offset,onClose(){},onSelectOffset:n=>update({transposeOffset:n}),onReset:()=>update({transposeOffset:transposeContext(stored,stored.transposeOffset).resetOffset})})))
-   assert.match(document.body.textContent,/Chart Key: E \(estimated\)/);assert.doesNotMatch(document.body.textContent,/\(Original\)/)
-   const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Chart)'));assert.match(zero.textContent,/0.*E/)
+   assert.match(document.body.textContent,/Chart Key: E/);assert.match(document.body.textContent,/\(Original\)/)
+   const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)'));assert.match(zero.textContent,/0.*E/)
    await act(async()=>zero.click());assert.equal(stored.transposeOffset,0)
    await mount();assert.deepEqual(rendered(),['E','Esus4']);await shortcut('s');assert.equal(stored.transposeOffset,0)
    await act(async()=>root.render(React.createElement(KeyPickerModal,{isOpen:true,song:stored,currentOffset:-3,onClose(){},onSelectOffset(){},onReset:()=>update({transposeOffset:transposeContext(stored,-3).resetOffset})})))
@@ -146,10 +147,10 @@ test('109 field QA: raw E without key G reconciles preview, Save/reload, picker 
  }
 })
 
-test('109 field QA: pre-existing stale no-directive entity cannot supply the original-relative adapter baseline',()=>{
+test('109 field QA: canonical original_key supersedes stale entity chart metadata',()=>{
  const stale={...song,rawContent:'{original_key: E}\n[E]My [Esus4]song'}
  const c=transposeContext(stale,-3)
- assert.equal(c.chartKey,'E');assert.equal(c.chartEstimated,true);assert.equal(c.originalKey,'E');assert.equal(c.performanceKey,'C#');assert.equal(c.displayOffset,-3);assert.equal(c.originalRelative,false);assert.equal(c.toStoredOffset(0),0);assert.equal(c.resetOffset,0)
+ assert.equal(c.chartKey,'E');assert.equal(c.chartEstimated,false);assert.equal(c.originalKey,'E');assert.equal(c.performanceKey,'C#');assert.equal(c.displayOffset,-3);assert.equal(c.originalRelative,true);assert.equal(c.toStoredOffset(0),0);assert.equal(c.resetOffset,0)
  assert.equal(transposeContext({...stale,originalKey:undefined,rawContent:'[E]song'},0).originalKey,'')
 })
 
@@ -163,10 +164,10 @@ test('109 field QA: actual stage renders the same raw E performance as its picke
  try{
   await render();assert.deepEqual(chords(),['C#','C#sus4']);assert.match(document.body.textContent,/Transpose: -3/)
   const open=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Transpose: -3'));await act(async()=>open.click())
-  assert.match(document.body.textContent,/Original KeyE.*Chart Key: E \(estimated\).*Performance KeyC#/)
-  const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Chart)'));await act(async()=>zero.click());assert.equal(offset,0)
+  assert.match(document.body.textContent,/Original KeyE.*Chart Key: E.*Performance KeyC#/)
+  const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)'));await act(async()=>zero.click());assert.equal(offset,0)
   await render();assert.deepEqual(chords(),['E','Esus4'])
-  offset=-3;await render();const reset=document.querySelector('[title="Reset Transposition to Chart Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(offset,0)
+  offset=-3;await render();const reset=document.querySelector('[title="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(offset,0)
   await render();assert.deepEqual(chords(),['E','Esus4']);assert.equal(stale.key,'G');assert.equal(stale.originalKey,'E')
  }finally{await act(async()=>root.unmount())}
 })
@@ -175,7 +176,7 @@ test('109 field QA: actual stage renders the same raw E performance as its picke
 test('111: confirmed chart key authorizes original zero without changing authored text or saved playback',()=>{
  const raw='{original_key: E}\n[G] [D] [Em]'
  const legacy={...song,rawContent:raw}
- assert.equal(transposeContext(legacy,0).originalRelative,false)
+ assert.equal(transposeContext(legacy,0).originalRelative,true);assert.equal(transposeContext(legacy,0).chartKey,'E')
  const confirmed={...legacy,confirmedChartKey:'G'}
  const c=transposeContext(confirmed,0)
  assert.equal(c.originalRelative,true);assert.equal(c.displayOffset,3);assert.equal(c.performanceKey,'G')
@@ -185,7 +186,7 @@ test('111: confirmed chart key authorizes original zero without changing authore
  assert.equal(confirmed.rawContent,raw)
 })
 
-test('111: explicit chart E confirmation preserves raw and C# playback; original zero then saves/reloads E',async()=>{
+test('109: canonical E needs no confirmation and preserves C# playback; original zero saves/reloads E',async()=>{
  localStorage.clear();const raw='{title: Fixture}\n{original_key: E}\n[E]My [Esus4]song'
  let stored={...song,rawContent:raw,transposeOffset:-3},root=createRoot(document.getElementById('root'))
  const update=partial=>{stored={...stored,...partial};persistLibrary({songs:[stored],setlists:[]});return true}
@@ -193,14 +194,13 @@ test('111: explicit chart E confirmation preserves raw and C# playback; original
  const chords=()=>[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent)
  try{
   await mount();await click('[aria-label="Song Details & Metadata"]')
-  await change(document.querySelector('[aria-label="Confirm authored Chart Key"]'),'E')
-  await click('[data-testid="confirm-chart-key"]')
-  assert.equal(stored.confirmedChartKey,'E');assert.equal(stored.rawContent,raw);assert.equal(stored.transposeOffset,-3);assert.deepEqual(chords(),['C#','C#sus4'])
+  assert.equal(document.querySelector('[data-testid="confirm-chart-key"]'),null)
+  assert.equal(stored.confirmedChartKey,undefined);assert.equal(stored.rawContent,raw);assert.equal(stored.transposeOffset,-3);assert.deepEqual(chords(),['C#','C#sus4'])
   assert.equal(transposeContext(stored,-3).displayOffset,-3)
   await act(async()=>root.render(React.createElement(KeyPickerModal,{isOpen:true,song:stored,currentOffset:-3,onClose(){},onSelectOffset:n=>update({transposeOffset:n}),onReset(){}})))
   await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)')).click())
   await mount();assert.deepEqual(chords(),['E','Esus4']);await shortcut('s');assert.equal(stored.transposeOffset,0)
-  const reloaded=readPersistedLibrary().songs[0];assert.equal(reloaded.confirmedChartKey,'E');assert.equal(transposeContext(reloaded,0).originalRelative,true);assert.doesNotMatch(reloaded.rawContent,/\{key:/)
+  const reloaded=readPersistedLibrary().songs[0];assert.equal(reloaded.confirmedChartKey,undefined);assert.equal(transposeContext(reloaded,0).originalRelative,true);assert.doesNotMatch(reloaded.rawContent,/\{key:/)
  }finally{await act(async()=>root.unmount())}
 })
 
@@ -249,7 +249,8 @@ test('111: confirmed E/E zero, non-tonic first chord, capo, minor and enharmonic
   const c=transposeContext(data,0);assert.equal(c.originalRelative,true)
   assert.equal(transposeContext(data,c.toStoredOffset(0)).performanceKey,data.originalKey)
  }
- const invalid=transposeContext({...song,confirmedChartKey:'H'},0);assert.equal(invalid.originalRelative,false);assert.equal(invalid.chartConflict,true)
+ assert.equal(transposeContext({...song,confirmedChartKey:'H'},0).chartKey,'G')
+ const invalid=transposeContext({...song,rawContent:'[G]song',confirmedChartKey:'H'},0);assert.equal(invalid.originalRelative,false);assert.equal(invalid.chartConflict,true)
 })
 
 test('111: stage cast broadcasts the same performance key and actual offset as rendered chords',async()=>{
@@ -267,7 +268,7 @@ test('111: stage cast broadcasts the same performance key and actual offset as r
 
 test('111: conflicting raw confirmation is rejected; failed confirmation keeps recoverable draft and CAS baseline',async()=>{
  for(const conflict of [true,false]){
-  localStorage.clear();const raw=conflict?song.rawContent:'{original_key: E}\n[E]My [Esus4]song'
+  localStorage.clear();const raw=conflict?song.rawContent:'[E]My [Esus4]song'
   const stale={...song,rawContent:raw,transposeOffset:-3};persistLibrary({songs:[stale],setlists:[]})
   const baseline=getLastKnownPersistedLibraryRaw(),recovery={current:null},root=createRoot(document.getElementById('root'));let writes=0
   try{
@@ -301,4 +302,107 @@ test('111 prior review: key shorthand survives Save, repairs synchronize stale e
    assert.equal(selected,transposeContext(song,offset).toStoredOffset(transposeContext(song,offset).displayOffset+delta));assert.ok(selected>=-11 && selected<=11)
   }finally{await act(async()=>root.unmount())}
  }
+})
+
+
+test('109 final: six-field Bb canonical chart ignores first-chord tonic, picker +2, Save/reload and backup preserve basis',async()=>{
+ const raw='{title: House of the Lord}\n{artist: Band}\n{original_key: Bb}\n{tempo: 120 BPM}\n{time: 4/4}\n{year: 2026}\n[Bb] [Bb] [F] [Eb]'
+ localStorage.clear();let stored={...song,title:'House of the Lord',artist:'Band',key:'G',originalKey:'Bb',rawContent:raw},root=createRoot(document.getElementById('root'))
+ const update=p=>{stored={...stored,...p};persistLibrary({songs:[stored],setlists:[]});return true}
+ const mount=()=>act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:stored.transposeOffset,onUpdateSong:update,onSaveSong:update})))
+ const chords=()=>[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent)
+ try{
+  await mount();assert.deepEqual(chords(),['Bb','Bb','F','Eb']);assert.doesNotMatch(document.body.textContent,/estimated/)
+  await click('[aria-label="Song Details & Metadata"]');assert.equal(document.querySelector('[data-testid="confirm-chart-key"]'),null)
+  await shortcut('s');assert.equal(stored.rawContent,raw);assert.equal(stored.transposeOffset,0)
+  await act(async()=>root.render(React.createElement(KeyPickerModal,{isOpen:true,song:stored,currentOffset:0,onClose(){},onSelectOffset:n=>update({transposeOffset:n}),onReset(){}})))
+  assert.match(document.body.textContent,/relative to Original Key/);assert.doesNotMatch(document.body.textContent,/estimate/)
+  await act(async()=>[...document.querySelectorAll('button')].find(b=>/^\+2/.test(b.textContent.trim())).click())
+  await mount();assert.deepEqual(chords(),['C','C','G','F']);await shortcut('s')
+  await act(async()=>root.unmount());root=createRoot(document.getElementById('root'));stored=readPersistedLibrary().songs[0];await mount();assert.deepEqual(chords(),['C','C','G','F'])
+  const backup=require('../src/utils/jsonBackup.ts').normalizeBackupSong(stored);assert.equal(backup.rawContent,raw);assert.equal(transposeContext(backup,2).displayOffset,2)
+  const nonTonic=resolveSongKeys({...stored,rawContent:raw.replace('[Bb] [Bb] [F] [Eb]','[F] [Eb]')});assert.equal(nonTonic.chartKey,'Bb');assert.equal(nonTonic.chartEstimated,false)
+ }finally{await act(async()=>root.unmount())}
+})
+
+test('109 final: removed key/k and equivalent duplicates require one decision; Cancel, B and reload preserve legacy playback',async()=>{
+ for(const directive of ['{key: G}','{k: G}','{key: G}\n{k: G}']){
+  localStorage.clear();const initial={...song,rawContent:song.rawContent.replace('{key: G}',directive),transposeOffset:2}
+  let stored={...initial},writes=0,root=createRoot(document.getElementById('root'))
+  const update=p=>{writes++;stored={...stored,...p};persistLibrary({songs:[stored],setlists:[]});return true}
+  const mount=()=>act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:2,onUpdateSong:update,onSaveSong:update})))
+  const next=initial.rawContent.replace(directive+'\n','')
+  const chords=()=>[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent)
+  try{
+   await mount();const before=chords();await input(document.querySelector('textarea'),next)
+   assert.equal(document.querySelectorAll('[aria-label="Removed Chart Key"]').length,1);assert.equal(writes,0);assert.deepEqual(stored,initial);assert.deepEqual(chords(),before)
+   await shortcut('s');assert.equal(writes,0);await click('[data-testid="key-deletion-cancel"]');assert.deepEqual(stored,initial);assert.equal(document.querySelector('textarea').value,initial.rawContent)
+   await input(document.querySelector('textarea'),next);await click('[data-testid="key-deletion-legacy"]')
+   assert.equal(stored.confirmedChartKey,'G');assert.equal(stored.rawContent,next);assert.equal(stored.transposeOffset,2);assert.deepEqual(chords(),before)
+   await change(document.querySelector('textarea'),next+'\nlyrics');assert.equal(stored.confirmedChartKey,'G');assert.equal(document.querySelector('[aria-label="Removed Chart Key"]'),null)
+   await shortcut('s');await act(async()=>root.unmount());root=createRoot(document.getElementById('root'));stored=readPersistedLibrary().songs[0];await mount()
+   assert.equal(stored.confirmedChartKey,'G');assert.deepEqual(chords(),before);assert.equal(transposeContext(stored,2).displayOffset,5)
+  }finally{await act(async()=>root.unmount())}
+ }
+})
+
+test('109 final: choice A records canonical basis, preserves raw/playback and offset, supports undo/redo without another prompt',async()=>{
+ let stored={...song,transposeOffset:-3};const root=createRoot(document.getElementById('root')),update=p=>{stored={...stored,...p};return true}
+ try{
+  await act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:-3,onUpdateSong:update,onSaveSong:update})))
+  const before=[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent),raw=song.rawContent.replace('{key: G}\n','')
+  await input(document.querySelector('textarea'),raw);await click('[data-testid="key-deletion-original"]')
+  assert.equal(stored.rawContent,raw);assert.equal(stored.confirmedChartKey,'');assert.equal(stored.transposeOffset,-3);assert.equal(resolveSongKeys(stored).chartKey,'E');assert.equal(resolveSongKeys(stored).chartEstimated,false)
+  assert.deepEqual([...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent),before)
+  await shortcut('z',document.querySelector('textarea'));assert.equal(stored.key,'G');assert.equal(stored.rawContent,song.rawContent)
+  await shortcut('y',document.querySelector('textarea'));assert.equal(stored.rawContent,raw);assert.equal(stored.confirmedChartKey,'');assert.equal(document.querySelector('[aria-label="Removed Chart Key"]'),null)
+  await change(document.querySelector('textarea'),raw+'\nlyrics');await shortcut('s');assert.equal(stored.confirmedChartKey,undefined);assert.equal(stored.transposeOffset,-3)
+ }finally{await act(async()=>root.unmount())}
+})
+
+test('109 final: matching/enharmonic deletion and partial duplicate removal do not prompt; contradictory duplicates require repair',async()=>{
+ for(const [directive,originalKey,remaining] of [['{key: E}','E',''],['{k: D#}','Eb',''],['{key: G}\n{k: G}','E','{k: G}\n']]){
+  let stored={...song,originalKey,rawContent:`{title: Fixture}\n${directive}\n{original_key: ${originalKey}}\n[G]song`,key:directive.includes('G')?'G':directive.includes('D#')?'D#':'E'}
+  const root=createRoot(document.getElementById('root'))
+  try{
+   await act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:0,onUpdateSong:p=>{stored={...stored,...p};return true}})))
+   await input(document.querySelector('textarea'),stored.rawContent.replace(directive+'\n',remaining));assert.equal(document.querySelector('[aria-label="Removed Chart Key"]'),null)
+   assert.equal(declaredKeyForTest(stored.rawContent).present,Boolean(remaining))
+  }finally{await act(async()=>root.unmount())}
+ }
+ function declaredKeyForTest(raw){return require('../src/utils/songKeySemantics.ts').declaredKey(raw)}
+ let writes=0;const root=createRoot(document.getElementById('root')),raw=song.rawContent+'\n{k: A}'
+ try{
+  await act(async()=>root.render(React.createElement(DesktopEditor,{song:{...song,rawContent:raw},transposeOffset:0,onUpdateSong:()=>{writes++;return true}})))
+  await input(document.querySelector('textarea'),raw.replace('{key: G}\n','').replace('\n{k: A}',''));assert.equal(writes,0);assert.match(document.body.textContent,/Resolve conflicting key directives/)
+ }finally{await act(async()=>root.unmount())}
+})
+
+test('109 final: blank six-field template requires explicit original selection; existing legacy imports remain supported',async()=>{
+ const {createBlankCanonicalSong}=require('../src/components/DesktopEditor.tsx');let stored=createBlankCanonicalSong();const root=createRoot(document.getElementById('root'))
+ assert.equal(stored.key,'');assert.equal(stored.originalKey,undefined);assert.equal(resolveSongKeys(stored).originalRelative,false)
+ assert.deepEqual(require('../src/utils/chordProMetadata.ts').parseChordProDirectives(stored.rawContent).directives.map(d=>d.name),['title','artist','original_key','tempo','time','year'])
+ try{
+  await act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:0,onUpdateSong:p=>{stored={...stored,...p};return true}})))
+  await click('[aria-label="Song Details & Metadata"]');await change(document.querySelector('[aria-label="Original Key"]'),'Bb')
+  assert.equal(stored.originalKey,'Bb');assert.match(stored.rawContent,/\{original_key: Bb\}/);assert.equal(resolveSongKeys(stored).chartKey,'Bb');assert.equal(resolveSongKeys(stored).originalRelative,true)
+  assert.equal(document.querySelector('[data-testid="confirm-chart-key"]'),null)
+ }finally{await act(async()=>root.unmount())}
+ assert.equal(resolveSongKeys({rawContent:'{k: G}\n[G]song',originalKey:'E'}).chartKey,'G')
+ assert.equal(resolveSongKeys({rawContent:'[D]intro [G]song'}).chartEstimated,true)
+})
+
+
+test('109 final: clearing key value cannot bypass deletion choice; failed B remains recoverable and retryable',async()=>{
+ let stored={...song},fail=true;const recovery={current:null},root=createRoot(document.getElementById('root'))
+ const update=p=>{if(fail)return false;stored={...stored,...p};return true}
+ try{
+  await act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:0,onUpdateSong:update,onSaveSong:update,recoveryDraftRef:recovery})))
+  await input(document.querySelector('textarea'),song.rawContent.replace('{key: G}','{key: }'))
+  assert.equal(document.querySelectorAll('[aria-label="Removed Chart Key"]').length,1)
+  await click('[data-testid="key-deletion-legacy"]');assert.equal(stored.rawContent,song.rawContent);assert.equal(recovery.current().confirmedChartKey,'G')
+  const raw=recovery.current().rawContent.replace('{key: }\n','')
+  await input(document.querySelector('textarea'),raw);assert.equal(document.querySelector('[aria-label="Removed Chart Key"]'),null);assert.equal(recovery.current().confirmedChartKey,'G')
+  fail=false;await shortcut('s');assert.equal(stored.confirmedChartKey,'G');assert.equal(stored.rawContent,raw.replace('{title: Fixture}', '{title: Fixture}\n{artist: Artist}'));assert.equal(transposeContext(stored,0).displayOffset,3)
+ }finally{await act(async()=>root.unmount())}
 })
