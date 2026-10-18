@@ -228,7 +228,7 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   assert.match(css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0], /margin-inline:\s*auto;/)
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
   assert.equal(toolbarButtons.length, 9)
-  const labels = [...toolbarButtons].map(btn => btn.querySelector('.toolbar-tooltip')?.textContent)
+  const labels = [...toolbarButtons].map(btn => btn.getAttribute('aria-label'))
   assert.deepEqual(labels, [
     'Back',
     'Stage Preview (Alt+1)',
