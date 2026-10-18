@@ -29,25 +29,50 @@ they often cover multiple subsystems and may be referenced elsewhere. Their
 placement indicates the main area to start searching, not exclusive coverage.
 Use test titles inside a file to locate specific cases.
 
+## Maintaining the catalog
+
+From the repository root (no dependency install required):
+
+```sh
+node web/scripts/test-catalog.cjs --write
+node web/scripts/test-catalog.cjs --check
+node --test web/tests/testCatalog.test.cjs
+```
+
+Only lists between `test-catalog` markers are generated. Keep headings,
+descriptions, and other human guidance outside those markers. Existing links
+supply the primary category; no filename heuristics or separate mapping is used.
+New/renamed files go to `UNCLASSIFIED` in code-unit filename order; deleted files
+are removed. A rename needs human reclassification if its old group should be
+retained. To classify a test, move its link between marked lists, then run
+`--write`. Duplicate links are detected by `--check`; `--write` keeps the first
+category in document order. Malformed regions fail without writing. `--check`
+is read-only and fails on missing, stale, duplicate, or unsorted entries. CI
+checks drift and generator regressions without installing dependencies or
+running the full suite in the catalog job. The existing suite job is unchanged.
+
 ## AUTH
 
 Account access, sign-in, session lifecycle, and authentication UI.
 
+<!-- test-catalog:AUTH:start -->
 - [accountAccessFoundation.test.cjs](accountAccessFoundation.test.cjs)
 - [authBypassInteraction.test.cjs](authBypassInteraction.test.cjs)
-- [authenticationSecurity.test.cjs](authenticationSecurity.test.cjs)
 - [authGate.test.cjs](authGate.test.cjs)
 - [authLifecycle.test.cjs](authLifecycle.test.cjs)
 - [authSessionRuntime.test.cjs](authSessionRuntime.test.cjs)
+- [authenticationSecurity.test.cjs](authenticationSecurity.test.cjs)
 - [durableAuthSession.test.cjs](durableAuthSession.test.cjs)
 - [g5SessionRevocationSecurity.test.cjs](g5SessionRevocationSecurity.test.cjs)
 - [googleOAuthSecurity.test.cjs](googleOAuthSecurity.test.cjs)
 - [membershipBadgeInteraction108Dev8f.test.cjs](membershipBadgeInteraction108Dev8f.test.cjs)
+<!-- test-catalog:AUTH:end -->
 
 ## CLOUD_SYNC_AND_STORAGE
 
 Cloud reconciliation, local persistence, backup, import recovery, and retirement.
 
+<!-- test-catalog:CLOUD_SYNC_AND_STORAGE:start -->
 - [adversarialDev13.test.cjs](adversarialDev13.test.cjs)
 - [backupResiduals.test.cjs](backupResiduals.test.cjs)
 - [backupRestoreHardening.test.cjs](backupRestoreHardening.test.cjs)
@@ -70,11 +95,13 @@ Cloud reconciliation, local persistence, backup, import recovery, and retirement
 - [storageRetirement.test.cjs](storageRetirement.test.cjs)
 - [syncDedup.test.cjs](syncDedup.test.cjs)
 - [syncJournal.test.cjs](syncJournal.test.cjs)
+<!-- test-catalog:CLOUD_SYNC_AND_STORAGE:end -->
 
 ## THEMES
 
 Presets, palettes, typography, semantic tokens, theme lifecycle, and theme sync.
 
+<!-- test-catalog:THEMES:start -->
 - [dev3bThemePresetRefresh.test.cjs](dev3bThemePresetRefresh.test.cjs)
 - [dev3cCustomPaletteV2.test.cjs](dev3cCustomPaletteV2.test.cjs)
 - [dev3dCustomPaletteEditorAndPresets.test.cjs](dev3dCustomPaletteEditorAndPresets.test.cjs)
@@ -87,11 +114,13 @@ Presets, palettes, typography, semantic tokens, theme lifecycle, and theme sync.
 - [dev3lSemanticColorCoverage.test.cjs](dev3lSemanticColorCoverage.test.cjs)
 - [g6CloudThemeSync.test.cjs](g6CloudThemeSync.test.cjs)
 - [themeSyncUiPolish108Dev8d.test.cjs](themeSyncUiPolish108Dev8d.test.cjs)
+<!-- test-catalog:THEMES:end -->
 
 ## STAGE
 
 Performance controls, casting, navigation, continuity, and session persistence.
 
+<!-- test-catalog:STAGE:start -->
 - [dev3QolNavigationStageControls.test.cjs](dev3QolNavigationStageControls.test.cjs)
 - [fullscreenStageQol.test.cjs](fullscreenStageQol.test.cjs)
 - [stageCastRouting.test.cjs](stageCastRouting.test.cjs)
@@ -99,21 +128,23 @@ Performance controls, casting, navigation, continuity, and session persistence.
 - [stageLifecycle.test.cjs](stageLifecycle.test.cjs)
 - [stageSectionNavigationDock.test.cjs](stageSectionNavigationDock.test.cjs)
 - [stageSessionPersistence.test.cjs](stageSessionPersistence.test.cjs)
+<!-- test-catalog:STAGE:end -->
 
 ## SONGBOOK_AND_EDITOR
 
 Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 
+<!-- test-catalog:SONGBOOK_AND_EDITOR:start -->
 - [chordProMetadataRevamp.test.cjs](chordProMetadataRevamp.test.cjs)
 - [dev2aFieldHardening.test.cjs](dev2aFieldHardening.test.cjs)
 - [dev2bFieldFixAndChordRendering.test.cjs](dev2bFieldFixAndChordRendering.test.cjs)
 - [dev2bUiCleanlinessAndNavigation.test.cjs](dev2bUiCleanlinessAndNavigation.test.cjs)
 - [dev2cUiPolishAndReceiptRetirement.test.cjs](dev2cUiPolishAndReceiptRetirement.test.cjs)
-- [dev3aFieldFixes.test.cjs](dev3aFieldFixes.test.cjs)
 - [dev3SearchUiCleanup.test.cjs](dev3SearchUiCleanup.test.cjs)
+- [dev3aFieldFixes.test.cjs](dev3aFieldFixes.test.cjs)
+- [dev4ChordFoundation.test.cjs](dev4ChordFoundation.test.cjs)
 - [dev4aTrustedChordVoicingCoverage.test.cjs](dev4aTrustedChordVoicingCoverage.test.cjs)
 - [dev4bExtendedChordCatalogAndQuickPreview.test.cjs](dev4bExtendedChordCatalogAndQuickPreview.test.cjs)
-- [dev4ChordFoundation.test.cjs](dev4ChordFoundation.test.cjs)
 - [dev5AiMetadataAndOriginalKeyAlignment.test.cjs](dev5AiMetadataAndOriginalKeyAlignment.test.cjs)
 - [dev5aMetadataLookupEditorUx.test.cjs](dev5aMetadataLookupEditorUx.test.cjs)
 - [dev5aWorkersAiModelHeaderNav.test.cjs](dev5aWorkersAiModelHeaderNav.test.cjs)
@@ -127,6 +158,8 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [editorLibraryQol108Dev8e.test.cjs](editorLibraryQol108Dev8e.test.cjs)
 - [g2SetlistImportSafety.test.cjs](g2SetlistImportSafety.test.cjs)
 - [g7SongbookSetlistUiPolish.test.cjs](g7SongbookSetlistUiPolish.test.cjs)
+- [issue107ToolbarBrowser.test.cjs](issue107ToolbarBrowser.test.cjs)
+- [issue109KeySemantics.test.cjs](issue109KeySemantics.test.cjs)
 - [librarySetlistBulkQol108Dev8f.test.cjs](librarySetlistBulkQol108Dev8f.test.cjs)
 - [librarySetlistDensityQol.test.cjs](librarySetlistDensityQol.test.cjs)
 - [mainSetlistCardActions.test.cjs](mainSetlistCardActions.test.cjs)
@@ -138,17 +171,19 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [sharedCatalogUi.test.cjs](sharedCatalogUi.test.cjs)
 - [sidePanelConsolidatedHotfix.test.cjs](sidePanelConsolidatedHotfix.test.cjs)
 - [slashChords.test.cjs](slashChords.test.cjs)
-- [songbookDataFoundation.test.cjs](songbookDataFoundation.test.cjs)
 - [songParser.test.cjs](songParser.test.cjs)
+- [songbookDataFoundation.test.cjs](songbookDataFoundation.test.cjs)
 - [songsVsSetlistsSearchUx.test.cjs](songsVsSetlistsSearchUx.test.cjs)
 - [swipeCardActions.test.cjs](swipeCardActions.test.cjs)
 - [transposeKeyCorrectness.test.cjs](transposeKeyCorrectness.test.cjs)
 - [uiCopyDensityCleanup108Dev8c.test.cjs](uiCopyDensityCleanup108Dev8c.test.cjs)
+<!-- test-catalog:SONGBOOK_AND_EDITOR:end -->
 
 ## SECURITY_AND_API
 
 API trust boundaries, abuse protection, sharing authorization, and safe logging.
 
+<!-- test-catalog:SECURITY_AND_API:start -->
 - [dev2ApiSecurityHardening.test.cjs](dev2ApiSecurityHardening.test.cjs)
 - [dev2QrSharingAuthGuard.test.cjs](dev2QrSharingAuthGuard.test.cjs)
 - [dev2SecurityRemediation.test.cjs](dev2SecurityRemediation.test.cjs)
@@ -161,11 +196,13 @@ API trust boundaries, abuse protection, sharing authorization, and safe logging.
 - [sharedCatalogSchema.test.cjs](sharedCatalogSchema.test.cjs)
 - [ugBodyLimits.test.cjs](ugBodyLimits.test.cjs)
 - [ugScraperContract.test.cjs](ugScraperContract.test.cjs)
+<!-- test-catalog:SECURITY_AND_API:end -->
 
 ## INFRASTRUCTURE
 
 Build/runtime configuration, release contracts, PWA lifecycle, and repository checks.
 
+<!-- test-catalog:INFRASTRUCTURE:start -->
 - [dev3mLintBehavior.test.cjs](dev3mLintBehavior.test.cjs)
 - [devVersionAndReleaseIdentity.test.cjs](devVersionAndReleaseIdentity.test.cjs)
 - [fieldCorrections108Dev8b.test.cjs](fieldCorrections108Dev8b.test.cjs)
@@ -176,5 +213,14 @@ Build/runtime configuration, release contracts, PWA lifecycle, and repository ch
 - [pwaUpdateLifecycle.test.cjs](pwaUpdateLifecycle.test.cjs)
 - [saveStatusAndPwaHardening.test.cjs](saveStatusAndPwaHardening.test.cjs)
 - [sourceTextPortability.test.cjs](sourceTextPortability.test.cjs)
+- [testCatalog.test.cjs](testCatalog.test.cjs)
 - [viteWatcherConfig.test.cjs](viteWatcherConfig.test.cjs)
 - [webOnlyRepositoryBoundary.test.cjs](webOnlyRepositoryBoundary.test.cjs)
+<!-- test-catalog:INFRASTRUCTURE:end -->
+
+## UNCLASSIFIED
+
+New or renamed tests await a human choice of primary category.
+
+<!-- test-catalog:UNCLASSIFIED:start -->
+<!-- test-catalog:UNCLASSIFIED:end -->

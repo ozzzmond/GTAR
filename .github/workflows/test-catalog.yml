@@ -1,0 +1,25 @@
+name: Test catalog drift
+on:
+  pull_request:
+    paths:
+      - 'web/tests/**'
+      - 'web/scripts/test-catalog.cjs'
+      - '.github/workflows/test-catalog.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'web/tests/**'
+      - 'web/scripts/test-catalog.cjs'
+      - '.github/workflows/test-catalog.yml'
+permissions:
+  contents: read
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test web/tests/testCatalog.test.cjs
+      - run: node web/scripts/test-catalog.cjs --check
