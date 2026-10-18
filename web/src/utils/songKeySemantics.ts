@@ -3,11 +3,11 @@ import { keysArePitchEquivalent, musicalKeyPitchClass, normalizeMusicalKey } fro
 import { transposeKey } from './chordTransposer'
 import { detectSongKey } from './songParser'
 
-export interface SongKeySource { key?: string | null; originalKey?: string | null; rawContent?: string | null }
+export interface SongKeySource { key?: string | null; confirmedChartKey?: string | null; originalKey?: string | null; rawContent?: string | null }
 
 export function declaredKey(rawContent: string, original = false) {
   const values = parseChordProDirectives(rawContent).directives
-    .filter(d => original ? ['original_key', 'originalkey'].includes(d.name) : d.name === 'key')
+    .filter(d => original ? ['original_key', 'originalkey'].includes(d.name) : ['key', 'k'].includes(d.name))
     .map(d => d.value)
   const key = values.length ? normalizeMusicalKey(values[0]) : ''
   const conflict = values.some(value => normalizeMusicalKey(value) === null || !keysArePitchEquivalent(value, key || ''))
@@ -20,17 +20,21 @@ export function resolveSongKeys(song: SongKeySource) {
   const chart = declaredKey(raw)
   const original = declaredKey(raw, true)
   const entityChart = normalizeMusicalKey(song.key)
+  const confirmedChart = normalizeMusicalKey(song.confirmedChartKey)
   const entityOriginal = normalizeMusicalKey(song.originalKey)
-  const chartConflict = chart.conflict || Boolean(song.key && !entityChart) ||
+  const chartConflict = chart.conflict || Boolean(song.confirmedChartKey && !confirmedChart) ||
+    Boolean(confirmedChart && chart.present && !keysArePitchEquivalent(confirmedChart, chart.key)) || Boolean(song.key && !entityChart) ||
     Boolean(entityChart && chart.present && !keysArePitchEquivalent(entityChart, chart.key))
   const originalConflict = original.conflict || Boolean(song.originalKey && !entityOriginal) ||
     Boolean(entityOriginal && original.present && !keysArePitchEquivalent(entityOriginal, original.key))
-  // Detection remains a legacy chart fallback, never verified provenance.
-  const chartKey = entityChart || chart.key || detectSongKey(raw) || ''
+  // Legacy entity keys and chord estimates cannot authorize conversion.
+  // An explicit chart confirmation is independent of optional raw directives.
+  const chartEstimated = raw ? !chart.key && !confirmedChart : !entityChart && !confirmedChart
+  const chartKey = confirmedChart || (raw ? chart.key || detectSongKey(raw) : entityChart || '')
   const originalKey = originalConflict ? '' : entityOriginal || original.key
-  const compatible = Boolean(originalKey && (entityChart || chart.key) && !chartConflict &&
+  const compatible = Boolean(originalKey && chartKey && !chartEstimated && !chartConflict &&
     originalKey.endsWith('m') === chartKey.endsWith('m'))
-  return { chartKey, originalKey, chartConflict, originalConflict, chartEstimated: !entityChart && !chart.key, originalRelative: compatible }
+  return { chartKey, originalKey, chartConflict, originalConflict, chartEstimated, originalRelative: compatible }
 }
 
 export function wrapKeyOffset(value: number): number {
@@ -45,7 +49,9 @@ export function transposeContext(song: SongKeySource, storedOffset: number) {
   return {
     ...keys,
     baseKey: keys.originalRelative ? keys.originalKey : keys.chartKey,
-    performanceKey: transposeKey(keys.chartKey, storedOffset),
+    performanceKey: keys.originalRelative
+      ? transposeKey(keys.originalKey, wrapKeyOffset(storedOffset + distance))
+      : transposeKey(keys.chartKey, storedOffset),
     displayOffset: keys.originalRelative ? wrapKeyOffset(storedOffset + distance) : storedOffset,
     resetOffset: keys.originalRelative ? wrapKeyOffset(-distance) : 0,
     toStoredOffset: (relative: number) => keys.originalRelative ? wrapKeyOffset(relative - distance) : relative,

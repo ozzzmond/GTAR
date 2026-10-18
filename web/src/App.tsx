@@ -970,7 +970,7 @@ function LibraryApp() {
     } else {
       stageCast.broadcastState({
         song: currentSong,
-        effectiveKey: currentSong.key || '',
+        effectiveKey: transposeContext(currentSong, currentSong.transposeOffset || 0).performanceKey,
         transposeOffset: currentSong.transposeOffset || 0,
         fontSizePx: 22,
         fontStyle,

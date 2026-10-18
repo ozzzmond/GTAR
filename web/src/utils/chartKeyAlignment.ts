@@ -7,12 +7,12 @@ type Chart = { key?: string | null; rawContent: string }
 // A legacy label or first-chord inference alone is not evidence of the tonic.
 export function trustworthyChartKey(chart: Chart): string | null {
   const key = normalizeMusicalKey(chart.key || '')
-  const declarations = [...chart.rawContent.matchAll(/^\s*\{key:\s*([^}]+)\}\s*$/gim)]
+  const declarations = [...chart.rawContent.matchAll(/^\s*\{(?:key|k):\s*([^}]+)\}\s*$/gim)]
   return key && declarations.length > 0 && declarations.every(m => normalizeMusicalKey(m[1]) === key) ? key : null
 }
 
 export function establishChartKey(rawContent: string, key: string): string {
-  const declaration = /^([ \t]*)\{key:\s*[^}]+\}([ \t]*)(\r?)$/gim
+  const declaration = /^([ \t]*)\{(?:key|k):\s*[^}]+\}([ \t]*)(\r?)$/gim
   return declaration.test(rawContent)
     ? rawContent.replace(declaration, (_match, before, after, cr) => `${before}{key: ${key}}${after}${cr}`)
     : `{key: ${key}}${rawContent.includes('\r\n') ? '\r\n' : '\n'}${rawContent}`

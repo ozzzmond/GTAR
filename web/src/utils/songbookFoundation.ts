@@ -592,6 +592,7 @@ export function computeSemanticSongFingerprint(song: SongEntity | ActiveSongStat
     artist,
     key,
     originalKey,
+    ...(song.confirmedChartKey ? { confirmedChartKey: song.confirmedChartKey } : {}),
     capo,
     bpm,
     time,

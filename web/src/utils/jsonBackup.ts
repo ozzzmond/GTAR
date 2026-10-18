@@ -5,7 +5,7 @@ import { GTAR_APP_VERSION } from '../types/gtar'
 import { readBackupSettings, validateBackupSettings, type BackupSettings } from './backupSettings'
 import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
 import { detectSongKey } from './songParser'
-import { canonicalSongKey } from './musicalKey'
+import { canonicalSongKey, normalizeMusicalKey } from './musicalKey'
 
 export const GTAR_BACKUP_SCHEMA_VERSION = 1
 export const RESTORE_SNAPSHOT_KEY = 'gtar_restore_safety_snapshot_v1'
@@ -51,6 +51,7 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
     id: s.id === undefined ? generateUUID() : (typeof s.id === 'string' ? s.id.trim() : s.id), title: s.title!, artist: s.artist ?? '',
     key: canonicalSongKey(s.key ?? detectSongKey(rawContent)),
     ...(s.originalKey !== undefined && s.originalKey !== null ? { originalKey: canonicalSongKey(s.originalKey) } : {}),
+    ...(s.confirmedChartKey ? { confirmedChartKey: canonicalSongKey(s.confirmedChartKey) } : {}),
     capo: s.capo ?? '', bpm: s.bpm ?? '120',
     ...(s.time !== undefined && s.time !== null ? { time: String(s.time).trim() } : {}),
     ...(s.year !== undefined && s.year !== null ? { year: String(s.year).trim() } : {}),
@@ -123,9 +124,10 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
     if (!object(value)) { errors.push(`${path}: must be an object`); return }
     const required = song ? 'title' : 'name'
     if (typeof value[required] !== 'string' || !value[required].trim()) errors.push(`${path}.${required}: must be a non-empty string`)
-    for (const field of ['artist', 'key', 'originalKey', 'capo', 'bpm', 'time', 'year', 'format', 'tags', 'rawContent', 'content']) {
+    for (const field of ['artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format', 'tags', 'rawContent', 'content']) {
       if (field in value && typeof value[field] !== 'string') errors.push(`${path}.${field}: must be a string`)
     }
+    if ('confirmedChartKey' in value && (typeof value.confirmedChartKey !== 'string' || normalizeMusicalKey(value.confirmedChartKey) === null)) errors.push(`${path}.confirmedChartKey: must be a valid musical key`)
     if (song && !('rawContent' in value) && !('content' in value)) errors.push(`${path}.rawContent: provide rawContent or content as a string`)
     if ('id' in value && !(typeof value.id === 'string' && value.id.trim()) && !(typeof value.id === 'number' && Number.isSafeInteger(value.id))) errors.push(`${path}.id: must be a non-empty string or integer`)
     for (const field of ['createdAt', 'lastOpenedAt']) {

@@ -54,7 +54,7 @@ export function parseChordProDirectives(content: string): {
       metadata.artist = value;
     } else if (name === 'a' || name === 'subtitle' || name === 'st') {
       if (metadata.artist === undefined) metadata.artist = value;
-    } else if (name === 'key') {
+    } else if (name === 'key' || name === 'k') {
       if (!metadata.key) metadata.key = value;
     } else if (name === 'tempo' || name === 'bpm') {
       if (!metadata.tempo) {
@@ -111,7 +111,7 @@ export function syncCanonicalDirectives(
   const directiveAliases: Record<CanonicalDirectiveName, string[]> = {
     title: ['title', 't'],
     artist: ['artist', 'a', 'subtitle', 'st'],
-    key: ['key'],
+    key: ['key', 'k'],
     tempo: ['tempo', 'bpm'],
     time: ['time'],
     year: ['year'],

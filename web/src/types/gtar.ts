@@ -36,6 +36,8 @@ export interface SongEntity {
   title: string
   artist?: string | null
   key?: string | null
+  /** Explicit user confirmation of the authored chord basis; never inferred. */
+  confirmedChartKey?: string
   originalKey?: string | null
   capo?: string | null
   bpm?: string | null
@@ -102,6 +104,8 @@ export interface ActiveSongState {
   title: string
   artist: string
   key: string
+  /** Explicit user confirmation of the authored chord basis; never inferred. */
+  confirmedChartKey?: string
   originalKey?: string
   capo: string
   bpm: string
@@ -182,6 +186,8 @@ export interface ParsedGtarSong {
   title: string
   artist: string
   key: string
+  /** Explicit user confirmation of the authored chord basis; never inferred. */
+  confirmedChartKey?: string
   originalKey?: string
   capo: string
   bpm: string
