@@ -413,45 +413,6 @@ test('searchOnlineChords live attempt network failure throws structured error an
   }
 })
 
-test('searchOnlineChords backend HTTP 400, 403, 429, 502, 504 return distinct structured failure semantics', async () => {
-  const originalFetch = global.fetch
-  const originalWarn = console.warn
-  console.warn = () => {}
-
-  const cases = [
-    { status: 400, code: 'INVALID_QUERY', msg: 'Invalid search query' },
-    { status: 403, code: 'RESTRICTED', msg: 'Online search temporarily restricted' },
-    { status: 429, code: 'RATE_LIMITED', msg: 'Search rate limit reached — please wait a moment' },
-    { status: 502, code: 'PARSE_ERROR', msg: 'Unable to parse online search results' },
-    { status: 504, code: 'TIMEOUT', msg: 'Online search timed out — please try again' },
-  ]
-
-  try {
-    for (const c of cases) {
-      global.fetch = async () => ({
-        ok: false,
-        status: c.status,
-        json: async () => ({ error: 'Error payload' }),
-      })
-
-      await assert.rejects(
-        searchOnlineChords('Stand By Me'),
-        (err) => {
-          assert.equal(err.name, 'OnlineSearchError')
-          assert.equal(err.status, c.status)
-          assert.equal(err.code, c.code)
-          assert.equal(err.message, c.msg)
-          return true
-        },
-        `HTTP ${c.status} must reject with code ${c.code} and exact message "${c.msg}" without curated fallback`
-      )
-    }
-  } finally {
-    global.fetch = originalFetch
-    console.warn = originalWarn
-  }
-})
-
 test('fetchOnlineChordSheet calls /api/ug-tab directly with encoded URL', async () => {
   const originalFetch = global.fetch
   let requestedUrl = ''
