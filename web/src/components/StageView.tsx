@@ -1696,7 +1696,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   disabled={!effectivePerformanceKey}
                   onClick={(e) => {
                     e.stopPropagation()
-                    onTransposeChange(transposeOffset - 1)
+                    onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
@@ -1728,7 +1728,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   disabled={!effectivePerformanceKey}
                   onClick={(e) => {
                     e.stopPropagation()
-                    onTransposeChange(transposeOffset + 1)
+                    onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
@@ -1748,7 +1748,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    onTransposeChange(transposeOffset - 1)
+                    onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer"
@@ -1779,7 +1779,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    onTransposeChange(transposeOffset + 1)
+                    onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer"
@@ -1903,7 +1903,7 @@ export const StageView: React.FC<StageViewProps> = ({
               <button
                 type="button"
                 disabled={!effectivePerformanceKey}
-                onClick={() => onTransposeChange(transposeOffset - 1)}
+                onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                 title="Step Key Down (-1 semitone)"
                 aria-label="Step Key Down (-1 semitone)"
@@ -1939,7 +1939,7 @@ export const StageView: React.FC<StageViewProps> = ({
               <button
                 type="button"
                 disabled={!effectivePerformanceKey}
-                onClick={() => onTransposeChange(transposeOffset + 1)}
+                onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                 title="Step Key Up (+1 semitone)"
                 aria-label="Step Key Up (+1 semitone)"
@@ -1958,7 +1958,7 @@ export const StageView: React.FC<StageViewProps> = ({
             >
               <button
                 type="button"
-                onClick={() => onTransposeChange(transposeOffset - 1)}
+                onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer"
                 title="Transpose Down (-1)"
               >
@@ -1992,7 +1992,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => onTransposeChange(transposeOffset + 1)}
+                onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer"
                 title="Transpose Up (+1)"
               >
@@ -2385,7 +2385,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 <button
                   type="button"
                   disabled={notation === 'numbers' && !effectivePerformanceKey}
-                  onClick={() => onTransposeChange(transposeOffset - 1)}
+                  onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
                   className="p-2 text-app-text hover:text-app-action cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                   title={notation === 'numbers' ? 'Step Key Down (-1)' : 'Transpose Down (-1)'}
                 >
@@ -2417,7 +2417,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 <button
                   type="button"
                   disabled={notation === 'numbers' && !effectivePerformanceKey}
-                  onClick={() => onTransposeChange(transposeOffset + 1)}
+                  onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
                   className="p-2 text-app-text hover:text-app-action cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
                   title={notation === 'numbers' ? 'Step Key Up (+1)' : 'Transpose Up (+1)'}
                 >

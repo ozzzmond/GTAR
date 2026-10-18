@@ -26,9 +26,9 @@ import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
-import { normalizeMusicalKey, canonicalSongKey } from '../utils/musicalKey'
+import { normalizeMusicalKey, canonicalSongKey, keysArePitchEquivalent } from '../utils/musicalKey'
 import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
-import { declaredKey, resolveSongKeys, transposeContext } from '../utils/songKeySemantics'
+import { declaredKey, resolveSongKeys, transposeContext, wrapKeyOffset } from '../utils/songKeySemantics'
 import { transposeCanonicalSong } from '../utils/chartKeyAlignment'
 import { lookupSongMetadata, type SongMetadataResult } from '../utils/songMetadataClient'
 import { generateUUID } from '../utils/uuid'
@@ -59,6 +59,8 @@ interface DesktopEditorProps {
   onNewSong?: () => void
 }
 
+type ChartTextEdit = TextEdit & { chartState?: { key: string; originalKey: string; confirmedChartKey: string; transposeOffset: number } }
+
 const QUICK_GENRE_TAGS = ['Worship', 'OPM', 'Acoustic', 'Rock', 'Slow Rock', 'Encore']
 const QUICK_SECTIONS = ['[Intro]', '[Verse 1]', '[Chorus]', '[Bridge]', '[Solo]', '[Outro]', '[Tab]']
 
@@ -67,12 +69,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   onUpdateSong,
   onSaveSong,
   onClose,
-  transposeOffset,
+  transposeOffset: suppliedOffset,
   navigationGuardRef,
   recoveryDraftRef,
   onNewSong,
 }) => {
   const [editingSong, setEditingSong] = useState<ActiveSongState>(song)
+  // A failed text transformation must retain its rebased offset in the draft.
+  const [pendingOffset, setPendingOffset] = useState<{ source: number; value: number } | null>(null)
+  const transposeOffset = pendingOffset?.source === suppliedOffset ? pendingOffset.value : suppliedOffset
+  const [confirmedChartKey, setConfirmedChartKey] = useState(song.confirmedChartKey || '')
+  const [chartConfirmation, setChartConfirmation] = useState('')
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- A new external selection supersedes a pending text-transform offset.
+    setPendingOffset(null)
+  }, [suppliedOffset])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [insertAnchor, setInsertAnchor] = useState<HTMLButtonElement | null>(null)
   const [insertOpen, setInsertOpen] = useState(false)
@@ -80,7 +91,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   // Local editor state initialized from active song
   const [localTitle, setLocalTitle] = useState(song.title || '')
   const [localArtist, setLocalArtist] = useState(song.artist || '')
-  const [localKey, setLocalKey] = useState(song.rawContent && !declaredKey(song.rawContent).present ? '' : normalizeMusicalKey(song.key || '') ?? song.key ?? '')
+  const [localKey, setLocalKey] = useState(song.rawContent && !declaredKey(song.rawContent).present ? song.confirmedChartKey || '' : normalizeMusicalKey(song.key || '') ?? song.key ?? '')
   const [localOriginalKey, setLocalOriginalKey] = useState(song.originalKey || declaredKey(song.rawContent || '', true).key)
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
@@ -96,8 +107,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     title: value.title || '',
     artist: value.artist || '',
     // Compare the same raw-authoritative chart state used by the draft initializer.
-    key: value.rawContent && !declaredKey(value.rawContent).present ? '' : value.key || '',
+    key: value.rawContent && !declaredKey(value.rawContent).present ? value.confirmedChartKey || '' : value.key || '',
     originalKey: value.originalKey || '',
+    confirmedChartKey: value.confirmedChartKey || '',
     capo: value.capo || '',
     bpm: value.bpm || '',
     time: value.time || '',
@@ -167,6 +179,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     artist: localArtist,
     key: localKey,
     originalKey: localOriginalKey,
+    confirmedChartKey,
     capo: editingSong.capo || '',
     bpm: localBpm,
     time: localTime,
@@ -178,10 +191,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const saveStatus: 'SAVING' | 'SAVED' | 'FAILED' | 'UNSAVED' =
     isSaving ? 'SAVING' : saveFailed && !isSaved ? 'FAILED' : isSaved ? 'SAVED' : 'UNSAVED'
   useEffect(() => {
-    if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft }
+    if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft, transposeOffset }
     return () => { if (recoveryDraftRef) recoveryDraftRef.current = null }
   })
-  const keyContext = transposeContext({ key: localKey, originalKey: localOriginalKey, rawContent: localRawContent }, transposeOffset)
+  const keyContext = transposeContext({ key: localKey, confirmedChartKey, originalKey: localOriginalKey, rawContent: localRawContent }, transposeOffset)
   const keyConflict = keyContext.chartConflict || keyContext.originalConflict
   const autosave = (updated: Partial<ActiveSongState>) => {
     const isRedundant = Object.entries(updated).every(
@@ -329,7 +342,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       showToast('Invalid Original Key')
       return
     }
-    const currentKey = normalizeMusicalKey(localKey)
+    const currentKey = keyContext.chartEstimated ? '' : normalizeMusicalKey(keyContext.chartKey)
     if (keyConflict || (currentKey && currentKey.endsWith('m') !== validated.endsWith('m'))) {
       showToast('Resolve key metadata and matching major/minor modes before transposing')
       return
@@ -348,13 +361,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
     // Call deterministic transposition
     const transposed = transposeCanonicalSong(localRawContent, currentKey, validated)
+    const rebasedOffset = wrapKeyOffset(transposeOffset - transposed.semitones)
+    setPendingOffset({ source: suppliedOffset, value: rebasedOffset })
+    setConfirmedChartKey(transposed.key)
     setLocalKey(transposed.key)
     setLocalOriginalKey(validated)
     const alignedContent = syncCanonicalDirectives(transposed.rawContent, { originalKey: validated })
+    const previous: ChartTextEdit = { text: localRawContent, ...selection.current,
+      chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset } }
+    history.current.record(previous, { text: alignedContent, ...selection.current })
     setLocalRawContent(alignedContent)
 
     autosave({
       key: transposed.key,
+      confirmedChartKey: transposed.key,
+      transposeOffset: rebasedOffset,
       originalKey: validated,
       rawContent: alignedContent,
     })
@@ -365,10 +386,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching song identity resets the draft and undo history together.
     setEditingSong(song)
+    setPendingOffset(null)
+    setConfirmedChartKey(song.confirmedChartKey || '')
+    setChartConfirmation('')
     const parsedMeta = parseChordProDirectives(song.rawContent || '').metadata
     setLocalTitle(song.title || parsedMeta.title || '')
     setLocalArtist(song.artist || parsedMeta.artist || '')
-    const initKey = song.rawContent && !declaredKey(song.rawContent).present ? '' : normalizeMusicalKey(song.key || parsedMeta.key || '') ?? song.key ?? parsedMeta.key ?? ''
+    const initKey = song.rawContent && !declaredKey(song.rawContent).present ? song.confirmedChartKey || '' : normalizeMusicalKey(song.key || parsedMeta.key || '') ?? song.key ?? parsedMeta.key ?? ''
     setLocalKey(initKey)
     setLocalOriginalKey(song.originalKey || declaredKey(song.rawContent || '', true).key)
     setLocalBpm(song.bpm || (parsedMeta.tempo ? String(parsedMeta.tempo) : ''))
@@ -398,6 +422,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     requestNavigation(() => {
       const blank = createBlankCanonicalSong()
       setEditingSong(blank)
+      setPendingOffset(null)
+      setConfirmedChartKey('')
       setLocalTitle(blank.title)
       setLocalArtist(blank.artist)
       const initKey = canonicalSongKey(blank.key || '')
@@ -449,6 +475,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       title: resolvedTitle,
       artist: resolvedArtist,
       key: effectiveKey,
+      confirmedChartKey: confirmedChartKey || undefined,
       ...(localOriginalKey.trim() ? { originalKey: canonicalSongKey(localOriginalKey.trim()) } : { originalKey: undefined }),
       bpm: resolvedBpm,
       time: resolvedTime || undefined,
@@ -528,14 +555,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }
 
   // Raw text change handler (eliminates erratic angle brackets on the fly)
-  const handleRawContentChange = (newText: string, remember = true) => {
+  const handleRawContentChange = (newText: string, remember = true, restored?: ChartTextEdit['chartState']) => {
     const cleaned = standardizeChordProBrackets(newText)
     if (remember) history.current.record({ text: localRawContent, ...selection.current }, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
     setLocalRawContent(cleaned)
     const nextDirectives = parseChordProDirectives(cleaned)
     const previousDirectives = parseChordProDirectives(localRawContent)
     const metadata = nextDirectives.metadata
-    const updated: Partial<ActiveSongState> = { rawContent: cleaned }
+    const updated: Partial<ActiveSongState> = { rawContent: cleaned, confirmedChartKey: '' }
+    setConfirmedChartKey('')
     if (metadata.artist !== undefined || previousDirectives.metadata.artist !== undefined) {
       const artist = metadata.artist ?? ''
       setLocalArtist(artist)
@@ -546,7 +574,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       updated.title = metadata.title
     }
     const rawChart = declaredKey(cleaned)
-    if (!rawChart.conflict && (rawChart.present || declaredKey(localRawContent).present) && metadata.key !== previousDirectives.metadata.key) {
+    if (!rawChart.conflict && (rawChart.present || declaredKey(localRawContent).present) && rawChart.key !== localKey) {
       const normKey = rawChart.key
       setLocalKey(normKey)
       updated.key = normKey
@@ -572,6 +600,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       const y = String(metadata.year)
       setLocalYear(y)
       updated.year = y
+    }
+    if (restored) {
+      setLocalKey(restored.key)
+      setLocalOriginalKey(restored.originalKey)
+      setConfirmedChartKey(restored.confirmedChartKey)
+      setPendingOffset({ source: suppliedOffset, value: restored.transposeOffset })
+      Object.assign(updated, restored)
     }
     autosave(updated)
   }
@@ -982,7 +1017,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return
                 const textarea = e.currentTarget
-                const current: TextEdit = { text: localRawContent, start: textarea.selectionStart, end: textarea.selectionEnd }
+                const current: ChartTextEdit = { text: localRawContent, start: textarea.selectionStart, end: textarea.selectionEnd, chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset } }
                 selection.current = { start: current.start, end: current.end }
                 let next: TextEdit | undefined
                 if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
@@ -993,7 +1028,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
                   e.preventDefault()
                   next = e.key.toLowerCase() === 'y' || e.shiftKey ? history.current.redo(current) : history.current.undo(current)
-                  if (next) handleRawContentChange(next.text, false)
+                  if (next) handleRawContentChange(next.text, false, (next as ChartTextEdit).chartState)
                 } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
                   e.preventDefault()
                   next = indentText(current.text, current.start, current.end, e.shiftKey)
@@ -1219,6 +1254,30 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </div>
             </div>
 
+            <div className="mb-3 text-xs text-app-muted">
+              <p>Confirm the key of the authored chords to enable Original Key zero. Confirmation preserves current playback; selecting zero changes playback.</p>
+              <input aria-label="Confirm authored Chart Key" value={chartConfirmation}
+                onChange={e => setChartConfirmation(e.target.value)} placeholder="e.g. E or F#m"
+                className="bg-app-base p-2 rounded border border-app-border" />
+              <button type="button" data-testid="confirm-chart-key" disabled={!normalizeMusicalKey(chartConfirmation)}
+                onClick={() => {
+                  const key = normalizeMusicalKey(chartConfirmation)
+                  if (!key) return
+                  const declaration = declaredKey(localRawContent)
+                  if (declaration.present && (declaration.conflict || !keysArePitchEquivalent(declaration.key, key))) {
+                    showToast('Correct or remove the conflicting raw key directive before confirmation.')
+                    return
+                  }
+                  setConfirmedChartKey(key)
+                  setLocalKey(key)
+                  autosave({ key, confirmedChartKey: key, rawContent: localRawContent })
+                }} className="p-2 text-app-action">Confirm Chart Key</button>
+              {keyContext.originalRelative && <button type="button" data-testid="transpose-chart-to-original"
+                onClick={() => handleConfirmTransposeToOriginalKey(localOriginalKey)} className="p-2 text-app-action">
+                Transpose chord text to Original Key (preserve playback)
+              </button>}
+            </div>
+
             {/* Canonical Metadata Inputs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {/* Chart key describes stored chord text */}
@@ -1236,11 +1295,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       const canonical = normalizeMusicalKey(val)
                       if (canonical) {
                         setLocalKey(canonical)
-                        autosave({ key: canonical })
+                        setConfirmedChartKey('')
+                        autosave({ key: canonical, confirmedChartKey: '' })
                       } else {
                         setLocalKey(val)
                         if (val.trim() === '') {
-                          autosave({ key: '' })
+                          setConfirmedChartKey('')
+                          autosave({ key: '', confirmedChartKey: '' })
                         }
                       }
                     }}

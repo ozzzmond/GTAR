@@ -106,6 +106,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
             {context.chartConflict || context.originalConflict ? 'Conflicting key metadata. ' : ''}
             Select Transpose Key: {context.originalRelative ? 'relative to Original Key' : 'relative to Chart Key'}
           </label>
+          {context.chartEstimated && <p className="text-xs text-app-muted mb-3">Chart key is an estimate. Confirm authored Chart Key in Song Details to enable Original Key zero.</p>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {offsets.map((offset) => {
               const targetKey = transposeKey(baseKey, offset)

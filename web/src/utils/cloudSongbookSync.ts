@@ -105,6 +105,7 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       artist: (s.artist || '').trim(),
       key: (s.key || '').trim(),
       originalKey: (s.originalKey || '').trim(),
+      ...(s.confirmedChartKey ? { confirmedChartKey: s.confirmedChartKey } : {}),
       capo: (s.capo || '').trim(),
       bpm: (s.bpm || '').trim(),
       time: (s.time || '').trim(),
@@ -471,6 +472,7 @@ export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
     (a.artist || '') === (b.artist || '') &&
     (a.key || '') === (b.key || '') &&
     (a.originalKey || '') === (b.originalKey || '') &&
+    (a.confirmedChartKey || '') === (b.confirmedChartKey || '') &&
     (a.capo || '') === (b.capo || '') &&
     (a.bpm || '') === (b.bpm || '') &&
     (a.time || '') === (b.time || '') &&

@@ -170,3 +170,135 @@ test('109 field QA: actual stage renders the same raw E performance as its picke
   await render();assert.deepEqual(chords(),['E','Esus4']);assert.equal(stale.key,'G');assert.equal(stale.originalKey,'E')
  }finally{await act(async()=>root.unmount())}
 })
+
+
+test('111: confirmed chart key authorizes original zero without changing authored text or saved playback',()=>{
+ const raw='{original_key: E}\n[G] [D] [Em]'
+ const legacy={...song,rawContent:raw}
+ assert.equal(transposeContext(legacy,0).originalRelative,false)
+ const confirmed={...legacy,confirmedChartKey:'G'}
+ const c=transposeContext(confirmed,0)
+ assert.equal(c.originalRelative,true);assert.equal(c.displayOffset,3);assert.equal(c.performanceKey,'G')
+ for(const [ui,expected] of [[0,['E','B','C#m']],[2,['F#','C#','D#m']]]){
+  const parsed=parseGtarSong(raw,c.toStoredOffset(ui));assert.deepEqual(parsed.lines.flatMap(l=>l.chords || (l.segments || []).filter(s=>s.chord).map(s=>s.chord)),expected)
+ }
+ assert.equal(confirmed.rawContent,raw)
+})
+
+test('111: explicit chart E confirmation preserves raw and C# playback; original zero then saves/reloads E',async()=>{
+ localStorage.clear();const raw='{title: Fixture}\n{original_key: E}\n[E]My [Esus4]song'
+ let stored={...song,rawContent:raw,transposeOffset:-3},root=createRoot(document.getElementById('root'))
+ const update=partial=>{stored={...stored,...partial};persistLibrary({songs:[stored],setlists:[]});return true}
+ const mount=()=>act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:stored.transposeOffset,onUpdateSong:update,onSaveSong:update})))
+ const chords=()=>[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent)
+ try{
+  await mount();await click('[aria-label="Song Details & Metadata"]')
+  await change(document.querySelector('[aria-label="Confirm authored Chart Key"]'),'E')
+  await click('[data-testid="confirm-chart-key"]')
+  assert.equal(stored.confirmedChartKey,'E');assert.equal(stored.rawContent,raw);assert.equal(stored.transposeOffset,-3);assert.deepEqual(chords(),['C#','C#sus4'])
+  assert.equal(transposeContext(stored,-3).displayOffset,-3)
+  await act(async()=>root.render(React.createElement(KeyPickerModal,{isOpen:true,song:stored,currentOffset:-3,onClose(){},onSelectOffset:n=>update({transposeOffset:n}),onReset(){}})))
+  await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)')).click())
+  await mount();assert.deepEqual(chords(),['E','Esus4']);await shortcut('s');assert.equal(stored.transposeOffset,0)
+  const reloaded=readPersistedLibrary().songs[0];assert.equal(reloaded.confirmedChartKey,'E');assert.equal(transposeContext(reloaded,0).originalRelative,true);assert.doesNotMatch(reloaded.rawContent,/\{key:/)
+ }finally{await act(async()=>root.unmount())}
+})
+
+
+test('111: text transposition rebases nonzero offset once, including slash bass, Save/reload and recovery',async()=>{
+ for(const fail of [false,true]){
+  localStorage.clear();let stored={...song,transposeOffset:2};const recovery={current:null},root=createRoot(document.getElementById('root'))
+  const update=partial=>{if(fail)return false;stored={...stored,...partial};persistLibrary({songs:[stored],setlists:[]});return true}
+  const mount=()=>act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:stored.transposeOffset,onUpdateSong:update,onSaveSong:update,recoveryDraftRef:recovery})))
+  const chords=()=>[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent)
+  try{
+   await mount();const before=chords();assert.deepEqual(before,['A','E/G#'])
+   await click('[aria-label="Song Details & Metadata"]');await click('[data-testid="transpose-chart-to-original"]')
+   assert.deepEqual(chords(),before);await shortcut('s')
+   const result=fail?recovery.current():readPersistedLibrary().songs[0]
+   assert.equal(result.key,'E');assert.equal(result.originalKey,'E');assert.equal(result.transposeOffset,5)
+   assert.match(result.rawContent,/\[E\]My \[B\/D#\]song/)
+   if(!fail){
+    await mount();assert.deepEqual(chords(),before);await shortcut('s');assert.equal(stored.transposeOffset,5)
+    await shortcut('z',document.querySelector('textarea'));await mount();assert.equal(stored.transposeOffset,2);assert.equal(stored.key,'G');assert.deepEqual(chords(),before)
+    await shortcut('y',document.querySelector('textarea'));await mount();assert.equal(stored.transposeOffset,5);assert.equal(stored.key,'E');assert.deepEqual(chords(),before)
+   }
+   else{assert.equal(stored.transposeOffset,2);assert.equal(stored.rawContent,song.rawContent)}
+  }finally{await act(async()=>root.unmount())}
+ }
+})
+
+test('111: confirmed chart survives backup and sync; confirmation-only changes are not discarded',()=>{
+ const {normalizeBackupSong,createBackupPayload}=require('../src/utils/jsonBackup.ts')
+ const {computeSongbookChecksum,songEquals}=require('../src/utils/cloudSongbookSync.ts')
+ const raw='{original_key: E}\n[E]My [Esus4]song',confirmed={...song,key:'E',confirmedChartKey:'E',rawContent:raw,transposeOffset:-3}
+ const normalized=normalizeBackupSong(confirmed);assert.equal(normalized.confirmedChartKey,'E');assert.equal(normalized.rawContent,raw);assert.equal(normalized.transposeOffset,-3)
+ const backup=createBackupPayload([confirmed],[{id:'list',name:'List',songs:[{id:song.id,title:song.title}]}])
+ assert.equal(backup.songs[0].confirmedChartKey,'E');assert.equal(backup.setlists[0].songs[0].id,song.id)
+ const legacy={...confirmed};delete legacy.confirmedChartKey
+ assert.notEqual(require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(legacy),require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(confirmed));assert.equal(songEquals(legacy,confirmed),false);assert.notEqual(computeSongbookChecksum({songs:[legacy],setlists:[]}),computeSongbookChecksum({songs:[confirmed],setlists:[]}))
+ localStorage.clear();persistLibrary({songs:[normalized],setlists:[]});assert.equal(readPersistedLibrary().songs[0].confirmedChartKey,'E')
+})
+
+test('111: confirmed E/E zero, non-tonic first chord, capo, minor and enharmonic spelling keep semantic basis',()=>{
+ for(const data of [
+  {key:'E',originalKey:'E',confirmedChartKey:'E',rawContent:'[E]My [Esus4]song',capo:'2'},
+  {key:'G',originalKey:'E',confirmedChartKey:'G',rawContent:'[D]intro [G]song'},
+  {key:'Gm',originalKey:'Em',confirmedChartKey:'Gm',rawContent:'[Dm]intro [Gm]song'},
+  {key:'C#',originalKey:'Db',confirmedChartKey:'C#',rawContent:'[G#]intro'}]){
+  const c=transposeContext(data,0);assert.equal(c.originalRelative,true)
+  assert.equal(transposeContext(data,c.toStoredOffset(0)).performanceKey,data.originalKey)
+ }
+ const invalid=transposeContext({...song,confirmedChartKey:'H'},0);assert.equal(invalid.originalRelative,false);assert.equal(invalid.chartConflict,true)
+})
+
+test('111: stage cast broadcasts the same performance key and actual offset as rendered chords',async()=>{
+ const {StageView}=require('../src/components/StageView.tsx'),{stageCast}=require('../src/utils/stageCast.ts')
+ const previous=stageCast.broadcastState;let received;stageCast.broadcastState=state=>{received=state}
+ const root=createRoot(document.getElementById('root'))
+ try{
+  await act(async()=>root.render(React.createElement(StageView,{song, songs:[song],activeSongIndex:0,onSelectSongIndex(){},onOpenSetlistDrawer(){},transposeOffset:-3,onTransposeChange(){}})))
+  assert.equal(received.effectiveKey,'E');assert.equal(received.transposeOffset,-3);assert.equal(received.song.rawContent,song.rawContent)
+  assert.deepEqual([...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent),['E','B/D#'])
+  const app=fs.readFileSync(require.resolve('../src/App.tsx'),'utf8');assert.match(app,/effectiveKey: transposeContext\(currentSong, currentSong.transposeOffset \|\| 0\).performanceKey/)
+ }finally{stageCast.broadcastState=previous;await act(async()=>root.unmount())}
+})
+
+
+test('111: conflicting raw confirmation is rejected; failed confirmation keeps recoverable draft and CAS baseline',async()=>{
+ for(const conflict of [true,false]){
+  localStorage.clear();const raw=conflict?song.rawContent:'{original_key: E}\n[E]My [Esus4]song'
+  const stale={...song,rawContent:raw,transposeOffset:-3};persistLibrary({songs:[stale],setlists:[]})
+  const baseline=getLastKnownPersistedLibraryRaw(),recovery={current:null},root=createRoot(document.getElementById('root'));let writes=0
+  try{
+   await act(async()=>root.render(React.createElement(DesktopEditor,{song:stale,transposeOffset:-3,recoveryDraftRef:recovery,onUpdateSong:()=>{writes++;return false}})))
+   await click('[aria-label="Song Details & Metadata"]');await change(document.querySelector('[aria-label="Confirm authored Chart Key"]'),'E');await click('[data-testid="confirm-chart-key"]')
+   assert.equal(writes,conflict?0:1);assert.equal(getLastKnownPersistedLibraryRaw(),baseline);assert.equal(readPersistedLibrary().songs[0].key,'G')
+   if(conflict)assert.match(document.body.textContent,/Correct or remove the conflicting raw key directive/)
+   else{assert.equal(recovery.current().confirmedChartKey,'E');assert.equal(recovery.current().rawContent,raw);assert.equal(recovery.current().transposeOffset,-3)}
+  }finally{await act(async()=>root.unmount())}
+ }
+ const {validateBackupEntries}=require('../src/utils/jsonBackup.ts');assert.ok(validateBackupEntries([{...song,confirmedChartKey:'H'}],[]).some(e=>e.includes('confirmedChartKey')))
+})
+
+
+test('111 prior review: key shorthand survives Save, repairs synchronize stale entity, steppers wrap stored boundaries',async()=>{
+ for(const raw of [song.rawContent.replace('{key: G}','{k: G}'),song.rawContent+'\n{key: A}']){
+  let stored={...song,key:raw.includes('{key: A}')?'A':'G',rawContent:raw};const root=createRoot(document.getElementById('root'))
+  const update=partial=>{stored={...stored,...partial};return true}
+  try{
+   await act(async()=>root.render(React.createElement(DesktopEditor,{song:stored,transposeOffset:0,onUpdateSong:update,onSaveSong:update})))
+   if(raw.includes('{key: A}'))await change(document.querySelector('textarea'),raw.replace('\n{key: A}',''))
+   await shortcut('s');assert.equal(stored.key,'G');assert.equal(transposeContext(stored,0).originalRelative,true);assert.match(stored.rawContent,/\[(?:G)\]My \[D\/F#\]song/)
+  }finally{await act(async()=>root.unmount())}
+ }
+ const {StageView}=require('../src/components/StageView.tsx')
+ for(const [offset,delta] of [[11,1],[-11,-1]]){
+  const root=createRoot(document.getElementById('root'));let selected
+  try{
+   await act(async()=>root.render(React.createElement(StageView,{song,songs:[song],activeSongIndex:0,onSelectSongIndex(){},onOpenSetlistDrawer(){},transposeOffset:offset,onTransposeChange:n=>{selected=n}})))
+   const button=document.querySelector(delta===1?'[title="Step Key Up (+1 semitone)"], [title="Transpose Up (+1)"]':'[title="Step Key Down (-1 semitone)"], [title="Transpose Down (-1)"]');assert.ok(button);await act(async()=>button.click())
+   assert.equal(selected,transposeContext(song,offset).toStoredOffset(transposeContext(song,offset).displayOffset+delta));assert.ok(selected>=-11 && selected<=11)
+  }finally{await act(async()=>root.unmount())}
+ }
+})

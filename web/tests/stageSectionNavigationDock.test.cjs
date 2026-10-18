@@ -352,9 +352,9 @@ test('EXISTING_STAGE_CONTINUITY_REGRESSION: PageUp/PageDown section shortcuts, L
   // Spacebar autoscroll
   assert.ok(stageViewSource.includes("e.code === 'Space'"), 'Spacebar shortcut preserved')
 
-  // 108-dev.1g Transpose stepper
-  assert.ok(stageViewSource.includes('onTransposeChange(transposeOffset - 1)'), 'Transpose down preserved')
-  assert.ok(stageViewSource.includes('onTransposeChange(transposeOffset + 1)'), 'Transpose up preserved')
+  // Transpose steppers translate displayed semitones to bounded stored offsets.
+  assert.ok(stageViewSource.includes('onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))'), 'Transpose down preserved')
+  assert.ok(stageViewSource.includes('onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))'), 'Transpose up preserved')
 
   // Setlist drawer & pill
   assert.ok(stageViewSource.includes('onOpenSetlistDrawer()'), 'Setlist drawer action preserved')

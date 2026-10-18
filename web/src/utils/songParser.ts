@@ -497,6 +497,7 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
         case 'st':
           artist = value
           break
+        case 'k':
         case 'key':
           key = value
           break
