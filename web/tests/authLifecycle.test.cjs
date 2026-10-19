@@ -80,3 +80,52 @@ test(`owner gate preserves presentation lifecycle and expiry: ${route}`,async()=
 })
 
 }
+
+// JSDOM models same-origin persistent storage; real browser QA remains separate.
+for (const route of ['/stage/present?view=present', '/tv']) {
+  for (const status of ['valid', 'expired', 'revoked', 'signed-out']) {
+    test(`presentation popup persisted-session gate: ${route} ${status}`, async () => {
+      const operator = new JSDOM('', { url: 'https://dev.gtar-web.pages.dev/' })
+      const popup = new JSDOM('<div id="root"></div>', { url: `https://dev.gtar-web.pages.dev${route}` })
+      // Same-origin windows share localStorage, but this popup starts with empty sessionStorage.
+      Object.defineProperty(popup.window, 'localStorage', { value: operator.window.localStorage })
+      const previousNavigator = Object.getOwnPropertyDescriptor(global, 'navigator')
+      Object.defineProperty(global, 'navigator', { configurable: true, value: popup.window.navigator })
+      const previous = { window: global.window, document: global.document, localStorage: global.localStorage, sessionStorage: global.sessionStorage, fetch: global.fetch, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT }
+      const { AuthGate } = require('../src/components/AuthGate.tsx')
+      const { StagePresentationView } = require('../src/components/StagePresentationView.tsx')
+      const { createDurableSession, SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
+      const now = Date.now()
+      const user = { id: 'owner-id', sub: 'owner', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' }
+      const stored = createDurableSession(user, undefined, status === 'expired' ? now - 31 * 86400000 : now,
+        { sessionToken: 'private-server-session', role: 'admin', access_status: 'active' })
+      if (status !== 'signed-out') operator.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored))
+      Object.assign(global, { window: popup.window, document: popup.window.document, localStorage: popup.window.localStorage, sessionStorage: popup.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
+      window.google = {}
+      global.fetch = async () => status === 'revoked'
+        ? new Response(JSON.stringify({ error: 'Session revoked' }), { status: 401 })
+        : new Response(JSON.stringify({ success: true, user: { ...user, google_sub: user.sub, display_name: 'Owner' } }))
+      const root = createRoot(document.getElementById('root'))
+      try {
+        assert.equal(sessionStorage.length, 0)
+        await act(async () => root.render(React.createElement(AuthGate, null, React.createElement(StagePresentationView))))
+        if (status === 'valid') {
+          assert.match(document.body.textContent, /Stage Teleprompter Ready/)
+          assert.doesNotMatch(document.body.textContent, /Owner Access/)
+        } else {
+          assert.match(document.body.textContent, /Owner Access/)
+          assert.doesNotMatch(document.body.textContent, /Stage Teleprompter Ready/)
+        }
+        assert.equal(window.location.pathname + window.location.search, route)
+        assert.equal(window.location.href.includes('private-server-session'), false)
+      } finally {
+        await act(async () => root.unmount())
+        popup.window.close()
+        operator.window.close()
+        Object.assign(global, previous)
+        if (previousNavigator) Object.defineProperty(global, 'navigator', previousNavigator)
+        else delete global.navigator
+      }
+    })
+  }
+}
