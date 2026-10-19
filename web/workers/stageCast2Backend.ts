@@ -6,8 +6,9 @@ export const POLICY = Object.freeze({ pairingMs: 120_000, sessionMs: 600_000, ti
 export type State = 'CREATED' | 'WAITING_FOR_CONTROLLER' | 'AWAITING_TV_APPROVAL' | 'PAIRED' | 'DISCONNECTED' | 'EXPIRED' | 'REVOKED'
 type Role = 'controller' | 'receiver'
 const transitions: Record<State, State[]> = {
-  CREATED: ['WAITING_FOR_CONTROLLER'], WAITING_FOR_CONTROLLER: ['AWAITING_TV_APPROVAL', 'EXPIRED', 'REVOKED'],
-  AWAITING_TV_APPROVAL: ['PAIRED', 'EXPIRED', 'REVOKED'], PAIRED: ['DISCONNECTED', 'EXPIRED', 'REVOKED'],
+  CREATED: ['WAITING_FOR_CONTROLLER'], WAITING_FOR_CONTROLLER: ['PAIRED', 'EXPIRED', 'REVOKED'],
+  // Legacy pending sessions can only expire or be revoked; new claims use possession consent.
+  AWAITING_TV_APPROVAL: ['EXPIRED', 'REVOKED'], PAIRED: ['DISCONNECTED', 'EXPIRED', 'REVOKED'],
   DISCONNECTED: ['PAIRED', 'EXPIRED', 'REVOKED'], EXPIRED: [], REVOKED: [],
 }
 export function transition(from: State, to: State): State {
@@ -205,11 +206,17 @@ export class StageCast2Hub {
         this.limit('owner:' + await digest(owner), 10)
         if (s.state !== 'WAITING_FOR_CONTROLLER') throw new Denial()
         if (++s.guesses > POLICY.guesses) { this.end(s, 'REVOKED'); throw new Denial() }
-        if (typeof b.pin !== 'string' || !/^\d{6}$/.test(b.pin) || await digest(s.ref + b.pin) !== s.pinHash) throw new Denial()
-        s.state = transition(s.state, 'AWAITING_TV_APPROVAL')
+        if (typeof b.pin !== 'string' || !/^\d{6}$/.test(b.pin) || await digest(s.ref + b.pin) !== s.pinHash) {
+          if (s.guesses >= POLICY.guesses) this.end(s, 'REVOKED')
+          throw new Denial()
+        }
+        if (this.rt.now() >= s.pairingDeadline) { this.end(s, 'EXPIRED'); throw new Denial() }
+        // Possession of the displayed PIN plus an active server-authorized account is consent.
+        // Serial persistence binds the first claim to its owner and burns the PIN before reply.
+        s.state = transition(s.state, 'PAIRED')
         const credential = secret()
         s.controllerHash = await digest(credential); s.owner = owner; s.requestId = secret(); s.pinHash = ''
-        return reply({ sessionId: s.ref, requestId: s.requestId, controllerCredential: credential, expiresAt: s.deadline })
+        return reply({ state: s.state, sessionId: s.ref, requestId: s.requestId, controllerCredential: credential, expiresAt: s.deadline })
       }
       if (b.role !== 'controller' && b.role !== 'receiver') throw new Denial()
       const role = b.role
@@ -219,12 +226,6 @@ export class StageCast2Hub {
           shape(b, ['ref', 'role', 'credential'])
           return reply({ sessionId: s.ref, state: s.state, requestId: s.requestId, expiresAt: s.deadline,
             sequence: s.sequence, inboundSequence: s.inbound[role] })
-        case '/decide':
-          shape(b, ['ref', 'role', 'credential', 'requestId', 'approve'])
-          if (role !== 'receiver' || s.state !== 'AWAITING_TV_APPROVAL' || b.requestId !== s.requestId || typeof b.approve !== 'boolean') throw new Denial()
-          if (!b.approve) this.end(s, 'REVOKED')
-          else s.state = transition(s.state, 'PAIRED')
-          return reply({ state: s.state })
         case '/revoke':
           shape(b, ['ref', 'role', 'credential'])
           this.end(s, 'REVOKED'); return reply({ state: s.state })

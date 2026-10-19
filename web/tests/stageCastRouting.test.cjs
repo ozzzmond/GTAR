@@ -324,27 +324,17 @@ test('Source contract verification: StageView guards Cast on iOS and provides Tv
   assert.match(content, /<TvPresentationModal[\s\S]*?isOpen=\{isTvPresentationModalOpen\}/)
 })
 
-test('Stage Options integration: proves Sync to TV action exists inside Stage Options and wires pairing flow', () => {
-  const stageViewFile = path.resolve(__dirname, '../src/components/StageView.tsx')
-  const content = fs.readFileSync(stageViewFile, 'utf8')
-
-  // 1. Asserts Stage Options bottom sheet contains TV Sync action
-  assert.match(content, /data-testid="stage-options-sync-tv-btn"/, 'Stage Options must include TV Sync button')
-  assert.match(content, /TV Sync/, 'Stage Options must display TV Sync label')
-  assert.match(content, /Sync to TV/, 'Stage Options button text must say Sync to TV when inactive')
-
-  // 2. Asserts clicking TV Sync calls handleTogglePresentation and closes menu
-  assert.match(content, /setIsStageMenuOpen\(false\)[\s\S]*?await handleTogglePresentation\(\)/)
-
-  // 3. Asserts handleTogglePresentation checks recommendedMode === 'tv_pairing' and triggers pairing flow
-  assert.match(content, /const handleTogglePresentation = useCallback/)
-  assert.match(content, /handleTogglePresentation[\s\S]*?stageCast\.getPresentationCapabilities\(\)/)
+test('Stage Options groups receiver preferences; Cast toolbar owns pairing', () => {
+  const content = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  const options = fs.readFileSync(path.resolve(__dirname, '../src/components/TvPresentationOptions.tsx'), 'utf8')
+  assert.match(content, /<TvPresentationOptions \/>/)
+  assert.match(options, /TV Presentation \/ TV Sync/)
+  assert.match(options, /stageCast2Controller.setChords/)
+  assert.doesNotMatch(content, /stage-options-sync-tv-btn/)
   assert.match(content, /handleTogglePresentation[\s\S]*?recommendedMode === 'tv_pairing'[\s\S]*?setIsTvPresentationModalOpen\(true\)/)
-
-  // 4. Asserts top bar Cast button also reuses handleTogglePresentation (no duplicate presentation logic)
-  assert.match(content, /<Cast className="w-4 h-4" \/>/)
   assert.match(content, /onClick=\{handleTogglePresentation\}/)
 })
+
 test('Stage Cast Security: postMessage restricts targetOrigin and validates event origin', () => {
   const oldWin = globalThis.window
   try {

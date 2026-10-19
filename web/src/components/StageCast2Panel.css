@@ -81,7 +81,7 @@
   letter-spacing: .15em;
   font-family: monospace;
   font-weight: 700;
-  color: var(--custom-chord-color, #E5A93C);
+  color: var(--custom-stage-chord, #E5A93C);
 }
 .cast2-check {
   display: flex !important;
@@ -89,7 +89,8 @@
   gap: 12px;
 }
 .cast2-lyrics {
-  height: 65dvh;
+  min-height: 0;
+  flex: 1;
   overflow: auto;
   display: grid;
   gap: 32px;
@@ -102,3 +103,12 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+.cast2-tv { height: 100dvh; display: flex; flex-direction: column; }
+.cast2-tv > h1 { flex: none; }
+.cast2-tv details { text-align: left; font-size: 1rem; }
+.cast2-tv summary { cursor: pointer; }
+.cast2-controller { color: var(--custom-uiPrimaryText, #EEE8D5); }
+.cast2-scanner video { width: 100%; max-height: 40dvh; border-radius: 8px; }
+.cast2-photo { cursor: pointer; }
+.cast2-photo input { max-width: 100%; }

@@ -1,7 +1,11 @@
-import React, { useState } from 'react'
+import React, { useState, useSyncExternalStore } from 'react'
 import { Tv, Copy, Check, Monitor, X } from 'lucide-react'
 import { stageCast } from '../utils/stageCast'
+import { stageCast2Controller } from '../utils/stageCast2Controller'
 import { StageCast2Panel } from './StageCast2Panel'
+
+const subscribe = (listener: () => void) => stageCast2Controller.subscribe(listener)
+const isConnected = () => stageCast2Controller.getView().state === 'CONNECTED'
 
 export interface TvPresentationModalProps {
   isOpen: boolean
@@ -15,6 +19,7 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
   detectedLanIp,
 }) => {
   const [copied, setCopied] = useState(false)
+  const connected = useSyncExternalStore(subscribe, isConnected, () => false)
 
   if (!isOpen) return null
 
@@ -84,38 +89,40 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
               </div>
             </div>
 
-            <p className="text-xs text-app-muted leading-relaxed">
-              Open this bookmarkable URL on your TV or secondary display browser:
-            </p>
+            {!connected && <>
+              <p className="text-xs text-app-muted leading-relaxed">
+                Open this bookmarkable URL on your TV or secondary display browser:
+              </p>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={pageUrl}
-                className="flex-1 px-3 py-2 text-xs font-mono bg-app-base border border-app-border rounded-lg text-app-heading focus:outline-none select-all truncate"
-                aria-label="TV Page URL"
-              />
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="px-3 py-2 text-xs font-bold rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy</span>
-                  </>
-                )}
-              </button>
-            </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={pageUrl}
+                  className="flex-1 px-3 py-2 text-xs font-mono bg-app-base border border-app-border rounded-lg text-app-heading focus:outline-none select-all truncate"
+                  aria-label="TV Page URL"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="px-3 py-2 text-xs font-bold rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
 
-            {/* Integrated Stage Cast 2.0 P2 Controller */}
+            </>}
+            {/* Integrated connection controls */}
             <div className="pt-2 border-t border-app-border/40">
               <StageCast2Panel />
             </div>

@@ -8,25 +8,26 @@ const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
 
-test('P2 UI: labelled mobile/tablet/TV controls, QR, countdown, explicit approval, safe controller auth', async () => {
+test('P2 UI: labelled mobile/tablet/TV controls, QR, clean projection, possession pairing, safe controller auth', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173/tv/cast2' })
-  const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval']
+  const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval', 'WebSocket']
   const prior = Object.fromEntries(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   const timers = new Map()
   let nextTimer = 0
-  const calls = []
+  const calls = [], sockets = []
   const ref = 'a'.repeat(64), requestId = 'c'.repeat(64)
   let state = 'WAITING_FOR_CONTROLLER'
   for (const [k, value] of Object.entries({ window: dom.window, document: dom.window.document, history: dom.window.history,
     navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true,
     setInterval: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id },
     clearInterval: id => timers.delete(id),
+    WebSocket: class { readyState = 0; send() {} close() {} constructor() { sockets.push(this); queueMicrotask(() => { this.readyState = 1; this.onopen?.() }) } },
     fetch: async (url, options) => {
       const body = JSON.parse(options.body); calls.push({ url, options, body })
       const data = url.endsWith('/create') ? { ref, pin: '000123', receiverCredential: 'b'.repeat(64), pairingExpiresAt: Date.now() + 120000, expiresAt: Date.now() + 600000 }
-        : url.endsWith('/claim') ? { sessionId: ref, controllerCredential: 'd'.repeat(64), expiresAt: Date.now() + 600000 }
+        : url.endsWith('/claim') ? { state: 'PAIRED', sessionId: ref, controllerCredential: 'd'.repeat(64), expiresAt: Date.now() + 600000 }
           : url.endsWith('/status') ? { sessionId: ref, state, requestId, inboundSequence: 0 }
-            : { state: body.approve ? 'PAIRED' : 'REVOKED' }
+            : url.endsWith('/ticket') ? { ticket: 'e'.repeat(64) } : { state: 'REVOKED' }
       return Response.json(data)
     },
   })) Object.defineProperty(globalThis, k, { configurable: true, writable: true, value })
@@ -46,19 +47,34 @@ test('P2 UI: labelled mobile/tablet/TV controls, QR, countdown, explicit approva
     assert.equal(document.querySelector('img').alt, 'Scan to open the authenticated GTAR controller')
     assert.match(document.querySelector('img').src, /^data:image\/png;base64,/)
     assert.match(document.body.textContent, /000123/)
-    assert.match(document.querySelector('[role=status]').textContent, /remaining/)
+    assert.match(document.body.textContent, /Pairing expires in/)
     assert.equal(calls[0].options.headers.Authorization, undefined)
     for (const width of [390, 768, 1920]) {
       dom.window.innerWidth = width; dom.window.dispatchEvent(new dom.window.Event('resize'))
       assert.ok([...document.querySelectorAll('input')].every(input => input.closest('label')))
       assert.ok(document.querySelector('main'))
     }
-    state = 'AWAITING_TV_APPROVAL'
+    state = 'PAIRED'
     await act(async () => { for (const t of timers.values()) if (t.delay === 5000) await t.fn() })
-    assert.ok([...document.querySelectorAll('button')].find(b => b.textContent === 'Reject controller'))
     assert.equal(calls.some(c => c.url.endsWith('/decide')), false)
-    await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Approve controller').click())
-    assert.deepEqual(calls.find(c => c.url.endsWith('/decide')).body, { ref, role: 'receiver', credential: 'b'.repeat(64), requestId, approve: true })
+    const snapshot = { songId: 'song', displayTitle: 'Amazing Grace', lines: [{ type: 'LYRIC', lyrics: 'How sweet the sound' }],
+      chordsVisible: false, transpose: { offset: 2, effectiveKey: 'D' }, position: { lineIndex: 0 },
+      scroll: { top: 10, fraction: .5 }, mode: { columns: 1, notation: 'chords' } }
+    await act(async () => sockets[0].onmessage({ data: JSON.stringify({ version: 1, type: 'PRESENTATION_SNAPSHOT',
+      direction: 'SERVER_TO_RECEIVER', sessionId: ref, timestamp: Date.now(), sequence: 1, payload: { snapshot } }) }))
+    assert.match(document.body.textContent, /Amazing Grace|How sweet the sound/)
+    assert.doesNotMatch(document.body.textContent, /Transpose/)
+    const viewport = document.querySelector('.cast2-lyrics')
+    Object.defineProperty(viewport, 'scrollHeight', { value: 1000 })
+    Object.defineProperty(viewport, 'clientHeight', { value: 400 })
+    await act(async () => dom.window.dispatchEvent(new dom.window.Event('resize')))
+    assert.equal(viewport.scrollTop, 300)
+
+    assert.doesNotMatch(document.body.textContent, /TV Browser Presentation Page|remaining|End session|Approve|Reject/)
+    await act(async () => dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' })))
+    assert.match(document.body.textContent, /End session|Return to presentation/)
+    await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Return to presentation').click())
+    assert.doesNotMatch(document.body.textContent, /End session/)
     await act(async () => root.render(null))
     dom.window.history.replaceState(null, '', '/#cast2=' + ref)
     const session = { version: 1, sessionToken: 'gtar-session-only', token: 'OAUTH_NEVER_FORWARD', idToken: 'ID_NEVER_FORWARD',
@@ -66,7 +82,8 @@ test('P2 UI: labelled mobile/tablet/TV controls, QR, countdown, explicit approva
     await act(async () => root.render(React.createElement(React.StrictMode, null,
       React.createElement(AuthContext.Provider, { value: { session } }, React.createElement(StageCast2Panel)))))
     assert.equal(dom.window.location.hash, '')
-    assert.equal(document.querySelector('input').value, ref)
+    assert.equal(document.querySelector('input[pattern="[a-f0-9]{64}"]').value, ref)
+    assert.match(document.body.textContent, /Scan TV QR|Choose QR photo/);
     const pinInput = document.querySelector('input[inputmode=numeric]')
     await act(async () => {
       Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(pinInput, '000123')

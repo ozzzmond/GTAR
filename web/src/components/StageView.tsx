@@ -1,3 +1,4 @@
+import { TvPresentationOptions } from './TvPresentationOptions'
 import { transposeContext } from '../utils/songKeySemantics'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
 import React, { useState, useLayoutEffect, useEffect, useRef, useMemo, useCallback } from 'react'
@@ -21,7 +22,6 @@ import {
   SkipBack,
   SkipForward,
   Cast,
-  Tv,
   SlidersHorizontal,
 } from 'lucide-react'
 import { StageControlDock } from './StageControlDock'
@@ -2626,31 +2626,7 @@ export const StageView: React.FC<StageViewProps> = ({
               </div>
             </div>
 
-            {/* --- Sync to TV / Stage Cast Action --- */}
-            <div className="flex items-center gap-2 mb-5">
-              <span className="text-xs font-mono text-app-muted w-20 shrink-0">TV Sync</span>
-              <button
-                type="button"
-                data-testid="stage-options-sync-tv-btn"
-                onClick={async () => {
-                  setIsStageMenuOpen(false)
-                  await handleTogglePresentation()
-                }}
-                className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer flex-1 ${
-                  isCastActive
-                    ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
-                    : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
-                }`}
-                title={
-                  isCastActive
-                    ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
-                    : 'Sync to TV / Secondary Display (AirPlay, Smart TV, or Teleprompter pairing)'
-                }
-              >
-                <Tv className="w-4 h-4" />
-                <span>{isCastActive ? 'Disconnect TV Sync' : 'Sync to TV'}</span>
-              </button>
-            </div>
+            <TvPresentationOptions />
 
             {/* --- Exit performance mode --- */}
             {inPerformanceMode && (

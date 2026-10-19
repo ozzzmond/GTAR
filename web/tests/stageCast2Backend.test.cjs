@@ -44,7 +44,7 @@ async function fixture(storage = new MemoryStorage()) {
   const decide = (s, c, approve = true) => call('/decide', { ...receiver(s), requestId: c.requestId, approve })
   const paired = async () => {
     const s = await create(), c = await claim(s)
-    assert.equal((await decide(s, c)).state, 'PAIRED')
+    assert.equal((await call('/status', receiver(s))).state, 'PAIRED')
     return { s, c }
   }
   const connectTicket = async ticket => {
@@ -91,24 +91,25 @@ test('PIN_FORMAT: rejection sampling, leading zeros, cryptographic distinct refe
   const f = await fixture(), a = await f.create(), b = await f.create()
   assert.notEqual(a.ref, b.ref)
 })
-test('AUTH_REQUIRED / TV_APPROVAL: guessing PIN never authorizes control or self approval', async () => {
+test('POSSESSION_PAIRING: active owner plus one-time PIN authorizes; QR reference alone cannot', async () => {
   const f = await fixture(), s = await f.create()
   assert.equal((await f.claim(s, '')).status, 401)
+  assert.equal((await f.call('/claim', { ref: s.ref }, 'user-1')).status, 400)
+  assert.equal((await f.call('/claim', { ref: s.ref, pin: 'bad' }, 'user-1')).status, 403)
   const c = await f.claim(s)
-  assert.equal((await f.call('/status', f.receiver(s))).state, 'AWAITING_TV_APPROVAL')
-  assert.equal((await f.call('/ticket', f.controller(s, c), 'user-1')).status, 403)
-  assert.equal((await f.call('/decide', { ...f.controller(s, c), requestId: c.requestId, approve: true }, 'user-1')).status, 403)
-  assert.equal((await f.call('/decide', { ...f.receiver(s), requestId: 'wrong', approve: true })).status, 403)
-  assert.equal((await f.decide(s, c)).state, 'PAIRED')
-  assert.equal((await f.decide(s, c)).status, 403)
+  assert.equal((await f.call('/status', f.receiver(s))).state, 'PAIRED')
+  assert.equal((await f.call('/ticket', f.controller(s, c), 'user-1')).status, 200)
+  assert.equal((await f.call('/decide', { ...f.controller(s, c), requestId: c.requestId, approve: true }, 'user-1')).status, 400)
   assert.equal((await f.claim(s)).status, 403)
 })
-test('PAIRING_REJECTION: terminal, destroys scopes and prevents replay', async () => {
+
+test('RECEIVER_EXIT: revocation destroys scopes and prevents replay', async () => {
   const f = await fixture(), s = await f.create(), c = await f.claim(s)
-  assert.equal((await f.decide(s, c, false)).state, 'REVOKED')
+  assert.equal((await f.call('/revoke', f.receiver(s))).state, 'REVOKED')
   for (const scope of [f.receiver(s), f.controller(s, c)]) assert.equal((await f.call('/status', scope, 'user-1')).status, 403)
-  assert.equal((await f.decide(s, c)).status, 403)
+  assert.equal((await f.claim(s)).status, 403)
 })
+
 test('PIN_RATE_LIMIT: durable attempt budget survives object restart', async () => {
   const f = await fixture(), s = await f.create(), wrong = s.pin === '111111' ? '222222' : '111111'
   for (let i = 0; i < POLICY.guesses; i++) assert.equal((await f.call('/claim', { ref: s.ref, pin: wrong }, 'user-1')).status, 403)
@@ -116,16 +117,24 @@ test('PIN_RATE_LIMIT: durable attempt budget survives object restart', async () 
   assert.equal((await restarted.claim(s)).status, 403)
   assert.equal((await restarted.call('/status', restarted.receiver(s))).status, 403)
 })
-test('PIN / QR_REFERENCE_EXPIRY: claim and pending TV approval expire at exact deadline', async () => {
-  for (const pending of [false, true]) {
-    const f = await fixture(), s = await f.create(), c = pending ? await f.claim(s) : null
-    f.clock.now = s.pairingExpiresAt
-    assert.equal((await f.claim(s)).status, 403)
-    if (c) assert.equal((await f.decide(s, c)).status, 403)
-    assert.equal((await f.call('/status', f.receiver(s))).status, 403)
-    assert.equal(f.storage.data.get('hub').sessions[0].state, 'EXPIRED')
-  }
+test('PIN / QR_REFERENCE_EXPIRY: unclaimed credentials expire at exact deadline', async () => {
+  const f = await fixture(), s = await f.create()
+  f.clock.now = s.pairingExpiresAt
+  assert.equal((await f.claim(s)).status, 403)
+  assert.equal((await f.call('/status', f.receiver(s))).status, 403)
+  assert.equal(f.storage.data.get('hub').sessions[0].state, 'EXPIRED')
 })
+
+test('ATOMIC_CLAIM: concurrent owners cannot reuse PIN; replay remains denied after restart', async () => {
+  const f = await fixture(), s = await f.create()
+  const claims = await Promise.all([f.claim(s, 'user-1'), f.claim(s, 'user-2')])
+  assert.deepEqual(claims.map(c => c.status), [200, 403])
+  const restarted = await fixture(f.storage)
+  assert.equal((await restarted.claim(s, 'user-2')).status, 403)
+  assert.equal((await restarted.call('/status', restarted.controller(s, claims[0]), 'user-2')).status, 403)
+  assert.equal((await restarted.call('/status', restarted.controller(s, claims[0]), 'user-1')).state, 'DISCONNECTED')
+})
+
 test('ROLE_ISOLATION / CROSS_SESSION_DENIAL / UNAUTHORIZED_ACCESS: owner and secret required', async () => {
   const f = await fixture(), { s, c } = await f.paired(), other = await f.create()
   for (const b of [f.controller(s, { controllerCredential: s.receiverCredential }),
@@ -226,8 +235,8 @@ test('FAIL_CLOSED: durable storage failure returns unavailable, no in-memory aut
   assert.equal((await f.call('/status', f.receiver(s))).status, 503)
 })
 test('INVALID_TRANSITIONS: all state pairs deterministic; terminal states immutable', () => {
-  const legal = { CREATED: ['WAITING_FOR_CONTROLLER'], WAITING_FOR_CONTROLLER: ['AWAITING_TV_APPROVAL', 'EXPIRED', 'REVOKED'],
-    AWAITING_TV_APPROVAL: ['PAIRED', 'EXPIRED', 'REVOKED'], PAIRED: ['DISCONNECTED', 'EXPIRED', 'REVOKED'],
+  const legal = { CREATED: ['WAITING_FOR_CONTROLLER'], WAITING_FOR_CONTROLLER: ['PAIRED', 'EXPIRED', 'REVOKED'],
+    AWAITING_TV_APPROVAL: ['EXPIRED', 'REVOKED'], PAIRED: ['DISCONNECTED', 'EXPIRED', 'REVOKED'],
     DISCONNECTED: ['PAIRED', 'EXPIRED', 'REVOKED'], EXPIRED: [], REVOKED: [] }
   for (const from of Object.keys(legal)) for (const to of Object.keys(legal)) {
     if (legal[from].includes(to)) assert.equal(transition(from, to), to)
@@ -269,4 +278,40 @@ test('GATEWAY: disabled by default, strict Origin, real auth adapter, no identit
   assert.equal((await worker.fetch(req('/create?credential=secret', {}), env)).status, 403)
   assert.equal((await worker.fetch(req('/create', { x: 'a'.repeat(2048) }), env)).status, 413)
   assert.ok(calls >= 3)
+})
+
+test('PAIRING_ABUSE: distributed guesses share a durable session budget and burn PIN on final failure', async () => {
+  const f = await fixture(), s = await f.create()
+  const wrong = s.pin === '111111' ? '222222' : '111111'
+  const attempts = await Promise.all(Array.from({ length: POLICY.guesses }, async (_, index) =>
+    f.call('/claim', { ref: s.ref, pin: wrong }, 'owner-' + index, await digest('ip-' + index))))
+  assert.ok(attempts.every(attempt => attempt.status === 403))
+  assert.equal(f.storage.data.get('hub').sessions[0].state, 'REVOKED')
+  assert.equal((await f.claim(s)).status, 403)
+})
+
+test('OWNER_RATE_LIMIT: persists across restart and bounds attempts over different TVs', async () => {
+  const f = await fixture(), a = await f.create(), b = await f.create(), c = await f.create()
+  const wrong = s => s.pin === '111111' ? '222222' : '111111'
+  for (const s of [a, b]) for (let i = 0; i < POLICY.guesses; i++)
+    assert.equal((await f.call('/claim', { ref: s.ref, pin: wrong(s) }, 'same-owner')).status, 403)
+  const restarted = await fixture(f.storage)
+  assert.equal((await restarted.claim(c, 'same-owner')).status, 429)
+})
+
+test('GATEWAY_AUTHORIZATION: pending/denied/absent identities cannot claim or use controller scopes', async () => {
+  for (const access_status of ['pending', 'denied', 'active']) {
+    let forwarded = 0
+    const worker = createStageCast2Worker(async () => ({ user: { id: 'owner', access_status } }))
+    const env = { CAST2_MODE: 'reviewed-v1', CAST2_ORIGIN: 'https://gtar.test', CAST2_HUB: {
+      idFromName: n => n, get: () => ({ fetch: async () => { forwarded++; return Response.json({ ok: true }) } }),
+    } }
+    for (const [route, payload] of [['/claim', {}], ['/ticket', { role: 'controller' }], ['/revoke', { role: 'controller' }]]) {
+      const response = await worker.fetch(new Request('https://worker.test' + route, { method: 'POST', headers: {
+        Origin: 'https://gtar.test', 'CF-Connecting-IP': '127.0.0.1', Authorization: 'Bearer test',
+      }, body: JSON.stringify(payload) }), env)
+      assert.equal(response.status, access_status === 'active' ? 200 : 401)
+    }
+    assert.equal(forwarded, access_status === 'active' ? 3 : 0)
+  }
 })
