@@ -145,7 +145,31 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
             </details>
           </div>
 
-          {/* Manual screen mirroring guidance applies only to iOS. */}
+          {caps.isAndroid && (
+            <section
+              aria-labelledby="android-screen-mirroring-title"
+              className="space-y-3 p-4 rounded-lg bg-app-surface/60 border border-app-border"
+            >
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-app-link shrink-0" />
+                <h3 id="android-screen-mirroring-title" className="text-xs font-bold text-app-link">
+                  Screen Mirroring (Android)
+                </h3>
+              </div>
+              <p className="text-xs text-app-muted leading-relaxed">
+                On supported devices, this is manual device mirroring, not an automatic GTAR
+                connection. Availability depends on your Android device and receiver.
+              </p>
+              <ol className="text-xs text-app-muted leading-relaxed space-y-1 list-decimal list-inside pl-1">
+                <li>Open your device's Cast / Screen Cast / Smart View control when available.</li>
+                <li>Google Home may also provide screen casting for compatible receivers.</li>
+                <li>Select a compatible TV or receiver on the appropriate network, usually the same Wi-Fi network.</li>
+                <li>Return to GTAR and display the desired stage content.</li>
+              </ol>
+            </section>
+          )}
+
+          {/* AirPlay guidance applies only to iOS. */}
           {caps.platform === 'ios' && (
             <div className="space-y-3 p-4 rounded-lg bg-app-surface/60 border border-app-border">
               <div className="flex items-center gap-2">
