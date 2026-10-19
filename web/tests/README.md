@@ -223,4 +223,5 @@ Build/runtime configuration, release contracts, PWA lifecycle, and repository ch
 New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
+- [stageCast2.test.cjs](stageCast2.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->
