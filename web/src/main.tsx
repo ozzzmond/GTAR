@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import { AuthGate } from './components/AuthGate'
+import { StageCast2Panel } from './components/StageCast2Panel'
+import { cast2LocalEnabled, cast2ReceiverRoute } from './utils/stageCast2Local'
 import { applyThemeRuntime, hydrateThemeSettings } from './components/ThemeModal'
 
 const initialTheme = hydrateThemeSettings()
@@ -143,6 +145,6 @@ if (!_win.__GTAR_REACT_ROOT__) {
 }
 _win.__GTAR_REACT_ROOT__.render(
   <StrictMode>
-    <AuthGate><Suspense fallback={<p role="status">Loading GTAR...</p>}><App /></Suspense></AuthGate>
+    {cast2ReceiverRoute ? <StageCast2Panel receiver /> : <AuthGate><Suspense fallback={<p role="status">Loading GTAR...</p>}><App />{cast2LocalEnabled && <StageCast2Panel />}</Suspense></AuthGate>}
   </StrictMode>,
 )

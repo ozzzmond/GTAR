@@ -239,6 +239,8 @@ export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(import.meta.dirname, '..')
   const releaseIdentity = resolveReleaseIdentity(repoRoot, { ...process.env, GTAR_BUILD_MODE: mode })
   const devIdentity = resolveDevIdentity(repoRoot, { ...process.env, GTAR_BUILD_MODE: mode })
+  const isProd = process.env.CF_PAGES_BRANCH === 'main' || Boolean(releaseIdentity)
+  const isStageCast2Dev = !isProd && (isDev || Boolean(devIdentity) || process.env.CF_PAGES_BRANCH === 'dev' || process.env.VITE_STAGE_CAST2 === 'true')
 
   // PWA manifest icon sets
   const devIcons = [
@@ -285,6 +287,7 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),
+      __GTAR_STAGE_CAST2_ENABLED__: JSON.stringify(isStageCast2Dev),
       __GTAR_PROD_VERSION__: JSON.stringify(releaseIdentity?.version ?? null),
       __GTAR_DEV_VERSION__: JSON.stringify(
         devIdentity?.tag ? devIdentity.tag.replace(/^v/, '') : (devIdentity?.version ?? '1.0.130-dev.4a')
@@ -412,6 +415,13 @@ export default defineConfig(({ mode }) => {
         ignored: ['**/.wrangler/**'],
       },
       proxy: {
+        ...(process.env.VITE_CAST2_LOCAL_REVIEW === 'true' || isStageCast2Dev ? {
+          '/cast2-api': {
+            target: 'http://127.0.0.1:8789', ws: true,
+            rewrite: (path: string) => path.replace(/^\/cast2-api/, ''),
+            headers: { Origin: 'https://gtar.test', 'CF-Connecting-IP': '127.0.0.1' },
+          },
+        } : {}),
         '/api/ug': {
           target: 'https://www.ultimate-guitar.com',
           changeOrigin: true,
@@ -446,5 +456,4 @@ export default defineConfig(({ mode }) => {
     },
   }
 })
-
 
