@@ -10,6 +10,7 @@ import { appLogger } from './logger'
 import { isIosDevice, isStandalonePwa } from './stagePerformance'
 
 export interface PresentationCapabilities {
+  isAndroid: boolean
   supportsPresentationApi: boolean
   supportsMultiWindow: boolean
   canDirectPresent: boolean
@@ -33,6 +34,7 @@ export interface PresentationRequestResult {
 export function getPresentationCapabilities(): PresentationCapabilities {
   if (typeof window === 'undefined') {
     return {
+      isAndroid: false,
       supportsPresentationApi: false,
       supportsMultiWindow: false,
       canDirectPresent: false,
@@ -49,6 +51,8 @@ export function getPresentationCapabilities(): PresentationCapabilities {
 
   // 2. Capability: iOS platform detection (WebKit environment)
   const isIos = isIosDevice()
+  // Platform hint for manual guidance only; does not imply mirroring support.
+  const isAndroid = !isIos && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '')
 
   // 3. Capability: Multi-window / multi-display popup support
   const isStandalone = isStandalonePwa()
@@ -86,6 +90,7 @@ export function getPresentationCapabilities(): PresentationCapabilities {
   }
 
   return {
+    isAndroid,
     supportsPresentationApi,
     supportsMultiWindow,
     canDirectPresent,

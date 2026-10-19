@@ -501,21 +501,50 @@ test('Presentation entry points: short alias and legacy routes preserve query da
   }
 })
 
-test('TV modal: Android and desktop omit iOS guidance; iPhone and iPad retain AirPlay', () => {
+test('TV modal: Android browser/PWA guidance is conditional; iOS retains exclusive AirPlay guidance', () => {
   const React = require('react')
   const { renderToStaticMarkup } = require('react-dom/server')
   const { TvPresentationModal } = require('../src/components/TvPresentationModal.tsx')
   const oldWin = globalThis.window
   try {
-    globalThis.window = { location: { origin: 'https://dev.gtar-web.pages.dev', protocol: 'https:' }, open() {} }
-    for (const [userAgent, platform, maxTouchPoints, ios] of [
-      ['Mozilla/5.0 (Linux; Android 14; Pixel Tablet)', 'Linux armv8l', 5, false],
-      ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32', 0, false],
-      ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)', 'iPhone', 0, true],
-      ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel', 5, true],
+    for (const [userAgent, platform, maxTouchPoints, standalone, api, ios, android, mode] of [
+      ['Mozilla/5.0 (Linux; Android 14; Pixel 8)', 'Linux armv8l', 5, false, false, false, true, 'tv_pairing'],
+      ['Mozilla/5.0 (Linux; Android 14; Pixel Tablet)', 'Linux armv8l', 5, true, false, false, true, 'tv_pairing'],
+      ['Mozilla/5.0 (Linux; Android 14; Pixel 8)', 'Linux armv8l', 5, false, true, false, true, 'presentation_api'],
+      ['Mozilla/5.0 (Linux; Android 14; Pixel Tablet)', 'Linux armv8l', 5, true, true, false, true, 'presentation_api'],
+      ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32', 0, false, false, false, false, 'popup_window'],
+      ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32', 0, false, true, false, false, 'presentation_api'],
+      ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32', 5, false, false, false, false, 'tv_pairing'],
+      ['Unknown touch device', '', 5, false, false, false, false, 'tv_pairing'],
+      ['', '', 0, true, false, false, false, 'tv_pairing'],
+      ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)', 'iPhone', 0, false, false, true, false, 'tv_pairing'],
+      ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel', 5, true, false, true, false, 'tv_pairing'],
     ]) {
+      globalThis.window = {
+        location: { origin: 'https://dev.gtar-web.pages.dev', protocol: 'https:' },
+        open() { assert.fail('Rendering guidance must not open a popup') },
+        matchMedia() { return { matches: standalone } },
+        ...(api ? { PresentationRequest: class { constructor() { assert.fail('Rendering guidance must not start presentation') } } } : {}),
+      }
       setMockNavigator({ userAgent, platform, maxTouchPoints })
+      const caps = getPresentationCapabilities()
+      assert.equal(caps.isAndroid, android, userAgent)
+      assert.equal(caps.recommendedMode, mode, userAgent)
+      assert.equal(caps.supportsPresentationApi, api)
+      assert.equal(caps.supportsMultiWindow, mode === 'popup_window' || (mode === 'presentation_api' && !maxTouchPoints))
       const html = renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: true, onClose() {} }))
+      assert.equal(html.includes('Screen Mirroring (Android)'), android, userAgent)
+      if (android) {
+        assert.match(html, /aria-labelledby="android-screen-mirroring-title"/)
+        assert.match(html, /manual device mirroring, not an automatic GTAR connection/)
+        assert.match(html, /Availability depends on your Android device and receiver/)
+        assert.match(html, /Cast \/ Screen Cast \/ Smart View control when available/)
+        assert.match(html, /Google Home may also provide screen casting for compatible receivers/)
+        assert.match(html, /compatible TV or receiver on the appropriate network/)
+        assert.match(html, /Return to GTAR and display the desired stage content/)
+      } else {
+        assert.doesNotMatch(html, /Smart View|Google Home/)
+      }
       assert.equal(html.includes('AirPlay Screen Mirroring'), ios, userAgent)
       assert.equal(html.includes('Control Center'), ios, userAgent)
       if (!ios) assert.doesNotMatch(html, /iPhone|iPad|AirPlay/)
@@ -527,6 +556,24 @@ test('TV modal: Android and desktop omit iOS guidance; iPhone and iPad retain Ai
     }
     assert.equal(stageCast.getPresentationPageUrl(), 'https://dev.gtar-web.pages.dev/tv')
     assert.equal(stageCast.getPresentationPageUrl('192.168.1.150:5173'), 'https://192.168.1.150:5173/tv')
+  } finally {
+    restoreNavigator()
+    globalThis.window = oldWin
+  }
+})
+
+test('TV modal: SSR without navigator or window omits device-specific mirroring guidance', () => {
+  const React = require('react')
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const { TvPresentationModal } = require('../src/components/TvPresentationModal.tsx')
+  const oldWin = globalThis.window
+  try {
+    delete globalThis.window
+    delete globalThis.navigator
+    assert.equal(getPresentationCapabilities().isAndroid, false)
+    const html = renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: true, onClose() {} }))
+    assert.doesNotMatch(html, /Screen Mirroring \(Android\)|AirPlay|Smart View|Google Home/)
+    assert.equal(renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: false, onClose() {} })), '')
   } finally {
     restoreNavigator()
     globalThis.window = oldWin
