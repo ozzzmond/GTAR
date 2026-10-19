@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gtar-stage-cast2-dev",
+  "main": "workers/stageCast2Worker.ts",
+  "compatibility_date": "2026-09-10",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CAST2_HUB",
+        "class_name": "StageCast2Hub"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["StageCast2Hub"]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gtar-db-dev",
+      "database_id": "455b9901-9018-4e73-9ac1-a684f7335def"
+    }
+  ],
+  "vars": {
+    "CAST2_MODE": "reviewed-v1",
+    "CAST2_ORIGIN": "https://dev.gtar-web.pages.dev"
+  }
+}

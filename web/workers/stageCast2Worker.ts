@@ -16,10 +16,12 @@ export function createStageCast2Worker(authenticate: Authenticate = authenticate
     if (env.CAST2_MODE !== 'reviewed-v1' || !env.CAST2_HUB || !env.CAST2_ORIGIN) return reply({ error: 'DISABLED' }, 503)
     try {
       const url = new URL(request.url)
-      if (url.search || request.headers.get('Origin') !== env.CAST2_ORIGIN || !env.CAST2_ORIGIN.startsWith('https://')) return reply({ error: 'DENIED' }, 403)
+      const allowedOrigins = (env.CAST2_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean)
+      const origin = request.headers.get('Origin')
+      if (url.search || !origin || !allowedOrigins.includes(origin) || !origin.startsWith('https://')) return reply({ error: 'DENIED' }, 403)
       const ip = request.headers.get('CF-Connecting-IP')
       if (!ip) return reply({ error: 'DENIED' }, 403)
-      const path = url.pathname
+      const path = url.pathname.replace(/^\/cast2-api/, '')
       if (!['/create', '/claim', '/decide', '/status', '/ticket', '/revoke', '/socket'].includes(path) ||
         (path === '/socket' ? request.method !== 'GET' : request.method !== 'POST')) return reply({ error: 'INVALID_REQUEST' }, 400)
       const headers = new Headers({ 'x-cast-client': await digest(ip) })

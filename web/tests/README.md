@@ -225,5 +225,8 @@ New or renamed tests await a human choice of primary category.
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [stageCast2.test.cjs](stageCast2.test.cjs)
 - [stageCast2Backend.test.cjs](stageCast2Backend.test.cjs)
+- [stageCast2DevEnablement.test.cjs](stageCast2DevEnablement.test.cjs)
+- [stageCast2Integration.test.cjs](stageCast2Integration.test.cjs)
 - [stageCast2Runtime.test.cjs](stageCast2Runtime.test.cjs)
+- [stageCast2Ui.test.cjs](stageCast2Ui.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->

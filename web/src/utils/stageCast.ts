@@ -185,6 +185,13 @@ const CHANNEL_NAME = 'gtar_stage_cast'
 const STORAGE_KEY = 'gtar_stage_cast_state'
 
 class StageCastEngine {
+  private projectionListeners = new Set<(state: StageCastState | null, scroll: { scrollTop: number; scrollFraction: number } | null) => void>()
+  public subscribeProjection(listener: (state: StageCastState | null, scroll: { scrollTop: number; scrollFraction: number } | null) => void) {
+    this.projectionListeners.add(listener)
+    // Only active in-memory presentation, never hydrate a songbook/cache for Cast 2.
+    listener(this.lastState, this.lastScroll)
+    return () => { this.projectionListeners.delete(listener) }
+  }
   private channel: BroadcastChannel | null = null
   private popupWindow: Window | null = null
   private presentationConnection: PresentationConnection | null = null
@@ -333,6 +340,7 @@ class StageCastEngine {
     state = { ...state, themeMode: state.themeMode ?? this.themeSnapshot.themeMode ?? this.lastState?.themeMode,
       customThemeColors: state.customThemeColors ?? this.themeSnapshot.customThemeColors ?? this.lastState?.customThemeColors }
     this.lastState = state
+    for (const listener of this.projectionListeners) listener(state, this.lastScroll)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
@@ -369,6 +377,7 @@ class StageCastEngine {
 
   public broadcastScroll(scrollTop: number, scrollFraction: number) {
     this.lastScroll = { scrollTop, scrollFraction }
+    for (const listener of this.projectionListeners) listener(this.lastState, this.lastScroll)
     const msg: StageCastMessage = {
       type: 'SCROLL_UPDATE',
       payload: { scrollTop, scrollFraction },
