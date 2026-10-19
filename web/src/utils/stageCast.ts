@@ -488,7 +488,7 @@ class StageCastEngine {
     this.notifySessionChange()
   }
 
-  public async requestPresentation(): Promise<PresentationRequestResult> {
+  public async requestPresentation(options: { preferPopup?: boolean } = {}): Promise<PresentationRequestResult> {
     if (typeof window === 'undefined') {
       appLogger.warn('StageCast', 'Cannot request presentation: window is undefined (SSR environment)')
       return { success: false, mode: 'error', error: 'SSR_ENVIRONMENT' }
@@ -517,6 +517,21 @@ class StageCastEngine {
         success: false,
         mode: 'tv_pairing',
         error: caps.reason || 'IOS_WEBKIT_NO_MULTIWINDOW_PRESENTATION',
+      }
+    }
+
+    // Keep the operator's browser storage and user activation for desktop pop-outs.
+    // A blocked preferred popup must never switch to a separate receiver context.
+    if (options.preferPopup) {
+      if (!caps.supportsMultiWindow) {
+        return { success: false, mode: 'popup_window', error: 'Presentation pop-ups are unavailable in this browser.' }
+      }
+      const win = this.openPopupWindow(targetUrl, windowFeatures)
+      return {
+        success: Boolean(win),
+        mode: 'popup_window',
+        window: win,
+        error: win ? undefined : 'Presentation pop-up could not open. Allow pop-ups for this site and try Cast again.',
       }
     }
 

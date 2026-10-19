@@ -532,3 +532,134 @@ test('TV modal: Android and desktop omit iOS guidance; iPhone and iPad retain Ai
     globalThis.window = oldWin
   }
 })
+
+// Mocked windows prove routing and call-stack timing, not browser popup policy.
+for (const file of ['App.tsx', 'components/StageView.tsx']) {
+  test(`Desktop Cast handler prefers synchronous same-origin popup with PresentationRequest: ${file}`, async () => {
+    const vm = require('node:vm')
+    const source = fs.readFileSync(path.resolve(__dirname, '../src', file), 'utf8')
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    let callback
+    function visit(node) {
+      if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'handleTogglePresentation') {
+        callback = node.initializer.arguments[0].getText(ast)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(ast)
+    assert.ok(callback)
+    const oldWin = globalThis.window
+    const messages = [], alerts = [], active = []
+    let opens = 0, starts = 0, inGesture = false, blocked = false
+    const popup = { closed: false, focus() {}, close() { this.closed = true }, postMessage(message, origin) { messages.push({ message, origin }) } }
+    const song = { id: 'popup-song', title: 'Popup Song', rawContent: '[C]Hello', transposeOffset: 2 }
+    const colors = { background: '#112233' }
+    let unsubscribe
+    try {
+      setMockNavigator({ maxTouchPoints: 0, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })
+      globalThis.window = {
+        location: { origin: 'https://dev.gtar-web.pages.dev' },
+        alert(message) { alerts.push(message) },
+        open(url, name) {
+          assert.equal(inGesture, true, 'window.open must run before handler returns its promise')
+          opens++
+          assert.equal(url, 'https://dev.gtar-web.pages.dev/stage/present?view=present')
+          assert.equal(name, 'gtar_stage_teleprompter')
+          const parsed = new URL(url)
+          assert.equal(parsed.username + parsed.password + parsed.hash, '')
+          assert.deepEqual([...parsed.searchParams], [['view', 'present']])
+          return blocked ? null : popup
+        },
+        PresentationRequest: class { start() { starts++; throw Error('Must not start receiver') } },
+      }
+      stageCast.stopPresentation()
+      stageCast.setThemeSnapshot('dark', colors)
+      unsubscribe = stageCast.subscribeSessionState(value => active.push(value))
+      const handler = vm.runInNewContext(ts.transpileModule(`const handler = ${callback}; handler;`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+      }).outputText, {
+        stageCast, window: globalThis.window, isCastActive: false,
+        currentSong: song, song, effectiveKey: 'D', transposeOffset: 2,
+        fontSizePx: 30, fontStyle: 'mono', isTwoColumn: true, chordScale: 110,
+        fontWeight: 'bold', lineSpacing: 'relaxed',
+        transposeContext: () => ({ performanceKey: 'D' }),
+        scrollContainerRef: { current: { scrollHeight: 1000, clientHeight: 500, scrollTop: 125 } },
+        setIsTvPresentationModalOpen() { assert.fail('No transport fallback') },
+      })
+      inGesture = true
+      const pending = handler()
+      inGesture = false
+      assert.equal(opens, 1)
+      assert.equal(starts, 0)
+      await pending
+      assert.equal(stageCast.isPresentationActive(), true)
+      assert.equal(active.at(-1), true)
+      await new Promise(resolve => setTimeout(resolve, 170))
+      const injected = messages.find(entry => entry.message.message.type === 'STATE_UPDATE')
+      assert.ok(injected)
+      assert.equal(injected.origin, window.location.origin)
+      assert.equal(injected.message.message.payload.song.title, song.title)
+      assert.equal(injected.message.message.payload.effectiveKey, 'D')
+      assert.equal(injected.message.message.payload.themeMode, 'dark')
+      assert.deepEqual(injected.message.message.payload.customThemeColors, colors)
+      stageCast.broadcastScroll(250, 0.5)
+      assert.deepEqual(messages.at(-1).message.message, { type: 'SCROLL_UPDATE', payload: { scrollTop: 250, scrollFraction: 0.5 } })
+      const updated = { ...stageCast.getCachedState(), song: { ...song, title: 'Next Song' } }
+      stageCast.broadcastState(updated)
+      assert.equal(messages.at(-1).message.message.payload.song.title, 'Next Song')
+      stageCast.stopPresentation()
+      assert.equal(active.at(-1), false)
+      blocked = true
+      inGesture = true
+      const failed = handler()
+      inGesture = false
+      await failed
+      assert.equal(starts, 0)
+      assert.equal(stageCast.isPresentationActive(), false)
+      assert.equal(alerts.length, 1)
+      assert.match(alerts[0], /Allow pop-ups.*try Cast again/)
+      inGesture = true
+      const result = await stageCast.requestPresentation({ preferPopup: true })
+      inGesture = false
+      assert.equal(result.success, false)
+      assert.equal(result.mode, 'popup_window')
+      assert.match(result.error, /Allow pop-ups/)
+    } finally {
+      unsubscribe?.()
+      stageCast.stopPresentation()
+      restoreNavigator()
+      globalThis.window = oldWin
+    }
+  })
+}
+
+test('Wireless default still starts Presentation API and injects state and scroll', async () => {
+  const oldWin = globalThis.window
+  const sent = []
+  let starts = 0
+  const connection = { id: 'wireless', state: 'connected', send(data) { sent.push(JSON.parse(data)) }, terminate() {} }
+  try {
+    setMockNavigator({ maxTouchPoints: 0, userAgent: 'Windows' })
+    globalThis.window = {
+      location: { origin: 'https://dev.gtar-web.pages.dev' },
+      open() { assert.fail('Wireless path must use Presentation API') },
+      PresentationRequest: class {
+        constructor(urls) { assert.deepEqual(urls, ['https://dev.gtar-web.pages.dev/stage/present?view=present']) }
+        async start() { starts++; return connection }
+      },
+    }
+    stageCast.broadcastState({ song: { title: 'Wireless Song' }, effectiveKey: 'G', transposeOffset: 0, fontSizePx: 24, fontStyle: 'mono', isTwoColumn: false })
+    stageCast.broadcastScroll(100, 0.25)
+    assert.deepEqual(await stageCast.requestPresentation(), { success: true, mode: 'presentation_api' })
+    assert.equal(starts, 1)
+    assert.equal(sent[0].message.payload.song.title, 'Wireless Song')
+    assert.equal(sent[1].message.type, 'SCROLL_UPDATE')
+    const count = sent.length
+    connection.onmessage({ data: { type: 'REQUEST_STATE' } })
+    assert.equal(sent.length, count + 2)
+  } finally {
+    stageCast.stopPresentation()
+    restoreNavigator()
+    globalThis.window = oldWin
+  }
+})

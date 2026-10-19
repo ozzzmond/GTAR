@@ -1549,7 +1549,10 @@ export const StageView: React.FC<StageViewProps> = ({
       if (caps.recommendedMode === 'tv_pairing' || !caps.canDirectPresent) {
         setIsTvPresentationModalOpen(true)
       } else {
-        const res = await stageCast.requestPresentation()
+        const res = await stageCast.requestPresentation({ preferPopup: caps.supportsMultiWindow })
+        if (!res.success && res.mode === 'popup_window' && res.error) {
+          window.alert(res.error)
+        }
         if (res.mode === 'tv_pairing') {
           setIsTvPresentationModalOpen(true)
         }
