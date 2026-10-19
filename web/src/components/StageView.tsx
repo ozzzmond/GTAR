@@ -450,7 +450,7 @@ export const StageView: React.FC<StageViewProps> = ({
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
-  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(false)
+  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.includes('cast2='))
   // Stage floating options menu (replaces top HUD)
   const [isStageMenuOpen, setIsStageMenuOpen] = useState(false)
 

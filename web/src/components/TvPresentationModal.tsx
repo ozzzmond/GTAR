@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { Tv, Copy, Check, ExternalLink, X, Smartphone, Monitor } from 'lucide-react'
+import { Tv, Copy, Check, Monitor, X } from 'lucide-react'
 import { stageCast } from '../utils/stageCast'
+import { StageCast2Panel } from './StageCast2Panel'
 
 export interface TvPresentationModalProps {
   isOpen: boolean
@@ -17,9 +18,7 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
 
   if (!isOpen) return null
 
-  const caps = stageCast.getPresentationCapabilities()
   const pageUrl = stageCast.getPresentationPageUrl(detectedLanIp)
-  const pairingUrl = stageCast.getPresentationPairingUrl(detectedLanIp)
 
   const handleCopy = async () => {
     try {
@@ -74,20 +73,8 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-sm">
-          {/* iOS / Mobile Single-Screen Platform Notice */}
-          {caps.platform === 'ios' && (
-            <div className="p-3.5 rounded-lg bg-app-accent/15 border border-app-accent/40 text-xs leading-relaxed text-app-text flex items-start gap-2.5">
-              <Smartphone className="w-4 h-4 text-app-accent shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold text-app-accent">iOS presentation options: </span>
-                Direct multi-window popups are restricted on iOS. Open the presentation page below,
-                or use AirPlay to mirror your device screen.
-              </div>
-            </div>
-          )}
-
-          {/* Option 1: Secondary TV Browser Pairing */}
-          <div className="space-y-3 p-4 rounded-lg bg-app-surface/60 border border-app-border">
+          {/* TV Browser Presentation Page Section */}
+          <div className="space-y-4 p-4 rounded-lg bg-app-surface/60 border border-app-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Monitor className="w-4 h-4 text-app-action" />
@@ -97,8 +84,8 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
               </div>
             </div>
 
-            <p className="text-xs text-app-muted">
-              Open this bookmarkable URL in a TV or secondary computer browser. Sign in if prompted:
+            <p className="text-xs text-app-muted leading-relaxed">
+              Open this bookmarkable URL on your TV or secondary display browser:
             </p>
 
             <div className="flex items-center gap-2">
@@ -128,87 +115,15 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
               </button>
             </div>
 
-            <p className="text-xs text-app-muted">
-              Opening this page does not connect devices. A separate TV browser will not receive
-              live updates from your phone. Existing same-browser displays and established
-              presentation connections retain their current behavior.
-            </p>
-            <details className="text-xs text-app-muted">
-              <summary className="cursor-pointer">Session URL (does not pair devices)</summary>
-              <input
-                type="text"
-                readOnly
-                value={pairingUrl}
-                aria-label="TV Session URL"
-                className="w-full mt-2 px-3 py-2 font-mono bg-app-base border border-app-border rounded-lg select-all"
-              />
-            </details>
-          </div>
-
-          {caps.isAndroid && (
-            <section
-              aria-labelledby="android-screen-mirroring-title"
-              className="space-y-3 p-4 rounded-lg bg-app-surface/60 border border-app-border"
-            >
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-app-link shrink-0" />
-                <h3 id="android-screen-mirroring-title" className="text-xs font-bold text-app-link">
-                  Screen Mirroring (Android)
-                </h3>
-              </div>
-              <p className="text-xs text-app-muted leading-relaxed">
-                On supported devices, this is manual device mirroring, not an automatic GTAR
-                connection. Availability depends on your Android device and receiver.
-              </p>
-              <ol className="text-xs text-app-muted leading-relaxed space-y-1 list-decimal list-inside pl-1">
-                <li>Open your device's Cast / Screen Cast / Smart View control when available.</li>
-                <li>Google Home may also provide screen casting for compatible receivers.</li>
-                <li>Select a compatible TV or receiver on the appropriate network, usually the same Wi-Fi network.</li>
-                <li>Return to GTAR and display the desired stage content.</li>
-              </ol>
-            </section>
-          )}
-
-          {/* AirPlay guidance applies only to iOS. */}
-          {caps.platform === 'ios' && (
-            <div className="space-y-3 p-4 rounded-lg bg-app-surface/60 border border-app-border">
-              <div className="flex items-center gap-2">
-                <ExternalLink className="w-4 h-4 text-app-link" />
-                <span className="text-xs font-bold uppercase tracking-wider text-app-link">
-                  AirPlay Screen Mirroring
-                </span>
-              </div>
-
-              <p className="text-xs text-app-muted">
-                Mirror your iPhone or iPad screen directly to Apple TV or any AirPlay-compatible Smart TV:
-              </p>
-
-              <ol className="text-xs text-app-muted space-y-1 list-decimal list-inside pl-1">
-                <li>
-                  Open{' '}
-                  <span className="text-app-heading font-semibold">Control Center</span>.
-                </li>
-                <li>
-                  Tap the <span className="text-app-heading font-semibold">Screen Mirroring</span> icon (two overlapping rectangles).
-                </li>
-                <li>
-                  Select your <span className="text-app-heading font-semibold">Apple TV</span> or Smart TV.
-                </li>
-                <li>
-                  Tap <span className="text-app-action font-semibold">Fullscreen</span> in Stage View for distraction-free performance view.
-                </li>
-              </ol>
+            {/* Integrated Stage Cast 2.0 P2 Controller */}
+            <div className="pt-2 border-t border-app-border/40">
+              <StageCast2Panel />
             </div>
-          )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-app-border bg-app-surface flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-app-muted">
-            <span className="w-2 h-2 rounded-full bg-app-button" />
-            <span>Presentation page &bull; Route: /tv</span>
-          </div>
-
+        <div className="p-4 border-t border-app-border bg-app-surface flex items-center justify-end">
           <button
             type="button"
             onClick={onClose}

@@ -1,16 +1,104 @@
-.cast2 { color: #fff; background: #121212; padding: clamp(16px, 3vw, 48px); overflow-wrap: anywhere; }
-.cast2 button, .cast2 input, .cast2 summary { min-height: 44px; font: inherit; }
-.cast2 button { padding: 10px 18px; margin: 8px; border: 2px solid #aaa; border-radius: 8px; background: #262626; color: white; cursor: pointer; }
-.cast2 :focus-visible { outline: 3px solid #ffdc75; outline-offset: 3px; }
-.cast2 label { display: block; margin-block: 12px; }
-.cast2 input:not([type=checkbox]) { display: block; box-sizing: border-box; width: 100%; padding: 8px; background: #fff; color: #111; }
-.cast2 a { color: #9ad4ff; text-decoration: underline; }
-.cast2-controller { position: fixed; z-index: 60; bottom: 0; right: 0; width: min(100%, 420px); box-sizing: border-box; max-height: 80dvh; overflow: auto; border: 2px solid #aaa; }
-.cast2-controller:not([open]) { padding: 4px 12px; width: auto; }
-.cast2-tv { min-height: 100dvh; box-sizing: border-box; font-size: clamp(18px, 1.6vw, 28px); }
-.cast2-pairing { max-width: 640px; margin: auto; }
-.cast2-pairing img { display: block; max-width: 100%; height: auto; }
-.cast2-pin { display: block; font-size: clamp(36px, 6vw, 80px); letter-spacing: .15em; }
-.cast2-check { display: flex !important; align-items: center; gap: 12px; }
-.cast2-lyrics { height: 65dvh; overflow: auto; display: grid; gap: 32px; }
-@media (max-width: 600px) { .cast2-lyrics { grid-template-columns: 1fr !important; } }
+/* Stage Cast / TV Presentation Canonical GTAR Theme Styling */
+.cast2 {
+  color: var(--custom-stage-text, #EEE8D5);
+  background: var(--custom-stage-bg, #002B36);
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+.cast2-tv {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  font-size: clamp(18px, 1.6vw, 28px);
+  padding: clamp(16px, 3vw, 48px);
+  background: var(--custom-stage-bg, #002B36);
+  color: var(--custom-stage-text, #EEE8D5);
+}
+.cast2 button, .cast2 input, .cast2 summary {
+  min-height: 44px;
+  font: inherit;
+}
+.cast2 button {
+  padding: 10px 18px;
+  margin: 6px;
+  border: 1px solid var(--custom-card-border, #586E75);
+  border-radius: 8px;
+  background: var(--custom-stage-surface, #073642);
+  color: var(--custom-stage-text, #EEE8D5);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.cast2 button:hover {
+  border-color: var(--custom-actionColor, #268BD2);
+  color: var(--custom-actionColor, #268BD2);
+}
+.cast2 :focus-visible {
+  outline: 3px solid var(--custom-control-accent, #2AA198);
+  outline-offset: 3px;
+}
+.cast2 label {
+  display: block;
+  margin-block: 8px;
+}
+.cast2 input:not([type=checkbox]) {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--custom-stage-bg, #002B36);
+  color: var(--custom-uiPrimaryText, #EEE8D5);
+  border: 1px solid var(--custom-card-border, #586E75);
+  border-radius: 8px;
+}
+.cast2 a {
+  color: var(--custom-uiLinkText, #268BD2);
+  text-decoration: underline;
+}
+.cast2-controller {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+}
+.cast2-pairing {
+  max-width: 640px;
+  margin: 24px auto;
+  padding: 24px;
+  background: var(--custom-stage-surface, #073642);
+  border: 1px solid var(--custom-card-border, #586E75);
+  border-radius: 16px;
+  text-align: center;
+}
+.cast2-pairing img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 16px auto;
+  border-radius: 12px;
+}
+.cast2-pin {
+  display: block;
+  font-size: clamp(36px, 6vw, 80px);
+  letter-spacing: .15em;
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--custom-chord-color, #E5A93C);
+}
+.cast2-check {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+}
+.cast2-lyrics {
+  height: 65dvh;
+  overflow: auto;
+  display: grid;
+  gap: 32px;
+  padding: 16px;
+  background: var(--custom-stage-bg, #002B36);
+  border-radius: 12px;
+}
+@media (max-width: 600px) {
+  .cast2-lyrics {
+    grid-template-columns: 1fr !important;
+  }
+}
