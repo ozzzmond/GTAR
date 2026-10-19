@@ -201,6 +201,20 @@ class StageCastEngine {
   private sessionListeners: Set<(isActive: boolean) => void> = new Set()
   private sessionId: string | null = null
   private windowCheckTimer: ReturnType<typeof setInterval> | null = null
+  private cast2Connected = false
+  private stopHandlers = new Set<() => void>()
+
+  public registerStopHandler(handler: () => void): () => void {
+    this.stopHandlers.add(handler)
+    return () => { this.stopHandlers.delete(handler) }
+  }
+
+  public setCast2Connected(connected: boolean) {
+    if (this.cast2Connected !== connected) {
+      this.cast2Connected = connected
+      this.notifySessionChange()
+    }
+  }
 
   constructor() {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -282,7 +296,7 @@ class StageCastEngine {
         this.presentationConnection.state === 'connecting')
 
     const isPopupActive = this.popupWindow != null && !this.popupWindow.closed
-    return Boolean(isConnActive || isPopupActive)
+    return Boolean(isConnActive || isPopupActive || this.cast2Connected)
   }
 
   public subscribeSessionState(listener: (isActive: boolean) => void): () => void {
@@ -493,6 +507,19 @@ class StageCastEngine {
     if (this.windowCheckTimer) {
       clearInterval(this.windowCheckTimer)
       this.windowCheckTimer = null
+    }
+
+    if (this.cast2Connected) {
+      hadSession = true
+      this.cast2Connected = false
+    }
+
+    for (const handler of this.stopHandlers) {
+      try {
+        handler()
+      } catch (err) {
+        appLogger.warn('StageCast', `Error in stopHandler: ${err}`)
+      }
     }
 
     if (hadSession) {

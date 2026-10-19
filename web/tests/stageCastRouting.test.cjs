@@ -7,22 +7,19 @@ const ts = require('typescript')
 const Module = require('node:module')
 const originalResolveFilename = Module._resolveFilename
 Module._resolveFilename = function (request, parent, isMain, options) {
-  try {
-    return originalResolveFilename.call(this, request, parent, isMain, options)
-  } catch (err) {
-    if (parent && parent.filename && request.startsWith('.')) {
-      const dir = path.dirname(parent.filename)
-      for (const ext of ['.ts', '.tsx', '/index.ts', '/index.tsx']) {
-        const candidate = path.resolve(dir, request + ext)
-        if (fs.existsSync(candidate)) {
-          return candidate
-        }
+  if (parent && parent.filename && request.startsWith('.')) {
+    const dir = path.dirname(parent.filename)
+    for (const ext of ['.ts', '.tsx', '/index.ts', '/index.tsx']) {
+      const candidate = path.resolve(dir, request + ext)
+      if (fs.existsSync(candidate)) {
+        return candidate
       }
     }
-    throw err
   }
+  return originalResolveFilename.call(this, request, parent, isMain, options)
 }
 
+require.extensions['.css'] = () => {};
 for (const ext of ['.ts', '.tsx']) {
   require.extensions[ext] = (module, filename) =>
     module._compile(
@@ -501,8 +498,9 @@ test('Presentation entry points: short alias and legacy routes preserve query da
   }
 })
 
-test('TV modal: Android browser/PWA guidance is conditional; iOS retains exclusive AirPlay guidance', () => {
-  const React = require('react')
+test('TV modal: unified TV Browser Presentation Page renders pairing controls without legacy mirroring tutorials', () => {
+  globalThis.__GTAR_STAGE_CAST2_ENABLED__ = true;
+  const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server')
   const { TvPresentationModal } = require('../src/components/TvPresentationModal.tsx')
   const oldWin = globalThis.window
@@ -533,36 +531,27 @@ test('TV modal: Android browser/PWA guidance is conditional; iOS retains exclusi
       assert.equal(caps.supportsPresentationApi, api)
       assert.equal(caps.supportsMultiWindow, mode === 'popup_window' || (mode === 'presentation_api' && !maxTouchPoints))
       const html = renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: true, onClose() {} }))
-      assert.equal(html.includes('Screen Mirroring (Android)'), android, userAgent)
-      if (android) {
-        assert.match(html, /aria-labelledby="android-screen-mirroring-title"/)
-        assert.match(html, /manual device mirroring, not an automatic GTAR connection/)
-        assert.match(html, /Availability depends on your Android device and receiver/)
-        assert.match(html, /Cast \/ Screen Cast \/ Smart View control when available/)
-        assert.match(html, /Google Home may also provide screen casting for compatible receivers/)
-        assert.match(html, /compatible TV or receiver on the appropriate network/)
-        assert.match(html, /Return to GTAR and display the desired stage content/)
-      } else {
-        assert.doesNotMatch(html, /Smart View|Google Home/)
-      }
-      assert.equal(html.includes('AirPlay Screen Mirroring'), ios, userAgent)
-      assert.equal(html.includes('Control Center'), ios, userAgent)
-      if (!ios) assert.doesNotMatch(html, /iPhone|iPad|AirPlay/)
+      assert.ok(html.includes('TV Browser Presentation Page'), 'Must show unified TV Browser Presentation Page')
+      assert.ok(html.includes('TV reference'), 'Must include TV reference pairing input')
+      assert.ok(html.includes('Six-digit TV PIN'), 'Must include Six-digit TV PIN pairing input')
+      assert.doesNotMatch(html, /Screen Mirroring \(Android\)|AirPlay Screen Mirroring|Smart View|Google Home/)
+      assert.doesNotMatch(html, /Opening this page does not connect devices/)
+      assert.doesNotMatch(html, /will not receive/)
+      assert.doesNotMatch(html, /Session URL \(does not pair devices\)/)
+      assert.doesNotMatch(html, /Route: \/tv/)
       assert.match(html, /aria-label="TV Page URL"[^>]*value="https:\/\/dev.gtar-web.pages.dev\/tv"/)
-      assert.match(html, /aria-label="TV Session URL"[\s\S]*?session=GTAR-/)
-      assert.match(html, /Opening this page does not connect devices/)
-      assert.match(html, /will not receive/)
-      assert.doesNotMatch(html, /Ready to Pair|mirrors chords, lyrics, and autoscroll live/)
     }
     assert.equal(stageCast.getPresentationPageUrl(), 'https://dev.gtar-web.pages.dev/tv')
     assert.equal(stageCast.getPresentationPageUrl('192.168.1.150:5173'), 'https://192.168.1.150:5173/tv')
   } finally {
+    delete globalThis.__GTAR_STAGE_CAST2_ENABLED__;
     restoreNavigator()
     globalThis.window = oldWin
   }
 })
 
 test('TV modal: SSR without navigator or window omits device-specific mirroring guidance', () => {
+  globalThis.__GTAR_STAGE_CAST2_ENABLED__ = true;
   const React = require('react')
   const { renderToStaticMarkup } = require('react-dom/server')
   const { TvPresentationModal } = require('../src/components/TvPresentationModal.tsx')
@@ -572,9 +561,11 @@ test('TV modal: SSR without navigator or window omits device-specific mirroring 
     delete globalThis.navigator
     assert.equal(getPresentationCapabilities().isAndroid, false)
     const html = renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: true, onClose() {} }))
+    assert.ok(html.includes('TV Browser Presentation Page'))
     assert.doesNotMatch(html, /Screen Mirroring \(Android\)|AirPlay|Smart View|Google Home/)
     assert.equal(renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: false, onClose() {} })), '')
   } finally {
+    delete globalThis.__GTAR_STAGE_CAST2_ENABLED__;
     restoreNavigator()
     globalThis.window = oldWin
   }

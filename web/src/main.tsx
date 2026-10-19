@@ -2,9 +2,10 @@ import { StrictMode, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
+import './components/StageCast2Panel.css'
 import { AuthGate } from './components/AuthGate'
 import { StageCast2Panel } from './components/StageCast2Panel'
-import { cast2LocalEnabled, cast2ReceiverRoute } from './utils/stageCast2Local'
+import { cast2ReceiverRoute } from './utils/stageCast2Local'
 import { applyThemeRuntime, hydrateThemeSettings } from './components/ThemeModal'
 
 const initialTheme = hydrateThemeSettings()
@@ -145,6 +146,6 @@ if (!_win.__GTAR_REACT_ROOT__) {
 }
 _win.__GTAR_REACT_ROOT__.render(
   <StrictMode>
-    {cast2ReceiverRoute ? <StageCast2Panel receiver /> : <AuthGate><Suspense fallback={<p role="status">Loading GTAR...</p>}><App />{cast2LocalEnabled && <StageCast2Panel />}</Suspense></AuthGate>}
+    {cast2ReceiverRoute ? <StageCast2Panel receiver /> : <AuthGate><Suspense fallback={<p role="status">Loading GTAR...</p>}><App /></Suspense></AuthGate>}
   </StrictMode>,
 )

@@ -951,7 +951,7 @@ function LibraryApp() {
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
-  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(false)
+  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.includes('cast2='))
 
   useEffect(() => {
     const unsubscribe = stageCast.subscribeSessionState((active) => {
