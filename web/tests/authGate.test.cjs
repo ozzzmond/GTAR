@@ -32,10 +32,13 @@ test('locked gate never renders app children or reads library storage', () => {
     global.window = { location: { hostname: 'gtar-web.pages.dev' } }
     global.localStorage = { getItem() { assert.fail('Library storage accessed while locked') } }
     function Library() { assert.fail('Library rendered while locked') }
-    const html = renderToString(React.createElement(AuthGate, null, React.createElement(Library)))
-    assert.match(html, /GTAR/)
-    assert.match(html, /restricted to authorized owners/)
-    assert.doesNotMatch(html, /Continue offline/)
+    for (const route of ['/', '/tv', '/tv?session=GTAR-ABCD', '/stage/present?view=present&session=GTAR-ABCD']) {
+      global.window.location = new URL(route, 'https://dev.gtar-web.pages.dev')
+      const html = renderToString(React.createElement(AuthGate, null, React.createElement(Library)))
+      assert.match(html, /GTAR/)
+      assert.match(html, /restricted to authorized owners/)
+      assert.doesNotMatch(html, /Continue offline/)
+    }
   } finally {
     global.window = prevWindow
     global.localStorage = prevStorage

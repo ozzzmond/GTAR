@@ -1,3 +1,4 @@
+import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
 import { mergeImportedSetlists } from './utils/importIdentity'
@@ -239,10 +240,7 @@ export interface WebSetlist {
 
 function App() {
   const isPresentationRoute =
-    typeof window !== 'undefined' &&
-    (window.location.pathname.includes('/stage/present') ||
-      window.location.search.includes('view=present') ||
-      window.location.hash.includes('present'))
+    typeof window !== 'undefined' && isPresentationLocation(window.location)
 
   if (isPresentationRoute) {
     return <StagePresentationView />

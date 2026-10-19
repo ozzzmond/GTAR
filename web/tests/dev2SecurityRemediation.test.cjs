@@ -160,7 +160,7 @@ test('RANDOMNESS_HARDENING: Stage Cast session ID uses cryptographically secure 
   // Prove pairing URL conforms to security policy
   const pairingUrl = stageCast.getPresentationPairingUrl()
   const parsed = new URL(pairingUrl)
-  assert.equal(parsed.pathname, '/stage/present')
+  assert.equal(parsed.pathname, '/tv')
   assert.equal(parsed.searchParams.get('session'), s1)
   assert.equal(parsed.searchParams.has('token'), false, 'Pairing URL must not leak long-lived secrets')
   assert.equal(parsed.searchParams.has('content'), false, 'Pairing URL must not include song content')
