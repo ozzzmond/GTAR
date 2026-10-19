@@ -58,8 +58,6 @@ async function fixture() {
     await receiver.start()
     await controller.start(receiver.view.ref, receiver.view.pin)
     await receiver.tick()
-    assert.equal(receiver.view.state, 'AWAITING_TV_APPROVAL')
-    await receiver.decide(true)
     await receiver.tick(); await flush()
     await controller.tick(); await flush()
   }
@@ -72,21 +70,18 @@ function snapshot(title = 'Song A', offset = 0, chords = true, fraction = 0) {
   assert.equal(result.ok, true)
   return result.value
 }
-test('P2: controller cannot connect or present until explicit receiver approval', async () => {
+test('P2: possession handshake connects without TV approval; receiver retains revocation', async () => {
   const f = await fixture()
-  await f.receiver.start()
-  assert.match(f.receiver.view.pin, /^\d{6}$/)
-  await f.controller.start(f.receiver.view.ref, f.receiver.view.pin)
-  f.controller.publish(snapshot())
-  await f.controller.tick(); await f.flush()
-  assert.equal(f.controller.view.state, 'AWAITING_TV_APPROVAL')
-  assert.equal(f.receiver.view.snapshot, null)
-  assert.equal(f.requests.some(r => r.path === '/ticket'), false)
-  await f.receiver.tick(); await f.receiver.decide(false)
-  await f.controller.tick()
-  assert.equal(f.receiver.view.state, 'REVOKED')
+  await f.pair()
+  assert.equal(f.controller.view.state, 'CONNECTED')
+  assert.equal(f.requests.some(r => r.path === '/decide'), false)
+  f.controller.publish(snapshot()); await f.flush()
+  assert.equal(f.receiver.view.snapshot.displayTitle, 'Song A')
+  await f.receiver.end(); await f.controller.tick()
+  assert.equal(f.receiver.view.state, 'ENDED')
   assert.equal(f.controller.view.state, 'ENDED')
 })
+
 test('P2: actual P1 relay delivers active projection, transpose, chords, song switch and scroll', async () => {
   const f = await fixture(); await f.pair()
   for (const s of [snapshot(), snapshot('Song B', 2, false, .65)]) {
@@ -141,4 +136,14 @@ test('P2: late create response after teardown cannot revive session', async () =
   resolve({ ref: 'a'.repeat(64), receiverCredential: 'b'.repeat(64), pin: '000001', expiresAt: 10000, pairingExpiresAt: 1000 })
   await start
   assert.equal(client.credential, ''); assert.equal(client.view.ref, '')
+})
+
+test('P2: legacy approval backend cannot be mistaken for possession pairing', async () => {
+  const client = new Cast2Client('controller', { now: () => 1, post: async () => ({
+    sessionId: 'a'.repeat(64), controllerCredential: 'b'.repeat(64), expiresAt: 600000,
+  }) }, () => {})
+  await client.start('a'.repeat(64), '000123')
+  assert.equal(client.view.state, 'ERROR')
+  assert.match(client.view.error, /service needs an update/)
+  assert.equal(client.credential, '')
 })

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
+import { TvQrScanner } from './TvQrScanner'
 import { Cast2Client } from '../utils/stageCast2Client'
 import { cast2LocalEnabled } from '../utils/stageCast2Local'
 import { useOptionalGoogleAuth } from '../utils/authContext'
@@ -34,6 +35,13 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   }, [])
 
   const [pin, setPin] = useState('')
+  const [recovery, setRecovery] = useState(false)
+  useEffect(() => {
+    if (!receiver) return
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setRecovery(value => !value) }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [receiver])
   const [qr, setQr] = useState('')
   const [now, setNow] = useState(() => Date.now())
   const viewport = useRef<HTMLDivElement>(null)
@@ -51,7 +59,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
         })
         const result = await response.json()
-        if (!response.ok) throw Error(['DENIED', 'AUTH_REQUIRED', 'DISABLED'].includes(result.error) ? result.error : 'UNAVAILABLE')
+        if (!response.ok) throw Error(['DENIED', 'AUTH_REQUIRED', 'DISABLED', 'RATE_LIMITED'].includes(result.error) ? result.error : 'UNAVAILABLE')
         return result
       },
       socket: ticket => {
@@ -69,9 +77,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
     return stageCast2Controller.subscribe(() => refresh(n => n + 1))
   }, [receiver])
 
-  const client = receiver ? receiverClient! : stageCast2Controller.getClient()
   const v = receiver ? receiverClient!.view : stageCast2Controller.getView()
-  const chords = !receiver && stageCast2Controller.getChords()
 
   // Receiver timers and document title
   useEffect(() => {
@@ -117,15 +123,25 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   if (!cast2LocalEnabled) return receiver ? <p role="status">TV Presentation is disabled.</p> : null
 
   const terminal = ['IDLE', 'ENDED', 'ERROR', 'REVOKED', 'EXPIRED'].includes(v.state) || (v.state === 'DISCONNECTED' && !!v.error.includes('exhausted'))
+  const errorText: Record<string, string> = {
+    AUTH_REQUIRED: 'Sign in with an approved GTAR account, then try pairing again.',
+    DENIED: 'Pairing denied or expired. Create a new pairing on the TV and check its PIN.',
+    DISABLED: 'TV pairing is unavailable on this site.',
+    RATE_LIMITED: 'Too many attempts. Wait one minute, then create a new TV pairing.',
+    UNAVAILABLE: 'Connection unavailable. Check the network and try again.',
+  }
   const remaining = Math.max(0, Math.ceil(((v.pin ? v.pairingExpiresAt : v.expiresAt) - now) / 1000))
   const columns = v.snapshot?.mode.columns === 2 ? splitSongLinesForColumns(v.snapshot.lines) : [v.snapshot?.lines || []]
 
   if (receiver) {
     return (
       <main className="cast2 cast2-tv">
-        <h1>TV Presentation</h1>
-        <p role="status" aria-live="polite">{v.state.replaceAll('_', ' ')}{v.expiresAt > now && !terminal ? ` · ${remaining}s remaining` : ''}</p>
-        {v.error && <p role="alert">{v.error}</p>}
+        {(v.state !== 'CONNECTED' || recovery) && <>
+          <h1>TV Browser Presentation Page</h1>
+          <p role="status" aria-live="polite">{v.state.replaceAll('_', ' ')}</p>
+          {recovery && <button onClick={() => setRecovery(false)}>Return to presentation</button>}
+        </>}
+        {v.error && <p role="alert">{errorText[v.error] || v.error}</p>}
         {terminal && (
           <button onClick={() => { receiverClient!.dispose(); void receiverClient!.start() }}>
             Create TV pairing
@@ -135,23 +151,18 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
           <div className="cast2-pairing">
             {qr && <img src={qr} alt="Scan to open the authenticated GTAR controller" width="280" height="280" />}
             <p>Six-digit PIN: <strong className="cast2-pin">{v.pin}</strong></p>
-            <label>TV reference<input readOnly value={v.ref} /></label>
-            <p>Scan QR, sign in on your phone, then enter this PIN. QR contains only the TV reference.</p>
+            <p>In Cast Options on your phone, scan this QR and enter the PIN. A signed-in controller with this PIN can connect.</p>
+            <p>Pairing expires in {remaining}s. Press Escape during presentation for session controls, or reload this page to pair again.</p>
+            <details><summary>Manual pairing reference</summary>
+              <label>TV reference<input readOnly value={v.ref} /></label>
+            </details>
           </div>
         )}
-        {v.state === 'AWAITING_TV_APPROVAL' && (
-          <div>
-            <p>A signed-in controller entered this TV's PIN. Approve only if you just requested this connection.</p>
-            <button autoFocus onClick={() => void receiverClient!.decide(false)}>Reject controller</button>
-            <button onClick={() => void receiverClient!.decide(true)}>Approve controller</button>
-          </div>
-        )}
-        {!terminal && <button onClick={() => void receiverClient!.end()}>End session</button>}
+        {!terminal && (v.state !== 'CONNECTED' || recovery) && <button onClick={() => void receiverClient!.end()}>End session</button>}
         {v.state === 'CONNECTED' && !v.snapshot && <p>Waiting for the controller's active song...</p>}
         {v.snapshot && v.state === 'CONNECTED' && (
           <>
             <h1>{v.snapshot.displayTitle}</h1>
-            <p>Key {v.snapshot.transpose.effectiveKey} · Transpose {v.snapshot.transpose.offset}</p>
             <div ref={viewport} className="cast2-lyrics" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
               {columns.map((lines, index) => (
                 <div key={index}>
@@ -169,21 +180,16 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   return (
     <div className="cast2 cast2-controller">
       <p role="status" aria-live="polite">
-        {v.state === 'CONNECTED' ? 'Connected to TV' : v.state === 'AWAITING_TV_APPROVAL' ? 'Awaiting TV approval' : v.state.replaceAll('_', ' ')}
-        {v.expiresAt > now && !terminal ? ` · ${remaining}s remaining` : ''}
+        {v.state === 'CONNECTED' ? 'Connected to TV' : v.state === 'DISCONNECTED' ? 'Reconnecting to TV' : v.state === 'PAIRED' ? 'Connecting to TV' : v.state === 'EXPIRED' ? 'Session expired. Pair again.' : terminal ? 'Ready to pair' : v.state.replaceAll('_', ' ')}
       </p>
-      {v.error && <p role="alert" className="text-xs text-status-error font-medium">{v.error}</p>}
+      {v.error && <p role="alert" className="text-xs text-status-error font-medium">{errorText[v.error] || v.error}</p>}
       {terminal ? (
         <form onSubmit={event => {
           event.preventDefault()
-          if (!receiver) {
-            void stageCast2Controller.start(ref, pin)
-          } else {
-            client.dispose()
-            void client.start(ref, pin)
-          }
+          void stageCast2Controller.start(ref.trim(), pin)
           setPin('')
         }}>
+          <TvQrScanner onReference={setRef} />
           <label>
             TV reference
             <input autoComplete="off" value={ref} onChange={e => setRef(e.target.value)} required pattern="[a-f0-9]{64}" />
@@ -192,21 +198,10 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
             Six-digit TV PIN
             <input inputMode="numeric" autoComplete="off" value={pin} onChange={e => setPin(e.target.value)} required pattern="[0-9]{6}" maxLength={6} />
           </label>
-          <button type="submit">Request TV approval</button>
+          <button type="submit">Connect to TV</button>
         </form>
       ) : (
         <div className="space-y-3 mt-2">
-          {v.state === 'AWAITING_TV_APPROVAL' && (
-            <p className="text-xs text-app-muted">
-              A connection request was sent to the TV. Select "Approve controller" on the TV screen.
-            </p>
-          )}
-          {v.state === 'CONNECTED' && (
-            <label className="cast2-check">
-              <input type="checkbox" checked={chords} onChange={e => stageCast2Controller.setChords(e.target.checked)} />
-              Show chords on TV
-            </label>
-          )}
           <button type="button" onClick={() => void stageCast2Controller.end()}>
             Disconnect
           </button>
@@ -214,7 +209,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
       )}
       {terminal && (
         <p className="text-xs text-app-muted mt-2">
-          On the TV, open the TV Presentation page. Scan its QR code or enter its reference and PIN here. Approve the request on the TV.
+          On the TV, open the TV Browser Presentation Page. Scan its QR or choose a photo to fill the reference, then enter the PIN. Manual reference entry is always available.
         </p>
       )}
     </div>

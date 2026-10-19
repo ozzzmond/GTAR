@@ -58,21 +58,12 @@ export class Cast2Client {
       const credential = this.role === 'receiver' ? data.receiverCredential : data.controllerCredential
       if (!opaque(id) || !opaque(credential) || !deadline(data.expiresAt) || (this.role === 'receiver' &&
         (!deadline(data.pairingExpiresAt) || typeof data.pin !== 'string' || !/^\d{6}$/.test(data.pin)))) throw Error('Invalid server response.')
+      if (this.role === 'controller' && data.state !== 'PAIRED') throw Error('TV pairing service needs an update. Reload both devices after the DEV service is updated.')
       this.credential = credential; this.sync = initialCast2SyncState(id)
       this.emit({ ref: id, pin: this.role === 'receiver' ? data.pin as string : '', expiresAt: data.expiresAt,
         pairingExpiresAt: this.role === 'receiver' ? data.pairingExpiresAt as number : this.io.now() + 120_000,
-        state: this.role === 'receiver' ? 'WAITING_FOR_CONTROLLER' : 'AWAITING_TV_APPROVAL' })
+        state: this.role === 'receiver' ? 'WAITING_FOR_CONTROLLER' : 'PAIRED' })
     } catch (error) { if (epoch === this.epoch) this.terminal('ERROR', error instanceof Error ? error.message : 'UNAVAILABLE') }
-    finally { this.busy = false }
-  }
-  async decide(approve: boolean) {
-    if (this.role !== 'receiver' || this.view.state !== 'AWAITING_TV_APPROVAL' || this.busy) return
-    this.busy = true
-    const epoch = this.epoch
-    try {
-      await this.io.post('/decide', { ...this.scope(), requestId: this.view.requestId, approve }, false)
-      if (epoch === this.epoch) { if (!approve) this.terminal('REVOKED'); else this.emit({ state: 'PAIRED', pin: '' }) }
-    } catch (error) { if (epoch === this.epoch) this.fail(error) }
     finally { this.busy = false }
   }
   async end() {

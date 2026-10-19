@@ -65,7 +65,7 @@ export class StageCast2ControllerManager {
           })
           const result = await response.json()
           if (!response.ok) {
-            throw Error(['DENIED', 'AUTH_REQUIRED', 'DISABLED'].includes(result.error) ? result.error : 'UNAVAILABLE')
+            throw Error(['DENIED', 'AUTH_REQUIRED', 'DISABLED', 'RATE_LIMITED'].includes(result.error) ? result.error : 'UNAVAILABLE')
           }
           return result
         },

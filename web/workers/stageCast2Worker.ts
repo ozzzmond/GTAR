@@ -22,7 +22,7 @@ export function createStageCast2Worker(authenticate: Authenticate = authenticate
       const ip = request.headers.get('CF-Connecting-IP')
       if (!ip) return reply({ error: 'DENIED' }, 403)
       const path = url.pathname.replace(/^\/cast2-api/, '')
-      if (!['/create', '/claim', '/decide', '/status', '/ticket', '/revoke', '/socket'].includes(path) ||
+      if (!['/create', '/claim', '/status', '/ticket', '/revoke', '/socket'].includes(path) ||
         (path === '/socket' ? request.method !== 'GET' : request.method !== 'POST')) return reply({ error: 'INVALID_REQUEST' }, 400)
       const headers = new Headers({ 'x-cast-client': await digest(ip) })
       let payload: Record<string, unknown> | undefined
