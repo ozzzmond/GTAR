@@ -28,7 +28,7 @@ test(`owner gate preserves presentation lifecycle and expiry: ${route}`,async()=
     assert.equal(mounted,1)
     assert.match(document.body.textContent,/Stage Teleprompter Ready/)
     assert.match(document.body.textContent, /Opening this page does not connect devices/)
-    assert.match(document.body.textContent, /A separate TV browser does not receive live updates/)
+    assert.match(document.body.textContent, /Independent-device synchronization is not yet supported/)
     assert.doesNotMatch(document.body.textContent, /mirror here in real time/)
     if (route.includes('session=')) assert.match(document.body.textContent, /Session: GTAR-ABCD/)
     assert.equal(window.location.pathname + window.location.search, route)
