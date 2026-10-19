@@ -287,8 +287,8 @@ test('Presentation contract: Session ID and Pairing URL adhere to security and p
     const parsed = new URL(url)
 
     // Guards:
-    // 1. Path is /stage/present
-    assert.equal(parsed.pathname, '/stage/present')
+    // 1. Short alias retains session-bearing URL contract
+    assert.equal(parsed.pathname, '/tv')
     // 2. view is present
     assert.equal(parsed.searchParams.get('view'), 'present')
     // 3. session is sessionId
@@ -304,7 +304,7 @@ test('Presentation contract: Session ID and Pairing URL adhere to security and p
 
     // Custom host override (e.g. detected LAN IP)
     const lanUrl = stageCast.getPresentationPairingUrl('192.168.1.150:5173')
-    assert.equal(lanUrl, `http://192.168.1.150:5173/stage/present?view=present&session=${sessionId}`)
+    assert.equal(lanUrl, `http://192.168.1.150:5173/tv?view=present&session=${sessionId}`)
   } finally {
     restoreNavigator()
     globalThis.window = oldWin
@@ -478,6 +478,57 @@ test('Stage Cast Security: postMessage restricts targetOrigin and validates even
 
     unsub()
   } finally {
+    globalThis.window = oldWin
+  }
+})
+
+
+test('Presentation entry points: short alias and legacy routes preserve query data', () => {
+  const { isPresentationLocation } = require('../src/utils/presentationRoute.ts')
+  for (const route of ['/tv', '/tv/', '/stage/present', '/stage/present?view=present&session=GTAR-ABCD', '/tv?session=GTAR-ABCD', '/?view=present', '/#present']) {
+    const url = new URL(route, 'https://dev.gtar-web.pages.dev')
+    const before = url.href
+    assert.equal(isPresentationLocation(url), true, route)
+    assert.equal(url.href, before, 'Route selection must not rewrite session data')
+    if (route.includes('session=')) assert.equal(url.searchParams.get('session'), 'GTAR-ABCD')
+  }
+  for (const route of ['/', '/tvision', '/tv/other', '/library']) {
+    assert.equal(isPresentationLocation(new URL(route, 'https://dev.gtar-web.pages.dev')), false)
+  }
+  for (const file of ['App.tsx', 'components/AuthGate.tsx']) {
+    const source = fs.readFileSync(path.resolve(__dirname, '../src', file), 'utf8')
+    assert.match(source, /isPresentationLocation\(window.location\)/, file)
+  }
+})
+
+test('TV modal: Android and desktop omit iOS guidance; iPhone and iPad retain AirPlay', () => {
+  const React = require('react')
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const { TvPresentationModal } = require('../src/components/TvPresentationModal.tsx')
+  const oldWin = globalThis.window
+  try {
+    globalThis.window = { location: { origin: 'https://dev.gtar-web.pages.dev', protocol: 'https:' }, open() {} }
+    for (const [userAgent, platform, maxTouchPoints, ios] of [
+      ['Mozilla/5.0 (Linux; Android 14; Pixel Tablet)', 'Linux armv8l', 5, false],
+      ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32', 0, false],
+      ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)', 'iPhone', 0, true],
+      ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel', 5, true],
+    ]) {
+      setMockNavigator({ userAgent, platform, maxTouchPoints })
+      const html = renderToStaticMarkup(React.createElement(TvPresentationModal, { isOpen: true, onClose() {} }))
+      assert.equal(html.includes('AirPlay Screen Mirroring'), ios, userAgent)
+      assert.equal(html.includes('Control Center'), ios, userAgent)
+      if (!ios) assert.doesNotMatch(html, /iPhone|iPad|AirPlay/)
+      assert.match(html, /aria-label="TV Page URL"[^>]*value="https:\/\/dev.gtar-web.pages.dev\/tv"/)
+      assert.match(html, /aria-label="TV Session URL"[\s\S]*?session=GTAR-/)
+      assert.match(html, /Opening this page does not connect devices/)
+      assert.match(html, /will not receive/)
+      assert.doesNotMatch(html, /Ready to Pair|mirrors chords, lyrics, and autoscroll live/)
+    }
+    assert.equal(stageCast.getPresentationPageUrl(), 'https://dev.gtar-web.pages.dev/tv')
+    assert.equal(stageCast.getPresentationPageUrl('192.168.1.150:5173'), 'https://192.168.1.150:5173/tv')
+  } finally {
+    restoreNavigator()
     globalThis.window = oldWin
   }
 })

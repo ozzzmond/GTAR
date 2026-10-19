@@ -8,8 +8,9 @@ const React=require('react')
 const {act}=React
 const {createRoot}=require('react-dom/client')
 
-test('owner gate unmounts real presentation on expiry and offline reload remains locked',async()=>{
-  const dom=new JSDOM('<div id="root"></div>',{url:'https://gtar-web.pages.dev/stage/present'})
+for (const route of ['/stage/present?view=present&session=GTAR-ABCD', '/tv', '/tv?session=GTAR-ABCD']) {
+test(`owner gate preserves presentation lifecycle and expiry: ${route}`,async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{url:`https://dev.gtar-web.pages.dev${route}`})
   const previous={window:global.window,document:global.document,localStorage:global.localStorage,sessionStorage:global.sessionStorage,fetch:global.fetch}
   Object.assign(global,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,sessionStorage:dom.window.sessionStorage,IS_REACT_ACT_ENVIRONMENT:true})
   window.google={}
@@ -26,6 +27,11 @@ test('owner gate unmounts real presentation on expiry and offline reload remains
     await act(async()=>{root.render(React.createElement(AuthGate,null,React.createElement(Presentation)))})
     assert.equal(mounted,1)
     assert.match(document.body.textContent,/Stage Teleprompter Ready/)
+    assert.match(document.body.textContent, /Opening this page does not connect devices/)
+    assert.match(document.body.textContent, /Independent-device synchronization is not yet supported/)
+    assert.doesNotMatch(document.body.textContent, /mirror here in real time/)
+    if (route.includes('session=')) assert.match(document.body.textContent, /Session: GTAR-ABCD/)
+    assert.equal(window.location.pathname + window.location.search, route)
     // Advance beyond the 30-day durable session expiry
     Date.now = () => now + 31 * 24 * 60 * 60 * 1000
     await act(async () => { window.dispatchEvent(new window.Event('focus')) })
@@ -72,3 +78,5 @@ test('owner gate unmounts real presentation on expiry and offline reload remains
     delete global.IS_REACT_ACT_ENVIRONMENT
   }
 })
+
+}

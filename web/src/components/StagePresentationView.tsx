@@ -19,13 +19,13 @@ import {
 const DEFAULT_FALLBACK_SONG: ActiveSongState = {
   id: 0,
   title: 'Stage Teleprompter Ready',
-  artist: 'Connect from GTAR Stage View',
+  artist: 'Presentation page available',
   key: 'C',
   capo: 'No Capo',
   bpm: '120',
   format: 'CHORD_PRO',
   transposeOffset: 0,
-  rawContent: `{title: Stage Teleprompter Ready}\n{artist: Waiting for Song Selection...}\n\n[Instructions]\nOpen Stage View on your main device to start projecting.\nChords, lyrics, and autoscroll mirror here in real time.\n`,
+  rawContent: `{title: Stage Teleprompter Ready}\n{artist: Presentation page available}\n\n[Instructions]\nOpening this page does not connect devices.\nIndependent-device synchronization is not yet supported.\nUse an established presentation connection or a same-browser display.\n`,
 }
 
 export const StagePresentationView: React.FC = () => {
@@ -273,7 +273,7 @@ export const StagePresentationView: React.FC = () => {
             {song.artist && (
               <p className="text-base sm:text-lg text-app-action font-medium truncate mt-0.5">
                 {song.id === 0 && sessionId
-                  ? `Session: ${sessionId} • Connect from GTAR Stage View`
+                  ? `Session: ${sessionId} • Presentation page available`
                   : song.artist}
               </p>
             )}

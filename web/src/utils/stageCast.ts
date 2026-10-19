@@ -248,6 +248,11 @@ class StageCastEngine {
    */
   public getPresentationPairingUrl(hostOverride?: string): string {
     const sessionId = this.getPresentationSessionId()
+    return `${this.getPresentationPageUrl(hostOverride)}?view=present&session=${encodeURIComponent(sessionId)}`
+  }
+
+  /** Stable page entry point; opening it does not establish a device connection. */
+  public getPresentationPageUrl(hostOverride?: string): string {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'
     let baseOrigin = origin
     if (hostOverride && hostOverride.trim()) {
@@ -255,7 +260,7 @@ class StageCastEngine {
       const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:'
       baseOrigin = `${protocol}//${cleanHost}`
     }
-    return `${baseOrigin}/stage/present?view=present&session=${encodeURIComponent(sessionId)}`
+    return `${baseOrigin}/tv`
   }
 
   public isPresentationActive(): boolean {

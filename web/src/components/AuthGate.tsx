@@ -1,3 +1,4 @@
+import { isPresentationLocation } from '../utils/presentationRoute'
 import { AuthContext, useOptionalGoogleAuth } from '../utils/authContext'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
@@ -51,10 +52,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const configuredEmails = import.meta.env.VITE_AUTHORIZED_EMAILS as string | undefined
 
   const isPresentationRoute =
-    typeof window !== 'undefined' &&
-    ((typeof window.location?.pathname === 'string' && window.location.pathname.includes('/stage/present')) ||
-      (typeof window.location?.search === 'string' && window.location.search.includes('view=present')) ||
-      (typeof window.location?.hash === 'string' && window.location.hash.includes('present')))
+    typeof window !== 'undefined' && isPresentationLocation(window.location)
 
   const canBypass = allowLocalBypass(import.meta.env.DEV, typeof window !== 'undefined' ? (window.location?.hostname || '') : '')
 
