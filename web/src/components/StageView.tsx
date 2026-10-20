@@ -752,8 +752,21 @@ export const StageView: React.FC<StageViewProps> = ({
       accumulatedScrollRef.current = target.scrollTop
     }
 
-    // Mirror to Stage Cast teleprompter screen in real time
-    stageCast.broadcastScroll(target.scrollTop, fraction)
+    // Mirror to Stage Cast teleprompter screen in real time with active line/section anchor
+    let activeLineIndex = 0
+    const lineElements = Array.from(target.querySelectorAll<HTMLElement>('[data-stage-line="true"]'))
+    const containerTop = target.getBoundingClientRect().top
+    const activeEl = lineElements.find((el) => {
+      const rect = el.getBoundingClientRect()
+      return rect.bottom > containerTop + 24
+    })
+    if (activeEl) {
+      const rawIdx = activeEl.getAttribute('data-line-index') ?? activeEl.getAttribute('data-section-index')
+      if (rawIdx !== null) {
+        activeLineIndex = parseInt(rawIdx, 10)
+      }
+    }
+    stageCast.broadcastScroll(target.scrollTop, fraction, activeLineIndex)
 
     if (syncState.role === 'HOST') {
       if (maxScroll > 0) {
@@ -864,8 +877,27 @@ export const StageView: React.FC<StageViewProps> = ({
       targetTop = 0
     }
 
+    let targetSectionIndex = 0
+    if (pastSections.length > 0) {
+      const currentSection = pastSections[pastSections.length - 1]
+      const clampedCurrent = Math.max(0, Math.min(maxScroll, currentSection.targetScrollTop))
+      if (currentScrollTop > currentSection.targetScrollTop + 24 && clampedCurrent < currentScrollTop - 4) {
+        targetSectionIndex = parseInt(currentSection.el.getAttribute('data-section-index') || currentSection.el.getAttribute('data-line-index') || '0', 10)
+      } else {
+        for (let i = pastSections.length - 2; i >= 0; i--) {
+          const clampedPreceding = Math.max(0, Math.min(maxScroll, pastSections[i].targetScrollTop))
+          if (clampedPreceding < currentScrollTop - 4) {
+            targetSectionIndex = parseInt(pastSections[i].el.getAttribute('data-section-index') || pastSections[i].el.getAttribute('data-line-index') || '0', 10)
+            break
+          }
+        }
+      }
+    }
+
     accumulatedScrollRef.current = targetTop
     setIsAutoScrolling(false)
+    const prevFraction = maxScroll > 0 ? targetTop / maxScroll : 0
+    stageCast.broadcastScroll(targetTop, prevFraction, targetSectionIndex)
     container.scrollTo({ top: targetTop, behavior: 'smooth' })
     triggerOverlaysShow()
   }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow])
@@ -898,8 +930,11 @@ export const StageView: React.FC<StageViewProps> = ({
     if (clampedNext <= currentScrollTop + 4 && currentScrollTop >= maxScroll - 4) return
 
     const targetTop = clampedNext
+    const nextSectionIndex = parseInt(nextSection.el.getAttribute('data-section-index') || nextSection.el.getAttribute('data-line-index') || '0', 10)
     accumulatedScrollRef.current = targetTop
     setIsAutoScrolling(false)
+    const nextFraction = maxScroll > 0 ? targetTop / maxScroll : 0
+    stageCast.broadcastScroll(targetTop, nextFraction, nextSectionIndex)
     container.scrollTo({ top: targetTop, behavior: 'smooth' })
     triggerOverlaysShow()
   }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow])
@@ -987,7 +1022,7 @@ export const StageView: React.FC<StageViewProps> = ({
         clearTimeout(transitionTimeoutRef.current)
         transitionTimeoutRef.current = null
       }
-      stageCast.broadcastScroll(0, 0)
+      stageCast.broadcastScroll(0, 0, 0)
     }
     previousSongKeyRef.current = currentSongKey
   }, [currentSongKey])

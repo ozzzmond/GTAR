@@ -13,7 +13,7 @@ export interface ReceiverSnapshot {
   transpose: { offset: number; effectiveKey: string }
   position: { lineIndex: number }
   scroll: { top: number; fraction: number }
-  mode: { columns: 1 | 2; notation: 'chords' | 'numbers' }
+  mode: { columns: 1 | 2; notation: 'chords' | 'numbers'; fontSize?: number }
 }
 type RejectionReason = 'DECLINED' | 'EXPIRED' | 'UNAVAILABLE'
 type RevocationReason = 'CONTROLLER_ENDED' | 'EXPIRED' | 'REPLACED'
@@ -84,15 +84,22 @@ const line: Check = v => {
   }
 }
 const snapshotCheck: Check = v => {
+  if (!obj(v)) return false
+  const modeObj = (v as { mode?: unknown }).mode
+  const modeRules: Record<string, Check> = {
+    columns: oneOf(1, 2),
+    notation: oneOf('chords', 'numbers'),
+    ...(obj(modeObj) && Object.hasOwn(modeObj, 'fontSize') ? { fontSize: integer(16, 72) } : {}),
+  }
   if (!exact(v, {
     songId: s => s === null || id(s) || integer(0)(s), displayTitle: text(CAST2_LIMITS.title, 1),
     lines: list(line, CAST2_LIMITS.lines), chordsVisible: boolean,
     transpose: t => exact(t, { offset: integer(-11, 11), effectiveKey: text(32) }),
     position: p => exact(p, { lineIndex: integer(0, CAST2_LIMITS.lines - 1) }),
     scroll: s => exact(s, { top: number(10000000), fraction: number(1) }),
-    mode: m => exact(m, { columns: oneOf(1, 2), notation: oneOf('chords', 'numbers') }),
+    mode: m => exact(m, modeRules),
   })) return false
-  const s = v as ReceiverSnapshot
+  const s = v as unknown as ReceiverSnapshot
   return s.position.lineIndex < Math.max(1, s.lines.length) && (s.chordsVisible ||
     s.lines.every(l => l.type !== 'CHORD_PRO' && l.type !== 'CHORD_ROW' && l.type !== 'TAB'))
 }

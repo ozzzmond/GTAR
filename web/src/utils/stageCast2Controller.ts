@@ -8,6 +8,7 @@ export class StageCast2ControllerManager {
   private client: Cast2Client | null = null
   private session: GoogleSession | null = null
   private chords = false
+  private tvFontSize = 32
   private timer: ReturnType<typeof setInterval> | null = null
   private clock: ReturnType<typeof setInterval> | null = null
   private unsubProjection: (() => void) | null = null
@@ -15,6 +16,17 @@ export class StageCast2ControllerManager {
   private now = Date.now()
 
   constructor() {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('gtar_tv_font_size')
+        if (saved) {
+          const parsed = parseInt(saved, 10)
+          if (Number.isFinite(parsed) && parsed >= 20 && parsed <= 56) {
+            this.tvFontSize = parsed
+          }
+        }
+      } catch { /* best effort */ }
+    }
     stageCast.registerStopHandler(() => {
       void this.end()
     })
@@ -101,7 +113,7 @@ export class StageCast2ControllerManager {
     if (!this.unsubProjection) {
       let pending: ReturnType<typeof setTimeout> | undefined
       let latestState: StageCastState | null = null
-      let latestScroll: { scrollTop: number; scrollFraction: number } | null = null
+      let latestScroll: { scrollTop: number; scrollFraction: number; lineIndex?: number } | null = null
 
       this.unsubProjection = stageCast.subscribeProjection((state, scroll) => {
         latestState = state
@@ -111,10 +123,11 @@ export class StageCast2ControllerManager {
           pending = undefined
           if (!latestState || !this.client) return
           const projected = projectCast2Presentation(latestState, {
-            lineIndex: 0,
+            lineIndex: latestScroll?.lineIndex ?? 0,
             scrollTop: latestScroll?.scrollTop ?? 0,
             scrollFraction: latestScroll?.scrollFraction ?? 0,
             chordsVisible: this.chords,
+            fontSize: this.tvFontSize,
           })
           if (projected.ok) {
             this.client.publish(projected.value)
@@ -149,6 +162,7 @@ export class StageCast2ControllerManager {
         scrollTop: 0,
         scrollFraction: 0,
         chordsVisible: visible,
+        fontSize: this.tvFontSize,
       })
       if (projected.ok) {
         this.client.publish(projected.value)
@@ -159,6 +173,34 @@ export class StageCast2ControllerManager {
 
   public getChords(): boolean {
     return this.chords
+  }
+
+  public setTvFontSize(size: number) {
+    const clamped = Math.max(20, Math.min(56, Math.round(size)))
+    this.tvFontSize = clamped
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gtar_tv_font_size', String(clamped))
+      }
+    } catch { /* best effort */ }
+    const cached = stageCast.getCachedState()
+    if (cached && this.client) {
+      const projected = projectCast2Presentation(cached, {
+        lineIndex: 0,
+        scrollTop: 0,
+        scrollFraction: 0,
+        chordsVisible: this.chords,
+        fontSize: clamped,
+      })
+      if (projected.ok) {
+        this.client.publish(projected.value)
+      }
+    }
+    this.notify()
+  }
+
+  public getTvFontSize(): number {
+    return this.tvFontSize
   }
 
   public getView(): Cast2View {
@@ -191,6 +233,7 @@ export class StageCast2ControllerManager {
     if (this.client) { this.client.dispose(); this.client = null }
     this.session = null
     this.chords = false
+    this.tvFontSize = 32
     stageCast.setCast2Connected(false)
   }
 }

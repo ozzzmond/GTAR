@@ -12,6 +12,9 @@
   padding: clamp(16px, 3vw, 48px);
   background: var(--custom-stage-bg, #002B36);
   color: var(--custom-stage-text, #EEE8D5);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 .cast2 button, .cast2 input, .cast2 summary {
   min-height: 44px;
@@ -58,6 +61,7 @@
   width: 100%;
   box-sizing: border-box;
   background: transparent;
+  color: var(--custom-uiPrimaryText, #EEE8D5);
 }
 .cast2-pairing {
   max-width: 640px;
@@ -88,27 +92,113 @@
   align-items: center;
   gap: 12px;
 }
+
+/* TV Presentation Container & Visual Language */
+.cast2-tv-presentation-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* TV Title Pill — GTAR mobile fullscreen inspired design */
+.cast2-tv-title-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(6px, 1.5vh, 12px) clamp(16px, 3vw, 48px);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cast2-tv-title-container {
+    transition: none !important;
+  }
+}
+
+.cast2-tv-title-pill {
+  max-width: min(85vw, 760px);
+  padding: 6px 22px;
+  border-radius: 9999px;
+  background: var(--custom-stage-surface, #073642);
+  background: color-mix(in srgb, var(--custom-stage-surface, #073642) 90%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--custom-card-border, #586E75);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.cast2-tv-title-text {
+  font-size: clamp(14px, 1.4vw, 20px);
+  font-weight: 700;
+  color: var(--custom-stage-text, #EEE8D5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.cast2-tv-title-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cast2-tv-title-hidden {
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+
 .cast2-lyrics {
   min-height: 0;
   flex: 1;
   overflow: auto;
   display: grid;
   gap: 32px;
-  padding: 16px;
+  padding: clamp(16px, 3vw, 48px);
+  padding-top: clamp(60px, 8vh, 84px);
+  scroll-padding-top: clamp(60px, 8vh, 84px);
   background: var(--custom-stage-bg, #002B36);
   border-radius: 12px;
+  box-sizing: border-box;
 }
+
 @media (max-width: 600px) {
   .cast2-lyrics {
     grid-template-columns: 1fr !important;
   }
 }
 
-.cast2-tv { height: 100dvh; display: flex; flex-direction: column; }
 .cast2-tv > h1 { flex: none; }
 .cast2-tv details { text-align: left; font-size: 1rem; }
 .cast2-tv summary { cursor: pointer; }
-.cast2-controller { color: var(--custom-uiPrimaryText, #EEE8D5); }
 .cast2-scanner video { width: 100%; max-height: 40dvh; border-radius: 8px; }
 .cast2-photo { cursor: pointer; }
 .cast2-photo input { max-width: 100%; }
+
+/* Accessibility hidden element */
+.cast2 .sr-only, .cast2-tv .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

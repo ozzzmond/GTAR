@@ -121,7 +121,7 @@ export interface StageCastState {
 
 export type StageCastMessage =
   | { type: 'STATE_UPDATE'; payload: StageCastState }
-  | { type: 'SCROLL_UPDATE'; payload: { scrollTop: number; scrollFraction: number } }
+  | { type: 'SCROLL_UPDATE'; payload: { scrollTop: number; scrollFraction: number; lineIndex?: number } }
   | { type: 'REQUEST_STATE' }
 
 export interface PresentationConnection extends EventTarget {
@@ -185,8 +185,8 @@ const CHANNEL_NAME = 'gtar_stage_cast'
 const STORAGE_KEY = 'gtar_stage_cast_state'
 
 class StageCastEngine {
-  private projectionListeners = new Set<(state: StageCastState | null, scroll: { scrollTop: number; scrollFraction: number } | null) => void>()
-  public subscribeProjection(listener: (state: StageCastState | null, scroll: { scrollTop: number; scrollFraction: number } | null) => void) {
+  private projectionListeners = new Set<(state: StageCastState | null, scroll: { scrollTop: number; scrollFraction: number; lineIndex?: number } | null) => void>()
+  public subscribeProjection(listener: (state: StageCastState | null, scroll: { scrollTop: number; scrollFraction: number; lineIndex?: number } | null) => void) {
     this.projectionListeners.add(listener)
     // Only active in-memory presentation, never hydrate a songbook/cache for Cast 2.
     listener(this.lastState, this.lastScroll)
@@ -197,7 +197,7 @@ class StageCastEngine {
   private presentationConnection: PresentationConnection | null = null
   private themeSnapshot: Pick<StageCastState, 'themeMode' | 'customThemeColors'> = {}
   private lastState: StageCastState | null = null
-  private lastScroll: { scrollTop: number; scrollFraction: number } | null = null
+  private lastScroll: { scrollTop: number; scrollFraction: number; lineIndex?: number } | null = null
   private sessionListeners: Set<(isActive: boolean) => void> = new Set()
   private sessionId: string | null = null
   private windowCheckTimer: ReturnType<typeof setInterval> | null = null
@@ -389,12 +389,12 @@ class StageCastEngine {
     }
   }
 
-  public broadcastScroll(scrollTop: number, scrollFraction: number) {
-    this.lastScroll = { scrollTop, scrollFraction }
+  public broadcastScroll(scrollTop: number, scrollFraction: number, lineIndex?: number) {
+    this.lastScroll = { scrollTop, scrollFraction, lineIndex: lineIndex ?? 0 }
     for (const listener of this.projectionListeners) listener(this.lastState, this.lastScroll)
     const msg: StageCastMessage = {
       type: 'SCROLL_UPDATE',
-      payload: { scrollTop, scrollFraction },
+      payload: { scrollTop, scrollFraction, ...(typeof lineIndex === 'number' ? { lineIndex } : {}) },
     }
 
     if (this.channel) {
