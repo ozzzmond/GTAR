@@ -23,7 +23,7 @@ const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { AuthContext } = require('../src/utils/authContext.ts')
 const { sharedCatalogService } = require('../src/utils/sharedCatalogService.ts')
 
-let dom, root, library, cloud, calls, version, responder
+let dom, root, library, cloud, calls, version, responder, publicationKeyTask
 const id = 'publication_123456789'
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 function session(account = 'account-a', role = 'admin', access = 'active') {
@@ -35,7 +35,13 @@ function session(account = 'account-a', role = 'admin', access = 'active') {
 }
 function persist() { localStorage.setItem(LIBRARY_KEY, JSON.stringify(library)) }
 function sourceResponse() { return response({ success: true, userId: 'account-a', cloudRecord: { userId: 'account-a', version, checksum: computeSongbookChecksum(cloud), data: cloud } }) }
-beforeEach(() => {
+beforeEach(t => {
+  publicationKeyTask = undefined
+  const newPublicationLink = api.newPublicationLink
+  t.mock.method(api, 'newPublicationLink', (...args) => {
+    publicationKeyTask = newPublicationLink(...args)
+    return publicationKeyTask
+  })
   dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test' })
   global.window = dom.window; global.document = dom.window.document
   global.localStorage = dom.window.localStorage; global.sessionStorage = dom.window.sessionStorage
@@ -59,7 +65,15 @@ afterEach(async () => { if (root) { await act(async () => root.unmount()); root 
 const prepare = () => api.preparePublication('set-a', () => library, () => false)
 async function mount(component) { root = createRoot(document.getElementById('root')); await act(async () => root.render(component)) }
 function button(text) { return [...document.querySelectorAll('button')].find(el => el.textContent === text) }
-async function click(element) { assert.ok(element, 'control exists'); await act(async () => element.click()) }
+async function click(element) {
+  assert.ok(element, 'control exists')
+  await act(async () => {
+    element.click()
+    // act flushes React work, but does not own WebCrypto's native digest task.
+    // Await the real key operation so review finishes before assertions/cleanup.
+    await publicationKeyTask
+  })
+}
 async function modal() { await mount(React.createElement(PublishSetlistModal, { sourceId: 'set-a', getLocal: () => library, blocked: () => false, onClose() {} })) }
 async function intent() { const preview = await prepare(); const link = await api.newPublicationLink(preview.account, 'set-a'); return { preview, link: { ...link, pending: api.makePublicationIntent(link, preview) } } }
 
@@ -211,6 +225,31 @@ test('disabled feature leaves Songs usable and Setlists disabled with accessible
   assert.ok(document.getElementById(button('Setlists').getAttribute('aria-describedby')))
   assert.ok(document.querySelector('[data-testid="catalog-search-input"]'))
 })
+test('modal interaction awaits deferred publication key before asserting review', async t => {
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const digest = crypto.subtle.digest.bind(crypto.subtle)
+  t.mock.method(crypto.subtle, 'digest', async (...args) => { await gate; return digest(...args) })
+  await modal()
+  let finished = false
+  const reviewing = click(button('Refresh and review')).then(() => { finished = true })
+  let finishedBeforeRelease
+  try {
+    // Advance one event-loop turn, without a timer or resolving the digest.
+    await new Promise(resolve => setImmediate(resolve))
+    finishedBeforeRelease = finished
+    assert.equal(calls.length, 0, 'review must not read cloud or mutate before the key is ready')
+  } finally {
+    release()
+    await reviewing
+  }
+  assert.equal(finishedBeforeRelease, false, 'interaction must await the actual async review')
+  assert.deepEqual([...document.querySelectorAll('ol h4')].map(e => e.textContent), ['Alpha', 'Beta', 'Alpha'])
+  assert.equal(button('Confirm publish').disabled, true)
+  assert.equal(document.querySelector('input[type=checkbox]').checked, false)
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0)
+})
+
 test('publication modal requires review and explicit confirmation; close/cancel never publish', async () => {
   await modal()
   assert.equal(button('Confirm publish').disabled, true)

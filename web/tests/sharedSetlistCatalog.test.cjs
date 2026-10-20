@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { parseConfigFileTextToJson } = require('typescript')
 const { DatabaseSync } = require('node:sqlite')
 const { createSessionToken } = require('../functions/lib/authCore.ts')
 const { handleSetlistCatalog, snapshotFromSongbook, validateSnapshot } = require('../functions/lib/setlistCatalog.ts')
@@ -107,7 +108,15 @@ test('gate: all routes and methods disabled before DB/auth; wrong and missing fl
   }
   assert.equal(require('../functions/api/catalog/setlists.ts').onRequest, handleSetlistCatalog)
   assert.equal(require('../functions/api/catalog/setlists/[id].ts').onRequest, handleSetlistCatalog)
-  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../wrangler.jsonc'), 'utf8'), /SHARED_SETLISTS_ENABLED/)
+})
+
+test('configuration: shared setlists enabled only in DEV Preview', () => {
+  const configPath = path.join(__dirname, '../wrangler.jsonc')
+  const { config, error } = parseConfigFileTextToJson(configPath, fs.readFileSync(configPath, 'utf8'))
+  assert.equal(error, undefined, 'wrangler.jsonc must be valid JSONC')
+  assert.equal(config.env.preview.vars.SHARED_SETLISTS_ENABLED, 'phase-a-v1')
+  assert.equal(Object.hasOwn(config.vars ?? {}, 'SHARED_SETLISTS_ENABLED'), false)
+  assert.equal(Object.hasOwn(config.env.production.vars ?? {}, 'SHARED_SETLISTS_ENABLED'), false)
 })
 
 test('authorization: active admin only mutations; active members may read; no ownership spoof', async () => {
