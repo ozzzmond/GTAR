@@ -1,3 +1,4 @@
+import type { CatalogSetlistLineage } from '../utils/catalogSetlistLineage'
 /**
  * GTAR Android Room Entity, Setlist & Stage Line Type Definitions (v1.1.62 compatible)
  */
@@ -54,6 +55,7 @@ export interface SongEntity {
 }
 
 export interface WebSetlist {
+  catalogSource?: CatalogSetlistLineage
   id: string | number
   name: string
   createdAt?: number

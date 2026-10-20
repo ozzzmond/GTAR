@@ -1,3 +1,4 @@
+import { validateCatalogLineage } from './catalogSetlistLineage'
 import type { SyncLibrary } from './syncMerge'
 import { prunePersistedLogs } from './logger'
 import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
@@ -123,6 +124,7 @@ export function validateLibrary(value: unknown): asserts value is SyncLibrary {
   }
   for (const list of lib.setlists) {
     if (!list || !validId(list.id) || typeof list.name !== 'string' || !Array.isArray(list.songs) || lists.has(String(list.id))) return fail()
+    if (list.catalogSource !== undefined) validateCatalogLineage(list.catalogSource)
     lists.add(String(list.id))
     for (const ref of list.songs) {
       if (!ref || !validId(ref.id) || !ids.has(String(ref.id)) || typeof ref.title !== 'string') return fail()
