@@ -1,3 +1,5 @@
+import { CatalogImportContext } from './utils/catalogImportContext'
+import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
 import { PublishSetlistModal } from './components/PublishSetlistModal'
 import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
@@ -232,6 +234,7 @@ const DEFAULT_SAMPLE_SETLISTS: WebSetlist[] = [
 ]
 
 export interface WebSetlist {
+  catalogSource?: CatalogSetlistLineage
   id: string | number
   name: string
   createdAt?: number
@@ -1918,6 +1921,16 @@ function LibraryApp() {
   }
 
   return (
+    <CatalogImportContext.Provider value={{
+      getLocal: () => publicationStateRef.current.getLocal(),
+      blocked: () => publicationStateRef.current.blocked() || hasActionableRecovery(),
+      applied: library => {
+        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        const partition = partitionSongs(library.songs)
+        setSongs(partition.active); setDeletedSongs(partition.deleted); setSetlists(library.setlists)
+      },
+      open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
+    }}>
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
       {!isStagePerformanceMode && (
@@ -2338,6 +2351,7 @@ function LibraryApp() {
         </div>
       )}
     </div>
+    </CatalogImportContext.Provider>
   )
 }
 

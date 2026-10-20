@@ -1,7 +1,9 @@
+import { CatalogSetlistPreview } from './CatalogSetlistPreview'
 import { useState } from 'react'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 
 export function SharedSetlistCatalogPanel() {
+  const [selected, setSelected] = useState<{ id: string; revision: number } | null>(null)
   const [offset, setOffset] = useState(0)
   const catalog = useSharedSetlists(true, offset)
   return <section aria-label="Published setlists" className="space-y-3">
@@ -13,9 +15,10 @@ export function SharedSetlistCatalogPanel() {
         <h3 className="font-bold break-words">{setlist.name}</h3>
         <p>{setlist.occurrences} songs · Revision {setlist.revision}</p>
         <p className="text-xs text-app-muted">Updated: {setlist.updated_at}</p>
+        <button type="button" className="min-h-11 px-3 border rounded-lg" onClick={() => setSelected(setlist)}>Preview setlist</button>
       </article>)}
     </div>
-    <p className="text-xs text-app-muted">Setlist preview, import and Open Setlist are planned for Phase C.</p>
+    {selected && catalog.enabled && <CatalogSetlistPreview key={`${selected.id}:${selected.revision}`} {...selected} onClose={() => setSelected(null)} />}
     <nav aria-label="Setlist pages" className="flex gap-3">
       <button type="button" className="min-h-11 px-3 border rounded-lg disabled:opacity-40" disabled={!offset} onClick={() => setOffset(n => Math.max(0, n - 20))}>Previous setlists</button>
       <button type="button" className="min-h-11 px-3 border rounded-lg disabled:opacity-40" disabled={!catalog.enabled || catalog.rows.length < 20} onClick={() => setOffset(n => n + 20)}>Next setlists</button>

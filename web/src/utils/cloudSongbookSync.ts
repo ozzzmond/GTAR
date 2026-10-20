@@ -1,3 +1,4 @@
+import { canonicalCatalogLineage } from './catalogSetlistLineage'
 import { LIBRARY_KEY, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
@@ -128,6 +129,7 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
   const setlists = [...library.setlists]
     .map((sl) => ({
       id: String(sl.id || ''),
+      ...(sl.catalogSource ? { catalogSource: canonicalCatalogLineage(sl.catalogSource) } : {}),
       name: (sl.name || '').trim(),
       isDeleted: Boolean(sl.isDeleted),
       songs: (sl.songs || []).map((ref) => ({
@@ -491,6 +493,7 @@ export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {
 }
 
 export function setlistEquals(a: WebSetlist, b: WebSetlist): boolean {
+  if (JSON.stringify(canonicalCatalogLineage(a.catalogSource)) !== JSON.stringify(canonicalCatalogLineage(b.catalogSource))) return false
   if (a.name !== b.name) return false
   if (Boolean(a.isDeleted) !== Boolean(b.isDeleted)) return false
   if (a.songs.length !== b.songs.length) return false

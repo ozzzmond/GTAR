@@ -1,3 +1,4 @@
+import { validateCatalogLineage } from './catalogSetlistLineage'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -144,6 +145,9 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
     const path = `setlists[${i}]`
     check(sl, path, false)
     if (!object(sl)) return
+    if (sl.catalogSource !== undefined) {
+      try { validateCatalogLineage(sl.catalogSource) } catch { errors.push(`${path}.catalogSource: invalid lineage`) }
+    }
     if (!Array.isArray(sl.songs)) { errors.push(`${path}.songs: must be an array`); return }
     sl.songs.forEach((ref: unknown, j: number) => {
       const refPath = `${path}.songs[${j}]`
