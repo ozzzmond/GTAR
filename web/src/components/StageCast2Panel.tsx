@@ -53,7 +53,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   const viewport = useRef<HTMLDivElement>(null)
 
   // Receiver-specific typography zoom state
-  const [tvFontSize, setTvFontSize] = useState<number>(() => {
+  const [fallbackFontSize, setFallbackFontSize] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('gtar_tv_font_size')
@@ -65,6 +65,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
     }
     return 32
   })
+  const [prevRemoteSize, setPrevRemoteSize] = useState<number | undefined>(undefined)
 
   // Receiver-specific client instance
   const [receiverClient] = useState(() => {
@@ -99,11 +100,19 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
 
   const v = receiver ? receiverClient!.view : stageCast2Controller.getView()
 
+  const remoteSize = v.snapshot?.mode.fontSize
+  if (typeof remoteSize === 'number' && remoteSize >= 20 && remoteSize <= 56 && remoteSize !== prevRemoteSize) {
+    setPrevRemoteSize(remoteSize)
+    setFallbackFontSize(remoteSize)
+  }
+  const tvFontSize = typeof remoteSize === 'number' && remoteSize >= 20 && remoteSize <= 56
+    ? remoteSize
+    : fallbackFontSize
+
   // Synchronize remote font size updates while paired
   useEffect(() => {
     const remoteSize = v.snapshot?.mode.fontSize
     if (typeof remoteSize === 'number' && remoteSize >= 20 && remoteSize <= 56) {
-      setTvFontSize(remoteSize)
       try {
         if (typeof window !== 'undefined') {
           localStorage.setItem('gtar_tv_font_size', String(remoteSize))
@@ -143,11 +152,18 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   }, [pairingUrl, receiver, v.pin])
 
   // TV Title presentation visibility and auto-hide
+  const currentSongKey = `${v.snapshot?.songId ?? ''}:${v.snapshot?.displayTitle ?? ''}`
+  const [prevSongKey, setPrevSongKey] = useState(currentSongKey)
   const [titleVisible, setTitleVisible] = useState(true)
+
+  if (currentSongKey !== prevSongKey) {
+    setPrevSongKey(currentSongKey)
+    setTitleVisible(true)
+  }
+
   const titleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    setTitleVisible(true)
     if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
     titleTimerRef.current = setTimeout(() => {
       const el = viewport.current
