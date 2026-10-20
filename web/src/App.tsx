@@ -1,3 +1,4 @@
+import { PublishSetlistModal } from './components/PublishSetlistModal'
 import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
@@ -800,6 +801,9 @@ function LibraryApp() {
 
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
   const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
+  const [publishingSetlistId, setPublishingSetlistId] = useState<string | number | null>(null)
+  const publicationStateRef = useRef({ getLocal: getConflictDraft, blocked: () => !!crossTabConflict || !!editorRecoveryDraftRef.current?.() })
+  publicationStateRef.current = { getLocal: getConflictDraft, blocked: () => !!crossTabConflict || !!editorRecoveryDraftRef.current?.() }
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
   const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
@@ -2056,6 +2060,7 @@ function LibraryApp() {
             onBulkDeleteSongs={handleBulkDeleteSongs}
             onBulkAddSongsToSetlist={handleBulkAddSongsToSetlist}
             onBulkDeleteSetlists={handleBulkDeleteSetlists}
+            onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
             onShareSetlist={(sl) => setSharingSetlist(sl)}
             onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
             onImportSharedCatalogSong={handleSaveSongFromEditor}
@@ -2174,6 +2179,7 @@ function LibraryApp() {
             onImportSingleSetlist={handleImportSingleSetlist}
             onSmartMerge={handleSmartMerge}
             onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
+            onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
             onShareSetlist={(sl) => setSharingSetlist(sl)}
           />
         )}
@@ -2289,6 +2295,12 @@ function LibraryApp() {
         onClose={() => setIsTvPresentationModalOpen(false)}
       />
 
+      {publishingSetlistId !== null && (
+        <PublishSetlistModal sourceId={publishingSetlistId}
+          getLocal={() => publicationStateRef.current.getLocal()}
+          blocked={() => publicationStateRef.current.blocked()}
+          onClose={() => setPublishingSetlistId(null)} />
+      )}
       {/* Share Setlist QR Code Modal */}
       {sharingSetlist && (
         <ShareSetlistModal

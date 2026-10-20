@@ -56,7 +56,7 @@ export function getAuthenticatedSessionToken(): { token: string; accountId: stri
 /**
  * Internal helper to perform typed fetch requests with timeout and cancellation.
  */
-async function catalogFetch<T>(
+export async function catalogFetch<T>(
   url: string,
   options: {
     method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -64,6 +64,7 @@ async function catalogFetch<T>(
     body?: unknown
     signal?: AbortSignal
     timeoutMs?: number
+    idempotencyKey?: string
   }
 ): Promise<T> {
   const { method = 'GET', token, body: requestBody, signal, timeoutMs = DEFAULT_CATALOG_TIMEOUT_MS } = options
@@ -94,12 +95,14 @@ async function catalogFetch<T>(
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
     }
+    if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey
     if (requestBody !== undefined) {
       headers['Content-Type'] = 'application/json'
     }
 
     const response = await fetch(url, {
       method,
+      cache: 'no-store',
       headers,
       body: requestBody !== undefined ? JSON.stringify(requestBody) : undefined,
       signal: controller.signal,
