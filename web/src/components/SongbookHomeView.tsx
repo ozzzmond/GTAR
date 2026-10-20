@@ -1804,8 +1804,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           </button>
                         )}
                         {onPublishSetlist && canPublishSetlist && setlistCapability.enabled && (
-                          <button type="button" className="w-full text-left px-3 min-h-11 hover:bg-app-surface"
-                            onClick={event => { event.stopPropagation(); setActiveMenuSetlistId(null); onPublishSetlist(sl) }}>Publish to Shared Setlists</button>
+                          <button
+                            type="button"
+                            data-testid={`menu-publish-setlist-${sl.id}`}
+                            aria-label={`Publish ${sl.name} to Shared`}
+                            title="Publish to Shared"
+                            onClick={event => { event.stopPropagation(); setActiveMenuSetlistId(null); onPublishSetlist(sl) }}
+                            className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                            <span>Publish to Shared</span>
+                          </button>
                         )}
                         {onShareSetlist && (
                           <button

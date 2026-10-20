@@ -24,9 +24,9 @@ focus containment, Escape cancellation, and focus return.
 
 ## Publication source and approval
 
-Active admins can choose Publish to Shared Setlists from personal setlist card
+Active admins can choose Publish to Shared from personal setlist card
 menus or the setlist drawer. No save/edit operation publishes. The modal requires
-Refresh and review, disclosure, and explicit checkbox/button confirmation.
+Review Setlist, disclosure, and explicit checkbox/button confirmation.
 
 The stable selected personal ID resolves against the persisted local library and
 a fresh authenticated GET `/api/songbook/sync`. In-memory edits, editor drafts,

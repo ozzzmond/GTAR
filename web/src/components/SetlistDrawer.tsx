@@ -14,6 +14,7 @@ import {
   PlayCircle,
   Download,
   Upload,
+  UploadCloud,
   QrCode,
   ListPlus,
   AlertCircle,
@@ -516,9 +517,15 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             </button>
                           )}
                           {onPublishSetlist && setlistCapability.enabled && (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active' && (
-                            <button type="button" aria-label={`Publish ${sl.name} to Shared Setlists`} title="Publish to Shared Setlists"
-                              className="min-h-11 min-w-11 p-2 rounded-lg text-app-action hover:bg-app-surface"
-                              onClick={event => { event.stopPropagation(); onPublishSetlist(sl) }}><Upload className="w-4 h-4" /></button>
+                            <button
+                              type="button"
+                              aria-label={`Publish ${sl.name} to Shared`}
+                              title="Publish to Shared"
+                              className="min-h-11 min-w-11 p-2 rounded-lg text-app-action hover:bg-app-surface flex items-center justify-center transition-colors cursor-pointer"
+                              onClick={event => { event.stopPropagation(); onPublishSetlist(sl) }}
+                            >
+                              <UploadCloud className="w-4 h-4 text-app-action" />
+                            </button>
                           )}
                           {onShareSetlist && (
                             <button
