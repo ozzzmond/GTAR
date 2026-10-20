@@ -194,6 +194,7 @@ API trust boundaries, abuse protection, sharing authorization, and safe logging.
 - [preAuthDebugLogs.test.cjs](preAuthDebugLogs.test.cjs)
 - [sharedCatalogApi.test.cjs](sharedCatalogApi.test.cjs)
 - [sharedCatalogSchema.test.cjs](sharedCatalogSchema.test.cjs)
+- [sharedSetlistCatalog.test.cjs](sharedSetlistCatalog.test.cjs)
 - [ugBodyLimits.test.cjs](ugBodyLimits.test.cjs)
 - [ugScraperContract.test.cjs](ugScraperContract.test.cjs)
 <!-- test-catalog:SECURITY_AND_API:end -->
