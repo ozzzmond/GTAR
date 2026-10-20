@@ -1,3 +1,5 @@
+import { SharedSetlistCatalogPanel } from './SharedSetlistCatalogPanel'
+import { useSharedSetlists } from '../utils/useSharedSetlists'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Search,
@@ -64,6 +66,9 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
   ).trim().toLowerCase()
   const activeUserRole = propUserRole || auth?.role || auth?.session?.role || 'member'
   const isSuperAdmin = auth?.isSuperAdmin || activeUserRole === 'admin' || activeUserRole === 'SUPER_ADMIN'
+
+  const [catalogKind, setCatalogKind] = useState<'songs' | 'setlists'>('songs')
+  const setlistCapability = useSharedSetlists()
 
   // State
   const [songs, setSongs] = useState<SharedCatalogSongItem[]>([])
@@ -358,6 +363,12 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
 
   return (
     <div className="shared-catalog-browser space-y-4" data-testid="shared-catalog-browser">
+      <nav aria-label="Shared Catalog content" className="flex gap-2">
+        <button type="button" aria-pressed={catalogKind === 'songs'} className="min-h-11 px-4 rounded-lg border border-app-border" onClick={() => setCatalogKind('songs')}>Songs</button>
+        <button type="button" aria-pressed={catalogKind === 'setlists'} disabled={!setlistCapability.enabled} aria-describedby="setlist-availability" className="min-h-11 px-4 rounded-lg border border-app-border disabled:opacity-40" onClick={() => setCatalogKind('setlists')}>Setlists</button>
+      </nav>
+      {!setlistCapability.enabled && <p id="setlist-availability" role="status" className="text-xs text-app-muted">{setlistCapability.message} <button type="button" className="min-h-11 px-2 underline" onClick={setlistCapability.reload}>Check availability</button></p>}
+      {catalogKind === 'setlists' && setlistCapability.enabled ? <SharedSetlistCatalogPanel /> : <>
       {/* Toast Notification */}
       {importFeedback && (
         <div
@@ -897,6 +908,7 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
           </div>
         </dialog>
       )}
+      </>}
     </div>
   )
 }

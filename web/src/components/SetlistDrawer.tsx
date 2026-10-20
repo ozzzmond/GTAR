@@ -1,3 +1,4 @@
+import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { resolveSetlistSong } from '../utils/setlistSongs'
 import React, { useState, useEffect, useMemo } from 'react'
 import {
@@ -51,6 +52,7 @@ interface SetlistDrawerProps {
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
   onExportAllData?: () => void
+  onPublishSetlist?: (setlist: WebSetlist) => void
   onShareSetlist?: (setlist: WebSetlist) => void
   onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => boolean
   onCreateSetlistForSong?: (songId: string | number, name: string) => boolean
@@ -88,6 +90,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   onSmartMerge,
   onExportAllData,
   onShareSetlist,
+  onPublishSetlist,
   onSongMembershipChange,
   onCreateSetlistForSong,
   initialTab,
@@ -124,6 +127,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
     return set
   }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
   const auth = useOptionalGoogleAuth()
+  const setlistCapability = useSharedSetlists(isOpen && (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active')
   const [localCatalogMetadata, setLocalCatalogMetadata] = useState<Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>>(() => sharedCatalogService.getCatalogMetadataMap())
   useEffect(() => {
     const handleUpdate = () => setLocalCatalogMetadata(sharedCatalogService.getCatalogMetadataMap())
@@ -510,6 +514,11 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             >
                               <PlayCircle className="w-4 h-4" />
                             </button>
+                          )}
+                          {onPublishSetlist && setlistCapability.enabled && (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active' && (
+                            <button type="button" aria-label={`Publish ${sl.name} to Shared Setlists`} title="Publish to Shared Setlists"
+                              className="min-h-11 min-w-11 p-2 rounded-lg text-app-action hover:bg-app-surface"
+                              onClick={event => { event.stopPropagation(); onPublishSetlist(sl) }}><Upload className="w-4 h-4" /></button>
                           )}
                           {onShareSetlist && (
                             <button

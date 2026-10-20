@@ -169,6 +169,7 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [setlistMembership.test.cjs](setlistMembership.test.cjs)
 - [sharedCatalogOffline.test.cjs](sharedCatalogOffline.test.cjs)
 - [sharedCatalogUi.test.cjs](sharedCatalogUi.test.cjs)
+- [sharedSetlistPublishing.test.cjs](sharedSetlistPublishing.test.cjs)
 - [sidePanelConsolidatedHotfix.test.cjs](sidePanelConsolidatedHotfix.test.cjs)
 - [slashChords.test.cjs](slashChords.test.cjs)
 - [songParser.test.cjs](songParser.test.cjs)

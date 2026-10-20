@@ -1,3 +1,4 @@
+import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
 import { resolveSetlistSong } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
@@ -57,6 +58,7 @@ interface SongbookHomeViewProps {
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
   onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
   onBulkDeleteSetlists?: (setlistIds: Array<string | number>) => void
+  onPublishSetlist?: (setlist: WebSetlist) => void
   onShareSetlist?: (setlist: WebSetlist) => void
   onImportSharedSetlist?: (shared: SharedSetlistPayload) => void
   onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | void
@@ -88,6 +90,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onBulkAddSongsToSetlist,
   onBulkDeleteSetlists,
   onShareSetlist,
+  onPublishSetlist,
   onImportSharedSetlist,
   onImportSharedCatalogSong,
   onUpdateSong,
@@ -154,6 +157,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
+  const canPublishSetlist = (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active'
+  const setlistCapability = useSharedSetlists(canPublishSetlist)
   const storedAuthStatus = getStoredSessionStatus()
   const isAuthActive = auth
     ? !!auth.session && auth.accessStatus === 'active'
@@ -1797,6 +1802,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <Pencil className="ui-action-text ui-action-text w-3.5 h-3.5 text-app-action" />
                             <span>Rename Setlist</span>
                           </button>
+                        )}
+                        {onPublishSetlist && canPublishSetlist && setlistCapability.enabled && (
+                          <button type="button" className="w-full text-left px-3 min-h-11 hover:bg-app-surface"
+                            onClick={event => { event.stopPropagation(); setActiveMenuSetlistId(null); onPublishSetlist(sl) }}>Publish to Shared Setlists</button>
                         )}
                         {onShareSetlist && (
                           <button
