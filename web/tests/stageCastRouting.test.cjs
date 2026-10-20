@@ -472,7 +472,7 @@ test('Stage Cast Security: postMessage restricts targetOrigin and validates even
 
 test('Presentation entry points: short alias and legacy routes preserve query data', () => {
   const { isPresentationLocation } = require('../src/utils/presentationRoute.ts')
-  for (const route of ['/tv', '/tv/', '/stage/present', '/stage/present?view=present&session=GTAR-ABCD', '/tv?session=GTAR-ABCD', '/?view=present', '/#present']) {
+  for (const route of ['/tv', '/tv/', '/tv/cast2', '/tv/cast2/', '/stage/present', '/stage/present?view=present&session=GTAR-ABCD', '/tv?session=GTAR-ABCD', '/?view=present', '/#present']) {
     const url = new URL(route, 'https://dev.gtar-web.pages.dev')
     const before = url.href
     assert.equal(isPresentationLocation(url), true, route)

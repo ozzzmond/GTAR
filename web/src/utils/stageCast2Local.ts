@@ -11,4 +11,9 @@ export const stageCast2Enabled = typeof __GTAR_STAGE_CAST2_ENABLED__ !== 'undefi
   : (Boolean(import.meta.env.DEV) && import.meta.env.VITE_CAST2_LOCAL_REVIEW === 'true')
 
 export const cast2LocalEnabled = stageCast2Enabled
-export const cast2ReceiverRoute = stageCast2Enabled && typeof window !== 'undefined' && (window.location.pathname === '/tv/cast2' || window.location.pathname === '/tv' || window.location.pathname === '/tv/')
+export const cast2ReceiverRoute = stageCast2Enabled && typeof window !== 'undefined' && (
+  window.location.pathname === '/tv' ||
+  window.location.pathname === '/tv/' ||
+  window.location.pathname === '/tv/cast2' ||
+  window.location.pathname === '/tv/cast2/'
+)

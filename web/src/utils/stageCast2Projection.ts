@@ -8,6 +8,7 @@ export interface ProjectionPosition {
   scrollTop: number
   scrollFraction: number
   chordsVisible: boolean
+  fontSize?: number
 }
 
 /** Explicit allowlist from the active stage only. No persistence, theme, draft or library copying. */
@@ -35,6 +36,12 @@ export function projectCast2Presentation(state: StageCastState, position: Projec
     transpose: { offset: state.transposeOffset, effectiveKey: state.effectiveKey },
     position: { lineIndex: position.lineIndex },
     scroll: { top: position.scrollTop, fraction: position.scrollFraction },
-    mode: { columns: state.isTwoColumn ? 2 : 1, notation: state.notation ?? 'chords' },
+    mode: {
+      columns: state.isTwoColumn ? 2 : 1,
+      notation: state.notation ?? 'chords',
+      ...(typeof position.fontSize === 'number' && Number.isSafeInteger(position.fontSize) && position.fontSize >= 16 && position.fontSize <= 72
+        ? { fontSize: position.fontSize }
+        : {}),
+    },
   })
 }

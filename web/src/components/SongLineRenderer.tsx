@@ -140,11 +140,11 @@ function renderInteractiveChordLine(
       const rawToken = text.substring(start, i)
 
       // Handle hyphenated compound chords like "<C#m>-<B>" or "C#m-B"
-      if (rawToken.includes('-') || rawToken.includes('–') || rawToken.includes('—')) {
-        const subParts = rawToken.split(/([–—-]|--)/)
+      if (rawToken.includes('-') || rawToken.includes('\u2013') || rawToken.includes('\u2014')) {
+        const subParts = rawToken.split(/([\u2013\u2014-]|--)/)
         for (let sIdx = 0; sIdx < subParts.length; sIdx++) {
           const sub = subParts[sIdx]
-          if (sub === '-' || sub === '–' || sub === '—' || sub === '--') {
+          if (sub === '-' || sub === '\u2013' || sub === '\u2014' || sub === '--') {
             elements.push(<span key={`sep-${start}-${sIdx}`}>{sub}</span>)
             continue
           }
@@ -285,7 +285,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   const isHighContrast = chordScale >= 1.2 && fontWeight === 'bold'
 
   const renderAnchored = (segments: ChordSegment[], key: number) => (
-    <div key={key} data-stage-line="true" className={`${fontClass} stage-anchored-line select-text`}
+    <div key={key} data-stage-line="true" data-line-index={key} className={`${fontClass} stage-anchored-line select-text`}
       style={{ fontSize: fontSizePx, padding: spacing.chordProPadding, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start' }}>
       {chordLyricWords(segments).map((word, wordIndex) => (
         <span key={wordIndex} className="stage-anchored-word" style={{ display: 'inline-flex', maxWidth: '100%', minWidth: 0 }}>
@@ -318,7 +318,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
         if (line.type === 'LYRIC' && previous?.type === 'CHORD_ROW' && previous.isOverLyric) return null
         switch (line.type) {
           case 'EMPTY':
-            return <div key={idx} style={{ height: spacing.emptySpacerHeight }} />
+            return <div key={idx} data-stage-line="true" data-line-index={idx} style={{ height: spacing.emptySpacerHeight }} />
 
           case 'SECTION_HEADER':
             return (
@@ -327,6 +327,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                 data-stage-section="true"
                 data-section-title={line.title}
                 data-section-index={idx}
+                data-line-index={idx}
                 className={`${fontClass} stage-section-header select-none`}
                 style={{
                   fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
@@ -347,6 +348,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               <div
                 key={idx}
                 data-stage-line="true"
+                data-line-index={idx}
                 style={{
                   paddingTop: spacing.chordRowPt,
                   paddingBottom: spacing.chordRowPb,
@@ -373,6 +375,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               <div
                 key={idx}
                 data-stage-line="true"
+                data-line-index={idx}
                 style={{
                   paddingTop: spacing.lyricRowPt,
                   paddingBottom: spacing.lyricRowPb,
@@ -398,6 +401,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                 <div
                   key={idx}
                   data-stage-line="true"
+                  data-line-index={idx}
                   style={{
                     paddingTop: '1.5px',
                     paddingBottom: '1.5px',

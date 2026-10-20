@@ -28,11 +28,17 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
     return params.get('cast2') || (!receiver ? stageCast2Controller.getView().ref : '') || ''
   })
 
+  // URL normalization and alias redirect
   useEffect(() => {
-    if (typeof window !== 'undefined' && new URLSearchParams((window.location.hash || '').slice(1)).has('cast2')) {
-      history.replaceState(null, '', window.location.pathname + window.location.search)
+    if (typeof window !== 'undefined') {
+      if (new URLSearchParams((window.location.hash || '').slice(1)).has('cast2')) {
+        history.replaceState(null, '', window.location.pathname + window.location.search)
+      }
+      if (receiver && (window.location.pathname === '/tv/cast2' || window.location.pathname === '/tv/cast2/')) {
+        history.replaceState(null, '', '/tv' + window.location.search + window.location.hash)
+      }
     }
-  }, [])
+  }, [receiver])
 
   const [pin, setPin] = useState('')
   const [recovery, setRecovery] = useState(false)
@@ -45,6 +51,21 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   const [qr, setQr] = useState('')
   const [now, setNow] = useState(() => Date.now())
   const viewport = useRef<HTMLDivElement>(null)
+
+  // Receiver-specific typography zoom state
+  const [fallbackFontSize, setFallbackFontSize] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('gtar_tv_font_size')
+        if (saved) {
+          const parsed = parseInt(saved, 10)
+          if (Number.isFinite(parsed) && parsed >= 20 && parsed <= 56) return parsed
+        }
+      } catch { /* best effort */ }
+    }
+    return 32
+  })
+  const [prevRemoteSize, setPrevRemoteSize] = useState<number | undefined>(undefined)
 
   // Receiver-specific client instance
   const [receiverClient] = useState(() => {
@@ -79,11 +100,32 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
 
   const v = receiver ? receiverClient!.view : stageCast2Controller.getView()
 
+  const remoteSize = v.snapshot?.mode.fontSize
+  if (typeof remoteSize === 'number' && remoteSize >= 20 && remoteSize <= 56 && remoteSize !== prevRemoteSize) {
+    setPrevRemoteSize(remoteSize)
+    setFallbackFontSize(remoteSize)
+  }
+  const tvFontSize = typeof remoteSize === 'number' && remoteSize >= 20 && remoteSize <= 56
+    ? remoteSize
+    : fallbackFontSize
+
+  // Synchronize remote font size updates while paired
+  useEffect(() => {
+    const remoteSize = v.snapshot?.mode.fontSize
+    if (typeof remoteSize === 'number' && remoteSize >= 20 && remoteSize <= 56) {
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('gtar_tv_font_size', String(remoteSize))
+        }
+      } catch { /* best effort */ }
+    }
+  }, [v.snapshot?.mode.fontSize])
+
   // Receiver timers and document title
   useEffect(() => {
     if (!receiver || !cast2LocalEnabled || !receiverClient) return
     if (typeof document !== 'undefined') {
-      document.title = 'TV Presentation · GTAR'
+      document.title = 'TV Presentation \u00b7 GTAR'
     }
     const timer = setInterval(() => { void receiverClient.tick() }, 5000)
     const clock = setInterval(() => setNow(Date.now()), 1000)
@@ -109,16 +151,93 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
     return () => { cancelled = true }
   }, [pairingUrl, receiver, v.pin])
 
+  // TV Title presentation visibility and auto-hide
+  const currentSongKey = `${v.snapshot?.songId ?? ''}:${v.snapshot?.displayTitle ?? ''}`
+  const [prevSongKey, setPrevSongKey] = useState(currentSongKey)
+  const [titleVisible, setTitleVisible] = useState(true)
+
+  if (currentSongKey !== prevSongKey) {
+    setPrevSongKey(currentSongKey)
+    setTitleVisible(true)
+  }
+
+  const titleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
+    titleTimerRef.current = setTimeout(() => {
+      const el = viewport.current
+      if (el && el.scrollTop > 30) {
+        setTitleVisible(false)
+      }
+    }, 4000)
+    return () => {
+      if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
+    }
+  }, [v.snapshot?.songId, v.snapshot?.displayTitle])
+
+  const handleReceiverScroll = () => {
+    const el = viewport.current
+    if (!el) return
+    const currentTop = el.scrollTop
+    if (currentTop <= 20) {
+      setTitleVisible(true)
+      if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
+    } else if (currentTop > 30) {
+      setTitleVisible(false)
+    }
+  }
+
+  const handleReceiverInteraction = () => {
+    setTitleVisible(true)
+    if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
+    titleTimerRef.current = setTimeout(() => {
+      const el = viewport.current
+      if (el && el.scrollTop > 30) {
+        setTitleVisible(false)
+      }
+    }, 4000)
+  }
+
+  // Section-aware scroll synchronization
+
   useEffect(() => {
     const el = viewport.current
     if (!el || !v.snapshot) return
-    const apply = () => { el.scrollTop = v.snapshot!.scroll.fraction * Math.max(0, el.scrollHeight - el.clientHeight) }
-    apply()
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply)
+
+    const applyScroll = () => {
+      if (v.snapshot!.scroll.fraction === 0 && v.snapshot!.position.lineIndex === 0) {
+        el.scrollTop = 0
+        return
+      }
+
+      const targetIndex = v.snapshot!.position.lineIndex
+      if (targetIndex > 0) {
+        const targetEl = el.querySelector<HTMLElement>(
+          `[data-section-index="${targetIndex}"], [data-line-index="${targetIndex}"]`
+        )
+        if (targetEl) {
+          const elRect = el.getBoundingClientRect()
+          const targetRect = targetEl.getBoundingClientRect()
+          const elementOffsetInContainer = targetRect.top - elRect.top + el.scrollTop
+          const clearance = 72
+          const targetScrollTop = Math.max(0, Math.round(elementOffsetInContainer - clearance))
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+          el.scrollTop = Math.min(maxScroll, targetScrollTop)
+          return
+        }
+      }
+
+      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+      el.scrollTop = Math.round(v.snapshot!.scroll.fraction * maxScroll)
+    }
+
+    applyScroll()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(applyScroll)
     observer?.observe(el)
-    window.addEventListener('resize', apply)
-    return () => { observer?.disconnect(); window.removeEventListener('resize', apply) }
-  }, [v.snapshot])
+    window.addEventListener('resize', applyScroll)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', applyScroll) }
+  }, [v.snapshot, tvFontSize])
 
   if (!cast2LocalEnabled) return receiver ? <p role="status">TV Presentation is disabled.</p> : null
 
@@ -161,16 +280,40 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
         {!terminal && (v.state !== 'CONNECTED' || recovery) && <button onClick={() => void receiverClient!.end()}>End session</button>}
         {v.state === 'CONNECTED' && !v.snapshot && <p>Waiting for the controller's active song...</p>}
         {v.snapshot && v.state === 'CONNECTED' && (
-          <>
-            <h1>{v.snapshot.displayTitle}</h1>
-            <div ref={viewport} className="cast2-lyrics" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
+          <div
+            className="cast2-tv-presentation-container"
+            onClick={handleReceiverInteraction}
+            onMouseMove={handleReceiverInteraction}
+          >
+            <h1 className="sr-only">{v.snapshot.displayTitle}</h1>
+            <div
+              className={`cast2-tv-title-container ${titleVisible ? 'cast2-tv-title-visible' : 'cast2-tv-title-hidden'}`}
+              aria-label={`Song: ${v.snapshot.displayTitle}`}
+            >
+              <div className="cast2-tv-title-pill">
+                <span className="cast2-tv-title-text" title={v.snapshot.displayTitle}>
+                  {v.snapshot.displayTitle}
+                </span>
+              </div>
+            </div>
+            <div
+              ref={viewport}
+              onScroll={handleReceiverScroll}
+              className="cast2-lyrics"
+              style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
+            >
               {columns.map((lines, index) => (
                 <div key={index}>
-                  <SongLineRenderer lines={lines} fontSizePx={32} notation={v.snapshot!.mode.notation} referenceKey={v.snapshot!.transpose.effectiveKey} />
+                  <SongLineRenderer
+                    lines={lines}
+                    fontSizePx={tvFontSize}
+                    notation={v.snapshot!.mode.notation}
+                    referenceKey={v.snapshot!.transpose.effectiveKey}
+                  />
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
       </main>
     )
@@ -209,7 +352,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
       )}
       {terminal && (
         <p className="text-xs text-app-muted mt-2">
-          On the TV, open the TV Browser Presentation Page. Scan its QR or choose a photo to fill the reference, then enter the PIN. Manual reference entry is always available.
+          On the TV, open the TV Browser Presentation Page at /tv. Scan its QR or choose a photo to fill the reference, then enter the PIN. Manual reference entry is always available.
         </p>
       )}
     </div>

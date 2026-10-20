@@ -20,7 +20,7 @@ Stage Cast 2.0 P2 brings the Stage Cast 2 offline protocol foundation (P0) and s
    - All connections utilize short-lived, single-use connection tickets over `wss://` (never passing bearer tokens over WebSockets).
 
 3. **Field QA URLs**:
-   - **Smart TV Browser Receiver**: `https://dev.gtar-web.pages.dev/tv/cast2`
+   - **Smart TV Browser Receiver (Canonical)**: `https://dev.gtar-web.pages.dev/tv` (`/tv/cast2` supported as compatibility alias)
    - **Mobile Phone / Tablet Controller**: `https://dev.gtar-web.pages.dev/` (opens Stage Cast 2 panel)
    - **QR Pairing Entrypoint**: `https://dev.gtar-web.pages.dev/#cast2=<64-char-ref>`
 
@@ -42,7 +42,7 @@ To activate backend transport in Cloudflare DEV:
    - D1 binding `DB` to `gtar-db-dev`
 
 3. **Field Testing Workflow**:
-   - On Smart TV: Open `https://dev.gtar-web.pages.dev/tv/cast2`. Click "Create TV pairing". TV displays QR code and 6-digit PIN.
+   - On Smart TV: Open `https://dev.gtar-web.pages.dev/tv`. Click "Create TV pairing". TV displays QR code and 6-digit PIN.
    - On Mobile / Tablet: Scan QR code with phone camera or navigate to `https://dev.gtar-web.pages.dev/#cast2=<ref>`. Sign in with authorized Google account. Enter the 6-digit PIN. Click "Request TV approval".
    - On Smart TV: Tap "Approve controller".
    - Real-time teleprompter sync: Controller song selection, transpose offset, chords toggle, and auto-scrolling project directly to the TV display.
