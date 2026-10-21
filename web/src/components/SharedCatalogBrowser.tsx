@@ -43,7 +43,9 @@ import { useOptionalGoogleAuth } from '../utils/authContext'
 
 export interface SharedCatalogBrowserProps {
   personalSongs?: ActiveSongState[]
+  personalSetlists?: import('../types/gtar').WebSetlist[]
   onSongUnpublished?: (catalogSongId: string) => void;
+  onSetlistUnpublished?: (catalogSetlistId: string) => void;
   onImportSong: (song: ActiveSongState) => boolean | void
   onSongImported?: (songTitle: string) => void
   currentUserId?: string | null
@@ -52,7 +54,9 @@ export interface SharedCatalogBrowserProps {
 
 export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
   personalSongs = [],
+  personalSetlists = [],
   onSongUnpublished,
+  onSetlistUnpublished,
   onImportSong,
   onSongImported,
   currentUserId: propUserId,
@@ -392,7 +396,13 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
         ><ListMusic className="w-3.5 h-3.5" /><span>Setlists</span></button>
       </nav>
       {!setlistCapability.enabled && <p id="setlist-availability" role="status" className="text-xs text-app-muted">{setlistCapability.message} <button type="button" className="min-h-11 px-2 underline cursor-pointer" onClick={setlistCapability.reload}>Check availability</button></p>}
-      {catalogKind === 'setlists' && setlistCapability.enabled ? <SharedSetlistCatalogPanel /> : <>
+      {catalogKind === 'setlists' && setlistCapability.enabled ? (
+        <SharedSetlistCatalogPanel
+          personalSetlists={personalSetlists}
+          currentUserId={activeUserId || null}
+          onUnpublished={onSetlistUnpublished}
+        />
+      ) : <>
       {/* Toast Notification */}
       {importFeedback && (
         <div
