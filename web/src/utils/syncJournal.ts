@@ -4,6 +4,7 @@ import { prunePersistedLogs } from './logger'
 import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 import { canonicalSongKey } from './musicalKey'
 import { validateCloudThemeSettings } from './backupSettings'
+import { recoverySourceDigest } from './recoverySourceDigest'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -196,7 +197,7 @@ export function recoveryData(storage: Storage = localStorage): Record<string, st
   return data
 }
 
-// Decisions preserve exact source bytes and the chosen library. They never remove archives.
+// Decisions preserve the chosen library and bind untouched archives to exact source bytes.
 export const RECOVERY_DECISIONS_KEY = 'gtar_recovery_decisions_v1'
 export interface RecoveryRecordDifference {
   kind: 'song' | 'setlist'
@@ -216,7 +217,12 @@ export interface RecoverySourceReview {
 interface RecoveryDecision {
   choice: 'keep-current' | 'reopen'
   libraryRaw: string
-  sources: Record<string, string>
+  sources: Record<string, string | RecoverySourceReference>
+}
+interface RecoverySourceReference {
+  sourceKey: string
+  rawLength: number
+  digest: string
 }
 export interface RecoveryReview {
   libraryRaw: string | null
@@ -252,16 +258,35 @@ function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary
 function readRecoveryDecisions(raw: string | null): RecoveryDecision[] {
   if (raw === null) return []
   const value = JSON.parse(raw)
-  if (value?.version !== 1 || !Array.isArray(value.decisions)) throw new Error('Invalid recovery decisions')
+  if (![1, 2].includes(value?.version) || !Array.isArray(value.decisions)) throw new Error('Invalid recovery decisions')
+  let historical: RecoveryDecision[] = []
+  if (value.version === 2) {
+    if (Object.keys(value).length !== 3) throw new Error('Invalid recovery decisions')
+    // Preserve the original V1 envelope verbatim, including historical-only bytes.
+    // Do not convert its sources to references: the original archives may be gone.
+    if (value.legacyV1Raw !== null) {
+      if (typeof value.legacyV1Raw !== 'string' || JSON.parse(value.legacyV1Raw)?.version !== 1) throw new Error('Invalid historical recovery decisions')
+      historical = readRecoveryDecisions(value.legacyV1Raw)
+    }
+  }
   for (const decision of value.decisions) {
     if (!decision || !['keep-current', 'reopen'].includes(decision.choice) || typeof decision.libraryRaw !== 'string' ||
         !decision.sources || typeof decision.sources !== 'object' || Array.isArray(decision.sources)) throw new Error('Invalid recovery decision')
+    if (value.version === 2 && Object.keys(decision).length !== 3) throw new Error('Invalid recovery decision')
     validateLibrary(JSON.parse(decision.libraryRaw))
     for (const [key, source] of Object.entries(decision.sources)) {
-      if ((!key.startsWith('gtar_sync_recovery:') && !key.startsWith('gtar_sync_v1:') && key !== 'legacy') || typeof source !== 'string') throw new Error('Invalid decision source')
+      if (!key.startsWith('gtar_sync_recovery:') && !key.startsWith('gtar_sync_v1:') && key !== 'legacy') throw new Error('Invalid decision source')
+      if (value.version === 1) {
+        if (typeof source !== 'string') throw new Error('Invalid decision source')
+      } else {
+        const ref = source as RecoverySourceReference
+        if (!ref || typeof ref !== 'object' || Array.isArray(ref) || ref.sourceKey !== key ||
+            !Number.isSafeInteger(ref.rawLength) || ref.rawLength < 0 || typeof ref.digest !== 'string' ||
+            !/^sha256-utf16le:[a-f0-9]{64}$/.test(ref.digest) || Object.keys(ref).length !== 3) throw new Error('Invalid decision source reference')
+      }
     }
   }
-  return value.decisions
+  return [...historical, ...value.decisions]
 }
 
 // Read-only review uses the same representation rule as the import guard.
@@ -314,7 +339,12 @@ export function inspectRecovery(storage: Storage = localStorage): RecoveryReview
         // Unknown/pending operations and legacy access-setting conflicts require manual recovery.
         item.canKeepCurrent = !represented && !pending && candidates.every(candidate => candidate.allowedUsers === undefined || same(library.allowedUsers, candidate.allowedUsers))
         if (item.canKeepCurrent) {
-          const decision = [...decisions].reverse().find(value => value.sources[key] === raw)
+          const decision = [...decisions].reverse().find(value => {
+            if (!Object.hasOwn(value.sources, key)) return false
+            const source = value.sources[key]
+            return typeof source === 'string' ? source === raw :
+              source.sourceKey === key && source.rawLength === raw.length && source.digest === recoverySourceDigest(raw)
+          })
           if (decision?.choice === 'keep-current') item.status = 'resolved'
         }
       } catch { item.status = 'invalid'; review.invalid = true }
@@ -333,7 +363,7 @@ export function hasActionableRecovery(storage: Storage = localStorage): boolean 
 }
 
 // Explicit operator choice only. No library write, source replacement, pruning or cloud action.
-// The append-only decision preserves the pre-choice library and exact historical sources.
+// V1 history stays verbatim; new events reference sources instead of duplicating them.
 export async function recordRecoveryChoice(review: RecoveryReview, choice: RecoveryDecision['choice'], blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
   if (!navigator.locks?.request) throw new Error('Safe recovery resolution requires Web Locks support.')
   await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, lock => {
@@ -342,9 +372,12 @@ export async function recordRecoveryChoice(review: RecoveryReview, choice: Recov
     if (!same(review, fresh) || fresh.invalid || !fresh.libraryRaw) throw new Error('Recovery changed or is invalid. Review again.')
     const selected = fresh.sources.filter(source => choice === 'keep-current' ? source.status === 'actionable' : source.status === 'resolved')
     if (!selected.length || selected.some(source => !source.canKeepCurrent)) throw new Error('Pending or unsupported recovery requires manual recovery. Export all recovery data.')
-    const decisions = readRecoveryDecisions(fresh.decisionRaw)
-    decisions.push({ choice, libraryRaw: fresh.libraryRaw, sources: Object.fromEntries(selected.map(source => [source.key, source.raw])) })
-    const payload = JSON.stringify({ version: 1, decisions })
+    const previous = fresh.decisionRaw === null ? null : JSON.parse(fresh.decisionRaw)
+    const decisions: RecoveryDecision[] = previous?.version === 2 ? previous.decisions : []
+    decisions.push({ choice, libraryRaw: fresh.libraryRaw, sources: Object.fromEntries(selected.map(source => [source.key, {
+      sourceKey: source.key, rawLength: source.raw.length, digest: recoverySourceDigest(source.raw),
+    }])) })
+    const payload = JSON.stringify({ version: 2, legacyV1Raw: previous?.version === 1 ? fresh.decisionRaw : previous?.legacyV1Raw ?? null, decisions })
     // No awaits between revalidation and this single-key transaction.
     try { storage.setItem(RECOVERY_DECISIONS_KEY, payload) }
     catch (err) {
