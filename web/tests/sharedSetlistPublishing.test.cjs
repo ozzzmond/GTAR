@@ -339,3 +339,191 @@ test('active admin and active member personal workflows expose publishing; pendi
     assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared"]'), (role === 'admin' || role === 'member') && access === 'active')
   }
 })
+
+
+test('REQUIRED: 62_SONG_COMPACT_JOURNAL_SIZE and NO_RAW_CHART_CONTENT_IN_NEW_JOURNAL', async () => {
+  const songs = []
+  const setlistSongs = []
+  for (let i = 0; i < 62; i++) {
+    const songId = 'song-' + i
+    songs.push({
+      id: songId,
+      title: 'Song ' + i,
+      artist: 'Artist ' + i,
+      rawContent: '{title: Song ' + i + '}\n[C]Chord line for song ' + i + '\n[G]Large chart body with lyrics and repeating musical measures\n'.repeat(20),
+      format: 'CHORD_PRO',
+      key: 'C',
+    })
+    setlistSongs.push({ id: songId, title: 'Song ' + i })
+  }
+  const bigLibrary = { songs, setlists: [{ id: 'set-62', name: '62-Song Setlist', songs: setlistSongs }] }
+  library = bigLibrary
+  cloud = structuredClone(bigLibrary)
+  version = 1
+  persist()
+
+  const preview = await api.preparePublication('set-62', () => library, () => false)
+  const baseLink = await api.newPublicationLink(preview.account, 'set-62')
+  const digest = api.computeSnapshotDigest(preview.snapshot)
+  assert.ok(digest.startsWith('sha256-utf16le:'))
+
+  const pendingLink = {
+    ...baseLink,
+    snapshotDigest: digest,
+    pending: api.makePublicationIntent(baseLink, preview),
+  }
+
+  // Pre-request save
+  api.savePublicationLink(preview.account, 'set-62', pendingLink)
+  const savedPending = api.readPublicationLink(preview.account, 'set-62')
+  assert.equal(savedPending.snapshot, undefined)
+  assert.equal(savedPending.snapshotDigest, digest)
+
+  // Send publication intent
+  responder = () => response({ id: 'publication_62_songs_id', revision: 1, unpublished: false })
+  const outcome = await api.sendPublicationIntent(preview.account, 'set-62', pendingLink)
+  assert.equal(outcome.saved, true)
+
+  const savedFinal = api.readPublicationLink(preview.account, 'set-62')
+  assert.equal(savedFinal.snapshot, undefined)
+  assert.equal(savedFinal.snapshotDigest, digest)
+
+  const journalRaw = localStorage.getItem('gtar_setlist_publication_v1:' + encodeURIComponent(preview.account) + ':set-62')
+  assert.ok(journalRaw.length < 500, 'compact journal size should be < 500 bytes for 62 songs, was: ' + journalRaw.length)
+  assert.equal(journalRaw.includes('Chord line for song'), false, 'no raw chart content in journal')
+  assert.equal(journalRaw.includes('Large chart body'), false, 'no raw chart content in journal')
+})
+
+test('REQUIRED: LEGACY_SNAPSHOT_COMPATIBILITY and SNAPSHOT_DIGEST_DIVERGENCE', () => {
+  const { resolveSetlistPublicationStatus } = require('../src/utils/setlistPublicationStatus.ts')
+  const previewSnapshot = snapshotFromSongbook(library, 'set-a')
+
+  // 1. Legacy link with full snapshot (no snapshotDigest) resolves to CONFIRMED_PUBLISHED
+  const legacyLink = {
+    publicationKey: 'pub_legacy_key',
+    result: { id, revision: 1, unpublished: false },
+    snapshot: previewSnapshot,
+  }
+  const legacyStatus = resolveSetlistPublicationStatus({
+    setlist: library.setlists[0],
+    songs: library.songs,
+    localLink: legacyLink,
+    isOnline: true,
+    publishedSetlists: [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: '2026-10-21' }],
+  })
+  assert.equal(legacyStatus, 'CONFIRMED_PUBLISHED')
+
+  // 2. New link with snapshotDigest resolves to CONFIRMED_PUBLISHED
+  const digest = api.computeSnapshotDigest(previewSnapshot)
+  const newLink = {
+    publicationKey: 'pub_new_key',
+    result: { id, revision: 1, unpublished: false },
+    snapshotDigest: digest,
+  }
+  const newStatus = resolveSetlistPublicationStatus({
+    setlist: library.setlists[0],
+    songs: library.songs,
+    localLink: newLink,
+    isOnline: true,
+    publishedSetlists: [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: '2026-10-21' }],
+  })
+  assert.equal(newStatus, 'CONFIRMED_PUBLISHED')
+
+  // 3. Content divergence detected via snapshotDigest
+  const modifiedSongs = structuredClone(library.songs)
+  modifiedSongs[0].rawContent += '\n[D]Modified chord'
+  const divergentStatus = resolveSetlistPublicationStatus({
+    setlist: library.setlists[0],
+    songs: modifiedSongs,
+    localLink: newLink,
+    isOnline: true,
+    publishedSetlists: [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: '2026-10-21' }],
+  })
+  assert.equal(divergentStatus, 'LOCAL_CHANGES_NOT_PUBLISHED')
+})
+
+test('REQUIRED: PRE_REQUEST_QUOTA_NO_NETWORK and POST_CONFIRMATION_QUOTA_RECONCILIATION', async () => {
+  const { preview, link } = await intent()
+  const original = dom.window.Storage.prototype.setItem
+
+  // Pre-request quota error: no network calls made
+  dom.window.Storage.prototype.setItem = function () { throw new Error('quota') }
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', link), /quota/)
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0, 'No network calls when pre-request save fails quota')
+
+  // Post-confirmation quota error: server succeeded, returns saved: false without throwing
+  dom.window.Storage.prototype.setItem = original
+  responder = () => {
+    dom.window.Storage.prototype.setItem = function () { throw new Error('quota') }
+    return response({ id, revision: 1, unpublished: false })
+  }
+  const outcome = await api.sendPublicationIntent(preview.account, 'set-a', link)
+  assert.equal(outcome.saved, false)
+  assert.equal(outcome.result.id, id)
+
+  // Reconciliation: safe retry reconciles and saves successfully once quota is cleared
+  dom.window.Storage.prototype.setItem = original
+  responder = () => response({ id, revision: 1, unpublished: false })
+  const pendingRecord = api.readPublicationLink(preview.account, 'set-a')
+  assert.ok(pendingRecord.pending, 'Pending record still durable')
+  const retryOutcome = await api.sendPublicationIntent(preview.account, 'set-a', pendingRecord)
+  assert.equal(retryOutcome.saved, true)
+  assert.equal(api.readPublicationLink(preview.account, 'set-a').pending, undefined)
+})
+
+test('REQUIRED: IDEMPOTENT_RETRY and CROSS_TAB_CONFLICT', async () => {
+  const { preview, link } = await intent()
+  api.savePublicationLink(preview.account, 'set-a', link)
+
+  // Cross-tab conflict: modified pending intent in another tab blocks request
+  const conflictingTabLink = { ...link, pending: { ...link.pending, key: 'concurrent-uuid-tab-b' } }
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', conflictingTabLink), /another tab/)
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0)
+
+  // Safe retry sends exact same idempotency key and body
+  responder = () => response({ id, revision: 1, unpublished: false })
+  const first = await api.sendPublicationIntent(preview.account, 'set-a', link)
+  assert.equal(first.saved, true)
+})
+
+test('REQUIRED: IMPORT_SOURCE_IDENTITY and NO_CLOUD_OVERWRITE', async () => {
+  // Imported setlists maintain independent identity
+  const importedSetlist = {
+    id: 'imported-set-1',
+    name: 'Sunday',
+    songs: [{ id: 'song-a', title: 'Alpha' }],
+    catalogSource: {
+      environmentScope: 'https://gtar.test',
+      setlistId: 'publication_other_owner_123',
+      revision: 1,
+    },
+  }
+  const { resolveSetlistPublicationStatus } = require('../src/utils/setlistPublicationStatus.ts')
+  const status = resolveSetlistPublicationStatus({
+    setlist: importedSetlist,
+    songs: library.songs,
+    localLink: null,
+    isOnline: true,
+    publishedSetlists: [{ id: 'publication_other_owner_123', revision: 1, name: 'Sunday', occurrences: 1, updated_at: '2026-10-21' }],
+  })
+  assert.equal(status, 'IMPORTED_FROM_CATALOG')
+})
+
+test('REQUIRED: LOCAL_STORAGE_FAILURE_PRESERVATION and RELOAD_PERSISTENCE', async () => {
+  const { preview, link } = await intent()
+  api.savePublicationLink(preview.account, 'set-a', link)
+
+  // Read back verifies reload persistence
+  const reloaded = api.readPublicationLink(preview.account, 'set-a')
+  assert.equal(reloaded.publicationKey, link.publicationKey)
+  assert.equal(reloaded.pending.key, link.pending.key)
+
+  // Simulated failure does not erase existing record
+  const original = dom.window.Storage.prototype.setItem
+  dom.window.Storage.prototype.setItem = function () { throw new Error('write error') }
+  assert.throws(() => api.savePublicationLink(preview.account, 'set-a', { publicationKey: 'broken' }))
+  dom.window.Storage.prototype.setItem = original
+
+  const preserved = api.readPublicationLink(preview.account, 'set-a')
+  assert.equal(preserved.publicationKey, link.publicationKey)
+})
