@@ -50,6 +50,7 @@ export function resolveSetlistPublicationStatus(options: {
   publishedSetlists?: PublishedSetlist[] | null
   localLink?: PublicationLink | null
   hasCandidatePublication?: boolean
+  isCatalogComplete?: boolean
 }): SetlistPublicationStatus {
   const {
     setlist,
@@ -60,15 +61,20 @@ export function resolveSetlistPublicationStatus(options: {
     publishedSetlists = null,
     localLink,
     hasCandidatePublication,
+    isCatalogComplete = publishedSetlists ? publishedSetlists.length < 20 : false,
   } = options
 
   // 1. Offline condition:
-  // Cannot verify cloud publication while offline. Never use only an old local journal entry to claim verified publication.
+  // Cannot verify cloud publication while offline.
+  // Never use only an old local journal entry to claim verified publication.
   if (!isOnline) {
     if (localLink?.result?.unpublished) {
       return 'NEVER_PUBLISHED'
     }
-    return 'UNKNOWN_OR_OFFLINE'
+    if (localLink?.result) {
+      return 'UNKNOWN_OR_OFFLINE'
+    }
+    return 'NEVER_PUBLISHED'
   }
 
   // 2. Catalog unavailable, disabled, or error:
@@ -76,7 +82,10 @@ export function resolveSetlistPublicationStatus(options: {
     if (localLink?.result?.unpublished) {
       return 'NEVER_PUBLISHED'
     }
-    return 'UNKNOWN_OR_OFFLINE'
+    if (localLink?.result) {
+      return 'UNKNOWN_OR_OFFLINE'
+    }
+    return 'NEVER_PUBLISHED'
   }
 
   // 3. Local journal link exists:
@@ -92,7 +101,8 @@ export function resolveSetlistPublicationStatus(options: {
     if (localLink.result && !localLink.result.unpublished) {
       const head = publishedSetlists.find(p => p.id === localLink.result!.id)
       if (!head) {
-        // Published ID is not found in active remote heads (e.g. unpublished remotely, deleted, or unverified)
+        // Do not treat absence from one paginated Shared Catalog page as proof of unpublication.
+        // Whether paginated or complete, if not found in active page, status is unknown.
         return 'UNKNOWN_OR_OFFLINE'
       }
 
@@ -110,33 +120,48 @@ export function resolveSetlistPublicationStatus(options: {
         return 'LOCAL_CHANGES_NOT_PUBLISHED'
       }
 
-      if (localLink.snapshot) {
-        if (canonical(currentSnapshot) !== canonical(localLink.snapshot)) {
-          return 'LOCAL_CHANGES_NOT_PUBLISHED'
-        }
-      } else {
-        // Fallback when snapshot was not retained in local link
+      // Exact snapshot verification
+      if (!localLink.snapshot) {
+        // Existing publication links without retained snapshot must resolve conservatively.
+        // Never show confirmed green from revision/name/song-count checks alone when exact published snapshot identity cannot be verified.
         if (currentSnapshot.name !== head.name || currentSnapshot.entries.length !== head.occurrences) {
           return 'LOCAL_CHANGES_NOT_PUBLISHED'
         }
+        return 'UNKNOWN_OR_OFFLINE'
+      }
+
+      if (canonical(currentSnapshot) !== canonical(localLink.snapshot)) {
+        return 'LOCAL_CHANGES_NOT_PUBLISHED'
       }
 
       return 'CONFIRMED_PUBLISHED'
     }
 
     // Link exists with publicationKey only (no result, no pending)
-    return 'NEVER_PUBLISHED'
+    // Fall through to candidate check below
   }
 
-  // 4. No local journal link:
+  // 4. Local journal link is absent or has no result:
   // "Never claim 'never published' merely because a local link is missing.
-  // If ownership or remote publication cannot be resolved reliably, show unknown instead of inventing certainty."
-  const candidateMatch = hasCandidatePublication ||
-    (publishedSetlists && publishedSetlists.some(p => p.name === setlist.name))
+  // If ownership or remote publication cannot be resolved reliably, show unknown instead of inventing certainty.
+  // Do not treat absence from one paginated Shared Catalog page as proof of unpublication.
+  // Avoid false NEVER_PUBLISHED when the local publication journal is absent."
 
+  // If a candidate match exists by name or explicit flag:
+  const candidateMatch = Boolean(
+    hasCandidatePublication ||
+    (publishedSetlists && publishedSetlists.some(p => p.name === setlist.name))
+  )
   if (candidateMatch) {
     return 'UNKNOWN_OR_OFFLINE'
   }
 
+  // If the catalog is paginated / not complete, we cannot rule out that the setlist was published on a subsequent page.
+  // Do not treat absence from one paginated page as proof of unpublication.
+  if (!isCatalogComplete) {
+    return 'UNKNOWN_OR_OFFLINE'
+  }
+
+  // Only when the catalog is confirmed complete and no candidate exists can we safely return NEVER_PUBLISHED.
   return 'NEVER_PUBLISHED'
 }

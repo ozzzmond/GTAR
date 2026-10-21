@@ -337,14 +337,98 @@ test('TEST_STATUS_OFFLINE_UNKNOWN', () => {
 test('TEST_STATUS_MISSING_LOCAL_JOURNAL_UNKNOWN', () => {
   const lib = sampleLibrary('Sunday')
   const setlist = lib.setlists[0]
-  const status = resolveSetlistPublicationStatus({
+  // 1. Missing local link with candidate match by name in catalog resolves to UNKNOWN_OR_OFFLINE (avoid false NEVER_PUBLISHED)
+  const candidateStatus = resolveSetlistPublicationStatus({
     setlist,
     songs: lib.songs,
     localLink: null,
     isOnline: true,
-    publishedSetlists: []
+    publishedSetlists: [{ id: 'cand-1', revision: 1, name: 'Sunday', occurrences: 2, updated_at: 'now' }],
+    isCatalogComplete: true
   })
-  assert.equal(status, 'NEVER_PUBLISHED')
+  assert.equal(candidateStatus, 'UNKNOWN_OR_OFFLINE')
+
+  // 2. Missing local link on a paginated catalog (not complete) resolves to UNKNOWN_OR_OFFLINE (avoid false NEVER_PUBLISHED)
+  const paginatedStatus = resolveSetlistPublicationStatus({
+    setlist,
+    songs: lib.songs,
+    localLink: null,
+    isOnline: true,
+    publishedSetlists: Array.from({ length: 20 }, (_, i) => ({ id: `pub-${i}`, revision: 1, name: `Other ${i}`, occurrences: 1, updated_at: 'now' })),
+    isCatalogComplete: false
+  })
+  assert.equal(paginatedStatus, 'UNKNOWN_OR_OFFLINE')
+
+  // 3. Missing local link on a confirmed complete catalog with no candidate anywhere resolves to NEVER_PUBLISHED
+  const cleanStatus = resolveSetlistPublicationStatus({
+    setlist,
+    songs: lib.songs,
+    localLink: null,
+    isOnline: true,
+    publishedSetlists: [{ id: 'other-1', revision: 1, name: 'Other', occurrences: 1, updated_at: 'now' }],
+    isCatalogComplete: true
+  })
+  assert.equal(cleanStatus, 'NEVER_PUBLISHED')
+})
+
+test('TEST_STATUS_LEGACY_LINK_WITHOUT_SNAPSHOT_CONSERVATIVE', () => {
+  const lib = sampleLibrary('Sunday')
+  const setlist = lib.setlists[0]
+  // Legacy link without snapshot field
+  const legacyLink = {
+    publicationKey: 'pub-key-legacy',
+    result: { id: 'pub-1234567890123456', revision: 1, unpublished: false }
+    // snapshot is undefined
+  }
+  // Even if name and occurrences match, exact snapshot identity cannot be verified -> UNKNOWN_OR_OFFLINE
+  const status = resolveSetlistPublicationStatus({
+    setlist,
+    songs: lib.songs,
+    localLink: legacyLink,
+    isOnline: true,
+    publishedSetlists: [{ id: 'pub-1234567890123456', revision: 1, name: 'Sunday', occurrences: 2, updated_at: 'now' }]
+  })
+  assert.equal(status, 'UNKNOWN_OR_OFFLINE', 'Legacy link without snapshot must resolve conservatively, never confirmed green')
+
+  // If local name differs from remote head, resolves to LOCAL_CHANGES_NOT_PUBLISHED
+  const modifiedLib = { ...lib, setlists: [{ ...setlist, name: 'Sunday Modified' }] }
+  const modifiedStatus = resolveSetlistPublicationStatus({
+    setlist: modifiedLib.setlists[0],
+    songs: modifiedLib.songs,
+    localLink: legacyLink,
+    isOnline: true,
+    publishedSetlists: [{ id: 'pub-1234567890123456', revision: 1, name: 'Sunday', occurrences: 2, updated_at: 'now' }]
+  })
+  assert.equal(modifiedStatus, 'LOCAL_CHANGES_NOT_PUBLISHED')
+})
+
+test('TEST_STATUS_PAGINATED_CATALOG_ABSENCE_NOT_UNPUBLISHED', () => {
+  const lib = sampleLibrary('Sunday')
+  const setlist = lib.setlists[0]
+  const snapshot = snapshotFromSongbook(lib, setlist.id)
+  const link = {
+    publicationKey: 'pub-key-page2',
+    result: { id: 'pub-on-page-2-1234', revision: 1, unpublished: false },
+    snapshot
+  }
+  // Catalog returns 20 items (page 1), and our published setlist is on page 2 (not in this page)
+  const page1Rows = Array.from({ length: 20 }, (_, i) => ({
+    id: `pub-page1-item-${i.toString().padStart(4, '0')}`,
+    revision: 1,
+    name: `Team Setlist ${i}`,
+    occurrences: 3,
+    updated_at: 'now'
+  }))
+  const status = resolveSetlistPublicationStatus({
+    setlist,
+    songs: lib.songs,
+    localLink: link,
+    isOnline: true,
+    publishedSetlists: page1Rows,
+    isCatalogComplete: false
+  })
+  // Absence from page 1 must NOT be treated as unpublication / NEVER_PUBLISHED
+  assert.equal(status, 'UNKNOWN_OR_OFFLINE')
 })
 
 test('TEST_STATUS_REFRESH_AFTER_MUTATION', () => {

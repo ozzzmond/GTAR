@@ -34,8 +34,11 @@ export function useSetlistPublicationStatuses(options: {
 
   const statusMap = useMemo(() => {
     const map = new Map<string | number, SetlistPublicationStatus>()
+    // If rows has fewer than 20 items, page 0 represents the entire catalog
+    const isCatalogComplete = Boolean(setlistCapability.rows && setlistCapability.rows.length < 20)
+
     for (const sl of setlists) {
-      const link = accountId ? readPublicationLink (accountId, sl.id) : null
+      const link = accountId ? readPublicationLink(accountId, sl.id) : null
       const status = resolveSetlistPublicationStatus({
         setlist: sl,
         songs,
@@ -45,6 +48,7 @@ export function useSetlistPublicationStatuses(options: {
         catalogError: setlistCapability.message && !setlistCapability.enabled ? setlistCapability.message : null,
         publishedSetlists: setlistCapability.rows,
         localLink: link,
+        isCatalogComplete,
       })
       map.set(sl.id, status)
     }

@@ -3,17 +3,19 @@ import { CloudCheck, UploadCloud, CloudOff } from 'lucide-react'
 import type { SetlistPublicationStatus } from '../utils/setlistPublicationStatus'
 import { SETLIST_STATUS_DESCRIPTORS } from '../utils/setlistPublicationStatus'
 
-export function SetlistCloudStatusBadge({
-  status,
-  setlistId,
-  testId,
-  className = '',
-}: {
+export interface SetlistCloudStatusBadgeProps {
   status: SetlistPublicationStatus
   setlistId: string | number
   testId?: string
   className?: string
-}) {
+}
+
+export const SetlistCloudStatusBadge: React.FC<SetlistCloudStatusBadgeProps> = ({
+  status,
+  setlistId,
+  testId,
+  className = '',
+}) => {
   if (status === 'NEVER_PUBLISHED') {
     return null
   }
