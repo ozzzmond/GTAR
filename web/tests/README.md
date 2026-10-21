@@ -160,6 +160,7 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [g7SongbookSetlistUiPolish.test.cjs](g7SongbookSetlistUiPolish.test.cjs)
 - [issue107ToolbarBrowser.test.cjs](issue107ToolbarBrowser.test.cjs)
 - [issue109KeySemantics.test.cjs](issue109KeySemantics.test.cjs)
+- [issue130SongbookLayoutParity.test.cjs](issue130SongbookLayoutParity.test.cjs)
 - [librarySetlistBulkQol108Dev8f.test.cjs](librarySetlistBulkQol108Dev8f.test.cjs)
 - [librarySetlistDensityQol.test.cjs](librarySetlistDensityQol.test.cjs)
 - [mainSetlistCardActions.test.cjs](mainSetlistCardActions.test.cjs)

@@ -2,6 +2,8 @@ import { SharedSetlistCatalogPanel } from './SharedSetlistCatalogPanel'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
+  Music,
+  ListMusic,
   Search,
   RefreshCw,
   Download,
@@ -363,11 +365,33 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
 
   return (
     <div className="shared-catalog-browser space-y-4" data-testid="shared-catalog-browser">
-      <nav aria-label="Shared Catalog content" className="flex gap-2">
-        <button type="button" aria-pressed={catalogKind === 'songs'} className="min-h-11 px-4 rounded-lg border border-app-border" onClick={() => setCatalogKind('songs')}>Songs</button>
-        <button type="button" aria-pressed={catalogKind === 'setlists'} disabled={!setlistCapability.enabled} aria-describedby="setlist-availability" className="min-h-11 px-4 rounded-lg border border-app-border disabled:opacity-40" onClick={() => setCatalogKind('setlists')}>Setlists</button>
+      <nav aria-label="Shared Catalog content" className="flex items-center gap-2 mb-3">
+        <button
+          type="button"
+          data-testid="catalog-tab-songs"
+          aria-pressed={catalogKind === 'songs'}
+          onClick={() => setCatalogKind('songs')}
+          className={`min-h-11 px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            catalogKind === 'songs'
+              ? 'bg-app-action text-app-on-action shadow-sm'
+              : 'bg-app-surface border border-app-border text-app-muted hover:text-app-heading hover:border-app-action'
+          }`}
+        ><Music className="w-3.5 h-3.5" /><span>Songs</span></button>
+        <button
+          type="button"
+          data-testid="catalog-tab-setlists"
+          aria-pressed={catalogKind === 'setlists'}
+          disabled={!setlistCapability.enabled}
+          aria-describedby={!setlistCapability.enabled ? 'setlist-availability' : undefined}
+          onClick={() => setCatalogKind('setlists')}
+          className={`min-h-11 px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+            catalogKind === 'setlists'
+              ? 'bg-app-action text-app-on-action shadow-sm'
+              : 'bg-app-surface border border-app-border text-app-muted hover:text-app-heading hover:border-app-action'
+          }`}
+        ><ListMusic className="w-3.5 h-3.5" /><span>Setlists</span></button>
       </nav>
-      {!setlistCapability.enabled && <p id="setlist-availability" role="status" className="text-xs text-app-muted">{setlistCapability.message} <button type="button" className="min-h-11 px-2 underline" onClick={setlistCapability.reload}>Check availability</button></p>}
+      {!setlistCapability.enabled && <p id="setlist-availability" role="status" className="text-xs text-app-muted">{setlistCapability.message} <button type="button" className="min-h-11 px-2 underline cursor-pointer" onClick={setlistCapability.reload}>Check availability</button></p>}
       {catalogKind === 'setlists' && setlistCapability.enabled ? <SharedSetlistCatalogPanel /> : <>
       {/* Toast Notification */}
       {importFeedback && (

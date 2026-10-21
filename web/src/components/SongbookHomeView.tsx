@@ -66,6 +66,7 @@ interface SongbookHomeViewProps {
   confirmedCatalogIds?: Set<string>
   freshCatalogIds?: Set<string>
   catalogMetadata?: Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>
+  initialTab?: 'my_songs' | 'setlists' | 'shared_catalog'
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -97,6 +98,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   confirmedCatalogIds: propConfirmedCatalogIds,
   freshCatalogIds: propFreshCatalogIds,
   catalogMetadata: propCatalogMetadata,
+  initialTab,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -153,7 +155,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [isBulkDeleteSetlistsConfirmOpen, setIsBulkDeleteSetlistsConfirmOpen] = useState(false)
 
   // Navigation tab state: 'my_songs' (default) vs 'shared_catalog'
-  const [activeTab, setActiveTab] = useState<'my_songs' | 'shared_catalog'>('my_songs')
+  const [activeTab, setActiveTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>(initialTab || 'my_songs')
 
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
@@ -1462,8 +1464,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </div>
       )}
 
-      {/* Navigation Tab Bar: My Songs (Default) vs Shared Catalog */}
-      <div className="flex items-center gap-2 mb-5 px-1 border-b border-app-border/60 pb-2">
+      {/* Navigation Tab Bar: My Songs, Setlists, Shared Catalog */}
+      <div className="flex items-center gap-2 mb-5 px-1 border-b border-app-border/60 pb-2 flex-wrap">
         <button
           type="button"
           data-testid="tab-my-songs"
@@ -1478,6 +1480,22 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         >
           <Music className="w-3.5 h-3.5" />
           <span>My Songs ({songs.length})</span>
+        </button>
+
+        <button
+          type="button"
+          data-testid="tab-setlists"
+          aria-selected={activeTab === 'setlists'}
+          role="tab"
+          onClick={() => setActiveTab('setlists')}
+          className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'setlists'
+              ? 'bg-app-action text-app-on-action shadow-sm'
+              : 'bg-app-surface border border-app-border text-app-muted hover:text-app-heading hover:border-app-action'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Setlists ({setlists.length})</span>
         </button>
 
         <button
@@ -1526,9 +1544,26 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         />
       ) : (
         <>
-          {/* 2. Song Setlists Grid */}
-      {setlists.length > 0 && (
-        <div className="mb-6">
+          {/* 2. SONG SETLISTS PANEL */}
+      {(activeTab === 'setlists' || (activeTab === 'my_songs' && setlists.length > 0)) && (
+        setlists.length === 0 ? (
+          <section aria-label="Song Setlists" className="rounded-2xl border border-app-border bg-app-surface p-6 sm:p-8 mb-6 shadow-xs text-center space-y-3">
+            <Layers className="ui-section-icon w-8 h-8 mx-auto text-app-accent" />
+            <div className="text-base font-bold ui-primary-text text-app-heading">No Setlists Yet</div>
+            <p className="text-xs ui-muted-text text-app-muted max-w-sm mx-auto">
+              Create a setlist to organize songs for your next gig or rehearsal.
+            </p>
+            <button
+              type="button"
+              data-testid="empty-new-setlist-btn"
+              onClick={onNewSetlist || onOpenSetlists}
+              className="mt-2 px-4 py-2 rounded-xl bg-app-action text-app-on-action font-bold text-xs cursor-pointer shadow-sm hover:bg-app-action/90"
+            >
+              + Create First Setlist
+            </button>
+          </section>
+        ) : (
+        <section aria-label="Song Setlists" className="rounded-2xl border border-app-border bg-app-surface p-4 sm:p-5 mb-6 shadow-xs">
           {/* Hidden file input for Setlist .json import */}
           <input
             ref={setlistFileInputRef}
@@ -1539,34 +1574,42 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           />
 
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2">
               <Layers className="ui-section-icon w-4 h-4 text-app-accent shrink-0" />
-              <h2 className="ui-section-text text-xs font-bold ui-primary-text text-app-heading uppercase tracking-wider font-mono">
+              <h2 className="ui-section-text text-xs sm:text-sm font-bold ui-primary-text text-app-heading uppercase tracking-wider font-mono">
                 Song Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
               </h2>
-              {!setlistsCollapsed && (
-                <div className="flex items-center gap-1.5 text-xs font-mono ml-1">
-                  <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Sort:</span>
-                  <select
-                    data-testid="setlist-sort-select"
-                    aria-label="Sort setlists"
-                    value={effectiveSetlistSortBy}
-                    onChange={(e) => setSetlistSortBy(e.target.value as SetlistSortOption)}
-                    className="bg-app-base border border-app-border ui-primary-text text-app-text rounded-lg px-2 py-0.5 text-xs font-mono outline-none cursor-pointer hover:border-app-action transition-colors"
-                  >
-                    <option value="manual">Manual Order</option>
-                    <option value="title_asc">Title A-Z</option>
-                    <option value="title_desc">Title Z-A</option>
-                    {hasReliableSetlistTimestamps && (
-                      <>
-                        <option value="newest">Newest First</option>
-                        <option value="oldest">Oldest First</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-              )}
             </div>
+          </div>
+
+          {/* Dedicated Tinted Setlist Controls Toolbar */}
+          <div
+            data-testid="setlist-controls-toolbar"
+            className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 rounded-2xl bg-app-filter border border-app-border shadow-sm"
+          >
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-mono">
+                <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Sort:</span>
+                <select
+                  data-testid="setlist-sort-select"
+                  aria-label="Sort setlists"
+                  value={effectiveSetlistSortBy}
+                  onChange={(e) => setSetlistSortBy(e.target.value as SetlistSortOption)}
+                  className="bg-app-base border border-app-border ui-primary-text text-app-text rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-app-action transition-colors"
+                >
+                  <option value="manual">Manual Order</option>
+                  <option value="title_asc">Title A-Z</option>
+                  <option value="title_desc">Title Z-A</option>
+                  {hasReliableSetlistTimestamps && (
+                    <>
+                      <option value="newest">Newest First</option>
+                      <option value="oldest">Oldest First</option>
+                    </>
+                  )}
+                </select>
+              </div>
+            </div>
+
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
               {isSetlistSelectionMode ? (
                 <div data-testid="setlist-selection-bar" className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
@@ -1804,8 +1847,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           </button>
                         )}
                         {onPublishSetlist && canPublishSetlist && setlistCapability.enabled && (
-                          <button type="button" className="w-full text-left px-3 min-h-11 hover:bg-app-surface"
-                            onClick={event => { event.stopPropagation(); setActiveMenuSetlistId(null); onPublishSetlist(sl) }}>Publish to Shared Setlists</button>
+                          <button
+                            type="button"
+                            data-testid={`menu-publish-setlist-${sl.id}`}
+                            aria-label={`Publish ${sl.name} to Shared`}
+                            title="Publish to Shared"
+                            onClick={event => { event.stopPropagation(); setActiveMenuSetlistId(null); onPublishSetlist(sl) }}
+                            className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                            <span>Publish to Shared</span>
+                          </button>
                         )}
                         {onShareSetlist && (
                           <button
@@ -1901,11 +1953,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             })}
           </div>
           </div>
-        </div>
+        </section>
+        )
       )}
 
-      {/* 3. Main Songs Grid / List */}
-      <div>
+      {/* 3. SONGS LIBRARY PANEL */}
+      {activeTab === 'my_songs' && (
+      <section aria-label="Songs Library" className="rounded-2xl border border-app-border bg-app-surface p-4 sm:p-5 mb-6 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
           <div className="flex items-center gap-2">
             <Music className="ui-section-icon w-4 h-4 text-app-action shrink-0" />
@@ -2524,7 +2578,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             })}
           </div>
         )}
-      </div>
+      </section>
+      )}
         </>
       )}
     </div>

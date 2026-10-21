@@ -232,7 +232,7 @@ test('modal interaction awaits deferred publication key before asserting review'
   t.mock.method(crypto.subtle, 'digest', async (...args) => { await gate; return digest(...args) })
   await modal()
   let finished = false
-  const reviewing = click(button('Refresh and review')).then(() => { finished = true })
+  const reviewing = click(button('Review Setlist')).then(() => { finished = true })
   let finishedBeforeRelease
   try {
     // Advance one event-loop turn, without a timer or resolving the digest.
@@ -245,27 +245,27 @@ test('modal interaction awaits deferred publication key before asserting review'
   }
   assert.equal(finishedBeforeRelease, false, 'interaction must await the actual async review')
   assert.deepEqual([...document.querySelectorAll('ol h4')].map(e => e.textContent), ['Alpha', 'Beta', 'Alpha'])
-  assert.equal(button('Confirm publish').disabled, true)
+  assert.equal(button('Share Setlist').disabled, true)
   assert.equal(document.querySelector('input[type=checkbox]').checked, false)
   assert.equal(calls.filter(c => c.method === 'POST').length, 0)
 })
 
 test('publication modal requires review and explicit confirmation; close/cancel never publish', async () => {
   await modal()
-  assert.equal(button('Confirm publish').disabled, true)
-  await click(button('Refresh and review'))
+  assert.equal(button('Share Setlist').disabled, true)
+  await click(button('Review Setlist'))
   assert.deepEqual([...document.querySelectorAll('ol h4')].map(e => e.textContent), ['Alpha', 'Beta', 'Alpha'])
   assert.match(document.body.textContent, /confirmedChartKey|transposeOffset/)
-  assert.equal(button('Confirm publish').disabled, true)
+  assert.equal(button('Share Setlist').disabled, true)
   await click(document.querySelector('input[type=checkbox]'))
-  assert.equal(button('Confirm publish').disabled, false)
-  await click(button('Close'))
+  assert.equal(button('Share Setlist').disabled, false)
+  await click(button('Cancel'))
   assert.equal(calls.filter(c => c.method === 'POST').length, 0)
 })
 test('stale preview removes confirmation and requires fresh review without sending a mutation', async () => {
-  await modal(); await click(button('Refresh and review')); await click(document.querySelector('input[type=checkbox]'))
+  await modal(); await click(button('Review Setlist')); await click(document.querySelector('input[type=checkbox]'))
   version++
-  await click(button('Confirm publish'))
+  await click(button('Share Setlist'))
   assert.match(document.body.textContent, /stale/)
   assert.equal(document.querySelector('[aria-label="Exact publication preview"]'), null)
   assert.equal(calls.filter(c => c.method === 'POST').length, 0)
@@ -274,7 +274,7 @@ test('reloaded pending request recovers exact approved request without using new
   const { preview, link } = await intent()
   api.savePublicationLink(preview.account, 'set-a', link)
   library.songs[0].rawContent += 'later draft'
-  await modal(); await click(button('Refresh and review'))
+  await modal(); await click(button('Review Setlist'))
   assert.ok(button('Retry confirmed request'))
   await click(button('Retry confirmed request'))
   assert.match(document.body.textContent, new RegExp(`Published: ${id}`))
@@ -285,7 +285,7 @@ test('review unpublish remains available when source is unsynced, and sends only
   library.songs[0].rawContent += 'draft'
   responder = (url, options) => options.method === 'DELETE' ? response({ id, revision: 3, unpublished: true }) :
     response({ setlists: [{ id, revision: 2, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
-  await modal(); await click(button('Refresh and review'))
+  await modal(); await click(button('Review Setlist'))
   assert.ok(button('Review unpublish'))
   await click(button('Review unpublish')); await click(document.querySelector('input[type=checkbox]')); await click(button('Confirm unpublish'))
   const deletion = calls.find(c => c.method === 'DELETE')
@@ -294,23 +294,23 @@ test('review unpublish remains available when source is unsynced, and sends only
 })
 test('switching account hides a previous account preview and disables its actions', async () => {
   const props = { sourceId: 'set-a', getLocal: () => library, blocked: () => false, onClose() {} }
-  await mount(React.createElement(PublishSetlistModal, props)); await click(button('Refresh and review'))
+  await mount(React.createElement(PublishSetlistModal, props)); await click(button('Review Setlist'))
   session('account-b')
   await act(async () => root.render(React.createElement(PublishSetlistModal, { ...props })))
   assert.match(document.body.textContent, /Account or session changed/)
   assert.equal(document.querySelector('ol'), null)
-  assert.equal(button('Confirm publish'), undefined)
+  assert.equal(button('Share Setlist'), undefined)
 })
 test('explicit publish confirms server result, update needs fresh review, and revision conflict clears approval', async () => {
-  await modal(); await click(button('Refresh and review')); await click(document.querySelector('input[type=checkbox]'))
-  await click(button('Confirm publish'))
+  await modal(); await click(button('Review Setlist')); await click(document.querySelector('input[type=checkbox]'))
+  await click(button('Share Setlist'))
   assert.match(document.body.textContent, new RegExp(`Published: ${id}`))
   responder = (url, options) => url === '/api/songbook/sync' ? sourceResponse() : options.method === 'PUT' ? response({ error: 'revision conflict' }, 409) : response({ setlists: [{ id, revision: 2, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
-  await click(button('Refresh and review'))
+  await click(button('Review Setlist'))
   // The final checkbox approves the snapshot; the first selects unpublish.
   const checkboxes = [...document.querySelectorAll('input[type=checkbox]')]
   await click(checkboxes.at(-1))
-  await click(button('Confirm update'))
+  await click(button('Share Setlist'))
   assert.match(document.body.textContent, /conflict/)
   assert.equal(document.querySelector('[aria-label="Exact publication preview"]'), null)
 })
@@ -320,7 +320,7 @@ test('mobile and keyboard controls use native modal focus, named dialog, touch s
   const dialog = document.querySelector('dialog')
   assert.equal(dialog.open, true)
   assert.ok(document.getElementById(dialog.getAttribute('aria-labelledby')))
-  assert.equal(document.activeElement, button('Close'))
+  assert.equal(document.activeElement, button('Cancel'))
   assert.ok([...dialog.querySelectorAll('button')].every(b => b.className.includes('min-h-11')))
   await act(async () => dialog.dispatchEvent(new dom.window.Event('cancel', { bubbles: true, cancelable: true })))
   assert.equal(closed, 1)
@@ -332,6 +332,6 @@ test('only active admin personal workflow exposes publishing; member and pending
     const authSession = session('account-a', role, access)
     await mount(React.createElement(AuthContext.Provider, { value: { session: authSession, role: role === 'admin' ? 'SUPER_ADMIN' : 'USER', accessStatus: access } },
       React.createElement(SetlistDrawer, { isOpen: true, initialTab: 'setlists', onClose() {}, songs: library.songs, setlists: library.setlists, activeSongIndex: 0, onSelectSongIndex() {}, onDeleteSong() {}, onNewSong() {}, onPublishSetlist() {} })))
-    assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared Setlists"]'), role === 'admin' && access === 'active')
+    assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared"]'), role === 'admin' && access === 'active')
   }
 })
