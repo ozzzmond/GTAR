@@ -73,6 +73,20 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
       ref={dialog}
       aria-label="Published setlist preview"
       onCancel={event => { event.preventDefault(); if (!busyRef.current) onClose() }}
+      onClick={event => {
+        if (busyRef.current) return
+        if (event.target === dialog.current) {
+          const rect = dialog.current.getBoundingClientRect()
+          if (
+            event.clientX < rect.left ||
+            event.clientX > rect.right ||
+            event.clientY < rect.top ||
+            event.clientY > rect.bottom
+          ) {
+            onClose()
+          }
+        }
+      }}
       className="bg-app-surface text-app-text rounded-xl p-4 w-full max-w-lg max-h-[90dvh] overflow-y-auto backdrop:bg-black/60"
     >
       <button type="button" className={buttonClass} disabled={busy} onClick={onClose}>Close preview</button>

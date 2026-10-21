@@ -26,6 +26,26 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
+  // Restore focus to triggering element when modal closes
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    return () => {
+      previous?.focus?.();
+    };
+  }, []);
+
+  // Safe Escape dismissal guarded against in-flight network operations
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading && !revoking) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [loading, revoking, onClose]);
+
   useEffect(() => {
     let isCancelled = false;
 
@@ -167,10 +187,16 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
 
   return (
     <div
+      data-testid="share-setlist-modal-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !loading && !revoking) {
+          onClose();
+        }
+      }}
     >
       <div
+        data-testid="share-setlist-modal-card"
         className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
@@ -191,7 +217,9 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            disabled={loading || revoking}
+            aria-label="Close"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-40"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -302,7 +330,8 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
         <div className="pt-2 border-t border-slate-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
+            disabled={loading || revoking}
+            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 disabled:opacity-40"
           >
             Close
           </button>

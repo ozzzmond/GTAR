@@ -228,6 +228,7 @@ Build/runtime configuration, release contracts, PWA lifecycle, and repository ch
 New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
+- [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)

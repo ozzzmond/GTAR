@@ -55,6 +55,35 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
 
+  // Focus restoration to triggering element upon modal close
+  const previousActiveElementRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (isOpen) {
+      previousActiveElementRef.current = document.activeElement as HTMLElement | null
+    } else if (previousActiveElementRef.current) {
+      previousActiveElementRef.current.focus?.()
+      previousActiveElementRef.current = null
+    }
+  }, [isOpen])
+  useEffect(() => {
+    return () => {
+      previousActiveElementRef.current?.focus?.()
+    }
+  }, [])
+
+  // Safe Escape key dismissal (guarded during in-flight operations)
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isProcessing) {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, isProcessing, onClose])
+
   // Parent callbacks can change when applying React state; that must not start another sync.
   const onSyncAppliedRef = useRef(onSyncApplied)
   useEffect(() => { onSyncAppliedRef.current = onSyncApplied }, [onSyncApplied])
@@ -184,12 +213,21 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     : null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in">
+    <div
+      data-testid="cloud-sync-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isProcessing) {
+          onClose()
+        }
+      }}
+    >
       <div
+        data-testid="cloud-sync-modal-card"
         className="w-full max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header: Cloud icon | Cloud Songbook Sync | Close X */}
         <div className="px-5 py-4 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
@@ -204,7 +242,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+            disabled={isProcessing}
+            aria-label="Close"
+            className="w-8 h-8 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
@@ -212,7 +252,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
-          {/* User Account Info */}
+          {/* Account Card: Avatar | Display name | Email | Role badge */}
           <div className="p-3.5 rounded-xl bg-app-base/70 border border-app-border flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               {session?.user?.picture ? (
@@ -250,7 +290,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
           </div>
 
-          {/* Sync Status Card */}
+          {/* Status Card: Sync status | Last synced | Fingerprint */}
           <div className="p-4 rounded-xl bg-app-base/90 border border-app-border space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-app-muted uppercase tracking-wider font-mono">
@@ -335,7 +375,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
 
           {/* Conflict Resolution Section */}
-          <button type="button" className="min-h-11 border border-app-border rounded px-3 py-2" disabled={isProcessing} onClick={openRecoveryReview}>Review local recovery</button>
           {syncStatus === 'CONFLICT' && conflicts.length > 0 && (
             <div className="p-4 rounded-xl bg-[#DC6E67]/10 border border-[#DC6E67]/40 space-y-3">
               <div className="flex items-center gap-2 text-status-error">
@@ -428,12 +467,25 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-between text-[11px] text-app-muted">
-          <span>Offline edits preserved safely</span>
+        <div className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-between gap-3 text-[11px] text-app-muted">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="cloud-sync-recovery-button"
+              disabled={isProcessing}
+              onClick={openRecoveryReview}
+              className="min-h-11 px-3 py-1.5 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Review local recovery
+            </button>
+            <span className="hidden sm:inline text-[10px] text-app-muted">Offline edits preserved safely</span>
+          </div>
           <button
             type="button"
+            data-testid="cloud-sync-close-button"
+            disabled={isProcessing}
             onClick={onClose}
-            className="px-3 py-1 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer"
+            className="min-h-11 px-4 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
           >
             Close
           </button>
