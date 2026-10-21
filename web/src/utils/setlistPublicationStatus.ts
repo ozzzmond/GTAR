@@ -6,6 +6,7 @@ export type SetlistPublicationStatus =
   | 'CONFIRMED_PUBLISHED'
   | 'LOCAL_CHANGES_NOT_PUBLISHED'
   | 'UNKNOWN_OR_OFFLINE'
+  | 'IMPORTED_FROM_CATALOG'
   | 'NEVER_PUBLISHED'
 
 export interface SetlistStatusDescriptor {
@@ -26,6 +27,10 @@ export const SETLIST_STATUS_DESCRIPTORS: Record<SetlistPublicationStatus, { titl
   UNKNOWN_OR_OFFLINE: {
     title: 'Sharing status unavailable',
     ariaLabel: 'Sharing status unavailable',
+  },
+  IMPORTED_FROM_CATALOG: {
+    title: 'Imported from Shared Catalog',
+    ariaLabel: 'Imported from Shared Catalog',
   },
   NEVER_PUBLISHED: {
     title: '',
@@ -64,34 +69,36 @@ export function resolveSetlistPublicationStatus(options: {
     isCatalogComplete = publishedSetlists ? publishedSetlists.length < 20 : false,
   } = options
 
+  const isImported = Boolean(setlist.catalogSource)
+
   // 1. Offline condition:
   // Cannot verify cloud publication while offline.
   // Never use only an old local journal entry to claim verified publication.
   if (!isOnline) {
     if (localLink?.result?.unpublished) {
-      return 'NEVER_PUBLISHED'
+      return isImported ? 'IMPORTED_FROM_CATALOG' : 'NEVER_PUBLISHED'
     }
     if (localLink?.result) {
       return 'UNKNOWN_OR_OFFLINE'
     }
-    return 'NEVER_PUBLISHED'
+    return isImported ? 'IMPORTED_FROM_CATALOG' : 'NEVER_PUBLISHED'
   }
 
   // 2. Catalog unavailable, disabled, or error:
   if (!catalogEnabled || catalogError || !publishedSetlists) {
     if (localLink?.result?.unpublished) {
-      return 'NEVER_PUBLISHED'
+      return isImported ? 'IMPORTED_FROM_CATALOG' : 'NEVER_PUBLISHED'
     }
     if (localLink?.result) {
       return 'UNKNOWN_OR_OFFLINE'
     }
-    return 'NEVER_PUBLISHED'
+    return isImported ? 'IMPORTED_FROM_CATALOG' : 'NEVER_PUBLISHED'
   }
 
   // 3. Local journal link exists:
   if (localLink) {
     if (localLink.result?.unpublished) {
-      return 'NEVER_PUBLISHED'
+      return isImported ? 'IMPORTED_FROM_CATALOG' : 'NEVER_PUBLISHED'
     }
 
     if (localLink.pending) {
@@ -138,10 +145,18 @@ export function resolveSetlistPublicationStatus(options: {
     }
 
     // Link exists with publicationKey only (no result, no pending)
+    if (isImported) {
+      return 'IMPORTED_FROM_CATALOG'
+    }
     // Fall through to candidate check below
   }
 
   // 4. Local journal link is absent or has no result:
+  // An imported setlist is an independent personal copy, not an ambiguous own publication.
+  if (isImported) {
+    return 'IMPORTED_FROM_CATALOG'
+  }
+
   // "Never claim 'never published' merely because a local link is missing.
   // If ownership or remote publication cannot be resolved reliably, show unknown instead of inventing certainty.
   // Do not treat absence from one paginated Shared Catalog page as proof of unpublication.

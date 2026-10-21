@@ -1786,6 +1786,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         <SetlistCloudStatusBadge
                           status={setlistStatusMap.get(sl.id) || 'NEVER_PUBLISHED'}
                           setlistId={sl.id}
+                          setlist={sl}
                         />
                       </div>
                       <div className="text-[10px] sm:text-[11px] font-mono ui-secondary-text text-app-muted mt-0.5">

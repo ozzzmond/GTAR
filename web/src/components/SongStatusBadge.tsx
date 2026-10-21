@@ -11,6 +11,7 @@ export interface SongStatusBadgeProps {
   popoverContent: React.ReactNode
   align?: 'left' | 'right'
   zIndex?: number
+  dataStatus?: string
 }
 
 /**
@@ -27,6 +28,7 @@ export const SongStatusBadge: React.FC<SongStatusBadgeProps> = ({
   popoverContent,
   align = 'left',
   zIndex = 25,
+  dataStatus,
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -45,6 +47,7 @@ export const SongStatusBadge: React.FC<SongStatusBadgeProps> = ({
         type="button"
         role={role}
         data-testid={testId}
+        {...(dataStatus ? { 'data-status': dataStatus } : {})}
         aria-label={ariaLabel}
         aria-expanded={isVisible}
         aria-haspopup="dialog"
