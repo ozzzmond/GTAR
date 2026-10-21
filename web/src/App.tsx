@@ -1,3 +1,6 @@
+import { RecoveryReviewDialog } from './components/RecoveryReviewDialog'
+import { openRecoveryReview } from './utils/recoveryReview'
+import type { ImportBlocker } from './utils/sharedSetlistImport'
 import { CatalogImportContext } from './utils/catalogImportContext'
 import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
 import { PublishSetlistModal } from './components/PublishSetlistModal'
@@ -21,6 +24,7 @@ import {
   performStorageHousekeeping,
   recoveryData,
   hasActionableRecovery,
+  inspectRecovery,
   requestDurableStorage,
   setupCrossTabLibraryConflictGuard,
 } from './utils/syncJournal'
@@ -330,6 +334,7 @@ function LibraryStartup() {
       <div className="flex-1 min-w-0">
         <span>{status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}</span>
         <button className="underline ml-3 cursor-pointer" onClick={exportRecovery}>Export recovery data</button>
+        {!status.damaged && <button className="underline ml-3 cursor-pointer" onClick={openRecoveryReview}>Review local recovery</button>}
       </div>
       {!status.damaged && <button
         type="button"
@@ -359,6 +364,12 @@ function LibraryStartup() {
 }
 
 function LibraryApp() {
+  const [reviewRecovery, setReviewRecovery] = useState(false)
+  useEffect(() => {
+    const open = () => setReviewRecovery(true)
+    window.addEventListener('gtar-review-recovery', open)
+    return () => window.removeEventListener('gtar-review-recovery', open)
+  }, [])
   const editorNavigationGuard = useRef<((next: () => void) => void) | null>(null)
   const navigateSafely = (next: () => void) => {
     if (editorNavigationGuard.current) editorNavigationGuard.current(next)
@@ -1924,6 +1935,15 @@ function LibraryApp() {
     <CatalogImportContext.Provider value={{
       getLocal: () => publicationStateRef.current.getLocal(),
       blocked: () => publicationStateRef.current.blocked() || hasActionableRecovery(),
+      blockers: () => {
+        const reasons: ImportBlocker[] = []
+        if (crossTabConflict) reasons.push('cross-tab-conflict')
+        if (editorRecoveryDraftRef.current?.()) reasons.push('editor-draft')
+        const recovery = inspectRecovery()
+        if (recovery.invalid) reasons.push('invalid-recovery')
+        if (recovery.sources.some(source => source.status === 'actionable')) reasons.push('actionable-recovery')
+        return reasons
+      },
       applied: library => {
         persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
         const partition = partitionSongs(library.songs)
@@ -1931,6 +1951,9 @@ function LibraryApp() {
       },
       open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
     }}>
+    {reviewRecovery && <RecoveryReviewDialog
+      blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
+      onClose={() => setReviewRecovery(false)} />}
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
       {!isStagePerformanceMode && (

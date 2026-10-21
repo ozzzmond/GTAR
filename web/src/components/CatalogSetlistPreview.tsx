@@ -1,3 +1,4 @@
+import { openRecoveryReview } from '../utils/recoveryReview'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { CatalogImportContext } from '../utils/catalogImportContext'
 import { existingCatalogImports, importCatalogSetlist, openCatalogImport, previewCatalogSetlist, type CatalogPreview } from '../utils/sharedSetlistImport'
@@ -59,6 +60,7 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
   return <dialog ref={dialog} aria-label="Published setlist preview" onCancel={event => { event.preventDefault(); if (!busyRef.current) onClose() }} className="bg-app-surface text-app-text rounded-xl p-4 w-full max-w-lg max-h-[90dvh] overflow-y-auto backdrop:bg-black/60">
     <button type="button" className={buttonClass} disabled={busy} onClick={onClose}>Close preview</button>
     {error && <p role="alert">{error}</p>}
+    <button type="button" className="min-h-11 border border-app-border rounded px-3 py-2" disabled={busy} onClick={openRecoveryReview}>Review local recovery</button>
     {!preview && !error && <p role="status">Loading exact revision…</p>}
     {preview && <>
       <h2 className="font-bold text-lg break-words">{preview.snapshot.name}</h2>
