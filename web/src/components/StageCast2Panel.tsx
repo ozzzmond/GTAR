@@ -141,7 +141,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
     }
     const timer = setInterval(() => { void receiverClient.tick() }, 5000)
     const clock = setInterval(() => setNow(Date.now()), 1000)
-    return () => { clearInterval(timer); clearInterval(clock); void receiverClient.end() }
+    return () => { clearInterval(timer); clearInterval(clock); receiverClient.disconnect() }
   }, [receiver, receiverClient])
 
   // Screen Wake Lock during active receiver presentation

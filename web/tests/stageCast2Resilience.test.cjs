@@ -3,19 +3,25 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const Module = require('node:module')
 const { buildSync } = require('esbuild')
+const { JSDOM } = require('jsdom')
+const React = require('react')
+const { act } = React
+const { createRoot } = require('react-dom/client')
 
 function loadModule(entryContents) {
   const bundled = buildSync({
     stdin: {
       contents: entryContents,
       resolveDir: path.resolve(__dirname, '..'),
-      loader: 'ts',
+      loader: 'tsx',
     },
     bundle: true,
     write: false,
     platform: 'node',
     format: 'cjs',
     packages: 'external',
+    jsx: 'automatic',
+    loader: { '.css': 'empty' },
     define: {
       'import.meta.env.DEV': 'true',
       'import.meta.env.VITE_CAST2_LOCAL_REVIEW': '"true"',
@@ -33,12 +39,14 @@ const {
   stageCast2Controller,
   projectCast2Presentation,
   createWakeLockController,
+  StageCast2Panel,
 } = loadModule(`
   export { StageCast2Hub, POLICY, digest } from './workers/stageCast2Backend.ts';
   export { Cast2Client } from './src/utils/stageCast2Client.ts';
   export { stageCast2Controller } from './src/utils/stageCast2Controller.ts';
   export { projectCast2Presentation } from './src/utils/stageCast2Projection.ts';
   export { createWakeLockController } from './src/utils/stagePerformance.ts';
+  export { StageCast2Panel } from './src/components/StageCast2Panel.tsx';
 `)
 
 class MemoryStorage {
@@ -546,5 +554,502 @@ test('NO_PERSISTENCE_WRITE_STORM', () => {
     delete globalThis.localStorage
     delete globalThis.window
     stageCast2Controller.resetForTesting()
+  }
+})
+
+test('LEGACY_SESSION_WITHOUT_MAX_DEADLINE', async () => {
+  const ref = 'a'.repeat(64), receiverCredential = 'b'.repeat(64)
+  const legacySession = {
+    ref,
+    state: 'WAITING_FOR_CONTROLLER',
+    deadline: 1_000_000 + 600_000,
+    pairingDeadline: 1_000_000 + 120_000,
+    pinHash: await digest(ref + '123456'),
+    receiverHash: await digest(receiverCredential),
+    owner: '',
+    controllerHash: '',
+    requestId: '',
+    guesses: 0,
+    sequence: 0,
+    inbound: { controller: 0, receiver: 0 },
+  }
+  const storage = new MemoryStorage()
+  await storage.put('hub', { sessions: [legacySession], tickets: [], buckets: [] })
+  let currentTime = 1_000_000
+  const hub = new StageCast2Hub({ storage }, undefined, {
+    now: () => currentTime,
+    upgrade: () => ({ server: new FakeSocket(), response: new Response(null, { status: 101 }) }),
+  })
+  const req = new Request('https://cast.gtar.internal/status', {
+    method: 'POST',
+    headers: { 'x-cast-client': '1'.repeat(64), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref, role: 'receiver', credential: receiverCredential }),
+  })
+  const res = await hub.fetch(req)
+  assert.equal(res.status, 200)
+  const body = await res.json()
+  assert.ok(Number.isFinite(body.expiresAt), 'expiresAt must be a finite number')
+  assert.ok(Number.isFinite(body.maxExpiresAt), 'maxExpiresAt must be a finite number')
+  assert.equal(body.maxExpiresAt, 1_000_000 + 5_400_000)
+})
+
+test('LEGACY_SESSION_FINITE_EXPIRY', async () => {
+  const storage = new MemoryStorage()
+  const ref = 'a'.repeat(64), receiverCredential = 'b'.repeat(64), controllerCredential = 'c'.repeat(64)
+  const legacySession = {
+    ref,
+    state: 'PAIRED',
+    deadline: 1_000_000 + 600_000,
+    pairingDeadline: 1_000_000 + 120_000,
+    pinHash: '',
+    receiverHash: await digest(receiverCredential),
+    owner: 'owner-1',
+    controllerHash: await digest(controllerCredential),
+    requestId: 'r'.repeat(64),
+    guesses: 0,
+    sequence: 0,
+    inbound: { controller: 0, receiver: 0 },
+  }
+  await storage.put('hub', { sessions: [legacySession], tickets: [], buckets: [] })
+  let currentTime = 1_000_000
+  const hub = new StageCast2Hub({ storage }, undefined, {
+    now: () => currentTime,
+    upgrade: () => ({ server: new FakeSocket(), response: new Response(null, { status: 101 }) }),
+  })
+  const makeReq = () => new Request('https://cast.gtar.internal/status', {
+    method: 'POST',
+    headers: { 'x-cast-client': '1'.repeat(64), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref, role: 'receiver', credential: receiverCredential }),
+  })
+
+  // Advance with regular active touches up to 85 minutes
+  for (let i = 0; i < 17; i++) {
+    currentTime += 300_000
+    const res = await hub.fetch(makeReq())
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    assert.ok(body.expiresAt <= 1_000_000 + 5_400_000, 'Renewal must never exceed maxDeadline ceiling')
+  }
+  const finalRes = await hub.fetch(makeReq())
+  const finalBody = await finalRes.json()
+  assert.equal(finalBody.expiresAt, 1_000_000 + 5_400_000)
+})
+
+test('LEGACY_SESSION_SURVIVES_SWEEP', async () => {
+  const storage = new MemoryStorage()
+  const ref = 'a'.repeat(64), receiverCredential = 'b'.repeat(64)
+  const legacySession = {
+    ref,
+    state: 'WAITING_FOR_CONTROLLER',
+    deadline: 1_000_000 + 600_000,
+    pairingDeadline: 1_000_000 + 120_000,
+    pinHash: await digest(ref + '123456'),
+    receiverHash: await digest(receiverCredential),
+    owner: '',
+    controllerHash: '',
+    requestId: '',
+    guesses: 0,
+    sequence: 0,
+    inbound: { controller: 0, receiver: 0 },
+  }
+  await storage.put('hub', { sessions: [legacySession], tickets: [], buckets: [] })
+  let currentTime = 1_000_000 + 30_000
+  const hub = new StageCast2Hub({ storage }, undefined, {
+    now: () => currentTime,
+    upgrade: () => ({ server: new FakeSocket(), response: new Response(null, { status: 101 }) }),
+  })
+  const makeReq = () => new Request('https://cast.gtar.internal/status', {
+    method: 'POST',
+    headers: { 'x-cast-client': '1'.repeat(64), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref, role: 'receiver', credential: receiverCredential }),
+  })
+  const res1 = await hub.fetch(makeReq())
+  assert.equal(res1.status, 200)
+
+  const res2 = await hub.fetch(makeReq())
+  assert.equal(res2.status, 200, 'Legacy session must survive sweep and subsequent requests')
+})
+
+test('LEGACY_SESSION_ABSOLUTE_EXPIRY', async () => {
+  const storage = new MemoryStorage()
+  const ref = 'a'.repeat(64), receiverCredential = 'b'.repeat(64)
+  const legacySession = {
+    ref,
+    state: 'WAITING_FOR_CONTROLLER',
+    deadline: 1_000_000 + 600_000,
+    pairingDeadline: 1_000_000 + 120_000,
+    pinHash: await digest(ref + '123456'),
+    receiverHash: await digest(receiverCredential),
+    owner: '',
+    controllerHash: '',
+    requestId: '',
+    guesses: 0,
+    sequence: 0,
+    inbound: { controller: 0, receiver: 0 },
+  }
+  await storage.put('hub', { sessions: [legacySession], tickets: [], buckets: [] })
+  let currentTime = 1_000_000 + 5_400_001
+  const hub = new StageCast2Hub({ storage }, undefined, {
+    now: () => currentTime,
+    upgrade: () => ({ server: new FakeSocket(), response: new Response(null, { status: 101 }) }),
+  })
+  const req = new Request('https://cast.gtar.internal/status', {
+    method: 'POST',
+    headers: { 'x-cast-client': '1'.repeat(64), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref, role: 'receiver', credential: receiverCredential }),
+  })
+  const res = await hub.fetch(req)
+  assert.equal(res.status, 403, 'Session past maxDeadline must expire')
+})
+
+test('WAITING_RECEIVER_RELOAD', async () => {
+  const fakeSessionStorage = new Map()
+  globalThis.window = {
+    sessionStorage: {
+      getItem: k => fakeSessionStorage.get(k) || null,
+      setItem: (k, v) => fakeSessionStorage.set(k, String(v)),
+      removeItem: k => fakeSessionStorage.delete(k),
+    },
+  }
+
+  let revoked = false
+  let createCalls = 0
+  try {
+    const client1 = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async (path, body) => {
+        if (path === '/create') {
+          createCalls++
+          return { ref: '1'.repeat(64), receiverCredential: 'b'.repeat(64), pin: '111111', expiresAt: 600000, pairingExpiresAt: 120000 }
+        }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {})
+
+    await client1.start()
+    assert.equal(createCalls, 1)
+    assert.ok(fakeSessionStorage.has('gtar_cast2_receiver_session'))
+
+    // Simulate page reload while session was still WAITING_FOR_CONTROLLER
+    const client2 = new Cast2Client('receiver', {
+      now: () => 2000,
+      post: async (path, body) => {
+        if (path === '/status') return { sessionId: '1'.repeat(64), state: 'WAITING_FOR_CONTROLLER', inboundSequence: 0, expiresAt: 600000 }
+        if (path === '/revoke') {
+          revoked = true
+          return { state: 'REVOKED' }
+        }
+        if (path === '/create') {
+          createCalls++
+          return { ref: '2'.repeat(64), receiverCredential: 'c'.repeat(64), pin: '222222', expiresAt: 600000, pairingExpiresAt: 120000 }
+        }
+        return {}
+      },
+      socket: () => ({ onopen: null, onclose: null, onerror: null, onmessage: null, close: () => {} }),
+    }, () => {})
+
+    const restored = client2.restore()
+    assert.equal(restored, true)
+    await client2.tick()
+
+    assert.equal(revoked, true, 'Old incomplete session must be revoked on server')
+    assert.equal(createCalls, 2, 'Fresh session must be created with new PIN')
+    assert.equal(client2.view.ref, '2'.repeat(64))
+    assert.equal(client2.view.pin, '222222')
+    assert.equal(client2.view.state, 'WAITING_FOR_CONTROLLER')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('PAIRING_DEADLINE_VALIDATION', async () => {
+  const client = new Cast2Client('receiver', {
+    now: () => 1000,
+    post: async () => ({ sessionId: 'a'.repeat(64), state: 'WAITING_FOR_CONTROLLER', inboundSequence: 0, expiresAt: 600000 }),
+    socket: () => ({}),
+  }, () => {})
+
+  client.view.state = 'WAITING_FOR_CONTROLLER'
+  client.view.expiresAt = 600000
+  client.view.pairingExpiresAt = 0
+  client['credential'] = 'c'.repeat(64)
+
+  // tick() must NOT immediately expire when pairingExpiresAt is 0
+  await client.tick()
+  assert.notEqual(client.view.state, 'EXPIRED', 'Must not falsely expire when pairingExpiresAt is 0')
+
+  // When pairingExpiresAt is set and now exceeds it
+  client.view.state = 'WAITING_FOR_CONTROLLER'
+  client.view.pairingExpiresAt = 500
+  await client.tick()
+  assert.equal(client.view.state, 'EXPIRED', 'Must expire when pairing deadline is exceeded')
+})
+
+test('PAIRED_RECEIVER_RELOAD', async () => {
+  const fakeSessionStorage = new Map()
+  globalThis.window = {
+    sessionStorage: {
+      getItem: k => fakeSessionStorage.get(k) || null,
+      setItem: (k, v) => fakeSessionStorage.set(k, String(v)),
+      removeItem: k => fakeSessionStorage.delete(k),
+    },
+  }
+
+  try {
+    fakeSessionStorage.set('gtar_cast2_receiver_session', JSON.stringify({
+      ref: 'a'.repeat(64),
+      credential: 'c'.repeat(64),
+      expiresAt: 600000,
+    }))
+
+    let ticketRequested = false
+    const client = new Cast2Client('receiver', {
+      now: () => 2000,
+      post: async path => {
+        if (path === '/status') return { sessionId: 'a'.repeat(64), state: 'PAIRED', inboundSequence: 0, expiresAt: 700000 }
+        if (path === '/ticket') {
+          ticketRequested = true
+          return { ticket: 'b'.repeat(64) }
+        }
+        return {}
+      },
+      socket: () => ({ onopen: null, onclose: null, onerror: null, onmessage: null, close: () => {} }),
+    }, () => {})
+
+    assert.equal(client.restore(), true)
+    await client.tick()
+    assert.equal(ticketRequested, true)
+    assert.equal(client.view.state, 'PAIRED')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('CONTROLLER_RELOAD', async () => {
+  const fakeSessionStorage = new Map()
+  globalThis.window = {
+    sessionStorage: {
+      getItem: k => fakeSessionStorage.get(k) || null,
+      setItem: (k, v) => fakeSessionStorage.set(k, String(v)),
+      removeItem: k => fakeSessionStorage.delete(k),
+    },
+  }
+
+  try {
+    fakeSessionStorage.set('gtar_cast2_controller_session', JSON.stringify({
+      ref: 'c'.repeat(64),
+      credential: 'b'.repeat(64),
+      expiresAt: 600000,
+    }))
+
+    const client = new Cast2Client('controller', {
+      now: () => 2000,
+      post: async path => {
+        if (path === '/status') return { sessionId: 'c'.repeat(64), state: 'PAIRED', inboundSequence: 0, expiresAt: 700000 }
+        if (path === '/ticket') return { ticket: 'b'.repeat(64) }
+        return {}
+      },
+      socket: () => ({ onopen: null, onclose: null, onerror: null, onmessage: null, close: () => {} }),
+    }, () => {})
+
+    assert.equal(client.restore(), true)
+    await client.tick()
+    assert.equal(client.view.state, 'PAIRED')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('STRICTMODE_DOUBLE_MOUNT', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173/tv' })
+  const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval', 'WebSocket']
+  const prior = Object.fromEntries(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
+  const timers = new Map()
+  let nextTimer = 0
+  const calls = []
+
+  for (const [k, value] of Object.entries({
+    window: dom.window, document: dom.window.document, history: dom.window.history,
+    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true,
+    setInterval: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id },
+    clearInterval: id => timers.delete(id),
+    WebSocket: class {
+      readyState = 0; send() {} close() {}
+      constructor() { queueMicrotask(() => { this.readyState = 1; this.onopen?.() }) }
+    },
+    fetch: async (url, options) => {
+      calls.push({ url, options })
+      if (url.endsWith('/create')) return Response.json({ ref: 'a'.repeat(64), pin: '123456', receiverCredential: 'b'.repeat(64), expiresAt: Date.now() + 600000, pairingExpiresAt: Date.now() + 120000 })
+      if (url.endsWith('/status')) return Response.json({ sessionId: 'a'.repeat(64), state: 'WAITING_FOR_CONTROLLER', requestId: 'r'.repeat(64), inboundSequence: 0, expiresAt: Date.now() + 600000 })
+      if (url.endsWith('/revoke')) return Response.json({ state: 'REVOKED' })
+      return Response.json({})
+    },
+  })) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value })
+  }
+
+  const root = createRoot(dom.window.document.getElementById('root'))
+  try {
+    await act(async () => {
+      root.render(React.createElement(React.StrictMode, null, React.createElement(StageCast2Panel, { receiver: true })))
+    })
+
+    const revokeCalls = calls.filter(c => c.url.endsWith('/revoke'))
+    assert.equal(revokeCalls.length, 0, 'StrictMode double-mount must not invoke server /revoke')
+  } finally {
+    try { await act(async () => root.unmount()) } catch { /* best effort */ }
+    for (const [k, desc] of Object.entries(prior)) {
+      if (desc) Object.defineProperty(globalThis, k, desc)
+      else delete globalThis[k]
+    }
+  }
+})
+
+test('SPA_UNMOUNT_NO_UNINTENDED_REVOKE', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173/tv' })
+  const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval', 'WebSocket']
+  const prior = Object.fromEntries(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
+  const timers = new Map()
+  let nextTimer = 0
+  const calls = []
+
+  for (const [k, value] of Object.entries({
+    window: dom.window, document: dom.window.document, history: dom.window.history,
+    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true,
+    setInterval: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id },
+    clearInterval: id => timers.delete(id),
+    WebSocket: class {
+      readyState = 0; send() {} close() {}
+      constructor() { queueMicrotask(() => { this.readyState = 1; this.onopen?.() }) }
+    },
+    fetch: async (url, options) => {
+      calls.push({ url, options })
+      if (url.endsWith('/create')) return Response.json({ ref: 'a'.repeat(64), pin: '123456', receiverCredential: 'b'.repeat(64), expiresAt: Date.now() + 600000, pairingExpiresAt: Date.now() + 120000 })
+      if (url.endsWith('/status')) return Response.json({ sessionId: 'a'.repeat(64), state: 'WAITING_FOR_CONTROLLER', requestId: 'r'.repeat(64), inboundSequence: 0, expiresAt: Date.now() + 600000 })
+      if (url.endsWith('/revoke')) return Response.json({ state: 'REVOKED' })
+      return Response.json({})
+    },
+  })) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value })
+  }
+
+  const root = createRoot(dom.window.document.getElementById('root'))
+  try {
+    await act(async () => {
+      root.render(React.createElement(StageCast2Panel, { receiver: true }))
+    })
+
+    await act(async () => {
+      root.unmount()
+    })
+
+    const revokeCalls = calls.filter(c => c.url.endsWith('/revoke'))
+    assert.equal(revokeCalls.length, 0, 'Component unmount must not trigger server revocation')
+  } finally {
+    for (const [k, desc] of Object.entries(prior)) {
+      if (desc) Object.defineProperty(globalThis, k, desc)
+      else delete globalThis[k]
+    }
+  }
+})
+
+test('EXPLICIT_END_REVOKES', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173/tv' })
+  const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval', 'WebSocket']
+  const prior = Object.fromEntries(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
+  const timers = new Map()
+  let nextTimer = 0
+  const calls = []
+
+  for (const [k, value] of Object.entries({
+    window: dom.window, document: dom.window.document, history: dom.window.history,
+    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true,
+    setInterval: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id },
+    clearInterval: id => timers.delete(id),
+    WebSocket: class {
+      readyState = 0; send() {} close() {}
+      constructor() { queueMicrotask(() => { this.readyState = 1; this.onopen?.() }) }
+    },
+    fetch: async (url, options) => {
+      calls.push({ url, options })
+      if (url.endsWith('/create')) return Response.json({ ref: 'a'.repeat(64), pin: '123456', receiverCredential: 'b'.repeat(64), expiresAt: Date.now() + 600000, pairingExpiresAt: Date.now() + 120000 })
+      if (url.endsWith('/status')) return Response.json({ sessionId: 'a'.repeat(64), state: 'WAITING_FOR_CONTROLLER', requestId: 'r'.repeat(64), inboundSequence: 0, expiresAt: Date.now() + 600000 })
+      if (url.endsWith('/revoke')) return Response.json({ state: 'REVOKED' })
+      return Response.json({})
+    },
+  })) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value })
+  }
+
+  const root = createRoot(dom.window.document.getElementById('root'))
+  try {
+    await act(async () => {
+      root.render(React.createElement(StageCast2Panel, { receiver: true }))
+    })
+
+    // Click "Create TV pairing" first
+    await act(async () => {
+      const createBtn = [...dom.window.document.querySelectorAll('button')].find(b => /Create TV/.test(b.textContent))
+      if (createBtn) createBtn.click()
+    })
+
+    // Click "End session" button
+    await act(async () => {
+      const endBtn = [...dom.window.document.querySelectorAll('button')].find(b => /End session/.test(b.textContent))
+      if (endBtn) endBtn.click()
+    })
+
+    const revokeCalls = calls.filter(c => c.url.endsWith('/revoke'))
+    assert.equal(revokeCalls.length, 1, 'Explicit button click must call server /revoke')
+  } finally {
+    try { await act(async () => root.unmount()) } catch { /* best effort */ }
+    for (const [k, desc] of Object.entries(prior)) {
+      if (desc) Object.defineProperty(globalThis, k, desc)
+      else delete globalThis[k]
+    }
+  }
+})
+
+test('NO_TIMER_OR_SOCKET_LEAK', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173/tv' })
+  const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval', 'WebSocket']
+  const prior = Object.fromEntries(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
+  const timers = new Map()
+  let nextTimer = 0
+
+  for (const [k, value] of Object.entries({
+    window: dom.window, document: dom.window.document, history: dom.window.history,
+    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true,
+    setInterval: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id },
+    clearInterval: id => timers.delete(id),
+    WebSocket: class {
+      readyState = 0; send() {}
+      close() {}
+      constructor() { queueMicrotask(() => { this.readyState = 1; this.onopen?.() }) }
+    },
+    fetch: async () => Response.json({}),
+  })) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value })
+  }
+
+  const root = createRoot(dom.window.document.getElementById('root'))
+  try {
+    await act(async () => {
+      root.render(React.createElement(StageCast2Panel, { receiver: true }))
+    })
+
+    assert.ok(timers.size >= 2, 'Timers must be started on mount')
+
+    await act(async () => {
+      root.unmount()
+    })
+
+    assert.equal(timers.size, 0, 'All interval timers must be cleared on unmount')
+  } finally {
+    for (const [k, desc] of Object.entries(prior)) {
+      if (desc) Object.defineProperty(globalThis, k, desc)
+      else delete globalThis[k]
+    }
   }
 })
