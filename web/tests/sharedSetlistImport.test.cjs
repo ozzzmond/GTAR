@@ -234,3 +234,32 @@ test('Open rejects stale chart state even when personal setlist identity still m
   localStorage.setItem(LIBRARY_KEY, JSON.stringify(external))
   assert.throws(() => api.openCatalogImport(destination, preview, h), /unavailable/)
 })
+
+
+test('exact blocker categories reject before network revalidation and remain checked inside import lock', async () => {
+  const preview = await prepare(), h = host(), original = localStorage.getItem(LIBRARY_KEY)
+  for (const [reason, message] of [['editor-draft', /editor changes/], ['cross-tab-conflict', /active cross-tab/], ['actionable-recovery', /Review local recovery/], ['invalid-recovery', /invalid or unreadable/]]) {
+    h.blockers = () => [reason]
+    const count = calls.length
+    await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }), message)
+    assert.equal(calls.length, count); assert.equal(localStorage.getItem(LIBRARY_KEY), original)
+  }
+  let checks = 0
+  h.blockers = () => ++checks === 1 ? [] : ['actionable-recovery']
+  await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }), /Review local recovery/)
+  assert.equal(localStorage.getItem(LIBRARY_KEY), original)
+})
+test('represented/raw archives permit clean import; genuine conflicts require explicit preserved decision', async () => {
+  const { hasActionableRecovery, inspectRecovery, recordRecoveryChoice } = require('../src/utils/syncJournal.ts')
+  localStorage.setItem('gtar_sync_recovery:replacement:1', JSON.stringify({ raw: JSON.stringify(library) }))
+  const h = host(); h.blocked = () => hasActionableRecovery()
+  await api.importCatalogSetlist(await prepare(), h, { kind: 'new' })
+  localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify({ songs: [{ id: 'missing', title: 'Missing', rawContent: 'Kept in recovery' }], setlists: [] }))
+  const preview = await prepare(), before = localStorage.getItem(LIBRARY_KEY)
+  await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'duplicate' }), /Resolve editor/)
+  await recordRecoveryChoice(inspectRecovery(), 'keep-current', () => false)
+  assert.equal(localStorage.getItem(LIBRARY_KEY), before)
+  await api.importCatalogSetlist(preview, h, { kind: 'duplicate' })
+  assert.equal(library.songs.some(song => song.id === 'missing'), false)
+  assert.equal(hasActionableRecovery(), false)
+})

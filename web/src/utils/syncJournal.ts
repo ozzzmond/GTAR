@@ -18,6 +18,7 @@ export const STAGE_CONTROLS_AUTO_HIDE_KEY = 'gtar_stage_controls_auto_hide'
 
 export const CANONICAL_STORAGE_PREFIXES = [
   LIBRARY_KEY,
+  'gtar_recovery_decisions_v1',
   SYNC_RETIRED_KEY,
   RESTORE_SNAPSHOT_KEY,
   STAGE_SESSION_KEY,
@@ -190,53 +191,182 @@ export function recoveryData(storage: Storage = localStorage): Record<string, st
   const data: Record<string, string> = {}
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i)
-    if (k && (k === LIBRARY_KEY || k === ownerKey || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:') || k.startsWith('gtar_sync_recovery:'))) data[k] = storage.getItem(k) ?? ''
+    if (k && (k === LIBRARY_KEY || k === ownerKey || k === RECOVERY_DECISIONS_KEY || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:') || k.startsWith('gtar_sync_recovery:'))) data[k] = storage.getItem(k) ?? ''
   }
   return data
 }
 
-// Canonical library and ownership markers are export sources, not recovery incidents.
-// Archives remain untouched; only provably represented data is non-actionable.
-export function hasActionableRecovery(storage: Storage = localStorage): boolean {
+// Decisions preserve exact source bytes and the chosen library. They never remove archives.
+export const RECOVERY_DECISIONS_KEY = 'gtar_recovery_decisions_v1'
+export interface RecoveryRecordDifference {
+  kind: 'song' | 'setlist'
+  id: string
+  title: string
+  deleted: boolean
+  difference: 'missing' | 'divergent'
+  record: unknown
+}
+export interface RecoverySourceReview {
+  key: string
+  raw: string
+  status: 'represented' | 'actionable' | 'invalid' | 'resolved'
+  differences: RecoveryRecordDifference[]
+  canKeepCurrent: boolean
+}
+interface RecoveryDecision {
+  choice: 'keep-current' | 'reopen'
+  libraryRaw: string
+  sources: Record<string, string>
+}
+export interface RecoveryReview {
+  libraryRaw: string | null
+  decisionRaw: string | null
+  invalid: boolean
+  sources: RecoverySourceReview[]
+  missingRecords: number
+  divergentVersions: number
+}
+
+function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary[]; pending: boolean } {
+  const snapshot = JSON.parse(raw)
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('Unknown recovery format')
+  if (key.startsWith('gtar_sync_v1:')) {
+    if (snapshot.version !== 1) throw new Error('Unknown journal version')
+    const candidates = snapshot.baseline ? [snapshot.baseline] : []
+    candidates.forEach(validateLibrary)
+    return { candidates, pending: Boolean(snapshot.pending) }
+  }
+  let candidates: SyncLibrary[]
+  if (Object.hasOwn(snapshot, 'raw')) {
+    if (Object.keys(snapshot).length !== 1 || typeof snapshot.raw !== 'string') throw new Error('Unknown raw envelope')
+    candidates = [JSON.parse(snapshot.raw)]
+  } else if (Object.hasOwn(snapshot, 'songs')) candidates = [snapshot]
+  else {
+    if (!snapshot.local) throw new Error('Unknown recovery format')
+    candidates = [snapshot.local, snapshot.remote, snapshot.journal?.baseline].filter(value => value != null)
+  }
+  candidates.forEach(validateLibrary)
+  return { candidates, pending: Boolean(snapshot.journal?.pending) }
+}
+
+function readRecoveryDecisions(raw: string | null): RecoveryDecision[] {
+  if (raw === null) return []
+  const value = JSON.parse(raw)
+  if (value?.version !== 1 || !Array.isArray(value.decisions)) throw new Error('Invalid recovery decisions')
+  for (const decision of value.decisions) {
+    if (!decision || !['keep-current', 'reopen'].includes(decision.choice) || typeof decision.libraryRaw !== 'string' ||
+        !decision.sources || typeof decision.sources !== 'object' || Array.isArray(decision.sources)) throw new Error('Invalid recovery decision')
+    validateLibrary(JSON.parse(decision.libraryRaw))
+    for (const [key, source] of Object.entries(decision.sources)) {
+      if ((!key.startsWith('gtar_sync_recovery:') && !key.startsWith('gtar_sync_v1:') && key !== 'legacy') || typeof source !== 'string') throw new Error('Invalid decision source')
+    }
+  }
+  return value.decisions
+}
+
+// Read-only review uses the same representation rule as the import guard.
+export function inspectRecovery(storage: Storage = localStorage): RecoveryReview {
+  const review: RecoveryReview = { libraryRaw: null, decisionRaw: null, invalid: false, sources: [], missingRecords: 0, divergentVersions: 0 }
   try {
+    review.libraryRaw = storage.getItem(LIBRARY_KEY)
     const library = readPersistedLibrary(storage)
+    review.decisionRaw = storage.getItem(RECOVERY_DECISIONS_KEY)
+    let decisions: RecoveryDecision[] = []
+    try { decisions = readRecoveryDecisions(review.decisionRaw) } catch { review.invalid = true }
     const sources = recoveryData(storage)
-    for (const [key, raw] of Object.entries(sources)) {
-      if (key === LIBRARY_KEY || key === ownerKey || legacyKeys.includes(key)) continue
-      const snapshot = JSON.parse(raw)
-      if (!library) return true
-      if (key.startsWith('gtar_sync_v1:')) {
-        if (snapshot.version !== 1 || snapshot.pending) return true
-        if (snapshot.baseline && !same(library, reconcile(library, snapshot.baseline))) return true
-      } else {
-        if (snapshot.journal?.pending) return true
-        const candidates = 'songs' in snapshot ? [snapshot] : [snapshot.local, snapshot.remote, snapshot.journal?.baseline]
-        if (!candidates[0]) return true
-        for (const candidate of candidates) {
-          if (candidate && !same(library, reconcile(library, candidate))) return true
-        }
-      }
-    }
+    delete sources[RECOVERY_DECISIONS_KEY]
+    const entries = Object.entries(sources).filter(([key]) => key !== LIBRARY_KEY && key !== ownerKey && !legacyKeys.includes(key))
     if (legacyKeys.some(key => key in sources)) {
-      if (!library) return true
-      const songs = JSON.parse(sources[legacyKeys[0]] ?? '[]')
-      const trash = JSON.parse(sources[legacyKeys[1]] ?? '[]')
-      const setlists = JSON.parse(sources[legacyKeys[2]] ?? '[]')
-      const legacy = { songs: [...songs, ...trash.map((song: SyncLibrary['songs'][number]) => ({ ...song, isDeleted: true }))], setlists }
-      if (!same(library, reconcile(library, legacy))) return true
+      // Preserve the original bytes too: a legacy source changes if any constituent changes.
+      entries.push(['legacy', JSON.stringify(legacyKeys.map(key => sources[key] ?? null))])
     }
-    return false
-  } catch { return true }
+    if (!library) review.invalid = true
+    for (const [key, raw] of entries) {
+      const item: RecoverySourceReview = { key, raw, status: 'represented', differences: [], canKeepCurrent: false }
+      review.sources.push(item)
+      try {
+        let candidates: SyncLibrary[], pending = false
+        if (key === 'legacy') {
+          const [songRaw, trashRaw, setlistRaw] = JSON.parse(raw)
+          const songs = JSON.parse(songRaw ?? '[]'), trash = JSON.parse(trashRaw ?? '[]'), setlists = JSON.parse(setlistRaw ?? '[]')
+          if (!Array.isArray(songs) || !Array.isArray(trash)) throw new Error('Invalid legacy records')
+          candidates = [{ songs: [...songs, ...trash.map(song => ({ ...song, isDeleted: true }))], setlists }]
+          candidates.forEach(validateLibrary)
+        } else ({ candidates, pending } = recoveryCandidates(key, raw))
+        if (!library) throw new Error('Canonical library unavailable')
+        let represented = !pending
+        for (const candidate of candidates) {
+          for (const kind of ['song', 'setlist'] as const) {
+            const records = kind === 'song' ? candidate.songs : candidate.setlists
+            const current = new Map((kind === 'song' ? library.songs : library.setlists).map(record => [String(record.id), record]))
+            for (const record of records) {
+              const existing = current.get(String(record.id))
+              if (!existing || !same(existing, record)) item.differences.push({
+                kind, id: String(record.id), title: 'title' in record ? String(record.title) : record.name,
+                deleted: Boolean(record.isDeleted), difference: existing ? 'divergent' : 'missing', record,
+              })
+            }
+          }
+          try { if (!same(library, reconcile(library, candidate))) represented = false }
+          catch { represented = false }
+        }
+        item.status = represented ? 'represented' : 'actionable'
+        // Unknown/pending operations and legacy access-setting conflicts require manual recovery.
+        item.canKeepCurrent = !represented && !pending && candidates.every(candidate => candidate.allowedUsers === undefined || same(library.allowedUsers, candidate.allowedUsers))
+        if (item.canKeepCurrent) {
+          const decision = [...decisions].reverse().find(value => value.sources[key] === raw)
+          if (decision?.choice === 'keep-current') item.status = 'resolved'
+        }
+      } catch { item.status = 'invalid'; review.invalid = true }
+    }
+    const differences = review.sources.flatMap(source => source.differences)
+    review.missingRecords = new Set(differences.filter(record => record.difference === 'missing').map(record => JSON.stringify([record.kind, record.id]))).size
+    review.divergentVersions = differences.filter((record, index) => record.difference === 'divergent' &&
+      differences.findIndex(other => other.kind === record.kind && other.id === record.id && same(other.record, record.record)) === index).length
+  } catch { review.invalid = true }
+  return review
+}
+
+export function hasActionableRecovery(storage: Storage = localStorage): boolean {
+  const review = inspectRecovery(storage)
+  return review.invalid || review.sources.some(source => source.status === 'actionable' || source.status === 'invalid')
+}
+
+// Explicit operator choice only. No library write, source replacement, pruning or cloud action.
+// The append-only decision preserves the pre-choice library and exact historical sources.
+export async function recordRecoveryChoice(review: RecoveryReview, choice: RecoveryDecision['choice'], blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
+  if (!navigator.locks?.request) throw new Error('Safe recovery resolution requires Web Locks support.')
+  await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, lock => {
+    if (!lock || blocked()) throw new Error('Resolve editor edits or active cross-tab conflicts before choosing a recovery version.')
+    const fresh = inspectRecovery(storage)
+    if (!same(review, fresh) || fresh.invalid || !fresh.libraryRaw) throw new Error('Recovery changed or is invalid. Review again.')
+    const selected = fresh.sources.filter(source => choice === 'keep-current' ? source.status === 'actionable' : source.status === 'resolved')
+    if (!selected.length || selected.some(source => !source.canKeepCurrent)) throw new Error('Pending or unsupported recovery requires manual recovery. Export all recovery data.')
+    const decisions = readRecoveryDecisions(fresh.decisionRaw)
+    decisions.push({ choice, libraryRaw: fresh.libraryRaw, sources: Object.fromEntries(selected.map(source => [source.key, source.raw])) })
+    const payload = JSON.stringify({ version: 1, decisions })
+    // No awaits between revalidation and this single-key transaction.
+    try { storage.setItem(RECOVERY_DECISIONS_KEY, payload) }
+    catch (err) {
+      if (isQuotaError(err)) throw new Error('Not enough browser storage to preserve this decision. Export recovery data; no sources were removed.', { cause: err })
+      throw err
+    }
+    if (storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Recovery decision could not be verified. Export recovery data and review again.')
+    if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
+  })
 }
 
 export function retireDriveSyncState(storage: Storage = localStorage): boolean {
   try {
+    // Explicit historical-version choices must not be undone by legacy startup migration.
+    // Decision sources and their baseline also remain available for export and reopening.
+    if (storage.getItem(RECOVERY_DECISIONS_KEY) !== null) return false
     const expectedRaw = storage.getItem(LIBRARY_KEY)
     let library = readPersistedLibrary(storage)
     if (!library) return false
     const superseded: SyncLibrary[] = []
     const sources = recoveryData(storage)
-    const keys = Object.keys(sources).filter(k => k !== LIBRARY_KEY && k !== ownerKey)
+    const keys = Object.keys(sources).filter(k => k !== LIBRARY_KEY && k !== ownerKey && k !== RECOVERY_DECISIONS_KEY)
     for (const k of keys.filter(k => k.startsWith('gtar_sync_v1:'))) {
       const journal = JSON.parse(sources[k])
       if (journal.version !== 1) return false

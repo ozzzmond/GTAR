@@ -8,9 +8,17 @@ import { LIBRARY_KEY, persistLibrary, readPersistedLibrary, saveCrossTabConflict
 import { generateUUID } from './uuid'
 
 export interface CatalogPreview { id: string; revision: number; snapshot: SetlistSnapshot; account: string; token: string; scope: string }
+export type ImportBlocker = 'editor-draft' | 'cross-tab-conflict' | 'actionable-recovery' | 'invalid-recovery'
+export const importBlockerMessages: Record<ImportBlocker, string> = {
+  'editor-draft': 'Save or discard editor changes before importing.',
+  'cross-tab-conflict': 'Resolve the active cross-tab conflict before importing.',
+  'actionable-recovery': 'Review local recovery and choose which versions to keep before importing.',
+  'invalid-recovery': 'Local recovery data is invalid or unreadable. Export recovery data for manual recovery.',
+}
 export interface ImportHost {
   getLocal: () => SyncLibrary
   blocked: () => boolean
+  blockers?: () => ImportBlocker[]
   applied: (library: SyncLibrary) => void
   open: (id: string | number) => void
 }
@@ -43,6 +51,11 @@ export function cloneCatalogSetlist(preview: CatalogPreview) {
     songs: songs.map(song => ({ id: song.id, title: song.title, artist: song.artist })) }
   return { songs, setlist }
 }
+function assertImportUnblocked(host: ImportHost) {
+  const reasons = host.blockers?.() ?? []
+  if (reasons.length) throw new Error(reasons.map(reason => importBlockerMessages[reason]).join(' '))
+  if (host.blocked()) throw new Error('Resolve editor, recovery or cross-tab conflicts before importing.')
+}
 let importing = false
 export async function importCatalogSetlist(preview: CatalogPreview, host: ImportHost,
   action: { kind: 'new' | 'duplicate' | 'revision' | 'restore'; existingId?: string | number }) {
@@ -51,7 +64,7 @@ export async function importCatalogSetlist(preview: CatalogPreview, host: Import
   try {
     if (!navigator.locks?.request) throw new Error('Safe import requires Web Locks support. Update your browser.')
     assertSession(preview)
-    if (host.blocked()) throw new Error('Resolve editor, recovery or cross-tab conflicts before importing.')
+    assertImportUnblocked(host)
     const baseline = localStorage.getItem(LIBRARY_KEY)
     const draft = host.getLocal()
     // Network revalidation is mandatory even for a previously reviewed revision.
@@ -60,8 +73,9 @@ export async function importCatalogSetlist(preview: CatalogPreview, host: Import
     return await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, lock => {
       if (!lock) throw new Error('Another tab is importing. Reload your library before retrying.')
       assertSession(preview)
+      assertImportUnblocked(host)
       const stored = readPersistedLibrary()
-      if (host.blocked() || localStorage.getItem(LIBRARY_KEY) !== baseline || !stored ||
+      if (localStorage.getItem(LIBRARY_KEY) !== baseline || !stored ||
           !same(draft, host.getLocal()) || !same(JSON.parse(JSON.stringify(draft)), stored)) throw new Error('Library changed or has unsaved edits. Reload and review again.')
       const copies = existingCatalogImports(stored, preview)
       const exact = copies.filter(list => list.catalogSource!.revision === preview.revision)

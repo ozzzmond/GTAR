@@ -1,3 +1,4 @@
+import { openRecoveryReview } from '../utils/recoveryReview'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Cloud,
@@ -334,6 +335,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </div>
 
           {/* Conflict Resolution Section */}
+          <button type="button" className="min-h-11 border border-app-border rounded px-3 py-2" disabled={isProcessing} onClick={openRecoveryReview}>Review local recovery</button>
           {syncStatus === 'CONFLICT' && conflicts.length > 0 && (
             <div className="p-4 rounded-xl bg-[#DC6E67]/10 border border-[#DC6E67]/40 space-y-3">
               <div className="flex items-center gap-2 text-status-error">
