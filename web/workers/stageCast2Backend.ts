@@ -32,7 +32,7 @@ export interface Storage {
   setAlarm(time: number): Promise<void>
 }
 interface Session {
-  ref: string; state: State; deadline: number; pairingDeadline: number; maxDeadline: number; pinHash: string; receiverHash: string
+  ref: string; state: State; deadline: number; pairingDeadline: number; maxDeadline?: number; pinHash: string; receiverHash: string
   owner: string; controllerHash: string; requestId: string; guesses: number; sequence: number
   inbound: Record<Role, number>
 }
@@ -107,8 +107,18 @@ export class StageCast2Hub {
     this.tail = this.storage.get<Database>('hub').then(saved => {
       if (saved) this.db = saved
       // Standard sockets close on eviction; presentation is deliberately memory only.
-      for (const s of this.db.sessions) if (s.state === 'PAIRED') s.state = transition(s.state, 'DISCONNECTED')
+      for (const s of this.db.sessions) {
+        this.ensureMaxDeadline(s)
+        if (s.state === 'PAIRED') s.state = transition(s.state, 'DISCONNECTED')
+      }
     }).catch(() => { this.failed = true })
+  }
+  private ensureMaxDeadline(s: Session): number {
+    if (typeof s.maxDeadline !== 'number' || !Number.isFinite(s.maxDeadline)) {
+      const base = Number.isFinite(s.deadline) ? s.deadline : this.rt.now() + POLICY.sessionMs
+      s.maxDeadline = base + (POLICY.maxLifetimeMs - POLICY.sessionMs)
+    }
+    return s.maxDeadline
   }
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const work = this.tail.then(async () => {
@@ -148,6 +158,7 @@ export class StageCast2Hub {
     this.db.buckets = this.db.buckets.filter(b => b.window === Math.floor(now / 60_000))
     this.db.tickets = this.db.tickets.filter(t => t.deadline > now)
     for (const s of this.db.sessions) {
+      this.ensureMaxDeadline(s)
       if (!['REVOKED', 'EXPIRED'].includes(s.state) && (now >= s.deadline ||
         (['WAITING_FOR_CONTROLLER', 'AWAITING_TV_APPROVAL'].includes(s.state) && now >= s.pairingDeadline))) this.end(s, 'EXPIRED')
     }
@@ -169,11 +180,13 @@ export class StageCast2Hub {
   }
   private touch(s: Session): void {
     if (['REVOKED', 'EXPIRED'].includes(s.state)) return
-    s.deadline = Math.min(s.maxDeadline, this.rt.now() + POLICY.idleTimeoutMs)
+    const maxDeadline = this.ensureMaxDeadline(s)
+    s.deadline = Math.min(maxDeadline, this.rt.now() + POLICY.idleTimeoutMs)
   }
   private session(ref: unknown): Session {
     const s = this.db.sessions.find(s => s.ref === ref)
     if (!s || ['REVOKED', 'EXPIRED'].includes(s.state)) throw new Denial()
+    this.ensureMaxDeadline(s)
     return s
   }
   private async authorize(s: Session, role: Role, credential: unknown, owner: string): Promise<void> {

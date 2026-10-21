@@ -98,6 +98,7 @@ export class Cast2Client {
   private emit(patch: Partial<Cast2View>) { this.view = { ...this.view, ...patch }; this.changed(this.view) }
   private scope() { return { ref: this.view.ref, role: this.role, credential: this.credential } }
   private close() { const ws = this.ws; this.ws = null; if (ws) { ws.onclose = null; ws.onerror = null; ws.onmessage = null; ws.onopen = null; ws.close() } }
+  disconnect() { this.close() }
   dispose() { this.epoch++; this.close(); this.credential = ''; this.latest = null; this.sync = initialCast2SyncState(''); this.view = { ...this.view, snapshot: null } }
   private terminal(state: string, error = '') { this.clearSessionStorage(); this.dispose(); this.emit({ state, error, pin: '', requestId: '', snapshot: null }) }
   private fail(error: unknown) {
@@ -170,7 +171,7 @@ export class Cast2Client {
     if (!this.credential || this.busy) return
     if (this.backoff && this.nextRetryAt > 0 && this.io.now() < this.nextRetryAt) return
     const pairing = ['WAITING_FOR_CONTROLLER', 'AWAITING_TV_APPROVAL'].includes(this.view.state)
-    if ((this.view.expiresAt > 0 && this.io.now() >= this.view.expiresAt) || (pairing && this.io.now() >= this.view.pairingExpiresAt)) { this.terminal('EXPIRED'); return }
+    if ((this.view.expiresAt > 0 && this.io.now() >= this.view.expiresAt) || (pairing && this.view.pairingExpiresAt > 0 && this.io.now() >= this.view.pairingExpiresAt)) { this.terminal('EXPIRED'); return }
     this.busy = true
     const epoch = this.epoch
     try {
@@ -178,6 +179,18 @@ export class Cast2Client {
       if (epoch !== this.epoch) return
       if (!states.includes(status.state as string) || status.sessionId !== this.view.ref || !Number.isSafeInteger(status.inboundSequence)) throw Error('Invalid server response.')
       if (status.state === 'REVOKED' || status.state === 'EXPIRED') { this.terminal(status.state); return }
+      if (this.role === 'receiver' && ['WAITING_FOR_CONTROLLER', 'AWAITING_TV_APPROVAL'].includes(status.state as string)) {
+        // Pairing was not completed prior to reload. Abandon incomplete session and revoke on server to avoid orphaned sessions.
+        const scope = this.scope()
+        this.clearSessionStorage()
+        this.dispose()
+        this.busy = false
+        if (scope.credential) {
+          try { await this.io.post('/revoke', scope, false) } catch { /* best effort */ }
+        }
+        await this.start()
+        return
+      }
       this.sequence = Math.max(this.sequence, status.inboundSequence as number)
       this.failures = 0
       this.nextRetryAt = 0
