@@ -65,6 +65,7 @@ Account access, sign-in, session lifecycle, and authentication UI.
 - [durableAuthSession.test.cjs](durableAuthSession.test.cjs)
 - [g5SessionRevocationSecurity.test.cjs](g5SessionRevocationSecurity.test.cjs)
 - [googleOAuthSecurity.test.cjs](googleOAuthSecurity.test.cjs)
+- [googleSigninReliability.test.cjs](googleSigninReliability.test.cjs)
 - [membershipBadgeInteraction108Dev8f.test.cjs](membershipBadgeInteraction108Dev8f.test.cjs)
 <!-- test-catalog:AUTH:end -->
 
