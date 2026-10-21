@@ -1,4 +1,4 @@
-﻿import { Cast2Client, type Cast2View } from './stageCast2Client'
+import { Cast2Client, type Cast2View } from './stageCast2Client'
 import { cast2LocalEnabled } from './stageCast2Local'
 import { validSession, hasServerApproval, type GoogleSession } from './googleAuth'
 import { stageCast, type StageCastState } from './stageCast'
@@ -9,6 +9,7 @@ export class StageCast2ControllerManager {
   private session: GoogleSession | null = null
   private chords = false
   private tvFontSize = 32
+  private projectionError = ''
   private timer: ReturnType<typeof setInterval> | null = null
   private clock: ReturnType<typeof setInterval> | null = null
   private unsubProjection: (() => void) | null = null
@@ -46,6 +47,7 @@ export class StageCast2ControllerManager {
   public getClient(): Cast2Client {
     if (!this.client) {
       this.client = this.createClient()
+      this.client.restore()
       this.ensureRunning()
     }
     return this.client
@@ -92,7 +94,8 @@ export class StageCast2ControllerManager {
         const isConnected = view.state === 'CONNECTED'
         stageCast.setCast2Connected(isConnected)
         this.notify()
-      }
+      },
+      { maxFailures: 30, backoff: true }
     )
   }
 
@@ -100,14 +103,14 @@ export class StageCast2ControllerManager {
     if (!this.timer && typeof window !== 'undefined') {
       this.timer = setInterval(() => {
         if (this.client) void this.client.tick()
-      }, 5000);
+      }, 5000)
       if (typeof this.timer?.unref === 'function') this.timer.unref()
     }
     if (!this.clock && typeof window !== 'undefined') {
       this.clock = setInterval(() => {
         this.now = Date.now()
         this.notify()
-      }, 1000);
+      }, 1000)
       if (typeof this.clock?.unref === 'function') this.clock.unref()
     }
     if (!this.unsubProjection) {
@@ -130,7 +133,13 @@ export class StageCast2ControllerManager {
             fontSize: this.tvFontSize,
           })
           if (projected.ok) {
+            this.projectionError = ''
             this.client.publish(projected.value)
+          } else {
+            this.projectionError = projected.error === 'OVERSIZED_PAYLOAD'
+              ? 'Song exceeds projection size limit.'
+              : 'Unable to project song to TV. Current audience display retained.'
+            this.notify()
           }
         }, 150)
       })
@@ -149,6 +158,7 @@ export class StageCast2ControllerManager {
     if (this.client) {
       await this.client.end()
       stageCast.setCast2Connected(false)
+      this.projectionError = ''
       this.notify()
     }
   }
@@ -165,7 +175,10 @@ export class StageCast2ControllerManager {
         fontSize: this.tvFontSize,
       })
       if (projected.ok) {
+        this.projectionError = ''
         this.client.publish(projected.value)
+      } else {
+        this.projectionError = 'Unable to project song to TV. Current audience display retained.'
       }
     }
     this.notify()
@@ -177,10 +190,14 @@ export class StageCast2ControllerManager {
 
   public setTvFontSize(size: number) {
     const clamped = Math.max(20, Math.min(56, Math.round(size)))
+    if (this.tvFontSize === clamped) return
     this.tvFontSize = clamped
     try {
       if (typeof window !== 'undefined') {
-        localStorage.setItem('gtar_tv_font_size', String(clamped))
+        const saved = localStorage.getItem('gtar_tv_font_size')
+        if (saved !== String(clamped)) {
+          localStorage.setItem('gtar_tv_font_size', String(clamped))
+        }
       }
     } catch { /* best effort */ }
     const cached = stageCast.getCachedState()
@@ -193,7 +210,10 @@ export class StageCast2ControllerManager {
         fontSize: clamped,
       })
       if (projected.ok) {
+        this.projectionError = ''
         this.client.publish(projected.value)
+      } else {
+        this.projectionError = 'Unable to project song to TV. Current audience display retained.'
       }
     }
     this.notify()
@@ -203,8 +223,12 @@ export class StageCast2ControllerManager {
     return this.tvFontSize
   }
 
-  public getView(): Cast2View {
-    return this.getClient().view
+  public getProjectionError(): string {
+    return this.projectionError
+  }
+
+  public getView(): Cast2View & { projectionError: string } {
+    return { ...this.getClient().view, projectionError: this.projectionError }
   }
 
   public getNow(): number {
@@ -234,6 +258,7 @@ export class StageCast2ControllerManager {
     this.session = null
     this.chords = false
     this.tvFontSize = 32
+    this.projectionError = ''
     stageCast.setCast2Connected(false)
   }
 }

@@ -202,3 +202,44 @@
   white-space: nowrap;
   border-width: 0;
 }
+
+/* TV Connection Status Badge for transient disconnect / reconnecting */
+.cast2-tv-status-badge {
+  position: absolute;
+  bottom: clamp(12px, 2vh, 24px);
+  right: clamp(16px, 3vw, 48px);
+  z-index: 25;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: var(--custom-stage-surface, #073642);
+  background: color-mix(in srgb, var(--custom-stage-surface, #073642) 90%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--custom-stage-chord, #E5A93C);
+  color: var(--custom-stage-chord, #E5A93C);
+  font-size: clamp(11px, 1.1vw, 15px);
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cast2-tv-status-badge::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--custom-stage-chord, #E5A93C);
+  opacity: 0.85;
+}
+
+.cast2-qr-fallback {
+  padding: 24px 16px;
+  border: 2px dashed var(--custom-card-border, #586E75);
+  border-radius: 12px;
+  margin: 0 auto 16px auto;
+  max-width: 280px;
+}
+
