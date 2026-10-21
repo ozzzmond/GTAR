@@ -6,21 +6,23 @@ import { readPersistedLibrary } from './syncJournal'
 import type { SyncLibrary } from './syncMerge'
 import { snapshotFromSongbook } from './sharedSetlistSnapshot'
 import { generateUUID } from './uuid'
+import { recoverySourceDigest } from './recoverySourceDigest'
 
 export type SetlistSnapshot = ReturnType<typeof snapshotFromSongbook>
 export interface PublishedSetlist { id: string; revision: number; name: string; occurrences: number; updated_at: string }
 export interface PublicationResult { id: string; revision: number; unpublished: boolean }
 export interface SourcePreview { account: string; token: string; sourceId: string | number; version: number; checksum: string; snapshot: SetlistSnapshot }
 export interface PublicationIntent { method: 'POST' | 'PUT' | 'DELETE'; id?: string; key: string; body: Record<string, unknown> }
-export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent; snapshot?: SetlistSnapshot }
+export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent; snapshotDigest?: string; snapshot?: SetlistSnapshot }
 
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(id)
 const positive = (n: unknown): n is number => Number.isSafeInteger(n) && Number(n) > 0
 // Theme settings do not enter setlist snapshots. The cloud record still verifies
 // its complete stored checksum below; source comparison uses the personal library.
 const sourceChecksum = (library: SyncLibrary) => computeSongbookChecksum({ songs: library.songs, setlists: library.setlists })
-const canonical = (value: unknown): string => JSON.stringify(value, (_key, v) => v && typeof v === 'object' && !Array.isArray(v)
+export const canonical = (value: unknown): string => JSON.stringify(value, (_key, v) => v && typeof v === 'object' && !Array.isArray(v)
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v)
+export const computeSnapshotDigest = (snapshot: unknown): string => recoverySourceDigest(canonical(snapshot))
 
 export function publisherSession() {
   const identity = getAuthenticatedSessionToken()
@@ -178,7 +180,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
     savePublicationLink(account, sourceId, {
       publicationKey: link.publicationKey,
       result,
-      snapshot: intent.method === 'DELETE' ? undefined : link.snapshot,
+      snapshotDigest: intent.method === 'DELETE' ? undefined : (link.snapshotDigest || (link.snapshot ? computeSnapshotDigest(link.snapshot) : undefined)),
     })
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
       const EventCtor = (window as unknown as { CustomEvent?: typeof CustomEvent }).CustomEvent || (typeof CustomEvent !== 'undefined' ? CustomEvent : undefined)

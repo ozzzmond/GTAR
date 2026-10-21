@@ -1,6 +1,6 @@
 import type { ActiveSongState, SongEntity, WebSetlist } from '../types/gtar'
 import { snapshotFromSongbook } from './sharedSetlistSnapshot'
-import type { PublicationLink, PublishedSetlist, SetlistSnapshot } from './sharedSetlistPublishing'
+import { computeSnapshotDigest, type PublicationLink, type PublishedSetlist, type SetlistSnapshot } from './sharedSetlistPublishing'
 
 export type SetlistPublicationStatus =
   | 'CONFIRMED_PUBLISHED'
@@ -128,20 +128,26 @@ export function resolveSetlistPublicationStatus(options: {
       }
 
       // Exact snapshot verification
-      if (!localLink.snapshot) {
-        // Existing publication links without retained snapshot must resolve conservatively.
-        // Never show confirmed green from revision/name/song-count checks alone when exact published snapshot identity cannot be verified.
-        if (currentSnapshot.name !== head.name || currentSnapshot.entries.length !== head.occurrences) {
+      if (localLink.snapshotDigest) {
+        if (computeSnapshotDigest(currentSnapshot) !== localLink.snapshotDigest) {
           return 'LOCAL_CHANGES_NOT_PUBLISHED'
         }
-        return 'UNKNOWN_OR_OFFLINE'
+        return 'CONFIRMED_PUBLISHED'
       }
 
-      if (canonical(currentSnapshot) !== canonical(localLink.snapshot)) {
+      if (localLink.snapshot) {
+        if (canonical(currentSnapshot) !== canonical(localLink.snapshot)) {
+          return 'LOCAL_CHANGES_NOT_PUBLISHED'
+        }
+        return 'CONFIRMED_PUBLISHED'
+      }
+
+      // Existing publication links without retained snapshot must resolve conservatively.
+      // Never show confirmed green from revision/name/song-count checks alone when exact published snapshot identity cannot be verified.
+      if (currentSnapshot.name !== head.name || currentSnapshot.entries.length !== head.occurrences) {
         return 'LOCAL_CHANGES_NOT_PUBLISHED'
       }
-
-      return 'CONFIRMED_PUBLISHED'
+      return 'UNKNOWN_OR_OFFLINE'
     }
 
     // Link exists with publicationKey only (no result, no pending)
