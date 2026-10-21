@@ -85,11 +85,21 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
   }
   const current = getLocal()
   const latestPersisted = readPersistedLibrary()
-  const snapshot = snapshotFromSongbook(cloud.data, sourceId)
   if (blocked() || !latestPersisted || sourceChecksum(current) !== sourceChecksum(latestPersisted) ||
-    canonical(snapshotFromSongbook(latestPersisted, sourceId)) !== canonical(snapshot) ||
     cloud.checksum !== computeSongbookChecksum(cloud.data) || sourceChecksum(current) !== sourceChecksum(local) ||
-    sourceChecksum(current) !== sourceChecksum(cloud.data) ||
+    sourceChecksum(current) !== sourceChecksum(cloud.data)) {
+    throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
+  }
+  let snapshot: SetlistSnapshot
+  try {
+    snapshot = snapshotFromSongbook(cloud.data, sourceId)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Missing or ambiguous source setlist') {
+      throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.', { cause: error })
+    }
+    throw error
+  }
+  if (canonical(snapshotFromSongbook(latestPersisted, sourceId)) !== canonical(snapshot) ||
     canonical(snapshotFromSongbook(current, sourceId)) !== canonical(snapshot)) {
     throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
   }

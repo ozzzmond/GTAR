@@ -509,6 +509,9 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               <SetlistCloudStatusBadge
                                 status={setlistStatusMap.get(sl.id) || 'NEVER_PUBLISHED'}
                                 setlistId={sl.id}
+                                setlist={sl}
+                                align="right"
+                                zIndex={80}
                               />
                             </div>
                             <div className="text-[10px] font-mono text-app-muted">
