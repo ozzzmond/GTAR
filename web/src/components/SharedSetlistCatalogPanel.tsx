@@ -1,12 +1,134 @@
 import { CatalogSetlistPreview } from './CatalogSetlistPreview'
 import { useState } from 'react'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
-import { RefreshCw, ListMusic, ChevronLeft, ChevronRight } from 'lucide-react'
+import { RefreshCw, ListMusic, ChevronLeft, ChevronRight, ArrowUpCircle, AlertTriangle, X } from 'lucide-react'
+import {
+  readPublicationLink,
+  makePublicationIntent,
+  sendPublicationIntent,
+  type PublishedSetlist,
+} from '../utils/sharedSetlistPublishing'
+import type { WebSetlist } from '../types/gtar'
 
-export function SharedSetlistCatalogPanel() {
+export interface SharedSetlistCatalogPanelProps {
+  /** Personal setlists, used to detect imported copies and compare revisions. */
+  personalSetlists?: WebSetlist[]
+  /** Authenticated user ID; enables publisher-only management controls. */
+  currentUserId?: string | null
+  /** Called after a successful unpublish so the parent can reload. */
+  onUnpublished?: (id: string) => void
+}
+
+/**
+ * Finds the saved source revision for a personal setlist imported from the
+ * given catalog publication ID in the current environment origin.
+ * Returns undefined when no such imported copy exists.
+ */
+function savedImportRevision(
+  personalSetlists: WebSetlist[],
+  catalogId: string,
+  scope: string,
+): number | undefined {
+  const match = personalSetlists.find(
+    (l) =>
+      !l.isDeleted &&
+      l.catalogSource?.environmentScope === scope &&
+      l.catalogSource?.setlistId === catalogId,
+  )
+  return match?.catalogSource?.revision
+}
+
+/**
+ * Finds the publication link for a given catalog setlist in the publisher's local journal.
+ * Scans both direct catalog ID key and all stored publication links for this user.
+ */
+function findOwnPublicationLink(
+  currentUserId: string,
+  catalogSetlistId: string,
+): { sourceId: string; link: import('../utils/sharedSetlistPublishing').PublicationLink } | null {
+  try {
+    // 1. Direct match by catalog setlist ID
+    const direct = readPublicationLink(currentUserId, catalogSetlistId)
+    if (direct?.result?.id === catalogSetlistId && !direct.result.unpublished) {
+      return { sourceId: catalogSetlistId, link: direct }
+    }
+
+    // 2. Scan localStorage keys for this user's publication links
+    const prefix = `gtar_setlist_publication_v1:${encodeURIComponent(currentUserId)}:`
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(prefix)) {
+        const sourceId = decodeURIComponent(k.slice(prefix.length))
+        const link = readPublicationLink(currentUserId, sourceId)
+        if (link?.result?.id === catalogSetlistId && !link.result.unpublished) {
+          return { sourceId, link }
+        }
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+/**
+ * Returns whether the currentUserId has a publisher journal entry for the
+ * given catalog setlist, checked client-side only. Server always re-validates.
+ */
+function isOwnPublication(currentUserId: string, setlistId: string): boolean {
+  return findOwnPublicationLink(currentUserId, setlistId) !== null
+}
+
+/** Convert unknown unpublish error to a user-facing string. */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  return 'Unpublish failed. Ensure your session is active and retry.'
+}
+
+export function SharedSetlistCatalogPanel({
+  personalSetlists = [],
+  currentUserId,
+  onUnpublished,
+}: SharedSetlistCatalogPanelProps) {
   const [selected, setSelected] = useState<{ id: string; revision: number } | null>(null)
   const [offset, setOffset] = useState(0)
   const catalog = useSharedSetlists(true, offset)
+
+  // Publisher Unpublish confirmation state
+  const [unpublishTarget, setUnpublishTarget] = useState<PublishedSetlist | null>(null)
+  const [isUnpublishing, setIsUnpublishing] = useState(false)
+  const [unpublishError, setUnpublishError] = useState<string | null>(null)
+  const [unpublishFeedback, setUnpublishFeedback] = useState<string | null>(null)
+
+  // Stable origin scope for catalogSource comparison
+  const scope = typeof window !== 'undefined' ? window.location.origin : ''
+
+  async function handleUnpublishConfirm() {
+    if (!unpublishTarget || !currentUserId || isUnpublishing) return
+    setIsUnpublishing(true)
+    setUnpublishError(null)
+    try {
+      const own = findOwnPublicationLink(currentUserId, unpublishTarget.id)
+      if (!own) {
+        throw new Error(
+          'Publication journal entry not found on this device. Reload the catalog and confirm you are the publisher before retrying.',
+        )
+      }
+      const intent = makePublicationIntent(own.link, undefined, true)
+      const withPending: import('../utils/sharedSetlistPublishing').PublicationLink = { ...own.link, pending: intent }
+      await sendPublicationIntent(currentUserId, own.sourceId, withPending)
+      onUnpublished?.(unpublishTarget.id)
+      const name = unpublishTarget.name
+      setUnpublishTarget(null)
+      catalog.reload()
+      setUnpublishFeedback(`"${name}" has been unpublished.`)
+      setTimeout(() => setUnpublishFeedback(null), 5000)
+    } catch (err: unknown) {
+      setUnpublishError(errorMessage(err))
+    } finally {
+      setIsUnpublishing(false)
+    }
+  }
 
   return (
     <section aria-label="Published setlists" className="space-y-4">
@@ -14,6 +136,18 @@ export function SharedSetlistCatalogPanel() {
         <p role="status" className="text-xs font-mono text-app-muted">
           {catalog.message}
         </p>
+      )}
+
+      {/* Unpublish success toast */}
+      {unpublishFeedback && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="setlist-unpublish-feedback"
+          className="p-3 bg-app-surface border border-app-border rounded-xl text-xs font-mono font-bold text-app-heading flex items-center gap-2 shadow-lg"
+        >
+          <span className="flex-1">{unpublishFeedback}</span>
+        </div>
       )}
 
       {/* Toolbar */}
@@ -25,12 +159,18 @@ export function SharedSetlistCatalogPanel() {
           onClick={catalog.reload}
           title="Refresh"
           aria-label="Refresh"
-        ><RefreshCw className="w-3.5 h-3.5" /><span>Refresh</span></button>
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Refresh</span>
+        </button>
       </div>
 
       {/* Empty State */}
       {catalog.enabled && catalog.rows.length === 0 && (
-        <div data-testid="catalog-setlists-empty-state" className="p-12 text-center rounded-2xl border border-app-border bg-app-surface/50 space-y-3">
+        <div
+          data-testid="catalog-setlists-empty-state"
+          className="p-12 text-center rounded-2xl border border-app-border bg-app-surface/50 space-y-3"
+        >
           <ListMusic className="w-8 h-8 mx-auto text-app-action" />
           <div className="text-base font-bold text-app-heading">No shared setlists yet.</div>
           <p className="text-xs text-app-muted max-w-sm mx-auto">
@@ -41,35 +181,100 @@ export function SharedSetlistCatalogPanel() {
 
       {/* Setlists Cards Grid */}
       {catalog.rows.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="catalog-setlist-list">
-          {catalog.rows.map((setlist) => (
-            <article
-              key={setlist.id}
-              data-testid={`catalog-setlist-card-${setlist.id}`}
-              className="p-3 rounded-xl border border-app-border bg-app-surface/70 hover:border-app-action hover:bg-app-surface transition-all flex flex-col justify-between gap-2.5 group select-none min-w-0"
-            >
-              <div className="min-w-0">
-                <h3 className="font-bold text-xs sm:text-sm text-app-heading group-hover:text-app-action transition-colors truncate break-words">
-                  {setlist.name}
-                </h3>
-                <p className="text-[11px] text-app-muted truncate mt-0.5">
-                  {setlist.occurrences} {setlist.occurrences === 1 ? 'song' : 'songs'}
-                </p>
-              </div>
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"
+          data-testid="catalog-setlist-list"
+        >
+          {catalog.rows.map((setlist) => {
+            const importedRevision = savedImportRevision(personalSetlists, setlist.id, scope)
+            const hasImportedCopy = importedRevision !== undefined
+            const updateAvailable = hasImportedCopy && setlist.revision > importedRevision
+            const isPublisher = !!currentUserId && isOwnPublication(currentUserId, setlist.id)
 
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-app-border/40 text-[10px] font-mono text-app-muted">
-                <span className="truncate">Updated: {setlist.updated_at}</span>
-                <button
-                  type="button"
-                  data-testid={`preview-setlist-btn-${setlist.id}`}
-                  className="min-h-11 px-3 py-1 rounded-lg border border-app-border bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-all cursor-pointer shrink-0"
-                  onClick={() => setSelected(setlist)}
-                >
-                  Preview setlist
-                </button>
-              </div>
-            </article>
-          ))}
+            return (
+              <article
+                key={setlist.id}
+                data-testid={`catalog-setlist-card-${setlist.id}`}
+                className="p-3 rounded-xl border border-app-border bg-app-surface/70 hover:border-app-action hover:bg-app-surface transition-all flex flex-col justify-between gap-2.5 group select-none min-w-0"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-bold text-xs sm:text-sm text-app-heading group-hover:text-app-action transition-colors break-words min-w-0 flex-1">
+                      {setlist.name}
+                    </h3>
+                    {/* Revision badge */}
+                    <span
+                      data-testid={`setlist-revision-badge-${setlist.id}`}
+                      className="px-1.5 py-0.5 rounded bg-app-base border border-app-border text-[9px] font-mono text-app-muted shrink-0"
+                      title={`Revision ${setlist.revision}`}
+                      aria-label={`Revision ${setlist.revision}`}
+                    >
+                      r{setlist.revision}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-app-muted truncate mt-0.5">
+                    {setlist.occurrences} {setlist.occurrences === 1 ? 'song' : 'songs'}
+                  </p>
+
+                  {/* "Update available" — imported copy is behind the catalog revision */}
+                  {updateAvailable && (
+                    <div
+                      data-testid={`setlist-update-available-${setlist.id}`}
+                      className="mt-1.5 flex items-center gap-1 text-[10px] font-mono text-status-warning"
+                      role="status"
+                      aria-label={`Newer revision available: your import is r${importedRevision}, catalog is r${setlist.revision}`}
+                    >
+                      <ArrowUpCircle className="w-3 h-3 shrink-0" />
+                      <span>
+                        Update available (your copy: r{importedRevision} → r{setlist.revision})
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Up-to-date imported copy indicator */}
+                  {hasImportedCopy && !updateAvailable && (
+                    <div
+                      data-testid={`setlist-imported-current-${setlist.id}`}
+                      className="mt-1.5 text-[10px] font-mono text-status-success"
+                      aria-label={`Your imported copy is up to date at r${importedRevision}`}
+                    >
+                      ✓ Imported copy at r{importedRevision}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-app-border/40 text-[10px] font-mono text-app-muted">
+                  <span className="truncate">Updated: {setlist.updated_at}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* Publisher-only: Unpublish */}
+                    {isPublisher && (
+                      <button
+                        type="button"
+                        data-testid={`unpublish-setlist-btn-${setlist.id}`}
+                        className="min-h-11 px-2 py-1 rounded-lg border border-app-border text-app-muted hover:text-status-error hover:border-status-error/40 font-mono text-[10px] font-bold transition-all cursor-pointer"
+                        title={`Unpublish "${setlist.name}"`}
+                        aria-label={`Unpublish ${setlist.name}`}
+                        onClick={() => {
+                          setUnpublishTarget(setlist)
+                          setUnpublishError(null)
+                        }}
+                      >
+                        Unpublish
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      data-testid={`preview-setlist-btn-${setlist.id}`}
+                      className="min-h-11 px-3 py-1 rounded-lg border border-app-border bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-all cursor-pointer shrink-0"
+                      onClick={() => setSelected(setlist)}
+                    >
+                      Preview setlist
+                    </button>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
         </div>
       )}
 
@@ -81,8 +286,89 @@ export function SharedSetlistCatalogPanel() {
         />
       )}
 
+      {/* Publisher Unpublish Confirmation Dialog */}
+      {unpublishTarget && (
+        <dialog
+          open
+          data-testid="setlist-unpublish-confirm-dialog"
+          aria-labelledby="unpublish-dialog-title"
+          aria-modal="true"
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl z-50 flex flex-col overflow-hidden"
+        >
+          <div className="p-4 border-b border-app-border/60 flex items-center justify-between">
+            <h2 id="unpublish-dialog-title" className="text-sm font-bold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-status-warning" />
+              Unpublish setlist
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                setUnpublishTarget(null)
+                setUnpublishError(null)
+              }}
+              className="p-1 rounded-lg hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer"
+              aria-label="Cancel"
+              disabled={isUnpublishing}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-3 font-mono text-xs">
+            <p className="text-app-heading">
+              Remove <strong className="break-words">"{unpublishTarget.name}"</strong> (r
+              {unpublishTarget.revision}) from the Shared Catalog?
+            </p>
+            <p className="text-app-muted">
+              Team members who already imported a personal copy keep their independent copy unchanged.
+              This action uses your active publisher session and cannot be undone by other users.
+            </p>
+            <p className="text-[10px] text-app-muted">
+              Note: Rename and permanent deletion are deferred backend tasks. Unpublish hides this setlist from new imports only.
+            </p>
+
+            {unpublishError && (
+              <p
+                role="alert"
+                data-testid="setlist-unpublish-error"
+                className="p-2.5 rounded-lg bg-status-error/15 border border-status-error/30 text-status-error"
+              >
+                {unpublishError}
+              </p>
+            )}
+          </div>
+
+          <div className="p-4 border-t border-app-border/60 flex justify-end gap-2">
+            <button
+              type="button"
+              data-testid="setlist-unpublish-cancel"
+              disabled={isUnpublishing}
+              onClick={() => {
+                setUnpublishTarget(null)
+                setUnpublishError(null)
+              }}
+              className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer font-mono text-xs font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-testid="setlist-unpublish-confirm"
+              disabled={isUnpublishing}
+              onClick={handleUnpublishConfirm}
+              className="px-4 py-2 rounded-lg bg-status-error text-white hover:bg-status-error/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1.5"
+            >
+              {isUnpublishing ? 'Unpublishing…' : 'Unpublish setlist'}
+            </button>
+          </div>
+        </dialog>
+      )}
+
       {/* Pagination */}
-      <nav aria-label="Setlist pages" className="flex items-center justify-between pt-3 border-t border-app-border text-xs font-mono text-app-muted px-1">
+      <nav
+        aria-label="Setlist pages"
+        className="flex items-center justify-between pt-3 border-t border-app-border text-xs font-mono text-app-muted px-1"
+      >
         <span>Showing {catalog.rows.length} setlists</span>
         <div className="flex items-center gap-1.5">
           <button
