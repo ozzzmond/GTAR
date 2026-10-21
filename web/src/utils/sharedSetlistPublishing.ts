@@ -12,8 +12,8 @@ export type SetlistSnapshot = ReturnType<typeof snapshotFromSongbook>
 export interface PublishedSetlist { id: string; revision: number; name: string; occurrences: number; updated_at: string }
 export interface PublicationResult { id: string; revision: number; unpublished: boolean }
 export interface SourcePreview { account: string; token: string; sourceId: string | number; version: number; checksum: string; snapshot: SetlistSnapshot }
-export interface PublicationIntent { method: 'POST' | 'PUT' | 'DELETE'; id?: string; key: string; body: Record<string, unknown> }
-export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent; snapshotDigest?: string; snapshot?: SetlistSnapshot }
+export interface PublicationIntent { method: 'POST' | 'PUT' | 'DELETE'; id?: string; key: string; body: Record<string, unknown>; snapshotDigest?: string; retried?: boolean }
+export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent; snapshotDigest?: string; snapshotRevision?: number; snapshot?: SetlistSnapshot }
 
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(id)
 const positive = (n: unknown): n is number => Number.isSafeInteger(n) && Number(n) > 0
@@ -137,6 +137,43 @@ export function savePublicationLink(account: string, sourceId: string | number, 
   if (localStorage.getItem(key) !== raw) throw new Error('Publication recovery record could not be saved. Free browser storage before retrying.')
 }
 
+// Serialize only synchronous journal transitions, never network requests. IndexedDB
+// supplies an origin-wide transaction mutex where Web Locks are unavailable.
+async function journalTransition<T>(action: () => T): Promise<T> {
+  if (window.navigator.locks) return window.navigator.locks.request('gtar-setlist-publication-journal', action)
+  if (!window.indexedDB) throw new Error('Publication recovery coordination unavailable. Preserve browser data and retry in a supported browser.')
+  return new Promise<T>((resolve, reject) => {
+    let blocked = false
+    const opening = window.indexedDB.open('gtar-publication-coordination-v1', 1)
+    opening.onupgradeneeded = () => opening.result.createObjectStore('mutex')
+    opening.onerror = () => reject(opening.error)
+    opening.onblocked = () => { blocked = true; reject(new Error('Close other tabs to recover publication coordination.')) }
+    opening.onsuccess = () => {
+      const db = opening.result
+      if (blocked) { db.close(); return }
+      try {
+        const tx = db.transaction('mutex', 'readwrite')
+        let value: T
+        let failure: unknown
+        tx.objectStore('mutex').get('journal').onsuccess = () => {
+          try { value = action() } catch (error) { failure = error; tx.abort() }
+        }
+        tx.oncomplete = () => { db.close(); resolve(value) }
+        tx.onabort = tx.onerror = () => { db.close(); reject(failure || tx.error) }
+      } catch (error) { db.close(); reject(error) }
+    }
+  })
+}
+
+export async function replacePublicationLink(account: string, sourceId: string | number, expected: PublicationLink | null, next: PublicationLink) {
+  await journalTransition(() => {
+    if (canonical(readPublicationLink(account, sourceId)) !== canonical(expected)) {
+      throw new Error('Publication changed in another tab. Reopen and recover its saved request before continuing.')
+    }
+    savePublicationLink(account, sourceId, next)
+  })
+}
+
 export async function newPublicationLink(account: string, sourceId: string | number): Promise<PublicationLink> {
   // Deterministic opaque key prevents duplicate creates even if the journal was lost.
   const bytes = new TextEncoder().encode(JSON.stringify(['setlist-v1', account, String(sourceId)]))
@@ -154,42 +191,79 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
     body: unpublish ? { expected_revision: result!.revision } : {
       snapshot_version: 1, source_setlist_id: preview!.sourceId, source_version: preview!.version,
       ...(result ? { expected_revision: result.revision } : { publication_key: link.publicationKey }),
-    } }
+    }, snapshotDigest: !unpublish && preview ? computeSnapshotDigest(preview.snapshot) : undefined }
 }
 
 export async function sendPublicationIntent(account: string, sourceId: string | number, link: PublicationLink): Promise<{ result: PublicationResult; saved: boolean }> {
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
-  const existing = readPublicationLink(account, sourceId)
-  if (existing && canonical(existing) !== canonical(link) &&
-    (existing.pending || canonical(existing.result) !== canonical(link.result) || existing.publicationKey !== link.publicationKey)) {
-    throw new Error('Publication changed in another tab. Reopen and recover its saved request before continuing.')
-  }
-  // Must be durable BEFORE any request. On timeout/reload the identical request survives.
-  savePublicationLink(account, sourceId, link)
-  const intent = link.pending
-  const result = await catalogFetch<PublicationResult>(`/api/catalog/setlists${intent.id ? `/${encodeURIComponent(intent.id)}` : ''}`, {
-    token, method: intent.method, body: intent.body, idempotencyKey: intent.key,
+  // Detach from caller-owned objects before crossing any asynchronous boundary.
+  link = JSON.parse(JSON.stringify(link)) as PublicationLink
+  const intent = link.pending!
+  let firstAttempt = false
+  await journalTransition(() => {
+    assertAccount(account, token, true)
+    const existing = readPublicationLink(account, sourceId)
+    const comparable = (entry: PublicationLink) => ({ ...entry, pending: entry.pending ? { ...entry.pending, retried: undefined } : undefined })
+    if (existing && (existing.pending
+      ? canonical(comparable(existing)) !== canonical(comparable(link))
+      : canonical(existing) !== canonical({ ...link, pending: undefined }))) {
+      throw new Error('Publication changed in another tab. Reopen and recover its saved request before continuing.')
+    }
+    firstAttempt = !existing?.pending
+    if (!firstAttempt) intent.retried = true
+    // Must be durable BEFORE any request. Legacy saved intents are ambiguous.
+    savePublicationLink(account, sourceId, link)
   })
+  let result: PublicationResult
+  try {
+    result = await catalogFetch<PublicationResult>(`/api/catalog/setlists${intent.id ? `/${encodeURIComponent(intent.id)}` : ''}`, {
+      token, method: intent.method, body: intent.body, idempotencyKey: intent.key,
+    })
+  } catch (error) {
+    // A rejection proves only this attempt failed. A previous/overlapping retry
+    // may already have committed; only an exact successful replay reconciles it.
+    if (firstAttempt && error instanceof CatalogApiError && [400, 403, 409, 410, 413, 422, 429].includes(error.status)) {
+      await journalTransition(() => {
+        assertAccount(account, token, true)
+        const current = readPublicationLink(account, sourceId)
+        if (canonical(current) === canonical(link) && !current?.pending?.retried) {
+          const clean = { ...link }; delete clean.pending
+          // Unbound legacy digests could describe a rejected proposal.
+          if (clean.snapshotRevision !== clean.result?.revision) { delete clean.snapshotDigest; delete clean.snapshot }
+          savePublicationLink(account, sourceId, clean)
+        }
+      })
+    }
+    throw error
+  }
   assertAccount(account, token, true)
   if (!result || !validId(result.id) || !positive(result.revision) || result.unpublished !== (intent.method === 'DELETE') ||
     (intent.id && result.id !== intent.id) || result.revision !== (intent.method === 'POST' ? 1 : Number(intent.body.expected_revision) + 1)) {
     throw new Error('Invalid server confirmation. Recover the same request before taking another action.')
   }
+  let saved = false
   try {
-    savePublicationLink(account, sourceId, {
-      publicationKey: link.publicationKey,
-      result,
-      snapshotDigest: intent.method === 'DELETE' ? undefined : (link.snapshotDigest || (link.snapshot ? computeSnapshotDigest(link.snapshot) : undefined)),
+    saved = await journalTransition(() => {
+      assertAccount(account, token, true)
+      const current = readPublicationLink(account, sourceId)
+      // A completed identical retry is harmless; it must never reinstall pending.
+      if (current?.publicationKey === link.publicationKey && !current.pending && canonical(current.result) === canonical(result)) return true
+      if (!current?.pending || canonical({ ...current, pending: { ...current.pending, retried: undefined } }) !==
+        canonical({ ...link, pending: { ...intent, retried: undefined } })) return false
+      savePublicationLink(account, sourceId, {
+        publicationKey: link.publicationKey,
+        result,
+        snapshotDigest: intent.method === 'DELETE' ? undefined : intent.snapshotDigest,
+        snapshotRevision: intent.method === 'DELETE' || !intent.snapshotDigest ? undefined : result.revision,
+      })
+      return true
     })
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      const EventCtor = (window as unknown as { CustomEvent?: typeof CustomEvent }).CustomEvent || (typeof CustomEvent !== 'undefined' ? CustomEvent : undefined)
-      if (EventCtor) {
-        window.dispatchEvent(new EventCtor('gtar-setlist-publication-updated', { detail: { account, sourceId } }))
-      }
-    }
-  } catch { return { result, saved: false } }
-  return { result, saved: true }
+  } catch { /* Server success remains authoritative even when local saving fails. */ }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new window.CustomEvent('gtar-setlist-publication-updated', { detail: { account, sourceId, ...result } }))
+  }
+  return { result, saved }
 }
 
 export async function refreshPublication(link: PublicationLink): Promise<PublicationLink> {
@@ -200,7 +274,10 @@ export async function refreshPublication(link: PublicationLink): Promise<Publica
     const page = await listPublishedSetlists(offset)
     assertAccount(accountId, token, true)
     const head = page.find(s => s.id === link.result!.id)
-    if (head) return { ...link, result: { id: head.id, revision: head.revision, unpublished: false } }
+    if (head) return { ...link,
+      // Never carry old or unbound content identity onto a newly observed head.
+      ...(head.revision !== link.result.revision ? { snapshotDigest: undefined, snapshotRevision: undefined, snapshot: undefined } : {}),
+      result: { id: head.id, revision: head.revision, unpublished: false } }
     if (page.length < 20) break
   }
   throw new Error('Publication is unavailable or unpublished. No mutation was sent.')

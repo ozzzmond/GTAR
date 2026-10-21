@@ -396,7 +396,8 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
         ><ListMusic className="w-3.5 h-3.5" /><span>Setlists</span></button>
       </nav>
       {!setlistCapability.enabled && <p id="setlist-availability" role="status" className="text-xs text-app-muted">{setlistCapability.message} <button type="button" className="min-h-11 px-2 underline cursor-pointer" onClick={setlistCapability.reload}>Check availability</button></p>}
-      {catalogKind === 'setlists' && setlistCapability.enabled ? (
+      {/* Keep recovery dialogs mounted while capability/catalog refresh is in flight. */}
+      {catalogKind === 'setlists' ? (
         <SharedSetlistCatalogPanel
           personalSetlists={personalSetlists}
           currentUserId={activeUserId || null}
