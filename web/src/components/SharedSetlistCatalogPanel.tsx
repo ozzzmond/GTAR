@@ -71,6 +71,24 @@ function findOwnPublicationLink(
   return null
 }
 
+// Pending deletes remain recoverable even when a committed timeout has already
+// removed the row from the active catalog. No replacement intent is generated.
+function pendingUnpublishes(account: string): PublishedSetlist[] {
+  const rows: PublishedSetlist[] = []
+  const prefix = `gtar_setlist_publication_v1:${encodeURIComponent(account)}:`
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key?.startsWith(prefix)) continue
+      const link = readPublicationLink(account, decodeURIComponent(key.slice(prefix.length)))
+      if (link?.pending?.method === 'DELETE' && link.result && !link.result.unpublished && link.pending.id === link.result.id) {
+        rows.push({ ...link.result, name: 'Pending unpublish', occurrences: 0, updated_at: '' })
+      }
+    }
+  } catch { /* Invalid journals are preserved for operator recovery. */ }
+  return rows
+}
+
 /**
  * Returns whether the currentUserId has a publisher journal entry for the
  * given catalog setlist, checked client-side only. Server always re-validates.
@@ -131,15 +149,21 @@ export function SharedSetlistCatalogPanel({
           'Publication journal entry not found on this device. Reload the catalog and confirm you are the publisher before retrying.',
         )
       }
-      const intent = makePublicationIntent(own.link, undefined, true)
+      if (own.link.pending && (own.link.pending.method !== 'DELETE' || own.link.pending.id !== unpublishTarget.id)) {
+        throw new Error('Recover the pending publication request before unpublishing.')
+      }
+      const intent = own.link.pending || makePublicationIntent(own.link, undefined, true)
       const withPending: import('../utils/sharedSetlistPublishing').PublicationLink = { ...own.link, pending: intent }
-      await sendPublicationIntent(currentUserId, own.sourceId, withPending)
+      const outcome = await sendPublicationIntent(currentUserId, own.sourceId, withPending)
+      if (!outcome.saved) {
+        setUnpublishError('Server confirmed unpublish; local recovery record could not be saved. Retry this same request to recover. Preserve browser data.')
+        return
+      }
       onUnpublished?.(unpublishTarget.id)
       const name = unpublishTarget.name
       unpublishDialogRef.current?.close()
       setUnpublishTarget(null)
       unpublishTriggerRef.current?.focus()
-      catalog.reload()
       setUnpublishFeedback(`"${name}" has been unpublished.`)
       setTimeout(() => setUnpublishFeedback(null), 5000)
     } catch (err: unknown) {
@@ -168,6 +192,13 @@ export function SharedSetlistCatalogPanel({
           <span className="flex-1">{unpublishFeedback}</span>
         </div>
       )}
+
+      {currentUserId && pendingUnpublishes(currentUserId).map(row => (
+        <button type="button" key={row.id} className="min-h-11 px-3 py-2 border border-app-border rounded-xl text-xs"
+          onClick={event => { unpublishTriggerRef.current = event.currentTarget; setUnpublishTarget(row); setUnpublishError(null) }}>
+          Recover unpublish: {row.id}
+        </button>
+      ))}
 
       {/* Toolbar */}
       <div className="flex items-center justify-end gap-2">

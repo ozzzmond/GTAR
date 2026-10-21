@@ -128,14 +128,14 @@ export function resolveSetlistPublicationStatus(options: {
       }
 
       // Exact snapshot verification
-      if (localLink.snapshotDigest) {
+      if (localLink.snapshotDigest && localLink.snapshotRevision === head.revision) {
         if (computeSnapshotDigest(currentSnapshot) !== localLink.snapshotDigest) {
           return 'LOCAL_CHANGES_NOT_PUBLISHED'
         }
         return 'CONFIRMED_PUBLISHED'
       }
 
-      if (localLink.snapshot) {
+      if (localLink.snapshot && !localLink.snapshotDigest) {
         if (canonical(currentSnapshot) !== canonical(localLink.snapshot)) {
           return 'LOCAL_CHANGES_NOT_PUBLISHED'
         }

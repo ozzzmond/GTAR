@@ -43,6 +43,7 @@ beforeEach(t => {
     return publicationKeyTask
   })
   dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test' })
+  Object.defineProperty(dom.window.navigator, 'locks', { configurable: true, value: { request: async (_name, action) => action() } })
   global.window = dom.window; global.document = dom.window.document
   global.localStorage = dom.window.localStorage; global.sessionStorage = dom.window.sessionStorage
   global.IS_REACT_ACT_ENVIRONMENT = true
@@ -369,7 +370,6 @@ test('REQUIRED: 62_SONG_COMPACT_JOURNAL_SIZE and NO_RAW_CHART_CONTENT_IN_NEW_JOU
 
   const pendingLink = {
     ...baseLink,
-    snapshotDigest: digest,
     pending: api.makePublicationIntent(baseLink, preview),
   }
 
@@ -377,7 +377,7 @@ test('REQUIRED: 62_SONG_COMPACT_JOURNAL_SIZE and NO_RAW_CHART_CONTENT_IN_NEW_JOU
   api.savePublicationLink(preview.account, 'set-62', pendingLink)
   const savedPending = api.readPublicationLink(preview.account, 'set-62')
   assert.equal(savedPending.snapshot, undefined)
-  assert.equal(savedPending.snapshotDigest, digest)
+  assert.equal(savedPending.pending.snapshotDigest, digest)
 
   // Send publication intent
   responder = () => response({ id: 'publication_62_songs_id', revision: 1, unpublished: false })
@@ -419,6 +419,7 @@ test('REQUIRED: LEGACY_SNAPSHOT_COMPATIBILITY and SNAPSHOT_DIGEST_DIVERGENCE', (
     publicationKey: 'pub_new_key',
     result: { id, revision: 1, unpublished: false },
     snapshotDigest: digest,
+    snapshotRevision: 1,
   }
   const newStatus = resolveSetlistPublicationStatus({
     setlist: library.setlists[0],
@@ -526,4 +527,326 @@ test('REQUIRED: LOCAL_STORAGE_FAILURE_PRESERVATION and RELOAD_PERSISTENCE', asyn
 
   const preserved = api.readPublicationLink(preview.account, 'set-a')
   assert.equal(preserved.publicationKey, link.publicationKey)
+})
+const { SharedSetlistCatalogPanel } = require('../src/components/SharedSetlistCatalogPanel.tsx')
+const { useSharedSetlists } = require('../src/utils/useSharedSetlists.ts')
+const { resolveSetlistPublicationStatus } = require('../src/utils/setlistPublicationStatus.ts')
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+const savedLink = () => api.readPublicationLink('account-a', 'set-a')
+const statusOf = (link, revision = link.result.revision) => resolveSetlistPublicationStatus({
+  setlist: library.setlists[0], songs: library.songs, localLink: link, isOnline: true,
+  publishedSetlists: [{ id, revision, name: 'Sunday', occurrences: 3, updated_at: 'today' }],
+})
+const confirmedLink = () => ({ publicationKey: 'publication_key_1234', result: { id, revision: 1, unpublished: false },
+  snapshotDigest: api.computeSnapshotDigest(snapshotFromSongbook(library, 'set-a')), snapshotRevision: 1 })
+async function flushRefresh() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
+
+test('H1_429_AFTER_AMBIGUOUS_COMMIT and H1_PENDING_INTENT_SURVIVES_RELOAD', async () => {
+  await modal(); await click(button('Review Setlist')); await click(document.querySelector('input[type=checkbox]'))
+  responder = (url) => { if (url === '/api/songbook/sync') return sourceResponse(); throw new Error('committed but response lost') }
+  await click(button('Share Setlist'))
+  const original = savedLink()
+  responder = () => response({ error: 'rate limit before idempotency lookup' }, 429)
+  await click(button('Retry confirmed request'))
+  assert.deepEqual(savedLink().pending.body, original.pending.body)
+  assert.equal(savedLink().pending.key, original.pending.key)
+  await act(async () => root.unmount()); root = null
+  await modal(); await click(button('Review Setlist'))
+  assert.ok(button('Retry confirmed request'))
+  responder = () => response({ id, revision: 1, unpublished: false })
+  await click(button('Retry confirmed request'))
+  assert.equal(savedLink().pending, undefined)
+  assert.equal(statusOf(savedLink()), 'CONFIRMED_PUBLISHED')
+  const requests = calls.filter(c => c.method === 'POST')
+  assert.ok(requests.every(c => c.body === requests[0].body && c.headers['Idempotency-Key'] === requests[0].headers['Idempotency-Key']))
+})
+
+test('H2_OVERLAPPING_IDENTICAL_RETRIES never reinstall pending after confirmation', async () => {
+  const { link } = await intent()
+  const a = deferred(), b = deferred(), enteredA = deferred(), enteredB = deferred()
+  let count = 0
+  responder = () => { if (++count === 1) { enteredA.resolve(); return a.promise } enteredB.resolve(); return b.promise }
+  const first = api.sendPublicationIntent('account-a', 'set-a', link); await enteredA.promise
+  const second = api.sendPublicationIntent('account-a', 'set-a', savedLink()); await enteredB.promise
+  b.resolve(response({ id, revision: 1, unpublished: false })); assert.equal((await second).saved, true)
+  const confirmed = localStorage.getItem('gtar_setlist_publication_v1:account-a:set-a')
+  a.resolve(response({ id, revision: 1, unpublished: false })); assert.equal((await first).saved, true)
+  assert.equal(localStorage.getItem('gtar_setlist_publication_v1:account-a:set-a'), confirmed)
+})
+
+test('H2_LATE_RESPONSE_NEWER_PENDING and H2_CROSS_TAB_JOURNAL_CONFLICT', async () => {
+  const { preview, link } = await intent()
+  const slow = deferred(), entered = deferred()
+  responder = () => { entered.resolve(); return slow.promise }
+  const pending = api.sendPublicationIntent('account-a', 'set-a', link); await entered.promise
+  const other = { ...confirmedLink(), pending: api.makePublicationIntent(confirmedLink(), preview) }
+  api.savePublicationLink('account-a', 'set-a', other) // another tab completed and began its next operation
+  slow.resolve(response({ id, revision: 1, unpublished: false }))
+  assert.equal((await pending).saved, false)
+  assert.deepEqual(savedLink(), other)
+  await assert.rejects(api.sendPublicationIntent('account-a', 'set-a', link), /another tab/)
+  await assert.rejects(api.replacePublicationLink('account-a', 'set-a', link, confirmedLink()), /another tab/)
+  assert.deepEqual(savedLink(), other)
+})
+
+test('H1 overlapping retry prevents first rejection from clearing potentially committed intent', async () => {
+  const { link } = await intent()
+  const a = deferred(), b = deferred(), enteredA = deferred(), enteredB = deferred()
+  let count = 0
+  responder = () => { if (++count === 1) { enteredA.resolve(); return a.promise } enteredB.resolve(); return b.promise }
+  const first = api.sendPublicationIntent('account-a', 'set-a', link); await enteredA.promise
+  const second = api.sendPublicationIntent('account-a', 'set-a', savedLink()); await enteredB.promise
+  const rejected = assert.rejects(first, e => e.status === 429)
+  a.resolve(response({ error: 'rejected' }, 429)); await rejected
+  assert.equal(savedLink().pending.key, link.pending.key)
+  b.resolve(response({ id, revision: 1, unpublished: false })); await second
+  assert.equal(savedLink().pending, undefined)
+})
+
+test('H3_REJECTED_UPDATE_NO_FALSE_BADGE preserves confirmed identity, never proposed digest', async () => {
+  const old = confirmedLink(); api.savePublicationLink('account-a', 'set-a', old)
+  library.songs[0].rawContent += 'changed'; cloud = structuredClone(library); version++; persist()
+  responder = (url) => url === '/api/songbook/sync' ? sourceResponse() : response({ setlists: [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
+  await modal(); await click(button('Review Setlist'))
+  await click([...document.querySelectorAll('input[type=checkbox]')].at(-1))
+  const originalResponder = responder
+  responder = (url, options) => options.method === 'PUT' ? response({ error: 'reject' }, 429) : originalResponder(url, options)
+  await click(button('Share Setlist'))
+  assert.equal(savedLink().pending, undefined)
+  assert.equal(savedLink().snapshotDigest, old.snapshotDigest)
+  assert.equal(statusOf(savedLink()), 'LOCAL_CHANGES_NOT_PUBLISHED')
+})
+
+test('H3_NEWER_HEAD_NO_OLD_DIGEST_CONFIRMATION and H3_CONFIRMED_DIGEST_REVISION_BINDING', async () => {
+  const old = confirmedLink()
+  assert.equal(statusOf(old), 'CONFIRMED_PUBLISHED')
+  assert.notEqual(statusOf({ ...old, snapshotRevision: 2 }), 'CONFIRMED_PUBLISHED')
+  responder = () => response({ setlists: [{ id, revision: 2, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
+  const fresh = await api.refreshPublication(old)
+  assert.equal(fresh.snapshotDigest, undefined)
+  assert.notEqual(statusOf(fresh), 'CONFIRMED_PUBLISHED')
+})
+
+test('H3_LEGACY_JOURNAL_COMPATIBILITY preserves data and recovers exact saved intent conservatively', async () => {
+  const old = confirmedLink(); delete old.snapshotRevision
+  api.savePublicationLink('account-a', 'set-a', old)
+  assert.equal(statusOf(savedLink()), 'UNKNOWN_OR_OFFLINE')
+  const legacySnapshot = { ...old, snapshotDigest: undefined, snapshot: snapshotFromSongbook(library, 'set-a') }
+  assert.equal(statusOf(legacySnapshot), 'CONFIRMED_PUBLISHED')
+  const preview = await prepare()
+  const legacy = { ...old, pending: api.makePublicationIntent(old, preview) }; delete legacy.pending.snapshotDigest
+  api.savePublicationLink('account-a', 'set-a', legacy)
+  const result = await api.sendPublicationIntent('account-a', 'set-a', savedLink())
+  assert.equal(result.saved, true)
+  assert.equal(savedLink().snapshotDigest, undefined)
+  assert.equal(statusOf(savedLink()), 'UNKNOWN_OR_OFFLINE')
+})
+
+async function catalogPanel() {
+  await mount(React.createElement(SharedSetlistCatalogPanel, { currentUserId: 'account-a' }))
+}
+const byTestId = id => document.querySelector(`[data-testid="${id}"]`)
+
+test('M1_UNPUBLISH_TIMEOUT_SAFE_RETRY survives panel reload with missing cloud row', async () => {
+  api.savePublicationLink('account-a', 'set-a', confirmedLink())
+  let removed = false
+  responder = (_url, options) => {
+    if (options.method === 'DELETE') { removed = true; throw new Error('response lost after commit') }
+    return response({ setlists: removed ? [] : [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
+  }
+  await catalogPanel(); await click(byTestId(`unpublish-setlist-btn-${id}`)); await click(byTestId('setlist-unpublish-confirm'))
+  assert.ok(byTestId('setlist-unpublish-error'))
+  const original = savedLink().pending
+  await act(async () => root.unmount()); root = null
+  await catalogPanel()
+  assert.equal(byTestId(`unpublish-setlist-btn-${id}`), null)
+  await click(button(`Recover unpublish: ${id}`))
+  responder = (_url, options) => options.method === 'DELETE' ? response({ id, revision: 2, unpublished: true }) : response({ setlists: [] })
+  await click(byTestId('setlist-unpublish-confirm'))
+  assert.match(byTestId('setlist-unpublish-feedback').textContent, /has been unpublished/)
+  assert.equal(savedLink().result.unpublished, true)
+  const deletes = calls.filter(c => c.method === 'DELETE')
+  assert.equal(deletes.length, 2)
+  assert.equal(deletes[0].headers['Idempotency-Key'], original.key)
+  assert.equal(deletes[1].headers['Idempotency-Key'], original.key)
+  assert.equal(deletes[0].body, deletes[1].body)
+})
+
+test('M1_SERVER_SUCCESS_LOCAL_SAVE_FAILURE surfaces server success and retains same recovery request', async () => {
+  api.savePublicationLink('account-a', 'set-a', confirmedLink())
+  const original = dom.window.Storage.prototype.setItem
+  responder = (_url, options) => {
+    if (options.method === 'DELETE') {
+      dom.window.Storage.prototype.setItem = () => { throw new Error('quota') }
+      return response({ id, revision: 2, unpublished: true })
+    }
+    return response({ setlists: [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
+  }
+  await catalogPanel(); await click(byTestId(`unpublish-setlist-btn-${id}`)); await click(byTestId('setlist-unpublish-confirm'))
+  assert.match(byTestId('setlist-unpublish-error').textContent, /Server confirmed unpublish; local recovery record could not be saved/)
+  assert.equal(byTestId('setlist-unpublish-feedback'), null)
+  const pending = savedLink().pending
+  dom.window.Storage.prototype.setItem = original
+  responder = (_url, options) => options.method === 'DELETE' ? response({ id, revision: 2, unpublished: true }) : response({ setlists: [] })
+  await click(byTestId('setlist-unpublish-confirm'))
+  assert.equal(calls.filter(c => c.method === 'DELETE').at(-1).headers['Idempotency-Key'], pending.key)
+  assert.equal(savedLink().result.unpublished, true)
+})
+
+function HookHarness() {
+  const catalog = useSharedSetlists()
+  return React.createElement('div', null, catalog.rows.map(r => r.name).join(','))
+}
+
+test('M2_SAME_TAB_PUBLISH_REFRESH and M2_UNPUBLISH_REFRESH only after confirmed mutations', async () => {
+  let published = false
+  responder = (_url, options) => {
+    if (options.method === 'POST') { published = true; return response({ id, revision: 1, unpublished: false }) }
+    if (options.method === 'DELETE') { published = false; return response({ id, revision: 2, unpublished: true }) }
+    return response({ setlists: published ? [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: 'today' }] : [] })
+  }
+  await mount(React.createElement(HookHarness))
+  const base = await api.newPublicationLink('account-a', 'set-a')
+  const preview = { sourceId: 'set-a', version: 4, snapshot: snapshotFromSongbook(library, 'set-a') }
+  await act(async () => { await api.sendPublicationIntent('account-a', 'set-a', { ...base, pending: api.makePublicationIntent(base, preview) }) })
+  await flushRefresh(); assert.match(document.body.textContent, /Sunday/)
+  const current = savedLink()
+  await act(async () => { await api.sendPublicationIntent('account-a', 'set-a', { ...current, pending: api.makePublicationIntent(current, undefined, true) }) })
+  await flushRefresh(); assert.equal(document.body.textContent, '')
+  assert.equal(calls.filter(c => c.method === 'GET').length, 3)
+})
+
+test('M2_NO_DUPLICATE_REFRESH_STORM scopes account/storage events and coalesces a burst', async () => {
+  await mount(React.createElement(HookHarness))
+  const event = account => new window.CustomEvent('gtar-setlist-publication-updated', { detail: { account } })
+  await act(async () => {
+    window.dispatchEvent(event('account-b'))
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'unrelated' }))
+  })
+  await flushRefresh(); assert.equal(calls.length, 1)
+  await act(async () => {
+    for (let i = 0; i < 10; i++) window.dispatchEvent(event('account-a'))
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'gtar_setlist_publication_v1:account-a:set-a' }))
+  })
+  await flushRefresh(); assert.equal(calls.length, 2)
+})
+
+test('publication coordination fails closed without Web Locks or IndexedDB', async () => {
+  const { link } = await intent()
+  Object.defineProperty(window.navigator, 'locks', { value: undefined })
+  await assert.rejects(api.sendPublicationIntent('account-a', 'set-a', link), /coordination unavailable/)
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0)
+})
+
+test('H2 IndexedDB fallback serializes competing tabs without Web Locks', async () => {
+  const { preview, link } = await intent()
+  Object.defineProperty(window.navigator, 'locks', { value: undefined })
+  // Deterministic transaction scheduler: readwrite transactions run in opening
+  // order, including their localStorage read/compare/write critical section.
+  let queue = Promise.resolve(), transactions = 0
+  const modes = []
+  Object.defineProperty(window, 'indexedDB', { configurable: true, value: {
+    open: () => {
+      const opening = {}
+      opening.result = {
+        close() {},
+        transaction(store, mode) {
+          assert.equal(store, 'mutex'); modes.push(mode); transactions++
+          const tx = { aborted: false, abort() { this.aborted = true } }
+          tx.objectStore = () => ({ get: () => {
+            const request = {}
+            queue = queue.then(() => {
+              request.onsuccess()
+              if (tx.aborted) tx.onabort(); else tx.oncomplete()
+            })
+            return request
+          } })
+          return tx
+        },
+      }
+      queueMicrotask(() => opening.onsuccess())
+      return opening
+    },
+  } })
+  const competing = { ...link, pending: { ...link.pending, key: 'different_request_1234' } }
+  const results = await Promise.allSettled([
+    api.sendPublicationIntent(preview.account, 'set-a', link),
+    api.sendPublicationIntent(preview.account, 'set-a', competing),
+  ])
+  assert.equal(results[0].status, 'fulfilled')
+  assert.equal(results[1].status, 'rejected')
+  assert.match(results[1].reason.message, /another tab/)
+  assert.equal(transactions, 3)
+  assert.ok(modes.every(mode => mode === 'readwrite'))
+  assert.equal(calls.filter(c => c.method === 'POST').length, 1)
+  assert.equal(savedLink().result.revision, 1)
+})
+
+test('blocked IndexedDB coordination never executes a delayed journal mutation', async () => {
+  const { link } = await intent()
+  Object.defineProperty(window.navigator, 'locks', { value: undefined })
+  let opening, closed = false
+  Object.defineProperty(window, 'indexedDB', { configurable: true, value: { open: () => {
+    opening = { result: { close() { closed = true }, transaction() { assert.fail('blocked request must never mutate') } } }
+    queueMicrotask(() => opening.onblocked())
+    return opening
+  } } })
+  await assert.rejects(api.sendPublicationIntent('account-a', 'set-a', link), /Close other tabs/)
+  opening.onsuccess()
+  assert.equal(closed, true)
+  assert.equal(savedLink(), null)
+  assert.equal(calls.filter(c => c.method === 'POST').length, 0)
+})
+
+test('M2 repeated identical server confirmations do not refetch and rejection emits no confirmation', async () => {
+  await mount(React.createElement(HookHarness))
+  const detail = { account: 'account-a', id, revision: 1, unpublished: false }
+  await act(async () => window.dispatchEvent(new window.CustomEvent('gtar-setlist-publication-updated', { detail })))
+  await flushRefresh()
+  assert.equal(calls.length, 2)
+  await act(async () => window.dispatchEvent(new window.CustomEvent('gtar-setlist-publication-updated', { detail })))
+  await flushRefresh()
+  assert.equal(calls.length, 2)
+  let events = 0
+  window.addEventListener('gtar-setlist-publication-updated', () => events++)
+  const base = await api.newPublicationLink('account-a', 'set-a')
+  const preview = { sourceId: 'set-a', version: 4, snapshot: snapshotFromSongbook(library, 'set-a') }
+  responder = () => response({ error: 'rejected' }, 429)
+  await assert.rejects(api.sendPublicationIntent('account-a', 'set-a', { ...base, pending: api.makePublicationIntent(base, preview) }))
+  await flushRefresh()
+  assert.equal(events, 0)
+  assert.equal(calls.filter(c => c.method === 'GET').length, 2)
+})
+
+test('M1 conflicting durable update blocks unpublish without replacement or network mutation', async () => {
+  const old = confirmedLink()
+  const preview = await prepare()
+  const pending = { ...old, pending: api.makePublicationIntent(old, preview) }
+  api.savePublicationLink('account-a', 'set-a', pending)
+  responder = () => response({ setlists: [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
+  await catalogPanel(); await click(byTestId(`unpublish-setlist-btn-${id}`)); await click(byTestId('setlist-unpublish-confirm'))
+  assert.match(byTestId('setlist-unpublish-error').textContent, /Recover the pending publication request/)
+  assert.deepEqual(savedLink(), pending)
+  assert.equal(calls.filter(c => c.method === 'DELETE').length, 0)
+})
+
+test('M1 catalog parent refresh preserves server-success/local-save-failure recovery dialog', async () => {
+  api.savePublicationLink('account-a', 'set-a', confirmedLink())
+  const original = dom.window.Storage.prototype.setItem
+  let removed = false
+  responder = (_url, options) => {
+    if (options.method === 'DELETE') {
+      removed = true
+      dom.window.Storage.prototype.setItem = () => { throw new Error('quota') }
+      return response({ id, revision: 2, unpublished: true })
+    }
+    return response({ setlists: removed ? [] : [{ id, revision: 1, name: 'Sunday', occurrences: 3, updated_at: 'today' }] })
+  }
+  await mount(React.createElement(SharedCatalogBrowser, { currentUserId: 'account-a', onImportSong() {} }))
+  await click(button('Setlists'))
+  await click(byTestId(`unpublish-setlist-btn-${id}`)); await click(byTestId('setlist-unpublish-confirm'))
+  await flushRefresh()
+  assert.match(byTestId('setlist-unpublish-error')?.textContent || '', /Server confirmed unpublish/)
+  assert.equal(byTestId('setlist-unpublish-confirm-dialog').open, true)
+  dom.window.Storage.prototype.setItem = original
 })

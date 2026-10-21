@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyncLibrary } from '../utils/syncMerge'
 import {
-  computeSnapshotDigest, makePublicationIntent, newPublicationLink, preparePublication, publicationError, publisherSession,
-  readPublicationLink, refreshPublication, savePublicationLink, sendPublicationIntent, verifyPreview,
+  makePublicationIntent, newPublicationLink, preparePublication, publicationError, publisherSession,
+  readPublicationLink, refreshPublication, replacePublicationLink, sendPublicationIntent, verifyPreview,
   type PublicationLink, type SourcePreview,
 } from '../utils/sharedSetlistPublishing'
-import { CatalogApiError } from '../types/sharedCatalog'
 import { useOptionalGoogleAuth } from '../utils/authContext'
 import { getStoredSessionStatus } from '../utils/googleAuth'
 import { UploadCloud, Globe } from 'lucide-react'
@@ -47,7 +46,8 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
     setPreview(null); setConfirmed(false); setRemove(false)
     const session = publisherSession()
     setIdentity(session)
-    let next = readPublicationLink(session.accountId, sourceId) || await newPublicationLink(session.accountId, sourceId)
+    const saved = readPublicationLink(session.accountId, sourceId)
+    let next = saved || await newPublicationLink(session.accountId, sourceId)
     if (next.pending) {
       setLink(next)
       setMessage(`A previously confirmed ${next.pending.method} request needs recovery. Retry its exact request before any new action.`)
@@ -59,7 +59,7 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
     setLink(next)
     const source = await preparePublication(sourceId, getLocal, blocked)
     if (!alive.current) return
-    savePublicationLink(session.accountId, sourceId, next)
+    await replacePublicationLink(session.accountId, sourceId, saved, next)
     setLink(next); setPreview(source)
   })
   const reviewUnpublish = () => run(async () => {
@@ -70,7 +70,7 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
     if (!saved?.result || saved.pending || saved.result.unpublished) throw new Error('Recover a verified active publication before unpublishing.')
     const fresh = await refreshPublication(saved)
     if (!alive.current) return
-    savePublicationLink(current.accountId, sourceId, fresh)
+    await replacePublicationLink(current.accountId, sourceId, saved, fresh)
     setLink(fresh); setRemove(true)
     setMessage(`Review unpublish: ${fresh.result!.id} · revision ${fresh.result!.revision}. Previously imported independent copies remain available to their owners.`)
   })
@@ -84,8 +84,7 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
         try { await verifyPreview(preview!, getLocal, blocked) }
         catch (error) { setPreview(null); setConfirmed(false); throw error }
       }
-      const snapshotDigest = remove ? undefined : (preview?.snapshot ? computeSnapshotDigest(preview.snapshot) : undefined)
-      pending = { ...link, snapshotDigest, pending: makePublicationIntent(link, preview!, remove) }
+      pending = { ...link, pending: makePublicationIntent(link, preview!, remove) }
     }
     // UI and durable intent keep exactly the same body and keys across ambiguous failures.
     setLink(pending)
@@ -93,15 +92,11 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
       const outcome = await sendPublicationIntent(session.accountId, sourceId, pending)
       if (!alive.current) return
       setPreview(null); setConfirmed(false)
-      if (outcome.saved) setLink({ publicationKey: pending.publicationKey, result: outcome.result, snapshotDigest: outcome.result.unpublished ? undefined : pending.snapshotDigest })
+      if (outcome.saved) setLink(readPublicationLink(session.accountId, sourceId))
       setMessage(`${outcome.result.unpublished ? 'Unpublished' : 'Published'}: ${outcome.result.id} · revision ${outcome.result.revision}.${outcome.saved ? '' : ' Server succeeded; local link could not be saved. Keep this ID. Retry the same request to recover without another publication.'}`)
     } catch (error) {
-      // These explicit server rejections have no committed mutation. Fresh review required.
-      if (error instanceof CatalogApiError && [400, 403, 409, 410, 413, 422, 429].includes(error.status)) {
-        const clean = { publicationKey: pending.publicationKey, result: pending.result, snapshotDigest: pending.snapshotDigest }
-        savePublicationLink(session.accountId, sourceId, clean)
-        setLink(clean); setPreview(null); setConfirmed(false)
-      }
+      setLink(readPublicationLink(session.accountId, sourceId))
+      setPreview(null); setConfirmed(false)
       throw error
     }
   })
