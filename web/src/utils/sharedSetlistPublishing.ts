@@ -12,7 +12,7 @@ export interface PublishedSetlist { id: string; revision: number; name: string; 
 export interface PublicationResult { id: string; revision: number; unpublished: boolean }
 export interface SourcePreview { account: string; token: string; sourceId: string | number; version: number; checksum: string; snapshot: SetlistSnapshot }
 export interface PublicationIntent { method: 'POST' | 'PUT' | 'DELETE'; id?: string; key: string; body: Record<string, unknown> }
-export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent }
+export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent; snapshot?: SetlistSnapshot }
 
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(id)
 const positive = (n: unknown): n is number => Number.isSafeInteger(n) && Number(n) > 0
@@ -25,9 +25,10 @@ const canonical = (value: unknown): string => JSON.stringify(value, (_key, v) =>
 export function publisherSession() {
   const identity = getAuthenticatedSessionToken()
   const { session, isExpired } = getStoredSessionStatus()
-  if (!session || isExpired || !session.user.id || (session.role || session.user.role) !== 'admin' ||
-    (session.access_status || session.user.access_status) !== 'active') {
-    throw new CatalogApiError('An active admin session is required. Sign in again if your access changed.', 403)
+  const role = session?.role || session?.user?.role
+  const status = session?.access_status || session?.user?.access_status
+  if (!session || isExpired || !session.user.id || (role !== 'admin' && role !== 'member') || status !== 'active') {
+    throw new CatalogApiError('An active approved session is required. Sign in again if your access changed.', 403)
   }
   return identity
 }
@@ -53,7 +54,7 @@ export function publicationError(error: unknown): string {
     const messages: Record<number, string> = {
       0: 'Connection failed. Retry the same confirmed request to recover its result.',
       401: 'Session expired. Sign in again, then reopen this setlist.',
-      403: 'An active admin and original publisher are required for this action.',
+      403: 'An active account and original publisher are required for this action.',
       404: 'Shared Setlists is unavailable in this environment.',
       408: 'Result unknown after timeout. Retry the same confirmed request; do not create another publication.',
       409: 'Publication or source conflict. Refresh and review again. An existing publication key cannot create another copy.',
@@ -163,8 +164,19 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
     (intent.id && result.id !== intent.id) || result.revision !== (intent.method === 'POST' ? 1 : Number(intent.body.expected_revision) + 1)) {
     throw new Error('Invalid server confirmation. Recover the same request before taking another action.')
   }
-  try { savePublicationLink(account, sourceId, { publicationKey: link.publicationKey, result }) }
-  catch { return { result, saved: false } }
+  try {
+    savePublicationLink(account, sourceId, {
+      publicationKey: link.publicationKey,
+      result,
+      snapshot: intent.method === 'DELETE' ? undefined : link.snapshot,
+    })
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      const EventCtor = (window as unknown as { CustomEvent?: typeof CustomEvent }).CustomEvent || (typeof CustomEvent !== 'undefined' ? CustomEvent : undefined)
+      if (EventCtor) {
+        window.dispatchEvent(new EventCtor('gtar-setlist-publication-updated', { detail: { account, sourceId } }))
+      }
+    }
+  } catch { return { result, saved: false } }
   return { result, saved: true }
 }
 

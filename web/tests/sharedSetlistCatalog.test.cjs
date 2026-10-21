@@ -119,22 +119,33 @@ test('configuration: shared setlists enabled only in DEV Preview', () => {
   assert.equal(Object.hasOwn(config.env.production.vars ?? {}, 'SHARED_SETLISTS_ENABLED'), false)
 })
 
-test('authorization: active admin only mutations; active members may read; no ownership spoof', async () => {
+test('authorization: active admin and active member mutations; active members may read; no ownership spoof', async () => {
   const f = await fixture()
   const { id } = await f.create()
-  for (const user of ['member', 'pending', 'denied']) {
+  for (const user of ['pending', 'denied']) {
     assert.equal((await f.call('POST', publish(), { user })).status, 403)
     assert.equal((await f.call('PUT', update(), { user, id })).status, 403)
     assert.equal((await f.call('DELETE', { expected_revision: 1 }, { user, id })).status, 403)
   }
+  // Member can publish their own setlist
+  f.sql.prepare('INSERT INTO user_songbooks VALUES(?,1,?,?,?)').run('member', JSON.stringify(library()), 'source-checksum', 'now')
+  const memberPub = await (await f.call('POST', { ...publish(), publication_key: 'member-publication-key-0001' }, { user: 'member', key: 'member-idempotency-key-001' })).json()
+  assert.equal(memberPub.revision, 1)
+  // Member updating their own setlist succeeds
+  assert.equal((await f.call('PUT', update(1), { user: 'member', id: memberPub.id, key: 'member-update-key-0001' })).status, 200)
+  // Member cannot modify admin setlist (409 conflict/ownership guard)
+  assert.equal((await f.call('PUT', update(), { user: 'member', id, key: 'member-steal-update-key' })).status, 409)
+  assert.equal((await f.call('DELETE', { expected_revision: 1 }, { user: 'member', id, key: 'member-steal-delete-key' })).status, 409)
+  // Member can unpublish their own setlist
+  assert.equal((await f.call('DELETE', { expected_revision: 2 }, { user: 'member', id: memberPub.id, key: 'member-delete-key-0001' })).status, 200)
   assert.equal((await f.call('GET', null, { user: 'member' })).status, 200)
   assert.equal((await f.call('GET', null, { user: 'pending' })).status, 403)
   assert.equal((await f.call('GET', null, { user: 'denied' })).status, 403)
   assert.equal((await f.call('DELETE', { expected_revision: 1 }, { user: 'other', id })).status, 409)
   assert.equal((await f.call('POST', { ...publish(), publisher_user_id: 'other' }, { key: 'another-idempotency' })).status, 400)
-  const head = f.sql.prepare('SELECT * FROM catalog_setlist_heads').get()
+  const head = f.sql.prepare('SELECT * FROM catalog_setlist_heads WHERE id = ?').get(id)
   assert.equal(head.publisher_user_id, 'admin')
-  assert.equal(f.sql.prepare('SELECT editor_user_id FROM catalog_setlist_mutations').get().editor_user_id, 'admin')
+  assert.equal(f.sql.prepare('SELECT editor_user_id FROM catalog_setlist_mutations WHERE setlist_id = ?').get(id).editor_user_id, 'admin')
 })
 
 test('publication: browse, exact revision, immutable history and unchanged personal/catalog/QR tables', async () => {
@@ -329,7 +340,7 @@ test('expiry and abuse: expired sessions, revoked approval and key reuse cannot 
   f.tokens.admin = await createSessionToken(f.users.admin, secret, -60000)
   assert.equal((await f.call()).status, 401)
   f.tokens.admin = await createSessionToken(f.users.admin, secret)
-  f.sql.exec("UPDATE users SET role='member' WHERE id='admin'")
+  f.sql.exec("UPDATE users SET access_status='pending' WHERE id='admin'")
   assert.equal((await f.call()).status, 403)
   f.sql.exec("UPDATE users SET role='admin',access_status='denied' WHERE id='admin'")
   assert.equal((await f.call()).status, 403)

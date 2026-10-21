@@ -1,7 +1,7 @@
 import { snapshotFromSongbook, validateSnapshot } from '../../src/utils/sharedSetlistSnapshot.ts'
 export { snapshotFromSongbook, validateSnapshot, SETLIST_LIMITS } from '../../src/utils/sharedSetlistSnapshot.ts'
 import {
-  authenticateAdminRequest, authenticateUserRequest, errorResponse, findUserSongbook,
+  authenticateUserRequest, errorResponse, findUserSongbook,
   jsonResponse, readBoundedJson,
   type AuthEnv, type D1Database,
 } from './authCore.ts'
@@ -77,7 +77,7 @@ export async function handleSetlistCatalog(context: SetlistContext): Promise<Res
     return errorResponse('Method not allowed', 405)
   }
   try {
-    const auth = await (write ? authenticateAdminRequest : authenticateUserRequest)(request, env)
+    const auth = await authenticateUserRequest(request, env)
     if ('error' in auth) return errorResponse(auth.error, auth.status)
     const db = env.DB!
     if (!await protect(db, auth.user.id, write)) return errorResponse('Rate limit exceeded', 429)

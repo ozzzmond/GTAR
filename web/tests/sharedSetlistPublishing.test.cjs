@@ -119,12 +119,16 @@ test('cloud theme settings do not cause false source differences and whole-recor
   const preview = await prepare()
   assert.equal(preview.snapshot.name, 'Sunday')
 })
-test('members, inactive admins and expired sessions cannot prepare or send', async () => {
-  session('account-a', 'member'); await assert.rejects(prepare, /active admin/)
-  session('account-a', 'admin', 'pending'); await assert.rejects(prepare, /active admin/)
+test('active members can prepare; pending or revoked users and expired sessions cannot prepare or send', async () => {
+  session('account-a', 'member')
+  const memberPreview = await prepare()
+  assert.equal(memberPreview.account, 'account-a')
+  session('account-a', 'member', 'pending'); await assert.rejects(prepare, /active approved session/)
+  session('account-a', 'admin', 'pending'); await assert.rejects(prepare, /active approved session/)
+  session('account-a', 'member', 'denied'); await assert.rejects(prepare, /active approved session/)
   const value = session(); value.localExpiresAt = value.expiresAt = Date.now() - 1; localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
   await assert.rejects(prepare, /Authentication/)
-  assert.equal(calls.length, 0)
+  assert.equal(calls.length, 1)
 })
 test('account switching during source read and before mutation preserves account isolation', async () => {
   const original = responder
@@ -326,12 +330,12 @@ test('mobile and keyboard controls use native modal focus, named dialog, touch s
   assert.equal(closed, 1)
   assert.equal(calls.filter(c => c.method === 'POST').length, 0)
 })
-test('only active admin personal workflow exposes publishing; member and pending admin controls stay hidden', async () => {
-  for (const [role, access] of [['member', 'active'], ['admin', 'pending'], ['admin', 'active']]) {
+test('active admin and active member personal workflows expose publishing; pending and denied controls stay hidden', async () => {
+  for (const [role, access] of [['member', 'active'], ['admin', 'pending'], ['admin', 'active'], ['member', 'denied']]) {
     if (root) { await act(async () => root.unmount()); root = null }
     const authSession = session('account-a', role, access)
     await mount(React.createElement(AuthContext.Provider, { value: { session: authSession, role: role === 'admin' ? 'SUPER_ADMIN' : 'USER', accessStatus: access } },
       React.createElement(SetlistDrawer, { isOpen: true, initialTab: 'setlists', onClose() {}, songs: library.songs, setlists: library.setlists, activeSongIndex: 0, onSelectSongIndex() {}, onDeleteSong() {}, onNewSong() {}, onPublishSetlist() {} })))
-    assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared"]'), role === 'admin' && access === 'active')
+    assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared"]'), (role === 'admin' || role === 'member') && access === 'active')
   }
 })

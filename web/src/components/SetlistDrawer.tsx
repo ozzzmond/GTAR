@@ -1,3 +1,6 @@
+import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
+import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
+import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { resolveSetlistSong } from '../utils/setlistSongs'
 import React, { useState, useEffect, useMemo } from 'react'
@@ -128,7 +131,16 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
     return set
   }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
   const auth = useOptionalGoogleAuth()
-  const setlistCapability = useSharedSetlists(isOpen && (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active')
+  const userRole = auth?.session?.role || auth?.session?.user.role
+  const isUserApproved = auth?.accessStatus === 'active' || hasServerApproval(auth?.session)
+  const canPublishSetlist = (userRole === 'admin' || userRole === 'member') && isUserApproved
+  const setlistCapability = useSharedSetlists(isOpen && canPublishSetlist)
+  const setlistStatusMap = useSetlistPublicationStatuses({
+    setlists,
+    songs,
+    accountId: auth?.session?.user?.id || getStoredSessionStatus().session?.user?.id,
+    setlistCapability,
+  })
   const [localCatalogMetadata, setLocalCatalogMetadata] = useState<Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>>(() => sharedCatalogService.getCatalogMetadataMap())
   useEffect(() => {
     const handleUpdate = () => setLocalCatalogMetadata(sharedCatalogService.getCatalogMetadataMap())
@@ -490,8 +502,14 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             <ListMusic className="ui-section-icon w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="font-bold text-xs truncate text-app-heading">
-                              {sl.name}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="font-bold text-xs truncate text-app-heading">
+                                {sl.name}
+                              </div>
+                              <SetlistCloudStatusBadge
+                                status={setlistStatusMap.get(sl.id) || 'NEVER_PUBLISHED'}
+                                setlistId={sl.id}
+                              />
                             </div>
                             <div className="text-[10px] font-mono text-app-muted">
                               {slSongs.length} {slSongs.length === 1 ? 'song' : 'songs'}
@@ -516,7 +534,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               <PlayCircle className="w-4 h-4" />
                             </button>
                           )}
-                          {onPublishSetlist && setlistCapability.enabled && (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active' && (
+                          {onPublishSetlist && setlistCapability.enabled && canPublishSetlist && (
                             <button
                               type="button"
                               aria-label={`Publish ${sl.name} to Shared`}
