@@ -1505,7 +1505,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>Setlists ({setlists.length})</span>
+          <span>Setlists ({activeSetlists.length})</span>
         </button>
 
         <button
@@ -1555,8 +1555,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       ) : (
         <>
           {/* 2. SONG SETLISTS PANEL */}
-      {(activeTab === 'setlists' || (activeTab === 'my_songs' && setlists.length > 0)) && (
-        setlists.length === 0 ? (
+      {(activeTab === 'setlists' || (activeTab === 'my_songs' && activeSetlists.length > 0)) && (
+        activeSetlists.length === 0 ? (
           <section aria-label="Song Setlists" className="rounded-2xl border border-app-border bg-app-surface p-6 sm:p-8 mb-6 shadow-xs text-center space-y-3">
             <Layers className="ui-section-icon w-8 h-8 mx-auto text-app-accent" />
             <div className="text-base font-bold ui-primary-text text-app-heading">No Setlists Yet</div>
@@ -1587,7 +1587,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <div className="flex items-center gap-2">
               <Layers className="ui-section-icon w-4 h-4 text-app-accent shrink-0" />
               <h2 className="ui-section-text text-xs sm:text-sm font-bold ui-primary-text text-app-heading uppercase tracking-wider font-mono">
-                Song Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${setlists.length}` : filteredSetlists.length})
+                Song Setlists ({searchQuery.trim() ? `${filteredSetlists.length} of ${activeSetlists.length}` : filteredSetlists.length})
               </h2>
             </div>
           </div>

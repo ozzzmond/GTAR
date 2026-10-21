@@ -167,6 +167,7 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [mainSetlistCardActions.test.cjs](mainSetlistCardActions.test.cjs)
 - [numbersNotation.test.cjs](numbersNotation.test.cjs)
 - [onlineSearchProvider.test.cjs](onlineSearchProvider.test.cjs)
+- [setlistCountConsistency.test.cjs](setlistCountConsistency.test.cjs)
 - [setlistImportRouting.test.cjs](setlistImportRouting.test.cjs)
 - [setlistMembership.test.cjs](setlistMembership.test.cjs)
 - [sharedCatalogOffline.test.cjs](sharedCatalogOffline.test.cjs)

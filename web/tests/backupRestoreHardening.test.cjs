@@ -575,7 +575,7 @@ test('search-filtered visible setlists do not change full backup preview totals'
     onSongMembershipChange: () => true, onCreateSetlistForSong: () => true,
     onSelectSong: () => {}, onNewSong: () => {}, onOpenSetlists: () => {}, onDeleteSong: () => {},
   })))
-  assert.match(document.body.textContent, /Song Setlists \(1 of 21\)/)
+  assert.match(document.body.textContent, /Song Setlists \(1 of 3\)/)
   const payload = createBackupPayload([mockSong1], setlists)
   await mountRestore(root)
   await selectBackup(dom, payload)
