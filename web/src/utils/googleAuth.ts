@@ -47,18 +47,43 @@ interface TokenClient {
   requestAccessToken(options?: TokenClientOptions): void
 }
 
-interface GISIdInitConfig {
+export interface PromptMomentNotification {
+  isDisplayed: () => boolean
+  isNotDisplayed: () => boolean
+  getNotDisplayedReason?: () => string
+  isSkippedMoment: () => boolean
+  getSkippedReason?: () => string
+  isDismissedMoment: () => boolean
+  getDismissedReason?: () => string
+  getMomentType?: () => string
+}
+
+export interface GsiButtonConfiguration {
+  type?: 'standard' | 'icon'
+  theme?: 'outline' | 'filled_blue' | 'filled_black'
+  size?: 'large' | 'medium' | 'small'
+  text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin'
+  shape?: 'rectangular' | 'pill' | 'circle' | 'square'
+  logo_alignment?: 'left' | 'center'
+  width?: number | string
+  locale?: string
+  click_listener?: () => void
+}
+
+export interface GISIdInitConfig {
   client_id: string
   callback: (response: { credential?: string; select_by?: string }) => void
   auto_select?: boolean
   cancel_on_tap_outside?: boolean
+  prompt_parent_id?: string
+  itp_support?: boolean
 }
 
 interface GIS {
   accounts: {
     id?: {
       initialize(config: GISIdInitConfig): void
-      prompt(momentListener?: (notification: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean; isDismissedMoment: () => boolean }) => void): void
+      prompt(momentListener?: (notification: PromptMomentNotification) => void): void
       renderButton(parent: HTMLElement, options: Record<string, unknown>): void
       cancel(): void
     }
@@ -108,6 +133,50 @@ export class ServerSessionError extends Error {
     this.isDefinitiveAuthFailure = options.isDefinitiveAuthFailure
     this.isTransient = options.isTransient
   }
+}
+
+export class GooglePromptSuppressedError extends Error {
+  reason: string
+  isSuppressed: true
+
+  constructor(message: string, reason = 'unknown') {
+    super(message)
+    this.name = 'GooglePromptSuppressedError'
+    this.reason = reason
+    this.isSuppressed = true
+  }
+}
+
+export class GooglePromptDismissedError extends Error {
+  reason: string
+  isDismissed: true
+
+  constructor(message: string, reason = 'unknown') {
+    super(message)
+    this.name = 'GooglePromptDismissedError'
+    this.reason = reason
+    this.isDismissed = true
+  }
+}
+
+export function isPromptSuppressed(err: unknown): boolean {
+  if (err instanceof GooglePromptSuppressedError) return true
+  if (err && typeof err === 'object' && 'isSuppressed' in err) {
+    return (err as { isSuppressed?: unknown }).isSuppressed === true
+  }
+  return false
+}
+
+export function isPromptDismissed(err: unknown): boolean {
+  if (err instanceof GooglePromptDismissedError) return true
+  if (err && typeof err === 'object' && 'isDismissed' in err) {
+    return (err as { isDismissed?: unknown }).isDismissed === true
+  }
+  return false
+}
+
+export function isPromptSuppressedOrDismissed(err: unknown): boolean {
+  return isPromptSuppressed(err) || isPromptDismissed(err)
 }
 
 export function isDefinitiveAuthError(err: unknown): boolean {
@@ -660,82 +729,213 @@ export async function logoutFromServer(sessionTokenOrIdToken: string): Promise<b
 }
 
 let loading: Promise<void> | undefined
-export function loadGoogleIdentity(): Promise<void> {
-  if (window.google) return Promise.resolve()
-  if (!loading) loading = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    const timeout = setTimeout(() => {
-      script.remove()
-      loading = undefined
-      reject(new Error('Google sign-in unavailable. Try again.'))
-    }, 15000)
-    script.onload = () => { clearTimeout(timeout); resolve() }
-    script.onerror = () => {
-      clearTimeout(timeout)
-      script.remove()
-      loading = undefined
-      reject(new Error('Google sign-in unavailable. Local editing is available.'))
+
+export function resetGoogleIdentityLoader(): void {
+  loading = undefined
+}
+
+export function loadGoogleIdentity(forceRetry = false): Promise<void> {
+  if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+    return Promise.resolve()
+  }
+  if (forceRetry) {
+    loading = undefined
+    if (typeof document !== 'undefined') {
+      const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]')
+      if (existing) {
+        existing.remove()
+      }
     }
-    document.head.appendChild(script)
-  })
+  }
+  if (!loading) {
+    loading = new Promise<void>((resolve, reject) => {
+      if (typeof document === 'undefined') {
+        resolve()
+        return
+      }
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      const timeout = setTimeout(() => {
+        script.remove()
+        loading = undefined
+        reject(new Error('Google sign-in unavailable. Try again.'))
+      }, 15000)
+      script.onload = () => {
+        clearTimeout(timeout)
+        resolve()
+      }
+      script.onerror = () => {
+        clearTimeout(timeout)
+        script.remove()
+        loading = undefined
+        reject(new Error('Google sign-in unavailable. Local editing is available.'))
+      }
+      document.head.appendChild(script)
+    })
+  }
   return loading
 }
 
-export interface RequestSessionOptions {
-  prompt?: string
-  hint?: string
+export function initializeGoogleIdentity(config: GISIdInitConfig): boolean {
+  if (typeof window === 'undefined' || !window.google?.accounts?.id?.initialize) {
+    return false
+  }
+  try {
+    window.google.accounts.id.initialize(config)
+    return true
+  } catch (err) {
+    console.warn('[googleAuth] Failed to initialize GIS:', err)
+    return false
+  }
+}
+
+export function renderGoogleButton(
+  parent: HTMLElement | null,
+  options?: GsiButtonConfiguration
+): boolean {
+  if (!parent || typeof window === 'undefined' || !window.google?.accounts?.id?.renderButton) {
+    return false
+  }
+  try {
+    const defaultOptions: GsiButtonConfiguration = {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+      shape: 'rectangular',
+      logo_alignment: 'left',
+      width: 300,
+    }
+    window.google.accounts.id.renderButton(parent, { ...defaultOptions, ...options })
+    return true
+  } catch (err) {
+    console.warn('[googleAuth] Failed to render Google button:', err)
+    return false
+  }
+}
+
+export function promptGoogleOneTap(
+  momentListener?: (notification: PromptMomentNotification) => void
+): boolean {
+  if (typeof window === 'undefined' || !window.google?.accounts?.id?.prompt) {
+    return false
+  }
+  try {
+    window.google.accounts.id.prompt(momentListener)
+    return true
+  } catch (err) {
+    console.warn('[googleAuth] Failed to prompt One Tap:', err)
+    return false
+  }
+}
+
+export function cancelGoogleOneTap(): void {
+  if (typeof window === 'undefined' || !window.google?.accounts?.id?.cancel) {
+    return
+  }
+  try {
+    window.google.accounts.id.cancel()
+  } catch {
+    /* ignore */
+  }
+}
+
+export interface RequestCredentialOptions {
+  timeoutMs?: number
+  onPromptMoment?: (notification: PromptMomentNotification) => void
 }
 
 /**
  * Requests server-verifiable Google ID token (JWT) via Google Identity Services
  */
-export function requestGoogleCredential(clientId: string): Promise<string> {
+export function requestGoogleCredential(
+  clientId: string,
+  options?: RequestCredentialOptions
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (!window.google?.accounts?.id) {
+    if (typeof window === 'undefined' || !window.google?.accounts?.id) {
       reject(new Error('Google sign-in is still loading. Try again.'))
       return
     }
 
     let settled = false
+    const timeoutMs = options?.timeoutMs ?? 60000
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true
         reject(new Error('Sign-in timeout. Please click sign-in again.'))
       }
-    }, 60000)
+    }, timeoutMs)
+
+    const finish = (action: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      action()
+    }
 
     try {
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: (response) => {
-          if (settled) return
-          settled = true
-          clearTimeout(timeout)
-          if (response.credential) {
-            resolve(response.credential)
-          } else {
-            reject(new Error('No credential returned from Google.'))
-          }
+          finish(() => {
+            if (response.credential) {
+              resolve(response.credential)
+            } else {
+              reject(new Error('No credential returned from Google.'))
+            }
+          })
         },
         auto_select: false,
+        cancel_on_tap_outside: true,
       })
 
       window.google.accounts.id.prompt((notification) => {
         if (settled) return
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          // If One-Tap is suppressed, attempt fallback or wait for user interaction
+        options?.onPromptMoment?.(notification)
+
+        if (notification.isNotDisplayed()) {
+          const reason = typeof notification.getNotDisplayedReason === 'function'
+            ? notification.getNotDisplayedReason()
+            : 'suppressed'
+          finish(() => {
+            reject(new GooglePromptSuppressedError('Google One Tap prompt was not displayed: ' + reason, reason))
+          })
+          return
+        }
+
+        if (notification.isSkippedMoment()) {
+          const reason = typeof notification.getSkippedReason === 'function'
+            ? notification.getSkippedReason()
+            : 'skipped'
+          finish(() => {
+            reject(new GooglePromptSuppressedError('Google One Tap prompt was skipped: ' + reason, reason))
+          })
+          return
+        }
+
+        if (notification.isDismissedMoment()) {
+          const reason = typeof notification.getDismissedReason === 'function'
+            ? notification.getDismissedReason()
+            : 'dismissed'
+          finish(() => {
+            reject(new GooglePromptDismissedError('Google One Tap prompt was dismissed: ' + reason, reason))
+          })
+          return
         }
       })
     } catch (err) {
-      if (!settled) {
-        settled = true
-        clearTimeout(timeout)
-        reject(err)
-      }
+      finish(() => {
+        reject(err instanceof Error ? err : new Error(String(err)))
+      })
     }
   })
+}
+
+export interface RequestSessionOptions {
+  prompt?: string
+  hint?: string
 }
 
 // Request session via Google Identity Services (GIS oauth2 token client backwards compatibility)

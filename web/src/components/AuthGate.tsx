@@ -15,6 +15,10 @@ import {
   hasServerApproval,
   isDefinitiveAuthError,
   isTransientAuthError,
+  initializeGoogleIdentity,
+  renderGoogleButton,
+  cancelGoogleOneTap,
+  isPromptSuppressedOrDismissed,
   type GoogleSession,
   type AccessStatus,
 } from '../utils/googleAuth'
@@ -39,15 +43,28 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false)
   const [checkingStatus, setCheckingStatus] = useState(false)
   const [ready, setReady] = useState(false)
+  const [scriptLoadFailed, setScriptLoadFailed] = useState(false)
   const [bypass, setBypass] = useState(false)
   const [error, setError] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [isExpiredOffline, setIsExpiredOffline] = useState(false)
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
+  const isMountedRef = useRef(true)
   const epoch = useRef(0)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Capturing the mount value would revive stale async work.
+      epoch.current++
+    }
+  }, [])
   const refreshing = useRef(false)
   const lastRecheckTimestamp = useRef<number>(0)
   const lastManualCheckRef = useRef<number>(0)
+  const inFlightCredentialRef = useRef<string | null>(null)
+  const gisRenderedRef = useRef(false)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
   const configuredEmails = import.meta.env.VITE_AUTHORIZED_EMAILS as string | undefined
 
@@ -84,6 +101,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     epoch.current++
+    inFlightCredentialRef.current = null
+    cancelGoogleOneTap()
+    gisRenderedRef.current = false
     const cur = sessionRef.current
     const token = cur?.sessionToken || cur?.idToken
     const oldAccountId = cur?.user?.id || (cur?.user?.email ? cur.user.email.trim().toLowerCase() : null) || sharedCatalogService.getAccount()
@@ -306,6 +326,49 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
   }, [session, checkingStatus])
 
+  // Centralized session exchange with backend Cloudflare Pages server
+  const exchangeCredential = useCallback(async (idToken: string, gen: number) => {
+    if (!idToken || inFlightCredentialRef.current === idToken) return
+    inFlightCredentialRef.current = idToken
+
+    try {
+      const serverSession = await authenticateWithServer(idToken)
+      if (!isMountedRef.current || gen !== epoch.current || !serverSession) return
+      if (!isServerBackedSession(serverSession)) {
+        saveGoogleSession(null)
+        throw new Error('Server authentication did not return a verifiable session.')
+      }
+
+      saveGoogleSession(serverSession)
+      setBypass(false)
+      setSession(serverSession)
+    } catch (failure) {
+      if (isMountedRef.current && gen === epoch.current) {
+        const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
+        setError(errorMsg)
+        void import('../utils/logger').then(({ appLogger }) => {
+          appLogger.error('AuthGate', `Google sign-in attempt failed: ${errorMsg}`, failure instanceof Error ? failure : undefined)
+        })
+      }
+    } finally {
+      inFlightCredentialRef.current = null
+      if (isMountedRef.current && gen === epoch.current) {
+        setBusy(false)
+        setChecking(false)
+      }
+    }
+  }, [])
+
+  const onGisCredentialResponse = useCallback((idToken: string) => {
+    if (!idToken || inFlightCredentialRef.current === idToken) return
+    const gen = ++epoch.current
+    setBusy(true)
+    setError('')
+    setStatusMessage('')
+    setIsExpiredOffline(false)
+    void exchangeCredential(idToken, gen)
+  }, [exchangeCredential])
+
   // Mount session initialization
   useEffect(() => {
     // Preserve incoming QR / deep-link share token during authentication workflow
@@ -416,23 +479,70 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     // This is a generation counter, not a DOM ref: invalidate the current epoch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Capturing the mount value would revive stale async work.
-    return () => { epoch.current++ }
+    return () => { isMountedRef.current = false; epoch.current++ }
   }, [backgroundRecheck, configuredEmails])
 
   // Load Google Identity Services SDK
-  useEffect(() => {
-    if (!clientId) return
+  const loadSdk = useCallback((forceRetry = false) => {
+    if (!clientId) return () => {}
+    setScriptLoadFailed(false)
     let active = true
-    void loadGoogleIdentity().then(() => { if (active) setReady(true) }).catch((err) => {
-      if (active) {
-        setError('Google sign-in is unavailable. Check your connection and reload.')
-        void import('../utils/logger').then(({ appLogger }) => {
-          appLogger.warn('AuthGate', 'Google Identity Services script load failed (offline or blocked).', String(err))
-        })
-      }
-    })
+    loadGoogleIdentity(forceRetry)
+      .then(() => {
+        if (active) {
+          setReady(true)
+          setScriptLoadFailed(false)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setScriptLoadFailed(true)
+          setError('Google sign-in is unavailable. Check your connection and reload.')
+          void import('../utils/logger').then(({ appLogger }) => {
+            appLogger.warn('AuthGate', 'Google Identity Services script load failed (offline or blocked).', String(err))
+          })
+        }
+      })
     return () => { active = false }
   }, [clientId])
+
+  useEffect(() => {
+    return loadSdk()
+  }, [loadSdk])
+
+  // Initialize GIS and render persistent sign-in button container
+  useEffect(() => {
+    if (!ready || !clientId || session || bypass || checking) return
+    const container = document.getElementById('google-signin-button')
+    if (!container) return
+
+    try {
+      initializeGoogleIdentity({
+        client_id: clientId,
+        callback: (response) => {
+          if (response?.credential) {
+            onGisCredentialResponse(response.credential)
+          }
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      })
+      renderGoogleButton(container, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        shape: 'rectangular',
+        logo_alignment: 'left',
+        width: 320,
+      })
+      gisRenderedRef.current = true
+    } catch (err) {
+      void import('../utils/logger').then(({ appLogger }) => {
+        appLogger.warn('AuthGate', 'Failed to render Google Identity Services button', String(err))
+      })
+    }
+  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse])
 
   // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
@@ -488,7 +598,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const signIn = async () => {
     if (!clientId || busy) return
-    const generation = ++epoch.current
+    const gen = ++epoch.current
     setBusy(true)
     setError('')
     setStatusMessage('')
@@ -496,29 +606,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     try {
       const idToken = await requestGoogleCredential(clientId)
-      if (generation !== epoch.current) return
-      const serverSession = await authenticateWithServer(idToken)
-      if (generation !== epoch.current || !serverSession) return
-      if (!isServerBackedSession(serverSession)) {
-        saveGoogleSession(null)
-        throw new Error('Server authentication did not return a verifiable session.')
-      }
-
-      saveGoogleSession(serverSession)
-      setBypass(false)
-      setSession(serverSession)
+      if (gen !== epoch.current) return
+      await exchangeCredential(idToken, gen)
     } catch (failure) {
-      if (generation === epoch.current) {
+      if (gen === epoch.current) {
+        if (isPromptSuppressedOrDismissed(failure)) {
+          // Google prompt was suppressed (cooldown) or dismissed; keep manual sign-in / GIS button ready
+          setBusy(false)
+          return
+        }
         const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
         setError(errorMsg)
         void import('../utils/logger').then(({ appLogger }) => {
           appLogger.error('AuthGate', `Google sign-in attempt failed: ${errorMsg}`, failure instanceof Error ? failure : undefined)
         })
-      }
-    } finally {
-      if (generation === epoch.current) {
         setBusy(false)
-        setChecking(false)
       }
     }
   }
@@ -679,13 +781,32 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {checking ? (
           <p role="status">Verifying your session...</p>
         ) : (
-          <button
-            disabled={!ready || busy}
-            className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 cursor-pointer"
-            onClick={() => void signIn()}
-          >
-            {busy ? 'Signing in...' : 'Sign In with Google'}
-          </button>
+          <div className="space-y-3">
+            <div
+              id="google-signin-button"
+              className="w-full flex justify-center my-2 min-h-[44px]"
+              aria-label="Google Sign-In"
+            />
+            <button
+              disabled={!ready || busy}
+              className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 cursor-pointer"
+              onClick={() => void signIn()}
+            >
+              {busy ? 'Signing in...' : 'Sign In with Google'}
+            </button>
+            {scriptLoadFailed && (
+              <button
+                type="button"
+                className="mt-2 text-sm font-semibold underline text-app-action hover:text-app-action-hover cursor-pointer"
+                onClick={() => {
+                  setError('')
+                  loadSdk(true)
+                }}
+              >
+                Retry loading Google Sign-In
+              </button>
+            )}
+          </div>
         )}
         <p role="status" className="text-sm text-status-warning mt-4">
           {error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}
