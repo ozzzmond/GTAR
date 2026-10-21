@@ -1011,6 +1011,169 @@ test('EXPLICIT_END_REVOKES', async () => {
   }
 })
 
+function withSessionStorage(store) {
+  globalThis.window = {
+    sessionStorage: {
+      getItem: k => store.get(k) || null,
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: k => store.delete(k),
+    },
+  }
+}
+
+test('FRESH_PAIRING_SURVIVES_REPEATED_TICKS', async () => {
+  const store = new Map()
+  withSessionStorage(store)
+  let createCalls = 0, revokeCalls = 0
+  try {
+    const client = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async path => {
+        if (path === '/create') { createCalls++; return { ref: '1'.repeat(64), receiverCredential: 'b'.repeat(64), pin: '111111', expiresAt: 10_000_000, pairingExpiresAt: 9_000_000 } }
+        if (path === '/status') return { sessionId: '1'.repeat(64), state: 'WAITING_FOR_CONTROLLER', requestId: 'r'.repeat(64), inboundSequence: 0, expiresAt: 10_000_000 }
+        if (path === '/revoke') { revokeCalls++; return { state: 'REVOKED' } }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {})
+
+    await client.start()
+    assert.equal(createCalls, 1)
+    assert.equal(client.view.pin, '111111')
+    assert.equal(client.view.ref, '1'.repeat(64))
+
+    for (let i = 0; i < 8; i++) await client.tick()
+
+    assert.equal(createCalls, 1, 'Normal polling must not create new sessions')
+    assert.equal(revokeCalls, 0, 'Normal polling must not revoke')
+    assert.equal(client.view.pin, '111111', 'PIN must remain stable across ticks')
+    assert.equal(client.view.ref, '1'.repeat(64), 'Session ref must remain stable across ticks')
+    assert.equal(client.view.state, 'WAITING_FOR_CONTROLLER')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('FRESH_AWAITING_APPROVAL_SURVIVES_REPEATED_TICKS', async () => {
+  const store = new Map()
+  withSessionStorage(store)
+  let createCalls = 0, revokeCalls = 0
+  try {
+    const client = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async path => {
+        if (path === '/create') { createCalls++; return { ref: '1'.repeat(64), receiverCredential: 'b'.repeat(64), pin: '111111', expiresAt: 10_000_000, pairingExpiresAt: 9_000_000 } }
+        if (path === '/status') return { sessionId: '1'.repeat(64), state: 'AWAITING_TV_APPROVAL', requestId: 'r'.repeat(64), inboundSequence: 0, expiresAt: 10_000_000 }
+        if (path === '/revoke') { revokeCalls++; return { state: 'REVOKED' } }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {})
+
+    await client.start()
+    for (let i = 0; i < 6; i++) await client.tick()
+
+    assert.equal(createCalls, 1)
+    assert.equal(revokeCalls, 0, 'Fresh AWAITING_TV_APPROVAL pairing must not revoke')
+    assert.equal(client.view.pin, '111111')
+    assert.equal(client.view.state, 'AWAITING_TV_APPROVAL')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('RESTORED_RECOVERY_RUNS_ONLY_ONCE', async () => {
+  const store = new Map()
+  withSessionStorage(store)
+  store.set('gtar_cast2_receiver_session', JSON.stringify({ ref: '1'.repeat(64), credential: 'b'.repeat(64), expiresAt: 10_000_000 }))
+  let createCalls = 0, revokeCalls = 0, statusRef = '1'.repeat(64)
+  try {
+    const client = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async path => {
+        if (path === '/status') return { sessionId: statusRef, state: 'WAITING_FOR_CONTROLLER', inboundSequence: 0, expiresAt: 10_000_000 }
+        if (path === '/create') { createCalls++; statusRef = '2'.repeat(64); return { ref: '2'.repeat(64), receiverCredential: 'c'.repeat(64), pin: '222222', expiresAt: 10_000_000, pairingExpiresAt: 9_000_000 } }
+        if (path === '/revoke') { revokeCalls++; return { state: 'REVOKED' } }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {})
+
+    assert.equal(client.restore(), true)
+    await client.tick()
+    assert.equal(revokeCalls, 1, 'Restored incomplete session must be revoked once')
+    assert.equal(createCalls, 1, 'Restored session recovery creates one fresh session')
+
+    for (let i = 0; i < 5; i++) await client.tick()
+    assert.equal(revokeCalls, 1, 'Recovery must run only once')
+    assert.equal(createCalls, 1, 'No further sessions may be created')
+    assert.equal(client.view.pin, '222222')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('REVOKE_FAILURE_NO_RECREATE_STORM', async () => {
+  const store = new Map()
+  withSessionStorage(store)
+  store.set('gtar_cast2_receiver_session', JSON.stringify({ ref: '1'.repeat(64), credential: 'b'.repeat(64), expiresAt: 10_000_000 }))
+  let createCalls = 0, revokeCalls = 0, statusRef = '1'.repeat(64)
+  try {
+    const client = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async path => {
+        if (path === '/status') return { sessionId: statusRef, state: 'WAITING_FOR_CONTROLLER', inboundSequence: 0, expiresAt: 10_000_000 }
+        if (path === '/revoke') { revokeCalls++; throw Error('UNAVAILABLE') }
+        if (path === '/create') { createCalls++; statusRef = '2'.repeat(64); return { ref: '2'.repeat(64), receiverCredential: 'c'.repeat(64), pin: '222222', expiresAt: 10_000_000, pairingExpiresAt: 9_000_000 } }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {})
+
+    assert.equal(client.restore(), true)
+    await client.tick()
+
+    for (let i = 0; i < 6; i++) await client.tick()
+    assert.equal(revokeCalls, 1, 'Revoke attempted only once')
+    assert.equal(createCalls, 1, 'Revoke failure must not trigger a recreate storm')
+    assert.equal(client.view.pin, '222222')
+  } finally {
+    delete globalThis.window
+  }
+})
+
+test('NETWORK_FAILURE_NO_RECREATE_STORM', async () => {
+  const store = new Map()
+  withSessionStorage(store)
+  let createCalls = 0, revokeCalls = 0, failStatus = false
+  try {
+    const client = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async path => {
+        if (path === '/create') { createCalls++; return { ref: '1'.repeat(64), receiverCredential: 'b'.repeat(64), pin: '111111', expiresAt: 10_000_000, pairingExpiresAt: 9_000_000 } }
+        if (path === '/status') { if (failStatus) throw Error('UNAVAILABLE'); return { sessionId: '1'.repeat(64), state: 'WAITING_FOR_CONTROLLER', inboundSequence: 0, expiresAt: 10_000_000 } }
+        if (path === '/revoke') { revokeCalls++; return { state: 'REVOKED' } }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {}, { maxFailures: 5 })
+
+    await client.start()
+    failStatus = true
+    await client.tick()
+    await client.tick()
+    failStatus = false
+    for (let i = 0; i < 4; i++) await client.tick()
+
+    assert.equal(createCalls, 1, 'Transient network failure must not recreate sessions')
+    assert.equal(revokeCalls, 0, 'Transient network failure must not revoke')
+    assert.equal(client.view.pin, '111111')
+    assert.equal(client.view.state, 'WAITING_FOR_CONTROLLER')
+  } finally {
+    delete globalThis.window
+  }
+})
+
 test('NO_TIMER_OR_SOCKET_LEAK', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173/tv' })
   const keys = ['window', 'document', 'history', 'navigator', 'fetch', 'IS_REACT_ACT_ENVIRONMENT', 'setInterval', 'clearInterval', 'WebSocket']

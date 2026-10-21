@@ -43,6 +43,7 @@ export class Cast2Client {
   private initialBackoffMs: number
   private maxBackoffMs: number
   private nextRetryAt = 0
+  private restored = false
 
   constructor(role: Role, io: Cast2IO, changed: (view: Cast2View) => void, options: Cast2ClientOptions = {}) {
     this.role = role
@@ -86,6 +87,7 @@ export class Cast2Client {
         return false
       }
       this.credential = parsed.credential
+      this.restored = true
       this.sync = initialCast2SyncState(parsed.ref)
       this.emit({ ref: parsed.ref, state: 'DISCONNECTED', error: 'Restoring session…', expiresAt: typeof parsed.expiresAt === 'number' ? parsed.expiresAt : 0 })
       return true
@@ -99,7 +101,7 @@ export class Cast2Client {
   private scope() { return { ref: this.view.ref, role: this.role, credential: this.credential } }
   private close() { const ws = this.ws; this.ws = null; if (ws) { ws.onclose = null; ws.onerror = null; ws.onmessage = null; ws.onopen = null; ws.close() } }
   disconnect() { this.close() }
-  dispose() { this.epoch++; this.close(); this.credential = ''; this.latest = null; this.sync = initialCast2SyncState(''); this.view = { ...this.view, snapshot: null } }
+  dispose() { this.epoch++; this.close(); this.credential = ''; this.restored = false; this.latest = null; this.sync = initialCast2SyncState(''); this.view = { ...this.view, snapshot: null } }
   private terminal(state: string, error = '') { this.clearSessionStorage(); this.dispose(); this.emit({ state, error, pin: '', requestId: '', snapshot: null }) }
   private fail(error: unknown) {
     const code = error instanceof Error ? error.message : 'UNAVAILABLE'
@@ -136,7 +138,7 @@ export class Cast2Client {
       if (!opaque(id) || !opaque(credential) || !deadline(data.expiresAt) || (this.role === 'receiver' &&
         (!deadline(data.pairingExpiresAt) || typeof data.pin !== 'string' || !/^\d{6}$/.test(data.pin)))) throw Error('Invalid server response.')
       if (this.role === 'controller' && data.state !== 'PAIRED') throw Error('TV pairing service needs an update. Reload both devices after the DEV service is updated.')
-      this.credential = credential; this.sync = initialCast2SyncState(id)
+      this.credential = credential; this.restored = false; this.sync = initialCast2SyncState(id)
       this.saveSessionStorage(id, credential, data.expiresAt as number)
       this.emit({ ref: id, pin: this.role === 'receiver' ? data.pin as string : '', expiresAt: data.expiresAt,
         pairingExpiresAt: this.role === 'receiver' ? data.pairingExpiresAt as number : this.io.now() + 120_000,
@@ -179,8 +181,10 @@ export class Cast2Client {
       if (epoch !== this.epoch) return
       if (!states.includes(status.state as string) || status.sessionId !== this.view.ref || !Number.isSafeInteger(status.inboundSequence)) throw Error('Invalid server response.')
       if (status.state === 'REVOKED' || status.state === 'EXPIRED') { this.terminal(status.state); return }
-      if (this.role === 'receiver' && ['WAITING_FOR_CONTROLLER', 'AWAITING_TV_APPROVAL'].includes(status.state as string)) {
-        // Pairing was not completed prior to reload. Abandon incomplete session and revoke on server to avoid orphaned sessions.
+      if (this.restored && this.role === 'receiver' && ['WAITING_FOR_CONTROLLER', 'AWAITING_TV_APPROVAL'].includes(status.state as string)) {
+        // Only an incomplete pairing restored from sessionStorage is abandoned here.
+        // A freshly created pairing polls normally and must never revoke itself.
+        this.restored = false
         const scope = this.scope()
         this.clearSessionStorage()
         this.dispose()
@@ -191,6 +195,7 @@ export class Cast2Client {
         await this.start()
         return
       }
+      this.restored = false
       this.sequence = Math.max(this.sequence, status.inboundSequence as number)
       this.failures = 0
       this.nextRetryAt = 0
