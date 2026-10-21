@@ -1,8 +1,8 @@
 import { CAST2_VERSION, validateCast2Message } from '../src/utils/stageCast2Protocol'
 import type { ReceiverSnapshot } from '../src/utils/stageCast2Protocol'
 
-export const POLICY = Object.freeze({ pairingMs: 120_000, sessionMs: 600_000, ticketMs: 15_000,
-  heartbeatMs: 45_000, sessions: 32, guesses: 5, requests: 120, buckets: 512 })
+export const POLICY = Object.freeze({ pairingMs: 120_000, idleTimeoutMs: 600_000, sessionMs: 600_000,
+  maxLifetimeMs: 5_400_000, ticketMs: 15_000, heartbeatMs: 45_000, sessions: 32, guesses: 5, requests: 120, buckets: 512 })
 export type State = 'CREATED' | 'WAITING_FOR_CONTROLLER' | 'AWAITING_TV_APPROVAL' | 'PAIRED' | 'DISCONNECTED' | 'EXPIRED' | 'REVOKED'
 type Role = 'controller' | 'receiver'
 const transitions: Record<State, State[]> = {
@@ -32,7 +32,7 @@ export interface Storage {
   setAlarm(time: number): Promise<void>
 }
 interface Session {
-  ref: string; state: State; deadline: number; pairingDeadline: number; pinHash: string; receiverHash: string
+  ref: string; state: State; deadline: number; pairingDeadline: number; maxDeadline: number; pinHash: string; receiverHash: string
   owner: string; controllerHash: string; requestId: string; guesses: number; sequence: number
   inbound: Record<Role, number>
 }
@@ -167,6 +167,10 @@ export class StageCast2Hub {
     s.receiverHash = ''; s.controllerHash = ''; s.pinHash = ''
     this.snapshots.delete(s.ref)
   }
+  private touch(s: Session): void {
+    if (['REVOKED', 'EXPIRED'].includes(s.state)) return
+    s.deadline = Math.min(s.maxDeadline, this.rt.now() + POLICY.idleTimeoutMs)
+  }
   private session(ref: unknown): Session {
     const s = this.db.sessions.find(s => s.ref === ref)
     if (!s || ['REVOKED', 'EXPIRED'].includes(s.state)) throw new Denial()
@@ -194,7 +198,7 @@ export class StageCast2Hub {
         if (this.db.sessions.length >= POLICY.sessions) throw new Denial('UNAVAILABLE', 503)
         const ref = secret(), credential = secret(), pin = securePin(), now = this.rt.now()
         const s: Session = { ref, state: transition('CREATED', 'WAITING_FOR_CONTROLLER'), deadline: now + POLICY.sessionMs,
-          pairingDeadline: now + POLICY.pairingMs, pinHash: await digest(ref + pin), receiverHash: await digest(credential),
+          pairingDeadline: now + POLICY.pairingMs, maxDeadline: now + POLICY.maxLifetimeMs, pinHash: await digest(ref + pin), receiverHash: await digest(credential),
           owner: '', controllerHash: '', requestId: '', guesses: 0, sequence: 0, inbound: { controller: 0, receiver: 0 } }
         this.db.sessions.push(s)
         return reply({ ref, pin, receiverCredential: credential, pairingExpiresAt: s.pairingDeadline, expiresAt: s.deadline })
@@ -214,6 +218,7 @@ export class StageCast2Hub {
         // Possession of the displayed PIN plus an active server-authorized account is consent.
         // Serial persistence binds the first claim to its owner and burns the PIN before reply.
         s.state = transition(s.state, 'PAIRED')
+        s.deadline = Math.min(s.maxDeadline, this.rt.now() + POLICY.idleTimeoutMs)
         const credential = secret()
         s.controllerHash = await digest(credential); s.owner = owner; s.requestId = secret(); s.pinHash = ''
         return reply({ state: s.state, sessionId: s.ref, requestId: s.requestId, controllerCredential: credential, expiresAt: s.deadline })
@@ -224,14 +229,16 @@ export class StageCast2Hub {
       switch (url.pathname) {
         case '/status':
           shape(b, ['ref', 'role', 'credential'])
+          this.touch(s)
           return reply({ sessionId: s.ref, state: s.state, requestId: s.requestId, expiresAt: s.deadline,
-            sequence: s.sequence, inboundSequence: s.inbound[role] })
+            maxExpiresAt: s.maxDeadline, sequence: s.sequence, inboundSequence: s.inbound[role] })
         case '/revoke':
           shape(b, ['ref', 'role', 'credential'])
           this.end(s, 'REVOKED'); return reply({ state: s.state })
         case '/ticket': {
           shape(b, ['ref', 'role', 'credential'])
           if (!['PAIRED', 'DISCONNECTED'].includes(s.state)) throw new Denial()
+          this.touch(s)
           this.db.tickets = this.db.tickets.filter(t => t.ref !== s.ref || t.role !== role)
           const ticket = secret()
           this.db.tickets.push({ hash: await digest(ticket), ref: s.ref, role, deadline: this.rt.now() + POLICY.ticketMs })
@@ -253,7 +260,9 @@ export class StageCast2Hub {
     const [ticket] = this.db.tickets.splice(index, 1)
     const s = this.session(ticket.ref)
     if (!['PAIRED', 'DISCONNECTED'].includes(s.state)) throw new Denial()
-    for (const old of this.connections.filter(c => c.ref === s.ref && c.role === ticket.role)) this.disconnect(old)
+    for (const old of this.connections.filter(c => c.ref === s.ref && c.role === ticket.role)) {
+      this.disconnect(old, ticket.role === 'receiver' ? 'REPLACED' : 'DISCONNECTED')
+    }
     const { server, response } = this.rt.upgrade()
     response.headers.set('Sec-WebSocket-Protocol', 'cast2')
     const c: Connection = { ref: s.ref, role: ticket.role, socket: server, lastSeen: this.rt.now(), window: 0, count: 0 }
@@ -266,10 +275,10 @@ export class StageCast2Hub {
     this.resync(s)
     return response
   }
-  private disconnect(c: Connection): void {
+  private disconnect(c: Connection, reason = 'DISCONNECTED'): void {
     if (!this.connections.includes(c)) return
     this.connections = this.connections.filter(v => v !== c)
-    c.socket.close(1000, 'DISCONNECTED')
+    c.socket.close(1000, reason)
     const s = this.db.sessions.find(s => s.ref === c.ref)
     if (s?.state === 'PAIRED') s.state = transition(s.state, 'DISCONNECTED')
   }
@@ -302,7 +311,7 @@ export class StageCast2Hub {
     const window = Math.floor(this.rt.now() / 1000)
     if (c.window !== window) { c.window = window; c.count = 0 }
     if (++c.count > 30) { this.disconnect(c); return }
-    if (raw === 'ping') { c.lastSeen = this.rt.now(); this.send(c, 'pong'); return }
+    if (raw === 'ping') { c.lastSeen = this.rt.now(); this.touch(s); this.send(c, 'pong'); return }
     if (typeof raw !== 'string') { this.disconnect(c); return }
     const checked = validateCast2Message(raw, c.role === 'controller' ? 'CONTROLLER_TO_SERVER' : 'RECEIVER_TO_SERVER')
     if (!checked.ok) { this.disconnect(c); return }
@@ -316,7 +325,7 @@ export class StageCast2Hub {
     if (m.type === 'PRESENTATION_UPDATE' && (!this.snapshots.has(s.ref) || m.payload.baseSequence !== s.sequence)) {
       this.disconnect(c); return
     }
-    s.inbound[c.role] = m.sequence; c.lastSeen = this.rt.now()
+    s.inbound[c.role] = m.sequence; c.lastSeen = this.rt.now(); this.touch(s)
     if (m.type === 'SYNC_ERROR') { this.resync(s); return }
     if (m.type === 'SYNC_ACK') return
     if (m.type === 'PRESENTATION_SNAPSHOT' || m.type === 'PRESENTATION_UPDATE') {

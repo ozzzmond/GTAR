@@ -239,6 +239,7 @@ New or renamed tests await a human choice of primary category.
 - [stageCast2DevEnablement.test.cjs](stageCast2DevEnablement.test.cjs)
 - [stageCast2Integration.test.cjs](stageCast2Integration.test.cjs)
 - [stageCast2Qr.test.cjs](stageCast2Qr.test.cjs)
+- [stageCast2Resilience.test.cjs](stageCast2Resilience.test.cjs)
 - [stageCast2Runtime.test.cjs](stageCast2Runtime.test.cjs)
 - [stageCast2Ui.test.cjs](stageCast2Ui.test.cjs)
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
