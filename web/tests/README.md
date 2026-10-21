@@ -227,6 +227,7 @@ Build/runtime configuration, release contracts, PWA lifecycle, and repository ch
 New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
+- [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
 - [stageCast2.test.cjs](stageCast2.test.cjs)
 - [stageCast2Backend.test.cjs](stageCast2Backend.test.cjs)
 - [stageCast2DevEnablement.test.cjs](stageCast2DevEnablement.test.cjs)

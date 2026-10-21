@@ -1,3 +1,5 @@
+import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
+import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
 import { resolveSetlistSong } from '../utils/setlistSongs'
@@ -159,8 +161,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
-  const canPublishSetlist = (auth?.session?.role || auth?.session?.user.role) === 'admin' && auth?.accessStatus === 'active'
+  const userRole = auth?.session?.role || auth?.session?.user.role
+  const isUserApproved = auth?.accessStatus === 'active' || hasServerApproval(auth?.session)
+  const canPublishSetlist = (userRole === 'admin' || userRole === 'member') && isUserApproved
   const setlistCapability = useSharedSetlists(canPublishSetlist)
+  const setlistStatusMap = useSetlistPublicationStatuses({
+    setlists,
+    songs,
+    accountId: auth?.session?.user?.id || getStoredSessionStatus().session?.user?.id,
+    setlistCapability,
+  })
   const storedAuthStatus = getStoredSessionStatus()
   const isAuthActive = auth
     ? !!auth.session && auth.accessStatus === 'active'
@@ -1769,8 +1779,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs sm:text-sm font-bold ui-primary-text text-app-heading group-hover:text-app-action truncate transition-colors">
-                        {sl.name}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="text-xs sm:text-sm font-bold ui-primary-text text-app-heading group-hover:text-app-action truncate transition-colors">
+                          {sl.name}
+                        </div>
+                        <SetlistCloudStatusBadge
+                          status={setlistStatusMap.get(sl.id) || 'NEVER_PUBLISHED'}
+                          setlistId={sl.id}
+                        />
                       </div>
                       <div className="text-[10px] sm:text-[11px] font-mono ui-secondary-text text-app-muted mt-0.5">
                         {sl.songs.length} {sl.songs.length === 1 ? 'song' : 'songs'}
