@@ -16,6 +16,7 @@ import {
   isDefinitiveAuthError,
   isTransientAuthError,
   initializeGoogleIdentity,
+  addCredentialListener,
   renderGoogleButton,
   cancelGoogleOneTap,
   isPromptSuppressedOrDismissed,
@@ -49,6 +50,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [statusMessage, setStatusMessage] = useState('')
   const [isExpiredOffline, setIsExpiredOffline] = useState(false)
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
+  const [gisRendered, setGisRendered] = useState(false)
   const isMountedRef = useRef(true)
   const epoch = useRef(0)
 
@@ -104,6 +106,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     inFlightCredentialRef.current = null
     cancelGoogleOneTap()
     gisRenderedRef.current = false
+    setGisRendered(false)
     const cur = sessionRef.current
     const token = cur?.sessionToken || cur?.idToken
     const oldAccountId = cur?.user?.id || (cur?.user?.email ? cur.user.email.trim().toLowerCase() : null) || sharedCatalogService.getAccount()
@@ -516,7 +519,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const container = document.getElementById('google-signin-button')
     if (!container) return
 
+    let removeListener: (() => void) | undefined
     try {
+      removeListener = addCredentialListener((response) => {
+        if (response?.credential) {
+          onGisCredentialResponse(response.credential)
+        }
+      })
       initializeGoogleIdentity({
         client_id: clientId,
         callback: (response) => {
@@ -537,10 +546,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
         width: 320,
       })
       gisRenderedRef.current = true
+      setGisRendered(container.children.length > 0)
     } catch (err) {
       void import('../utils/logger').then(({ appLogger }) => {
         appLogger.warn('AuthGate', 'Failed to render Google Identity Services button', String(err))
       })
+    }
+    return () => {
+      removeListener?.()
     }
   }, [ready, clientId, session, bypass, checking, onGisCredentialResponse])
 
@@ -598,6 +611,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const signIn = async () => {
     if (!clientId || busy) return
+    if (bypass) {
+      setBypass(false)
+      return
+    }
     const gen = ++epoch.current
     setBusy(true)
     setError('')
@@ -605,6 +622,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setIsExpiredOffline(false)
 
     try {
+      const container = document.getElementById('google-signin-button')
+      const renderedBtn = container?.querySelector('button, [role="button"]') as HTMLElement | null
+      if (renderedBtn && typeof renderedBtn.click === 'function') {
+        renderedBtn.click()
+        return
+      }
+
       const idToken = await requestGoogleCredential(clientId)
       if (gen !== epoch.current) return
       await exchangeCredential(idToken, gen)
@@ -780,6 +804,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         )}
         {checking ? (
           <p role="status">Verifying your session...</p>
+        ) : busy ? (
+          <p role="status" className="text-sm text-app-action font-semibold animate-pulse">
+            Signing in with Google...
+          </p>
         ) : (
           <div className="space-y-3">
             <div
@@ -787,13 +815,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
               className="w-full flex justify-center my-2 min-h-[44px]"
               aria-label="Google Sign-In"
             />
-            <button
-              disabled={!ready || busy}
-              className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 cursor-pointer"
-              onClick={() => void signIn()}
-            >
-              {busy ? 'Signing in...' : 'Sign In with Google'}
-            </button>
+            {!gisRendered && !scriptLoadFailed && (
+              <button
+                disabled={!ready || busy}
+                className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 cursor-pointer"
+                onClick={() => void signIn()}
+              >
+                {busy ? 'Signing in...' : 'Sign In with Google'}
+              </button>
+            )}
             {scriptLoadFailed && (
               <button
                 type="button"

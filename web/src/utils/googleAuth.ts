@@ -730,8 +730,37 @@ export async function logoutFromServer(sessionTokenOrIdToken: string): Promise<b
 
 let loading: Promise<void> | undefined
 
+export type CredentialResponse = { credential?: string; select_by?: string }
+export type CredentialListener = (response: CredentialResponse) => void
+
+const credentialListeners = new Set<CredentialListener>()
+let isGisInitialized = false
+
+export function addCredentialListener(listener: CredentialListener): () => void {
+  credentialListeners.add(listener)
+  return () => {
+    credentialListeners.delete(listener)
+  }
+}
+
+export function clearCredentialListeners(): void {
+  credentialListeners.clear()
+}
+
+function dispatchCredentialResponse(response: CredentialResponse): void {
+  for (const listener of Array.from(credentialListeners)) {
+    try {
+      listener(response)
+    } catch (err) {
+      console.warn('[googleAuth] Error in credential listener:', err)
+    }
+  }
+}
+
 export function resetGoogleIdentityLoader(): void {
   loading = undefined
+  credentialListeners.clear()
+  isGisInitialized = false
 }
 
 export function loadGoogleIdentity(forceRetry = false): Promise<void> {
@@ -782,7 +811,14 @@ export function initializeGoogleIdentity(config: GISIdInitConfig): boolean {
     return false
   }
   try {
-    window.google.accounts.id.initialize(config)
+    if (config.callback) {
+      credentialListeners.add(config.callback)
+    }
+    window.google.accounts.id.initialize({
+      ...config,
+      callback: dispatchCredentialResponse,
+    })
+    isGisInitialized = true
     return true
   } catch (err) {
     console.warn('[googleAuth] Failed to initialize GIS:', err)
@@ -862,34 +898,40 @@ export function requestGoogleCredential(
     let settled = false
     const timeoutMs = options?.timeoutMs ?? 60000
     const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true
+      finish(() => {
         reject(new Error('Sign-in timeout. Please click sign-in again.'))
-      }
+      })
     }, timeoutMs)
 
     const finish = (action: () => void) => {
       if (settled) return
       settled = true
       clearTimeout(timeout)
+      removeListener()
       action()
     }
 
-    try {
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (response) => {
-          finish(() => {
-            if (response.credential) {
-              resolve(response.credential)
-            } else {
-              reject(new Error('No credential returned from Google.'))
-            }
-          })
-        },
-        auto_select: false,
-        cancel_on_tap_outside: true,
+    const onCredential = (response: CredentialResponse) => {
+      finish(() => {
+        if (response.credential) {
+          resolve(response.credential)
+        } else {
+          reject(new Error('No credential returned from Google.'))
+        }
       })
+    }
+
+    const removeListener = addCredentialListener(onCredential)
+
+    try {
+      if (!isGisInitialized) {
+        initializeGoogleIdentity({
+          client_id: clientId,
+          callback: onCredential,
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        })
+      }
 
       window.google.accounts.id.prompt((notification) => {
         if (settled) return

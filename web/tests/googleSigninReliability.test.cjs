@@ -35,6 +35,7 @@ const { AuthGate, useGoogleAuth } = require('../src/components/AuthGate.tsx')
 const {
   requestGoogleCredential,
   resetGoogleIdentityLoader,
+  initializeGoogleIdentity,
   GooglePromptSuppressedError,
   GooglePromptDismissedError,
   isPromptSuppressedOrDismissed,
@@ -63,6 +64,7 @@ function setupTestEnvironment() {
 
   let gisInitCallback = null
   let gisPromptListener = null
+  let buttonCredential = 'mock-gis-button-jwt-credential'
 
   dom.window.google = {
     accounts: {
@@ -73,9 +75,16 @@ function setupTestEnvironment() {
         prompt(listener) {
           gisPromptListener = listener
         },
-        renderButton(container) {
+        renderButton(container, options) {
           if (container) {
-            container.innerHTML = '<button type="button" aria-label="Sign in with Google">GIS Button</button>'
+            container.innerHTML = '<button type="button" aria-label="Sign in with Google">Sign in with Google</button>'
+            const btn = container.querySelector('button')
+            btn.onclick = () => {
+              if (options?.click_listener) options.click_listener()
+              if (gisInitCallback) {
+                gisInitCallback({ credential: buttonCredential })
+              }
+            }
           }
         },
         cancel() {},
@@ -99,6 +108,9 @@ function setupTestEnvironment() {
     },
     setGisPromptListener: (l) => {
       gisPromptListener = l
+    },
+    setButtonCredential: (token) => {
+      buttonCredential = token
     },
   }
 }
@@ -166,8 +178,9 @@ test('TEST_ONETAP_SUCCESS: One Tap prompt returns credential and unlocks AuthGat
   }
 })
 
-test('TEST_ONETAP_COOLDOWN_FALLBACK: Cooldown onetap.card.prompt.cooldown.2 rejects promptly without 60s hang; manual sign-in remains active without error banner', async () => {
+test('TEST_ONETAP_COOLDOWN_FALLBACK: Cooldown onetap.card.prompt.cooldown.2 rejects promptly without 60s hang; GIS button remains fully functional and unlocks app', async () => {
   const env = setupTestEnvironment()
+  env.setButtonCredential('cooldown-fallback-token')
 
   env.dom.window.google.accounts.id.prompt = (listener) => {
     if (listener) {
@@ -178,6 +191,26 @@ test('TEST_ONETAP_COOLDOWN_FALLBACK: Cooldown onetap.card.prompt.cooldown.2 reje
         isDismissedMoment: () => false,
       })
     }
+  }
+
+  global.fetch = async (url, init) => {
+    if (String(url).includes('/api/auth/session') && init?.method === 'POST') {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sessionToken: 'cooldown-session-token',
+          user: {
+            id: 'usr-cooldown',
+            google_sub: 'sub-cooldown',
+            email: 'cooldown@example.com',
+            role: 'member',
+            access_status: 'active',
+          },
+        }),
+        { status: 200 }
+      )
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200 })
   }
 
   try {
@@ -204,28 +237,23 @@ test('TEST_ONETAP_COOLDOWN_FALLBACK: Cooldown onetap.card.prompt.cooldown.2 reje
     const signInBtn = Array.from(env.dom.window.document.querySelectorAll('button')).find((b) =>
       /Sign in with Google/i.test(b.textContent || '')
     )
-    assert.ok(signInBtn, 'Manual Sign In button must be rendered')
-    assert.equal(signInBtn.disabled, false, 'Manual Sign In button must not be disabled')
+    assert.ok(signInBtn, 'GIS Sign In button must be rendered')
+    assert.equal(signInBtn.disabled, false, 'GIS Sign In button must not be disabled')
 
+    // Click GIS button during One Tap cooldown -> authentication succeeds!
     await act(async () => {
       signInBtn.click()
     })
 
-    assert.equal(
+    assert.ok(
       env.dom.window.document.getElementById('protected-app'),
-      null,
-      'App remains locked without auth'
+      'Child app must unlock via GIS button even when One Tap is in cooldown'
     )
     const statusMsg = env.dom.window.document.querySelector('[role="status"]')
     assert.doesNotMatch(
       statusMsg?.textContent || '',
       /Sign-in failed/i,
       'Prompt cooldown must not display false Sign-in failed error'
-    )
-    assert.equal(
-      signInBtn.disabled,
-      false,
-      'Manual Sign In button remains active for user interaction'
     )
 
     await act(async () => root.unmount())
@@ -366,14 +394,13 @@ test('TEST_GIS_SCRIPT_FAILURE: Script load failure shows recoverable feedback an
   }
 })
 
-test('TEST_MANUAL_SIGNIN_BUTTON: Manual sign-in button triggers authentication exchange and unlocks app', async () => {
+test('TEST_MANUAL_SIGNIN_BUTTON: Official GIS button triggers authentication exchange and unlocks app without requiring One Tap prompt', async () => {
   const env = setupTestEnvironment()
   let promptCalled = false
+  env.setButtonCredential('manual-id-token')
 
   env.dom.window.google.accounts.id.prompt = () => {
     promptCalled = true
-    const cb = env.getGisInitCallback()
-    if (cb) cb({ credential: 'manual-id-token' })
   }
 
   global.fetch = async (url, init) => {
@@ -402,17 +429,18 @@ test('TEST_MANUAL_SIGNIN_BUTTON: Manual sign-in button triggers authentication e
       root.render(React.createElement(AuthGate, null, React.createElement(ChildApp)))
     })
 
-    const signInBtn = Array.from(env.dom.window.document.querySelectorAll('button')).find((b) =>
-      /Sign in with Google/i.test(b.textContent || '')
-    )
-    assert.ok(signInBtn)
+    const gisContainer = env.dom.window.document.getElementById('google-signin-button')
+    assert.ok(gisContainer, '#google-signin-button container must be in DOM')
+
+    const signInBtn = gisContainer.querySelector('button')
+    assert.ok(signInBtn, 'Official GIS button must be rendered inside container')
 
     await act(async () => {
       signInBtn.click()
     })
 
-    assert.equal(promptCalled, true, 'One Tap prompt must be requested')
-    assert.ok(env.dom.window.document.getElementById('protected-app'))
+    assert.equal(promptCalled, false, 'One Tap prompt must NOT be required for manual button authentication')
+    assert.ok(env.dom.window.document.getElementById('protected-app'), 'Child app must unlock on GIS button click')
 
     await act(async () => root.unmount())
   } finally {
@@ -423,11 +451,7 @@ test('TEST_MANUAL_SIGNIN_BUTTON: Manual sign-in button triggers authentication e
 test('TEST_RETRY_AFTER_FAILURE: Server failure displays error, retry succeeds and unlocks AuthGate', async () => {
   const env = setupTestEnvironment()
   let shouldFail = true
-
-  env.dom.window.google.accounts.id.prompt = () => {
-    const cb = env.getGisInitCallback()
-    if (cb) cb({ credential: 'retry-token' })
-  }
+  env.setButtonCredential('retry-token')
 
   global.fetch = async (url, init) => {
     if (String(url).includes('/api/auth/session') && init?.method === 'POST') {
@@ -851,6 +875,64 @@ test('TEST_KEYBOARD_AND_MOBILE_COMPATIBILITY: Sign-in buttons and GIS container 
     )
     assert.ok(manualBtn, 'Manual button must be a native <button>')
     assert.equal(manualBtn.tagName, 'BUTTON', 'Must be interactive button element for keyboard accessibility')
+
+    await act(async () => root.unmount())
+  } finally {
+    env.teardown()
+  }
+})
+
+test('TEST_INITIALIZE_DOES_NOT_OVERWRITE_ACTIVE_CALLBACKS: Subsequent initialize calls and requestGoogleCredential preserve active credential callbacks', async () => {
+  const env = setupTestEnvironment()
+  let cb1Called = false
+  let cb2Called = false
+
+  try {
+    // 1. Initial listener registration
+    initializeGoogleIdentity({
+      client_id: 'test-client-id',
+      callback: (res) => {
+        if (res.credential === 'test-token') cb1Called = true
+      },
+    })
+
+    // 2. Second initialize call (e.g. StrictMode, remount, or secondary component)
+    initializeGoogleIdentity({
+      client_id: 'test-client-id',
+      callback: (res) => {
+        if (res.credential === 'test-token') cb2Called = true
+      },
+    })
+
+    // 3. Dispatch credential through GIS callback
+    const initCb = env.getGisInitCallback()
+    assert.ok(initCb, 'Init callback dispatcher must be set')
+    initCb({ credential: 'test-token' })
+
+    assert.equal(cb1Called, true, 'First callback must be called')
+    assert.equal(cb2Called, true, 'Second callback must also be called')
+  } finally {
+    env.teardown()
+  }
+})
+
+test('TEST_NO_DUPLICATE_CONTROLS: Only the official GIS button is displayed; duplicate legacy button is suppressed', async () => {
+  const env = setupTestEnvironment()
+
+  try {
+    const root = createRoot(env.dom.window.document.getElementById('root'))
+    await act(async () => {
+      root.render(React.createElement(AuthGate, null, React.createElement(ChildApp)))
+    })
+
+    const buttons = Array.from(env.dom.window.document.querySelectorAll('button')).filter((b) =>
+      /Sign in with Google/i.test(b.textContent || b.getAttribute('aria-label') || '')
+    )
+    assert.equal(buttons.length, 1, 'Exactly one primary Google Sign-In control must be rendered')
+    assert.ok(
+      env.dom.window.document.getElementById('google-signin-button')?.contains(buttons[0]),
+      'Rendered button must reside inside #google-signin-button'
+    )
 
     await act(async () => root.unmount())
   } finally {
