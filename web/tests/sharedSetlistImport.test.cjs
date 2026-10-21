@@ -263,3 +263,28 @@ test('represented/raw archives permit clean import; genuine conflicts require ex
   assert.equal(library.songs.some(song => song.id === 'missing'), false)
   assert.equal(hasActionableRecovery(), false)
 })
+
+test('resolved compact decisions do not bypass import quota failures or mutate historical archives', async () => {
+  const { hasActionableRecovery, inspectRecovery, recordRecoveryChoice, recoveryData, RECOVERY_DECISIONS_KEY } = require('../src/utils/syncJournal.ts')
+  const key = 'gtar_sync_recovery:download:quota', raw = JSON.stringify({ songs: [{ id: 'missing', title: 'Missing', rawContent: 'historical' }], setlists: [] })
+  localStorage.setItem(key, raw)
+  const h = host(); h.blocked = () => hasActionableRecovery()
+  const preview = await prepare()
+  await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }), /Resolve editor/)
+  await recordRecoveryChoice(inspectRecovery(), 'keep-current', () => false)
+  const decisions = localStorage.getItem(RECOVERY_DECISIONS_KEY), baseline = localStorage.getItem(LIBRARY_KEY)
+  let applied = 0; h.applied = () => applied++
+  const proto = dom.window.Storage.prototype, set = proto.setItem
+  for (const failure of ['snapshot', 'library']) {
+    proto.setItem = function(k, v) {
+      if ((failure === 'snapshot' && k.startsWith('gtar_sync_recovery:')) || (failure === 'library' && k === LIBRARY_KEY)) throw new DOMException('full', 'QuotaExceededError')
+      return set.call(this, k, v)
+    }
+    try {
+      await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }))
+      assert.equal(applied, 0); assert.equal(localStorage.getItem(LIBRARY_KEY), baseline)
+      assert.equal(recoveryData()[key], raw); assert.equal(localStorage.getItem(RECOVERY_DECISIONS_KEY), decisions)
+      assert.equal(hasActionableRecovery(), false)
+    } finally { proto.setItem = set }
+  }
+})
