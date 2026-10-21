@@ -221,7 +221,7 @@ test('REVISION_COMPARISON & NO_AUTOMATIC_LOCAL_OVERWRITE & RECOVERY_LAZY_DETAIL_
 
   await act(async () => { await new Promise(r => setTimeout(r, 40)) })
 
-  // REVISION_COMPARISON: revision badge and diff notice
+  // REVISION_COMPARISON: revision badge and diff notice with explicit limitation
   const badge = document.querySelector('[data-testid="preview-revision-badge"]')
   assert.ok(badge, 'Preview revision badge exists')
   assert.equal(badge.textContent.trim(), 'r2')
@@ -229,6 +229,8 @@ test('REVISION_COMPARISON & NO_AUTOMATIC_LOCAL_OVERWRITE & RECOVERY_LAZY_DETAIL_
   const staleNotice = document.querySelector('[data-testid="preview-stale-import-notice"]')
   assert.ok(staleNotice, 'Stale import notice exists')
   assert.match(staleNotice.textContent, /r1 → this is r2/)
+  assert.match(staleNotice.textContent, /only revision numbers and metadata can be compared/)
+  assert.match(staleNotice.textContent, /never overwrite existing imported setlists/)
 
   // RECOVERY_LAZY_DETAIL_DISCLOSURE: Chart details element is closed by default
   const details = document.querySelector('details')
@@ -286,12 +288,29 @@ test('PUBLISHER_ONLY_MANAGEMENT & NON_OWNER_ACCESS_DENIED & UNPUBLISH_CONFIRMATI
   assert.ok(unpublishBtn, 'Unpublish button visible for authenticated publisher')
   assert.equal(document.querySelector('[data-testid="unpublish-setlist-btn-cat-other-00000002"]'), null)
 
-  // UNPUBLISH_CONFIRMATION: Clicking unpublish opens confirmation modal dialog
+  // UNPUBLISH_CONFIRMATION: Clicking unpublish opens confirmation modal dialog via showModal()
   await act(async () => unpublishBtn.click())
   const confirmDialog = document.querySelector('[data-testid="setlist-unpublish-confirm-dialog"]')
   assert.ok(confirmDialog, 'Unpublish confirmation dialog opens')
+  assert.equal(confirmDialog.open, true, 'Dialog open property set via showModal')
   assert.match(confirmDialog.textContent, /Remove "Publisher Setlist" \(r1\) from the Shared Catalog\?/)
   assert.match(confirmDialog.textContent, /Rename and permanent deletion are deferred backend tasks/)
+
+  // UNPUBLISH_MODAL_ESCAPE_CANCEL & UNPUBLISH_MODAL_FOCUS_RESTORATION
+  const cancelBtn = document.querySelector('[data-testid="setlist-unpublish-cancel"]')
+  assert.ok(cancelBtn, 'Cancel button exists in unpublish dialog')
+  await act(async () => cancelBtn.click())
+  assert.equal(document.querySelector('[data-testid="setlist-unpublish-confirm-dialog"]'), null, 'Dialog dismissed on cancel')
+  assert.equal(document.activeElement, unpublishBtn, 'Focus restored to triggering unpublish button')
+
+  // UNPUBLISH_MODAL_ESCAPE_CANCEL: native cancel event closes dialog
+  await act(async () => unpublishBtn.click())
+  const reopenDialog = document.querySelector('[data-testid="setlist-unpublish-confirm-dialog"]')
+  assert.ok(reopenDialog)
+  const cancelEvent = new dom.window.Event('cancel', { cancelable: true })
+  await act(async () => { reopenDialog.dispatchEvent(cancelEvent) })
+  assert.equal(document.querySelector('[data-testid="setlist-unpublish-confirm-dialog"]'), null, 'Dialog dismissed on native cancel event')
+  assert.equal(document.activeElement, unpublishBtn, 'Focus restored to triggering unpublish button after Escape cancel')
 })
 
 test('CROSS_USER_PUBLICATION_ISOLATION', () => {

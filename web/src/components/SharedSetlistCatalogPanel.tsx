@@ -1,5 +1,5 @@
 import { CatalogSetlistPreview } from './CatalogSetlistPreview'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { RefreshCw, ListMusic, ChevronLeft, ChevronRight, ArrowUpCircle, AlertTriangle, X } from 'lucide-react'
 import {
@@ -100,6 +100,23 @@ export function SharedSetlistCatalogPanel({
   const [unpublishError, setUnpublishError] = useState<string | null>(null)
   const [unpublishFeedback, setUnpublishFeedback] = useState<string | null>(null)
 
+  const unpublishDialogRef = useRef<HTMLDialogElement>(null)
+  const unpublishTriggerRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (unpublishTarget) {
+      unpublishDialogRef.current?.showModal()
+    }
+  }, [unpublishTarget])
+
+  function closeUnpublishDialog() {
+    if (isUnpublishing) return
+    unpublishDialogRef.current?.close()
+    setUnpublishTarget(null)
+    setUnpublishError(null)
+    unpublishTriggerRef.current?.focus()
+  }
+
   // Stable origin scope for catalogSource comparison
   const scope = typeof window !== 'undefined' ? window.location.origin : ''
 
@@ -119,7 +136,9 @@ export function SharedSetlistCatalogPanel({
       await sendPublicationIntent(currentUserId, own.sourceId, withPending)
       onUnpublished?.(unpublishTarget.id)
       const name = unpublishTarget.name
+      unpublishDialogRef.current?.close()
       setUnpublishTarget(null)
+      unpublishTriggerRef.current?.focus()
       catalog.reload()
       setUnpublishFeedback(`"${name}" has been unpublished.`)
       setTimeout(() => setUnpublishFeedback(null), 5000)
@@ -254,7 +273,8 @@ export function SharedSetlistCatalogPanel({
                         className="min-h-11 px-2 py-1 rounded-lg border border-app-border text-app-muted hover:text-status-error hover:border-status-error/40 font-mono text-[10px] font-bold transition-all cursor-pointer"
                         title={`Unpublish "${setlist.name}"`}
                         aria-label={`Unpublish ${setlist.name}`}
-                        onClick={() => {
+                        onClick={(e) => {
+                          unpublishTriggerRef.current = e.currentTarget
                           setUnpublishTarget(setlist)
                           setUnpublishError(null)
                         }}
@@ -289,11 +309,15 @@ export function SharedSetlistCatalogPanel({
       {/* Publisher Unpublish Confirmation Dialog */}
       {unpublishTarget && (
         <dialog
-          open
+          ref={unpublishDialogRef}
           data-testid="setlist-unpublish-confirm-dialog"
           aria-labelledby="unpublish-dialog-title"
           aria-modal="true"
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl z-50 flex flex-col overflow-hidden"
+          onCancel={(e) => {
+            e.preventDefault()
+            closeUnpublishDialog()
+          }}
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl z-50 flex flex-col overflow-hidden backdrop:bg-black/60"
         >
           <div className="p-4 border-b border-app-border/60 flex items-center justify-between">
             <h2 id="unpublish-dialog-title" className="text-sm font-bold flex items-center gap-2">
@@ -302,10 +326,7 @@ export function SharedSetlistCatalogPanel({
             </h2>
             <button
               type="button"
-              onClick={() => {
-                setUnpublishTarget(null)
-                setUnpublishError(null)
-              }}
+              onClick={closeUnpublishDialog}
               className="p-1 rounded-lg hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer"
               aria-label="Cancel"
               disabled={isUnpublishing}
@@ -343,10 +364,7 @@ export function SharedSetlistCatalogPanel({
               type="button"
               data-testid="setlist-unpublish-cancel"
               disabled={isUnpublishing}
-              onClick={() => {
-                setUnpublishTarget(null)
-                setUnpublishError(null)
-              }}
+              onClick={closeUnpublishDialog}
               className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer font-mono text-xs font-bold"
             >
               Cancel

@@ -102,16 +102,21 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
           </span>
           <span className="text-app-muted">{preview.snapshot.entries.length} songs</span>
 
-          {/* Stale imported copies: show revision diff */}
+          {/* Stale imported copies: show revision metadata comparison and explicit limitation */}
           {staleImports.length > 0 && (
-            <span
+            <div
               data-testid="preview-stale-import-notice"
-              className="px-2 py-0.5 rounded bg-status-warning/15 border border-status-warning/30 text-status-warning"
+              className="w-full flex flex-col gap-1 p-2 rounded bg-status-warning/10 border border-status-warning/30 text-status-warning text-xs font-mono"
               role="status"
               aria-label={`You have ${staleImports.length} imported copy at an earlier revision`}
             >
-              Your copy: r{staleImports[0].catalogSource!.revision} → this is r{revision}
-            </span>
+              <div className="font-bold">
+                Your copy: r{staleImports[0].catalogSource!.revision} → this is r{revision}
+              </div>
+              <p className="text-[11px] text-app-muted font-sans leading-relaxed">
+                Notice: Historical song content and original imported snapshots are not retained in catalog lineage; only revision numbers and metadata can be compared. Differences in songs, ordering, or chart content require manual review. Re-import creates an independent personal copy and will never overwrite existing imported setlists.
+              </p>
+            </div>
           )}
 
           {/* Up-to-date imported copies */}
