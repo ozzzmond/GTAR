@@ -647,6 +647,118 @@ async function catalogPanel() {
 }
 const byTestId = id => document.querySelector(`[data-testid="${id}"]`)
 
+const journalPrefix = 'gtar_setlist_publication_v1:account-a:'
+const recoveryButtons = () => [...document.querySelectorAll('button')].filter(b => b.textContent.startsWith('Recover unpublish:'))
+function pendingDelete(sourceId = 'set-a', account = 'account-a', publicationId = id) {
+  const link = { ...confirmedLink(), result: { id: publicationId, revision: 1, unpublished: false } }
+  link.pending = api.makePublicationIntent(link, undefined, true)
+  api.savePublicationLink(account, sourceId, link)
+  return link
+}
+const storageSnapshot = () => Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)]))
+
+for (const scenario of ['MALFORMED_FIRST_ENTRY_VALID_SECOND', 'VALID_FIRST_MALFORMED_SECOND',
+  'MULTIPLE_MALFORMED_ENTRIES', 'MALFORMED_URI_ENCODING', 'NONCANONICAL_URI_ENCODING', 'INVALID_JOURNAL_JSON']) {
+  test(`${scenario}: discovers exact pending DELETE without journal mutation and reports unresolved corruption`, async () => {
+    if (scenario === 'VALID_FIRST_MALFORMED_SECOND') pendingDelete()
+    localStorage.setItem(journalPrefix + (scenario === 'MALFORMED_URI_ENCODING' ? '%E0%A4%A'
+      : scenario === 'NONCANONICAL_URI_ENCODING' ? '%73et-a' : 'broken'),
+      scenario === 'INVALID_JOURNAL_JSON' ? '{invalid JSON' : JSON.stringify({ publicationKey: 'invalid' }))
+    if (scenario === 'MULTIPLE_MALFORMED_ENTRIES') {
+      localStorage.setItem(journalPrefix + 'broken-json', '{')
+      localStorage.setItem(journalPrefix + '%', 'untouched malformed URI')
+      // A corrupt direct lookup must not hide a different valid source link.
+      localStorage.setItem(journalPrefix + id, '{')
+    }
+    if (scenario !== 'VALID_FIRST_MALFORMED_SECOND') pendingDelete()
+    const before = storageSnapshot()
+    const original = savedLink().pending
+    await catalogPanel()
+    assert.equal(recoveryButtons().length, 1)
+    assert.match(byTestId('setlist-recovery-warning').textContent, /incomplete.*Preserve browser data/)
+    assert.equal(byTestId('setlist-unpublish-feedback'), null)
+    assert.deepEqual(storageSnapshot(), before)
+    assert.equal(calls.filter(c => c.method === 'DELETE').length, 0)
+    await click(recoveryButtons()[0])
+    await click(byTestId('setlist-unpublish-confirm'))
+    const deletes = calls.filter(c => c.method === 'DELETE')
+    assert.equal(deletes.length, 1)
+    assert.equal(deletes[0].headers['Idempotency-Key'], original.key)
+    assert.equal(deletes[0].body, JSON.stringify(original.body))
+    assert.equal(savedLink().result.unpublished, true)
+    assert.ok(byTestId('setlist-recovery-warning'), 'unresolved corruption remains visible after valid recovery')
+    for (const [key, raw] of Object.entries(before)) {
+      if (key !== journalPrefix + 'set-a') assert.equal(localStorage.getItem(key), raw)
+    }
+  })
+}
+
+test('VALID_PENDING_DELETE_DISCOVERY, CROSS_ACCOUNT_ISOLATION, NO_DUPLICATE_RECOVERY_ACTIONS and NO_JOURNAL_MUTATION', async () => {
+  const original = pendingDelete('source:with / spaces')
+  api.savePublicationLink('account-a', 'duplicate-source', original)
+  pendingDelete('foreign-source', 'account-a-extra', 'foreign_publication_123')
+  pendingDelete('foreign-source', 'account-b', 'foreign_publication_456')
+  localStorage.setItem('gtar_setlist_publication_v1:account-b:%', '{')
+  const before = storageSnapshot()
+  await catalogPanel()
+  assert.equal(recoveryButtons().length, 1)
+  assert.match(recoveryButtons()[0].textContent, new RegExp(id))
+  assert.equal(byTestId('setlist-recovery-warning'), null)
+  assert.deepEqual(storageSnapshot(), before)
+  await act(async () => root.render(React.createElement(SharedSetlistCatalogPanel, { currentUserId: 'account-b' })))
+  assert.equal(recoveryButtons().length, 1)
+  assert.match(recoveryButtons()[0].textContent, /foreign_publication_456/)
+  assert.deepEqual(storageSnapshot(), before)
+})
+
+test('multiple valid DELETE intents survive interleaved corruption and a per-entry storage read failure', async t => {
+  pendingDelete('unreadable-source', 'account-a', 'unreadable_publication_123')
+  pendingDelete('set-a')
+  localStorage.setItem(journalPrefix + 'broken', '{')
+  pendingDelete('another-source', 'account-a', 'second_publication_123')
+  const mismatch = pendingDelete('mismatched-source', 'account-a', 'mismatched_publication_123')
+  mismatch.pending.id = id
+  api.savePublicationLink('account-a', 'mismatched-source', mismatch)
+  const before = storageSnapshot()
+  const getItem = dom.window.Storage.prototype.getItem
+  t.mock.method(dom.window.Storage.prototype, 'getItem', function (key) {
+    if (key === journalPrefix + 'unreadable-source') throw new Error('storage read denied')
+    return getItem.call(this, key)
+  })
+  await catalogPanel()
+  assert.deepEqual(recoveryButtons().map(b => b.textContent), [
+    `Recover unpublish: ${id}`, 'Recover unpublish: second_publication_123',
+  ])
+  assert.ok(byTestId('setlist-recovery-warning'))
+  t.mock.restoreAll()
+  assert.deepEqual(storageSnapshot(), before)
+})
+
+for (const failure of ['length', 'key', 'getItem']) {
+  test(`STORAGE_ACCESS_FAILURE_HANDLING: ${failure} failure reports incomplete scan without mutation`, async t => {
+    pendingDelete()
+    const before = storageSnapshot()
+    const prototype = dom.window.Storage.prototype
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, failure)
+    if (failure === 'length') {
+      Object.defineProperty(prototype, 'length', { configurable: true, get() { throw new Error('storage denied') } })
+      t.after(() => Object.defineProperty(prototype, 'length', descriptor))
+    } else {
+      t.mock.method(prototype, failure, function (...args) {
+        if (failure !== 'getItem' || args[0].startsWith(journalPrefix)) throw new Error('storage denied')
+        return descriptor.value.apply(this, args)
+      })
+    }
+    await catalogPanel()
+    assert.equal(recoveryButtons().length, 0)
+    assert.match(byTestId('setlist-recovery-warning').textContent, /incomplete.*Preserve browser data/)
+    assert.equal(byTestId('setlist-unpublish-feedback'), null)
+    Object.defineProperty(prototype, failure, descriptor)
+    assert.deepEqual(storageSnapshot(), before)
+    assert.equal(calls.filter(c => c.method === 'DELETE').length, 0)
+  })
+}
+
 test('M1_UNPUBLISH_TIMEOUT_SAFE_RETRY survives panel reload with missing cloud row', async () => {
   api.savePublicationLink('account-a', 'set-a', confirmedLink())
   let removed = false

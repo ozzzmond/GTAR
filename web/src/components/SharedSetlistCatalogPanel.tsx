@@ -38,55 +38,47 @@ function savedImportRevision(
   return match?.catalogSource?.revision
 }
 
-/**
- * Finds the publication link for a given catalog setlist in the publisher's local journal.
- * Scans both direct catalog ID key and all stored publication links for this user.
- */
-function findOwnPublicationLink(
-  currentUserId: string,
-  catalogSetlistId: string,
-): { sourceId: string; link: import('../utils/sharedSetlistPublishing').PublicationLink } | null {
-  try {
-    // 1. Direct match by catalog setlist ID
-    const direct = readPublicationLink(currentUserId, catalogSetlistId)
-    if (direct?.result?.id === catalogSetlistId && !direct.result.unpublished) {
-      return { sourceId: catalogSetlistId, link: direct }
-    }
-
-    // 2. Scan localStorage keys for this user's publication links
-    const prefix = `gtar_setlist_publication_v1:${encodeURIComponent(currentUserId)}:`
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && k.startsWith(prefix)) {
-        const sourceId = decodeURIComponent(k.slice(prefix.length))
-        const link = readPublicationLink(currentUserId, sourceId)
-        if (link?.result?.id === catalogSetlistId && !link.result.unpublished) {
-          return { sourceId, link }
-        }
-      }
-    }
-  } catch {
-    return null
-  }
-  return null
-}
-
-// Pending deletes remain recoverable even when a committed timeout has already
-// removed the row from the active catalog. No replacement intent is generated.
-function pendingUnpublishes(account: string): PublishedSetlist[] {
-  const rows: PublishedSetlist[] = []
+// Read-only scan: one corrupt entry must not hide other saved requests. An
+// incomplete scan is always reported; source records remain untouched.
+function scanPublicationLinks(account: string) {
+  const entries: { sourceId: string; link: import('../utils/sharedSetlistPublishing').PublicationLink }[] = []
   const prefix = `gtar_setlist_publication_v1:${encodeURIComponent(account)}:`
+  let incomplete = false
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
       if (!key?.startsWith(prefix)) continue
-      const link = readPublicationLink(account, decodeURIComponent(key.slice(prefix.length)))
-      if (link?.pending?.method === 'DELETE' && link.result && !link.result.unpublished && link.pending.id === link.result.id) {
-        rows.push({ ...link.result, name: 'Pending unpublish', occurrences: 0, updated_at: '' })
-      }
+      try {
+        const sourceId = decodeURIComponent(key.slice(prefix.length))
+        // Reject aliases rather than reading a different record via re-encoding.
+        if (encodeURIComponent(sourceId) !== key.slice(prefix.length)) throw new Error('Invalid journal key')
+        const link = readPublicationLink(account, sourceId)
+        if (link) entries.push({ sourceId, link })
+        else incomplete = true
+      } catch { incomplete = true }
     }
-  } catch { /* Invalid journals are preserved for operator recovery. */ }
-  return rows
+  } catch { incomplete = true }
+  return { entries, incomplete }
+}
+
+/** Finds an owned publication without letting unrelated corrupt records abort lookup. */
+function findOwnPublicationLink(currentUserId: string, catalogSetlistId: string) {
+  const { entries } = scanPublicationLinks(currentUserId)
+  const matches = entries.filter(({ link }) => link.result?.id === catalogSetlistId && !link.result.unpublished)
+  return matches.find(({ sourceId }) => sourceId === catalogSetlistId) || matches[0] || null
+}
+
+// Pending deletes remain recoverable even when a committed timeout has already
+// removed the row from the active catalog. No replacement intent is generated.
+function pendingUnpublishes(account: string) {
+  const { entries, incomplete } = scanPublicationLinks(account)
+  const rows = new Map<string, PublishedSetlist>()
+  for (const { link } of entries) {
+    if (link.pending?.method === 'DELETE' && link.result && !link.result.unpublished && link.pending.id === link.result.id) {
+      rows.set(link.result.id, { ...link.result, name: 'Pending unpublish', occurrences: 0, updated_at: '' })
+    }
+  }
+  return { rows: [...rows.values()], incomplete }
 }
 
 /**
@@ -134,6 +126,8 @@ export function SharedSetlistCatalogPanel({
     setUnpublishError(null)
     unpublishTriggerRef.current?.focus()
   }
+
+  const recovery = currentUserId ? pendingUnpublishes(currentUserId) : { rows: [], incomplete: false }
 
   // Stable origin scope for catalogSource comparison
   const scope = typeof window !== 'undefined' ? window.location.origin : ''
@@ -193,7 +187,12 @@ export function SharedSetlistCatalogPanel({
         </div>
       )}
 
-      {currentUserId && pendingUnpublishes(currentUserId).map(row => (
+      {recovery.incomplete && (
+        <p role="alert" data-testid="setlist-recovery-warning" className="text-xs text-status-warning">
+          Publication recovery scan is incomplete. Preserve browser data and contact the operator for manual recovery or export. Some saved operations may be unavailable.
+        </p>
+      )}
+      {recovery.rows.map(row => (
         <button type="button" key={row.id} className="min-h-11 px-3 py-2 border border-app-border rounded-xl text-xs"
           onClick={event => { unpublishTriggerRef.current = event.currentTarget; setUnpublishTarget(row); setUnpublishError(null) }}>
           Recover unpublish: {row.id}
