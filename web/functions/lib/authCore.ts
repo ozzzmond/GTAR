@@ -1,7 +1,7 @@
 import type { AbuseEnv } from './abuseProtection.ts'
 import { API_SECURITY_HEADERS } from './securityHeaders.ts'
 /**
- * GTAR Server-Authoritative Account & Access Control (v1.0.136-dev.3)
+ * GTAR Server-Authoritative Account & Access Control (v1.0.139-dev.1)
  * Cloudflare Pages Functions + D1 SQLite Core Library
  */
 
