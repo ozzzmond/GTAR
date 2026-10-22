@@ -13,7 +13,7 @@ const webDir = path.resolve(__dirname, '..')
 const { parseDevTag, inspectCheckpoint, main: releaseMetadataMain, HISTORICAL_TAG_EXCEPTIONS } = require('../../.github/release_metadata.cjs')
 const { resolveReleaseIdentity, resolveDevIdentity, resolveDeploymentId, getCommittedDevVersion } = require('../../.github/release_identity.cjs')
 const canonicalDevVersion = getCommittedDevVersion(root)
-assert.equal(canonicalDevVersion, '1.0.136-dev.1', 'Canonical DEV metadata must match target DEV.1 release')
+assert.equal(canonicalDevVersion, '1.0.136-dev.2', 'Canonical DEV metadata must match target DEV.2 release')
 
 const ts = require('typescript')
 for (const ext of ['.ts', '.tsx']) {
