@@ -1216,3 +1216,46 @@ test('NO_TIMER_OR_SOCKET_LEAK', async () => {
     }
   }
 })
+
+test('EXPLICIT_END_DURING_RESTORED_RECOVERY_DOES_NOT_RECREATE', async () => {
+  const store = new Map()
+  withSessionStorage(store)
+  store.set('gtar_cast2_receiver_session', JSON.stringify({ ref: '1'.repeat(64), credential: 'b'.repeat(64), expiresAt: 10_000_000 }))
+  let createCalls = 0, revokeCalls = 0
+  let endTriggered = false
+  let clientRef = null
+  try {
+    const client = new Cast2Client('receiver', {
+      now: () => 1000,
+      post: async path => {
+        if (path === '/status') return { sessionId: '1'.repeat(64), state: 'WAITING_FOR_CONTROLLER', inboundSequence: 0, expiresAt: 10_000_000 }
+        if (path === '/revoke') {
+          revokeCalls++
+          if (!endTriggered && clientRef) {
+            endTriggered = true
+            await clientRef.end()
+          }
+          return { state: 'REVOKED' }
+        }
+        if (path === '/create') {
+          createCalls++
+          return { ref: '2'.repeat(64), receiverCredential: 'c'.repeat(64), pin: '222222', expiresAt: 10_000_000, pairingExpiresAt: 9_000_000 }
+        }
+        return {}
+      },
+      socket: () => ({}),
+    }, () => {})
+    clientRef = client
+
+    assert.equal(client.restore(), true)
+    await client.tick()
+
+    assert.equal(revokeCalls >= 1, true, 'Revoke must have been called')
+    assert.equal(createCalls, 0, 'No fresh pairing may be created after explicit End session')
+    assert.equal(client.view.state, 'ENDED', 'Terminal state must remain ENDED')
+    assert.equal(store.has('gtar_cast2_receiver_session'), false, 'Session storage must be cleared')
+  } finally {
+    delete globalThis.window
+  }
+})
+
