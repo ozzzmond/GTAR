@@ -23,6 +23,10 @@ web/node_modules/
 web/dist/
 web/dev-dist/
 web/.env.local
+web/.env
+web/.env.*
+!web/.env.example
+web/.dev.vars
 
 .npm-cache/
 lint-results.json

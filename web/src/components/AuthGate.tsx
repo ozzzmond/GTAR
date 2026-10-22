@@ -1,7 +1,7 @@
 import { isPresentationLocation } from '../utils/presentationRoute'
 import { AuthContext, useOptionalGoogleAuth } from '../utils/authContext'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { allowLocalBypass, getUserRole, type UserRole } from '../utils/authPolicy'
+import { allowLocalBypass, type UserRole } from '../utils/authPolicy'
 import {
   loadGoogleIdentity,
   getStoredSessionStatus,
@@ -68,7 +68,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const inFlightCredentialRef = useRef<string | null>(null)
   const gisRenderedRef = useRef(false)
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-  const configuredEmails = import.meta.env.VITE_AUTHORIZED_EMAILS as string | undefined
 
   const isPresentationRoute =
     typeof window !== 'undefined' && isPresentationLocation(window.location)
@@ -91,9 +90,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (session.role === 'member') return 'USER'
     if (session.user.role === 'admin') return 'SUPER_ADMIN'
     if (session.user.role === 'member') return 'USER'
-    // Non-authoritative legacy helper fallback
-    return getUserRole(session.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-  }, [session, bypass, canBypass, configuredEmails])
+    // No server role: least privilege; the client never elevates from local data
+    return 'USER'
+  }, [session, bypass, canBypass])
 
   const isSuperAdmin = role === 'SUPER_ADMIN'
   const permitted = !!session && validSession(session) && hasServerApproval(session) && accessStatus === 'active'
@@ -447,18 +446,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
       return
     }
 
-    if (candidate.access_status !== 'denied' && candidate.access_status !== 'pending') {
-      const candidateRole = getUserRole(candidate.user.email, import.meta.env.VITE_ROOT_ADMIN_EMAIL, configuredEmails)
-      if (candidateRole === 'NONE' && configuredEmails !== undefined) {
-        saveGoogleSession(null)
-        if (generation === epoch.current) {
-          setError('Access revoked. Your account is not on the authorized whitelist.')
-          setChecking(false)
-        }
-        return
-      }
-    }
-
     // Unlock immediately from local server-backed durable session
     if (generation === epoch.current) {
       setSession(candidate)
@@ -483,7 +470,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // This is a generation counter, not a DOM ref: invalidate the current epoch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Capturing the mount value would revive stale async work.
     return () => { isMountedRef.current = false; epoch.current++ }
-  }, [backgroundRecheck, configuredEmails])
+  }, [backgroundRecheck])
 
   // Load Google Identity Services SDK
   const loadSdk = useCallback((forceRetry = false) => {

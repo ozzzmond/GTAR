@@ -60,8 +60,6 @@
       },
       "vars": {
         "VITE_GOOGLE_CLIENT_ID": "895835718654-8bru1vdlj2otgq5dk46h76nilqagg421.apps.googleusercontent.com",
-        "VITE_ROOT_ADMIN_EMAIL": "jlopez3rd@gmail.com",
-        "VITE_AUTHORIZED_EMAILS": "jlopez3rd@gmail.com,jlopezturk@gmail.com,akojep@gmail.com,jajamorano@gmail.com,johncriscaculitan01@gmail.com,michael.intal@gmail.com,princediaznarciso@gmail.com",
         "CAST2_MODE": "reviewed-v1",
         "CAST2_ORIGIN": "https://dev.gtar-web.pages.dev",
         "SHARED_SETLISTS_ENABLED": "phase-a-v1"

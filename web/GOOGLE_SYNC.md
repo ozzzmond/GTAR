@@ -22,8 +22,8 @@ prerequisites](README.md).
 Sign-in obtains a Google ID token and sends it to `/api/auth/session`. The server
 verifies the identity and authoritative D1 account/access status, then issues a
 session token. Pending or denied accounts see their respective access screens;
-active accounts can use the app. `VITE_AUTHORIZED_EMAILS` supports client-side
-role/allowlist behavior; it does not replace server approval or D1 authorization.
+active accounts can use the app. Roles and access come only from the server (D1);
+the client keeps no email allowlist.
 
 Sessions are retained in browser sessionStorage and rechecked against the server.
 Sign-out or an invalid/expired session locks the client while retaining device
