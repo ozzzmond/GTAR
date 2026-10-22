@@ -11,7 +11,6 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useOptionalGoogleAuth } from '../utils/authContext'
-import { DEFAULT_ROOT_ADMIN } from '../utils/authPolicy'
 
 interface AdminUser {
   id: string
@@ -49,8 +48,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const auth = useOptionalGoogleAuth()
   const sessionToken = auth?.session?.sessionToken || auth?.session?.idToken
   const currentEmail = auth?.session?.user?.email
-
-  const rootAdmin = (import.meta.env.VITE_ROOT_ADMIN_EMAIL as string | undefined) || DEFAULT_ROOT_ADMIN
 
   const notifyChange = useCallback(() => {
     onUpdateUsers?.()
@@ -311,7 +308,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
           ) : (
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {filteredUsers.map((user) => {
-                const isRoot = user.email.toLowerCase() === rootAdmin.toLowerCase()
+                // Server role is authoritative; every admin account is protected in the UI
+                const isRoot = user.role === 'admin'
                 const isSelf = user.email.toLowerCase() === (currentEmail || '').toLowerCase()
                 const isBusy = actionId === user.id
 

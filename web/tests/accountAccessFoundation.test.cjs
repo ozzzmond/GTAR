@@ -11,7 +11,7 @@ for (const extension of ['.ts', '.tsx']) {
           .readFileSync(filename, 'utf8')
           .replaceAll(
             'import.meta.env',
-            '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-test-id",VITE_AUTHORIZED_EMAILS:"jlopez3rd@gmail.com",VITE_ROOT_ADMIN_EMAIL:"jlopez3rd@gmail.com"})'
+            '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-test-id"})'
           ),
         {
           compilerOptions: {
@@ -289,7 +289,7 @@ test('TARGETED: ACTIVE_ACCESS allows application rendering for users with access
     {
       id: 'usr-1',
       sub: 'google-sub-1',
-      email: 'jlopez3rd@gmail.com',
+      email: 'owner@example.com',
       role: 'admin',
       access_status: 'active',
     },
@@ -598,7 +598,7 @@ test('TARGETED: PROFILE_PENDING_BADGE and GREEN_STATUS_DOT_PRESERVED', async () 
     {
       id: 'admin-1',
       sub: 'google-sub-admin',
-      email: 'jlopez3rd@gmail.com',
+      email: 'owner@example.com',
       role: 'admin',
       access_status: 'active',
     },

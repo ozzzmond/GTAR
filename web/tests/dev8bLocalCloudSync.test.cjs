@@ -12,7 +12,7 @@ for (const extension of ['.ts', '.tsx']) {
           .readFileSync(filename, 'utf8')
           .replaceAll(
             'import.meta.env',
-            '({DEV:true,VITE_GOOGLE_CLIENT_ID:"client-test-id",VITE_AUTHORIZED_EMAILS:"jlopez3rd@gmail.com",VITE_ROOT_ADMIN_EMAIL:"jlopez3rd@gmail.com"})'
+            '({DEV:true,VITE_GOOGLE_CLIENT_ID:"client-test-id"})'
           ),
         {
           compilerOptions: {
@@ -191,7 +191,7 @@ test('4: D1 schema operations support both Songbook and Setlist (DEV7) sync with
   await insertUser(mockDb, {
     id: userId,
     google_sub: 'sub_123',
-    email: 'jlopez3rd@gmail.com',
+    email: 'owner@example.com',
     display_name: 'Tester',
     picture_url: null,
     role: 'admin',

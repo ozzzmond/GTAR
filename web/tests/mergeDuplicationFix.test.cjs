@@ -18,7 +18,7 @@ for (const extension of [".ts", ".tsx"]) {
           .readFileSync(filename, "utf8")
           .replaceAll(
             "import.meta.env",
-            '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-test-id",VITE_AUTHORIZED_EMAILS:"jlopez3rd@gmail.com",VITE_ROOT_ADMIN_EMAIL:"jlopez3rd@gmail.com"})'
+            '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-test-id"})'
           ),
         {
           compilerOptions: {

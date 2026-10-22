@@ -5,7 +5,7 @@ const ts = require('typescript')
 
 for (const extension of ['.ts', '.tsx']) {
   require.extensions[extension] = (module, filename) => module._compile(
-    ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-id-123",VITE_AUTHORIZED_EMAILS:"jlopez3rd@gmail.com, bandmate@gmail.com",VITE_ROOT_ADMIN_EMAIL:"jlopez3rd@gmail.com"})'), {
+    ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-id-123"})'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true }
     }).outputText, filename
   )
@@ -26,7 +26,7 @@ const {
   SESSION_STORAGE_KEY,
   LEGACY_STORAGE_KEY,
 } = require('../src/utils/googleAuth.ts')
-const { allowLocalBypass, authorizedEmail, getUserRole } = require('../src/utils/authPolicy.ts')
+const { allowLocalBypass } = require('../src/utils/authPolicy.ts')
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
@@ -68,7 +68,7 @@ test('1. First successful login creates 30-day durable session with normalized i
 test('2. Online renewal extends 30-day window from current time while preserving initial authentication time', () => {
   const t0 = Date.now()
   const t1 = t0 + 5 * 86400000 // 5 days later
-  const original = createDurableSession({ sub: 'owner-1', email: 'jlopez3rd@gmail.com' }, 'token-1', t0)
+  const original = createDurableSession({ sub: 'owner-1', email: 'owner@example.com' }, 'token-1', t0)
   const renewed = renewDurableSession(original, t1)
 
   assert.equal(renewed.authenticatedAt, t0)
@@ -185,7 +185,7 @@ test('5. App mount with valid server-backed session unlocks immediately and rend
         user: {
           id: 'admin-id',
           google_sub: 'admin-sub',
-          email: 'jlopez3rd@gmail.com',
+          email: 'owner@example.com',
           display_name: 'Admin',
           picture_url: null,
           role: 'admin',
@@ -195,7 +195,7 @@ test('5. App mount with valid server-backed session unlocks immediately and rend
     })
 
     const session = createDurableSession(
-      { id: 'admin-id', sub: 'admin-sub', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' },
+      { id: 'admin-id', sub: 'admin-sub', email: 'owner@example.com', role: 'admin', access_status: 'active' },
       undefined,
       Date.now(),
       { sessionToken: 'server-session-token-123', role: 'admin', access_status: 'active' }
@@ -225,13 +225,14 @@ test('5. App mount with valid server-backed session unlocks immediately and rend
   }
 })
 
-test('6. Whitelist revocation locks gate and purges unauthorized session', async () => {
+test('6. Server-approved member without any client email list unlocks; client never revokes from local data', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
   const prevWindow = global.window
   const prevDoc = global.document
   const prevLocal = global.localStorage
   const prevSession = global.sessionStorage
   const prevAct = global.IS_REACT_ACT_ENVIRONMENT
+  const prevFetch = global.fetch
 
   try {
     Object.assign(global, {
@@ -240,19 +241,22 @@ test('6. Whitelist revocation locks gate and purges unauthorized session', async
       localStorage: dom.window.localStorage,
       sessionStorage: dom.window.sessionStorage,
       IS_REACT_ACT_ENVIRONMENT: true,
+      fetch: async () => new Response(JSON.stringify({
+        success: true,
+        user: { id: 'member-id', google_sub: 'member-sub', email: 'stranger@example.com', display_name: 'Member', picture_url: null, role: 'member', access_status: 'active' },
+      })),
     })
 
-    // Session exists for unapproved outsider
-    const outsiderSession = createDurableSession(
-      { id: 'outsider-id', sub: 'outsider-sub', email: 'stranger@example.com', role: 'member', access_status: 'active' },
+    const memberSession = createDurableSession(
+      { id: 'member-id', sub: 'member-sub', email: 'stranger@example.com', role: 'member', access_status: 'active' },
       undefined,
       Date.now(),
-      { sessionToken: 'server-token-outsider', role: 'member', access_status: 'active' }
+      { sessionToken: 'server-token-member', role: 'member', access_status: 'active' }
     )
-    dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(outsiderSession))
+    dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(memberSession))
 
     function SongbookApp() {
-      return React.createElement('div', { id: 'songbook' }, 'Should Not Render')
+      return React.createElement('div', { id: 'songbook' }, 'Member Songbook')
     }
 
     const root = createRoot(dom.window.document.getElementById('root'))
@@ -260,10 +264,9 @@ test('6. Whitelist revocation locks gate and purges unauthorized session', async
       root.render(React.createElement(AuthGate, null, React.createElement(SongbookApp)))
     })
 
-    assert.match(dom.window.document.body.textContent, /Owner Access/)
-    assert.match(dom.window.document.body.textContent, /Access revoked/)
-    assert.doesNotMatch(dom.window.document.body.textContent, /Should Not Render/)
-    assert.equal(dom.window.localStorage.getItem(SESSION_STORAGE_KEY), null)
+    assert.match(dom.window.document.body.textContent, /Member Songbook/)
+    assert.doesNotMatch(dom.window.document.body.textContent, /Access revoked|whitelist/i)
+    assert.notEqual(dom.window.localStorage.getItem(SESSION_STORAGE_KEY), null)
     await act(async () => root.unmount())
   } finally {
     dom.window.close()
@@ -272,6 +275,7 @@ test('6. Whitelist revocation locks gate and purges unauthorized session', async
     global.localStorage = prevLocal
     global.sessionStorage = prevSession
     global.IS_REACT_ACT_ENVIRONMENT = prevAct
+    global.fetch = prevFetch
   }
 })
 
@@ -298,7 +302,7 @@ test('7. Expired session locks gate without wiping stored user library data', as
     // Expired session (> 30 days old)
     const expiredSession = {
       version: 1,
-      user: { sub: 'user-sub', email: 'jlopez3rd@gmail.com' },
+      user: { sub: 'user-sub', email: 'owner@example.com' },
       authenticatedAt: Date.now() - 40 * 86400000,
       lastVerifiedAt: Date.now() - 40 * 86400000,
       localExpiresAt: Date.now() - 10 * 86400000,
@@ -383,7 +387,7 @@ test('9. Background recheck preserves server-backed durable session on transient
 
     // Valid 30-day server-backed durable session encountering transient 503
     const validDurable = createDurableSession(
-      { id: 'user-id-1', sub: 'user-sub', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' },
+      { id: 'user-id-1', sub: 'user-sub', email: 'owner@example.com', role: 'admin', access_status: 'active' },
       undefined,
       Date.now(),
       { sessionToken: 'server-session-token-123', role: 'admin', access_status: 'active' }
@@ -406,7 +410,7 @@ test('9. Background recheck preserves server-backed durable session on transient
 
     // Durable session is preserved
     const stored = JSON.parse(dom.window.localStorage.getItem(SESSION_STORAGE_KEY))
-    assert.equal(stored.user.email, 'jlopez3rd@gmail.com')
+    assert.equal(stored.user.email, 'owner@example.com')
     assert.equal(stored.sessionToken, 'server-session-token-123')
     assert.equal(validSession(stored), true)
 

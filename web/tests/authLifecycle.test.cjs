@@ -17,11 +17,11 @@ test(`owner gate preserves presentation lifecycle and expiry: ${route}`,async()=
   const originalNow=Date.now
   const now=originalNow()
   let mounted=0,unmounted=0
-  global.fetch=async()=>new Response(JSON.stringify({success:true,user:{id:'owner-id',google_sub:'owner',email:'jlopez3rd@gmail.com',display_name:'Owner',picture_url:null,role:'admin',access_status:'active'}}))
+  global.fetch=async()=>new Response(JSON.stringify({success:true,user:{id:'owner-id',google_sub:'owner',email:'owner@example.com',display_name:'Owner',picture_url:null,role:'admin',access_status:'active'}}))
   const {AuthGate}=require('../src/components/AuthGate.tsx')
   const {StagePresentationView}=require('../src/components/StagePresentationView.tsx')
   function Presentation(){React.useEffect(()=>{mounted++;return()=>{unmounted++}},[]);return React.createElement(StagePresentationView)}
-  sessionStorage.setItem('gtar_google_session',JSON.stringify({sessionToken:'test-session-token',role:'admin',access_status:'active',expiresAt:now+60000,user:{id:'owner-id',sub:'owner',email:'jlopez3rd@gmail.com',role:'admin',access_status:'active'}}))
+  sessionStorage.setItem('gtar_google_session',JSON.stringify({sessionToken:'test-session-token',role:'admin',access_status:'active',expiresAt:now+60000,user:{id:'owner-id',sub:'owner',email:'owner@example.com',role:'admin',access_status:'active'}}))
   let root=createRoot(document.getElementById('root'))
   try {
     await act(async()=>{root.render(React.createElement(AuthGate,null,React.createElement(Presentation)))})
@@ -52,7 +52,7 @@ test(`owner gate preserves presentation lifecycle and expiry: ${route}`,async()=
       lastVerifiedAt: now,
       localExpiresAt: now + 30 * 24 * 60 * 60 * 1000,
       expiresAt: now + 30 * 24 * 60 * 60 * 1000,
-      user: { id: 'owner-id', sub: 'owner', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' }
+      user: { id: 'owner-id', sub: 'owner', email: 'owner@example.com', role: 'admin', access_status: 'active' }
     }))
     global.fetch = async () => { throw Error('offline') }
     root = createRoot(document.getElementById('root'))
@@ -96,7 +96,7 @@ for (const route of ['/stage/present?view=present', '/tv']) {
       const { StagePresentationView } = require('../src/components/StagePresentationView.tsx')
       const { createDurableSession, SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
       const now = Date.now()
-      const user = { id: 'owner-id', sub: 'owner', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' }
+      const user = { id: 'owner-id', sub: 'owner', email: 'owner@example.com', role: 'admin', access_status: 'active' }
       const stored = createDurableSession(user, undefined, status === 'expired' ? now - 31 * 86400000 : now,
         { sessionToken: 'private-server-session', role: 'admin', access_status: 'active' })
       if (status !== 'signed-out') operator.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored))

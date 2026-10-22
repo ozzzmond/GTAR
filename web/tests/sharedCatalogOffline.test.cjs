@@ -13,7 +13,7 @@ for (const extension of ['.ts', '.tsx']) {
           .readFileSync(filename, 'utf8')
           .replaceAll(
             'import.meta.env',
-            '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-test-id",VITE_AUTHORIZED_EMAILS:"member@gtar.app",VITE_ROOT_ADMIN_EMAIL:"admin@gtar.app"})'
+            '({DEV:false,VITE_GOOGLE_CLIENT_ID:"client-test-id"})'
           ),
         {
           compilerOptions: {

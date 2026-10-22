@@ -1145,7 +1145,7 @@ test('29. REGRESSION_HOTFIX_FAILED_LOGIN_NO_OAUTH_FALLBACK: Failed server login 
               user: {
                 id: 'usr-approved-1',
                 google_sub: 'sub-approved-1',
-                email: 'jlopez3rd@gmail.com',
+                email: 'owner@example.com',
                 display_name: 'J Lopez',
                 picture_url: null,
                 role: 'admin',
@@ -1162,7 +1162,7 @@ test('29. REGRESSION_HOTFIX_FAILED_LOGIN_NO_OAUTH_FALLBACK: Failed server login 
           user: {
             id: 'usr-approved-1',
             google_sub: 'sub-approved-1',
-            email: 'jlopez3rd@gmail.com',
+            email: 'owner@example.com',
             display_name: 'J Lopez',
             picture_url: null,
             role: 'admin',
@@ -1268,7 +1268,7 @@ test('30. REGRESSION_HOTFIX_REJECT_LEGACY_STORED_SESSIONS_PRESERVE_SONGBOOK: Rej
         lastVerifiedAt: now,
         localExpiresAt: now + 86400000,
         expiresAt: now + 86400000,
-        user: { sub: 'sub-1', email: 'jlopez3rd@gmail.com', role: 'admin', access_status: 'active' },
+        user: { sub: 'sub-1', email: 'owner@example.com', role: 'admin', access_status: 'active' },
       },
       // Case 2: Stored session with sessionToken but missing server access_status
       {
@@ -1278,7 +1278,7 @@ test('30. REGRESSION_HOTFIX_REJECT_LEGACY_STORED_SESSIONS_PRESERVE_SONGBOOK: Rej
         lastVerifiedAt: now,
         localExpiresAt: now + 86400000,
         expiresAt: now + 86400000,
-        user: { id: 'usr-1', sub: 'sub-1', email: 'jlopez3rd@gmail.com' },
+        user: { id: 'usr-1', sub: 'sub-1', email: 'owner@example.com' },
       },
       // Case 3: Stored session with raw idToken but no server user.id and no sessionToken
       {
@@ -1289,7 +1289,7 @@ test('30. REGRESSION_HOTFIX_REJECT_LEGACY_STORED_SESSIONS_PRESERVE_SONGBOOK: Rej
         lastVerifiedAt: now,
         localExpiresAt: now + 86400000,
         expiresAt: now + 86400000,
-        user: { sub: 'sub-1', email: 'jlopez3rd@gmail.com', access_status: 'active' },
+        user: { sub: 'sub-1', email: 'owner@example.com', access_status: 'active' },
       },
     ]
 
@@ -1358,7 +1358,7 @@ test('31. REGRESSION_HOTFIX_LOCK_ON_REVOKED_EXPIRED_DENIED_OR_INVALID_SERVER_SES
             user: {
               id: 'usr-active-1',
               google_sub: 'sub-active-1',
-              email: 'jlopez3rd@gmail.com',
+              email: 'owner@example.com',
               display_name: 'J Lopez',
               picture_url: null,
               role: 'member',
@@ -1418,7 +1418,7 @@ test('31. REGRESSION_HOTFIX_LOCK_ON_REVOKED_EXPIRED_DENIED_OR_INVALID_SERVER_SES
         {
           id: 'usr-active-1',
           sub: 'sub-active-1',
-          email: 'jlopez3rd@gmail.com',
+          email: 'owner@example.com',
           role: 'admin',
           access_status: 'active',
         },
@@ -1508,7 +1508,7 @@ test('32. REGRESSION_HOTFIX_TRANSIENT_NETWORK_ERRORS_PRESERVE_SESSION: Transient
         {
           id: 'usr-Stage-1',
           sub: 'sub-stage-1',
-          email: 'jlopez3rd@gmail.com',
+          email: 'owner@example.com',
           role: 'admin',
           access_status: 'active',
         },
