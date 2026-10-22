@@ -188,10 +188,12 @@ export class Cast2Client {
         const scope = this.scope()
         this.clearSessionStorage()
         this.dispose()
+        const recoveryEpoch = this.epoch
         this.busy = false
         if (scope.credential) {
           try { await this.io.post('/revoke', scope, false) } catch { /* best effort */ }
         }
+        if (this.epoch !== recoveryEpoch || this.view.state === 'ENDED') return
         await this.start()
         return
       }
