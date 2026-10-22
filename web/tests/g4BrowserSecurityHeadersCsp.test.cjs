@@ -244,7 +244,7 @@ test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 409,
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff', `${label} missing nosniff`)
     assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin', `${label} missing referrer-policy`)
     assert.equal(res.headers.get('x-frame-options'), 'DENY', `${label} missing x-frame-options`)
-    assert.equal(res.headers.get('access-control-allow-origin'), '*', `${label} missing CORS origin`)
+    assert.equal(res.headers.get('access-control-allow-origin'), null, `${label} must not grant cross-origin reads`)
   }
 
   // 204: OPTIONS Preflight
@@ -476,4 +476,20 @@ test('6. COMPATIBILITY_GUARDS: Preserves Google Auth, QR, StageCast, and BandSyn
   // 7. Clickjacking frame protection
   assert.equal(rules.get('/*')['X-Frame-Options'], 'DENY')
   assert.deepEqual(directives.get('frame-ancestors'), new Set(["'none'"]), "CSP must set frame-ancestors 'none'")
+})
+
+test('API sources never grant cross-origin reads (GTAR API is same-origin only, #160)', () => {
+  const nodeFs = require('node:fs')
+  const nodePath = require('node:path')
+  const roots = ['functions', 'workers'].map(dir => nodePath.join(__dirname, '..', dir))
+  const offenders = []
+  const walk = dir => {
+    for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
+      const full = nodePath.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (/\.(ts|js)$/.test(entry.name) && /Access-Control-Allow-Origin/i.test(nodeFs.readFileSync(full, 'utf8'))) offenders.push(nodePath.relative(nodePath.join(__dirname, '..'), full))
+    }
+  }
+  roots.filter(dir => nodeFs.existsSync(dir)).forEach(walk)
+  assert.deepEqual(offenders, [])
 })
