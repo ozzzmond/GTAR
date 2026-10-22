@@ -2,7 +2,9 @@ import { CAST2_VERSION, validateCast2Message } from '../src/utils/stageCast2Prot
 import type { ReceiverSnapshot } from '../src/utils/stageCast2Protocol'
 
 export const POLICY = Object.freeze({ pairingMs: 120_000, idleTimeoutMs: 600_000, sessionMs: 600_000,
-  maxLifetimeMs: 5_400_000, ticketMs: 15_000, heartbeatMs: 45_000, sessions: 32, guesses: 5, requests: 120, buckets: 512 })
+  maxLifetimeMs: 5_400_000, ticketMs: 15_000, heartbeatMs: 45_000, sessions: 32, guesses: 5, requests: 120, buckets: 512,
+  // Controller sockets stay authorized only while authenticated HTTP keeps renewing this lease (#84).
+  authLeaseMs: 30_000, storedSessions: 128 })
 export type State = 'CREATED' | 'WAITING_FOR_CONTROLLER' | 'AWAITING_TV_APPROVAL' | 'PAIRED' | 'DISCONNECTED' | 'EXPIRED' | 'REVOKED'
 type Role = 'controller' | 'receiver'
 const transitions: Record<State, State[]> = {
@@ -34,6 +36,7 @@ export interface Storage {
 interface Session {
   ref: string; state: State; deadline: number; pairingDeadline: number; maxDeadline?: number; pinHash: string; receiverHash: string
   owner: string; controllerHash: string; requestId: string; guesses: number; sequence: number
+  authorizedUntil?: number
   inbound: Record<Role, number>
 }
 interface Ticket { hash: string; ref: string; role: Role; deadline: number }
@@ -144,11 +147,12 @@ export class StageCast2Hub {
     this.tail = work.catch(() => {})
     return work
   }
-  private limit(key: string, maximum: number): void {
+  private limit(key: string, maximum: number, authenticated = false): void {
     const window = Math.floor(this.rt.now() / 60_000)
     let b = this.db.buckets.find(v => v.key === key && v.window === window)
     if (!b) {
-      if (this.db.buckets.length >= POLICY.buckets) throw new Denial('RATE_LIMITED', 429)
+      // A full bucket table must not lock out gateway-authenticated traffic.
+      if (this.db.buckets.length >= POLICY.buckets && !authenticated) throw new Denial('RATE_LIMITED', 429)
       b = { key, count: 0, window }; this.db.buckets.push(b)
     }
     if (++b.count > maximum) throw new Denial('RATE_LIMITED', 429)
@@ -162,7 +166,13 @@ export class StageCast2Hub {
       if (!['REVOKED', 'EXPIRED'].includes(s.state) && (now >= s.deadline ||
         (['WAITING_FOR_CONTROLLER', 'AWAITING_TV_APPROVAL'].includes(s.state) && now >= s.pairingDeadline))) this.end(s, 'EXPIRED')
     }
-    for (const c of [...this.connections]) if (now - c.lastSeen >= POLICY.heartbeatMs) this.disconnect(c)
+    for (const c of [...this.connections]) {
+      if (now - c.lastSeen >= POLICY.heartbeatMs) this.disconnect(c)
+      else if (c.role === 'controller') {
+        const s = this.db.sessions.find(v => v.ref === c.ref)
+        if (!s || !this.leased(s)) this.disconnect(c, 'AUTH_EXPIRED')
+      }
+    }
     // Keep terminal tombstones until session deadline; absent refs deny identically.
     this.db.sessions = this.db.sessions.filter(s => now < s.deadline)
   }
@@ -178,6 +188,14 @@ export class StageCast2Hub {
     s.receiverHash = ''; s.controllerHash = ''; s.pinHash = ''
     this.snapshots.delete(s.ref)
   }
+  private leased(s: Session): boolean {
+    return typeof s.authorizedUntil === 'number' && Number.isFinite(s.authorizedUntil) && this.rt.now() < s.authorizedUntil
+  }
+  /** Only gateway-authenticated controller HTTP renews authorization; socket traffic never does. */
+  private renewLease(s: Session): void {
+    s.authorizedUntil = Math.min(this.ensureMaxDeadline(s), this.rt.now() + POLICY.authLeaseMs)
+  }
+  private live(): Session[] { return this.db.sessions.filter(s => !['REVOKED', 'EXPIRED'].includes(s.state)) }
   private touch(s: Session): void {
     if (['REVOKED', 'EXPIRED'].includes(s.state)) return
     const maxDeadline = this.ensureMaxDeadline(s)
@@ -199,16 +217,25 @@ export class StageCast2Hub {
       if (url.search) throw new Denial('INVALID_REQUEST', 400)
       const ip = request.headers.get('x-cast-client')
       if (!opaque(ip)) throw new Denial()
-      this.limit('global', POLICY.requests)
-      this.limit('ip:' + ip, 40)
+      const owner = request.headers.get('x-cast-owner') || ''
+      // Per-client limit first, so one client's rejected flood never consumes shared admission.
+      // Anonymous and gateway-authenticated traffic draw from separate global pools.
+      this.limit('ip:' + ip, 40, !!owner)
+      this.limit(owner ? 'global:auth' : 'global:anon', POLICY.requests, !!owner)
       if (url.pathname === '/socket' && request.method === 'GET') return this.connect(request)
       if (request.method !== 'POST') throw new Denial('INVALID_REQUEST', 400)
       const b = await body(request)
-      const owner = request.headers.get('x-cast-owner') || ''
       if (url.pathname === '/create') {
         shape(b, [])
         this.limit('create:' + ip, 5)
-        if (this.db.sessions.length >= POLICY.sessions) throw new Denial('UNAVAILABLE', 503)
+        // Expired/revoked tombstones still deny their refs but no longer hold live capacity.
+        if (this.live().length >= POLICY.sessions) throw new Denial('UNAVAILABLE', 503)
+        // Bound stored tombstones: drop the soonest-expiring terminal sessions first.
+        const terminal = this.db.sessions.filter(v => ['REVOKED', 'EXPIRED'].includes(v.state)).sort((a, b) => a.deadline - b.deadline)
+        while (this.db.sessions.length >= POLICY.storedSessions && terminal.length) {
+          const drop = terminal.shift()
+          this.db.sessions = this.db.sessions.filter(v => v !== drop)
+        }
         const ref = secret(), credential = secret(), pin = securePin(), now = this.rt.now()
         const s: Session = { ref, state: transition('CREATED', 'WAITING_FOR_CONTROLLER'), deadline: now + POLICY.sessionMs,
           pairingDeadline: now + POLICY.pairingMs, maxDeadline: now + POLICY.maxLifetimeMs, pinHash: await digest(ref + pin), receiverHash: await digest(credential),
@@ -234,11 +261,13 @@ export class StageCast2Hub {
         s.deadline = Math.min(s.maxDeadline, this.rt.now() + POLICY.idleTimeoutMs)
         const credential = secret()
         s.controllerHash = await digest(credential); s.owner = owner; s.requestId = secret(); s.pinHash = ''
+        this.renewLease(s)
         return reply({ state: s.state, sessionId: s.ref, requestId: s.requestId, controllerCredential: credential, expiresAt: s.deadline })
       }
       if (b.role !== 'controller' && b.role !== 'receiver') throw new Denial()
       const role = b.role
       await this.authorize(s, role, b.credential, owner)
+      if (role === 'controller') this.renewLease(s)
       switch (url.pathname) {
         case '/status':
           shape(b, ['ref', 'role', 'credential'])
@@ -273,6 +302,7 @@ export class StageCast2Hub {
     const [ticket] = this.db.tickets.splice(index, 1)
     const s = this.session(ticket.ref)
     if (!['PAIRED', 'DISCONNECTED'].includes(s.state)) throw new Denial()
+    if (ticket.role === 'controller' && !this.leased(s)) throw new Denial('AUTH_REQUIRED', 401)
     for (const old of this.connections.filter(c => c.ref === s.ref && c.role === ticket.role)) {
       this.disconnect(old, ticket.role === 'receiver' ? 'REPLACED' : 'DISCONNECTED')
     }
@@ -324,6 +354,8 @@ export class StageCast2Hub {
     const window = Math.floor(this.rt.now() / 1000)
     if (c.window !== window) { c.window = window; c.count = 0 }
     if (++c.count > 30) { this.disconnect(c); return }
+    // Lapsed authorization closes the controller before any frame, including ping, is honored.
+    if (c.role === 'controller' && !this.leased(s)) { this.disconnect(c, 'AUTH_EXPIRED'); return }
     if (raw === 'ping') { c.lastSeen = this.rt.now(); this.touch(s); this.send(c, 'pong'); return }
     if (typeof raw !== 'string') { this.disconnect(c); return }
     const checked = validateCast2Message(raw, c.role === 'controller' ? 'CONTROLLER_TO_SERVER' : 'RECEIVER_TO_SERVER')
