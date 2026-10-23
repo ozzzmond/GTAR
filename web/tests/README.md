@@ -232,6 +232,7 @@ New or renamed tests await a human choice of primary category.
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
+- [libraryBodyShadow.test.cjs](libraryBodyShadow.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
