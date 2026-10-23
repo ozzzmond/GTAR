@@ -416,15 +416,19 @@ test('F2: first-write same-ID race preserves both edits without a common base it
   assert.equal(posts, 2)
 })
 
-test('F3: failed or unverifiable recovery snapshot aborts download without changing local data or metadata', async () => {
+test('P3/F3: failed or unverifiable recovery snapshot aborts download without changing local data or metadata', async () => {
   const { request, db } = await fixture()
   await write(db, library('remote'), emptyRevision)
+  const { appLogger } = require('../src/utils/logger.ts')
+  const entries = [], originalAdd = appLogger.addEntry
+  appLogger.addEntry = entry => entries.push(entry)
+  try {
   for (const failure of ['throw', 'silent']) {
     const store = seedStorage(library('local'), library('base'))
     const before = store.getItem(sync.CLOUD_SYNC_META_KEY)
     const setItem = store.setItem
     store.setItem = (key, value) => {
-      if (key.startsWith('gtar_sync_recovery:')) { if (failure === 'throw') throw new Error('quota'); return }
+      if (key.startsWith('gtar_sync_recovery:')) { if (failure === 'throw') throw new DOMException('full', 'QuotaExceededError'); return }
       setItem(key, value)
     }
     await withFetch((url, opts) => request(opts.method), async () => {
@@ -436,7 +440,14 @@ test('F3: failed or unverifiable recovery snapshot aborts download without chang
     })
     assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
     assert.equal(store.getItem(sync.CLOUD_SYNC_META_KEY), before)
+    const logged = entries.at(-1)
+    assert.equal(logged.level, 'ERROR'); assert.equal(logged.tag, 'RecoverySnapshot')
+    if (failure === 'throw') assert.match(logged.message, /quota/)
+    const details = JSON.parse(logged.details)
+    assert.match(details.key, /^gtar_sync_recovery:download:/)
+    assert.ok(details.attemptedBytes > 0); assert.ok(details.totalUsedBytes > 0)
   }
+  } finally { appLogger.addEntry = originalAdd }
 })
 
 test('F3: automatic and explicit downloads abort when browser edits arrive during GET', async () => {
@@ -613,4 +624,24 @@ test('CLIENT: sync cannot resurrect a local library removed during GET', async (
     assert.equal(result.success, false)
     assert.equal(readPersistedLibrary(store), null)
   })
+})
+
+test('snapshot quota estimate yielding cannot overwrite new local library edits', async () => {
+  const { request, db } = await fixture()
+  await write(db, library('remote'), emptyRevision)
+  const store = seedStorage(library('local'), library('base'))
+  const prior = Object.getOwnPropertyDescriptor(global, 'navigator')
+  Object.defineProperty(global, 'navigator', { configurable: true, value: { storage: { estimate: async () => {
+    persistLibrary(library('edited during estimate'), store)
+    return { usage: 100, quota: 10000000 }
+  } } } })
+  try {
+    await withFetch((url, opts) => request(opts.method), async () => {
+      const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction: 'download' })
+      assert.equal(result.success, false); assert.equal(result.status, 'CONFLICT')
+      assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'edited during estimate')
+    })
+  } finally {
+    if (prior) Object.defineProperty(global, 'navigator', prior); else delete global.navigator
+  }
 })

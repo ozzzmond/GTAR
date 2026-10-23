@@ -1,6 +1,6 @@
 import { validateCatalogLineage } from './catalogSetlistLineage'
 import type { SyncLibrary } from './syncMerge'
-import { prunePersistedLogs } from './logger'
+import { appLogger, prunePersistedLogs } from './logger'
 import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 import { canonicalSongKey } from './musicalKey'
 import { validateCloudThemeSettings } from './backupSettings'
@@ -80,28 +80,10 @@ export function isQuotaError(err: unknown): boolean {
   return false
 }
 
+// Compatibility entry point: background callers must never delete recovery history.
 export function pruneAllRecoverySnapshots(storage: Storage, maxAllowed = 0) {
-  const prefix = 'gtar_sync_recovery:'
-  const existingKeys: string[] = []
-  for (let i = 0; i < storage.length; i++) {
-    const k = storage.key(i)
-    if (k?.startsWith(prefix) && !isCanonicalKey(k)) existingKeys.push(k)
-  }
-  existingKeys.sort()
-  while (existingKeys.length > maxAllowed) {
-    const oldest = existingKeys.shift()
-    if (oldest && !isCanonicalKey(oldest)) {
-      try {
-        const library = readPersistedLibrary(storage)
-        const snapshot = JSON.parse(storage.getItem(oldest) ?? 'null')
-        if (!library || !snapshot?.local || !Object.hasOwn(snapshot, 'remote') || snapshot.journal?.pending) continue
-        let checked = reconcile(library, snapshot.local)
-        if (snapshot.remote) checked = reconcile(checked, snapshot.remote)
-        if (snapshot.journal?.baseline) checked = reconcile(checked, snapshot.journal.baseline)
-        if (same(library, checked)) storage.removeItem(oldest)
-      } catch { /* Ambiguous snapshots remain available for export. */ }
-    }
-  }
+  void storage; void maxAllowed
+  // Cleanup is available only through the confirmed recovery review below.
 }
 
 const legacyKeys = ['gtar_songs_store', 'gtar_trash_songs_store', 'gtar_setlists_store']
@@ -216,7 +198,8 @@ export interface RecoverySourceReview {
 }
 interface RecoveryDecision {
   choice: 'keep-current' | 'reopen'
-  libraryRaw: string
+  libraryRaw?: string
+  library?: RecoveryLibrarySummary
   sources: Record<string, string | RecoverySourceReference>
 }
 interface RecoverySourceReference {
@@ -255,38 +238,126 @@ function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary
   return { candidates, pending: Boolean(snapshot.journal?.pending) }
 }
 
-function readRecoveryDecisions(raw: string | null): RecoveryDecision[] {
+interface RecoveryLibrarySummary { digest: string; rawLength: number; songs: number; setlists: number; timestamp: number }
+function librarySummary(raw: string): RecoveryLibrarySummary {
+  const library = JSON.parse(raw); validateLibrary(library)
+  return { digest: recoverySourceDigest(raw), rawLength: raw.length, songs: library.songs.length, setlists: library.setlists.length, timestamp: Date.now() }
+}
+function readRecoveryDecisions(raw: string | null, depth = 0): RecoveryDecision[] {
   if (raw === null) return []
+  if (depth > 2) throw new Error('Invalid nested recovery decisions')
   const value = JSON.parse(raw)
-  if (![1, 2].includes(value?.version) || !Array.isArray(value.decisions)) throw new Error('Invalid recovery decisions')
+  if (![1, 2, 3].includes(value?.version) || !Array.isArray(value.decisions)) throw new Error('Invalid recovery decisions')
   let historical: RecoveryDecision[] = []
-  if (value.version === 2) {
-    if (Object.keys(value).length !== 3) throw new Error('Invalid recovery decisions')
-    // Preserve the original V1 envelope verbatim, including historical-only bytes.
-    // Do not convert its sources to references: the original archives may be gone.
-    if (value.legacyV1Raw !== null) {
-      if (typeof value.legacyV1Raw !== 'string' || JSON.parse(value.legacyV1Raw)?.version !== 1) throw new Error('Invalid historical recovery decisions')
-      historical = readRecoveryDecisions(value.legacyV1Raw)
+  if (value.version !== 1) {
+    const legacyKey = value.version === 2 ? 'legacyV1Raw' : 'legacyRaw'
+    if (Object.keys(value).length !== 3 || !Object.hasOwn(value, legacyKey)) throw new Error('Invalid recovery decisions')
+    if (value[legacyKey] !== null) {
+      if (typeof value[legacyKey] !== 'string' || ![1, 2].includes(JSON.parse(value[legacyKey])?.version)) throw new Error('Invalid historical recovery decisions')
+      historical = readRecoveryDecisions(value[legacyKey], depth + 1)
     }
   }
   for (const decision of value.decisions) {
-    if (!decision || !['keep-current', 'reopen'].includes(decision.choice) || typeof decision.libraryRaw !== 'string' ||
+    if (!decision || !['keep-current', 'reopen'].includes(decision.choice) ||
         !decision.sources || typeof decision.sources !== 'object' || Array.isArray(decision.sources)) throw new Error('Invalid recovery decision')
-    if (value.version === 2 && Object.keys(decision).length !== 3) throw new Error('Invalid recovery decision')
-    validateLibrary(JSON.parse(decision.libraryRaw))
+    if (value.version === 3) {
+      const m = decision.library
+      if (Object.keys(decision).length !== 3 || !m || Object.keys(m).length !== 5 ||
+          !/^sha256-utf16le:[a-f0-9]{64}$/.test(m.digest) ||
+          ![m.rawLength, m.songs, m.setlists, m.timestamp].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('Invalid library summary')
+    } else {
+      if (typeof decision.libraryRaw !== 'string' || (value.version === 2 && Object.keys(decision).length !== 3)) throw new Error('Invalid recovery decision')
+      validateLibrary(JSON.parse(decision.libraryRaw))
+    }
     for (const [key, source] of Object.entries(decision.sources)) {
       if (!key.startsWith('gtar_sync_recovery:') && !key.startsWith('gtar_sync_v1:') && key !== 'legacy') throw new Error('Invalid decision source')
-      if (value.version === 1) {
-        if (typeof source !== 'string') throw new Error('Invalid decision source')
-      } else {
-        const ref = source as RecoverySourceReference
-        if (!ref || typeof ref !== 'object' || Array.isArray(ref) || ref.sourceKey !== key ||
-            !Number.isSafeInteger(ref.rawLength) || ref.rawLength < 0 || typeof ref.digest !== 'string' ||
-            !/^sha256-utf16le:[a-f0-9]{64}$/.test(ref.digest) || Object.keys(ref).length !== 3) throw new Error('Invalid decision source reference')
-      }
+      if (typeof source === 'string' && value.version !== 2) continue
+      if (value.version === 1) throw new Error('Invalid decision source')
+      const ref = source as RecoverySourceReference
+      if (!ref || typeof ref !== 'object' || Array.isArray(ref) || ref.sourceKey !== key ||
+          !Number.isSafeInteger(ref.rawLength) || ref.rawLength < 0 || typeof ref.digest !== 'string' ||
+          !/^sha256-utf16le:[a-f0-9]{64}$/.test(ref.digest) || Object.keys(ref).length !== 3) throw new Error('Invalid decision source reference')
     }
   }
   return [...historical, ...value.decisions]
+}
+
+export function localStorageBytes(storage: Storage): number {
+  let bytes = 0
+  for (let i = 0; i < storage.length; i++) { const key = storage.key(i); if (key) bytes += 2 * (key.length + (storage.getItem(key)?.length ?? 0)) }
+  return bytes
+}
+export const RECOVERY_MAX_COUNT = 32
+export const RECOVERY_MAX_BYTES = 3 * 1024 * 1024
+
+// Estimates cover the whole origin, not Safari's separate localStorage limit.
+// Always attempt the actual guarded write unless retention or reported quota blocks it.
+export async function writeRecoverySnapshot(key: string, raw: string, storage: Storage): Promise<void> {
+  let estimate: StorageEstimate | undefined
+  try { estimate = await navigator.storage?.estimate?.() } catch { /* advisory only */ }
+  writeRecoverySnapshotChecked(key, raw, storage, estimate)
+}
+
+function writeRecoverySnapshotChecked(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
+  let count = 0, bytes = 0
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k?.startsWith('gtar_sync_recovery:')) { count++; bytes += 2 * (k.length + (storage.getItem(k)?.length ?? 0)) }
+  }
+  const attemptedBytes = 2 * (key.length + raw.length)
+  try {
+    if (count >= RECOVERY_MAX_COUNT || bytes + attemptedBytes > RECOVERY_MAX_BYTES) throw new Error('Recovery retention limit reached. Export a backup and Review local recovery to confirm cleanup; undecided archives are protected.')
+    if (estimate?.quota !== undefined && estimate.usage !== undefined && estimate.usage + attemptedBytes > estimate.quota) throw new DOMException('Origin quota estimate exceeded', 'QuotaExceededError')
+    storage.setItem(key, raw)
+    if (storage.getItem(key) !== raw) throw new Error('Snapshot readback failed')
+  } catch (error) {
+    appLogger.error('RecoverySnapshot', isQuotaError(error) ? 'Recovery snapshot quota exceeded' : 'Recovery snapshot failed', undefined,
+      JSON.stringify({ key, attemptedBytes, totalUsedBytes: localStorageBytes(storage), originUsage: estimate?.usage, originQuota: estimate?.quota }))
+    throw error
+  }
+}
+
+export function planRecoveryCleanup(review: RecoveryReview): { key: string; raw: string }[] {
+  if (review.invalid) return []
+  const decisions = readRecoveryDecisions(review.decisionRaw)
+  return review.sources.filter(source => {
+    if (!source.key.startsWith('gtar_sync_recovery:') || source.status === 'invalid' || !source.canKeepCurrent) return false
+    const decision = [...decisions].reverse().find(d => Object.hasOwn(d.sources, source.key))
+    if (decision?.choice !== 'keep-current') return false
+    const ref = decision.sources[source.key]
+    const matches = typeof ref === 'string' ? ref === source.raw : ref.rawLength === source.raw.length && ref.digest === recoverySourceDigest(source.raw)
+    if (!matches) appLogger.warn('RecoveryCleanup', 'Digest mismatch; archive retained', source.key)
+    return matches
+  }).map(({ key, raw }) => ({ key, raw })).sort((a, b) => {
+    const time = (key: string) => Number(key.split(':')[2]) || 0
+    return time(a.key) - time(b.key) || a.key.localeCompare(b.key)
+  })
+}
+
+// Confirmed UI action only. The lock and exact preview recheck protect editor/cross-tab changes.
+export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: boolean, blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
+  if (!confirmed) throw new Error('Explicit cleanup confirmation required.')
+  if (!navigator.locks?.request) throw new Error('Safe recovery cleanup requires Web Locks support.')
+  await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, lock => {
+    if (!lock || blocked()) throw new Error('Resolve editor edits or active cross-tab conflicts before cleanup.')
+    const fresh = inspectRecovery(storage)
+    if (!same(review, fresh) || fresh.invalid) throw new Error('Recovery changed or is invalid. Review again.')
+    const plan = planRecoveryCleanup(fresh)
+    // The prior full baseline is retained verbatim until this explicit confirmation.
+    // V1 historical-only source bytes remain embedded; do not discard the only copy.
+    const decisions = readRecoveryDecisions(fresh.decisionRaw).map(d => ({ choice: d.choice,
+      library: d.library ?? librarySummary(d.libraryRaw!), sources: Object.fromEntries(Object.entries(d.sources).map(([key, source]) =>
+        [key, typeof source === 'string' && storage.getItem(key) === source ? { sourceKey: key, rawLength: source.length, digest: recoverySourceDigest(source) } : source])) }))
+    const payload = JSON.stringify({ version: 3, legacyRaw: null, decisions })
+    storage.setItem(RECOVERY_DECISIONS_KEY, payload)
+    if (storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Decision compaction could not be verified. Archives retained.')
+    for (const item of plan) {
+      if (blocked() || storage.getItem(LIBRARY_KEY) !== fresh.libraryRaw || storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Library or decisions changed. Review remaining archives again.')
+      if (storage.getItem(item.key) === item.raw) storage.removeItem(item.key)
+      else appLogger.warn('RecoveryCleanup', 'Archive changed; retained', item.key)
+    }
+    if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
+  })
 }
 
 // Read-only review uses the same representation rule as the import guard.
@@ -337,7 +408,7 @@ export function inspectRecovery(storage: Storage = localStorage): RecoveryReview
         }
         item.status = represented ? 'represented' : 'actionable'
         // Unknown/pending operations and legacy access-setting conflicts require manual recovery.
-        item.canKeepCurrent = !represented && !pending && candidates.every(candidate => candidate.allowedUsers === undefined || same(library.allowedUsers, candidate.allowedUsers))
+        item.canKeepCurrent = !pending && candidates.every(candidate => candidate.allowedUsers === undefined || same(library.allowedUsers, candidate.allowedUsers))
         if (item.canKeepCurrent) {
           const decision = [...decisions].reverse().find(value => {
             if (!Object.hasOwn(value.sources, key)) return false
@@ -370,14 +441,14 @@ export async function recordRecoveryChoice(review: RecoveryReview, choice: Recov
     if (!lock || blocked()) throw new Error('Resolve editor edits or active cross-tab conflicts before choosing a recovery version.')
     const fresh = inspectRecovery(storage)
     if (!same(review, fresh) || fresh.invalid || !fresh.libraryRaw) throw new Error('Recovery changed or is invalid. Review again.')
-    const selected = fresh.sources.filter(source => choice === 'keep-current' ? source.status === 'actionable' : source.status === 'resolved')
+    const selected = fresh.sources.filter(source => choice === 'keep-current' ? (source.status === 'actionable' || (source.status === 'represented' && source.key.startsWith('gtar_sync_recovery:'))) : source.status === 'resolved')
     if (!selected.length || selected.some(source => !source.canKeepCurrent)) throw new Error('Pending or unsupported recovery requires manual recovery. Export all recovery data.')
     const previous = fresh.decisionRaw === null ? null : JSON.parse(fresh.decisionRaw)
-    const decisions: RecoveryDecision[] = previous?.version === 2 ? previous.decisions : []
-    decisions.push({ choice, libraryRaw: fresh.libraryRaw, sources: Object.fromEntries(selected.map(source => [source.key, {
+    const decisions: RecoveryDecision[] = previous?.version === 3 ? previous.decisions : []
+    decisions.push({ choice, library: librarySummary(fresh.libraryRaw), sources: Object.fromEntries(selected.map(source => [source.key, {
       sourceKey: source.key, rawLength: source.raw.length, digest: recoverySourceDigest(source.raw),
     }])) })
-    const payload = JSON.stringify({ version: 2, legacyV1Raw: previous?.version === 1 ? fresh.decisionRaw : previous?.legacyV1Raw ?? null, decisions })
+    const payload = JSON.stringify({ version: 3, legacyRaw: previous?.version === 3 ? previous.legacyRaw : fresh.decisionRaw, decisions })
     // No awaits between revalidation and this single-key transaction.
     try { storage.setItem(RECOVERY_DECISIONS_KEY, payload) }
     catch (err) {
@@ -438,7 +509,7 @@ export function retireDriveSyncState(storage: Storage = localStorage): boolean {
     persistLibrary(library, storage, { expectedRaw })
     if (!same(readPersistedLibrary(storage), library)) return false
     storage.setItem(SYNC_RETIRED_KEY, 'true')
-    for (const k of [...keys, ownerKey]) if (storage.getItem(k) !== null) storage.removeItem(k)
+    for (const k of [...keys, ownerKey]) if (!k.startsWith('gtar_sync_recovery:') && storage.getItem(k) !== null) storage.removeItem(k)
     return true
   } catch { return false }
 }
@@ -494,11 +565,11 @@ export function saveCrossTabConflictSnapshot(draft: SyncLibrary, storage: Storag
   const key = `gtar_sync_recovery:cross-tab-conflict:${Date.now()}:${id}`
   const payload = JSON.stringify(draft)
   try {
-    storage.setItem(key, payload)
+    writeRecoverySnapshotChecked(key, payload, storage)
   } catch (err) {
     if (isQuotaError(err)) {
       prunePersistedLogs(storage, 10)
-      storage.setItem(key, payload)
+      writeRecoverySnapshotChecked(key, payload, storage)
     } else throw err
   }
   if (storage.getItem(key) !== payload) throw new Error('Recovery snapshot could not be verified. Keep this tab open and export your draft.')
@@ -510,28 +581,13 @@ export function preserveStoredLibrary(raw: string | null, storage: Storage = loc
   if (raw === null) return
   const key = `gtar_sync_recovery:replacement:${Date.now()}:${Math.random().toString(36).slice(2)}`
   const payload = JSON.stringify({ raw })
-  storage.setItem(key, payload)
+  writeRecoverySnapshotChecked(key, payload, storage)
   if (storage.getItem(key) !== payload) throw new Error('Current stored version could not be preserved. Replacement cancelled.')
 }
 
-// Cloud download/merge saves plain-library snapshots, unlike legacy Drive envelopes.
-// Retire only archives whose records are already covered by durable canonical storage.
-// Conflicts, unknown formats and pre-restore safety snapshots remain untouched.
+// Legacy compatibility hook: represented archives also require a recorded decision and confirmation.
 export function retireRepresentedCloudSnapshots(storage: Storage = localStorage): void {
-  try {
-    const library = readPersistedLibrary(storage)
-    if (!library) return
-    const sources = recoveryData(storage)
-    for (const [key, raw] of Object.entries(sources)) {
-      if (!key.startsWith('gtar_sync_recovery:')) continue
-      try {
-        const snapshot = JSON.parse(raw)
-        if (!snapshot || !Object.hasOwn(snapshot, 'songs')) continue
-        validateLibrary(snapshot)
-        if (same(library, reconcile(library, snapshot))) storage.removeItem(key)
-      } catch { /* Ambiguous or conflicting archives remain exportable. */ }
-    }
-  } catch { /* Canonical storage must be readable before retirement. */ }
+  void storage // Only a recorded decision plus explicit cleanup may remove archives.
 }
 
 export function performStorageHousekeeping(storage: Storage = localStorage) {
@@ -727,7 +783,7 @@ export function applyDanglingReferenceRepair(plan: DanglingReferenceRepair, stor
   validateLibrary(repaired)
   // Invalid raw archive fails strict snapshot validation and remains exportable.
   const archive = 'gtar_sync_recovery:dangling-references:' + Date.now() + ':' + Math.random().toString(36).slice(2)
-  storage.setItem(archive, plan.raw)
+  writeRecoverySnapshotChecked(archive, plan.raw, storage)
   if (storage.getItem(archive) !== plan.raw) throw new Error('Could not preserve original recovery data.')
   if (storage.getItem(LIBRARY_KEY) !== plan.raw) throw new Error('Library changed. Preview repair again.')
   storage.setItem(LIBRARY_KEY, JSON.stringify(repaired))

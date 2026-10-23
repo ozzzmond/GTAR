@@ -123,6 +123,12 @@ class MockIDBObjectStore {
     this.records.set(key, JSON.parse(JSON.stringify(record)))
   }
 
+  getAll() {
+    const req = new MockIDBRequest()
+    queueMicrotask(() => { req.result = [...this.records.values()].map(r => JSON.parse(JSON.stringify(r))); req.onsuccess?.({ target: req }) })
+    return req
+  }
+
   get(key) {
     const req = new MockIDBRequest()
     queueMicrotask(() => {

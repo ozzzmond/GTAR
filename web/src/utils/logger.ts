@@ -1,3 +1,4 @@
+import { isDevEnv } from './env'
 /**
  * Web Logging Engine for GTAR
  * Intercepts console errors, warnings, unhandled window exceptions and promise rejections.
@@ -168,7 +169,7 @@ class WebLoggerEngine {
       })
     })
 
-    this.info('WebLogger', `Logger initialized. Environment: ${import.meta.env.DEV ? 'development' : 'production'}`)
+    this.info('WebLogger', `Logger initialized. Environment: ${isDevEnv ? 'development' : 'production'}`)
   }
 
   private captureConsoleEntry(level: LogLevel, args: unknown[]) {
@@ -290,7 +291,7 @@ class WebLoggerEngine {
     const header = [
       '=========================================================================',
       `GTAR WEB DEBUG LOG EXPORT - ${new Date().toISOString()}`,
-      `Environment: ${import.meta.env.DEV ? 'development' : 'production'}`,
+      `Environment: ${isDevEnv ? 'development' : 'production'}`,
       `User Agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}`,
       `Total Log Entries: ${this.logs.length}`,
       '=========================================================================',

@@ -7,7 +7,7 @@
  * here deletes, rewrites or migrates user data. Shadow writes and load-time verification only
  * report into Debug Logs so the next phase can be judged on field evidence.
  */
-import { isQuotaError } from './syncJournal'
+import { isQuotaError, recoveryData, inspectRecovery, RESTORE_SNAPSHOT_KEY } from './syncJournal'
 
 export const BODY_DB_NAME = 'gtar_library_bodies_db'
 export const BODY_DB_VERSION = 1
@@ -187,4 +187,85 @@ export function installLibraryBodyShadow(options: ShadowInstallOptions): () => v
     target.removeEventListener('gtar-library-persisted', onPersisted)
     target.removeEventListener('storage', onStorage)
   }
+}
+
+export interface ShadowCleanupPlan {
+  storageRaw: string
+  records: BodyRecord[]
+  totalBytes: number
+  orphanBytes: number
+  totalCount: number
+}
+
+// Protect bodies referenced anywhere in the current library or retained recovery history.
+// Unknown/malformed JSON fails closed rather than guessing which bodies are disposable.
+function shadowStorageRaw(storage: Storage): string {
+  const sources = recoveryData(storage)
+  const restore = storage.getItem(RESTORE_SNAPSHOT_KEY)
+  if (restore !== null) sources[RESTORE_SNAPSHOT_KEY] = restore
+  return JSON.stringify(sources)
+}
+async function protectedHashes(raw: string): Promise<Set<string>> {
+  const hashes = new Set<string>()
+  const walk = async (value: unknown): Promise<void> => {
+    if (typeof value === 'string') {
+      if (/^\s*[[{]/.test(value)) { try { await walk(JSON.parse(value)) } catch { throw new Error('Unreadable historical body references; export before manual recovery.') } }
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'rawContent' && typeof child === 'string') hashes.add(await bodyHash(child))
+      else if (['raw', 'libraryRaw', 'legacyRaw', 'legacyV1Raw'].includes(key) && typeof child === 'string') await walk(JSON.parse(child))
+      else await walk(child)
+    }
+  }
+  for (const [key, value] of Object.entries(JSON.parse(raw))) {
+    if (key === 'gtar_sync_library_owner') continue
+    await walk(JSON.parse(value as string))
+  }
+  return hashes
+}
+export async function inspectShadowCleanup(storage: Storage = localStorage, options?: BodyStoreOptions): Promise<ShadowCleanupPlan> {
+  if (inspectRecovery(storage).invalid) throw new Error('Invalid recovery data; shadow cleanup unavailable. Export recovery data.')
+  const storageRaw = shadowStorageRaw(storage)
+  const protectedSet = await protectedHashes(storageRaw)
+  const db = await openBodyDatabase(options)
+  try {
+    const all = await new Promise<BodyRecord[]>((resolve, reject) => {
+      const request = db.transaction(BODY_STORE, 'readonly').objectStore(BODY_STORE).getAll()
+      request.onsuccess = () => resolve(request.result as BodyRecord[])
+      request.onerror = () => reject(request.error)
+    })
+    const records = all.filter(record => !protectedSet.has(record.hash))
+    if (shadowStorageRaw(storage) !== storageRaw) throw new Error('Recovery changed. Review shadow storage again.')
+    const bytes = (records: BodyRecord[]) => records.reduce((sum, record) => sum + JSON.stringify(record).length * 2, 0)
+    return { storageRaw, records, totalCount: all.length, totalBytes: bytes(all), orphanBytes: bytes(records) }
+  } finally { db.close() }
+}
+export async function confirmShadowCleanup(plan: ShadowCleanupPlan, confirmed: boolean, blocked: () => boolean,
+  storage: Storage = localStorage, options?: BodyStoreOptions): Promise<void> {
+  if (!confirmed) throw new Error('Explicit shadow cleanup confirmation required.')
+  if (!navigator.locks?.request) throw new Error('Safe shadow cleanup requires Web Locks support.')
+  await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, async lock => {
+    if (!lock || blocked()) throw new Error('Resolve editor edits or cross-tab conflicts before cleanup.')
+    const fresh = await inspectShadowCleanup(storage, options)
+    if (JSON.stringify(fresh) !== JSON.stringify(plan)) throw new Error('Shadow storage changed. Review again.')
+    const db = await openBodyDatabase(options)
+    try {
+      if (blocked() || shadowStorageRaw(storage) !== plan.storageRaw) throw new Error('Library changed. Review again.')
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(BODY_STORE, 'readwrite')
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error || new Error('Shadow cleanup failed'))
+        tx.onabort = () => reject(tx.error || new Error('Shadow cleanup aborted'))
+        const store = tx.objectStore(BODY_STORE)
+        for (const record of plan.records) {
+          const request = store.get(record.hash)
+          request.onsuccess = () => {
+            if (!blocked() && shadowStorageRaw(storage) === plan.storageRaw && JSON.stringify(request.result) === JSON.stringify(record)) store.delete(record.hash)
+          }
+        }
+      })
+    } finally { db.close() }
+  })
 }

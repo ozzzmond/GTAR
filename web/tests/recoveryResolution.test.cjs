@@ -83,7 +83,8 @@ test('explicit keep-current preserves every byte and baseline, survives new libr
   await choose()
   for (const [key, value] of Object.entries(before)) assert.equal(localStorage.getItem(key), value)
   const decision = JSON.parse(localStorage.getItem(RECOVERY_DECISIONS_KEY)).decisions[0]
-  assert.equal(decision.libraryRaw, before[LIBRARY_KEY])
+  assert.equal(decision.libraryRaw, undefined)
+  assert.equal(decision.library.digest, recoverySourceDigest(before[LIBRARY_KEY]))
   assert.deepEqual(decision.sources['gtar_sync_recovery:download:1'], {
     sourceKey: 'gtar_sync_recovery:download:1', rawLength: before['gtar_sync_recovery:download:1'].length,
     digest: recoverySourceDigest(before['gtar_sync_recovery:download:1']),
@@ -181,7 +182,7 @@ test('SHA-256 UTF-16LE agrees with independent crypto across padding, Unicode an
   assert.notEqual(recoverySourceDigest('\ud800'), recoverySourceDigest('\ufffd'))
 })
 
-test('V1 history remains verbatim in V2, including sources no longer present and prior library snapshots', async () => {
+test('V1 history remains verbatim in V3, including sources no longer present and prior library snapshots', async () => {
   const key = 'gtar_sync_recovery:download:1', raw = JSON.stringify({ songs: [song('missing')], setlists: [] })
   localStorage.setItem(key, raw)
   const oldLibrary = JSON.stringify({ songs: [song('historical-library')], setlists: [] })
@@ -191,14 +192,14 @@ test('V1 history remains verbatim in V2, including sources no longer present and
   assert.equal(hasActionableRecovery(), false)
   await choose(inspectRecovery(), 'reopen')
   let value = JSON.parse(localStorage.getItem(RECOVERY_DECISIONS_KEY))
-  assert.equal(value.version, 2); assert.equal(value.legacyV1Raw, v1)
-  assert.deepEqual(JSON.parse(value.legacyV1Raw).decisions[0], historical)
+  assert.equal(value.version, 3); assert.equal(value.legacyRaw, v1)
+  assert.deepEqual(JSON.parse(value.legacyRaw).decisions[0], historical)
   assert.equal(hasActionableRecovery(), true)
   await choose()
   value = JSON.parse(localStorage.getItem(RECOVERY_DECISIONS_KEY))
-  assert.equal(value.legacyV1Raw, v1); assert.equal(value.decisions.length, 2)
+  assert.equal(value.legacyRaw, v1); assert.equal(value.decisions.length, 2)
   assert.equal(recoveryData()[key], raw)
-  assert.equal(JSON.parse(recoveryData()[RECOVERY_DECISIONS_KEY]).legacyV1Raw, v1)
+  assert.equal(JSON.parse(recoveryData()[RECOVERY_DECISIONS_KEY]).legacyRaw, v1)
 })
 
 test('compact decision fits a byte budget that rejects archive duplication and exports every original source', async () => {
@@ -241,7 +242,7 @@ test('fresh module and storage reload preserve compact approval, snapshots and r
     const fresh = require('../src/utils/syncJournal.ts')
     assert.equal(fresh.hasActionableRecovery(reloaded.window.localStorage), false)
     const decisions = JSON.parse(saved[RECOVERY_DECISIONS_KEY]).decisions
-    assert.equal(decisions.length, 7); assert.equal(decisions.every(d => d.libraryRaw === baseline), true)
+    assert.equal(decisions.length, 7); assert.equal(decisions.every(d => d.libraryRaw === undefined && d.library.digest === recoverySourceDigest(baseline)), true)
     assert.deepEqual(fresh.recoveryData(reloaded.window.localStorage), saved)
   } finally { reloaded.window.close() }
 })
@@ -258,12 +259,12 @@ test('exact source identity rejects whitespace, same-length content, Unicode and
   assert.equal(hasActionableRecovery(), true)
 })
 
-test('malformed V2 envelopes and source references fail closed without rewriting history', async () => {
+test('malformed V3 envelopes and source references fail closed without rewriting history', async () => {
   archive('download:1', { songs: [song('missing')], setlists: [] }); await choose()
   const valid = JSON.parse(localStorage.getItem(RECOVERY_DECISIONS_KEY)), key = 'gtar_sync_recovery:download:1'
-  const variants = [v => { v.version = 3 }, v => { delete v.legacyV1Raw }, v => { v.legacyV1Raw = JSON.stringify(v) },
+  const variants = [v => { v.version = 4 }, v => { delete v.legacyRaw }, v => { v.legacyRaw = JSON.stringify(v) },
     v => { v.extra = true }, v => { v.decisions[0].extra = true },
-    v => { v.decisions[0].sources[key] = 'raw' }, v => { v.decisions[0].sources[key].sourceKey = 'wrong' },
+    v => { v.decisions[0].sources[key] = 1 }, v => { v.decisions[0].sources[key].sourceKey = 'wrong' },
     v => { v.decisions[0].sources[key].rawLength = -1 }, v => { v.decisions[0].sources[key].rawLength = 1.5 },
     v => { v.decisions[0].sources[key].digest = 'weak' }, v => { v.decisions[0].sources[key].extra = true }]
   for (const mutate of variants) {
@@ -310,7 +311,7 @@ test('failed V1 upgrade preserves its exact stored value and UI keeps export ava
   await act(async () => root.render(React.createElement(RecoveryReviewDialog, { blocked: () => false, onClose() {} })))
   const click = async text => act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === text).click())
   await click('Choose current library')
-  assert.match(document.body.textContent, /snapshot of the current library and integrity references/)
+  assert.match(document.body.textContent, /digest, counts, timestamp and integrity references/)
   await act(async () => document.querySelector('input[type=checkbox]').click())
   proto.setItem = function(k, v) { if (k === RECOVERY_DECISIONS_KEY) throw new DOMException('full', 'QuotaExceededError'); return set.call(this, k, v) }
   try { await click('Confirm recovery choice') } finally { proto.setItem = set }

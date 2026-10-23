@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { inspectRecovery, recordRecoveryChoice, recoveryData } from '../utils/syncJournal'
+import { inspectRecovery, recordRecoveryChoice, recoveryData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes } from '../utils/syncJournal'
+
+import { isDevEnv } from '../utils/env'
+import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
 
 // Shared by startup notice, Cloud Sync and the catalog import preview.
 export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [review, setReview] = useState(() => inspectRecovery())
-  const [choice, setChoice] = useState<'keep-current' | 'reopen' | null>(null)
+  const [choice, setChoice] = useState<'keep-current' | 'reopen' | 'cleanup' | 'shadow' | null>(null)
   const [approved, setApproved] = useState(false)
+  const [shadow, setShadow] = useState<ShadowCleanupPlan | null>(null)
+  const cleanup = planRecoveryCleanup(review)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -17,7 +22,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
     return () => previous?.focus()
   }, [])
 
-  const refresh = () => { setReview(inspectRecovery()); setChoice(null); setApproved(false); setError('') }
+  const refresh = () => { setReview(inspectRecovery()); setChoice(null); setApproved(false); setError(''); setShadow(null) }
 
   const archiveSources = review.sources.filter(source => source.key.startsWith('gtar_sync_recovery:'))
   const actionable = review.sources.filter(source => source.status === 'actionable')
@@ -27,7 +32,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
   const hasNoActionable = actionable.length === 0
   const keepCurrentDisabledReason = review.invalid
     ? 'Cannot proceed: one or more recovery sources are invalid or unreadable. Export all recovery data first.'
-    : hasNoActionable
+    : hasNoActionable && !archiveSources.some(source => source.status === 'represented')
       ? 'No actionable conflicts exist. Your current library already accounts for all recovery records.'
       : actionable.some(source => !source.canKeepCurrent)
         ? 'One or more sources contain pending operations or legacy access-setting conflicts requiring manual recovery.'
@@ -36,8 +41,23 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
   async function confirm() {
     if (!choice || !approved || busyRef.current) return
     busyRef.current = true; setBusy(true); setError('')
-    try { await recordRecoveryChoice(review, choice, blocked); refresh() }
+    try {
+      if (choice === 'cleanup') await confirmRecoveryCleanup(review, approved, blocked)
+      else if (choice === 'shadow' && shadow) {
+        const store = await import('../utils/libraryBodyStore')
+        await store.confirmShadowCleanup(shadow, approved, blocked)
+      } else if (choice === 'keep-current' || choice === 'reopen') await recordRecoveryChoice(review, choice, blocked)
+      refresh()
+    }
     catch (err) { setError(err instanceof Error ? err.message : 'Recovery choice failed. Export recovery data.'); setChoice(null); setApproved(false) }
+    finally { busyRef.current = false; setBusy(false) }
+  }
+
+  async function reviewShadow() {
+    if (busyRef.current) return
+    busyRef.current = true; setBusy(true); setError('')
+    try { const store = await import('../utils/libraryBodyStore'); setShadow(await store.inspectShadowCleanup()); setChoice('shadow'); setApproved(false) }
+    catch (err) { setError(err instanceof Error ? err.message : 'Shadow review failed; data retained.') }
     finally { busyRef.current = false; setBusy(false) }
   }
 
@@ -212,6 +232,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
               </summary>
 
               <div className="px-3 pb-3 space-y-2 text-xs font-mono">
+                <p className="text-app-muted break-all">localStorage: {source.key} · {source.raw.length.toLocaleString()} chars · {((source.key.length + source.raw.length) * 2).toLocaleString()} bytes (UTF-16 estimate)</p>
                 {/* Resolved history note */}
                 {isResolved && (
                   <p
@@ -275,8 +296,11 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
           historical raw recovery may require manual recovery.
         </p>
 
+        <p className="text-xs text-app-muted">localStorage gtar_library_v1: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: 32 archives / 3 MiB; review is required when full.</p>
         {/* Action buttons */}
         <div className="flex flex-wrap gap-2">
+          <button className={button} disabled={busy || review.invalid || !review.decisionRaw} onClick={() => { setChoice('cleanup'); setApproved(false) }} data-testid="review-cleanup-btn">Review decided archive cleanup</button>
+          {isDevEnv && <button className={button} disabled={busy} onClick={reviewShadow}>Review shadow storage</button>}
           <button className={button} disabled={busy} onClick={exportSources} data-testid="export-recovery-btn">
             Export all recovery data
           </button>
@@ -323,8 +347,12 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
             aria-label="Confirm recovery choice"
           >
             <p className="text-xs text-app-heading">
-              {choice === 'keep-current'
-                ? 'Keep the current Songbook and its deletion choices. Missing songs and historical edits will remain only in preserved recovery data; they will not be imported or resurrected. This decision saves a snapshot of the current library and integrity references to the reviewed sources. All existing recovery sources and previous decisions stay intact. Export first if you need an external copy.'
+              {choice === 'cleanup'
+                ? `Remove ${cleanup.length} decided archives (${cleanup.reduce((sum, item) => sum + 2 * (item.key.length + item.raw.length), 0).toLocaleString()} bytes), oldest first, only if their recorded SHA-256 still matches. Compact historical decisions to library digests and counts. This removes archived versions and historical library baselines; export first if you need those copies. Your Songbook and undecided archives stay intact.`
+                : choice === 'shadow'
+                ? `IndexedDB gtar_library_bodies_db / bodies: ${shadow?.totalCount ?? 0} bodies, approximately ${shadow?.totalBytes ?? 0} bytes. Remove ${shadow?.records.length ?? 0} unreferenced bodies (${shadow?.orphanBytes ?? 0} bytes). Bodies referenced by your Songbook and retained recovery history are protected. Superseded chart history will be removed.`
+                : choice === 'keep-current'
+                ? 'Keep the current Songbook and its deletion choices. Missing songs and historical edits will remain only in preserved recovery data; they will not be imported or resurrected. This decision saves a digest, counts, timestamp and integrity references to the reviewed sources. All existing recovery sources and previous decisions stay intact. Export first if you need an external copy.'
                 : 'Reopen these recovery conflicts and block new catalog imports until they are resolved again. Your library and archives stay intact.'}
             </p>
             <label className="block py-2 text-xs">

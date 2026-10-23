@@ -1,5 +1,5 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { LIBRARY_KEY, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
+import { LIBRARY_KEY, writeRecoverySnapshot, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1229,7 +1229,7 @@ async function executeCloudSongbookSync(
     try {
       const key = `gtar_sync_recovery:concurrency:${Date.now()}:${generateUUID()}`
       const snapshot = JSON.stringify({ local: pending, remote: cloudRecord?.data ?? null })
-      targetStorage.setItem(key, snapshot)
+      await writeRecoverySnapshot(key, snapshot, targetStorage)
       if (targetStorage.getItem(key) !== snapshot) throw new Error('Recovery snapshot unavailable')
       if ((retry?.attempt ?? 0) >= 2) {
         return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'CONFLICT_DETECTED',
@@ -1348,11 +1348,10 @@ async function executeCloudSongbookSync(
         const recoveryKey = `gtar_sync_recovery:upload:${Date.now()}:${generateUUID()}`
         const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: cloudRecord.data })
         try {
-          targetStorage.setItem(recoveryKey, recoverySnapshot)
-          if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) throw new Error('Snapshot readback failed')
+          await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
         } catch {
           return { success: false, status: 'ERROR', state: decisionResult.state, actionTaken: 'NONE',
-            error: 'Recovery snapshot could not be saved. Free browser storage or export a backup before replacing the cloud songbook.' }
+            error: 'Recovery snapshot could not be saved. Export a backup, then open Review local recovery to confirm cleanup before replacing the cloud songbook.' }
         }
       }
       const uploadRes = await fetch('/api/songbook/sync', {
@@ -1531,12 +1530,17 @@ async function executeCloudSongbookSync(
         : localLibrary
       const recoverySnapshot = JSON.stringify(recoveryCandidate)
       try {
-        targetStorage.setItem(recoveryKey, recoverySnapshot)
-        if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) throw new Error('Snapshot readback failed')
+        await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
       } catch (err) {
-        throw new Error('Recovery snapshot could not be saved. Free browser storage or export a backup before retrying download.', { cause: err })
+        throw new Error('Recovery snapshot could not be saved. Export a backup, then open Review local recovery to confirm cleanup before retrying download.', { cause: err })
       }
 
+      // Storage estimation yields to the event loop: recheck both library and theme.
+      if (targetStorage.getItem(LIBRARY_KEY) !== expectedRaw ||
+          !cloudThemeSettingsEquals(readCloudThemeSettings(targetStorage), themeAtStart)) {
+        return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'NONE',
+          error: 'Local library or theme updated in another tab or during recovery preparation. Current edits preserved. Retry download.' }
+      }
       persistLibraryAndThemeAtomically(
         downloadedLibrary,
         expectedRaw,
@@ -1649,7 +1653,7 @@ async function executeCloudSongbookSync(
       // Require durable recovery before attempting a merge write.
       const recoveryKey = `gtar_sync_recovery:merge:${Date.now()}:${generateUUID()}`
       const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: incoming })
-      targetStorage.setItem(recoveryKey, recoverySnapshot)
+      await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
       if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) {
         throw new Error('Recovery snapshot unavailable. Export a backup before retrying.')
       }

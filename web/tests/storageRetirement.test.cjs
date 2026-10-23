@@ -82,14 +82,14 @@ test('divergent legacy records are retained; disjoint records reconcile', () => 
   assert.equal(readPersistedLibrary(storage).songs.length, 2)
   assert.equal(storage.getItem('gtar_songs_store'), null)
 })
-test('recovery snapshots reconcile missing songs and setlist references before deletion', () => {
+test('legacy recovery reconciles missing songs but retains undecided archive', () => {
   const storage = setup()
   const recovered = { songs: [{id:'b', title:'Recovered', rawContent:'saved'}], setlists:[{id:'set',name:'Recovered set',songs:[{id:'b',title:'Recovered'}]}] }
   storage.setItem(snapshotKey, JSON.stringify({local:base, remote:recovered, journal:{version:1,baseline:null}}))
   assert.equal(retireDriveSyncState(storage), true)
   assert.equal(readPersistedLibrary(storage).songs.length, 2)
   assert.equal(readPersistedLibrary(storage).setlists[0].songs[0].id, 'b')
-  assert.equal(storage.getItem(snapshotKey), null)
+  assert.notEqual(storage.getItem(snapshotKey), null)
 })
 for (const blockedKey of [LIBRARY_KEY, SYNC_RETIRED_KEY]) test(`quota failure on ${blockedKey} retains all sources and permits retry`, () => {
   const storage = setup({version:1,baseline:base,pending:{acknowledged:true,before:base,merged:edited}})
@@ -138,7 +138,7 @@ test('acknowledged merge supersedes known pre-upload snapshots and legacy duplic
   storage.setItem('gtar_songs_store',JSON.stringify(base.songs))
   assert.equal(retireDriveSyncState(storage),true)
   assert.deepEqual(readPersistedLibrary(storage),edited)
-  assert.equal(storage.getItem(snapshotKey),null)
+  assert.notEqual(storage.getItem(snapshotKey),null)
   assert.equal(storage.getItem('gtar_songs_store'),null)
 })
 test('acknowledged order-only changes survive retirement',()=>{
