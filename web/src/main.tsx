@@ -22,6 +22,19 @@ if (typeof window !== 'undefined') {
   requestDurableStorage().catch(() => {})
 }
 
+// #167 phase B0, DEV only: shadow-copy chart bodies to IndexedDB and verify them on load.
+// Read-only with respect to the library; localStorage stays the source of truth. Never loaded in PROD.
+if (typeof window !== 'undefined' && isDevEnv) {
+  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger')]).then(([store, { appLogger }]) => {
+    store.installLibraryBodyShadow({
+      enabled: true,
+      logger: appLogger,
+      // Raw parse only: readPersistedLibrary() would move the cross-tab conflict baseline.
+      readLibrary: () => { const raw = window.localStorage.getItem('gtar_library_v1'); return raw ? JSON.parse(raw) : null },
+    })
+  }).catch(() => { /* shadow copy is optional */ })
+}
+
 
 function applyEnvironmentBranding(isDev: boolean) {
   if (typeof document === 'undefined') return
