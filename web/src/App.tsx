@@ -6,7 +6,6 @@ import { PublishSetlistModal } from './components/PublishSetlistModal'
 import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
-import { mergeImportedSetlists } from './utils/importIdentity'
 import {
   libraryRevision,
   persistLibrary,
@@ -28,12 +27,13 @@ import { LIBRARY_B1_KEY } from './utils/libraryIndex'
 import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
 import { appLogger } from './utils/logger'
 import { useLibraryPersistence } from './utils/useLibraryPersistence'
+import { useLibraryImports } from './utils/useLibraryImports'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
-import { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload } from './utils/jsonBackup'
-import { setSongMembership, resolveSetlistSong, mergeBackupLibrary, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
+import { createSingleSetlistPayload } from './utils/jsonBackup'
+import { setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
   readStageSession,
   saveStageSession,
@@ -748,29 +748,14 @@ function LibraryApp() {
     currentSong?.title,
   ])
 
-  // Consecutive transport messages can arrive before React renders the first
-  // committed merge. Keep that complete state available to the next reception.
-  const importStateRef = useRef({ songs: [...songs, ...deletedSongs], setlists })
-  // Pre-existing render-time ref sync (unchanged by #85): consecutive transport messages read it before React renders.
-  // eslint-disable-next-line react-hooks/refs
-  importStateRef.current = { songs: [...songs, ...deletedSongs], setlists }
-
-  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
-    const existingSongs = importStateRef.current.songs
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }), { mode: 'merge', existingSongs })
-    if (!parsed.isValid) throw new Error(parsed.error)
-    const merged = mergeBackupLibrary(existingSongs, parsed.songs, parsed.setlists)
-    const partition = partitionSongs(merged.songs)
-    const nextSetlists = mergeImportedSetlists(importStateRef.current.setlists, merged.setlists)
-    // A merge based on stale React state must never replace a newer tab's data.
-    persistLibrary({ songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
-    persistedBaselineRef.current = libraryRevision()
-    importStateRef.current = { songs: merged.songs, setlists: nextSetlists }
-    setCrossTabConflict(null)
-    setSongs(partition.active)
-    setDeletedSongs(partition.deleted)
-    setSetlists(nextSetlists)
-  }, [persistedBaselineRef, setCrossTabConflict])
+  // #85 slice 2: import, merge and restore handlers live in one hook.
+  const {
+    importStateRef, handleSmartMerge, handleImportSong, handleImportAllSongs, handleFullRestore,
+    handleImportSingleSetlist, handleImportSharedSetlist,
+  } = useLibraryImports({
+    songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
+    setToastMessage, setActiveSongIndex, setActiveSetlistId, setActiveSetlistSongIndex, setQueueMode, setIncomingSharedSetlist,
+  })
 
   // Band Sync: listen to leader song sync events when client
   // Transpose handler
@@ -923,7 +908,7 @@ function LibraryApp() {
       }
     })
     return unsub
-  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge])
+  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge, importStateRef])
 
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
@@ -1461,76 +1446,6 @@ function LibraryApp() {
       setActiveSongIndex(0)
     }
     return true
-  }
-
-  const handleImportSong = (imported: Partial<ActiveSongState>) => {
-    const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
-    if (song.isDeleted) setDeletedSongs(prev => [song, ...prev])
-    else setSongs(prev => [song, ...prev])
-    setActiveSongIndex(0)
-    setActiveSetlistId(null)
-  }
-
-  const handleImportAllSongs = (importedSongs: Array<Partial<ActiveSongState>>) => {
-    const normalized = importedSongs.map(song => normalizeBackupSong({ ...song, id: generateUUID(), title: song.title || 'Imported Song' }))
-    const partition = partitionSongs(normalized)
-    setSongs(prev => [...prev, ...partition.active])
-    setDeletedSongs(prev => [...prev, ...partition.deleted])
-  }
-
-  const handleFullRestore = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }))
-    if (!parsed.isValid) throw new Error(parsed.error)
-    const partition = partitionSongs(parsed.songs)
-    // Full restore is explicitly confirmed by the restore dialog; preserve the
-    // current stored revision too, which may differ from the dialog's local state.
-    const expectedRaw = libraryRevision()
-    preserveStoredLibrary(expectedRaw)
-    persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
-    persistedBaselineRef.current = libraryRevision()
-    setCrossTabConflict(null)
-    setSongs(partition.active)
-    setDeletedSongs(partition.deleted)
-    setSetlists(parsed.setlists)
-    setActiveSetlistId(null)
-    setActiveSongIndex(0)
-    setActiveSetlistSongIndex(0)
-    setQueueMode('library')
-  }
-
-  const handleImportSingleSetlist = (setlist: WebSetlist, newSongs: ActiveSongState[]) => {
-    handleSmartMerge(newSongs, [setlist])
-    setToastMessage(`Imported setlist "${setlist.name}" (${setlist.songs.length} songs)`)
-    setTimeout(() => setToastMessage(null), 4000)
-  }
-
-  const handleImportSharedSetlist = (shared: SharedSetlistPayload) => {
-    const newSongStates: ActiveSongState[] = shared.songs.map((s) => ({
-      id: generateUUID(),
-      title: s.title,
-      artist: s.artist || '',
-      key: s.key || detectSongKey(s.rawContent || ''),
-      capo: s.capo || 'No Capo',
-      bpm: s.bpm || '120',
-      time: s.time,
-      format: 'CHORD_PRO',
-      transposeOffset: 0,
-      rawContent: s.rawContent,
-    }))
-
-    const newSetlist: WebSetlist = {
-      id: generateUUID(),
-      name: shared.name,
-      createdAt: Date.now(),
-      songs: newSongStates.map((ns) => ({
-        id: ns.id,
-        title: ns.title,
-        artist: ns.artist,
-      })),
-    }
-
-    handleImportSingleSetlist(newSetlist, newSongStates)
-    setIncomingSharedSetlist(null)
   }
 
   const handleOpenSharedSetlistInStage = (shared: SharedSetlistPayload) => {
