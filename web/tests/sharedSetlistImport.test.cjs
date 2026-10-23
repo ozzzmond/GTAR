@@ -288,3 +288,15 @@ test('resolved compact decisions do not bypass import quota failures or mutate h
     } finally { proto.setItem = set }
   }
 })
+
+test('duplicate investigation: separate explicit catalog imports allocate new song IDs for byte-identical charts', async () => {
+  const preview = await prepare()
+  const first = api.cloneCatalogSetlist(preview), second = api.cloneCatalogSetlist(preview)
+  assert.equal(first.songs.length, second.songs.length)
+  first.songs.forEach((song, index) => {
+    assert.equal(song.rawContent, second.songs[index].rawContent)
+    assert.notEqual(song.id, second.songs[index].id)
+  })
+  // This proves one insert mechanism, not which operation caused the field duplicates.
+  assert.equal(new Set([...first.songs, ...second.songs].map(s => s.id)).size, first.songs.length * 2)
+})
