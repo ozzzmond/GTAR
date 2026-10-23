@@ -27,7 +27,10 @@ import {
   inspectRecovery,
   requestDurableStorage,
   setupCrossTabLibraryConflictGuard,
+  decodeLibraryRevision,
+  prepareLibraryStorage,
 } from './utils/syncJournal'
+import { LIBRARY_B1_KEY, isMissingLibraryBodyError, loadLibraryIndexBodies } from './utils/libraryIndex'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
@@ -104,7 +107,20 @@ function App() {
   return <LibraryStartup />
 }
 
+// #171 B1: with the DEV toggle on, chart bodies load from IndexedDB before anything reads the library.
 function LibraryStartup() {
+  const [ready, setReady] = useState(() => { try { return localStorage.getItem(LIBRARY_B1_KEY) !== '1' } catch { return true } })
+  useEffect(() => {
+    if (ready) return
+    let live = true
+    prepareLibraryStorage().finally(() => { if (live) setReady(true) })
+    return () => { live = false }
+  }, [ready])
+  if (!ready) return <p role="status" className="p-4 text-app-muted">Loading library…</p>
+  return <LibraryStartupReady />
+}
+
+function LibraryStartupReady() {
   const [repairPreview, setRepairPreview] = useState<DanglingReferenceRepair | null>(null)
   const [repairError, setRepairError] = useState<string | null>(null)
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
@@ -434,7 +450,7 @@ function LibraryApp() {
       let hasLocalChanges = true
       if (baselineRaw) {
         try {
-          const parsedBase = JSON.parse(baselineRaw)
+          const parsedBase = decodeLibraryRevision(baselineRaw)
           if (same(parsedBase, JSON.parse(JSON.stringify(currentLocal)))) {
             hasLocalChanges = false
           }
@@ -456,8 +472,8 @@ function LibraryApp() {
       } else {
         console.info('[Storage] External library update adopted into clean tab.')
         if (externalRaw) {
-          try {
-            const parsed = JSON.parse(externalRaw)
+          const adopt = () => {
+            const parsed = decodeLibraryRevision(externalRaw) as { songs: ActiveSongState[]; setlists: WebSetlist[] }
             persistedBaselineRef.current = externalRaw
             const partitioned = partitionSongs(parsed.songs)
             setSongs(partitioned.active)
@@ -465,7 +481,19 @@ function LibraryApp() {
             setSetlists(parsed.setlists)
             setToastMessage('Songbook library updated from another tab.')
             setTimeout(() => setToastMessage(null), 4000)
-          } catch {
+          }
+          try {
+            adopt()
+          } catch (error) {
+            // #171 B1: another tab saved charts this tab has not loaded; fetch them before adopting.
+            if (isMissingLibraryBodyError(error)) {
+              loadLibraryIndexBodies(externalRaw)
+                .then(() => { if (libraryRevision() === externalRaw) adopt() })
+                .catch(() => {
+                  setCrossTabConflict({ remoteRaw: externalRaw, detectedAt: Date.now() })
+                  setToastMessage('Another tab saved charts this tab could not load. Your library was not replaced; reload to continue.')
+                })
+            }
             // Malformed external data safely ignored
           }
         }
@@ -479,7 +507,7 @@ function LibraryApp() {
     const guard = (event: BeforeUnloadEvent) => {
       try {
         const raw = persistedBaselineRef.current
-        if (raw !== null && same(JSON.parse(raw), JSON.parse(JSON.stringify({ songs: [...songs, ...deletedSongs], setlists })))) return
+        if (raw !== null && same(decodeLibraryRevision(raw), JSON.parse(JSON.stringify({ songs: [...songs, ...deletedSongs], setlists })))) return
       } catch { /* An unreadable baseline cannot establish durability. */ }
       event.preventDefault()
       event.returnValue = ''
@@ -497,7 +525,7 @@ function LibraryApp() {
     const baselineRaw = persistedBaselineRef.current
     if (baselineRaw) {
       try {
-        const parsedBase = JSON.parse(baselineRaw)
+        const parsedBase = decodeLibraryRevision(baselineRaw)
         if (same(parsedBase, JSON.parse(JSON.stringify(candidate)))) {
           return
         }

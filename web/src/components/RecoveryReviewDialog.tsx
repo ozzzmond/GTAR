@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { inspectRecovery, recordRecoveryChoice, recoveryData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage } from '../utils/syncJournal'
+import { inspectRecovery, recordRecoveryChoice, recoveryData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage, isLibraryIndexActive, enableLibraryIndex, disableLibraryIndex } from '../utils/syncJournal'
 
 import { isDevEnv } from '../utils/env'
 import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
@@ -8,7 +8,7 @@ import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
 export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [review, setReview] = useState(() => inspectRecovery())
-  const [choice, setChoice] = useState<'keep-current' | 'reopen' | 'cleanup' | 'shadow' | null>(null)
+  const [choice, setChoice] = useState<'keep-current' | 'reopen' | 'cleanup' | 'shadow' | 'b1' | null>(null)
   const [approved, setApproved] = useState(false)
   const [shadow, setShadow] = useState<ShadowCleanupPlan | null>(null)
   const cleanup = planRecoveryCleanup(review)
@@ -30,6 +30,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
   const invalid = review.sources.filter(source => source.status === 'invalid')
 
   const hasNoActionable = actionable.length === 0
+  const b1On = isDevEnv && isLibraryIndexActive()
   const retention = recoveryRetentionUsage(localStorage)
   const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(2)
   // Distinct missing records across actionable sources; titles stay behind a disclosure.
@@ -52,6 +53,16 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
       else if (choice === 'shadow' && shadow) {
         const store = await import('../utils/libraryBodyStore')
         await store.confirmShadowCleanup(shadow, approved, blocked)
+      } else if (choice === 'b1') {
+        // #171 B1 (DEV): switch under the shared lock, then reload so every view reads the new source.
+        if (!navigator.locks?.request) throw new Error('Library storage switch requires Web Locks support.')
+        await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, async lock => {
+          if (!lock || blocked()) throw new Error('Resolve editor edits or cross-tab conflicts first.')
+          if (b1On) disableLibraryIndex()
+          else await enableLibraryIndex()
+        })
+        window.location.reload()
+        return
       } else if (choice === 'keep-current' || choice === 'reopen') await recordRecoveryChoice(review, choice, blocked)
       refresh()
     }
@@ -342,6 +353,9 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
         <div className="flex flex-wrap gap-2">
           <button className={button} disabled={busy || review.invalid || !review.decisionRaw} onClick={() => { setChoice('cleanup'); setApproved(false) }} data-testid="review-cleanup-btn">Review decided archive cleanup</button>
           {isDevEnv && <button className={button} disabled={busy} onClick={reviewShadow}>Review shadow storage</button>}
+          {isDevEnv && <button className={button} disabled={busy} onClick={() => { setChoice('b1'); setApproved(false) }} data-testid="library-b1-toggle-btn">
+            Library storage B1: {b1On ? 'On — turn off' : 'Off — turn on'}
+          </button>}
           <button className={button} disabled={busy} onClick={exportSources} data-testid="export-recovery-btn">
             Export all recovery data
           </button>
@@ -390,6 +404,10 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
             <p className="text-xs text-app-heading">
               {choice === 'cleanup'
                 ? `Remove ${cleanup.length} decided archives (${cleanup.reduce((sum, item) => sum + 2 * (item.key.length + item.raw.length), 0).toLocaleString()} bytes), oldest first, only if their recorded SHA-256 still matches. Compact historical decisions to library digests and counts. This removes archived versions and historical library baselines; export first if you need those copies. Your Songbook and undecided archives stay intact.`
+                : choice === 'b1'
+                ? (b1On
+                  ? 'Turn off B1: write the full library (with every edit made while on) back to gtar_library_v1, verify it, then reload. IndexedDB bodies stay.'
+                  : 'Turn on B1 (DEV test): copy every chart body to IndexedDB, verify, write the slim gtar_library_v2 index, then reload. gtar_library_v1 is frozen as a complete fallback and never deleted; this does not free storage yet. Export recovery data first.')
                 : choice === 'shadow'
                 ? `IndexedDB gtar_library_bodies_db / bodies: ${shadow?.totalCount ?? 0} bodies, approximately ${shadow?.totalBytes ?? 0} bytes. Remove ${shadow?.records.length ?? 0} unreferenced bodies (${shadow?.orphanBytes ?? 0} bytes). Bodies referenced by your Songbook and retained recovery history are protected. Superseded chart history will be removed.`
                 : choice === 'keep-current'

@@ -7,7 +7,7 @@
  * here deletes, rewrites or migrates user data. Shadow writes and load-time verification only
  * report into Debug Logs so the next phase can be judged on field evidence.
  */
-import { isLibraryStorageKey, isQuotaError, recoveryData, inspectRecovery, RESTORE_SNAPSHOT_KEY } from './syncJournal'
+import { isLibraryIndexActive, isLibraryStorageKey, isQuotaError, recoveryData, inspectRecovery, RESTORE_SNAPSHOT_KEY } from './syncJournal'
 
 export const BODY_DB_NAME = 'gtar_library_bodies_db'
 export const BODY_DB_VERSION = 1
@@ -214,7 +214,8 @@ async function protectedHashes(raw: string): Promise<Set<string>> {
     }
     if (!value || typeof value !== 'object') return
     for (const [key, child] of Object.entries(value)) {
-      if (key === 'rawContent' && typeof child === 'string') hashes.add(await bodyHash(child))
+      if ((key === 'rawContent' || key === 'pendingRawContent') && typeof child === 'string') hashes.add(await bodyHash(child))
+      else if (key === 'contentHash' && typeof child === 'string') hashes.add(child)
       else if (['raw', 'libraryRaw', 'legacyRaw', 'legacyV1Raw'].includes(key) && typeof child === 'string') await walk(JSON.parse(child))
       else await walk(child)
     }
@@ -227,6 +228,8 @@ async function protectedHashes(raw: string): Promise<Set<string>> {
 }
 export async function inspectShadowCleanup(storage: Storage = localStorage, options?: BodyStoreOptions): Promise<ShadowCleanupPlan> {
   if (inspectRecovery(storage).invalid) throw new Error('Invalid recovery data; shadow cleanup unavailable. Export recovery data.')
+  // #171 B1: the index depends on these bodies and other tabs cache them; cleanup waits for B1 off.
+  if (isLibraryIndexActive(storage)) throw new Error('Library storage B1 is on. Turn it off before shadow cleanup.')
   const storageRaw = shadowStorageRaw(storage)
   const protectedSet = await protectedHashes(storageRaw)
   const db = await openBodyDatabase(options)
@@ -268,4 +271,48 @@ export async function confirmShadowCleanup(plan: ShadowCleanupPlan, confirmed: b
       })
     } finally { db.close() }
   })
+}
+
+/**
+ * #171 B1 backend: `load` returns only bodies whose SHA-256 matches their key (corrupt records are
+ * treated as missing); `store` resolves after the write transaction completes.
+ */
+export function libraryBodyBackend(options?: BodyStoreOptions) {
+  return {
+    async load(hashes: string[]): Promise<Map<string, string>> {
+      const db = await openBodyDatabase(options)
+      try {
+        const records = await readRecords(db, hashes)
+        const verified = new Map<string, string>()
+        for (const [hash, record] of records) {
+          if (record && typeof record.body === 'string' && await bodyHash(record.body) === hash) verified.set(hash, record.body)
+        }
+        return verified
+      } finally { db.close() }
+    },
+    async store(bodies: string[]): Promise<Map<string, string>> {
+      const byBody = new Map<string, string>()
+      for (const body of bodies) byBody.set(body, await bodyHash(body))
+      const db = await openBodyDatabase(options)
+      try {
+        const existing = await readRecords(db, [...new Set(byBody.values())])
+        // Content-addressed: rewriting a missing or corrupt record with its true body is always safe.
+        const writes = [...byBody].filter(([body, hash]) => existing.get(hash)?.body !== body)
+        if (writes.length) {
+          const now = options?.now ?? Date.now
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(BODY_STORE, 'readwrite')
+            tx.oncomplete = () => resolve()
+            tx.onerror = () => reject(tx.error || new Error('Library body write failed'))
+            tx.onabort = () => reject(tx.error || new Error('Library body write aborted'))
+            const store = tx.objectStore(BODY_STORE)
+            for (const [body, hash] of writes) store.put({ hash, body, chars: body.length, storedAt: now() } satisfies BodyRecord)
+          })
+        }
+        const check = await readRecords(db, [...new Set(byBody.values())])
+        for (const [body, hash] of byBody) if (check.get(hash)?.body !== body) throw new Error('Library body write could not be verified')
+        return byBody
+      } finally { db.close() }
+    },
+  }
 }
