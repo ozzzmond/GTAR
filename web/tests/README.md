@@ -234,6 +234,7 @@ New or renamed tests await a human choice of primary category.
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [libraryBodyShadow.test.cjs](libraryBodyShadow.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
+- [recoveryRetentionGuidance.test.cjs](recoveryRetentionGuidance.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
