@@ -237,6 +237,7 @@ New or renamed tests await a human choice of primary category.
 - [libraryBodyShadow.test.cjs](libraryBodyShadow.test.cjs)
 - [libraryIndexB1.test.cjs](libraryIndexB1.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
+- [libraryV1Retirement.test.cjs](libraryV1Retirement.test.cjs)
 - [recoveryArchivesIdb.test.cjs](recoveryArchivesIdb.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
 - [recoveryRetentionGuidance.test.cjs](recoveryRetentionGuidance.test.cjs)

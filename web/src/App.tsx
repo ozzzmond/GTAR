@@ -19,6 +19,8 @@ import {
   recoveryData,
   requestDurableStorage,
   prepareLibraryStorage,
+  autoEnableLibraryIndex,
+  retireLibraryV1,
 } from './utils/syncJournal'
 import { LIBRARY_B1_KEY } from './utils/libraryIndex'
 import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
@@ -112,12 +114,19 @@ function LibraryStartup() {
   useEffect(() => {
     if (ready) return
     let live = true
-    const archives = needsArchiveStartup()
-      ? prepareRecoveryArchives(recoveryArchiveBackend(), localStorage, (level, message) => appLogger[level]('RecoveryArchives', message))
-        .catch(error => appLogger.warn('RecoveryArchives', 'IndexedDB unavailable; archives stay in localStorage', error instanceof Error ? error.message : String(error)))
-      : null
-    const timeout = new Promise(resolve => setTimeout(resolve, 8000))
-    Promise.race([Promise.all([archives, prepareLibraryStorage()]), timeout]).finally(() => { if (live) setReady(true) })
+    const warn = (tag: string, message: string) => (error: unknown) => appLogger.warn(tag, message, error instanceof Error ? error.message : String(error))
+    const startup = async () => {
+      if (needsArchiveStartup()) {
+        await prepareRecoveryArchives(recoveryArchiveBackend(), localStorage, (level, message) => appLogger[level]('RecoveryArchives', message))
+          .catch(warn('RecoveryArchives', 'IndexedDB unavailable; archives stay in localStorage'))
+      }
+      // #167 (DEV): B1 on by default, then retire gtar_library_v1 once the index fully loads.
+      if (isDevEnv) await autoEnableLibraryIndex().catch(warn('LibraryIndex', 'Automatic B1 enable skipped; gtar_library_v1 stays the source'))
+      const prepared = await prepareLibraryStorage()
+      if (isDevEnv && prepared.indexed) await retireLibraryV1().catch(warn('LibraryIndex', 'gtar_library_v1 retirement deferred'))
+    }
+    const timeout = new Promise(resolve => setTimeout(resolve, 15000))
+    Promise.race([startup(), timeout]).finally(() => { if (live) setReady(true) })
     return () => { live = false }
   }, [ready])
   if (!ready) return <p role="status" className="p-4 text-app-muted">Loading library…</p>
