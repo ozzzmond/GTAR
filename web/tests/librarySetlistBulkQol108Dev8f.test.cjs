@@ -5,24 +5,17 @@ const path = require('node:path')
 
 const webDir = path.resolve(__dirname, '..')
 
-// 2. RECOVERY BANNER DISMISS QOL
-test('RECOVERY_DISMISS_BEHAVIOR: App.tsx has non-destructive archive-scoped dismiss button and re-evaluates on reload', () => {
+// 2. #181: the DEV recovery banner and its dismissal are replaced by red dots; only damage alerts.
+test('RECOVERY_DOT_CONTRACT: App.tsx alerts only a damaged library; Header and Cloud Sync show the recovery dot', () => {
   const appTsx = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
-
-  // Must have dismiss-recovery-banner button with proper aria-label
-  assert.ok(appTsx.includes('data-testid="dismiss-recovery-banner"'), 'App.tsx must render dismiss recovery button')
-  assert.ok(appTsx.includes('aria-label="Dismiss recovery notice"'), 'Dismiss button must have accessible aria-label')
-  
-  // 8j persists acknowledgement separately; new archives and damage re-alert.
-  assert.ok(appTsx.includes('dismissedNotice === status.noticeId'), 'Dismissal must match current recovery sources')
-  assert.ok(appTsx.includes('localStorage.setItem(RECOVERY_NOTICE_ACK_KEY, status.noticeId)'), 'Persist only notice acknowledgement')
-  const handler = appTsx.slice(appTsx.indexOf('const dismissRecovery ='), appTsx.indexOf('const showBanner ='))
-  assert.ok(handler.includes('if (status.damaged || status.noticeId === null) return'), 'Damage cannot be dismissed')
-  assert.doesNotMatch(handler, /removeItem|persistLibrary|retireDriveSyncState|pruneAllRecoverySnapshots/, 'Dismissal must not destroy recovery or mutate library')
-
-  // Must preserve export action
-  assert.ok(appTsx.includes('Export recovery data'), 'Export action text must remain intact')
-  assert.ok(appTsx.includes('exportRecovery'), 'Export handler must remain functional')
+  assert.ok(!appTsx.includes('dismiss-recovery-banner'), 'No dismissible recovery banner')
+  assert.ok(!appTsx.includes('Recovery data is available'), 'No DEV recovery banner text')
+  assert.ok(appTsx.includes('{status.damaged && <aside role="alert"'), 'Damaged library keeps the alert')
+  assert.ok(appTsx.includes('Export recovery data') && appTsx.includes('exportRecovery'), 'Damaged-state export remains')
+  const header = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
+  const modal = fs.readFileSync(path.join(webDir, 'src/components/CloudSyncModal.tsx'), 'utf8')
+  assert.ok(header.includes('data-testid="header-recovery-dot"') && header.includes('useRecoveryAttention()'))
+  assert.ok(modal.includes('data-testid="cloud-sync-recovery-dot"') && modal.includes('useRecoveryAttention()'))
 })
 
 // 3. PROVE_MEMBERSHIP: COMPACT BADGE & NAVIGATION

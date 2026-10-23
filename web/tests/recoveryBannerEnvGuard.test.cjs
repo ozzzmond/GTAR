@@ -66,7 +66,7 @@ function setupDom(url, storageQuota) {
   return { dom, prior }
 }
 
-test('RECOVERY_BANNER_DEV: localhost renders global recovery data warning banner when recovery data present', async () => {
+test('RECOVERY_BANNER_DEV (#181): localhost shows the recovery dot, not a banner, when recovery data is present', async () => {
   clearAppRequireCache()
   const { dom, prior } = setupDom('http://localhost:5173/')
 
@@ -83,10 +83,8 @@ test('RECOVERY_BANNER_DEV: localhost renders global recovery data warning banner
   try {
     const App = require('../src/App.tsx').default
     await act(async () => root.render(React.createElement(App)))
-    const alertAside = document.querySelector('aside[role="alert"]')
-    assert.ok(alertAside, 'Dev/localhost must render recovery banner aside')
-    assert.match(alertAside.textContent, /Recovery data is available/)
-    assert.match(alertAside.textContent, /Export recovery data/)
+    assert.equal(document.querySelector('aside[role="alert"]'), null, '#181: no recovery banner in DEV')
+    assert.ok(document.querySelector('[data-testid="header-recovery-dot"]'), '#181: DEV shows the red recovery dot instead')
   } finally {
     await act(async () => root.unmount())
     Object.assign(global, prior)
@@ -147,10 +145,12 @@ test('RECOVERY_BANNER_PROD_DAMAGED: production renders damage alert if library d
   }
 })
 
-test('RECOVERY_BANNER_CONTRACT: App source code gates banner rendering with isDevEnv', () => {
+test('RECOVERY_BANNER_CONTRACT (#181): only damage alerts; the recovery dot is DEV-gated', () => {
   const appSrc = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8')
-  assert.match(appSrc, /import\s+\{[^}]*isDevEnv[^}]*\}\s+from\s+['"]\.\/utils\/env['"]/)
-  assert.match(appSrc, /showBanner\s*=\s*status\.damaged\s*\|\|\s*\(\s*isDevEnv\s*&&\s*!status\.retired\s*\)/)
+  assert.ok(appSrc.includes('{status.damaged && <aside role="alert"'))
+  assert.doesNotMatch(appSrc, /showBanner/)
+  const attention = fs.readFileSync(path.resolve(__dirname, '../src/utils/recoveryAttention.ts'), 'utf8')
+  assert.match(attention, /if \(!isDevEnv\) return false/)
 })
 
 test('8j startup recovery is refreshed after child migration and stays resolved on reload', async () => {
@@ -171,99 +171,28 @@ test('8j startup recovery is refreshed after child migration and stays resolved 
   } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
 })
 
-test('8j dismiss preserves sources across reload/auth remount; changed sources and damage re-alert', async () => {
+test('8j/#181 dot follows recovery state across remounts; new archives re-alert; damage still alerts', async () => {
   clearAppRequireCache()
   const { dom, prior } = setupDom('http://localhost/')
   const library = JSON.stringify({songs:[{id:'550e8400-e29b-41d4-a716-446655440000',title:'Song',rawContent:'C'}],setlists:[]})
   localStorage.setItem('gtar_library_v1', library)
   localStorage.setItem('gtar_sync_recovery:unknown', 'original archive')
   const App = require('../src/App.tsx').default
+  const dot = () => document.querySelector('[data-testid="header-recovery-dot"]')
   let root = createRoot(document.getElementById('root'))
   try {
     await act(async () => root.render(React.createElement(App)))
-    assert.match(document.querySelector('aside[role="alert"]').textContent, /Export recovery data/)
-    await act(async () => document.querySelector('[data-testid="dismiss-recovery-banner"]').click())
     assert.equal(document.querySelector('aside[role="alert"]'), null)
-    assert.equal(localStorage.getItem('gtar_library_v1'), library)
-    assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'original archive')
-    // AuthGate unmounts/remounts App; signOut clears auth session keys only.
+    assert.ok(dot(), 'actionable archive shows the dot')
     await act(async () => root.unmount())
     root = createRoot(document.getElementById('root'))
     await act(async () => root.render(React.createElement(App)))
-    assert.equal(document.querySelector('aside[role="alert"]'), null)
-    localStorage.setItem('gtar_sync_recovery:unknown', 'new archive')
-    await act(async () => window.dispatchEvent(new window.StorageEvent('storage')))
-    assert.ok(document.querySelector('aside[role="alert"]'))
-    await act(async () => document.querySelector('[data-testid="dismiss-recovery-banner"]').click())
+    assert.ok(dot(), 'dot survives an auth remount while the archive is undecided')
+    assert.equal(localStorage.getItem('gtar_library_v1'), library)
+    assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'original archive')
     localStorage.setItem('gtar_library_v1', '{broken')
     await act(async () => window.dispatchEvent(new window.StorageEvent('storage')))
     assert.match(document.querySelector('aside[role="alert"]').textContent, /Device library needs recovery/)
-    assert.equal(document.querySelector('[data-testid="dismiss-recovery-banner"]'), null)
-    assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'new archive')
-  } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
-})
-
-
-test('8j large archive acknowledgement survives fresh page and sign-out/sign-in with limited quota', async () => {
-  clearAppRequireCache()
-  let { dom, prior } = setupDom('http://localhost/', 10000)
-  const library = JSON.stringify({songs:[{id:'550e8400-e29b-41d4-a716-446655440000',title:'Song',rawContent:'C'}],setlists:[]})
-  const archive = 'preserved recovery '.repeat(330)
-  localStorage.setItem('gtar_library_v1', library)
-  localStorage.setItem('gtar_sync_recovery:large', archive)
-  let root = createRoot(document.getElementById('root'))
-  try {
-    const App = require('../src/App.tsx').default
-    await act(async () => root.render(React.createElement(App)))
-    await act(async () => document.querySelector('[data-testid="dismiss-recovery-banner"]').click())
-    assert.equal(document.querySelector('aside[role="alert"]'), null)
-    assert.ok(localStorage.getItem('gtar_recovery_notice_ack_v1'), 'Acknowledgement must fit remaining quota')
-    const saved = Array.from({length:localStorage.length}, (_, i) => [localStorage.key(i), localStorage.getItem(localStorage.key(i))])
-    await act(async () => root.unmount())
-    dom.window.close()
-    ;({ dom } = setupDom('http://localhost/', 10000))
-    for (const [key, value] of saved) localStorage.setItem(key, value)
-    clearAppRequireCache()
-    const ReloadedApp = require('../src/App.tsx').default
-    root = createRoot(document.getElementById('root'))
-    await act(async () => root.render(React.createElement(ReloadedApp)))
-    assert.equal(document.querySelector('aside[role="alert"]'), null, 'Fresh page retains acknowledgement')
-    const { saveGoogleSession } = require('../src/utils/googleAuth.ts')
-    const session = {user:{sub:'same-user',email:'same@example.com'},localExpiresAt:Date.now()+60000}
-    saveGoogleSession(session)
-    await act(async () => root.unmount())
-    saveGoogleSession(null)
-    saveGoogleSession(session)
-    root = createRoot(document.getElementById('root'))
-    await act(async () => root.render(React.createElement(ReloadedApp)))
-    assert.equal(document.querySelector('aside[role="alert"]'), null, 'Same user auth remount retains acknowledgement')
-    assert.equal(localStorage.getItem('gtar_library_v1'), library)
-    assert.equal(localStorage.getItem('gtar_sync_recovery:large'), archive)
-    localStorage.setItem('gtar_sync_recovery:new', 'new actionable recovery')
-    await act(async () => window.dispatchEvent(new window.Event('gtar-library-persisted')))
-    assert.ok(document.querySelector('aside[role="alert"]'), 'New recovery event reappears')
-    assert.equal(localStorage.getItem('gtar_sync_recovery:large'), archive)
-  } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
-})
-
-
-test('8j existing serialized acknowledgement remains valid after fingerprint migration', async () => {
-  clearAppRequireCache()
-  const { dom, prior } = setupDom('http://localhost/')
-  const archiveKey = 'gtar_sync_recovery:legacy-ack'
-  localStorage.setItem('gtar_library_v1', JSON.stringify({songs:[{id:'550e8400-e29b-41d4-a716-446655440000',title:'Song',rawContent:'C'}],setlists:[]}))
-  localStorage.setItem(archiveKey, 'old archive')
-  localStorage.setItem('gtar_recovery_notice_ack_v1', JSON.stringify([[archiveKey, 'old archive']]))
-  const root = createRoot(document.getElementById('root'))
-  try {
-    const App = require('../src/App.tsx').default
-    await act(async () => root.render(React.createElement(App)))
-    assert.equal(document.querySelector('aside[role="alert"]'), null)
-    localStorage.setItem(archiveKey, 'new archive')
-    await act(async () => window.dispatchEvent(new window.StorageEvent('storage')))
-    assert.ok(document.querySelector('aside[role="alert"]'), 'Same-length changed archive reappears')
-    await act(async () => document.querySelector('[data-testid="dismiss-recovery-banner"]').click())
-    assert.match(localStorage.getItem('gtar_recovery_notice_ack_v1'), /^v2:\d+:[0-9a-f]{32}$/)
-    assert.equal(localStorage.getItem(archiveKey), 'new archive')
+    assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'original archive')
   } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
 })

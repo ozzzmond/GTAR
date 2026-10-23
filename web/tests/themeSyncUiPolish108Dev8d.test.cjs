@@ -89,8 +89,8 @@ test('HEADER_SYNC_INDICATOR: Header cloud sync control provides state-aware heal
   assert.ok(headerContent.includes('SyncIcon = AlertTriangle'), 'Maps conflict/error to AlertTriangle icon')
 
   // PROOF OF ACCESSIBILITY & CLICK BEHAVIOR
-  assert.ok(headerContent.includes('title={syncLabel}'), 'Button has dynamic accessible title')
-  assert.ok(headerContent.includes('aria-label={syncLabel}'), 'Button has dynamic aria-label')
+  assert.match(headerContent, /title=\{recoveryAttention \? `\$\{syncLabel\}[^`]*` : syncLabel\}/, 'Button has dynamic accessible title (plus #181 recovery hint)')
+  assert.match(headerContent, /aria-label=\{recoveryAttention \? `\$\{syncLabel\}[^`]*` : syncLabel\}/, 'Button has dynamic aria-label (plus #181 recovery hint)')
   assert.ok(headerContent.includes('onClick={() => setShowCloudSyncModal(true)}'), 'Click behavior is unchanged and opens CloudSyncModal')
 
   // PROOF OF COMPACTNESS & PRESERVED IDENTITY

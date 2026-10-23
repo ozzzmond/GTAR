@@ -71,6 +71,7 @@ export async function prepareRecoveryArchives(next: RecoveryArchiveBackend, stor
       if (typeof message?.key !== 'string' || !message.key.startsWith(ARCHIVE_PREFIX)) return
       if (message.type === 'put' && typeof message.raw === 'string') mirror.set(message.key, message.raw)
       else if (message.type === 'remove') mirror.delete(message.key)
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('gtar-recovery-changed')) } catch { /* ignore */ }
     }
   }
   let migrated = 0, failed = 0
