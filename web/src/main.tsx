@@ -25,7 +25,9 @@ if (typeof window !== 'undefined') {
 // #167 phase B0, DEV only: shadow-copy chart bodies to IndexedDB and verify them on load.
 // Read-only with respect to the library; localStorage stays the source of truth. Never loaded in PROD.
 if (typeof window !== 'undefined' && isDevEnv) {
-  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger'), import('./utils/syncJournal')]).then(([store, { appLogger }, { peekPersistedLibrary }]) => {
+  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger'), import('./utils/syncJournal'), import('./utils/libraryIndex')]).then(([store, { appLogger }, { peekPersistedLibrary }, { setLibraryBodyBackend }]) => {
+    // #171 B1: IndexedDB access for the slim library index (used only when the DEV toggle is on).
+    setLibraryBodyBackend(store.libraryBodyBackend())
     store.installLibraryBodyShadow({
       enabled: true,
       logger: appLogger,

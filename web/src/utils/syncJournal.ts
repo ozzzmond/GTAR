@@ -5,6 +5,8 @@ import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 import { canonicalSongKey } from './musicalKey'
 import { validateCloudThemeSettings } from './backupSettings'
 import { recoverySourceDigest } from './recoverySourceDigest'
+import { LIBRARY_B1_KEY, LIBRARY_V2_KEY, confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex,
+  loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -176,6 +178,16 @@ export function recoveryData(storage: Storage = localStorage): Record<string, st
     const k = storage.key(i)
     if (k && (k === LIBRARY_KEY || k === ownerKey || k === RECOVERY_DECISIONS_KEY || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:') || k.startsWith('gtar_sync_recovery:'))) data[k] = storage.getItem(k) ?? ''
   }
+  // #171 B1: exports always carry the full current library, never the slim index alone.
+  const indexRaw = storage.getItem(LIBRARY_V2_KEY)
+  if (indexRaw !== null) {
+    let full: string | null = null
+    if (activeLibraryKey(storage) === LIBRARY_V2_KEY) {
+      try { full = JSON.stringify(decodeLibraryRevision(indexRaw)) } catch { /* bodies unavailable: keep both raw forms */ }
+    }
+    if (full !== null) data[LIBRARY_KEY] = full
+    else data[LIBRARY_V2_KEY] = indexRaw
+  }
   return data
 }
 
@@ -240,7 +252,7 @@ function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary
 
 interface RecoveryLibrarySummary { digest: string; rawLength: number; songs: number; setlists: number; timestamp: number }
 function librarySummary(raw: string): RecoveryLibrarySummary {
-  const library = JSON.parse(raw); validateLibrary(library)
+  const library = decodeLibraryRevision(raw); validateLibrary(library)
   return { digest: recoverySourceDigest(raw), rawLength: raw.length, songs: library.songs.length, setlists: library.setlists.length, timestamp: Date.now() }
 }
 function readRecoveryDecisions(raw: string | null, depth = 0): RecoveryDecision[] {
@@ -370,7 +382,7 @@ export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: 
     storage.setItem(RECOVERY_DECISIONS_KEY, payload)
     if (storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Decision compaction could not be verified. Archives retained.')
     for (const item of plan) {
-      if (blocked() || storage.getItem(LIBRARY_KEY) !== fresh.libraryRaw || storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Library or decisions changed. Review remaining archives again.')
+      if (blocked() || libraryRevision(storage) !== fresh.libraryRaw || storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Library or decisions changed. Review remaining archives again.')
       if (storage.getItem(item.key) === item.raw) storage.removeItem(item.key)
       else appLogger.warn('RecoveryCleanup', 'Archive changed; retained', item.key)
     }
@@ -382,14 +394,14 @@ export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: 
 export function inspectRecovery(storage: Storage = localStorage): RecoveryReview {
   const review: RecoveryReview = { libraryRaw: null, decisionRaw: null, invalid: false, sources: [], missingRecords: 0, divergentVersions: 0 }
   try {
-    review.libraryRaw = storage.getItem(LIBRARY_KEY)
+    review.libraryRaw = libraryRevision(storage)
     const library = readPersistedLibrary(storage)
     review.decisionRaw = storage.getItem(RECOVERY_DECISIONS_KEY)
     let decisions: RecoveryDecision[] = []
     try { decisions = readRecoveryDecisions(review.decisionRaw) } catch { review.invalid = true }
     const sources = recoveryData(storage)
     delete sources[RECOVERY_DECISIONS_KEY]
-    const entries = Object.entries(sources).filter(([key]) => key !== LIBRARY_KEY && key !== ownerKey && !legacyKeys.includes(key))
+    const entries = Object.entries(sources).filter(([key]) => key !== LIBRARY_KEY && key !== LIBRARY_V2_KEY && key !== ownerKey && !legacyKeys.includes(key))
     if (legacyKeys.some(key => key in sources)) {
       // Preserve the original bytes too: a legacy source changes if any constituent changes.
       entries.push(['legacy', JSON.stringify(legacyKeys.map(key => sources[key] ?? null))])
@@ -483,12 +495,12 @@ export function retireDriveSyncState(storage: Storage = localStorage): boolean {
     // Explicit historical-version choices must not be undone by legacy startup migration.
     // Decision sources and their baseline also remain available for export and reopening.
     if (storage.getItem(RECOVERY_DECISIONS_KEY) !== null) return false
-    const expectedRaw = storage.getItem(LIBRARY_KEY)
+    const expectedRaw = libraryRevision(storage)
     let library = readPersistedLibrary(storage)
     if (!library) return false
     const superseded: SyncLibrary[] = []
     const sources = recoveryData(storage)
-    const keys = Object.keys(sources).filter(k => k !== LIBRARY_KEY && k !== ownerKey && k !== RECOVERY_DECISIONS_KEY)
+    const keys = Object.keys(sources).filter(k => k !== LIBRARY_KEY && k !== LIBRARY_V2_KEY && k !== ownerKey && k !== RECOVERY_DECISIONS_KEY)
     for (const k of keys.filter(k => k.startsWith('gtar_sync_v1:'))) {
       const journal = JSON.parse(sources[k])
       if (journal.version !== 1) return false
@@ -562,32 +574,44 @@ export interface PersistLibraryOptions {
 const lastKnownLibraryRawByStorage = new WeakMap<Storage, string | null>()
 
 /*
- * #171 B1a storage seam. Everything outside this module reads and restores the persisted library
- * only through these helpers, so B1 can move the source of truth (v2 index + IndexedDB bodies)
- * in one place. Today the revision token is the raw `gtar_library_v1` JSON.
+ * #171 storage seam. Everything outside this module reads and restores the persisted library
+ * only through these helpers. With B1 off (default) the revision token is the raw
+ * `gtar_library_v1` JSON. With B1 on it is the `gtar_library_v2` slim index and v1 is frozen.
  */
+/** B1 is active only when toggled on and its index exists; otherwise v1 stays the source of truth. */
+function activeLibraryKey(storage: Storage): string {
+  return storage.getItem(LIBRARY_B1_KEY) === '1' && storage.getItem(LIBRARY_V2_KEY) !== null ? LIBRARY_V2_KEY : LIBRARY_KEY
+}
+export function isLibraryIndexActive(storage: Storage = localStorage): boolean {
+  return activeLibraryKey(storage) === LIBRARY_V2_KEY
+}
 /** Opaque revision token of the persisted library, for revision gates and change checks. Throws like `Storage.getItem`. */
 export function libraryRevision(storage: Storage = localStorage): string | null {
-  return storage.getItem(LIBRARY_KEY)
+  return storage.getItem(activeLibraryKey(storage))
 }
 /** Restores a revision read earlier with `libraryRevision` (rollback after a failed follow-up write). */
 export function restoreLibraryRevision(revision: string | null, storage: Storage = localStorage): void {
-  if (revision === null) storage.removeItem(LIBRARY_KEY)
-  else storage.setItem(LIBRARY_KEY, revision)
+  const key = activeLibraryKey(storage)
+  if (revision === null) storage.removeItem(key)
+  else storage.setItem(key, revision)
 }
 /** True when a `storage` event key signals a library change in another tab. */
 export function isLibraryStorageKey(key: string | null): boolean {
-  return key === LIBRARY_KEY
+  return key === LIBRARY_KEY || key === LIBRARY_V2_KEY
+}
+/** Full (unvalidated) library object from a revision token. Throws MissingLibraryBodyError when a body is not loaded. */
+export function decodeLibraryRevision(raw: string): unknown {
+  return decodeLibraryIndex(JSON.parse(raw))
 }
 /** Parses the persisted library without validation or moving the cross-tab baseline (diagnostics, shadow copy). */
 export function peekPersistedLibrary(storage: Storage = localStorage): unknown {
-  const raw = storage.getItem(LIBRARY_KEY)
-  return raw ? JSON.parse(raw) : null
+  const raw = libraryRevision(storage)
+  return raw ? decodeLibraryRevision(raw) : null
 }
 
 export function getPersistedLibraryRaw(storage: Storage = localStorage): string | null {
   try {
-    return storage.getItem(LIBRARY_KEY)
+    return libraryRevision(storage)
   } catch {
     return null
   }
@@ -654,19 +678,25 @@ export function persistLibrary(
     }))
   }
 
-  const payload = JSON.stringify(canonicalized)
-  const currentRaw = storage.getItem(LIBRARY_KEY)
+  const key = activeLibraryKey(storage)
+  const indexed = key === LIBRARY_V2_KEY
+  const encoded = indexed ? encodeLibraryIndex(canonicalized) : null
+  const payload = encoded ? encoded.payload : JSON.stringify(canonicalized)
+  const currentRaw = storage.getItem(key)
   const hasExpected = options?.expectedRaw !== undefined
   const expectedRaw = options?.expectedRaw
   let isIdentical = currentRaw === payload
+  let sameContent = isIdentical
   if (!isIdentical && currentRaw !== null) {
     try {
       // Compare the persisted representation: optional undefined fields are omitted.
-      isIdentical = same(JSON.parse(currentRaw), JSON.parse(payload))
+      sameContent = same(decodeLibraryRevision(currentRaw), JSON.parse(JSON.stringify(canonicalized)))
+      // B1: same content but a newly confirmed body hash still rewrites (drops the inline copy).
+      isIdentical = sameContent && !indexed
     } catch { /* Unparseable external storage must not bypass the revision gate. */ }
   }
 
-  if (!options?.force && hasExpected && currentRaw !== expectedRaw && !isIdentical) {
+  if (!options?.force && hasExpected && currentRaw !== expectedRaw && !sameContent) {
     throw new StaleWriteConflictError(
       'Songbook library was updated in another tab or instance. Persistence rejected to prevent data loss.',
       currentRaw,
@@ -681,26 +711,30 @@ export function persistLibrary(
   }
 
   try {
-    storage.setItem(LIBRARY_KEY, payload)
+    storage.setItem(key, payload)
   } catch (err) {
     if (!isQuotaError(err)) throw err
     // Logs are disposable. Journals, snapshots and legacy stores are not.
     try { prunePersistedLogs(storage, 10) } catch { /* Log cleanup must not mask the write error. */ }
-    const retryRaw = storage.getItem(LIBRARY_KEY)
+    const retryRaw = storage.getItem(key)
     if (retryRaw !== currentRaw) {
       throw new StaleWriteConflictError('Songbook library changed while retrying persistence.', retryRaw, canonicalized)
     }
-    try { storage.setItem(LIBRARY_KEY, payload) }
+    try { storage.setItem(key, payload) }
     catch (retryErr) {
       if (!isQuotaError(retryErr)) throw retryErr
       throw new Error('Local browser storage quota exceeded. Free up device storage or export a backup.', { cause: retryErr })
     }
   }
 
-  if (storage.getItem(LIBRARY_KEY) !== payload) {
+  if (storage.getItem(key) !== payload) {
     throw new Error('Songbook save could not be verified. Keep this tab open and export your draft.')
   }
   lastKnownLibraryRawByStorage.set(storage, payload)
+  if (encoded?.pending.length) {
+    void confirmPendingLibraryBodies(encoded.pending, error =>
+      appLogger.warn('LibraryIndex', 'Chart body not yet in IndexedDB; kept inline (library unaffected)', error instanceof Error ? error.message : String(error)))
+  }
   // Recovery archives remain exportable even when represented by the saved library.
   if (typeof window !== 'undefined') {
     try {
@@ -710,10 +744,10 @@ export function persistLibrary(
 }
 
 export function readPersistedLibrary(storage: Storage = localStorage): SyncLibrary | null {
-  const raw = storage.getItem(LIBRARY_KEY)
+  const raw = libraryRevision(storage)
   lastKnownLibraryRawByStorage.set(storage, raw)
   if (!raw) return null
-  const library: unknown = JSON.parse(raw)
+  const library: unknown = decodeLibraryRevision(raw)
   validateLibrary(library)
   return { ...library, songs: library.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) })) }
 }
@@ -789,7 +823,7 @@ export interface DanglingReferenceRepair {
 
 /** Strict validation of the copied remainder proves missing IDs are the sole defect. */
 function danglingReferenceCandidate(raw: string) {
-  const library = JSON.parse(raw) as SyncLibrary
+  const library = decodeLibraryRevision(raw) as SyncLibrary
   if (!library || !Array.isArray(library.songs) || !Array.isArray(library.setlists)) throw new Error('Unsupported recovery data.')
   // Validate songs, duplicates and top-level fields before considering references.
   validateLibrary({ ...library, setlists: [] })
@@ -811,7 +845,7 @@ function danglingReferenceCandidate(raw: string) {
 
 export function planDanglingReferenceRepair(storage: Storage = localStorage): DanglingReferenceRepair | null {
   try {
-    const raw = storage.getItem(LIBRARY_KEY)
+    const raw = libraryRevision(storage)
     if (raw === null) return null
     return { raw, references: danglingReferenceCandidate(raw).references }
   } catch { return null }
@@ -819,16 +853,93 @@ export function planDanglingReferenceRepair(storage: Storage = localStorage): Da
 
 /** Explicit caller confirmation only. Refuse stale previews and preserve exact input first. */
 export function applyDanglingReferenceRepair(plan: DanglingReferenceRepair, storage: Storage = localStorage): void {
-  if (storage.getItem(LIBRARY_KEY) !== plan.raw) throw new Error('Library changed. Preview repair again.')
+  if (libraryRevision(storage) !== plan.raw) throw new Error('Library changed. Preview repair again.')
   const { repaired, references } = danglingReferenceCandidate(plan.raw)
   if (JSON.stringify(references) !== JSON.stringify(plan.references)) throw new Error('Repair preview does not match current references.')
   validateLibrary(repaired)
   // Invalid raw archive fails strict snapshot validation and remains exportable.
   const archive = 'gtar_sync_recovery:dangling-references:' + Date.now() + ':' + Math.random().toString(36).slice(2)
-  writeRecoverySnapshotChecked(archive, plan.raw, storage)
-  if (storage.getItem(archive) !== plan.raw) throw new Error('Could not preserve original recovery data.')
-  if (storage.getItem(LIBRARY_KEY) !== plan.raw) throw new Error('Library changed. Preview repair again.')
-  storage.setItem(LIBRARY_KEY, JSON.stringify(repaired))
+  // B1: archive the full library, not the slim index, so the archive stays reviewable.
+  const original = isLibraryIndexActive(storage) ? JSON.stringify(decodeLibraryRevision(plan.raw)) : plan.raw
+  writeRecoverySnapshotChecked(archive, original, storage)
+  if (storage.getItem(archive) !== original) throw new Error('Could not preserve original recovery data.')
+  if (libraryRevision(storage) !== plan.raw) throw new Error('Library changed. Preview repair again.')
+  const activeKey = activeLibraryKey(storage)
+  storage.setItem(activeKey, activeKey === LIBRARY_V2_KEY ? encodeLibraryIndex(repaired).payload : JSON.stringify(repaired))
   readPersistedLibrary(storage)
   if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
+}
+
+/*
+ * #171 B1 (DEV toggle, off by default). Enabling writes every chart body to IndexedDB first, then
+ * the slim index, then the toggle. Disabling materializes the full library back into v1 before the
+ * toggle is cleared. Neither path deletes gtar_library_v1.
+ */
+function canonicalLibrary(library: SyncLibrary): SyncLibrary {
+  const { themeSettings: _ignoredTheme, ...rest } = library
+  void _ignoredTheme
+  return { ...rest, songs: library.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) })) }
+}
+
+export async function enableLibraryIndex(storage: Storage = localStorage, timeoutMs = 5000): Promise<void> {
+  if (isLibraryIndexActive(storage)) return
+  // A stale index from an earlier fallback is kept as a reviewable archive before it is replaced.
+  const stale = storage.getItem(LIBRARY_V2_KEY)
+  if (stale !== null) preserveStoredLibrary(stale, storage)
+  const revision = libraryRevision(storage)
+  const library = readPersistedLibrary(storage)
+  if (!library) throw new Error('No library to move. Nothing was changed.')
+  const store = await waitForLibraryBodyBackend(timeoutMs)
+  const stored = await store.store([...new Set(library.songs.map(song => song.rawContent))])
+  rememberLibraryBodies([...stored].map(([body, hash]) => [hash, body] as const))
+  if (libraryRevision(storage) !== revision) throw new Error('Library changed while enabling. Nothing was changed; try again.')
+  const { payload, pending } = encodeLibraryIndex(canonicalLibrary(library))
+  if (pending.length) throw new Error('Some chart bodies were not confirmed in IndexedDB. Nothing was changed.')
+  storage.setItem(LIBRARY_V2_KEY, payload)
+  if (storage.getItem(LIBRARY_V2_KEY) !== payload || !same(decodeLibraryRevision(payload), JSON.parse(JSON.stringify(canonicalLibrary(library))))) {
+    storage.removeItem(LIBRARY_V2_KEY)
+    throw new Error('Library index could not be verified. Nothing was changed.')
+  }
+  storage.setItem(LIBRARY_B1_KEY, '1')
+  appLogger.info('LibraryIndex', `B1 on: ${library.songs.length} songs, ${stored.size} chart bodies in IndexedDB; gtar_library_v1 frozen`)
+}
+
+export function disableLibraryIndex(storage: Storage = localStorage): void {
+  if (!isLibraryIndexActive(storage)) { storage.removeItem(LIBRARY_B1_KEY); return }
+  const library = readPersistedLibrary(storage)
+  if (!library) throw new Error('Library unavailable. B1 stays on; export recovery data.')
+  const payload = JSON.stringify(canonicalLibrary(library))
+  storage.setItem(LIBRARY_KEY, payload)
+  if (storage.getItem(LIBRARY_KEY) !== payload) throw new Error('Library could not be written back. B1 stays on.')
+  storage.removeItem(LIBRARY_B1_KEY)
+  if (!same(readPersistedLibrary(storage), library)) {
+    storage.setItem(LIBRARY_B1_KEY, '1')
+    throw new Error('Written-back library did not verify. B1 stays on.')
+  }
+  storage.removeItem(LIBRARY_V2_KEY)
+  appLogger.info('LibraryIndex', `B1 off: ${library.songs.length} songs written back to gtar_library_v1`)
+}
+
+export interface LibraryStoragePreparation { indexed: boolean; fellBack: boolean }
+/**
+ * Startup step before the library renders. With B1 on, loads every referenced body from IndexedDB.
+ * Any missing or corrupt body: keep the index as a recovery archive and return to frozen v1.
+ */
+export async function prepareLibraryStorage(storage: Storage = localStorage, timeoutMs = 5000): Promise<LibraryStoragePreparation> {
+  if (storage.getItem(LIBRARY_B1_KEY) !== '1') return { indexed: false, fellBack: false }
+  const raw = storage.getItem(LIBRARY_V2_KEY)
+  try {
+    if (raw === null) throw new Error('Library index missing')
+    await loadLibraryIndexBodies(raw, timeoutMs)
+    validateLibrary(decodeLibraryRevision(raw))
+    return { indexed: true, fellBack: false }
+  } catch (error) {
+    if (raw !== null) {
+      try { preserveStoredLibrary(raw, storage) } catch { /* gtar_library_v2 itself is kept below */ }
+    }
+    storage.removeItem(LIBRARY_B1_KEY)
+    appLogger.error('LibraryIndex', 'B1 index unusable; using gtar_library_v1. Index kept for recovery review.', undefined,
+      error instanceof Error ? error.message : String(error))
+    return { indexed: false, fellBack: true }
+  }
 }

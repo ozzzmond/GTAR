@@ -234,6 +234,7 @@ New or renamed tests await a human choice of primary category.
 - [editorLeaveSaveFeedback.test.cjs](editorLeaveSaveFeedback.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [libraryBodyShadow.test.cjs](libraryBodyShadow.test.cjs)
+- [libraryIndexB1.test.cjs](libraryIndexB1.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
 - [recoveryRetentionGuidance.test.cjs](recoveryRetentionGuidance.test.cjs)
