@@ -233,6 +233,7 @@ New or renamed tests await a human choice of primary category.
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
+- [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
 - [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
 - [stageCast2.test.cjs](stageCast2.test.cjs)
