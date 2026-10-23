@@ -35,7 +35,13 @@ import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
 import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
-import { getChordVoicing, type ChordVoicing } from '../utils/chordDictionary'
+import type { ChordVoicing } from '../utils/chordDictionary'
+
+// The voicing catalog (~270 KB of chord data) loads in its own chunk, preloaded when Stage mounts (#85).
+type ChordDictionaryModule = typeof import('../utils/chordDictionary')
+let chordDictionaryPromise: Promise<ChordDictionaryModule> | null = null
+const loadChordDictionary = (): Promise<ChordDictionaryModule> =>
+  (chordDictionaryPromise ??= import('../utils/chordDictionary').catch(error => { chordDictionaryPromise = null; throw error }))
 import {
   SongLineRenderer,
   type StageChordScale,
@@ -447,6 +453,23 @@ export const StageView: React.FC<StageViewProps> = ({
   const [previewVoicing, setPreviewVoicing] = useState<ChordVoicing | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isHoveringPreviewRef = useRef(false)
+  const chordDictionaryRef = useRef<ChordDictionaryModule | null>(null)
+  const voicingRequestRef = useRef(0)
+  useEffect(() => {
+    let active = true
+    loadChordDictionary().then(m => { if (active) chordDictionaryRef.current = m }).catch(() => { /* retried on first chord tap */ })
+    return () => { active = false }
+  }, [])
+  // Synchronous once the catalog is loaded (the normal case); otherwise applies the latest request after load.
+  const withVoicing = useCallback((chordName: string, apply: (voicing: ChordVoicing | null) => void) => {
+    const request = ++voicingRequestRef.current
+    const loaded = chordDictionaryRef.current
+    if (loaded) { apply(loaded.getChordVoicing(chordName)); return }
+    loadChordDictionary().then(m => {
+      chordDictionaryRef.current = m
+      if (request === voicingRequestRef.current) apply(m.getChordVoicing(chordName))
+    }).catch(() => { if (request === voicingRequestRef.current) apply(null) })
+  }, [])
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
   const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
@@ -1619,22 +1642,26 @@ export const StageView: React.FC<StageViewProps> = ({
       const rect = targetEl.getBoundingClientRect()
       if (previewAnchor?.chord === chordName) {
         // Toggle or open full modal
-        setSelectedChordName(chordName)
-        const voicing = getChordVoicing(chordName)
-        setSelectedVoicing(voicing)
-        setPreviewAnchor(null)
-        setPreviewVoicing(null)
+        withVoicing(chordName, voicing => {
+          setSelectedChordName(chordName)
+          setSelectedVoicing(voicing)
+          setPreviewAnchor(null)
+          setPreviewVoicing(null)
+        })
       } else {
-        setPreviewAnchor({ rect, chord: chordName })
-        setPreviewVoicing(getChordVoicing(chordName))
+        withVoicing(chordName, voicing => {
+          setPreviewAnchor({ rect, chord: chordName })
+          setPreviewVoicing(voicing)
+        })
       }
     } else {
       // Fallback for direct invocation without element target
-      setSelectedChordName(chordName)
-      const voicing = getChordVoicing(chordName)
-      setSelectedVoicing(voicing)
-      setPreviewAnchor(null)
-      setPreviewVoicing(null)
+      withVoicing(chordName, voicing => {
+        setSelectedChordName(chordName)
+        setSelectedVoicing(voicing)
+        setPreviewAnchor(null)
+        setPreviewVoicing(null)
+      })
     }
   }
 
@@ -1647,8 +1674,10 @@ export const StageView: React.FC<StageViewProps> = ({
     // 250ms intentional hover delay to prevent flashing
     hoverTimerRef.current = setTimeout(() => {
       const rect = targetEl.getBoundingClientRect()
-      setPreviewAnchor({ rect, chord: chordName })
-      setPreviewVoicing(getChordVoicing(chordName))
+      withVoicing(chordName, voicing => {
+        setPreviewAnchor({ rect, chord: chordName })
+        setPreviewVoicing(voicing)
+      })
     }, 250)
   }
 
@@ -1657,6 +1686,7 @@ export const StageView: React.FC<StageViewProps> = ({
       clearTimeout(hoverTimerRef.current)
       hoverTimerRef.current = null
     }
+    voicingRequestRef.current++ // drop any preview still waiting for the catalog to load
 
     // Delay closing briefly to allow pointer movement into the preview popover
     setTimeout(() => {

@@ -1,4 +1,6 @@
-import jsQR from 'jsqr'
+// jsQR (~125 KB) is loaded only when a scan actually runs, keeping it out of the entry chunk (#85).
+let decoder: Promise<typeof import('jsqr').default> | null = null
+const loadDecoder = () => (decoder ??= import('jsqr').then(m => m.default))
 
 /** The QR identifies a TV only; PIN and all authorization credentials stay out of URLs. */
 export function parseTvQr(value: string, origin: string): string | null {
@@ -11,8 +13,9 @@ export function parseTvQr(value: string, origin: string): string | null {
   } catch { return null }
 }
 
-export function readTvQr(source: CanvasImageSource, width: number, height: number): string | null {
+export async function readTvQr(source: CanvasImageSource, width: number, height: number): Promise<string | null> {
   if (!width || !height) return null
+  const jsQR = await loadDecoder()
   const scale = Math.min(1, 1600 / Math.max(width, height))
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(width * scale))
