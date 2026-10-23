@@ -441,14 +441,26 @@ function LibraryApp() {
     requestDurableStorage().catch(() => {})
   }, [])
 
-  // Cross-tab storage conflict protection for gtar_library_v1
+  // #177: the guard compares against the library this tab last committed or adopted. Closure state
+  // lags one render behind an adoption, so a burst of external saves looked like local edits.
+  // State arrays adopted verbatim from another tab, keyed by identity. Local edits always create new
+  // arrays, so state made only of adopted arrays has nothing local to save or protect, even when a
+  // concurrent render commits an older adoption after the baseline has moved to a newer one.
+  const adoptedStateRef = useRef(new WeakMap<object, string>())
+  const isAdoptedState = (state: { songs: object; deletedSongs: object; setlists: object }) =>
+    [state.songs, state.deletedSongs, state.setlists].every(part => adoptedStateRef.current.has(part))
+  const localLibraryRef = useRef<{ songs: ActiveSongState[]; deletedSongs: ActiveSongState[]; setlists: WebSetlist[] } | null>(null)
+  useEffect(() => { localLibraryRef.current = { songs, deletedSongs, setlists } }, [songs, deletedSongs, setlists])
+
+  // Cross-tab storage conflict protection for the persisted library
   useEffect(() => {
     const cleanup = setupCrossTabLibraryConflictGuard((externalRaw) => {
-      const currentLocal = { songs: [...songs, ...deletedSongs], setlists }
+      const local = localLibraryRef.current ?? { songs, deletedSongs, setlists }
+      const currentLocal = { songs: [...local.songs, ...local.deletedSongs], setlists: local.setlists }
       const baselineRaw = persistedBaselineRef.current
       // Match JSON storage semantics, including omitted optional editor fields.
-      let hasLocalChanges = true
-      if (baselineRaw) {
+      let hasLocalChanges = !isAdoptedState(local)
+      if (hasLocalChanges && baselineRaw) {
         try {
           const parsedBase = decodeLibraryRevision(baselineRaw)
           if (same(parsedBase, JSON.parse(JSON.stringify(currentLocal)))) {
@@ -476,6 +488,8 @@ function LibraryApp() {
             const parsed = decodeLibraryRevision(externalRaw) as { songs: ActiveSongState[]; setlists: WebSetlist[] }
             persistedBaselineRef.current = externalRaw
             const partitioned = partitionSongs(parsed.songs)
+            for (const adopted of [partitioned.active, partitioned.deleted, parsed.setlists]) adoptedStateRef.current.set(adopted, externalRaw)
+            localLibraryRef.current = { songs: partitioned.active, deletedSongs: partitioned.deleted, setlists: parsed.setlists }
             setSongs(partitioned.active)
             setDeletedSongs(partitioned.deleted)
             setSetlists(parsed.setlists)
@@ -505,6 +519,7 @@ function LibraryApp() {
   // State-only mutations can outlive a failed save outside the editor.
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
+      if (isAdoptedState({ songs, deletedSongs, setlists })) return
       try {
         const raw = persistedBaselineRef.current
         if (raw !== null && same(decodeLibraryRevision(raw), JSON.parse(JSON.stringify({ songs: [...songs, ...deletedSongs], setlists })))) return
@@ -521,6 +536,7 @@ function LibraryApp() {
     if (crossTabConflict) {
       return
     }
+    if (isAdoptedState({ songs, deletedSongs, setlists })) return
     const candidate = { songs: [...songs, ...deletedSongs], setlists }
     const baselineRaw = persistedBaselineRef.current
     if (baselineRaw) {

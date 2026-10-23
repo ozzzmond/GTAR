@@ -313,6 +313,22 @@ test('9. React App: cross-tab conflict detection, alert UI rendering, and recove
     assert.equal(home.songs.length, 2, 'Clean tab must adopt external update')
     assert.equal(document.querySelector('[data-testid="cross-tab-conflict-alert"]'), null)
 
+    // #177: rapid saves in another tab (two events before this tab re-renders) are both adopted.
+    const burst1 = JSON.stringify({ songs: [songA, { ...songB, rawContent: songB.rawContent + '\nburst 1' }], setlists: [] })
+    const burst2 = JSON.stringify({ songs: [songA, { ...songB, rawContent: songB.rawContent + '\nburst 1\nburst 2' }], setlists: [] })
+    await act(async () => {
+      localStorage.setItem(LIBRARY_KEY, burst1)
+      window.dispatchEvent(new dom.window.StorageEvent('storage', { key: LIBRARY_KEY, newValue: burst1 }))
+      localStorage.setItem(LIBRARY_KEY, burst2)
+      window.dispatchEvent(new dom.window.StorageEvent('storage', { key: LIBRARY_KEY, newValue: burst2 }))
+    })
+    assert.equal(document.querySelector('[data-testid="cross-tab-conflict-alert"]'), null, 'Idle tab must not pause saving on a burst of external saves')
+    assert.match(home.songs[1].rawContent, /burst 2$/, 'Latest external save adopted')
+    assert.equal(localStorage.getItem(LIBRARY_KEY), burst2, 'Idle tab did not write back')
+    localStorage.setItem(LIBRARY_KEY, externalRaw)
+    await act(async () => window.dispatchEvent(new dom.window.StorageEvent('storage', { key: LIBRARY_KEY, newValue: externalRaw })))
+    assert.equal(home.songs[1].rawContent, songB.rawContent)
+
     // A synchronous editor save plus the React persistence effect writes once.
     await act(async () => header.onViewChange('editor'))
     const countPrototype = Object.getPrototypeOf(localStorage)
