@@ -450,6 +450,38 @@ test('P3/F3: failed or unverifiable recovery snapshot aborts download without ch
   } finally { appLogger.addEntry = originalAdd }
 })
 
+test('F3: browser quota exhaustion on any sync safety snapshot never surfaces raw quota text or changes data', async () => {
+  const { request, db } = await fixture()
+  const base = library('base')
+  await write(db, library('remote'), emptyRevision)
+  const cloudBefore = await findUserSongbook(db, 'user-a')
+  for (const forceAction of ['download', 'merge_preserve', 'upload']) {
+    const store = seedStorage(library('local'), base)
+    const metaBefore = store.getItem(sync.CLOUD_SYNC_META_KEY)
+    const setItem = store.setItem
+    store.setItem = (key, value) => {
+      if (key.startsWith('gtar_sync_recovery:')) {
+        const err = new Error('The quota has been exceeded.'); err.name = 'QuotaExceededError'; throw err
+      }
+      setItem(key, value)
+    }
+    let posts = 0
+    await withFetch((url, opts) => { if (opts.method === 'POST') posts++; return request(opts.method, opts.body && JSON.parse(opts.body)) }, async () => {
+      const result = await sync.performCloudSongbookSync('token', { storage: store, forceAction })
+      assert.equal(result.success, false, forceAction)
+      assert.equal(result.actionTaken, 'NONE')
+      assert.doesNotMatch(result.error, /^The quota has been exceeded\.?$/, forceAction)
+      assert.match(result.error, /Review local recovery/, forceAction)
+    })
+    assert.equal(posts, 0, `${forceAction} must not reach the server`)
+    assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
+    assert.equal(store.getItem(sync.CLOUD_SYNC_META_KEY), metaBefore)
+  }
+  const cloudAfter = await findUserSongbook(db, 'user-a')
+  assert.equal(cloudAfter.version, cloudBefore.version)
+  assert.equal(cloudAfter.checksum, cloudBefore.checksum)
+})
+
 test('F3: automatic and explicit downloads abort when browser edits arrive during GET', async () => {
   const { request, db } = await fixture()
   const base = library('base')

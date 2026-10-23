@@ -1,5 +1,5 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { LIBRARY_KEY, writeRecoverySnapshot, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
+import { LIBRARY_KEY, isQuotaError, writeRecoverySnapshot, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1247,7 +1247,9 @@ async function executeCloudSongbookSync(
       return result
     } catch (err) {
       return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
-        error: `Cannot safely reconcile: ${err instanceof Error ? err.message : String(err)}. Local edits preserved; export a backup before retrying.` }
+        error: isQuotaError(err)
+          ? 'Device storage is full, so the reconciliation safety snapshot could not be saved. Local edits preserved; export a backup, then open Review local recovery to confirm cleanup before retrying.'
+          : `Cannot safely reconcile: ${err instanceof Error ? err.message : String(err)}. Local edits preserved; export a backup before retrying.` }
     }
   }
 
@@ -1653,7 +1655,15 @@ async function executeCloudSongbookSync(
       // Require durable recovery before attempting a merge write.
       const recoveryKey = `gtar_sync_recovery:merge:${Date.now()}:${generateUUID()}`
       const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: incoming })
-      await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
+      try {
+        await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
+      } catch (err) {
+        // Nothing has been uploaded or persisted yet; never surface the raw browser quota text.
+        return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
+          error: isQuotaError(err)
+            ? 'Device storage is full, so the merge safety snapshot could not be saved. Nothing was changed. Export a backup, then open Review local recovery to confirm cleanup before retrying sync.'
+            : 'Recovery snapshot could not be saved. Export a backup, then open Review local recovery to confirm cleanup before retrying sync.' }
+      }
       if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) {
         throw new Error('Recovery snapshot unavailable. Export a backup before retrying.')
       }
