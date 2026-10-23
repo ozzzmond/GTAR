@@ -26,6 +26,7 @@ import {
   type ConflictingItem,
 } from '../utils/cloudSongbookSync'
 import { readPersistedLibrary } from '../utils/syncJournal'
+import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { tryReadCloudThemeSettings } from '../utils/backupSettings'
 import type { SyncLibrary } from '../utils/syncMerge'
 
@@ -42,6 +43,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   onSyncApplied,
   onSyncStateChange,
 }) => {
+  const recoveryAttention = useRecoveryAttention() // #181
   const authContext = useOptionalGoogleAuth()
 
   const session = authContext?.session
@@ -474,9 +476,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               data-testid="cloud-sync-recovery-button"
               disabled={isProcessing}
               onClick={openRecoveryReview}
-              className="min-h-11 px-3 py-1.5 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              aria-label={recoveryAttention ? 'Review local recovery, needs a decision' : undefined}
+              className="relative min-h-11 px-3 py-1.5 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
             >
               Review local recovery
+              {recoveryAttention && <span data-testid="cloud-sync-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
             </button>
             <span className="hidden sm:inline text-[10px] text-app-muted">Offline edits preserved safely</span>
           </div>

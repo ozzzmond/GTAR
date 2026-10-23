@@ -1,5 +1,4 @@
 import { RecoveryReviewDialog } from './components/RecoveryReviewDialog'
-import { openRecoveryReview } from './utils/recoveryReview'
 import type { ImportBlocker } from './utils/sharedSetlistImport'
 import { CatalogImportContext } from './utils/catalogImportContext'
 import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
@@ -47,7 +46,7 @@ import {
 } from './utils/stageSession'
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
 import { DEFAULT_SAMPLE_SETLISTS, DEFAULT_SETLIST } from './data/defaultLibrary'
-import { checkRecovery, RECOVERY_NOTICE_ACK_KEY, recoveryNoticeFingerprint } from './utils/recoveryNotice'
+import { checkRecovery } from './utils/recoveryNotice'
 import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
 import { StageView } from './components/StageView'
@@ -151,19 +150,6 @@ function LibraryStartupReady() {
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  const [dismissedNotice, setDismissedNotice] = useState<string | null>(() => {
-    try {
-      const saved = localStorage.getItem(RECOVERY_NOTICE_ACK_KEY)
-      // Existing 8j acknowledgements contain the full serialized source set.
-      return saved?.startsWith('[') ? recoveryNoticeFingerprint(saved) : saved
-    } catch { return null }
-  })
-  const dismissed = !status.damaged && status.noticeId !== null && dismissedNotice === status.noticeId
-  const dismissRecovery = () => {
-    if (status.damaged || status.noticeId === null) return
-    setDismissedNotice(status.noticeId)
-    try { localStorage.setItem(RECOVERY_NOTICE_ACK_KEY, status.noticeId) } catch { /* Session acknowledgement still works. */ }
-  }
   const repairPlan = status.damaged ? planDanglingReferenceRepair() : null
   const applyRepair = () => {
     if (!repairPreview) return
@@ -174,24 +160,14 @@ function LibraryStartupReady() {
       setStatus(checkRecovery())
     } catch (err) { setRepairError(err instanceof Error ? err.message : 'Repair failed. Original data remains available for export.') }
   }
-  const showBanner = status.damaged || (isDevEnv && !status.retired)
+  // #181: only a damaged library gets the full-width alert (the app cannot load). Actionable recovery
+  // is shown as a red dot on the Cloud Sync button and on "Review local recovery" (DEV only).
   return <>
-    {!dismissed && showBanner && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
+    {status.damaged && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
       <div className="flex-1 min-w-0">
-        <span>{status.damaged ? 'Device library needs recovery. Original browser data has been preserved.' : 'Recovery data is available. Export it before clearing browser storage.'}</span>
+        <span>Device library needs recovery. Original browser data has been preserved.</span>
         <button className="underline ml-3 cursor-pointer" onClick={exportRecovery}>Export recovery data</button>
-        {!status.damaged && <button className="underline ml-3 cursor-pointer" onClick={openRecoveryReview}>Review local recovery</button>}
       </div>
-      {!status.damaged && <button
-        type="button"
-        aria-label="Dismiss recovery notice"
-        title="Dismiss recovery notice"
-        data-testid="dismiss-recovery-banner"
-        onClick={dismissRecovery}
-        className="p-1.5 rounded hover:bg-amber-200 text-black/70 hover:text-black focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shrink-0"
-      >
-        <span aria-hidden="true" className="text-lg leading-none font-bold">×</span>
-      </button>}
     </aside>}
     {status.damaged && repairPlan && <section className="p-4" aria-label="Repair dangling setlist references">
       <h2>Repair dangling setlist references</h2>

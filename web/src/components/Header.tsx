@@ -63,6 +63,7 @@ import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
 import { navigateBack } from '../utils/viewHistory'
+import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -232,6 +233,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCast,
   isCastActive = false,
 }) => {
+  const recoveryAttention = useRecoveryAttention() // #181
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
@@ -672,12 +674,13 @@ export const Header: React.FC<HeaderProps> = ({
                 data-testid="header-cloud-sync-button"
                 data-sync-state={isSyncing ? 'syncing' : isInSync ? 'in_sync' : isIssue ? 'issue' : 'idle'}
                 onClick={() => setShowCloudSyncModal(true)}
-                className={btnClass}
-                title={syncLabel}
-                aria-label={syncLabel}
+                className={`${btnClass} relative`}
+                title={recoveryAttention ? `${syncLabel} · local recovery needs review` : syncLabel}
+                aria-label={recoveryAttention ? `${syncLabel}, local recovery needs review` : syncLabel}
               >
                 <SyncIcon className={iconClass} />
                 <span className="hidden md:inline font-mono text-[11px]">{syncLabel}</span>
+                {recoveryAttention && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
               </button>
             )
           })()}

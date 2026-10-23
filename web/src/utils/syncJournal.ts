@@ -359,6 +359,7 @@ export async function writeRecoverySnapshot(key: string, raw: string, storage: S
       if (usage.count >= usage.maxCount || usage.bytes + attemptedBytes > usage.maxBytes) throw new RecoveryRetentionError(usage.maxCount, usage.maxBytes)
       if (estimate?.quota !== undefined && estimate.usage !== undefined && estimate.usage + attemptedBytes > estimate.quota) throw new DOMException('Origin quota estimate exceeded', 'QuotaExceededError')
       await putRecoveryArchive(key, raw)
+      notifyRecoveryChanged()
     } catch (error) {
       appLogger.error('RecoverySnapshot', isQuotaError(error) ? 'Recovery snapshot quota exceeded' : error instanceof RecoveryRetentionError ? 'Recovery retention limit reached' : 'Recovery snapshot failed', undefined,
         JSON.stringify({ key, store: 'indexeddb', attemptedBytes, recoveryCount: usage.count, recoveryBytes: usage.bytes, originUsage: estimate?.usage, originQuota: estimate?.quota }))
@@ -367,6 +368,11 @@ export async function writeRecoverySnapshot(key: string, raw: string, storage: S
     return
   }
   writeRecoverySnapshotChecked(key, raw, storage, estimate)
+  notifyRecoveryChanged()
+}
+/** #181: same-tab signal for the recovery attention dot (other tabs get `storage` or the archive channel). */
+function notifyRecoveryChanged(): void {
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('gtar-recovery-changed')) } catch { /* ignore */ }
 }
 
 function writeRecoverySnapshotChecked(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
