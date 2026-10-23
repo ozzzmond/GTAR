@@ -40,7 +40,7 @@ import {
   clearStageSession,
   validateAndResolveStageSession,
 } from './utils/stageSession'
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
 import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
 import { StageView } from './components/StageView'
@@ -59,7 +59,6 @@ import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
 import type { SharedSetlistPayload } from './utils/sharedSetlist'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
-import { ImportDialogModal } from './components/ImportDialogModal'
 import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
 import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
 import { StageErrorBoundary } from './components/StageErrorBoundary'
@@ -80,6 +79,9 @@ import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
 import { isDevEnv } from './utils/env'
 import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
+
+// The import dialog pulls in ChordSheetJS (~230 KB); load it only when first opened (#85).
+const ImportDialogModal = lazy(() => import('./components/ImportDialogModal').then(m => ({ default: m.ImportDialogModal })))
 
 // Modern GTAR v1.0.42 Default Stage Setlist
 const DEFAULT_SETLIST: ActiveSongState[] = [
@@ -766,6 +768,9 @@ function LibraryApp() {
   // Global Modals
   const [isWebsiteUrlModalOpen, setIsWebsiteUrlModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  // Stays mounted after first open so the dialog keeps its state across opens, as before.
+  const [importDialogMounted, setImportDialogMounted] = useState(false)
+  if (isImportModalOpen && !importDialogMounted) setImportDialogMounted(true)
   const [isBackupRestoreModalOpen, setIsBackupRestoreModalOpen] = useState(false)
   const [isStageSettingsModalOpen, setIsStageSettingsModalOpen] = useState(false)
   const [isStageToolsModalOpen, setIsStageToolsModalOpen] = useState(false)
@@ -2243,7 +2248,7 @@ function LibraryApp() {
       />
 
       {/* Import Modal Dialog (File Import & Folder Batch) */}
-      <ImportDialogModal
+      {importDialogMounted && <Suspense fallback={null}><ImportDialogModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onImportSong={handleImportSong}
@@ -2252,7 +2257,7 @@ function LibraryApp() {
         onSmartMerge={handleSmartMerge}
         existingSongs={[...songs, ...deletedSongs]}
         existingSetlists={setlists}
-      />
+      /></Suspense>}
 
       {/* Backup & Restore Modal Dialog (Export Backup & Restore Backup Smart Merge) */}
       <BackupRestoreDialogModal

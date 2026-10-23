@@ -42,10 +42,11 @@ export function TvQrScanner({ onReference }: { onReference: (ref: string) => voi
       if (!el) { stop(); return }
       el.srcObject = media
       await el.play()
-      const scan = () => {
+      const scan = async () => {
         if (current !== generation.current) return
         try {
-          const result = readTvQr(el, el.videoWidth, el.videoHeight)
+          const result = await readTvQr(el, el.videoWidth, el.videoHeight)
+          if (current !== generation.current) return
           if (result) { accept(result); return }
           timer.current = setTimeout(scan, 300)
         } catch (error) {
@@ -53,7 +54,7 @@ export function TvQrScanner({ onReference }: { onReference: (ref: string) => voi
           setMessage(error instanceof Error ? error.message : 'Camera scan failed. Choose a photo or use manual entry.')
         }
       }
-      scan()
+      void scan()
     } catch (error) {
       if (current !== generation.current) return
       stop(); setActive(false)
@@ -75,11 +76,12 @@ export function TvQrScanner({ onReference }: { onReference: (ref: string) => voi
     const url = URL.createObjectURL(file)
     photoUrl.current = url
     const img = new Image()
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(url)
       if (current !== generation.current) return
       try {
-        const result = readTvQr(img, img.naturalWidth, img.naturalHeight)
+        const result = await readTvQr(img, img.naturalWidth, img.naturalHeight)
+        if (current !== generation.current) return
         if (!result) throw Error('No readable QR found. Choose a clearer photo or enter the TV reference manually.')
         accept(result)
       } catch (error) { setMessage(error instanceof Error ? error.message : 'Photo scan failed. Use manual entry.') }
