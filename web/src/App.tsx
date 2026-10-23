@@ -26,6 +26,7 @@ import { appLogger } from './utils/logger'
 import { useLibraryPersistence } from './utils/useLibraryPersistence'
 import { useLibraryImports } from './utils/useLibraryImports'
 import { useSetlistPublication } from './utils/useSetlistPublication'
+import { useAppModals } from './utils/useAppModals'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
@@ -452,18 +453,19 @@ function LibraryApp() {
       DEFAULT_SETLIST[0]
     : songs[activeSongIndex] || DEFAULT_SETLIST[0]
 
-  // Global Modals
-  const [isWebsiteUrlModalOpen, setIsWebsiteUrlModalOpen] = useState(false)
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  // Global Modals: one reducer (#85 slice 4); each entry keeps the useState [value, setter] shape.
+  const modals = useAppModals(() => ({ tvPresentation: typeof window !== 'undefined' && window.location.hash.includes('cast2=') }))
+  const [isWebsiteUrlModalOpen, setIsWebsiteUrlModalOpen] = modals.websiteUrl
+  const [isImportModalOpen, setIsImportModalOpen] = modals.import
   // Stays mounted after first open so the dialog keeps its state across opens, as before.
   const [importDialogMounted, setImportDialogMounted] = useState(false)
   if (isImportModalOpen && !importDialogMounted) setImportDialogMounted(true)
-  const [isBackupRestoreModalOpen, setIsBackupRestoreModalOpen] = useState(false)
-  const [isStageSettingsModalOpen, setIsStageSettingsModalOpen] = useState(false)
-  const [isStageToolsModalOpen, setIsStageToolsModalOpen] = useState(false)
-  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false)
-  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
-  const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
+  const [isBackupRestoreModalOpen, setIsBackupRestoreModalOpen] = modals.backupRestore
+  const [isStageSettingsModalOpen, setIsStageSettingsModalOpen] = modals.stageSettings
+  const [isStageToolsModalOpen, setIsStageToolsModalOpen] = modals.stageTools
+  const [isThemeModalOpen, setIsThemeModalOpen] = modals.theme
+  const [isJsonModalOpen, setIsJsonModalOpen] = modals.json
+  const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = modals.headerKeyPicker
   // #85 slice 3: Shared Setlists publication state, catalog badges and the catalog import context.
   const {
     confirmedCatalogIds, freshCatalogIds, publishingSetlistId, setPublishingSetlistId, publicationStateRef, catalogImportHost,
@@ -471,7 +473,7 @@ function LibraryApp() {
     getConflictDraft, crossTabConflict, editorRecoveryDraftRef, persistedBaselineRef, setSongs, setDeletedSongs, setSetlists,
   })
 
-  const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
+  const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = modals.setlistDrawer
   const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
   const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
@@ -624,7 +626,7 @@ function LibraryApp() {
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
-  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.includes('cast2='))
+  const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = modals.tvPresentation
 
   useEffect(() => {
     const unsubscribe = stageCast.subscribeSessionState((active) => {
@@ -669,6 +671,7 @@ function LibraryApp() {
     currentSong,
     fontStyle,
     isTwoColumn,
+    setIsTvPresentationModalOpen,
   ])
 
 
@@ -866,7 +869,7 @@ function LibraryApp() {
       }
     })
     return unsub
-  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge, importStateRef])
+  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge, importStateRef, setIsSetlistDrawerOpen])
 
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
@@ -1277,7 +1280,7 @@ function LibraryApp() {
     setActiveView('songbook')
     setSearchQuery('')
     setIsSetlistDrawerOpen(false)
-  }, [])
+  }, [setIsSetlistDrawerOpen])
 
   // Desktop Global Navigation Shortcuts (Alt+1..6, Alt+0/H)
   useEffect(() => {
@@ -1335,7 +1338,7 @@ function LibraryApp() {
 
     window.addEventListener('keydown', handleGlobalNavShortcuts)
     return () => window.removeEventListener('keydown', handleGlobalNavShortcuts)
-  }, [handleTogglePresentation, handleNavigateHome])
+  }, [handleTogglePresentation, handleNavigateHome, setIsStageToolsModalOpen, setIsThemeModalOpen])
 
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
