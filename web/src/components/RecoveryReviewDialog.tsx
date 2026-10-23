@@ -407,7 +407,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
                 : choice === 'b1'
                 ? (b1On
                   ? 'Turn off B1: write the full library (with every edit made while on) back to gtar_library_v1, verify it, then reload. IndexedDB bodies stay.'
-                  : 'Turn on B1 (DEV test): copy every chart body to IndexedDB, verify, write the slim gtar_library_v2 index, then reload. gtar_library_v1 is frozen as a complete fallback and never deleted; this does not free storage yet. Export recovery data first.')
+                  : 'Turn on B1: copy every chart body to IndexedDB, verify, write the slim gtar_library_v2 index, then reload. On DEV, the next clean startup retires gtar_library_v1 to a verified IndexedDB copy. Export recovery data first.')
                 : choice === 'shadow'
                 ? `IndexedDB gtar_library_bodies_db / bodies: ${shadow?.totalCount ?? 0} bodies, approximately ${shadow?.totalBytes ?? 0} bytes. Remove ${shadow?.records.length ?? 0} unreferenced bodies (${shadow?.orphanBytes ?? 0} bytes). Bodies referenced by your Songbook and retained recovery history are protected. Superseded chart history will be removed.`
                 : choice === 'keep-current'

@@ -5,9 +5,9 @@ import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 import { canonicalSongKey } from './musicalKey'
 import { validateCloudThemeSettings } from './backupSettings'
 import { recoverySourceDigest } from './recoverySourceDigest'
-import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, putRecoveryArchive, recoveryArchiveEntries,
+import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, getRetiredLibrary, putRecoveryArchive, putRetiredLibrary, recoveryArchiveEntries,
   recoveryArchiveGet, recoveryArchivesInIndexedDb, removeRecoveryArchive } from './recoveryArchiveStore'
-import { LIBRARY_B1_KEY, LIBRARY_V2_KEY, confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex,
+import { LIBRARY_B1_KEY, LIBRARY_B1_OPTOUT_KEY, LIBRARY_V2_KEY, confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex,
   loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 
 const ownerKey = 'gtar_sync_library_owner'
@@ -946,10 +946,12 @@ export async function enableLibraryIndex(storage: Storage = localStorage, timeou
     throw new Error('Library index could not be verified. Nothing was changed.')
   }
   storage.setItem(LIBRARY_B1_KEY, '1')
+  storage.removeItem(LIBRARY_B1_OPTOUT_KEY)
   appLogger.info('LibraryIndex', `B1 on: ${library.songs.length} songs, ${stored.size} chart bodies in IndexedDB; gtar_library_v1 frozen`)
 }
 
 export function disableLibraryIndex(storage: Storage = localStorage): void {
+  storage.setItem(LIBRARY_B1_OPTOUT_KEY, '1') // an explicit "off" is not undone by DEV auto-enable
   if (!isLibraryIndexActive(storage)) { storage.removeItem(LIBRARY_B1_KEY); return }
   const library = readPersistedLibrary(storage)
   if (!library) throw new Error('Library unavailable. B1 stays on; export recovery data.')
@@ -982,9 +984,40 @@ export async function prepareLibraryStorage(storage: Storage = localStorage, tim
     if (raw !== null) {
       try { preserveStoredLibrary(raw, storage) } catch { /* gtar_library_v2 itself is kept below */ }
     }
+    // #167: after v1 retirement the fallback is the retired copy (newer edits stay in the kept index and the cloud).
+    const retired = storage.getItem(LIBRARY_KEY) === null ? getRetiredLibrary() : null
+    if (retired !== null) {
+      storage.setItem(LIBRARY_KEY, retired)
+      appLogger.warn('LibraryIndex', 'Restored the retired gtar_library_v1 copy for fallback; use Cloud Sync to bring back newer edits')
+    }
     storage.removeItem(LIBRARY_B1_KEY)
     appLogger.error('LibraryIndex', 'B1 index unusable; using gtar_library_v1. Index kept for recovery review.', undefined,
       error instanceof Error ? error.message : String(error))
     return { indexed: false, fellBack: true }
   }
+}
+
+/*
+ * #167 v1 retirement (DEV, owner-approved 2026-10-24). Startup turns B1 on automatically unless the
+ * owner turned it off by hand, then retires gtar_library_v1: the exact bytes move to IndexedDB
+ * (`gtar_library_v1_retired`, verified) and only then leave localStorage. PROD is unchanged.
+ */
+export async function autoEnableLibraryIndex(storage: Storage = localStorage, timeoutMs = 5000): Promise<boolean> {
+  if (isLibraryIndexActive(storage) || storage.getItem(LIBRARY_B1_OPTOUT_KEY) === '1' || storage.getItem(LIBRARY_KEY) === null) return false
+  await enableLibraryIndex(storage, timeoutMs)
+  return true
+}
+
+export async function retireLibraryV1(storage: Storage = localStorage): Promise<number> {
+  const raw = storage.getItem(LIBRARY_KEY)
+  if (raw === null || !isLibraryIndexActive(storage) || !usesIdbArchives(storage)) return 0
+  // Only retire a v1 the index can fully replace: every body must be loaded and the library valid.
+  validateLibrary(decodeLibraryRevision(libraryRevision(storage)!))
+  await putRetiredLibrary(raw)
+  if (getRetiredLibrary() !== raw) throw new Error('Retired library copy could not be verified')
+  if (storage.getItem(LIBRARY_KEY) !== raw) return 0 // changed meanwhile: keep it, retry next startup
+  storage.removeItem(LIBRARY_KEY)
+  const freed = 2 * (LIBRARY_KEY.length + raw.length)
+  appLogger.info('LibraryIndex', `gtar_library_v1 retired: copy kept in IndexedDB; ${freed} bytes freed in localStorage`)
+  return freed
 }

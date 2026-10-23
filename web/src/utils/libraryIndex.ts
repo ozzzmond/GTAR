@@ -4,12 +4,14 @@
  * With B1 on, the library revision lives in `gtar_library_v2`: songs carry `contentHash` (body in
  * IndexedDB, see libraryBodyStore) or, until IndexedDB confirms the body, an inline
  * `pendingRawContent`. Saves stay synchronous; bodies are confirmed in the background and the next
- * save swaps the inline copy for its hash. `gtar_library_v1` is frozen as a complete fallback and is
- * never deleted here. This module has no syncJournal import so syncJournal can depend on it.
+ * save swaps the inline copy for its hash. `gtar_library_v1` is frozen while B1 is on; on DEV it is later
+ * retired to a verified IndexedDB copy (#167, syncJournal.retireLibraryV1). No syncJournal import here.
  */
 export const LIBRARY_V2_KEY = 'gtar_library_v2'
 export const LIBRARY_B1_KEY = 'gtar_library_b1_enabled'
 export const LIBRARY_INDEX_FORMAT = 'gtar-library-index-v2'
+/** Set when the owner turns B1 off by hand, so DEV startup does not turn it back on (#167 v1 retirement). */
+export const LIBRARY_B1_OPTOUT_KEY = 'gtar_library_b1_optout'
 
 export class MissingLibraryBodyError extends Error {
   readonly hashes: string[]

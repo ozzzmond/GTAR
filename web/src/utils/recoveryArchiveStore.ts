@@ -26,6 +26,9 @@ export interface RecoveryArchiveBackend {
 }
 
 const mirror = new Map<string, string>()
+/** #167: the retired `gtar_library_v1` copy. Same IndexedDB store, but not a recovery archive (no review noise). */
+export const RETIRED_LIBRARY_KEY = 'gtar_library_v1_retired'
+let retiredLibrary: string | null = null
 let backend: RecoveryArchiveBackend | null = null
 let ready = false
 let channel: BroadcastChannel | null = null
@@ -62,7 +65,11 @@ export async function prepareRecoveryArchives(next: RecoveryArchiveBackend, stor
   log?: (level: 'info' | 'warn', message: string) => void): Promise<ArchivePreparation> {
   backend = next
   mirror.clear()
-  for (const [key, raw] of await next.loadAll()) mirror.set(key, raw)
+  retiredLibrary = null
+  for (const [key, raw] of await next.loadAll()) {
+    if (key === RETIRED_LIBRARY_KEY) retiredLibrary = raw
+    else if (key.startsWith(ARCHIVE_PREFIX)) mirror.set(key, raw)
+  }
   ready = true
   if (typeof BroadcastChannel !== 'undefined' && !channel) {
     channel = new BroadcastChannel('gtar-recovery-archives')
@@ -93,9 +100,19 @@ export async function prepareRecoveryArchives(next: RecoveryArchiveBackend, stor
   return { indexedDb: true, migrated, failed }
 }
 
+export function getRetiredLibrary(): string | null { return retiredLibrary }
+/** Stores (or replaces) the retired v1 copy; resolves after a verified IndexedDB write. */
+export async function putRetiredLibrary(raw: string): Promise<void> {
+  if (!backend || !ready) throw new Error('Recovery archive storage unavailable')
+  if (retiredLibrary === raw) return
+  if (retiredLibrary !== null && !await backend.remove(RETIRED_LIBRARY_KEY, retiredLibrary)) throw new Error('Retired library copy changed; not replaced')
+  await backend.put(RETIRED_LIBRARY_KEY, raw)
+  retiredLibrary = raw
+}
+
 /** Test/diagnostic reset. */
 export function resetRecoveryArchives(): void {
-  mirror.clear(); backend = null; ready = false
+  mirror.clear(); backend = null; ready = false; retiredLibrary = null
   try { channel?.close() } catch { /* ignore */ }
   channel = null
 }
