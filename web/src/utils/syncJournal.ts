@@ -5,6 +5,8 @@ import { RESTORE_SNAPSHOT_KEY } from './jsonBackup'
 import { canonicalSongKey } from './musicalKey'
 import { validateCloudThemeSettings } from './backupSettings'
 import { recoverySourceDigest } from './recoverySourceDigest'
+import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, putRecoveryArchive, recoveryArchiveEntries,
+  recoveryArchiveGet, recoveryArchivesInIndexedDb, removeRecoveryArchive } from './recoveryArchiveStore'
 import { LIBRARY_B1_KEY, LIBRARY_V2_KEY, confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex,
   loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 
@@ -178,6 +180,8 @@ export function recoveryData(storage: Storage = localStorage): Record<string, st
     const k = storage.key(i)
     if (k && (k === LIBRARY_KEY || k === ownerKey || k === RECOVERY_DECISIONS_KEY || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:') || k.startsWith('gtar_sync_recovery:'))) data[k] = storage.getItem(k) ?? ''
   }
+  // #167 B1c: archives held in IndexedDB are part of the same recovery set.
+  if (usesIdbArchives(storage)) for (const [key, raw] of recoveryArchiveEntries()) if (!(key in data)) data[key] = raw
   // #171 B1: exports always carry the full current library, never the slim index alone.
   const indexRaw = storage.getItem(LIBRARY_V2_KEY)
   if (indexRaw !== null) {
@@ -304,22 +308,40 @@ export const RECOVERY_MAX_BYTES = 3 * 1024 * 1024
 
 /** Retention cap reached; undecided archives are protected, so the user must decide and clean up. */
 export class RecoveryRetentionError extends Error {
-  constructor() { super('Recovery retention limit reached. Export a backup and Review local recovery to confirm cleanup; undecided archives are protected.'); this.name = 'RecoveryRetentionError' }
+  readonly maxCount: number
+  readonly maxBytes: number
+  constructor(maxCount = RECOVERY_MAX_COUNT, maxBytes = RECOVERY_MAX_BYTES) {
+    super('Recovery retention limit reached. Export a backup and Review local recovery to confirm cleanup; undecided archives are protected.')
+    this.name = 'RecoveryRetentionError'; this.maxCount = maxCount; this.maxBytes = maxBytes
+  }
 }
 
-export function recoveryRetentionUsage(storage: Storage): { count: number; bytes: number; maxCount: number; maxBytes: number } {
+/** #167 B1c: archives live in IndexedDB (mirrored in memory) for the app's own localStorage once loaded. */
+function usesIdbArchives(storage: Storage): boolean {
+  return recoveryArchivesInIndexedDb() && typeof localStorage !== 'undefined' && storage === localStorage
+}
+/** Reads one archive from wherever it is held. */
+export function readRecoveryArchive(key: string, storage: Storage = localStorage): string | null {
+  return (usesIdbArchives(storage) ? recoveryArchiveGet(key) : null) ?? storage.getItem(key)
+}
+
+export function recoveryRetentionUsage(storage: Storage): { count: number; bytes: number; maxCount: number; maxBytes: number; indexedDb: boolean } {
   let count = 0, bytes = 0
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i)
-    if (k?.startsWith('gtar_sync_recovery:')) { count++; bytes += 2 * (k.length + (storage.getItem(k)?.length ?? 0)) }
+    if (k?.startsWith(ARCHIVE_PREFIX)) { count++; bytes += 2 * (k.length + (storage.getItem(k)?.length ?? 0)) }
   }
-  return { count, bytes, maxCount: RECOVERY_MAX_COUNT, maxBytes: RECOVERY_MAX_BYTES }
+  if (usesIdbArchives(storage)) {
+    for (const [k, raw] of recoveryArchiveEntries()) { count++; bytes += 2 * (k.length + raw.length) }
+    return { count, bytes, maxCount: IDB_RECOVERY_MAX_COUNT, maxBytes: IDB_RECOVERY_MAX_BYTES, indexedDb: true }
+  }
+  return { count, bytes, maxCount: RECOVERY_MAX_COUNT, maxBytes: RECOVERY_MAX_BYTES, indexedDb: false }
 }
 
 /** User-facing reason for a failed safety snapshot. Callers only use it before any change is made. */
 export function recoverySnapshotFailureMessage(error: unknown, retry: 'sync' | 'download' | 'replacing the cloud songbook'): string {
   const steps = `open Review local recovery, export recovery data, choose the current library, then review decided archive cleanup before retrying ${retry}.`
-  if (error instanceof RecoveryRetentionError) return `Recovery storage is full (limit ${RECOVERY_MAX_COUNT} archives / ${RECOVERY_MAX_BYTES / 1024 / 1024} MiB), so the safety snapshot was not saved. Nothing was changed. To free space, ${steps}`
+  if (error instanceof RecoveryRetentionError) return `Recovery storage is full (limit ${error.maxCount} archives / ${error.maxBytes / 1024 / 1024} MiB), so the safety snapshot was not saved. Nothing was changed. To free space, ${steps}`
   if (isQuotaError(error)) return `Device storage is full, so the safety snapshot could not be saved. Nothing was changed. Export a backup, then ${steps}`
   return `Recovery snapshot could not be verified after saving. Nothing was changed. Export a backup, then ${steps}`
 }
@@ -329,6 +351,21 @@ export function recoverySnapshotFailureMessage(error: unknown, retry: 'sync' | '
 export async function writeRecoverySnapshot(key: string, raw: string, storage: Storage): Promise<void> {
   let estimate: StorageEstimate | undefined
   try { estimate = await navigator.storage?.estimate?.() } catch { /* advisory only */ }
+  if (usesIdbArchives(storage)) {
+    // #167 B1c: IndexedDB, resolved only after a verified readback.
+    const usage = recoveryRetentionUsage(storage)
+    const attemptedBytes = 2 * (key.length + raw.length)
+    try {
+      if (usage.count >= usage.maxCount || usage.bytes + attemptedBytes > usage.maxBytes) throw new RecoveryRetentionError(usage.maxCount, usage.maxBytes)
+      if (estimate?.quota !== undefined && estimate.usage !== undefined && estimate.usage + attemptedBytes > estimate.quota) throw new DOMException('Origin quota estimate exceeded', 'QuotaExceededError')
+      await putRecoveryArchive(key, raw)
+    } catch (error) {
+      appLogger.error('RecoverySnapshot', isQuotaError(error) ? 'Recovery snapshot quota exceeded' : error instanceof RecoveryRetentionError ? 'Recovery retention limit reached' : 'Recovery snapshot failed', undefined,
+        JSON.stringify({ key, store: 'indexeddb', attemptedBytes, recoveryCount: usage.count, recoveryBytes: usage.bytes, originUsage: estimate?.usage, originQuota: estimate?.quota }))
+      throw error
+    }
+    return
+  }
   writeRecoverySnapshotChecked(key, raw, storage, estimate)
 }
 
@@ -368,7 +405,7 @@ export function planRecoveryCleanup(review: RecoveryReview): { key: string; raw:
 export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: boolean, blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
   if (!confirmed) throw new Error('Explicit cleanup confirmation required.')
   if (!navigator.locks?.request) throw new Error('Safe recovery cleanup requires Web Locks support.')
-  await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, lock => {
+  await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, async lock => {
     if (!lock || blocked()) throw new Error('Resolve editor edits or active cross-tab conflicts before cleanup.')
     const fresh = inspectRecovery(storage)
     if (!same(review, fresh) || fresh.invalid) throw new Error('Recovery changed or is invalid. Review again.')
@@ -377,14 +414,16 @@ export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: 
     // V1 historical-only source bytes remain embedded; do not discard the only copy.
     const decisions = readRecoveryDecisions(fresh.decisionRaw).map(d => ({ choice: d.choice,
       library: d.library ?? librarySummary(d.libraryRaw!), sources: Object.fromEntries(Object.entries(d.sources).map(([key, source]) =>
-        [key, typeof source === 'string' && storage.getItem(key) === source ? { sourceKey: key, rawLength: source.length, digest: recoverySourceDigest(source) } : source])) }))
+        [key, typeof source === 'string' && readRecoveryArchive(key, storage) === source ? { sourceKey: key, rawLength: source.length, digest: recoverySourceDigest(source) } : source])) }))
     const payload = JSON.stringify({ version: 3, legacyRaw: null, decisions })
     storage.setItem(RECOVERY_DECISIONS_KEY, payload)
     if (storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Decision compaction could not be verified. Archives retained.')
     for (const item of plan) {
       if (blocked() || libraryRevision(storage) !== fresh.libraryRaw || storage.getItem(RECOVERY_DECISIONS_KEY) !== payload) throw new Error('Library or decisions changed. Review remaining archives again.')
       if (storage.getItem(item.key) === item.raw) storage.removeItem(item.key)
-      else appLogger.warn('RecoveryCleanup', 'Archive changed; retained', item.key)
+      else if (usesIdbArchives(storage) && recoveryArchiveGet(item.key) === item.raw) {
+        if (!await removeRecoveryArchive(item.key, item.raw)) appLogger.warn('RecoveryCleanup', 'Archive changed; retained', item.key)
+      } else appLogger.warn('RecoveryCleanup', 'Archive changed; retained', item.key)
     }
     if (typeof window !== 'undefined' && storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted'))
   })

@@ -190,7 +190,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
 
         {/* Recovery storage usage and guided order (#173) */}
         <div data-testid="recovery-retention-usage" className="text-xs font-mono text-app-muted">
-          Recovery storage: {retention.count} of {retention.maxCount} archives · {mib(retention.bytes)} of {mib(retention.maxBytes)} MiB
+          Recovery storage{retention.indexedDb ? ' (IndexedDB)' : ''}: {retention.count} of {retention.maxCount} archives · {mib(retention.bytes)} of {mib(retention.maxBytes)} MiB
         </div>
         {!review.invalid && (actionable.length > 0 || cleanup.length > 0) && (
           <ol
@@ -348,7 +348,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
           historical raw recovery may require manual recovery.
         </p>
 
-        <p className="text-xs text-app-muted">localStorage gtar_library_v1: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: 32 archives / 3 MiB; review is required when full.</p>
+        <p className="text-xs text-app-muted">localStorage gtar_library_v1: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: {retention.maxCount} archives / {mib(retention.maxBytes)} MiB{retention.indexedDb ? ' (archives in IndexedDB)' : ''}; review is required when full.</p>
         {/* Action buttons */}
         <div className="flex flex-wrap gap-2">
           <button className={button} disabled={busy || review.invalid || !review.decisionRaw} onClick={() => { setChoice('cleanup'); setApproved(false) }} data-testid="review-cleanup-btn">Review decided archive cleanup</button>

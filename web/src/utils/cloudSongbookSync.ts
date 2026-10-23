@@ -1,5 +1,5 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { libraryRevision, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
+import { libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1229,7 +1229,7 @@ async function executeCloudSongbookSync(
       const key = `gtar_sync_recovery:concurrency:${Date.now()}:${generateUUID()}`
       const snapshot = JSON.stringify({ local: pending, remote: cloudRecord?.data ?? null })
       await writeRecoverySnapshot(key, snapshot, targetStorage)
-      if (targetStorage.getItem(key) !== snapshot) throw new Error('Recovery snapshot unavailable')
+      if (readRecoveryArchive(key, targetStorage) !== snapshot) throw new Error('Recovery snapshot unavailable')
       if ((retry?.attempt ?? 0) >= 2) {
         return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'CONFLICT_DETECTED',
           error: 'Cloud keeps changing. Local edits and recovery snapshot preserved. Export a backup and retry sync when other devices are idle.' }
@@ -1661,7 +1661,7 @@ async function executeCloudSongbookSync(
         return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
           error: recoverySnapshotFailureMessage(err, 'sync') }
       }
-      if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) {
+      if (readRecoveryArchive(recoveryKey, targetStorage) !== recoverySnapshot) {
         throw new Error('Recovery snapshot unavailable. Export a backup before retrying.')
       }
 

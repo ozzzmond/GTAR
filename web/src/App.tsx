@@ -31,6 +31,8 @@ import {
   prepareLibraryStorage,
 } from './utils/syncJournal'
 import { LIBRARY_B1_KEY, isMissingLibraryBodyError, loadLibraryIndexBodies } from './utils/libraryIndex'
+import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
+import { appLogger } from './utils/logger'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
@@ -107,13 +109,22 @@ function App() {
   return <LibraryStartup />
 }
 
-// #171 B1: with the DEV toggle on, chart bodies load from IndexedDB before anything reads the library.
+// #167 B1c (DEV): recovery archives load from IndexedDB, and with the #171 B1 toggle on, chart bodies
+// too, before anything reads the library or recovery state.
+const needsArchiveStartup = () => isDevEnv && typeof indexedDB !== 'undefined' && !recoveryArchivesInIndexedDb()
 function LibraryStartup() {
-  const [ready, setReady] = useState(() => { try { return localStorage.getItem(LIBRARY_B1_KEY) !== '1' } catch { return true } })
+  const [ready, setReady] = useState(() => {
+    try { return localStorage.getItem(LIBRARY_B1_KEY) !== '1' && !needsArchiveStartup() } catch { return true }
+  })
   useEffect(() => {
     if (ready) return
     let live = true
-    prepareLibraryStorage().finally(() => { if (live) setReady(true) })
+    const archives = needsArchiveStartup()
+      ? prepareRecoveryArchives(recoveryArchiveBackend(), localStorage, (level, message) => appLogger[level]('RecoveryArchives', message))
+        .catch(error => appLogger.warn('RecoveryArchives', 'IndexedDB unavailable; archives stay in localStorage', error instanceof Error ? error.message : String(error)))
+      : null
+    const timeout = new Promise(resolve => setTimeout(resolve, 8000))
+    Promise.race([Promise.all([archives, prepareLibraryStorage()]), timeout]).finally(() => { if (live) setReady(true) })
     return () => { live = false }
   }, [ready])
   if (!ready) return <p role="status" className="p-4 text-app-muted">Loading library…</p>

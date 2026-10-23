@@ -55,7 +55,7 @@ test('retention usage counts only recovery archives (UTF-16 bytes)', () => {
   localStorage.setItem('gtar_sync_recovery:download:1', 'x'.repeat(100))
   localStorage.setItem('unrelated', 'y'.repeat(1000))
   const usage = api.recoveryRetentionUsage(localStorage)
-  assert.deepEqual(usage, { count: 1, bytes: 2 * ('gtar_sync_recovery:download:1'.length + 100), maxCount: 32, maxBytes: 3 * 1024 * 1024 })
+  assert.deepEqual(usage, { count: 1, bytes: 2 * ('gtar_sync_recovery:download:1'.length + 100), maxCount: 32, maxBytes: 3 * 1024 * 1024, indexedDb: false })
 })
 
 test('undecided archives: guided steps, usage line and deduplicated missing titles behind a disclosure', async () => {
