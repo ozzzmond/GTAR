@@ -1259,3 +1259,42 @@ test('EXPLICIT_END_DURING_RESTORED_RECOVERY_DOES_NOT_RECREATE', async () => {
   }
 })
 
+
+test('CONTROLLER_REPLACEMENT_IS_DETERMINISTIC: newest controller wins, older socket is told REPLACED', async () => {
+  const f = await fixture()
+  const { s, c } = await f.paired()
+  const first = await f.connect(f.controller(s, c), 'owner-1')
+  const second = await f.connect(f.controller(s, c), 'owner-1')
+  assert.equal(first.closed, true)
+  assert.equal(first.closeReason, 'REPLACED')
+  assert.equal(second.closed, false)
+})
+
+test('CONTROLLER_REPLACED_CLIENT_STOPS: a replaced controller tab ends instead of retrying', async () => {
+  const posts = []
+  let socket = null
+  const client = new Cast2Client('controller', {
+    now: () => 1000,
+    post: async path => {
+      posts.push(path)
+      if (path === '/status') return { sessionId: 'a'.repeat(64), state: 'PAIRED', inboundSequence: 0, expiresAt: 600000 }
+      if (path === '/ticket') return { ticket: 'b'.repeat(64) }
+      return {}
+    },
+    socket: () => (socket = { readyState: 0, onopen: null, onclose: null, onerror: null, onmessage: null, send() {}, close() {} }),
+  }, () => {}, { maxFailures: 10 })
+  client['credential'] = 'c'.repeat(64)
+  client.view.ref = 'a'.repeat(64)
+  client.view.state = 'PAIRED'
+
+  await client.tick()
+  assert.ok(socket, 'controller opened a socket')
+  socket.onclose({ code: 1000, reason: 'REPLACED' })
+  assert.equal(client.view.state, 'REPLACED')
+  assert.match(client.view.error, /another tab or device/)
+  assert.equal(client['credential'], '')
+
+  const before = posts.length
+  await client.tick()
+  assert.equal(posts.length, before, 'no further status/ticket polling after replacement')
+})

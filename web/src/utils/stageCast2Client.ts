@@ -220,7 +220,10 @@ export class Cast2Client {
           if (epoch === this.epoch && this.ws === ws) {
             const reason = typeof (event as { reason?: string })?.reason === 'string' ? (event as { reason?: string }).reason : ''
             if (reason === 'REPLACED') {
-              this.terminal('REPLACED', 'This TV display was replaced by another connected receiver.')
+              // A replaced controller stops instead of retrying and displacing the newer tab/device.
+              this.terminal('REPLACED', this.role === 'controller'
+                ? 'This TV is now controlled from another tab or device.'
+                : 'This TV display was replaced by another connected receiver.')
             } else {
               this.fail(Error('Socket closed'))
             }
