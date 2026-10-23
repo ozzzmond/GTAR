@@ -1,5 +1,5 @@
 // Recovery notice identity and startup recovery status (moved from App.tsx, #85).
-import { hasActionableRecovery, readPersistedLibrary, recoveryData } from './syncJournal'
+import { LIBRARY_KEY, hasActionableRecovery, readPersistedLibrary, recoveryData } from './syncJournal'
 
 export const RECOVERY_NOTICE_ACK_KEY = 'gtar_recovery_notice_ack_v1'
 
@@ -23,7 +23,7 @@ export function recoveryNoticeFingerprint(value: string): string {
 
 // Acknowledge this exact archive set only. New/changed sources need attention.
 export const recoveryNoticeId = () => recoveryNoticeFingerprint(JSON.stringify(Object.entries(recoveryData())
-  .filter(([key]) => key !== 'gtar_library_v1' && key !== 'gtar_sync_library_owner')
+  .filter(([key]) => key !== LIBRARY_KEY && key !== 'gtar_sync_library_owner')
   .sort(([a], [b]) => a.localeCompare(b))))
 export const checkRecovery = () => {
   try { readPersistedLibrary(); return { retired: !hasActionableRecovery(), damaged: false, noticeId: recoveryNoticeId() } }

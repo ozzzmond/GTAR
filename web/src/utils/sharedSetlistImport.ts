@@ -4,7 +4,7 @@ import type { SyncLibrary } from './syncMerge'
 import { catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
 import { validateSnapshot } from './sharedSetlistSnapshot'
 import type { SetlistSnapshot } from './sharedSetlistPublishing'
-import { LIBRARY_KEY, persistLibrary, readPersistedLibrary, saveCrossTabConflictSnapshot, same } from './syncJournal'
+import { libraryRevision, persistLibrary, readPersistedLibrary, saveCrossTabConflictSnapshot, same } from './syncJournal'
 import { generateUUID } from './uuid'
 
 export interface CatalogPreview { id: string; revision: number; snapshot: SetlistSnapshot; account: string; token: string; scope: string }
@@ -65,7 +65,7 @@ export async function importCatalogSetlist(preview: CatalogPreview, host: Import
     if (!navigator.locks?.request) throw new Error('Safe import requires Web Locks support. Update your browser.')
     assertSession(preview)
     assertImportUnblocked(host)
-    const baseline = localStorage.getItem(LIBRARY_KEY)
+    const baseline = libraryRevision()
     const draft = host.getLocal()
     // Network revalidation is mandatory even for a previously reviewed revision.
     const fresh = await previewCatalogSetlist(preview.id, preview.revision)
@@ -75,7 +75,7 @@ export async function importCatalogSetlist(preview: CatalogPreview, host: Import
       assertSession(preview)
       assertImportUnblocked(host)
       const stored = readPersistedLibrary()
-      if (localStorage.getItem(LIBRARY_KEY) !== baseline || !stored ||
+      if (libraryRevision() !== baseline || !stored ||
           !same(draft, host.getLocal()) || !same(JSON.parse(JSON.stringify(draft)), stored)) throw new Error('Library changed or has unsaved edits. Reload and review again.')
       const copies = existingCatalogImports(stored, preview)
       const exact = copies.filter(list => list.catalogSource!.revision === preview.revision)

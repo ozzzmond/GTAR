@@ -543,6 +543,30 @@ export interface PersistLibraryOptions {
 
 const lastKnownLibraryRawByStorage = new WeakMap<Storage, string | null>()
 
+/*
+ * #171 B1a storage seam. Everything outside this module reads and restores the persisted library
+ * only through these helpers, so B1 can move the source of truth (v2 index + IndexedDB bodies)
+ * in one place. Today the revision token is the raw `gtar_library_v1` JSON.
+ */
+/** Opaque revision token of the persisted library, for revision gates and change checks. Throws like `Storage.getItem`. */
+export function libraryRevision(storage: Storage = localStorage): string | null {
+  return storage.getItem(LIBRARY_KEY)
+}
+/** Restores a revision read earlier with `libraryRevision` (rollback after a failed follow-up write). */
+export function restoreLibraryRevision(revision: string | null, storage: Storage = localStorage): void {
+  if (revision === null) storage.removeItem(LIBRARY_KEY)
+  else storage.setItem(LIBRARY_KEY, revision)
+}
+/** True when a `storage` event key signals a library change in another tab. */
+export function isLibraryStorageKey(key: string | null): boolean {
+  return key === LIBRARY_KEY
+}
+/** Parses the persisted library without validation or moving the cross-tab baseline (diagnostics, shadow copy). */
+export function peekPersistedLibrary(storage: Storage = localStorage): unknown {
+  const raw = storage.getItem(LIBRARY_KEY)
+  return raw ? JSON.parse(raw) : null
+}
+
 export function getPersistedLibraryRaw(storage: Storage = localStorage): string | null {
   try {
     return storage.getItem(LIBRARY_KEY)
@@ -730,7 +754,7 @@ export function setupCrossTabLibraryConflictGuard(
   }
   const handler = (event: Event) => {
     const storageEvent = event as StorageEvent
-    if (storageEvent.key !== LIBRARY_KEY) return
+    if (!isLibraryStorageKey(storageEvent.key)) return
     onConflict(storageEvent.newValue ?? null)
   }
   ;(targetWindow as EventTarget).addEventListener('storage', handler as EventListener)

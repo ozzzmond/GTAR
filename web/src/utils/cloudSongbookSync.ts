@@ -1,5 +1,5 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { LIBRARY_KEY, isQuotaError, writeRecoverySnapshot, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
+import { libraryRevision, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1123,8 +1123,7 @@ async function executeCloudSongbookSync(
         persistCloudThemeSettings(libraryToApply.themeSettings, targetStorage)
       } catch (themeErr) {
         try {
-          if (expectedRaw === null) targetStorage.removeItem(LIBRARY_KEY)
-          else targetStorage.setItem(LIBRARY_KEY, expectedRaw)
+          restoreLibraryRevision(expectedRaw, targetStorage)
           setLastKnownPersistedLibraryRaw(expectedRaw, targetStorage)
         } catch { /* Recovery snapshot already saved */ }
         throw themeErr
@@ -1307,7 +1306,7 @@ async function executeCloudSongbookSync(
 
   if (actionToExecute === 'NOOP') {
     try {
-      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
+      const expectedRaw = libraryRevision(targetStorage)
       const latestFull = readLatestWithTheme()
       if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
       if (!persistedAtStart && latestFull) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
@@ -1409,7 +1408,7 @@ async function executeCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
-      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
+      const expectedRaw = libraryRevision(targetStorage)
       const latestFull = readLatestWithTheme()
       if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
       if (!persistedAtStart && latestFull) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
@@ -1514,7 +1513,7 @@ async function executeCloudSongbookSync(
       }
 
       // A download must not replace edits made while GET was in flight.
-      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
+      const expectedRaw = libraryRevision(targetStorage)
       const latest = readPersistedLibrary(targetStorage)
       const latestTheme = readCloudThemeSettings(targetStorage)
       if (
@@ -1538,7 +1537,7 @@ async function executeCloudSongbookSync(
       }
 
       // Storage estimation yields to the event loop: recheck both library and theme.
-      if (targetStorage.getItem(LIBRARY_KEY) !== expectedRaw ||
+      if (libraryRevision(targetStorage) !== expectedRaw ||
           !cloudThemeSettingsEquals(readCloudThemeSettings(targetStorage), themeAtStart)) {
         return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'NONE',
           error: 'Local library or theme updated in another tab or during recovery preparation. Current edits preserved. Retry download.' }
@@ -1722,7 +1721,7 @@ async function executeCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
-      const expectedRaw = targetStorage.getItem(LIBRARY_KEY)
+      const expectedRaw = libraryRevision(targetStorage)
       const latestFull = readLatestWithTheme()
       if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
       if (!persistedAtStart && latestFull) throw new Error('Local library appeared during sync. Retry to preserve current edits.')
