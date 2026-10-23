@@ -25,12 +25,12 @@ if (typeof window !== 'undefined') {
 // #167 phase B0, DEV only: shadow-copy chart bodies to IndexedDB and verify them on load.
 // Read-only with respect to the library; localStorage stays the source of truth. Never loaded in PROD.
 if (typeof window !== 'undefined' && isDevEnv) {
-  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger')]).then(([store, { appLogger }]) => {
+  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger'), import('./utils/syncJournal')]).then(([store, { appLogger }, { peekPersistedLibrary }]) => {
     store.installLibraryBodyShadow({
       enabled: true,
       logger: appLogger,
       // Raw parse only: readPersistedLibrary() would move the cross-tab conflict baseline.
-      readLibrary: () => { const raw = window.localStorage.getItem('gtar_library_v1'); return raw ? JSON.parse(raw) : null },
+      readLibrary: () => peekPersistedLibrary() as Parameters<typeof store.shadowWriteBodies>[0] | null,
     })
   }).catch(() => { /* shadow copy is optional */ })
 }

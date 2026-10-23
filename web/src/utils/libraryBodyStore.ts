@@ -7,7 +7,7 @@
  * here deletes, rewrites or migrates user data. Shadow writes and load-time verification only
  * report into Debug Logs so the next phase can be judged on field evidence.
  */
-import { isQuotaError, recoveryData, inspectRecovery, RESTORE_SNAPSHOT_KEY } from './syncJournal'
+import { isLibraryStorageKey, isQuotaError, recoveryData, inspectRecovery, RESTORE_SNAPSHOT_KEY } from './syncJournal'
 
 export const BODY_DB_NAME = 'gtar_library_bodies_db'
 export const BODY_DB_VERSION = 1
@@ -176,7 +176,7 @@ export function installLibraryBodyShadow(options: ShadowInstallOptions): () => v
     if (timer !== null) cancel(timer)
     timer = schedule(() => { timer = null; trigger() }, debounceMs)
   }
-  const onStorage = (event: Event) => { if ((event as StorageEvent).key === 'gtar_library_v1') onPersisted() }
+  const onStorage = (event: Event) => { if (isLibraryStorageKey((event as StorageEvent).key)) onPersisted() }
   target.addEventListener('gtar-library-persisted', onPersisted)
   target.addEventListener('storage', onStorage)
   const startup = schedule(() => trigger(true), debounceMs)

@@ -9,7 +9,7 @@ import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
 import { mergeImportedSetlists } from './utils/importIdentity'
 import {
-  LIBRARY_KEY,
+  libraryRevision,
   persistLibrary,
   planDanglingReferenceRepair,
   applyDanglingReferenceRepair,
@@ -505,7 +505,7 @@ function LibraryApp() {
     }
     try {
       persistLibrary(candidate, localStorage, { expectedRaw: persistedBaselineRef.current })
-      persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      persistedBaselineRef.current = libraryRevision()
     } catch (err) {
       setTimeout(() => {
         handleStorageWriteFailure(err)
@@ -887,7 +887,7 @@ function LibraryApp() {
     const nextSetlists = mergeImportedSetlists(importStateRef.current.setlists, merged.setlists)
     // A merge based on stale React state must never replace a newer tab's data.
     persistLibrary({ songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
-    persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+    persistedBaselineRef.current = libraryRevision()
     importStateRef.current = { songs: merged.songs, setlists: nextSetlists }
     setCrossTabConflict(null)
     setSongs(partition.active)
@@ -1276,7 +1276,7 @@ function LibraryApp() {
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       if (typeof persistedBaselineRef !== 'undefined') {
-        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        persistedBaselineRef.current = libraryRevision()
       }
     }
     catch (err) { handleStorageWriteFailure(err); return null }
@@ -1396,7 +1396,7 @@ function LibraryApp() {
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       if (typeof persistedBaselineRef !== 'undefined') {
-        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        persistedBaselineRef.current = libraryRevision()
       }
     }
     catch (err) { handleStorageWriteFailure(err); return false }
@@ -1423,7 +1423,7 @@ function LibraryApp() {
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       if (typeof persistedBaselineRef !== 'undefined') {
-        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        persistedBaselineRef.current = libraryRevision()
       }
     }
     catch (err) { handleStorageWriteFailure(err); return false }
@@ -1545,7 +1545,7 @@ function LibraryApp() {
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       if (typeof persistedBaselineRef !== 'undefined') {
-        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        persistedBaselineRef.current = libraryRevision()
       }
       if (typeof importStateRef !== 'undefined') {
         importStateRef.current = { songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists }
@@ -1575,7 +1575,7 @@ function LibraryApp() {
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       if (typeof persistedBaselineRef !== 'undefined') {
-        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        persistedBaselineRef.current = libraryRevision()
       }
     }
     catch (err) { handleStorageWriteFailure(err); return false }
@@ -1607,10 +1607,10 @@ function LibraryApp() {
     const partition = partitionSongs(parsed.songs)
     // Full restore is explicitly confirmed by the restore dialog; preserve the
     // current stored revision too, which may differ from the dialog's local state.
-    const expectedRaw = localStorage.getItem(LIBRARY_KEY)
+    const expectedRaw = libraryRevision()
     preserveStoredLibrary(expectedRaw)
     persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
-    persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+    persistedBaselineRef.current = libraryRevision()
     setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
@@ -1713,9 +1713,9 @@ function LibraryApp() {
       // a download being initiated does not prove that this draft is recoverable.
       saveCrossTabConflictSnapshot(getConflictDraft())
       setConflictRecoverySaved(true)
-      const raw = localStorage.getItem(LIBRARY_KEY)
+      const raw = libraryRevision()
       const reloaded = readPersistedLibrary()
-      if (!reloaded || localStorage.getItem(LIBRARY_KEY) !== raw) throw new Error('Latest library unavailable or changed. Retry reload.')
+      if (!reloaded || libraryRevision() !== raw) throw new Error('Latest library unavailable or changed. Retry reload.')
       persistedBaselineRef.current = raw
       setCrossTabConflict(null)
       const partitioned = partitionSongs(reloaded.songs)
@@ -1733,14 +1733,14 @@ function LibraryApp() {
     if (!window.confirm("Replace the current stored library with this tab's edits? The stored version will be preserved in recovery first.")) return
     try {
       const candidate = getConflictDraft()
-      const expectedRaw = localStorage.getItem(LIBRARY_KEY)
+      const expectedRaw = libraryRevision()
       preserveStoredLibrary(expectedRaw)
       persistLibrary(
         candidate,
         localStorage,
         { expectedRaw }
       )
-      persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+      persistedBaselineRef.current = libraryRevision()
       const partitioned = partitionSongs(candidate.songs)
       setSongs(partitioned.active)
       setDeletedSongs(partitioned.deleted)
@@ -1767,7 +1767,7 @@ function LibraryApp() {
         return reasons
       },
       applied: library => {
-        persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+        persistedBaselineRef.current = libraryRevision()
         const partition = partitionSongs(library.songs)
         setSongs(partition.active); setDeletedSongs(partition.deleted); setSetlists(library.setlists)
       },
@@ -1822,7 +1822,7 @@ function LibraryApp() {
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
           onCloudSyncApplied={(updated) => {
-            persistedBaselineRef.current = localStorage.getItem(LIBRARY_KEY)
+            persistedBaselineRef.current = libraryRevision()
             setCrossTabConflict(null)
             const partition = partitionSongs(updated.songs)
             setSongs(partition.active)
