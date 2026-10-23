@@ -1,5 +1,4 @@
 import { RecoveryReviewDialog } from './components/RecoveryReviewDialog'
-import type { ImportBlocker } from './utils/sharedSetlistImport'
 import { CatalogImportContext } from './utils/catalogImportContext'
 import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
 import { PublishSetlistModal } from './components/PublishSetlistModal'
@@ -18,8 +17,6 @@ import {
   same,
   performStorageHousekeeping,
   recoveryData,
-  hasActionableRecovery,
-  inspectRecovery,
   requestDurableStorage,
   prepareLibraryStorage,
 } from './utils/syncJournal'
@@ -28,6 +25,7 @@ import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInInde
 import { appLogger } from './utils/logger'
 import { useLibraryPersistence } from './utils/useLibraryPersistence'
 import { useLibraryImports } from './utils/useLibraryImports'
+import { useSetlistPublication } from './utils/useSetlistPublication'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
@@ -52,7 +50,6 @@ import { TrashView } from './components/TrashView'
 import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
-import { getConfirmedActiveCatalogIds, sharedCatalogService } from './utils/sharedCatalogService'
 import { getStoredSessionStatus } from './utils/googleAuth'
 import { useOptionalGoogleAuth } from './utils/authContext'
 import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
@@ -467,54 +464,15 @@ function LibraryApp() {
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false)
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false)
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = useState(false)
-  const [confirmedCatalogIds, setConfirmedCatalogIds] = useState<Set<string>>(new Set())
-  const [freshCatalogIds, setFreshCatalogIds] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    let mounted = true
-    const refresh = async () => {
-      try {
-        const ids = await getConfirmedActiveCatalogIds()
-        if (mounted) {
-          setConfirmedCatalogIds(ids)
-          setFreshCatalogIds(sharedCatalogService.getFreshConfirmedCatalogIds())
-        }
-      } catch {
-        // non-blocking
-      }
-    }
-    const reconcile = async () => {
-      try {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) return
-        const auth = getStoredSessionStatus()
-        if (!auth.session || auth.isExpired) return
-        const result = await sharedCatalogService.reconcilePublicationsBatch()
-        if (mounted) {
-          setConfirmedCatalogIds(result.confirmedIds)
-          setFreshCatalogIds(result.freshIds)
-        }
-      } catch {
-        // non-blocking
-      }
-    }
-    refresh().then(() => reconcile())
-    const onCatalogUpdate = () => refresh()
-    window.addEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
-    window.addEventListener('storage', onCatalogUpdate)
-    return () => {
-      mounted = false
-      window.removeEventListener('gtar-shared-catalog-cache-updated', onCatalogUpdate)
-      window.removeEventListener('storage', onCatalogUpdate)
-    }
-  }, [])
+  // #85 slice 3: Shared Setlists publication state, catalog badges and the catalog import context.
+  const {
+    confirmedCatalogIds, freshCatalogIds, publishingSetlistId, setPublishingSetlistId, publicationStateRef, catalogImportHost,
+  } = useSetlistPublication({
+    getConflictDraft, crossTabConflict, editorRecoveryDraftRef, persistedBaselineRef, setSongs, setDeletedSongs, setSetlists,
+  })
 
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = useState(false)
   const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
-  const [publishingSetlistId, setPublishingSetlistId] = useState<string | number | null>(null)
-  const publicationStateRef = useRef({ getLocal: getConflictDraft, blocked: () => !!crossTabConflict || !!editorRecoveryDraftRef.current?.() })
-  // Pre-existing render-time ref sync (unchanged by #85); readers need the current render synchronously.
-  // eslint-disable-next-line react-hooks/refs
-  publicationStateRef.current = { getLocal: getConflictDraft, blocked: () => !!crossTabConflict || !!editorRecoveryDraftRef.current?.() }
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
   const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
@@ -1547,22 +1505,7 @@ function LibraryApp() {
 
   return (
     <CatalogImportContext.Provider value={{
-      getLocal: () => publicationStateRef.current.getLocal(),
-      blocked: () => publicationStateRef.current.blocked() || hasActionableRecovery(),
-      blockers: () => {
-        const reasons: ImportBlocker[] = []
-        if (crossTabConflict) reasons.push('cross-tab-conflict')
-        if (editorRecoveryDraftRef.current?.()) reasons.push('editor-draft')
-        const recovery = inspectRecovery()
-        if (recovery.invalid) reasons.push('invalid-recovery')
-        if (recovery.sources.some(source => source.status === 'actionable')) reasons.push('actionable-recovery')
-        return reasons
-      },
-      applied: library => {
-        persistedBaselineRef.current = libraryRevision()
-        const partition = partitionSongs(library.songs)
-        setSongs(partition.active); setDeletedSongs(partition.deleted); setSetlists(library.setlists)
-      },
+      ...catalogImportHost,
       open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
     }}>
     {reviewRecovery && <RecoveryReviewDialog
