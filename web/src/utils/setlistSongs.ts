@@ -13,6 +13,18 @@ export function resolveSetlistSong(ref: SongReference, songs: ActiveSongState[])
   return matches.length === 1 ? matches[0] : undefined
 }
 
+/** First song per String(id), matching resolveSetlistSong's `find` order for ID references. */
+export function songIdIndex(songs: ActiveSongState[]): Map<string, ActiveSongState> {
+  const index = new Map<string, ActiveSongState>()
+  for (const song of songs) if (song.id !== undefined && !index.has(String(song.id))) index.set(String(song.id), song)
+  return index
+}
+
+/** Same result as resolveSetlistSong, with O(1) ID lookups; legacy title refs fall back to the scan. */
+export function resolveSetlistSongIndexed(ref: SongReference, songs: ActiveSongState[], index: Map<string, ActiveSongState>): ActiveSongState | undefined {
+  return ref.id !== undefined ? index.get(String(ref.id)) : resolveSetlistSong(ref, songs)
+}
+
 /** Run at library load/import; saved IDs remain authoritative after edits. */
 export function bindLegacySetlists(setlists: WebSetlist[], songs: ActiveSongState[]): WebSetlist[] {
   return setlists.map(setlist => ({ ...setlist, songs: setlist.songs.map(ref => {

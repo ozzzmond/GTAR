@@ -234,6 +234,7 @@ New or renamed tests await a human choice of primary category.
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
+- [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
 - [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
 - [stageCast2.test.cjs](stageCast2.test.cjs)

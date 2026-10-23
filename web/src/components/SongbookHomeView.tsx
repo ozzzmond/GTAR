@@ -2,7 +2,7 @@ import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
-import { resolveSetlistSong } from '../utils/setlistSongs'
+import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
 import React, { useState, useMemo, useRef, useCallback } from 'react'
 import {
@@ -570,13 +570,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
   }
 
+  // Resolve every setlist reference once per library/setlist change (#139). Previously each
+  // song card and filter pass re-resolved every reference by scanning the whole library.
+  const songIndex = useMemo(() => songIdIndex(songs), [songs])
+  const setlistMemberIds = useMemo(() => new Map(activeSetlists.map(sl => [sl,
+    new Set(sl.songs.map(ref => resolveSetlistSongIndexed(ref, songs, songIndex)?.id))] as const)), [activeSetlists, songs, songIndex])
+
   // Find setlists containing a song
   const getSongSetlists = (song: ActiveSongState) => {
-    return activeSetlists.filter((sl) =>
-      sl.songs.some(
-        (ref) => resolveSetlistSong(ref, songs)?.id === song.id
-      )
-    )
+    return activeSetlists.filter((sl) => setlistMemberIds.get(sl)?.has(song.id))
   }
 
   // Available unique keys in library
@@ -613,10 +615,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       if (filterSetlistId !== 'ALL') {
         const sl = activeSetlists.find((s) => String(s.id) === String(filterSetlistId))
         if (!sl) return false
-        const inSetlist = sl.songs.some(
-          (ref) => resolveSetlistSong(ref, songs)?.id === song.id
-        )
-        if (!inSetlist) return false
+        if (!setlistMemberIds.get(sl)?.has(song.id)) return false
       }
 
       if (filterMetadata !== 'ALL') {
@@ -627,7 +626,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       return true
     })
-  }, [indexedSongs, songs, searchQuery, filterKey, filterSetlistId, filterMetadata, activeSetlists])
+  }, [indexedSongs, searchQuery, filterKey, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {
@@ -655,14 +654,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return activeSetlists.filter((sl) => {
       const matchName = sl.name.toLowerCase().includes(q)
       const matchSong = (sl.songs || []).some((ref) => {
-        const resolved = resolveSetlistSong(ref, songs)
+        const resolved = resolveSetlistSongIndexed(ref, songs, songIndex)
         const t = resolved?.title || ref.title || ''
         const a = resolved?.artist || ref.artist || ''
         return t.toLowerCase().includes(q) || a.toLowerCase().includes(q)
       })
       return matchName || matchSong
     })
-  }, [activeSetlists, searchQuery, songs])
+  }, [activeSetlists, searchQuery, songs, songIndex])
 
   type SetlistSortOption = 'manual' | 'title_asc' | 'title_desc' | 'newest' | 'oldest'
   const [setlistSortBy, setSetlistSortBy] = useState<SetlistSortOption>('manual')

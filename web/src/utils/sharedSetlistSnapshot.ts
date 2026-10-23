@@ -44,7 +44,11 @@ export function validateSnapshot(value: unknown): asserts value is {
     if (entry.transposeOffset !== undefined &&
         (!Number.isSafeInteger(entry.transposeOffset) || Math.abs(Number(entry.transposeOffset)) > 48)) fail()
   }
-  if (encoder.encode(JSON.stringify(value)).length > SETLIST_LIMITS.snapshotBytes) fail('Snapshot too large')
+  const size = encoder.encode(JSON.stringify(value)).length
+  if (size > SETLIST_LIMITS.snapshotBytes) {
+    fail(`Snapshot too large: ${Math.ceil(size / 1024)} KB exceeds the ${SETLIST_LIMITS.snapshotBytes / 1024} KB shared setlist limit. ` +
+      'Split the setlist or shorten long charts, then review again.')
+  }
 }
 
 /** Resolve only the authenticated publisher's exact cloud songbook version.
