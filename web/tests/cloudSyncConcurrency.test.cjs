@@ -257,7 +257,7 @@ test('CLIENT: missing/foreign base or failed recovery storage blocks unsafe reco
   await withFetch((url, opts) => opts.method === 'GET' ? request('GET') : new Response('{}', { status: 409 }), async () => {
     const result = await sync.performCloudSongbookSync('token', { storage: store })
     assert.equal(result.status, 'ERROR')
-    assert.match(result.error, /export a backup/)
+    assert.match(result.error, /export a backup/i)
   })
 })
 

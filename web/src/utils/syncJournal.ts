@@ -290,6 +290,28 @@ export function localStorageBytes(storage: Storage): number {
 export const RECOVERY_MAX_COUNT = 32
 export const RECOVERY_MAX_BYTES = 3 * 1024 * 1024
 
+/** Retention cap reached; undecided archives are protected, so the user must decide and clean up. */
+export class RecoveryRetentionError extends Error {
+  constructor() { super('Recovery retention limit reached. Export a backup and Review local recovery to confirm cleanup; undecided archives are protected.'); this.name = 'RecoveryRetentionError' }
+}
+
+export function recoveryRetentionUsage(storage: Storage): { count: number; bytes: number; maxCount: number; maxBytes: number } {
+  let count = 0, bytes = 0
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k?.startsWith('gtar_sync_recovery:')) { count++; bytes += 2 * (k.length + (storage.getItem(k)?.length ?? 0)) }
+  }
+  return { count, bytes, maxCount: RECOVERY_MAX_COUNT, maxBytes: RECOVERY_MAX_BYTES }
+}
+
+/** User-facing reason for a failed safety snapshot. Callers only use it before any change is made. */
+export function recoverySnapshotFailureMessage(error: unknown, retry: 'sync' | 'download' | 'replacing the cloud songbook'): string {
+  const steps = `open Review local recovery, export recovery data, choose the current library, then review decided archive cleanup before retrying ${retry}.`
+  if (error instanceof RecoveryRetentionError) return `Recovery storage is full (limit ${RECOVERY_MAX_COUNT} archives / ${RECOVERY_MAX_BYTES / 1024 / 1024} MiB), so the safety snapshot was not saved. Nothing was changed. To free space, ${steps}`
+  if (isQuotaError(error)) return `Device storage is full, so the safety snapshot could not be saved. Nothing was changed. Export a backup, then ${steps}`
+  return `Recovery snapshot could not be verified after saving. Nothing was changed. Export a backup, then ${steps}`
+}
+
 // Estimates cover the whole origin, not Safari's separate localStorage limit.
 // Always attempt the actual guarded write unless retention or reported quota blocks it.
 export async function writeRecoverySnapshot(key: string, raw: string, storage: Storage): Promise<void> {
@@ -299,20 +321,16 @@ export async function writeRecoverySnapshot(key: string, raw: string, storage: S
 }
 
 function writeRecoverySnapshotChecked(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
-  let count = 0, bytes = 0
-  for (let i = 0; i < storage.length; i++) {
-    const k = storage.key(i)
-    if (k?.startsWith('gtar_sync_recovery:')) { count++; bytes += 2 * (k.length + (storage.getItem(k)?.length ?? 0)) }
-  }
+  const { count, bytes } = recoveryRetentionUsage(storage)
   const attemptedBytes = 2 * (key.length + raw.length)
   try {
-    if (count >= RECOVERY_MAX_COUNT || bytes + attemptedBytes > RECOVERY_MAX_BYTES) throw new Error('Recovery retention limit reached. Export a backup and Review local recovery to confirm cleanup; undecided archives are protected.')
+    if (count >= RECOVERY_MAX_COUNT || bytes + attemptedBytes > RECOVERY_MAX_BYTES) throw new RecoveryRetentionError()
     if (estimate?.quota !== undefined && estimate.usage !== undefined && estimate.usage + attemptedBytes > estimate.quota) throw new DOMException('Origin quota estimate exceeded', 'QuotaExceededError')
     storage.setItem(key, raw)
     if (storage.getItem(key) !== raw) throw new Error('Snapshot readback failed')
   } catch (error) {
-    appLogger.error('RecoverySnapshot', isQuotaError(error) ? 'Recovery snapshot quota exceeded' : 'Recovery snapshot failed', undefined,
-      JSON.stringify({ key, attemptedBytes, totalUsedBytes: localStorageBytes(storage), originUsage: estimate?.usage, originQuota: estimate?.quota }))
+    appLogger.error('RecoverySnapshot', isQuotaError(error) ? 'Recovery snapshot quota exceeded' : error instanceof RecoveryRetentionError ? 'Recovery retention limit reached' : 'Recovery snapshot failed', undefined,
+      JSON.stringify({ key, attemptedBytes, recoveryCount: count, recoveryBytes: bytes, totalUsedBytes: localStorageBytes(storage), originUsage: estimate?.usage, originQuota: estimate?.quota }))
     throw error
   }
 }

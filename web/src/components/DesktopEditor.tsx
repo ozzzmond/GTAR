@@ -55,6 +55,8 @@ interface DesktopEditorProps {
   onClose?: () => void
   navigationGuardRef?: React.RefObject<((next: () => void) => void) | null>
   recoveryDraftRef?: React.RefObject<(() => ActiveSongState | null) | null>
+  /** #170: called when the editor closes after autosaving edits, so the app can confirm "Changes saved". */
+  onLeaveWithSavedChanges?: () => void
   transposeOffset: number
   onNewSong?: () => void
 }
@@ -73,6 +75,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   navigationGuardRef,
   recoveryDraftRef,
   onNewSong,
+  onLeaveWithSavedChanges,
 }) => {
   const [editingSong, setEditingSong] = useState<ActiveSongState>(song)
   // A failed text transformation must retain its rebased offset in the draft.
@@ -197,6 +200,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   })
   const keyContext = transposeContext({ key: localKey, confirmedChartKey, originalKey: localOriginalKey, rawContent: localRawContent }, transposeOffset)
   const keyConflict = keyContext.chartConflict || keyContext.originalConflict
+  // #170: autosave is silent, so confirm on leave that this session's edits were kept.
+  const autosavedEditsRef = useRef(false)
+  const leaveStateRef = useRef({ isSaved, onLeaveWithSavedChanges })
+  useEffect(() => { leaveStateRef.current = { isSaved, onLeaveWithSavedChanges } })
+  useEffect(() => () => {
+    const { isSaved: saved, onLeaveWithSavedChanges: notify } = leaveStateRef.current
+    if (autosavedEditsRef.current && saved) notify?.()
+  }, [])
   const autosave = (updated: Partial<ActiveSongState>) => {
     const isRedundant = Object.entries(updated).every(
       ([key, val]) => persisted[key as keyof typeof persisted] === val
@@ -223,6 +234,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       const res = onUpdateSong(next)
       if (res === true) {
         setPersisted(previous => ({ ...previous, ...next }))
+        autosavedEditsRef.current = true
         setSaveFailed(false)
       } else {
         setSaveFailed(true)
@@ -403,6 +415,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalTags(song.tags || '')
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
+    autosavedEditsRef.current = false
     setSaveFailed(false)
     setIsSaving(false)
     history.current = new TextHistory()
@@ -842,32 +855,40 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 {saveStatus === 'SAVING' ? (
                   <span
                     data-testid="editor-save-status"
+                    role="status"
+                    aria-live="polite"
                     data-save-status="SAVING"
-                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-surface text-app-muted border border-app-border animate-pulse"
+                    className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-app-surface text-app-muted border border-app-border animate-pulse"
                   >
                     Saving...
                   </span>
                 ) : saveStatus === 'FAILED' ? (
                   <span
                     data-testid="editor-save-status"
+                    role="status"
+                    aria-live="polite"
                     data-save-status="FAILED"
-                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-status-error/20 text-status-error border border-status-error/30"
+                    className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-status-error/20 text-status-error border border-status-error/30"
                   >
                     Failed (Unsaved)
                   </span>
                 ) : saveStatus === 'UNSAVED' ? (
                   <span
                     data-testid="editor-save-status"
+                    role="status"
+                    aria-live="polite"
                     data-save-status="UNSAVED"
-                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent border border-app-accent/30"
+                    className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-app-accent/20 text-app-accent border border-app-accent/30"
                   >
                     Unsaved
                   </span>
                 ) : (
                   <span
                     data-testid="editor-save-status"
+                    role="status"
+                    aria-live="polite"
                     data-save-status="SAVED"
-                    className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30"
+                    className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-app-action/20 text-app-action border border-app-action/30"
                   >
                     Saved
                   </span>
