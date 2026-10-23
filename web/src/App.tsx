@@ -1934,6 +1934,10 @@ function LibraryApp() {
             onClose={() => setActiveView('stage')}
             navigationGuardRef={editorNavigationGuard}
             recoveryDraftRef={editorRecoveryDraftRef}
+            onLeaveWithSavedChanges={() => {
+              setToastMessage('Changes saved')
+              setTimeout(() => setToastMessage(current => current === 'Changes saved' ? null : current), 2500)
+            }}
             transposeOffset={currentSong.transposeOffset || 0}
             onNewSong={handleNewSong}
           />

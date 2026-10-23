@@ -231,6 +231,7 @@ New or renamed tests await a human choice of primary category.
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
+- [editorLeaveSaveFeedback.test.cjs](editorLeaveSaveFeedback.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [libraryBodyShadow.test.cjs](libraryBodyShadow.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
