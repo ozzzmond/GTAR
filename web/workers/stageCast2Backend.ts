@@ -303,9 +303,8 @@ export class StageCast2Hub {
     const s = this.session(ticket.ref)
     if (!['PAIRED', 'DISCONNECTED'].includes(s.state)) throw new Denial()
     if (ticket.role === 'controller' && !this.leased(s)) throw new Denial('AUTH_REQUIRED', 401)
-    for (const old of this.connections.filter(c => c.ref === s.ref && c.role === ticket.role)) {
-      this.disconnect(old, ticket.role === 'receiver' ? 'REPLACED' : 'DISCONNECTED')
-    }
+    // Last connection wins for either role; the replaced socket is told so and must not retry (#84).
+    for (const old of this.connections.filter(c => c.ref === s.ref && c.role === ticket.role)) this.disconnect(old, 'REPLACED')
     const { server, response } = this.rt.upgrade()
     response.headers.set('Sec-WebSocket-Protocol', 'cast2')
     const c: Connection = { ref: s.ref, role: ticket.role, socket: server, lastSeen: this.rt.now(), window: 0, count: 0 }

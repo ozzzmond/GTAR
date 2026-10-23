@@ -374,7 +374,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
   return (
     <div className="cast2 cast2-controller">
       <p role="status" aria-live="polite">
-        {v.state === 'CONNECTED' ? 'Connected to TV' : v.state === 'DISCONNECTED' ? 'Reconnecting to TV' : v.state === 'PAIRED' ? 'Connecting to TV' : v.state === 'EXPIRED' ? 'Session expired. Pair again.' : v.state === 'REPLACED' ? 'Session ended: TV connected elsewhere' : terminal ? 'Ready to pair' : v.state.replaceAll('_', ' ')}
+        {v.state === 'CONNECTED' ? 'Connected to TV' : v.state === 'DISCONNECTED' ? 'Reconnecting to TV' : v.state === 'PAIRED' ? 'Connecting to TV' : v.state === 'EXPIRED' ? 'Session expired. Pair again.' : v.state === 'REPLACED' ? 'Session ended: controlled from another tab or device' : terminal ? 'Ready to pair' : v.state.replaceAll('_', ' ')}
       </p>
       {v.error && <p role="alert" className="text-xs text-status-error font-medium">{errorText[v.error] || v.error}</p>}
       {projectionError && (
