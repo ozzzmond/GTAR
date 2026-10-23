@@ -13,7 +13,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 const root = path.join(__dirname, '..')
 const { makeLibrary, QuotaStorage } = require(path.join(root, 'tests/helpers/syntheticSongbook.cjs'))
 const { persistLibrary, LIBRARY_KEY } = require(path.join(root, 'src/utils/syncJournal.ts'))
-const { resolveSetlistSong } = require(path.join(root, 'src/utils/setlistSongs.ts'))
+const { resolveSetlistSong, resolveSetlistSongIndexed, songIdIndex } = require(path.join(root, 'src/utils/setlistSongs.ts'))
 
 const QUOTA = 5 * 1024 * 1024
 const scales = (process.argv[2] || '100,250,500,1000,1500').split(',').map(Number)
@@ -22,8 +22,14 @@ const time = fn => { const t = process.hrtime.bigint(); fn(); return Number(proc
 
 // Mirrors SongbookHomeView's title/artist search predicate.
 const search = (songs, q) => songs.filter(s => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q))
-// Mirrors SongbookHomeView's setlist filter: every song is resolved against every setlist ref.
-const setlistFilter = (songs, setlist) => songs.filter(song => setlist.songs.some(ref => resolveSetlistSong(ref, songs)?.id === song.id))
+// Pre-#139 SongbookHomeView setlist filter: every song re-resolves every setlist ref.
+const legacySetlistFilter = (songs, setlist) => songs.filter(song => setlist.songs.some(ref => resolveSetlistSong(ref, songs)?.id === song.id))
+// Current SongbookHomeView: resolve refs once through the ID index, then Set membership.
+const setlistFilter = (songs, setlist) => {
+  const index = songIdIndex(songs)
+  const members = new Set(setlist.songs.map(ref => resolveSetlistSongIndexed(ref, songs, index)?.id))
+  return songs.filter(song => members.has(song.id))
+}
 
 const rows = []
 for (const n of scales) {
@@ -37,6 +43,7 @@ for (const n of scales) {
   const queries = ['song 0001', 'artist 4', 'synthetic', 'zzz-no-match', 'test artist 9']
   const searchRuns = []
   for (let r = 0; r < 20; r++) for (const q of queries) searchRuns.push(time(() => search(library.songs, q)))
+  const legacyFilterMs = time(() => legacySetlistFilter(library.songs, library.setlists[0]))
   const filterMs = time(() => setlistFilter(library.songs, library.setlists[0]))
   rows.push({
     songs: n,
@@ -47,7 +54,8 @@ for (const n of scales) {
     parseMs: parseMs?.toFixed(1) ?? '-',
     searchP50ms: percentile(searchRuns, 0.5).toFixed(2),
     searchP95ms: percentile(searchRuns, 0.95).toFixed(2),
-    setlistFilterMs: filterMs.toFixed(1),
+    legacyFilterMs: legacyFilterMs.toFixed(1),
+    setlistFilterMs: filterMs.toFixed(2),
   })
 }
 console.table(rows)
