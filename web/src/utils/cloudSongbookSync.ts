@@ -1,5 +1,5 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { LIBRARY_KEY, isQuotaError, writeRecoverySnapshot, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
+import { LIBRARY_KEY, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1247,8 +1247,8 @@ async function executeCloudSongbookSync(
       return result
     } catch (err) {
       return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
-        error: isQuotaError(err)
-          ? 'Device storage is full, so the reconciliation safety snapshot could not be saved. Local edits preserved; export a backup, then open Review local recovery to confirm cleanup before retrying.'
+        error: isQuotaError(err) || err instanceof RecoveryRetentionError
+          ? recoverySnapshotFailureMessage(err, 'sync')
           : `Cannot safely reconcile: ${err instanceof Error ? err.message : String(err)}. Local edits preserved; export a backup before retrying.` }
     }
   }
@@ -1351,9 +1351,9 @@ async function executeCloudSongbookSync(
         const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: cloudRecord.data })
         try {
           await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
-        } catch {
+        } catch (err) {
           return { success: false, status: 'ERROR', state: decisionResult.state, actionTaken: 'NONE',
-            error: 'Recovery snapshot could not be saved. Export a backup, then open Review local recovery to confirm cleanup before replacing the cloud songbook.' }
+            error: recoverySnapshotFailureMessage(err, 'replacing the cloud songbook') }
         }
       }
       const uploadRes = await fetch('/api/songbook/sync', {
@@ -1534,7 +1534,7 @@ async function executeCloudSongbookSync(
       try {
         await writeRecoverySnapshot(recoveryKey, recoverySnapshot, targetStorage)
       } catch (err) {
-        throw new Error('Recovery snapshot could not be saved. Export a backup, then open Review local recovery to confirm cleanup before retrying download.', { cause: err })
+        throw new Error(recoverySnapshotFailureMessage(err, 'download'), { cause: err })
       }
 
       // Storage estimation yields to the event loop: recheck both library and theme.
@@ -1660,9 +1660,7 @@ async function executeCloudSongbookSync(
       } catch (err) {
         // Nothing has been uploaded or persisted yet; never surface the raw browser quota text.
         return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
-          error: isQuotaError(err)
-            ? 'Device storage is full, so the merge safety snapshot could not be saved. Nothing was changed. Export a backup, then open Review local recovery to confirm cleanup before retrying sync.'
-            : 'Recovery snapshot could not be saved. Export a backup, then open Review local recovery to confirm cleanup before retrying sync.' }
+          error: recoverySnapshotFailureMessage(err, 'sync') }
       }
       if (targetStorage.getItem(recoveryKey) !== recoverySnapshot) {
         throw new Error('Recovery snapshot unavailable. Export a backup before retrying.')

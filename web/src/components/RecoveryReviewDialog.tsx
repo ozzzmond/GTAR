@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { inspectRecovery, recordRecoveryChoice, recoveryData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes } from '../utils/syncJournal'
+import { inspectRecovery, recordRecoveryChoice, recoveryData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage } from '../utils/syncJournal'
 
 import { isDevEnv } from '../utils/env'
 import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
@@ -30,6 +30,12 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
   const invalid = review.sources.filter(source => source.status === 'invalid')
 
   const hasNoActionable = actionable.length === 0
+  const retention = recoveryRetentionUsage(localStorage)
+  const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(2)
+  // Distinct missing records across actionable sources; titles stay behind a disclosure.
+  const missingTitles = [...new Map(actionable.flatMap(source => source.differences)
+    .filter(record => record.difference === 'missing')
+    .map(record => [`${record.kind}:${record.id}`, record] as const)).values()]
   const keepCurrentDisabledReason = review.invalid
     ? 'Cannot proceed: one or more recovery sources are invalid or unreadable. Export all recovery data first.'
     : hasNoActionable && !archiveSources.some(source => source.status === 'represented')
@@ -170,6 +176,41 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
             <span className="font-bold text-app-heading">{review.divergentVersions}</span> divergent versions (including resolved history)
           </p>
         </div>
+
+        {/* Recovery storage usage and guided order (#173) */}
+        <div data-testid="recovery-retention-usage" className="text-xs font-mono text-app-muted">
+          Recovery storage: {retention.count} of {retention.maxCount} archives · {mib(retention.bytes)} of {mib(retention.maxBytes)} MiB
+        </div>
+        {!review.invalid && (actionable.length > 0 || cleanup.length > 0) && (
+          <ol
+            data-testid="recovery-guided-steps"
+            aria-label="How to free recovery storage"
+            className="p-2.5 rounded-lg border border-status-warning/40 bg-status-warning/8 text-xs space-y-1 list-decimal list-inside"
+          >
+            <li className={actionable.length ? 'text-app-heading' : 'text-app-muted line-through'}>Export all recovery data (keeps an external copy).</li>
+            <li className={actionable.length ? 'text-app-heading' : 'text-app-muted line-through'}>
+              Choose current library{actionable.length ? ` for ${actionable.length} undecided ${actionable.length === 1 ? 'archive' : 'archives'}` : ' (done)'}. Undecided archives can't be cleaned up.
+            </li>
+            <li className="text-app-heading">
+              Review decided archive cleanup{cleanup.length ? ` — ${cleanup.length} ready to remove` : ''}, then retry sync.
+            </li>
+          </ol>
+        )}
+        {missingTitles.length > 0 && (
+          <details data-testid="recovery-missing-titles" className="rounded-lg border border-status-warning/30 text-xs">
+            <summary className="min-h-11 cursor-pointer px-3 py-2 select-none font-mono">
+              Show {missingTitles.length} missing {missingTitles.length === 1 ? 'record' : 'records'} before deciding
+            </summary>
+            <ul className="px-3 pb-3 space-y-1">
+              {missingTitles.map(record => (
+                <li key={`${record.kind}:${record.id}`} className="break-words">
+                  <span className="font-bold text-app-heading">{record.kind === 'song' ? '♪' : '☰'} {record.title}</span>
+                  <span className="text-app-muted ml-2">{classifyMissing(record)}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
 
         {/* Invalid banner */}
         {review.invalid && (
