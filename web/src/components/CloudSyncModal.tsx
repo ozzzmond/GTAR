@@ -31,12 +31,16 @@ import { readPersistedLibrary } from '../utils/syncJournal'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { tryReadCloudThemeSettings } from '../utils/backupSettings'
 import type { SyncLibrary } from '../utils/syncMerge'
+import type { SyncPill } from '../utils/syncStatus'
+import type { SyncDeviceFacts } from '../utils/useSyncStatus'
 
 interface CloudSyncModalProps {
   isOpen: boolean
   onClose: () => void
   onSyncApplied?: (updatedLibrary: SyncLibrary) => void
   onSyncStateChange?: (status: CloudSyncStatus, isProcessing: boolean) => void
+  /** #191: DEV Sync Center. When set, the dialog is titled Sync Center and shows device facts. */
+  syncCenter?: { pill: SyncPill; facts: SyncDeviceFacts; onOpenDebugLogs?: () => void }
 }
 
 export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
@@ -44,6 +48,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   onClose,
   onSyncApplied,
   onSyncStateChange,
+  syncCenter,
 }) => {
   const recoveryAttention = useRecoveryAttention() // #181
   const authContext = useOptionalGoogleAuth()
@@ -252,7 +257,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
             <div>
               <h2 className="font-extrabold text-sm sm:text-base tracking-wide">
-                Cloud Songbook Sync
+                {syncCenter ? 'Sync Center' : 'Cloud Songbook Sync'}
               </h2>
             </div>
           </div>
@@ -418,6 +423,48 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               )}
             </div>
           </div>
+
+          {syncCenter && (
+            <div data-testid="sync-center-details" className="space-y-3">
+              {syncCenter.pill.attention.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-status-error/10 border border-status-error/40 space-y-2">
+                  <h3 className="text-xs font-bold text-status-error">
+                    {syncCenter.pill.attention.length === 1 ? '1 item needs a decision' : `${syncCenter.pill.attention.length} items need a decision`}
+                  </h3>
+                  <ul className="space-y-1 text-xs text-app-heading">
+                    {syncCenter.pill.attention.map(item => <li key={item.id}>{item.label}</li>)}
+                  </ul>
+                  <p className="text-[11px] text-app-muted">Your edits are safe on this device. Export a backup before choosing.</p>
+                </div>
+              )}
+              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs">
+                <h3 className="px-3.5 pt-3 pb-1 font-bold text-app-heading">This device</h3>
+                <div className="px-3.5 py-2 flex justify-between gap-3">
+                  <span className="text-app-muted">Library</span>
+                  <span>{syncCenter.facts.songs === null ? 'Unavailable' : `${syncCenter.facts.songs} songs · ${syncCenter.facts.setlists} setlists`}</span>
+                </div>
+                <div className="px-3.5 py-2 flex justify-between gap-3 border-t border-app-border/60">
+                  <span className="text-app-muted">Charts stored in</span>
+                  <span>{syncCenter.facts.chartsInIndexedDb ? 'IndexedDB' : 'Browser storage'}</span>
+                </div>
+                <div className="px-3.5 py-2 pb-3 flex justify-between gap-3 border-t border-app-border/60">
+                  <span className="text-app-muted">Sync reference</span>
+                  <span data-testid="sync-center-reference" className={syncCenter.facts.syncReference === 'missing' ? 'text-status-error font-semibold' : syncCenter.facts.syncReference === 'saved' ? 'text-status-success font-semibold' : 'text-app-muted'}>
+                    {syncCenter.facts.syncReference === 'saved' ? 'Saved' : syncCenter.facts.syncReference === 'missing' ? 'Not saved' : 'Not synced yet'}
+                  </span>
+                </div>
+              </div>
+              {syncCenter.onOpenDebugLogs && (
+                <button
+                  type="button"
+                  onClick={syncCenter.onOpenDebugLogs}
+                  className="w-full min-h-11 px-3.5 rounded-xl bg-app-base/70 border border-app-border text-left text-xs font-semibold text-app-heading hover:border-app-action transition-colors cursor-pointer"
+                >
+                  Diagnostics and debug logs
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Conflict Resolution Section */}
           {syncStatus === 'CONFLICT' && conflicts.length > 0 && (

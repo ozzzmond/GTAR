@@ -264,6 +264,24 @@ export async function prepareCloudSyncBase(storage?: Storage, timeoutMs = 5000):
   }
 }
 
+export type SyncReferenceState = 'none' | 'saved' | 'missing'
+/**
+ * #191: whether this device still holds the common base of its last sync. 'none' = never synced
+ * here; 'missing' = synced before but the base is gone or stale (next merge needs a manual choice).
+ */
+export async function inspectSyncReference(storage?: Storage): Promise<SyncReferenceState> {
+  const targetStorage = getStorage(storage)
+  if (!targetStorage) return 'none'
+  const meta = readCloudSyncMeta(targetStorage)
+  if (!meta.lastSyncedChecksum) return 'none'
+  await prepareCloudSyncBase(targetStorage)
+  const base = readCloudSyncBase(targetStorage)
+  if (!base) return 'missing'
+  const matches = computeSongbookChecksum(base) === meta.lastSyncedChecksum ||
+    computeSongbookChecksum({ songs: base.songs, setlists: base.setlists }) === meta.lastSyncedChecksum
+  return matches ? 'saved' : 'missing'
+}
+
 /**
  * Saves the base snapshot used for three-way reconciliation and reports whether it was kept.
  *
