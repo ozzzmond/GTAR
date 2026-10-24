@@ -1,4 +1,5 @@
 import { openRecoveryReview } from '../utils/recoveryReview'
+import { isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled } from '../utils/recordsSync'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Cloud,
@@ -18,7 +19,6 @@ import {
 } from 'lucide-react'
 import { useOptionalGoogleAuth } from '../utils/authContext'
 import {
-  performCloudSongbookSync,
   readCloudSyncMeta,
   computeSongbookChecksum,
   estimateSongbookUploadBytes,
@@ -64,6 +64,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [warningMessage, setWarningMessage] = useState<string>('')
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
+  const [recordsSync, setRecordsSync] = useState(() => { try { return isRecordsSyncEnabled() } catch { return false } })
 
   // Focus restoration to triggering element upon modal close
   const previousActiveElementRef = useRef<HTMLElement | null>(null)
@@ -104,7 +105,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setErrorMessage('')
     setWarningMessage('')
     try {
-      const result = await performCloudSongbookSync(token)
+      const result = await performSongbookSync(token)
       setSyncStatus(result.status)
       setLastMeta(readCloudSyncMeta())
 
@@ -134,6 +135,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           )
         }
       } else if (result.status === 'CONFLICT') {
+        if (result.updatedLibrary) onSyncAppliedRef.current?.(result.updatedLibrary)
         const hasThemeConflict = (result.conflicts || []).some((c) => c.type === 'theme')
         setStatusMessage(
           hasThemeConflict
@@ -182,7 +184,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setErrorMessage('')
     setWarningMessage('')
     try {
-      const result: CloudSyncResult = await performCloudSongbookSync(token, { forceAction })
+      const result: CloudSyncResult = await performSongbookSync(token, { forceAction })
       setSyncStatus(result.status)
       setLastMeta(readCloudSyncMeta())
       if (result.success) {
@@ -453,6 +455,28 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     {syncCenter.facts.syncReference === 'saved' ? 'Saved' : syncCenter.facts.syncReference === 'missing' ? 'Not saved' : 'Not synced yet'}
                   </span>
                 </div>
+              </div>
+              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs px-3.5 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold text-app-heading">Sync engine</div>
+                  <div className="text-[11px] text-app-muted">
+                    {recordsSync ? 'Per-record (DEV): syncs only changed songs and setlists.' : 'Classic: syncs the whole songbook.'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="sync-center-engine-toggle"
+                  aria-pressed={recordsSync}
+                  disabled={isProcessing}
+                  onClick={() => {
+                    const next = !recordsSync
+                    try { setRecordsSyncEnabled(next) } catch { return }
+                    setRecordsSync(next)
+                  }}
+                  className="shrink-0 min-h-11 px-3 rounded-lg border border-app-border bg-app-surface hover:border-app-action font-semibold text-app-heading cursor-pointer disabled:opacity-50"
+                >
+                  {recordsSync ? 'Per-record' : 'Classic'}
+                </button>
               </div>
               {syncCenter.onOpenDebugLogs && (
                 <button
