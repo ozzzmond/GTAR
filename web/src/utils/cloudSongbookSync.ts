@@ -1341,6 +1341,12 @@ async function executeCloudSongbookSync(
   }
 
   // A rejected upload is reconciled against a fresh GET, never replayed blindly.
+  // #208 F2: the server refuses classic writes for per-record accounts. Nothing to merge or archive.
+  const recordsActiveResult = (parsed: { error?: string } | null): CloudSyncResult => ({
+    success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE',
+    error: parsed?.error || 'This account now syncs song by song. Reload the app, then sync again. Your edits are kept on this device.',
+  })
+
   const recoverConflict = async (pending: SyncLibrary): Promise<CloudSyncResult> => {
     try {
       const key = `gtar_sync_recovery:concurrency:${Date.now()}:${generateUUID()}`
@@ -1499,6 +1505,7 @@ async function executeCloudSongbookSync(
         error?: string
       }>(uploadRes)
 
+      if (uploadRes.status === 409 && (uploadParsed as { code?: string } | null)?.code === 'SONGBOOK_RECORDS_ACTIVE') return recordsActiveResult(uploadParsed)
       if (uploadRes.status === 409) return recoverConflict(localLibrary)
 
       if (!uploadRes.ok) {
@@ -1810,6 +1817,7 @@ async function executeCloudSongbookSync(
         error?: string
       }>(uploadRes)
 
+      if (uploadRes.status === 409 && (uploadParsed as { code?: string } | null)?.code === 'SONGBOOK_RECORDS_ACTIVE') return recordsActiveResult(uploadParsed)
       if (uploadRes.status === 409) return recoverConflict(mergedLib)
 
       if (!uploadRes.ok) {

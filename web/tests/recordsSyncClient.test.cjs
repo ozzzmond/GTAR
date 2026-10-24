@@ -310,3 +310,44 @@ test('#208 F1: without the hold, the same older library would delete the cloud r
   await w.run(a)
   assert.equal(cloudRow(w, 4).removed, 1, 'documents why the hold is needed')
 })
+
+// #208 F2: once a user has records, classic writes are refused instead of silently diverging.
+test('#208 F2: classic upload is refused (409 SONGBOOK_RECORDS_ACTIVE) once records exist; no archive, cloud unchanged', async () => {
+  const w = await world({ library: base })
+  const b = w.device(base)
+  client.setRecordsSyncEnabled(false, b) // an old or classic-only client, in sync with the cloud
+  assert.equal((await w.runAny(b)).success, true)
+  const a = w.device(base)
+  await w.run(a) // another device seeds the records
+  const before = await findUserSongbook(w.db, 'user-a')
+  edit(b, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(1) ? { ...s, rawContent: 'classic edit' } : s) }))
+  const archivesBefore = recoveryKeys(b).length
+  const result = await w.runAny(b)
+  assert.equal(result.success, false)
+  assert.match(result.error, /syncs song by song/)
+  assert.equal(recoveryKeys(b).length, archivesBefore, 'no recovery snapshot for a refused write')
+  const after = await findUserSongbook(w.db, 'user-a')
+  assert.equal(after.checksum, before.checksum, 'classic document unchanged')
+  assert.equal(read(b).songs.find(s => s.id === id(1)).rawContent, 'classic edit', 'edit kept on the device')
+  // Switched to per-record sync, the unsynced edit is a reviewable conflict (never silently lost) and resolves.
+  client.setRecordsSyncEnabled(true, b)
+  assert.equal((await w.runAny(b)).status, 'CONFLICT')
+  assert.equal((await w.run(b, { forceAction: 'upload' })).success, true) // keep this device's version
+  assert.equal(JSON.parse((await findUserSongbook(w.db, 'user-a')).data_json).songs.find(s => s.id === id(1)).rawContent, 'classic edit')
+})
+
+test('#208 F2: classic writes still work for users without records and on databases without 0009', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  client.setRecordsSyncEnabled(false, a)
+  assert.equal((await w.runAny(a)).success, true)
+  edit(a, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(2) ? { ...s, rawContent: 'classic ok' } : s) }))
+  assert.equal((await w.runAny(a)).success, true)
+  const noTables = await world({ library: base })
+  noTables.db.sqlite.exec('DROP TABLE user_songbook_records; DROP TABLE user_songbook_cursors;')
+  const b = noTables.device(base)
+  client.setRecordsSyncEnabled(false, b)
+  assert.equal((await noTables.runAny(b)).success, true)
+  edit(b, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(3) ? { ...s, rawContent: 'prod-like' } : s) }))
+  assert.equal((await noTables.runAny(b)).success, true)
+})
