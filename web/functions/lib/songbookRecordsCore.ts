@@ -67,29 +67,37 @@ export async function recordsActiveForUser(db: D1Database, userId: string): Prom
  * Concurrent first calls are safe: only the call whose token claimed the cursor inserts records.
  */
 export async function ensureRecordsSeeded(db: D1Database, userId: string, now: string): Promise<number> {
-  const existing = await headSeq(db, userId)
-  if (existing !== null) return existing
-  let records: ReturnType<typeof libraryToRecords> = []
-  const legacy = await findUserSongbook(db, userId)
-  if (legacy) {
-    try { records = libraryToRecords(JSON.parse(legacy.data_json) as SyncLibrary) } catch { records = [] }
+  // #208 F2: the cursor is created only if the whole-document songbook is still the version the
+  // records were built from. A classic write that lands meanwhile makes this round insert nothing,
+  // and the next round seeds from the newer document. Classic writes in turn require "no cursor".
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existing = await headSeq(db, userId)
+    if (existing !== null) return existing
+    let records: ReturnType<typeof libraryToRecords> = []
+    const legacy = await findUserSongbook(db, userId)
+    if (legacy) {
+      try { records = libraryToRecords(JSON.parse(legacy.data_json) as SyncLibrary) } catch { records = [] }
+    }
+    const token = `${now}#${crypto.randomUUID()}`
+    // Two statements whatever the library size (D1 counts statements per invocation): the cursor,
+    // then every record from one JSON array. Only the call whose token claimed the cursor inserts.
+    const rows = records.map((record, index) => ({ k: record.kind, i: record.id, s: index + 1,
+      d: JSON.stringify(record.data), c: recordChecksum(false, record.data) }))
+    const statements = [
+      db.prepare(`INSERT INTO user_songbook_cursors (user_id, seq, seeded_at)
+        SELECT ?, ?, ? WHERE (SELECT version FROM user_songbooks WHERE user_id = ?) IS ?
+        ON CONFLICT(user_id) DO NOTHING`).bind(userId, records.length, token, userId, legacy ? legacy.version : null),
+      db.prepare(`INSERT INTO user_songbook_records (user_id, kind, record_id, rev, seq, removed, data_json, checksum, updated_at)
+        SELECT ?, json_extract(value, '$.k'), json_extract(value, '$.i'), 1, json_extract(value, '$.s'), 0,
+          json_extract(value, '$.d'), json_extract(value, '$.c'), ?
+        FROM json_each(?) WHERE (SELECT seeded_at FROM user_songbook_cursors WHERE user_id = ?) = ?
+        ON CONFLICT(user_id, kind, record_id) DO NOTHING`).bind(userId, now, JSON.stringify(rows), userId, token),
+    ]
+    await runBatch(db, statements)
   }
-  const token = `${now}#${crypto.randomUUID()}`
-  // Two statements whatever the library size (D1 counts statements per invocation): the cursor,
-  // then every record from one JSON array. Only the call whose token claimed the cursor inserts.
-  const rows = records.map((record, index) => ({ k: record.kind, i: record.id, s: index + 1,
-    d: JSON.stringify(record.data), c: recordChecksum(false, record.data) }))
-  const statements = [
-    db.prepare(`INSERT INTO user_songbook_cursors (user_id, seq, seeded_at) VALUES (?, ?, ?)
-      ON CONFLICT(user_id) DO NOTHING`).bind(userId, records.length, token),
-    db.prepare(`INSERT INTO user_songbook_records (user_id, kind, record_id, rev, seq, removed, data_json, checksum, updated_at)
-      SELECT ?, json_extract(value, '$.k'), json_extract(value, '$.i'), 1, json_extract(value, '$.s'), 0,
-        json_extract(value, '$.d'), json_extract(value, '$.c'), ?
-      FROM json_each(?) WHERE (SELECT seeded_at FROM user_songbook_cursors WHERE user_id = ?) = ?
-      ON CONFLICT(user_id, kind, record_id) DO NOTHING`).bind(userId, now, JSON.stringify(rows), userId, token),
-  ]
-  await runBatch(db, statements)
-  return (await headSeq(db, userId)) ?? 0
+  const head = await headSeq(db, userId)
+  if (head === null) throw new Error('Songbook kept changing while per-record sync was being set up; try again')
+  return head
 }
 
 export async function pullRecords(db: D1Database, userId: string, since: number, limit: number, now: string): Promise<PullResponse> {
