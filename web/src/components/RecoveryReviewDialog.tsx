@@ -284,7 +284,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
               </summary>
 
               <div className="px-3 pb-3 space-y-2 text-xs font-mono">
-                <p className="text-app-muted break-all">localStorage: {source.key} · {source.raw.length.toLocaleString()} chars · {((source.key.length + source.raw.length) * 2).toLocaleString()} bytes (UTF-16 estimate)</p>
+                <p className="text-app-muted break-all">{retention.indexedDb ? 'IndexedDB' : 'localStorage'}: {source.key} · {source.raw.length.toLocaleString()} chars · {((source.key.length + source.raw.length) * 2).toLocaleString()} bytes (UTF-16 estimate)</p>
                 {/* Resolved history note */}
                 {isResolved && (
                   <p
@@ -348,7 +348,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
           historical raw recovery may require manual recovery.
         </p>
 
-        <p className="text-xs text-app-muted">localStorage gtar_library_v1: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: {retention.maxCount} archives / {mib(retention.maxBytes)} MiB{retention.indexedDb ? ' (archives in IndexedDB)' : ''}; review is required when full.</p>
+        <p className="text-xs text-app-muted">{isLibraryIndexActive() ? 'localStorage gtar_library_v2 (B1 index)' : 'localStorage gtar_library_v1'}: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: {retention.maxCount} archives / {mib(retention.maxBytes)} MiB{retention.indexedDb ? ' (archives in IndexedDB)' : ''}; review is required when full.</p>
         {/* Action buttons */}
         <div className="flex flex-wrap gap-2">
           <button className={button} disabled={busy || review.invalid || !review.decisionRaw} onClick={() => { setChoice('cleanup'); setApproved(false) }} data-testid="review-cleanup-btn">Review decided archive cleanup</button>
