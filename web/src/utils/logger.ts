@@ -21,6 +21,18 @@ export const STORAGE_KEY = 'gtar_web_debug_logs'
 export const MAX_MEMORY_LOGS = 1000
 export const MAX_LOGS = MAX_MEMORY_LOGS
 export const MAX_PERSISTED_LOGS = 30
+/**
+ * Owner choice (2026-10-24): debug logging switch, OFF by default. Off = only warnings and
+ * errors are recorded (quietly, so a problem that already happened can still be reviewed);
+ * on = info and debug entries too. Per device, in localStorage.
+ */
+export const DEBUG_LOGS_ENABLED_KEY = 'gtar_debug_logs_enabled'
+export function isDebugLoggingEnabled(): boolean {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem(DEBUG_LOGS_ENABLED_KEY) === '1' } catch { return false }
+}
+export function setDebugLoggingEnabled(enabled: boolean): void {
+  try { localStorage.setItem(DEBUG_LOGS_ENABLED_KEY, enabled ? '1' : '0') } catch { /* storage unavailable */ }
+}
 
 /**
  * Redacts OAuth tokens, access tokens, client secrets, auth cookies, and authorization headers.
@@ -213,6 +225,7 @@ class WebLoggerEngine {
     details?: string
   }) {
     if (!this.storageEnabled) return
+    if ((entry.level === 'INFO' || entry.level === 'DEBUG') && !isDebugLoggingEnabled()) return
     const newLog: LogEntry = {
       id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: new Date().toISOString(),

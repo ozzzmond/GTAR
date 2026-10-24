@@ -121,12 +121,53 @@ test('Sync Center sections render only when the dialog is in Sync Center mode', 
   assert.match(container.querySelector('h2').textContent, /Sync Center/)
   const details = container.querySelector('[data-testid="sync-center-details"]')
   assert.match(details.textContent, /1 item needs a decision/)
-  assert.match(details.textContent, /140 songs · 12 setlists/)
-  assert.match(details.textContent, /IndexedDB/)
-  assert.equal(container.querySelector('[data-testid="sync-center-reference"]').textContent.trim(), 'Not saved')
+  // Owner 2026-10-24: storage internals and the redundant sync-reference row are gone; no
+  // "offline edits" footnote in the Sync Center.
+  assert.doesNotMatch(container.textContent, /IndexedDB|Charts stored in|Offline edits preserved/)
+  assert.equal(container.querySelector('[data-testid="sync-center-reference"]'), null)
+  assert.doesNotMatch(details.textContent, /setlists|Sync engine/)
   const diag = [...details.querySelectorAll('button')].find(b => /debug logs/.test(b.textContent))
   act(() => diag.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
   assert.equal(logs, 1)
+
+  // Debug logs switch: off by default, toggles the device setting.
+  localStorage.removeItem('gtar_debug_logs_enabled')
+  act(() => root.render(React.createElement(CloudSyncModal, { isOpen: false, onClose: () => {}, syncCenter: center })))
+  act(() => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose: () => {}, syncCenter: center })))
+  const debugSwitch = container.querySelector('[data-testid="sync-center-debug-switch"]')
+  assert.equal(debugSwitch.getAttribute('role'), 'switch')
+  assert.equal(debugSwitch.getAttribute('aria-checked'), 'false')
+  act(() => debugSwitch.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+  assert.equal(debugSwitch.getAttribute('aria-checked'), 'true')
+  assert.equal(localStorage.getItem('gtar_debug_logs_enabled'), '1')
+
+  // "This device" in the footer opens the device view (library + sync engine); Back returns.
+  const deviceButton = container.querySelector('[data-testid="sync-center-device-button"]')
+  act(() => deviceButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+  const view = container.querySelector('[data-testid="sync-center-device-view"]')
+  assert.match(view.textContent, /140 songs · 12 setlists/)
+  assert.match(view.textContent, /Sync engine/)
+  assert.ok(container.querySelector('[data-testid="sync-center-engine-toggle"]'))
+  assert.equal(container.querySelector('[data-testid="sync-center-details"]'), null)
+  const back = [...view.querySelectorAll('button')].find(b => b.textContent.trim() === 'Back')
+  act(() => back.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+  assert.ok(container.querySelector('[data-testid="sync-center-details"]'))
+})
+
+test('debug logging switch: off records only warnings and errors; on records info too', () => {
+  const logger = require('../src/utils/logger.ts')
+  logger.appLogger.resume()
+  logger.appLogger.clearLogs?.()
+  logger.setDebugLoggingEnabled(false)
+  const before = logger.appLogger.getLogs().length
+  logger.appLogger.info('Probe', 'info while off')
+  logger.appLogger.warn('Probe', 'warn while off')
+  const offLogs = logger.appLogger.getLogs().slice(before).map(l => `${l.level}:${l.message}`)
+  assert.deepEqual(offLogs, ['WARN:warn while off'])
+  logger.setDebugLoggingEnabled(true)
+  logger.appLogger.info('Probe', 'info while on')
+  assert.ok(logger.appLogger.getLogs().some(l => l.message === 'info while on'))
+  logger.setDebugLoggingEnabled(false)
 })
 
 test('no render loop when the dialog re-emits its sync state on every render', async () => {

@@ -1,5 +1,6 @@
 import { openRecoveryReview } from '../utils/recoveryReview'
 import { isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled } from '../utils/recordsSync'
+import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Cloud,
@@ -65,6 +66,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
   const [recordsSync, setRecordsSync] = useState(() => { try { return isRecordsSyncEnabled() } catch { return false } })
+  const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
+  // Sync Center: "This device" view (library and sync engine) instead of the main view.
+  const [deviceView, setDeviceView] = useState(false)
+  const [wasOpen, setWasOpen] = useState(isOpen)
+  if (wasOpen !== isOpen) { setWasOpen(isOpen); if (!isOpen) setDeviceView(false) }
 
   // Focus restoration to triggering element upon modal close
   const previousActiveElementRef = useRef<HTMLElement | null>(null)
@@ -276,6 +282,46 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {syncCenter && deviceView ? (
+            <div data-testid="sync-center-device-view" className="space-y-3">
+              <button
+                type="button"
+                onClick={() => setDeviceView(false)}
+                className="min-h-11 px-3 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-xs font-semibold text-app-heading cursor-pointer"
+              >
+                Back
+              </button>
+              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs">
+                <h3 className="px-3.5 pt-3 pb-1 font-bold text-app-heading">This device</h3>
+                <div className="px-3.5 py-2 pb-3 flex justify-between gap-3">
+                  <span className="text-app-muted">Library</span>
+                  <span>{syncCenter.facts.songs === null ? 'Unavailable' : `${syncCenter.facts.songs} songs · ${syncCenter.facts.setlists} setlists`}</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs px-3.5 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold text-app-heading">Sync engine</div>
+                  <div className="text-[11px] text-app-muted">
+                    {recordsSync ? 'Per-record: syncs only the songs and setlists that changed.' : 'Classic: syncs the whole songbook at once.'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="sync-center-engine-toggle"
+                  aria-pressed={recordsSync}
+                  disabled={isProcessing}
+                  onClick={() => {
+                    const next = !recordsSync
+                    try { setRecordsSyncEnabled(next) } catch { return }
+                    setRecordsSync(next)
+                  }}
+                  className="shrink-0 min-h-11 px-3 rounded-lg border border-app-border bg-app-surface hover:border-app-action font-semibold text-app-heading cursor-pointer disabled:opacity-50"
+                >
+                  {recordsSync ? 'Per-record' : 'Classic'}
+                </button>
+              </div>
+            </div>
+          ) : (<>
           {/* Account Card: Avatar | Display name | Email | Role badge */}
           <div className="p-3.5 rounded-xl bg-app-base/70 border border-app-border flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -439,53 +485,27 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   <p className="text-[11px] text-app-muted">Your edits are safe on this device. Export a backup before choosing.</p>
                 </div>
               )}
-              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs">
-                <h3 className="px-3.5 pt-3 pb-1 font-bold text-app-heading">This device</h3>
-                <div className="px-3.5 py-2 flex justify-between gap-3">
-                  <span className="text-app-muted">Library</span>
-                  <span>{syncCenter.facts.songs === null ? 'Unavailable' : `${syncCenter.facts.songs} songs · ${syncCenter.facts.setlists} setlists`}</span>
-                </div>
-                <div className="px-3.5 py-2 flex justify-between gap-3 border-t border-app-border/60">
-                  <span className="text-app-muted">Charts stored in</span>
-                  <span>{syncCenter.facts.chartsInIndexedDb ? 'IndexedDB' : 'Browser storage'}</span>
-                </div>
-                <div className="px-3.5 py-2 pb-3 flex justify-between gap-3 border-t border-app-border/60">
-                  <span className="text-app-muted">Sync reference</span>
-                  <span data-testid="sync-center-reference" className={syncCenter.facts.syncReference === 'missing' ? 'text-status-error font-semibold' : syncCenter.facts.syncReference === 'saved' ? 'text-status-success font-semibold' : 'text-app-muted'}>
-                    {syncCenter.facts.syncReference === 'saved' ? 'Saved' : syncCenter.facts.syncReference === 'missing' ? 'Not saved' : 'Not synced yet'}
-                  </span>
-                </div>
-              </div>
-              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs px-3.5 py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-bold text-app-heading">Sync engine</div>
-                  <div className="text-[11px] text-app-muted">
-                    {recordsSync ? 'Per-record (DEV): syncs only changed songs and setlists.' : 'Classic: syncs the whole songbook.'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-testid="sync-center-engine-toggle"
-                  aria-pressed={recordsSync}
-                  disabled={isProcessing}
-                  onClick={() => {
-                    const next = !recordsSync
-                    try { setRecordsSyncEnabled(next) } catch { return }
-                    setRecordsSync(next)
-                  }}
-                  className="shrink-0 min-h-11 px-3 rounded-lg border border-app-border bg-app-surface hover:border-app-action font-semibold text-app-heading cursor-pointer disabled:opacity-50"
-                >
-                  {recordsSync ? 'Per-record' : 'Classic'}
-                </button>
-              </div>
               {syncCenter.onOpenDebugLogs && (
-                <button
-                  type="button"
-                  onClick={syncCenter.onOpenDebugLogs}
-                  className="w-full min-h-11 px-3.5 rounded-xl bg-app-base/70 border border-app-border text-left text-xs font-semibold text-app-heading hover:border-app-action transition-colors cursor-pointer"
-                >
-                  Diagnostics and debug logs
-                </button>
+                <div className="rounded-xl bg-app-base/70 border border-app-border flex items-center justify-between gap-3 pr-2">
+                  <button
+                    type="button"
+                    onClick={syncCenter.onOpenDebugLogs}
+                    className="flex-1 min-h-11 px-3.5 text-left text-xs font-semibold text-app-heading hover:text-app-action transition-colors cursor-pointer"
+                  >
+                    Diagnostics and debug logs
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    data-testid="sync-center-debug-switch"
+                    aria-checked={debugLogs}
+                    aria-label="Record debug logs"
+                    onClick={() => { const next = !debugLogs; setDebugLoggingEnabled(next); setDebugLogs(next) }}
+                    className={`relative shrink-0 w-11 h-6 rounded-full border transition-colors cursor-pointer ${debugLogs ? 'bg-app-action border-app-action' : 'bg-app-border/60 border-app-border'}`}
+                  >
+                    <span aria-hidden="true" className={`absolute top-0.5 left-0.5 w-[18px] h-[18px] rounded-full bg-white shadow transition-transform ${debugLogs ? 'translate-x-5' : ''}`} />
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -580,6 +600,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <span>Download from Cloud</span>
             </button>
           </div>
+          </>)}
         </div>
 
         {/* Footer */}
@@ -596,7 +617,19 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               Review local recovery
               {recoveryAttention && <span data-testid="cloud-sync-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
             </button>
-            <span className="hidden sm:inline text-[10px] text-app-muted">Offline edits preserved safely</span>
+            {syncCenter ? (
+              <button
+                type="button"
+                data-testid="sync-center-device-button"
+                aria-pressed={deviceView}
+                onClick={() => setDeviceView(view => !view)}
+                className="min-h-11 px-3 py-1.5 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-app-heading font-semibold transition-colors cursor-pointer"
+              >
+                This device
+              </button>
+            ) : (
+              <span className="hidden sm:inline text-[10px] text-app-muted">Offline edits preserved safely</span>
+            )}
           </div>
           <button
             type="button"
