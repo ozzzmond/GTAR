@@ -1,8 +1,10 @@
 import { isDevEnv } from './env'
+import { applyLogRetention, debugLogBackend, entryBytes, LOG_MAX_BYTES as LOG_MAX_BYTES_REF, LOG_RETENTION_MS as LOG_RETENTION_MS_REF, type DebugLogBackend } from './debugLogStore'
 /**
  * Web Logging Engine for GTAR
  * Intercepts console errors, warnings, unhandled window exceptions and promise rejections.
- * Stores timestamped logs in localStorage and provides human-readable export for Notepad.
+ * #204 S1: stores timestamped logs in IndexedDB (12 h, 10 MB; see debugLogStore), with the old
+ * 30-entry localStorage copy only as a fallback when IndexedDB is unavailable.
  */
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
@@ -77,6 +79,12 @@ class WebLoggerEngine {
   private listeners: Set<LogListener> = new Set()
   private isInitialized = false
   private storageEnabled = false
+  // #204 S1: IndexedDB store. Memory keeps the newest MAX_MEMORY_LOGS for the viewer; the store keeps all within retention.
+  private store: DebugLogBackend | null = null
+  private stored = new Map<string, { timestamp: string; bytes: number }>()
+  private pending: LogEntry[] = []
+  private flushTimer: ReturnType<typeof setTimeout> | null = null
+  private flushing: Promise<void> = Promise.resolve()
   private originalConsole = {
     error: console.error,
     warn: console.warn,
@@ -95,6 +103,81 @@ class WebLoggerEngine {
     this.storageEnabled = true
     this.loadPersistedLogs()
     this.init()
+    if (!this.store && typeof indexedDB !== 'undefined') void this.attachStore(debugLogBackend(indexedDB))
+  }
+
+  /**
+   * #204 S1: switch persistence to IndexedDB. Existing localStorage entries and anything captured
+   * so far are moved in, retention is applied, and the localStorage copy is removed.
+   */
+  public async attachStore(backend: DebugLogBackend, storage: Pick<Storage, 'getItem' | 'removeItem'> | null = typeof localStorage !== 'undefined' ? localStorage : null): Promise<boolean> {
+    try {
+      const existing = await backend.loadAll()
+      let legacy: LogEntry[] = []
+      try { const parsed = JSON.parse(storage?.getItem(STORAGE_KEY) ?? '[]'); if (Array.isArray(parsed)) legacy = parsed } catch { /* unreadable: dropped */ }
+      const byId = new Map<string, LogEntry>()
+      for (const entry of [...existing, ...legacy, ...this.logs, ...this.pending]) if (entry?.id) byId.set(entry.id, entry)
+      const { keep, drop } = applyLogRetention([...byId.values()])
+      const known = new Set(existing.map(e => e.id))
+      await backend.write(keep.filter(e => !known.has(e.id)), drop.filter(id => known.has(id)))
+      this.store = backend
+      this.pending = []
+      this.stored = new Map(keep.map(e => [e.id, { timestamp: e.timestamp, bytes: entryBytes(e) }]))
+      this.logs = keep.slice(-MAX_MEMORY_LOGS)
+      try { storage?.removeItem(STORAGE_KEY) } catch { /* the next startup retries */ }
+      if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
+      this.notifyListeners()
+      return true
+    } catch {
+      return false // stays on the localStorage fallback
+    }
+  }
+
+  private onVisibility = () => {
+    if (document.visibilityState === 'hidden') void this.flush()
+    else this.pruneMemory()
+  }
+
+  private pruneMemory() {
+    const { keep } = applyLogRetention(this.logs)
+    if (keep.length !== this.logs.length) { this.logs = keep; this.notifyListeners() }
+    this.scheduleFlush()
+  }
+
+  private scheduleFlush() {
+    if (this.flushTimer) return
+    this.flushTimer = setTimeout(() => { this.flushTimer = null; void this.flush() }, 500)
+  }
+
+  /** Writes queued entries and applies retention to everything stored, in one transaction. */
+  public flush(): Promise<void> {
+    const store = this.store
+    if (!store) return Promise.resolve()
+    this.flushing = this.flushing.then(async () => {
+      const put = this.pending
+      this.pending = []
+      for (const entry of put) this.stored.set(entry.id, { timestamp: entry.timestamp, bytes: entryBytes(entry) })
+      const now = Date.now()
+      const ordered = [...this.stored].sort((a, b) => b[1].timestamp.localeCompare(a[1].timestamp))
+      const drop: string[] = []
+      let bytes = 0
+      for (const [id, meta] of ordered) {
+        const time = Date.parse(meta.timestamp)
+        if (!Number.isFinite(time) || now - time > LOG_RETENTION_MS_REF || bytes + meta.bytes > LOG_MAX_BYTES_REF) drop.push(id)
+        else bytes += meta.bytes
+      }
+      for (const id of drop) this.stored.delete(id)
+      const dropped = new Set(drop)
+      try { await store.write(put.filter(e => !dropped.has(e.id)), drop) } catch { /* best effort: memory copy remains */ }
+    })
+    return this.flushing
+  }
+
+  /** All stored entries within retention (the viewer shows only the newest MAX_MEMORY_LOGS). */
+  public async getAllLogs(): Promise<LogEntry[]> {
+    if (!this.store) return this.getLogs()
+    await this.flush()
+    try { return applyLogRetention(await this.store.loadAll()).keep } catch { return this.getLogs() }
   }
 
   public suspend() { this.storageEnabled = false }
@@ -114,8 +197,13 @@ class WebLoggerEngine {
     }
   }
 
-  private persistLogs() {
+  private persistLogs(entry?: LogEntry) {
     if (!this.storageEnabled) return
+    if (this.store) {
+      if (entry) this.pending.push(entry)
+      this.scheduleFlush()
+      return
+    }
     if (typeof localStorage === 'undefined') return
     try {
       const persisted = this.logs.slice(-MAX_PERSISTED_LOGS)
@@ -241,7 +329,7 @@ class WebLoggerEngine {
       this.logs = this.logs.slice(-MAX_LOGS)
     }
 
-    this.persistLogs()
+    this.persistLogs(newLog)
     this.notifyListeners()
   }
 
@@ -275,6 +363,12 @@ class WebLoggerEngine {
 
   public clearLogs() {
     this.logs = []
+    if (this.store) {
+      const ids = [...this.stored.keys(), ...this.pending.map(e => e.id)]
+      this.stored.clear()
+      this.pending = []
+      void this.store.write([], ids).catch(() => { /* best effort */ })
+    }
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.removeItem(STORAGE_KEY)
@@ -300,18 +394,27 @@ class WebLoggerEngine {
     }
   }
 
+  /** #204 S1: export everything stored (12 h, 10 MB), not just the viewer's newest entries. */
+  public async exportAllLogsAsText(): Promise<string> {
+    return this.formatLogs(await this.getAllLogs())
+  }
+
   public exportLogsAsText(): string {
+    return this.formatLogs(this.logs)
+  }
+
+  private formatLogs(logs: LogEntry[]): string {
     const header = [
       '=========================================================================',
       `GTAR WEB DEBUG LOG EXPORT - ${new Date().toISOString()}`,
       `Environment: ${isDevEnv ? 'development' : 'production'}`,
       `User Agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}`,
-      `Total Log Entries: ${this.logs.length}`,
+      `Total Log Entries: ${logs.length}`,
       '=========================================================================',
       '',
     ].join('\r\n')
 
-    const body = this.logs
+    const body = logs
       .map((log) => {
         const timeStr = log.timestamp.replace('T', ' ').replace('Z', '')
         let line = `[${timeStr}] [${log.level.padEnd(5)}] [${log.tag}] ${redactSensitiveData(log.message)}`
@@ -331,9 +434,9 @@ class WebLoggerEngine {
     return redactSensitiveData(header + body)
   }
 
-  public downloadLogFile() {
+  public async downloadLogFile() {
     if (typeof window === 'undefined') return
-    const content = this.exportLogsAsText()
+    const content = await this.exportAllLogsAsText()
     const now = new Date()
     const yyyy = now.getFullYear()
     const mm = String(now.getMonth() + 1).padStart(2, '0')

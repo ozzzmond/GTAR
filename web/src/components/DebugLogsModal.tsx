@@ -44,7 +44,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
 
   const handleCopyAll = async () => {
     try {
-      const text = appLogger.exportLogsAsText()
+      const text = await appLogger.exportAllLogsAsText()
       await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -60,7 +60,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
   }
 
   const handleDownload = () => {
-    appLogger.downloadLogFile()
+    void appLogger.downloadLogFile()
   }
 
   const getLevelColor = (level: LogLevel) => {
