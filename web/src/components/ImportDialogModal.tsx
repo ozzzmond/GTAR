@@ -5,6 +5,7 @@ import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { parseGtarSong, detectSongKey } from '../utils/songParser'
 import { extractDirectives } from '../utils/chordSheetParser'
 import { parseBackupJson } from '../utils/jsonBackup'
+import { isOnSongFile, looksLikeArchive, onsongToChordPro, SONG_FILE_EXTENSIONS } from '../utils/onsongImport'
 
 interface ImportDialogModalProps {
   isOpen: boolean
@@ -32,6 +33,8 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null
   )
+  // #149 S4: converted OnSong files are previewed before they are saved.
+  const [preview, setPreview] = useState<{ song: Partial<ActiveSongState>; filename: string; warnings: string[] } | null>(null)
 
   if (!isOpen) return null
 
@@ -46,7 +49,9 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
   }
 
   // Parse a text or loose json file content into song state
-  const parseFileContent = (filename: string, content: string): Partial<ActiveSongState> | null => {
+  const parseFileContent = (filename: string, original: string): Partial<ActiveSongState> | null => {
+    if (looksLikeArchive(original)) throw new Error('This looks like an OnSong backup or archive, not a song file. Export single songs as .onsong or ChordPro text.')
+    const content = isOnSongFile(filename) ? onsongToChordPro(original).content : original
     const trimmed = content.trim()
     if (!trimmed) return null
 
@@ -157,9 +162,11 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
         }
       }
 
-      // 2. Loose song file content (.txt, .chordpro, loose JSON)
+      // 2. Loose song file content (.txt, .cho, .chordpro, .onsong, loose JSON)
       const song = parseFileContent(file.name, text)
-      if (song) {
+      if (song && isOnSongFile(file.name)) {
+        setPreview({ song, filename: file.name, warnings: onsongToChordPro(text).warnings })
+      } else if (song) {
         onImportSong(song)
         showFeedback('success', `Successfully imported "${song.title}"!`)
       } else {
@@ -178,7 +185,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
     const files = e.target.files
     if (!files || files.length === 0) return
 
-    const validExtensions = ['.txt', '.chordpro', '.chopro', '.pro', '.chordtxt', '.crd', '.tab', '.json']
+    const validExtensions: readonly string[] = SONG_FILE_EXTENSIONS
     const importedList: Array<Partial<ActiveSongState>> = []
 
     for (let i = 0; i < files.length; i++) {
@@ -215,7 +222,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".txt,.chordpro,.chopro,.pro,.chordtxt,.crd,.tab,.json,text/*,application/json"
+          accept={`${SONG_FILE_EXTENSIONS.join(',')},text/*,application/json`}
           onChange={handleFileChange}
           className="hidden"
         />
@@ -273,6 +280,24 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
             </div>
           )}
 
+          {preview && (
+            <div data-testid="onsong-preview" className="p-3 rounded-xl border border-app-action/40 bg-app-base space-y-2 text-xs">
+              <div className="font-bold text-app-heading">Preview: {preview.song.title}{preview.song.artist ? ` · ${preview.song.artist}` : ''}</div>
+              <div className="text-app-muted">From {preview.filename}{preview.song.key ? ` · Key ${preview.song.key}` : ''}. Converted from OnSong to ChordPro; check it before saving.</div>
+              {preview.warnings.map(w => <div key={w} className="text-status-warning">{w}</div>)}
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap p-2 rounded bg-app-surface border border-app-border text-[11px]">{preview.song.rawContent}</pre>
+              <div className="flex gap-2">
+                <button type="button" data-testid="onsong-import-confirm" onClick={() => {
+                  const { song } = preview
+                  setPreview(null)
+                  onImportSong(song)
+                  showFeedback('success', `Successfully imported "${song.title}"!`)
+                }} className="px-3 py-1.5 rounded-lg bg-app-action text-app-on-action font-bold cursor-pointer">Import song</button>
+                <button type="button" onClick={() => setPreview(null)} className="px-3 py-1.5 rounded-lg border border-app-border cursor-pointer">Cancel</button>
+              </div>
+            </div>
+          )}
+
           {/* Option 1: Import File */}
           <button
             type="button"
@@ -284,7 +309,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
-                Import File (.txt, .chordpro, .json)
+                Import File (.txt, .cho, .chordpro, .onsong, .json)
               </div>
               <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
                 Select single song, chord sheet, or exported setlist JSON
