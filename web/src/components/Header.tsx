@@ -64,6 +64,8 @@ import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
 import { navigateBack } from '../utils/viewHistory'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
+import { useSyncStatus } from '../utils/useSyncStatus'
+import { SyncStatusPill } from './SyncStatusPill'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -304,6 +306,9 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
+  // #191 (RFC #188 S3): DEV-only status pill and Sync Center until field QA makes them default.
+  const syncStatus = useSyncStatus({ enabled: isDevEnv, signedIn: Boolean(currentSession), status: cloudSyncStatus,
+    isProcessing: isCloudSyncProcessing, recoveryNeedsDecision: recoveryAttention })
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -642,7 +647,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right Action Icons & User Avatar */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Cloud Sync Button & Health Indicator */}
-          {(() => {
+          {isDevEnv ? (
+            <SyncStatusPill pill={syncStatus.pill} recoveryDot={recoveryAttention} onOpen={() => setShowCloudSyncModal(true)} />
+          ) : (() => {
             const isSyncing = isCloudSyncProcessing || cloudSyncStatus === 'SYNCING'
             const isInSync = !isSyncing && cloudSyncStatus === 'IN_SYNC'
             const isIssue = !isSyncing && (cloudSyncStatus === 'CONFLICT' || cloudSyncStatus === 'ERROR')
@@ -1484,6 +1491,7 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={showCloudSyncModal}
         onClose={() => setShowCloudSyncModal(false)}
         onSyncApplied={onCloudSyncApplied}
+        syncCenter={isDevEnv ? { ...syncStatus, onOpenDebugLogs: () => { setShowCloudSyncModal(false); setShowDebugLogsModal(true) } } : undefined}
         onSyncStateChange={(status, isProcessing) => {
           setCloudSyncStatus(status)
           setIsCloudSyncProcessing(isProcessing)
