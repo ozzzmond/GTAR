@@ -266,3 +266,67 @@ test('#208 F3: an older mirror that finishes last is superseded, the document ke
   const doc = JSON.parse((await findUserSongbook(db, 'user-a')).data_json)
   assert.equal(doc.songs[0].rawContent, 'B newer')
 })
+
+// #208 F2 (re-audit): the classic write and the records seed must not interleave into a lost edit.
+const classicApi = require('../functions/api/songbook/sync.ts')
+async function classicPost(db, library, expected) {
+  const user = { id: 'user-a', google_sub: 'sub-a', email: 'a@example.com', role: 'member', access_status: 'active' }
+  const env = { DB: db, AUTH_SECRET: 'records-test-secret' }
+  const token = await createSessionToken(user, env.AUTH_SECRET)
+  const res = await classicApi.onRequestPost({ env, request: new Request('https://example.com/api/songbook/sync', { method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: library, expectedVersion: expected.version, expectedChecksum: expected.checksum }) }) })
+  return { status: res.status, json: await res.json() }
+}
+
+test('#208 F2: a seed landing between the classic check and write → classic gets 409, nothing is lost', async () => {
+  const { db, call, seedV1 } = await fixture()
+  const v1 = { songs: [song('s1')], setlists: [] }
+  await seedV1(v1)
+  const row = await findUserSongbook(db, 'user-a')
+  const original = db.prepare
+  let seeded = false
+  // Right before the classic write statement runs, the records get seeded (another device's first records read).
+  db.prepare = sql => {
+    const stmt = original(sql)
+    if (seeded || !/^\s*UPDATE user_songbooks SET version = version \+ 1/.test(sql)) return stmt
+    const bind = stmt.bind.bind(stmt)
+    stmt.bind = (...args) => {
+      const bound = bind(...args)
+      const first = bound.first.bind(bound)
+      bound.first = async () => { seeded = true; db.prepare = original; await call('GET'); return first() }
+      return bound
+    }
+    return stmt
+  }
+  const res = await classicPost(db, { songs: [song('s1', { rawContent: 'classic edit' })], setlists: [] }, { version: row.version, checksum: row.checksum })
+  db.prepare = original
+  assert.equal(seeded, true)
+  assert.equal(res.status, 409)
+  assert.equal(res.json.code, 'SONGBOOK_RECORDS_ACTIVE')
+  assert.equal(JSON.parse((await findUserSongbook(db, 'user-a')).data_json).songs[0].rawContent, `[G]Line s1`, 'classic document unchanged')
+})
+
+test('#208 F2: a classic write landing while the seed is in flight → the seed retries from the newer document', async () => {
+  const { db, call, seedV1 } = await fixture()
+  await seedV1({ songs: [song('s1')], setlists: [] })
+  const row = await findUserSongbook(db, 'user-a')
+  const batch = db.batch.bind(db)
+  let raced = false
+  db.batch = async statements => {
+    if (!raced && /INSERT INTO user_songbook_cursors/.test(statements[0].sql)) {
+      raced = true // seed has read the document; a classic write lands before its cursor insert
+      const res = await classicPost(db, { songs: [song('s1', { rawContent: 'classic edit' })], setlists: [] }, { version: row.version, checksum: row.checksum })
+      assert.equal(res.status, 200, 'no cursor yet: the classic write is valid')
+    }
+    return batch(statements)
+  }
+  const feed = await call('GET')
+  db.batch = batch
+  assert.equal(raced, true)
+  assert.equal(feed.json.records.find(r => r.id === 's1').data.rawContent, 'classic edit', 'records built from the newer document')
+  // And a later records push mirrors the records, which already hold the classic edit.
+  await call('POST', { body: { changes: [{ kind: 'song', id: 's2', baseRev: 0, data: song('s2') }] } })
+  const doc = JSON.parse((await findUserSongbook(db, 'user-a')).data_json)
+  assert.equal(doc.songs.find(s => s.id === 's1').rawContent, 'classic edit', 'classic edit not erased')
+})
