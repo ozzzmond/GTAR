@@ -37,6 +37,8 @@ export interface RecordsEnv extends AuthEnv { SONGBOOK_RECORDS_SYNC?: string }
 interface PagesContext { request: Request; env: RecordsEnv }
 
 const disabled = () => jsonResponse({ success: false, code: 'RECORDS_SYNC_DISABLED', error: 'Not found' }, 404)
+/** Migration 0009 not applied yet: behave as disabled so clients use the classic sync. */
+const missingTables = (err: unknown) => err instanceof Error && /no such table: user_songbook_(records|cursors)/.test(err.message)
 
 export async function onRequestOptions(): Promise<Response> {
   return new Response(null, { status: 204, headers: JSON_HEADERS })
@@ -58,6 +60,7 @@ export async function onRequestGet({ request, env }: PagesContext): Promise<Resp
     const page = await pullRecords(env.DB!, auth.user.id, since, limit, new Date().toISOString())
     return jsonResponse({ success: true, userId: auth.user.id, ...page })
   } catch (err) {
+    if (missingTables(err)) return disabled()
     console.error('Failed to read songbook records:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to read songbook records', 500)
   }
@@ -114,6 +117,7 @@ export async function onRequestPost({ request, env }: PagesContext): Promise<Res
     const result = await pushRecords(env.DB!, auth.user.id, changes, new Date().toISOString())
     return jsonResponse({ success: true, userId: auth.user.id, ...result })
   } catch (err) {
+    if (missingTables(err)) return disabled()
     console.error('Failed to write songbook records:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to write songbook records', 500)
   }

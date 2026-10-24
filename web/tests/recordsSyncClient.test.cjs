@@ -210,9 +210,9 @@ test('the classic sync metadata follows a records sync (header status and fallba
   assert.ok(meta.lastSyncedAt > 0)
 })
 
-test('DEV toggle: off by default, opt-in per device, classic sync when off', async () => {
+test('DEV toggle: on by default (S7), off per device, classic sync when off', async () => {
   const s = storage()
-  assert.equal(client.isRecordsSyncEnabled(s), false)
+  assert.equal(client.isRecordsSyncEnabled(s), true)
   client.setRecordsSyncEnabled(true, s)
   assert.equal(client.isRecordsSyncEnabled(s), true)
   client.setRecordsSyncEnabled(false, s)
@@ -220,6 +220,7 @@ test('DEV toggle: off by default, opt-in per device, classic sync when off', asy
   // Off: the dialog's sync goes to /api/songbook/sync only.
   const w = await world({ library: base })
   const a = w.device(base)
+  client.setRecordsSyncEnabled(false, a)
   const urls = []
   w.setHook(async url => { urls.push(url) })
   await w.runAny(a)
@@ -228,4 +229,13 @@ test('DEV toggle: off by default, opt-in per device, classic sync when off', asy
   client.setRecordsSyncEnabled(true, a)
   await w.runAny(a)
   assert.ok(urls.every(url => url.startsWith('/api/songbook/records')), urls.join(','))
+})
+
+test('DB without migration 0009: records API reports disabled, the client falls back to classic sync', async () => {
+  const w = await world({ library: base })
+  w.db.sqlite.exec('DROP TABLE user_songbook_records; DROP TABLE user_songbook_cursors;')
+  const a = w.device(base)
+  assert.equal(await w.run(a), null)
+  const viaDialog = await w.runAny(a)
+  assert.equal(viaDialog.success, true, viaDialog.error)
 })

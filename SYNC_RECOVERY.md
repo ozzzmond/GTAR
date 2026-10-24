@@ -46,7 +46,32 @@ upload. The API does not provide the former Drive revision-file history or
 automatic rollback. These descriptions are limits of the existing
 implementation, not changes to synchronization behavior.
 
-## Device recovery
+## Per-record sync (DEV)
+
+RFC #188 (S4–S7). On DEV the Sync Center's **Sync engine** defaults to **Per-record**; it can be
+switched back to **Classic** per device. PROD keeps the classic whole-songbook sync until a
+separately approved release.
+
+- **Server:** `/api/songbook/records`, enabled only when `SONGBOOK_RECORDS_SYNC=records-v1`
+  (DEV `preview` vars) and migration `0009_songbook_records.sql` is applied. Otherwise it answers
+  as disabled and the client uses `/api/songbook/sync`. Each song, setlist and the theme
+  settings are one record with a revision; writes are compare-and-swap per record. The first
+  access seeds the records from the whole-document songbook, and every write mirrors the
+  records back into it, so classic sync and rollback keep working.
+- **Client:** remembers, per record, the revision and checksum it last agreed on
+  (`gtar_records_sync_v1`). Records not edited on this device are fast-forwarded. Records
+  edited here and in the cloud are conflicts: the local copy is kept and nothing is merged
+  automatically. The dialog's choices apply to all queued conflicts: keep this device
+  (Upload), use cloud (Download) or keep both (Merge & Preserve, cloud copy). A recovery
+  snapshot of both sides is saved before any choice. Fast-forwarding an unedited record writes
+  no snapshot.
+- **Automatic sync:** one tab per browser (Web Locks leader) syncs a few seconds after a save,
+  on reconnect, when the page becomes visible and every two minutes. It pauses while the
+  editor is open, a cross-tab conflict is unresolved or the Sync Center is open.
+- **Rollback:** switch the device to Classic, or remove the DEV flag; the mirrored
+  whole-document songbook is current.
+
+
 
 Startup validates canonical IDs, record fields and setlist references while
 retiring legacy browser storage. Original sources remain when retirement cannot
