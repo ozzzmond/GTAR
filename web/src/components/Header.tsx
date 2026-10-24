@@ -1366,8 +1366,9 @@ export const Header: React.FC<HeaderProps> = ({
 
 
 
-          {/* 5. Debug Logs (Debug environment only) */}
-          {isDevApp && (
+          {/* 5. Debug Logs: PROD super-admins / debug builds only. On DEV the Sync Center's
+              "Diagnostics and debug logs" replaces this menu item (#191). */}
+          {isDevApp && !isDevEnv && (
             <>
               <div className="h-[1px] bg-app-border/60 my-1" />
               <button
