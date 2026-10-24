@@ -16,6 +16,8 @@ import { appLogger } from './logger'
 import {
   libraryRevision,
   persistLibrary,
+  RECORDS_DELETE_HOLD_KEY,
+  recordsDeleteHoldActive,
   readPersistedLibrary,
   restoreLibraryRevision,
   setLastKnownPersistedLibraryRaw,
@@ -240,7 +242,8 @@ async function pullAll(token: string, state: RecordsSyncState): Promise<{ record
   throw new Error('Cloud account changed during sync')
 }
 
-async function pushAll(token: string, state: RecordsSyncState, library: SyncLibrary, skip: Set<string>, force: Map<string, number> = new Map()): Promise<{ pushed: number; failed: string | null }> {
+async function pushAll(token: string, state: RecordsSyncState, library: SyncLibrary, skip: Set<string>, force: Map<string, number> = new Map(),
+  allowRemovals = true): Promise<{ pushed: number; failed: string | null }> {
   const local = localRecords(library)
   const changes: RecordChange[] = []
   for (const [key, record] of local) {
@@ -251,6 +254,8 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
     changes.push({ kind: record.kind, id: record.id, baseRev, data: record.data })
   }
   for (const [key, known] of Object.entries(state.known)) {
+    // #208 F1: never send a deletion inferred from a library restored from an older copy.
+    if (!allowRemovals) break
     if (local.has(key) || skip.has(key) || known.checksum === REMOVED) continue
     const [kind, ...rest] = key.split(':')
     changes.push({ kind: kind as RecordKind, id: rest.join(':'), baseRev: force.get(key) ?? known.rev, removed: true })
@@ -284,15 +289,28 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
  */
 async function syncOnce(token: string, storage: Storage): Promise<CloudSyncResult> {
   const before = readLocal(storage)
-  const pulled = await pullAll(token, readRecordsSyncState(storage))
+  // #208 F1: after a storage fallback, read the whole feed so every record missing here can be restored.
+  const hold = recordsDeleteHoldActive(storage)
+  const saved = readRecordsSyncState(storage)
+  const pulled = await pullAll(token, hold ? { ...saved, cursor: 0 } : saved)
   const state = pulled.state
   const working = new Working(before.library)
   const local = localRecords(before.library)
   let applied = 0
+  let restored = 0
 
   for (const [key, remote] of pulled.records) {
     const known = state.known[key]
     const mine = local.get(key)
+    if (hold && !mine && known && !remote.removed) {
+      // Known record missing from the fallback copy: bring the cloud version back, do not delete it.
+      working.apply(remote)
+      state.known[key] = { rev: remote.rev, checksum: remote.checksum }
+      state.conflicts = state.conflicts.filter(item => recordKey(item.kind, item.id) !== key)
+      applied++
+      restored++
+      continue
+    }
     const mineChecksum = mine ? mine.checksum : REMOVED
     if (mineChecksum === remote.checksum) {
       state.known[key] = { rev: remote.rev, checksum: remote.checksum }
@@ -314,7 +332,11 @@ async function syncOnce(token: string, storage: Storage): Promise<CloudSyncResul
   if (applied) persistApplied(storage, before, next)
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
-  const { pushed, failed } = await pushAll(token, state, next, skip)
+  const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold)
+  if (hold && !failed) {
+    try { storage.removeItem(RECORDS_DELETE_HOLD_KEY) } catch { /* stays on; next sync repeats the safe path */ }
+    appLogger.warn('RecordsSync', `Storage fallback recovered: ${restored} ${restored === 1 ? 'record' : 'records'} restored from the cloud; no cloud deletes sent`)
+  }
   return finish(storage, state, next, applied, pushed, failed)
 }
 
@@ -360,7 +382,7 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   state.conflicts = []
   const next = working.library()
   if (applied) persistApplied(storage, before, next)
-  const { pushed, failed } = await pushAll(token, state, next, new Set(), force)
+  const { pushed, failed } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
   return finish(storage, state, next, applied, pushed, failed)
 }
 

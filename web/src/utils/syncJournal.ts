@@ -972,6 +972,16 @@ export interface LibraryStoragePreparation { indexed: boolean; fellBack: boolean
  * Startup step before the library renders. With B1 on, loads every referenced body from IndexedDB.
  * Any missing or corrupt body: keep the index as a recovery archive and return to frozen v1.
  */
+/**
+ * #208 F1: set when the B1 index falls back to an older v1 copy. While set, per-record sync never
+ * infers cloud deletions from the (older) local library: records it knew but no longer finds here
+ * are restored from the cloud instead. Cleared by the first per-record sync that completes.
+ */
+export const RECORDS_DELETE_HOLD_KEY = 'gtar_records_delete_hold_v1'
+export function recordsDeleteHoldActive(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
+  try { return storage.getItem(RECORDS_DELETE_HOLD_KEY) !== null } catch { return true }
+}
+
 export async function prepareLibraryStorage(storage: Storage = localStorage, timeoutMs = 5000): Promise<LibraryStoragePreparation> {
   if (storage.getItem(LIBRARY_B1_KEY) !== '1') return { indexed: false, fellBack: false }
   const raw = storage.getItem(LIBRARY_V2_KEY)
@@ -991,6 +1001,7 @@ export async function prepareLibraryStorage(storage: Storage = localStorage, tim
       appLogger.warn('LibraryIndex', 'Restored the retired gtar_library_v1 copy for fallback; use Cloud Sync to bring back newer edits')
     }
     storage.removeItem(LIBRARY_B1_KEY)
+    try { storage.setItem(RECORDS_DELETE_HOLD_KEY, JSON.stringify({ at: Date.now(), reason: 'b1-fallback' })) } catch { /* sync then refuses to run without storage */ }
     appLogger.error('LibraryIndex', 'B1 index unusable; using gtar_library_v1. Index kept for recovery review.', undefined,
       error instanceof Error ? error.message : String(error))
     return { indexed: false, fellBack: true }

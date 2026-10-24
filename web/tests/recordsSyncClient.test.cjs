@@ -273,3 +273,40 @@ test('disabled answers say why: not enabled for the host, or no per-record table
   const entry = logger.appLogger.getLogs().reverse().find(l => /per-record sync off/.test(l.message))
   assert.match(entry.details, /no per-record tables \(newest migration: 0008_member_setlist_publishing\.sql\)/)
 })
+
+// #208 F1: a B1 fallback restores an older library; sync must not turn the missing records into cloud deletes.
+const cloudRow = (w, n) => w.db.sqlite.prepare("SELECT removed, data_json FROM user_songbook_records WHERE kind = 'song' AND record_id = ?").get(id(n))
+test('#208 F1: after a storage fallback, records missing locally are restored from the cloud, never deleted', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  edit(a, lib => ({ ...lib, songs: [...lib.songs, song(4)] }))
+  await w.run(a)
+  await w.run(a) // cursor moves past our own write, as after any later sync
+  assert.equal(cloudRow(w, 4).removed, 0)
+  // The fallback copy predates song 4 (what prepareLibraryStorage restores), and it sets the hold.
+  journal.persistLibrary(base, a, { expectedRaw: journal.libraryRevision(a) })
+  a.setItem(journal.RECORDS_DELETE_HOLD_KEY, JSON.stringify({ at: 1, reason: 'b1-fallback' }))
+  const result = await w.run(a)
+  assert.equal(result.success, true)
+  assert.equal(cloudRow(w, 4).removed, 0, 'cloud record kept')
+  assert.ok(cloudRow(w, 4).data_json, 'cloud data kept')
+  assert.ok(read(a).songs.some(s => s.id === id(4)), 'song 4 restored on this device')
+  assert.equal(a.getItem(journal.RECORDS_DELETE_HOLD_KEY), null, 'hold cleared after a completed sync')
+  // A real delete afterwards still reaches the cloud.
+  edit(a, lib => ({ ...lib, songs: lib.songs.filter(s => s.id !== id(4)) }))
+  await w.run(a)
+  assert.equal(cloudRow(w, 4).removed, 1)
+})
+
+test('#208 F1: without the hold, the same older library would delete the cloud record (the audited path)', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  edit(a, lib => ({ ...lib, songs: [...lib.songs, song(4)] }))
+  await w.run(a)
+  await w.run(a) // cursor moves past our own write, as after any later sync
+  journal.persistLibrary(base, a, { expectedRaw: journal.libraryRevision(a) })
+  await w.run(a)
+  assert.equal(cloudRow(w, 4).removed, 1, 'documents why the hold is needed')
+})
