@@ -62,7 +62,8 @@
         "VITE_GOOGLE_CLIENT_ID": "895835718654-8bru1vdlj2otgq5dk46h76nilqagg421.apps.googleusercontent.com",
         "CAST2_MODE": "reviewed-v1",
         "CAST2_ORIGIN": "https://dev.gtar-web.pages.dev",
-        "SHARED_SETLISTS_ENABLED": "phase-a-v1"
+        "SHARED_SETLISTS_ENABLED": "phase-a-v1",
+        "SONGBOOK_RECORDS_SYNC": "records-v1"
       }
     }
   }

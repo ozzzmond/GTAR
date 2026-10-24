@@ -245,6 +245,7 @@ New or renamed tests await a human choice of primary category.
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
 - [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
+- [songbookRecordsApi.test.cjs](songbookRecordsApi.test.cjs)
 - [stageCast2.test.cjs](stageCast2.test.cjs)
 - [stageCast2AuthLeaseAdmission.test.cjs](stageCast2AuthLeaseAdmission.test.cjs)
 - [stageCast2Backend.test.cjs](stageCast2Backend.test.cjs)
