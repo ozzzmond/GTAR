@@ -37,6 +37,8 @@ import {
 } from './cloudSongbookSync'
 import {
   MAX_PUSH_CHANGES,
+  MAX_PUSH_BODY_BYTES,
+  MAX_RECORD_BYTES,
   libraryToRecords,
   recordChecksum,
   recordKey,
@@ -104,6 +106,8 @@ export function pendingRecordConflicts(storage: Pick<Storage, 'getItem'> = local
 }
 
 class RecordsSyncDisabledError extends Error {}
+/** #208 F6: the caller became busy before remote changes were applied; nothing was written. */
+class RecordsSyncDeferredError extends Error {}
 /** Why the server last said per-record sync is off (for the debug log). */
 let lastDisabledReason: string | null = null
 let loggedDisabledReason: string | null | undefined
@@ -260,13 +264,30 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
     const [kind, ...rest] = key.split(':')
     changes.push({ kind: kind as RecordKind, id: rest.join(':'), baseRev: force.get(key) ?? known.rev, removed: true })
   }
+  // #208 F5: batches are bounded by bytes as well as by count. A record the server would refuse
+  // on its own is left out (kept on this device) and reported, so the rest still syncs.
+  const encoder = new TextEncoder()
+  const tooLarge: string[] = []
+  const batches: RecordChange[][] = []
+  let current: RecordChange[] = []
+  let currentBytes = 0
+  for (const change of changes) {
+    const dataBytes = change.removed ? 0 : encoder.encode(JSON.stringify(change.data)).byteLength
+    if (dataBytes > MAX_RECORD_BYTES) { tooLarge.push(`${recordTitle(change.kind, change.data)} (${Math.ceil(dataBytes / 1024)} KB)`); continue }
+    const bytes = encoder.encode(JSON.stringify(change)).byteLength + 1
+    if (current.length && (current.length >= MAX_PUSH_CHANGES || currentBytes + bytes > MAX_PUSH_BODY_BYTES)) { batches.push(current); current = []; currentBytes = 0 }
+    current.push(change)
+    currentBytes += bytes
+  }
+  if (current.length) batches.push(current)
+  const oversize = tooLarge.length
+    ? `Not uploaded, too large to sync (max ${MAX_RECORD_BYTES / 1024} KB each): ${tooLarge.join(', ')}. They stay on this device.` : null
   let pushed = 0
-  for (let i = 0; i < changes.length; i += MAX_PUSH_CHANGES) {
-    const batch = changes.slice(i, i + MAX_PUSH_CHANGES)
+  for (const batch of batches) {
     let response: PushResponse
     try { response = await request<PushResponse>(token, 'POST', '', { changes: batch }) } catch (error) {
       if (error instanceof RecordsSyncDisabledError) throw error
-      return { pushed, failed: `Cloud upload stopped: ${error instanceof Error ? error.message : String(error)}. Local edits are kept; sync again later.` }
+      return { pushed, failed: `Cloud upload stopped: ${error instanceof Error ? error.message : String(error)}. Local edits are kept; sync again later.${oversize ? ` ${oversize}` : ''}` }
     }
     for (const accepted of response.accepted) {
       state.known[recordKey(accepted.kind, accepted.id)] = { rev: accepted.rev, checksum: accepted.checksum }
@@ -280,14 +301,15 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
     }
     if (response.mirror === 'skipped-size') appLogger.warn('RecordsSync', 'Cloud copy for older clients not updated: songbook over 2 MB')
   }
-  return { pushed, failed: null }
+  if (oversize) appLogger.warn('RecordsSync', oversize)
+  return { pushed, failed: oversize }
 }
 
 /**
  * One sync round: pull every remote change since the checkpoint, fast-forward unedited records,
  * queue conflicts, then push local edits. Throws RecordsSyncDisabledError when the server flag is off.
  */
-async function syncOnce(token: string, storage: Storage): Promise<CloudSyncResult> {
+async function syncOnce(token: string, storage: Storage, canApply?: () => boolean): Promise<CloudSyncResult> {
   const before = readLocal(storage)
   // #208 F1: after a storage fallback, read the whole feed so every record missing here can be restored.
   const hold = recordsDeleteHoldActive(storage)
@@ -329,6 +351,8 @@ async function syncOnce(token: string, storage: Storage): Promise<CloudSyncResul
   }
 
   const next = working.library()
+  // #208 F6: never write remote changes under an open editor; nothing is saved, the next run repeats.
+  if (applied && canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
   if (applied) persistApplied(storage, before, next)
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
@@ -408,22 +432,25 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
  * forceAction maps the existing dialog buttons: upload = keep this device's versions,
  * download = use the cloud's, merge_preserve = keep both (cloud copies).
  */
-export async function performRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage } = {}): Promise<CloudSyncResult | null> {
+export async function performRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage;
+  /** #208 F6: checked right before remote changes are written; false defers the whole round. */
+  canApply?: () => boolean } = {}): Promise<CloudSyncResult | null> {
   // One records sync at a time across this browser's tabs (manual and automatic).
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
   if (locks?.request) return locks.request(RECORDS_SYNC_RUN_LOCK, () => runRecordsSync(token, options))
   return runRecordsSync(token, options)
 }
 
-async function runRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage }): Promise<CloudSyncResult | null> {
+async function runRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean }): Promise<CloudSyncResult | null> {
   const storage = options.storage ?? localStorage
   try {
-    if (!options.forceAction) return await syncOnce(token, storage)
+    if (!options.forceAction) return await syncOnce(token, storage, options.canApply)
     const hasConflicts = readRecordsSyncState(storage).conflicts.length > 0
     if (options.forceAction === 'download') return hasConflicts ? await resolveOnce(token, storage, 'use-cloud') : await replaceWithCloud(token, storage)
     return await resolveOnce(token, storage, options.forceAction === 'upload' ? 'keep-local' : 'keep-both')
   } catch (error) {
     if (error instanceof RecordsSyncDisabledError) { lastDisabledReason = error.message || null; return null }
+    if (error instanceof RecordsSyncDeferredError) return { success: false, status: 'IDLE', state: 'SAME_STATE', actionTaken: 'NONE', deferred: true }
     const status = error instanceof RecordsHttpError ? error.status : 0
     appLogger.warn('RecordsSync', 'Per-record sync did not finish', error instanceof Error ? error.message : String(error))
     return {

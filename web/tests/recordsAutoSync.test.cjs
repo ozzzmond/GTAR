@@ -107,3 +107,31 @@ test('off when the per-record engine is off, signed out or offline', async () =>
   navigator.onLine = true
   assert.equal(calls, 0)
 })
+
+// #208 F6: the editor opening while a sync is in flight must not receive that sync's result.
+test('#208 F6: a result arriving while blocked is held, then delivered once the block ends', async () => {
+  const applied = []
+  let release
+  const lib = { songs: [{ id: 'x', title: 'Remote edit', artist: '', rawContent: '' }], setlists: [] }
+  const props = { enabled: true, token: 't', blocked: false, debounceMs: 10, onApplied: l => applied.push(l),
+    sync: () => new Promise(resolve => { release = () => resolve(result({ actionTaken: 'DOWNLOADED', updatedLibrary: lib })) }) }
+  const view = mount('a', props)
+  await act(async () => { await wait(30) })
+  view.rerender({ ...props, blocked: true }) // editor opens mid-flight
+  await act(async () => { release(); await wait(10) })
+  assert.equal(applied.length, 0, 'nothing applied under the open editor')
+  view.rerender({ ...props, blocked: false, sync: async () => result() })
+  await act(async () => { await wait(30) })
+  assert.deepEqual(applied, [lib], 'delivered after the editor closes')
+})
+
+test('#208 F6: the sync is told to defer applying while blocked', async () => {
+  let canApply
+  const props = { enabled: true, token: 't', blocked: false, debounceMs: 10,
+    sync: async (_token, options) => { canApply = options.canApply; return result({ deferred: true, status: 'IDLE' }) } }
+  const view = mount('a', props)
+  await act(async () => { await wait(30) })
+  assert.equal(canApply(), true)
+  view.rerender({ ...props, blocked: true })
+  assert.equal(canApply(), false, 'reads the live block state')
+})
