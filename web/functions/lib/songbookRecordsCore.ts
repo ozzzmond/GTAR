@@ -52,6 +52,17 @@ async function headSeq(db: D1Database, userId: string): Promise<number | null> {
 }
 
 /**
+ * #208 F2: once a user has per-record records, they are the source of truth. Classic whole-document
+ * writes are then refused (409) so the two never diverge. No 0009 tables (PROD today) = false.
+ */
+export async function recordsActiveForUser(db: D1Database, userId: string): Promise<boolean> {
+  try { return (await headSeq(db, userId)) !== null } catch (err) {
+    if (err instanceof Error && /no such table: user_songbook_cursors/.test(err.message)) return false
+    throw err
+  }
+}
+
+/**
  * Creates the user's cursor and, when a whole-document songbook exists, its records (rev 1).
  * Concurrent first calls are safe: only the call whose token claimed the cursor inserts records.
  */
