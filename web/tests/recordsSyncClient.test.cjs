@@ -406,3 +406,29 @@ test('#204: a successful per-record sync logs a success line with counts', async
     assert.match(line.details, /^cursor \d+$/)
   } finally { logger.setDebugLoggingEnabled(false) }
 })
+
+// #208 F6 (re-audit): a save from another surface during the push makes the sync's library stale.
+test('#208 F6: result carries the revision it wrote; a save landing during the push is detectable and kept', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base), b = w.device(base)
+  await w.run(a); await w.run(b)
+  edit(a, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(1) ? { ...s, rawContent: 'remote from A' } : s) }))
+  await w.run(a)
+  edit(b, lib => ({ ...lib, songs: [...lib.songs, song(5)] })) // something for B to push
+  let saved = false
+  w.setHook(async (url, opts) => {
+    if (!saved && opts.method === 'POST') { // B's push is in flight: a fresh editor surface saves on B
+      saved = true
+      edit(b, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(2) ? { ...s, rawContent: 'NEW EDITOR SAVE' } : s) }))
+    }
+  })
+  const result = await w.run(b)
+  assert.equal(saved, true)
+  assert.ok(result.updatedLibrary, 'B applied the remote change')
+  assert.equal(typeof result.appliedRevision, 'string')
+  assert.notEqual(result.appliedRevision, journal.libraryRevision(b), 'stale: a newer save exists')
+  const stored = read(b)
+  assert.equal(stored.songs.find(s => s.id === id(2)).rawContent, 'NEW EDITOR SAVE', 'the newer save is in storage')
+  assert.equal(stored.songs.find(s => s.id === id(1)).rawContent, 'remote from A', 'with the remote change')
+  assert.equal(result.updatedLibrary.songs.find(s => s.id === id(2)).rawContent, `[G]Line 2`, 'the result copy is the stale one')
+})

@@ -182,7 +182,8 @@ function localRecords(library: SyncLibrary): Map<string, { kind: RecordKind; id:
 }
 
 /** Persists the library (revision-gated) and theme together; restores the library if the theme write fails. */
-function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary): void {
+/** Returns the library revision this write produced (#208 F6: results are delivered only while it is still current). */
+function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary): string | null {
   const integrity = validateSongbookIntegrity(next.songs, next.setlists)
   if (!integrity.isValid) throw new Error(`Synced songbook failed referential integrity check: ${integrity.errors.join('; ')}`)
   const { themeSettings, ...library } = next
@@ -194,6 +195,7 @@ function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary):
       throw error
     }
   }
+  return libraryRevision(storage)
 }
 
 function conflictItems(conflicts: RecordConflict[]): ConflictingItem[] {
@@ -213,7 +215,7 @@ function logSyncOutcome(state: RecordsSyncState, applied: number, pushed: number
   appLogger.info('RecordsSync', `✅ Per-record sync OK: ${applied} from cloud, ${pushed} uploaded`, `cursor ${state.cursor}`)
 }
 
-function finish(storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null): CloudSyncResult {
+function finish(storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null, appliedRevision?: string | null): CloudSyncResult {
   saveState(state, storage)
   logSyncOutcome(state, applied, pushed, pushFailed)
   const fullySynced = state.conflicts.length === 0 && !pushFailed
@@ -231,7 +233,7 @@ function finish(storage: Storage, state: RecordsSyncState, library: SyncLibrary,
     state: state.conflicts.length ? 'CONFLICT' : pushFailed ? 'OFFLINE_OR_CLOUD_FAILURE' : 'SAME_STATE',
     actionTaken,
     checksum: computeSongbookChecksum(library),
-    ...(applied ? { updatedLibrary: library } : {}),
+    ...(applied ? { updatedLibrary: library, ...(appliedRevision !== undefined ? { appliedRevision } : {}) } : {}),
     ...(state.conflicts.length ? { conflicts: conflictItems(state.conflicts),
       error: 'Some songs or setlists were edited here and in the cloud. Your edits are kept on this device. Export a backup, then choose how to resolve.' } : {}),
     ...(pushFailed ? { error: pushFailed } : {}),
@@ -366,7 +368,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
   const next = working.library()
   // #208 F6: never write remote changes under an open editor; nothing is saved, the next run repeats.
   if (applied && canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
-  if (applied) persistApplied(storage, before, next)
+  const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
   const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold)
@@ -374,7 +376,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
     try { storage.removeItem(RECORDS_DELETE_HOLD_KEY) } catch { /* stays on; next sync repeats the safe path */ }
     appLogger.warn('RecordsSync', `Storage fallback recovered: ${restored} ${restored === 1 ? 'record' : 'records'} restored from the cloud; no cloud deletes sent`)
   }
-  return finish(storage, state, next, applied, pushed, failed)
+  return finish(storage, state, next, applied, pushed, failed, appliedRevision)
 }
 
 export type ConflictChoice = 'keep-local' | 'use-cloud' | 'keep-both'
@@ -418,9 +420,9 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   }
   state.conflicts = []
   const next = working.library()
-  if (applied) persistApplied(storage, before, next)
+  const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
   const { pushed, failed } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
-  return finish(storage, state, next, applied, pushed, failed)
+  return finish(storage, state, next, applied, pushed, failed, appliedRevision)
 }
 
 /** Replaces the whole device library with the cloud records (explicit "Download from Cloud"). */
@@ -435,8 +437,8 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
   }
   const next = working.library()
   await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
-  persistApplied(storage, before, next)
-  return finish(storage, state, next, 1, 0, null)
+  const appliedRevision = persistApplied(storage, before, next)
+  return finish(storage, state, next, 1, 0, null, appliedRevision)
 }
 
 /**

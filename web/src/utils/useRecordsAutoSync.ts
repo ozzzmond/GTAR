@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef } from 'react'
 import type { CloudSyncResult, CloudSyncStatus } from './cloudSongbookSync'
-import { isLibraryStorageKey } from './syncJournal'
+import { isLibraryStorageKey, libraryRevision } from './syncJournal'
 import { isRecordsSyncEnabled, performRecordsSync } from './recordsSync'
 import type { SyncLibrary } from './syncMerge'
 
@@ -26,15 +26,21 @@ export interface RecordsAutoSyncInput {
   onState?: (status: CloudSyncStatus, isProcessing: boolean) => void
   /** Test hooks. */
   sync?: (token: string, options?: { canApply?: () => boolean }) => Promise<CloudSyncResult | null>
+  /** Current library revision (#208 F6); defaults to the stored one. */
+  revision?: () => string | null
   debounceMs?: number
 }
 
 export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
   const latest = useRef(input)
+  const isCurrent = (result: CloudSyncResult) => {
+    if (result.appliedRevision === undefined) return true
+    try { return (latest.current.revision ?? (() => libraryRevision()))() === result.appliedRevision } catch { return false }
+  }
   useEffect(() => { latest.current = input })
   const scheduleRef = useRef<(() => void) | null>(null)
   // #208 F6: a result that arrives while blocked is delivered when the block ends, never during it.
-  const pendingRef = useRef<SyncLibrary | null>(null)
+  const pendingRef = useRef<CloudSyncResult | null>(null)
   const { enabled, token, blocked } = input
 
   useEffect(() => {
@@ -60,7 +66,9 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
         if (disposed) return
         if (!result || result.deferred) { current.onState?.('IDLE', false); return }
         if (result.updatedLibrary) {
-          if (latest.current.blocked) pendingRef.current = result.updatedLibrary
+          // #208 F6: a newer local save since this sync wrote makes its library stale: drop it, sync again.
+          if (!isCurrent(result)) again = true
+          else if (latest.current.blocked) pendingRef.current = result
           else latest.current.onApplied?.(result.updatedLibrary)
         }
         latest.current.onState?.(result.status, false)
@@ -112,7 +120,7 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
     if (blocked) return
     const pending = pendingRef.current
     pendingRef.current = null
-    if (pending) latest.current.onApplied?.(pending)
+    if (pending?.updatedLibrary && isCurrent(pending)) latest.current.onApplied?.(pending.updatedLibrary)
     scheduleRef.current?.()
   }, [blocked])
 }
