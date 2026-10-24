@@ -66,7 +66,8 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
     try {
       const text = await appLogger.exportAllLogsAsText()
       const file = typeof File !== 'undefined' ? new File([text], 'gtar-debug.log', { type: 'text/plain' }) : null
-      if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'GTAR debug log' })
+      // Files only: iOS turns a `title` next to files into an extra text.txt attachment.
+      if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] })
       else await navigator.share({ title: 'GTAR debug log', text })
     } catch (err) {
       if ((err as { name?: string })?.name !== 'AbortError') await handleCopyAll()

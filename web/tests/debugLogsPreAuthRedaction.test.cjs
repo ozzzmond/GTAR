@@ -51,3 +51,8 @@ test('Debug Logs has a Share action that exports everything stored', () => {
   assert.match(modal, /data-testid="debug-logs-share"/)
   assert.match(modal, /exportAllLogsAsText\(\)[\s\S]*navigator\.share/)
 })
+
+test('Share sends only the log file (no title, which iOS adds as an extra text.txt)', () => {
+  const modal = read('src/components/DebugLogsModal.tsx')
+  assert.match(modal, /navigator\.share\(\{ files: \[file\] \}\)/)
+})
