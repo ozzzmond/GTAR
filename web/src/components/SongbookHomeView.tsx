@@ -64,6 +64,8 @@ interface SongbookHomeViewProps {
   onShareSetlist?: (setlist: WebSetlist) => void
   onImportSharedSetlist?: (shared: SharedSetlistPayload) => void
   onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | void
+  /** #149: Songs Library ⋯ menu → the existing song import dialog. */
+  onOpenImportSongs?: () => void
   onUpdateSong?: (updated: Partial<ActiveSongState>) => boolean | void
   confirmedCatalogIds?: Set<string>
   freshCatalogIds?: Set<string>
@@ -96,6 +98,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onPublishSetlist,
   onImportSharedSetlist,
   onImportSharedCatalogSong,
+  onOpenImportSongs,
   onUpdateSong,
   confirmedCatalogIds: propConfirmedCatalogIds,
   freshCatalogIds: propFreshCatalogIds,
@@ -491,23 +494,18 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     try { localStorage.setItem('gtar_songbook_setlists_collapsed', String(next)) } catch { /* Session preference remains usable. */ }
   }
 
-  type SortOption = 'title' | 'artist' | 'key' | 'date'
+  // #149: no Key sort or Key filter. A saved 'key' sort falls back to title.
+  type SortOption = 'title' | 'artist' | 'date'
   const [sortBy, setSortBy] = useState<SortOption>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gtar_songbook_sort')
-      if (saved === 'title' || saved === 'artist' || saved === 'key' || saved === 'date') {
+      if (saved === 'title' || saved === 'artist' || saved === 'date') {
         return saved
       }
     }
     return 'title'
   })
-
-  const [filterKey, setFilterKey] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('gtar_songbook_filter_key') || 'ALL'
-    }
-    return 'ALL'
-  })
+  const [libraryMenuAnchor, setLibraryMenuAnchor] = useState<HTMLElement | null>(null)
 
   const [filterSetlistId, setFilterSetlistId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -556,13 +554,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
   }
 
-  const handleFilterKeyChange = (newKey: string) => {
-    setFilterKey(newKey)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('gtar_songbook_filter_key', newKey)
-    }
-  }
-
   const handleFilterSetlistChange = (slId: string) => {
     setFilterSetlistId(slId)
     if (typeof window !== 'undefined') {
@@ -581,17 +572,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return activeSetlists.filter((sl) => setlistMemberIds.get(sl)?.has(song.id))
   }
 
-  // Available unique keys in library
-  const availableKeys = useMemo(() => {
-    const keys = new Set<string>()
-    songs.forEach((s) => {
-      if (s.key && s.key.trim()) {
-        keys.add(s.key.trim().toUpperCase())
-      }
-    })
-    return Array.from(keys).sort()
-  }, [songs])
-
   // Map songs with their original index in library
   const indexedSongs = useMemo(() => {
     return songs.map((song, originalIdx) => ({ song, originalIdx }))
@@ -605,11 +585,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         const matchTitle = song.title?.toLowerCase().includes(q)
         const matchArtist = song.artist?.toLowerCase().includes(q)
         if (!matchTitle && !matchArtist) return false
-      }
-
-      if (filterKey !== 'ALL') {
-        const sKey = (song.key || '').trim().toUpperCase()
-        if (sKey !== filterKey.toUpperCase()) return false
       }
 
       if (filterSetlistId !== 'ALL') {
@@ -626,7 +601,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       return true
     })
-  }, [indexedSongs, searchQuery, filterKey, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds])
+  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {
@@ -637,9 +612,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       }
       if (sortBy === 'artist') {
         return (a.song.artist || '').localeCompare(b.song.artist || '')
-      }
-      if (sortBy === 'key') {
-        return (a.song.key || '').localeCompare(b.song.key || '')
       }
       // 'date' or default order
       return a.originalIdx - b.originalIdx
@@ -2073,6 +2045,52 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     {optionsCollapsed ? 'Show' : 'Hide'}
                   </button>
                 )}
+                {onOpenImportSongs && (
+                  <>
+                    <button
+                      type="button"
+                      data-testid="songs-library-menu-btn"
+                      aria-label="Songs Library actions"
+                      aria-haspopup="menu"
+                      aria-expanded={!!libraryMenuAnchor}
+                      title="Songs Library actions"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        closeAllMenus()
+                        setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
+                      }}
+                      className="w-7 h-7 rounded-lg border border-app-border ui-secondary-text text-app-muted hover:text-app-heading hover:border-app-action/40 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
+                    <DropdownPortal
+                      anchorEl={libraryMenuAnchor}
+                      open={!!libraryMenuAnchor}
+                      onClose={() => setLibraryMenuAnchor(null)}
+                      align="right"
+                    >
+                      <div
+                        role="menu"
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-48 bg-app-base border border-app-border rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-testid="songs-library-menu-import"
+                          onClick={() => {
+                            setLibraryMenuAnchor(null)
+                            onOpenImportSongs()
+                          }}
+                          className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                          <span>Import songs…</span>
+                        </button>
+                      </div>
+                    </DropdownPortal>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -2096,29 +2114,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 >
                   <option value="title">Title (A-Z)</option>
                   <option value="artist">Artist (A-Z)</option>
-                  <option value="key">Key</option>
                   <option value="date">Library Order</option>
                 </select>
               </div>
-
-              {/* Key Filter Dropdown */}
-              {availableKeys.length > 0 && (
-                <div className="flex items-center gap-1.5 text-xs font-mono">
-                  <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Key:</span>
-                  <select
-                    value={filterKey}
-                    onChange={(e) => handleFilterKeyChange(e.target.value)}
-                    className="bg-app-base border border-app-border ui-primary-text text-app-text rounded-lg px-2.5 py-1 text-xs font-mono outline-none cursor-pointer hover:border-app-action transition-colors"
-                  >
-                    <option value="ALL">All Keys</option>
-                    {availableKeys.map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {/* Metadata Filter Dropdown */}
               <div className="flex items-center gap-1.5 text-xs font-mono">
@@ -2192,12 +2190,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         ) : sortedIndexedSongs.length === 0 ? (
           <div className="p-8 text-center rounded-2xl border border-app-border bg-app-surface/40 ui-secondary-text text-app-muted space-y-2">
             <div className="text-sm font-bold ui-primary-text text-app-heading">No matching songs found</div>
-            <p className="text-xs">Try clearing your search query or adjusting key/setlist filters.</p>
+            <p className="text-xs">Try clearing your search query or adjusting filters.</p>
             <button
               type="button"
               onClick={() => {
                 handleSearchChange('')
-                handleFilterKeyChange('ALL')
                 handleFilterSetlistChange('ALL')
                 handleFilterMetadataChange('ALL')
               }}

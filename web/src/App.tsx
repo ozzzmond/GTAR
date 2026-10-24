@@ -1670,6 +1670,7 @@ function LibraryApp() {
             onShareSetlist={(sl) => setSharingSetlist(sl)}
             onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
             onImportSharedCatalogSong={handleSaveSongFromEditor}
+            onOpenImportSongs={() => navigateSafely(() => setIsImportModalOpen(true))}
             onUpdateSong={handleUpdateSong}
             confirmedCatalogIds={confirmedCatalogIds}
             freshCatalogIds={freshCatalogIds}

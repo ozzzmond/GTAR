@@ -153,8 +153,8 @@ test('4. Main song library view has exactly one primary search surface in Header
   const homeInputMatches = homeHtml.match(/<input[^>]+type="text"/g) || []
   assert.equal(homeInputMatches.length, 0, 'SongbookHomeView should have zero text inputs (no redundant lower search)')
 
-  // Filters must be preserved: Sort dropdown, Key dropdown, Setlist dropdown
+  // Filters must be preserved: Sort dropdown, Setlist dropdown (#149: the Key filter was removed by owner direction)
   assert.match(homeHtml, /Sort:/)
-  assert.match(homeHtml, /Key:/)
+  assert.doesNotMatch(homeHtml, /Key:/)
   assert.match(homeHtml, /Setlist:/)
 })
