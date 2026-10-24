@@ -83,6 +83,8 @@ test('missing body after retirement: fallback restores the retired copy instead 
   assert.equal(localStorage.getItem(V1), raw)
   assert.deepEqual(api.readPersistedLibrary(), lib)
   assert.ok(localStorage.getItem(index.LIBRARY_V2_KEY), 'index kept for review')
+  assert.ok(localStorage.getItem(api.RECORDS_DELETE_HOLD_KEY), '#208 F1: fallback holds per-record deletes')
+  assert.equal(api.recordsDeleteHoldActive(localStorage), true)
 })
 
 test('retirement is skipped when archives are not in IndexedDB or the index cannot load', async () => {
