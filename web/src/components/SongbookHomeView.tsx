@@ -3,6 +3,7 @@ import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationSta
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
 import { DuplicateReviewDialog } from './DuplicateReviewDialog'
+import { ExportSongsDialog } from './ExportSongsDialog'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
 import React, { useState, useMemo, useRef, useCallback } from 'react'
@@ -512,6 +513,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   })
   const [libraryMenuAnchor, setLibraryMenuAnchor] = useState<HTMLElement | null>(null)
   const [isDuplicateReviewOpen, setIsDuplicateReviewOpen] = useState(false)
+  const [isExportSongsOpen, setIsExportSongsOpen] = useState(false)
   const [setlistsMenuAnchor, setSetlistsMenuAnchor] = useState<HTMLElement | null>(null)
 
   const [filterSetlistId, setFilterSetlistId] = useState<string>(() => {
@@ -1983,6 +1985,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         )
       )}
 
+      {isExportSongsOpen && (
+        <ExportSongsDialog songs={songs} preselected={isSongSelectionMode ? [...selectedSongIds] : []}
+          onClose={() => setIsExportSongsOpen(false)} />
+      )}
+
       {isDuplicateReviewOpen && onTrashDuplicates && (
         <DuplicateReviewDialog songs={songs} setlists={setlists} onTrashDuplicates={onTrashDuplicates}
           onClose={() => setIsDuplicateReviewOpen(false)} />
@@ -2199,6 +2206,20 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           <span>Import songs…</span>
                         </button>
                       )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-testid="songs-library-menu-export"
+                        disabled={songs.length === 0}
+                        onClick={() => {
+                          setLibraryMenuAnchor(null)
+                          setIsExportSongsOpen(true)
+                        }}
+                        className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-t border-app-border/50"
+                      >
+                        <Upload className="ui-action-text w-3.5 h-3.5 text-app-action rotate-180" />
+                        <span>Export songs (TXT / PDF)…</span>
+                      </button>
                       {onTrashDuplicates && (
                         <button
                           type="button"
