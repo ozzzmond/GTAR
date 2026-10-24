@@ -760,7 +760,7 @@ test('21. SECURITY_HEADERS: Logout endpoint includes API security headers', asyn
   assert.equal(postRes.headers.get('X-Frame-Options'), 'DENY')
   assert.equal(postRes.headers.get('Referrer-Policy'), 'strict-origin-when-cross-origin')
   const { STATIC_SECURITY_HEADERS } = require(path.join(webDir, 'functions/lib/securityHeaders.ts'))
-  assert.ok(STATIC_SECURITY_HEADERS['Content-Security-Policy-Report-Only'], 'CSP Report-Only header must be defined')
+  assert.ok(STATIC_SECURITY_HEADERS['Content-Security-Policy'], 'CSP header must be defined (#160: enforced)')
 
   const optRes = await logoutApi.onRequestOptions()
   assert.equal(optRes.status, 204)

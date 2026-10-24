@@ -136,10 +136,10 @@ test('1. STATIC_HEADERS_FILE_COVERAGE: Cloudflare Pages _headers definition inte
   assert.ok(perm.includes('payment=()'), 'Must restrict payment')
   assert.ok(perm.includes('usb=()'), 'Must restrict usb')
 
-  // Content-Security-Policy-Report-Only (initially non-enforced foundation)
-  assert.equal(globalHeaders['Content-Security-Policy'], undefined, 'Must NOT enforce CSP until browser testing')
-  const csp = globalHeaders['Content-Security-Policy-Report-Only']
-  assert.ok(csp, 'Content-Security-Policy-Report-Only must be defined')
+  // #160: CSP is enforced (DEV field QA 2026-10-24); no Report-Only copy remains
+  assert.equal(globalHeaders['Content-Security-Policy-Report-Only'], undefined, 'Report-Only header replaced by the enforced policy')
+  const csp = globalHeaders['Content-Security-Policy']
+  assert.ok(csp, 'Content-Security-Policy must be defined')
 
   const directives = parseCspSources(csp)
 
@@ -183,7 +183,7 @@ test('2. BUILD_DISTRIBUTION_DIST_HEADERS: Verify Vite emits _headers to dist roo
   if (fs.existsSync(distHeadersPath)) {
     const distContent = fs.readFileSync(distHeadersPath, 'utf8')
     assert.ok(distContent.includes('X-Content-Type-Options: nosniff'))
-    assert.ok(distContent.includes('Content-Security-Policy-Report-Only'))
+    assert.ok(distContent.includes('Content-Security-Policy:'))
     assert.ok(distContent.includes('X-Frame-Options: DENY'))
   }
 })
@@ -197,7 +197,7 @@ test('3. SECURITY_HEADERS_HELPER_UNIT_TESTS: Verification of functions/lib/secur
   assert.equal(API_SECURITY_HEADERS['X-Content-Type-Options'], 'nosniff')
   assert.equal(API_SECURITY_HEADERS['Referrer-Policy'], 'strict-origin-when-cross-origin')
   assert.equal(API_SECURITY_HEADERS['X-Frame-Options'], 'DENY')
-  assert.ok(STATIC_SECURITY_HEADERS['Content-Security-Policy-Report-Only'])
+  assert.ok(STATIC_SECURITY_HEADERS['Content-Security-Policy'])
 
   // Helper withApiSecurityHeaders preserves existing headers and injects missing ones
   const headers = withApiSecurityHeaders({
@@ -444,11 +444,11 @@ test('6. COMPATIBILITY_GUARDS: Preserves Google Auth, QR, StageCast, and BandSyn
   // 1. QR Code Data URI compatibility
   const qrUri = generateQrSvgDataUri('https://gtar.app/setlists/shared#token=1234567890abcdef1234567890abcdef')
   assert.ok(qrUri.startsWith('data:image/svg+xml;utf8,'), 'QR generator produces data URI')
-  // Verify CSP Report-Only img-src allows data:
+  // Verify CSP img-src allows data:
   const headersPath = path.resolve(__dirname, '../public/_headers')
   const content = fs.readFileSync(headersPath, 'utf8')
   const rules = parseHeadersFile(content)
-  const csp = rules.get('/*')['Content-Security-Policy-Report-Only']
+  const csp = rules.get('/*')['Content-Security-Policy']
   const directives = parseCspSources(csp)
   assert.ok(directives.get('img-src').has('data:'), 'CSP must allow data: in img-src for QR codes')
 
@@ -492,4 +492,17 @@ test('API sources never grant cross-origin reads (GTAR API is same-origin only, 
   }
   roots.filter(dir => nodeFs.existsSync(dir)).forEach(walk)
   assert.deepEqual(offenders, [])
+})
+
+test('#160: the enforced CSP is identical in public/_headers and the Functions security headers, and keeps what DEV QA used', () => {
+  const headersFile = fs.readFileSync(path.join(__dirname, '../public/_headers'), 'utf8')
+  const fromFile = headersFile.match(/^\s*Content-Security-Policy:\s*(.+)$/m)[1].trim()
+  const { STATIC_SECURITY_HEADERS: H } = require('../functions/lib/securityHeaders.ts')
+  assert.equal(fromFile, H['Content-Security-Policy'])
+  assert.doesNotMatch(headersFile, /Content-Security-Policy-Report-Only/)
+  // Google sign-in, profile photos, Stage Cast 2.0 (wss same origin) and BandSync (ws:, owner decision A)
+  for (const needle of ["script-src 'self' https://accounts.google.com", 'frame-src https://accounts.google.com', 'https://*.googleusercontent.com', "connect-src 'self'", ' ws: wss:', "frame-ancestors 'none'", "object-src 'none'"]) {
+    assert.ok(fromFile.includes(needle), needle)
+  }
+  assert.doesNotMatch(fromFile, /script-src[^;]*'unsafe-inline'/, 'no inline scripts allowed')
 })
