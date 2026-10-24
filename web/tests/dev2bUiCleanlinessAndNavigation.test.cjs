@@ -217,14 +217,14 @@ test('STEP_7: SongbookHomeView Sort & Filter controls and Manage button placemen
     'Show/Hide Options button must have aria-controls targeting options container'
   )
 
-  // FOLLOWUP: Desktop New Setlist moved into Gig Setlists action row before Select
+  // #149 layout (owner 2026-10-24): New Setlist and Import live in the setlists ⋯ menu, after Manage
   assert.ok(
-    songbookHtml.includes('data-testid="main-new-setlist-btn"'),
-    'Desktop New Setlist button must be in action row'
+    songbookHtml.includes('data-testid="setlists-menu-btn"'),
+    'Setlists ⋯ menu button must be in action row'
   )
   assert.ok(
-    songbookHtml.indexOf('data-testid="main-new-setlist-btn"') < songbookHtml.indexOf('data-testid="toggle-setlist-selection-mode"'),
-    'Desktop New Setlist button must be placed before Select button'
+    songbookHtml.indexOf('data-testid="toggle-setlist-selection-mode"') < songbookHtml.indexOf('data-testid="setlists-menu-btn"'),
+    'Setlists ⋯ menu must follow Manage'
   )
 
   // FOLLOWUP: text-only buttons in SetlistDrawer (no plus icon)

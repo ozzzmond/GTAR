@@ -115,9 +115,10 @@ test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collap
     songbookSource.includes('data-testid="toggle-setlist-selection-mode"'),
     'Select button must be present in setlists action row'
   )
+  // #149 layout: New Setlist moved into the setlists ⋯ menu, which follows Manage
   assert.ok(
-    songbookSource.indexOf('data-testid="main-new-setlist-btn"') < songbookSource.indexOf('data-testid="toggle-setlist-selection-mode"'),
-    'New Setlist button must precede Select button in setlists action row'
+    songbookSource.indexOf('data-testid="toggle-setlist-selection-mode"') < songbookSource.indexOf('data-testid="setlists-menu-btn"'),
+    'Setlists ⋯ menu must follow the Manage button in setlists action row'
   )
 
   // toggleSetlists must exit selection mode when collapsing

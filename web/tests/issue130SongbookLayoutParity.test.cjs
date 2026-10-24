@@ -192,13 +192,10 @@ test('ISSUE 130: 4. Dedicated tinted Setlist Controls toolbar contains sort, New
     // Setlist action buttons
     const actionToolbar = toolbar.querySelector('[data-testid="setlist-toolbar"]')
     assert.ok(actionToolbar)
+    // #149 owner layout: QR | Manage | ⋯ (New Setlist, Import) | Hide
     const buttons = Array.from(actionToolbar.querySelectorAll('button'))
-    assert.equal(buttons.length, 5)
-    assert.equal(buttons[0].getAttribute('data-testid'), 'main-new-setlist-btn')
-    assert.equal(buttons[1].getAttribute('data-testid'), 'toggle-setlist-selection-mode')
-    assert.equal(buttons[2].getAttribute('data-testid'), 'main-share-setlist-btn')
-    assert.equal(buttons[3].getAttribute('data-testid'), 'main-import-setlist-btn')
-    assert.equal(buttons[4].getAttribute('data-testid'), 'toggle-setlists-collapse')
+    assert.deepEqual(buttons.map(b => b.getAttribute('data-testid')),
+      ['main-share-setlist-btn', 'toggle-setlist-selection-mode', 'setlists-menu-btn', 'toggle-setlists-collapse'])
   } finally {
     await act(async () => root.unmount())
   }
