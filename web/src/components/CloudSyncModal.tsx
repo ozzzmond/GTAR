@@ -1,5 +1,5 @@
 import { openRecoveryReview } from '../utils/recoveryReview'
-import { isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled } from '../utils/recordsSync'
+import { isRecordsServerUnavailable, isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled } from '../utils/recordsSync'
 import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -67,6 +67,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
   const [recordsSync, setRecordsSync] = useState(() => { try { return isRecordsSyncEnabled() } catch { return false } })
   const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
+  // Read on each render: the last sync updates it, and the device view is opened after a sync.
+  let recordsServerOff = false
+  try { recordsServerOff = isRecordsServerUnavailable() } catch { /* storage unavailable */ }
   // Sync Center: "This device" view (library and sync engine) instead of the main view.
   const [deviceView, setDeviceView] = useState(false)
   const [wasOpen, setWasOpen] = useState(isOpen)
@@ -302,7 +305,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 <div className="min-w-0">
                   <div className="font-bold text-app-heading">Sync engine</div>
                   <div className="text-[11px] text-app-muted">
-                    {recordsSync ? 'Per-record: syncs only the songs and setlists that changed.' : 'Classic: syncs the whole songbook at once.'}
+                    {!recordsSync ? 'Classic: syncs the whole songbook at once.'
+                      : recordsServerOff ? 'Per-record is not available on the server yet, so Classic is used.'
+                      : 'Per-record: syncs only the songs and setlists that changed.'}
                   </div>
                 </div>
                 <button
@@ -317,7 +322,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   }}
                   className="shrink-0 min-h-11 px-3 rounded-lg border border-app-border bg-app-surface hover:border-app-action font-semibold text-app-heading cursor-pointer disabled:opacity-50"
                 >
-                  {recordsSync ? 'Per-record' : 'Classic'}
+                  {recordsSync ? (recordsServerOff ? 'Per-record (unavailable)' : 'Per-record') : 'Classic'}
                 </button>
               </div>
             </div>

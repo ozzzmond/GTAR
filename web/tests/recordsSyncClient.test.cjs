@@ -239,3 +239,21 @@ test('DB without migration 0009: records API reports disabled, the client falls 
   const viaDialog = await w.runAny(a)
   assert.equal(viaDialog.success, true, viaDialog.error)
 })
+
+test('server off: classic fallback is remembered (shown in the Sync Center) and logged once', async () => {
+  const logger = require('../src/utils/logger.ts')
+  logger.appLogger.resume()
+  const w = await world({ enabled: false, library: base })
+  const a = w.device(base)
+  client.setRecordsSyncEnabled(true, a)
+  const before = logger.appLogger.getLogs().filter(l => /per-record sync off/.test(l.message)).length
+  await w.runAny(a); await w.runAny(a); await w.runAny(a)
+  assert.equal(client.isRecordsServerUnavailable(a), true)
+  assert.equal(logger.appLogger.getLogs().filter(l => /per-record sync off/.test(l.message)).length - before, 1)
+  const on = await world({ library: base })
+  const b = on.device(base)
+  client.setRecordsSyncEnabled(true, b)
+  b.setItem(client.RECORDS_SERVER_STATE_KEY, 'off')
+  await on.runAny(b)
+  assert.equal(client.isRecordsServerUnavailable(b), false)
+})
