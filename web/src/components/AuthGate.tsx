@@ -584,17 +584,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
   }, [session, clientId, signOut, isPresentationRoute, backgroundRecheck])
 
+  // #204 S2: capture already runs from startup (main.tsx); here the signed-in account's
+  // identifiers are registered so exports redact them.
+  const sessionUserId = session?.user?.id
+  const sessionUserSub = session?.user?.sub
   useEffect(() => {
-    if (!permitted && !(bypass && canBypass)) return
-    let active = true
-    let pause: (() => void) | undefined
-    void import('../utils/logger').then(({ appLogger }) => {
-      if (!active) return
-      appLogger.resume()
-      pause = () => appLogger.suspend()
-    })
-    return () => { active = false; pause?.() }
-  }, [permitted, bypass, canBypass])
+    if (!sessionUserId && !sessionUserSub) return
+    void import('../utils/logger').then(({ registerRedactedIdentifiers }) => registerRedactedIdentifiers(sessionUserId, sessionUserSub))
+  }, [sessionUserId, sessionUserSub])
 
   const signIn = async () => {
     if (!clientId || busy) return
