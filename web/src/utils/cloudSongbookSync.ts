@@ -97,6 +97,8 @@ export interface CloudSyncResult {
   warning?: string
   /** #208 F6: nothing was applied or pushed because the caller became busy (e.g. the editor opened); retry later. */
   deferred?: boolean
+  /** #208 F6: the library revision the sync wrote. A newer local write since then makes `updatedLibrary` stale. */
+  appliedRevision?: string | null
 }
 
 /** #189: shown when a successful sync could not keep its common base for the next three-way merge. */

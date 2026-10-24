@@ -1586,12 +1586,15 @@ function LibraryApp() {
           isCastActive={isCastActive}
           autoSyncBlocked={activeView === 'editor' || Boolean(crossTabConflict)}
           onCloudSyncApplied={(updated) => {
+            // #208 F6: adopt what is stored now, not the sync's copy: a save from another surface may have
+            // landed after the sync wrote, and the stored library already contains both.
+            const stored = readPersistedLibrary() ?? updated
             persistedBaselineRef.current = libraryRevision()
             setCrossTabConflict(null)
-            const partition = partitionSongs(updated.songs)
+            const partition = partitionSongs(stored.songs)
             setSongs(partition.active)
             setDeletedSongs(partition.deleted)
-            setSetlists(updated.setlists)
+            setSetlists(stored.setlists)
             setToastMessage('Songbook synced with Cloud')
             setTimeout(() => setToastMessage(null), 3500)
           }}

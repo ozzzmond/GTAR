@@ -135,3 +135,40 @@ test('#208 F6: the sync is told to defer applying while blocked', async () => {
   view.rerender({ ...props, blocked: true })
   assert.equal(canApply(), false, 'reads the live block state')
 })
+
+// #208 F6 (re-audit): results are delivered only while the revision they wrote is still current.
+test('#208 F6: a stale result (newer local save since) is not delivered, and sync runs again', async () => {
+  const applied = []
+  let revision = 'r2-newer-save', runs = 0
+  const lib = { songs: [{ id: 'x', title: 'Stale', artist: '', rawContent: '' }], setlists: [] }
+  mount('a', { enabled: true, token: 't', blocked: false, debounceMs: 10, revision: () => revision, onApplied: l => applied.push(l),
+    sync: async () => { runs++; return runs === 1 ? result({ actionTaken: 'DOWNLOADED', updatedLibrary: lib, appliedRevision: 'r1-sync-write' }) : result() } })
+  await act(async () => { await wait(80) })
+  assert.equal(applied.length, 0, 'stale library never handed to the app')
+  assert.ok(runs >= 2, 'a fresh sync follows')
+  revision = 'r3'
+})
+
+test('#208 F6: a result held while blocked is dropped if a newer save lands before the block ends', async () => {
+  const applied = []
+  let revision = 'r1', release
+  const lib = { songs: [], setlists: [] }
+  const props = { enabled: true, token: 't', blocked: false, debounceMs: 10, revision: () => revision, onApplied: l => applied.push(l),
+    sync: () => new Promise(resolve => { release = () => resolve(result({ actionTaken: 'DOWNLOADED', updatedLibrary: lib, appliedRevision: 'r1' })) }) }
+  const view = mount('a', props)
+  await act(async () => { await wait(30) })
+  view.rerender({ ...props, blocked: true })
+  await act(async () => { release(); await wait(10) })
+  revision = 'r2' // the editor saved
+  view.rerender({ ...props, blocked: false, sync: async () => result() })
+  await act(async () => { await wait(30) })
+  assert.equal(applied.length, 0)
+})
+
+test('#208 F6: App adopts the stored library on a sync result, never the sync copy over a newer save', () => {
+  const app = fs.readFileSync(require('node:path').join(__dirname, '../src/App.tsx'), 'utf8')
+  const handler = app.slice(app.indexOf('onCloudSyncApplied={(updated) => {'), app.indexOf("setToastMessage('Songbook synced with Cloud')"))
+  assert.match(handler, /const stored = readPersistedLibrary\(\) \?\? updated/)
+  assert.match(handler, /partitionSongs\(stored\.songs\)/)
+  assert.match(handler, /setSetlists\(stored\.setlists\)/)
+})
