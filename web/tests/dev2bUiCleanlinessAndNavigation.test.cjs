@@ -209,12 +209,12 @@ test('STEP_7: SongbookHomeView Sort & Filter controls and Manage button placemen
 
   // STEP_7: Hide Options / Show Options toggle control
   assert.ok(
-    songbookHtml.includes('data-testid="toggle-sort-filter-options"'),
-    'Show/Hide Options toggle button must be present'
+    songbookHtml.includes('data-testid="toggle-songs-collapse"'),
+    'Songs Library Show/Hide toggle button must be present'
   )
   assert.ok(
-    songbookHtml.includes('aria-controls="songbook-sort-filter-options"'),
-    'Show/Hide Options button must have aria-controls targeting options container'
+    songbookHtml.includes('aria-controls="songbook-song-cards"'),
+    'Songs Library Show/Hide button must target the song cards (#149: like Song Setlists)'
   )
 
   // #149 layout (owner 2026-10-24): New Setlist and Import live in the setlists ⋯ menu, after Manage

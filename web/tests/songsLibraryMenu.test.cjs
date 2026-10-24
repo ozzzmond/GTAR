@@ -94,10 +94,16 @@ test('#149 layout: Songs Library controls sit inside the filter box, right side 
   assert.ok(box.querySelector('#songbook-sort-filter-options select'), 'filters are inside the box')
   const actions = box.querySelector('[data-testid="songs-library-actions"]')
   assert.deepEqual([...actions.querySelectorAll('button')].map(b => b.getAttribute('data-testid')),
-    ['toggle-song-selection-mode', 'songs-library-menu-btn', 'toggle-sort-filter-options'])
+    ['toggle-song-selection-mode', 'songs-library-menu-btn', 'toggle-songs-collapse'])
   const header = document.querySelector('section[aria-label="Songs Library"] > div')
   assert.equal(header.querySelector('button'), null, 'no controls left outside the box')
-  await act(async () => document.querySelector('[data-testid="toggle-sort-filter-options"]').click())
-  assert.equal(document.getElementById('songbook-sort-filter-options').hidden, true)
-  assert.ok(document.querySelector('[data-testid="toggle-sort-filter-options"]'), 'Show stays reachable while filters are hidden')
+  // Hide collapses the song cards (like Song Setlists); filters and controls stay
+  await act(async () => document.querySelector('[data-testid="toggle-songs-collapse"]').click())
+  assert.equal(document.getElementById('songbook-song-cards').hidden, true)
+  assert.equal(document.getElementById('songbook-sort-filter-options').hidden, false)
+  assert.equal(document.querySelector('[data-testid="toggle-songs-collapse"]').textContent.trim(), 'Show')
+  // Manage re-opens the list
+  await act(async () => document.querySelector('[data-testid="toggle-song-selection-mode"]').click())
+  assert.equal(document.getElementById('songbook-song-cards').hidden, false)
+  assert.ok(document.querySelector('[data-testid="song-selection-bar"]'))
 })
