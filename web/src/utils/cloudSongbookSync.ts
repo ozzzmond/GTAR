@@ -95,6 +95,8 @@ export interface CloudSyncResult {
   updatedLibrary?: SyncLibrary
   /** #189: the sync succeeded but its common base could not be saved on this device. */
   warning?: string
+  /** #208 F6: nothing was applied or pushed because the caller became busy (e.g. the editor opened); retry later. */
+  deferred?: boolean
 }
 
 /** #189: shown when a successful sync could not keep its common base for the next three-way merge. */

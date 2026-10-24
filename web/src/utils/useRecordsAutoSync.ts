@@ -25,7 +25,7 @@ export interface RecordsAutoSyncInput {
   onApplied?: (library: SyncLibrary) => void
   onState?: (status: CloudSyncStatus, isProcessing: boolean) => void
   /** Test hooks. */
-  sync?: (token: string) => Promise<CloudSyncResult | null>
+  sync?: (token: string, options?: { canApply?: () => boolean }) => Promise<CloudSyncResult | null>
   debounceMs?: number
 }
 
@@ -33,6 +33,8 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
   const latest = useRef(input)
   useEffect(() => { latest.current = input })
   const scheduleRef = useRef<(() => void) | null>(null)
+  // #208 F6: a result that arrives while blocked is delivered when the block ends, never during it.
+  const pendingRef = useRef<SyncLibrary | null>(null)
   const { enabled, token, blocked } = input
 
   useEffect(() => {
@@ -54,10 +56,13 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
       running = true
       current.onState?.('SYNCING', true)
       try {
-        const result = await (current.sync ?? performRecordsSync)(current.token)
+        const result = await (current.sync ?? performRecordsSync)(current.token, { canApply: () => !latest.current.blocked })
         if (disposed) return
-        if (!result) { current.onState?.('IDLE', false); return }
-        if (result.updatedLibrary) latest.current.onApplied?.(result.updatedLibrary)
+        if (!result || result.deferred) { current.onState?.('IDLE', false); return }
+        if (result.updatedLibrary) {
+          if (latest.current.blocked) pendingRef.current = result.updatedLibrary
+          else latest.current.onApplied?.(result.updatedLibrary)
+        }
         latest.current.onState?.(result.status, false)
       } catch {
         latest.current.onState?.('ERROR', false)
@@ -103,5 +108,11 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
   }, [enabled, token])
 
   // Leaving the editor or resolving a cross-tab conflict catches up right away.
-  useEffect(() => { if (!blocked) scheduleRef.current?.() }, [blocked])
+  useEffect(() => {
+    if (blocked) return
+    const pending = pendingRef.current
+    pendingRef.current = null
+    if (pending) latest.current.onApplied?.(pending)
+    scheduleRef.current?.()
+  }, [blocked])
 }

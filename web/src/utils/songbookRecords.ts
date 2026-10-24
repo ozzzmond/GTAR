@@ -23,6 +23,11 @@ export const MAX_RECORD_BYTES = 512 * 1024
  * 50 statements per invocation on the Workers Free plan (a push uses changes + ~10 statements).
  */
 export const MAX_PUSH_CHANGES = 25
+/**
+ * #208 F5: client-side byte budget for one push body. The server reads at most 2 MiB
+ * (MAX_RECORDS_PUSH_BYTES); this leaves room for the JSON envelope.
+ */
+export const MAX_PUSH_BODY_BYTES = 1536 * 1024
 /** Most records returned in one pull page. */
 export const MAX_PULL_RECORDS = 200
 
