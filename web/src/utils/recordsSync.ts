@@ -51,7 +51,8 @@ import { generateUUID } from './uuid'
 export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
 export const RECORDS_SYNC_TOGGLE_KEY = 'gtar_records_sync_enabled'
-export const RECORDS_SYNC_DEFAULT_ON = false
+/** RFC #188 S7: per-record sync is the default on DEV; '0' turns it off per device. PROD never runs it. */
+export const RECORDS_SYNC_DEFAULT_ON = true
 const REMOVED = recordChecksum(true, null)
 export const RECORDS_SYNC_RUN_LOCK = 'gtar-records-sync-run'
 const REQUEST_TIMEOUT_MS = 15000
