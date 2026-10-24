@@ -116,7 +116,8 @@ export interface SongLifecycleState {
   setlists: WebSetlist[]
 }
 export type SongLifecycleOperation =
-  | { kind: 'trash'; ids: Array<string | number>; blank: ActiveSongState }
+  /** `repoint` (#149): setlist refs to a trashed id move to the kept song id first (deduplicated, order kept). */
+  | { kind: 'trash'; ids: Array<string | number>; blank: ActiveSongState; repoint?: Record<string, string | number> }
   | { kind: 'restore' | 'permanent'; ids: Array<string | number> }
   | { kind: 'empty' }
 
@@ -128,7 +129,8 @@ export function transitionSongLibrary(state: SongLifecycleState, operation: Song
     const moved = state.active.filter(selected)
     if (!moved.length) return state
     const remaining = state.active.filter(song => !selected(song))
-    return { ...state, active: remaining.length ? remaining : [operation.blank],
+    const setlists = operation.repoint ? repointSetlists(state.setlists, operation.repoint, remaining) : state.setlists
+    return { ...state, setlists, active: remaining.length ? remaining : [operation.blank],
       deleted: [...moved.map(song => ({ ...song, isDeleted: true })), ...state.deleted] }
   }
   const moved = state.deleted.filter(selected)
@@ -139,4 +141,27 @@ export function transitionSongLibrary(state: SongLifecycleState, operation: Song
   return { ...state, deleted: state.deleted.filter(song => !selected(song)),
     setlists: state.setlists.map(list => ({ ...list,
       songs: list.songs.filter(ref => ref.id === undefined || !removed.has(String(ref.id))) })) }
+}
+
+/** #149: point setlist refs from `from` ids to kept songs. Refuses targets that are not active songs. */
+export function repointSetlists(setlists: WebSetlist[], repoint: Record<string, string | number>, active: ActiveSongState[]): WebSetlist[] {
+  const index = songIdIndex(active)
+  const moves = new Map(Object.entries(repoint).map(([from, to]) => [from, String(to)]))
+  for (const [from, to] of moves) {
+    if (!index.has(to) || to === from) throw new Error(`Cannot re-point setlists from ${from} to ${to}: target is not an active song.`)
+  }
+  return setlists.map(list => {
+    if (!list.songs.some(ref => ref.id !== undefined && moves.has(String(ref.id)))) return list
+    // A re-pointed ref is dropped when the kept song is already in this setlist; other refs stay as they are.
+    const present = new Set(list.songs.filter(ref => ref.id !== undefined && !moves.has(String(ref.id))).map(ref => String(ref.id)))
+    const songs: SongReference[] = []
+    for (const ref of list.songs) {
+      if (ref.id === undefined || !moves.has(String(ref.id))) { songs.push(ref); continue }
+      const target = index.get(moves.get(String(ref.id))!)!
+      if (present.has(String(target.id))) continue
+      present.add(String(target.id))
+      songs.push({ id: target.id, title: target.title, artist: target.artist })
+    }
+    return { ...list, songs }
+  })
 }

@@ -76,3 +76,14 @@ test('⋯ menu is available on an empty library', async () => {
   })))
   assert.ok(document.querySelector('[data-testid="songs-library-menu-btn"]'))
 })
+
+test('#149 S2: ⋯ menu → AI Worker opens the duplicate check', async () => {
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
+  await mount({ onTrashDuplicates: () => true })
+  await act(async () => document.querySelector('[data-testid="songs-library-menu-btn"]').click())
+  assert.equal(document.querySelector('[data-testid="songs-library-menu-import"]'), null, 'no Import item without its handler')
+  await act(async () => document.querySelector('[data-testid="songs-library-menu-duplicates"]').click())
+  assert.ok(document.querySelector('[data-testid="duplicate-review-dialog"]'))
+  assert.match(document.querySelector('[data-testid="duplicate-summary"]').textContent, /No duplicates found/)
+})

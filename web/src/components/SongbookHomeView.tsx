@@ -2,6 +2,7 @@ import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
+import { DuplicateReviewDialog } from './DuplicateReviewDialog'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
 import React, { useState, useMemo, useRef, useCallback } from 'react'
@@ -18,6 +19,7 @@ import {
   Pencil,
   Share2,
   MoreHorizontal,
+  Copy,
   Check,
   CheckCircle2,
   AlertCircle,
@@ -66,6 +68,8 @@ interface SongbookHomeViewProps {
   onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | void
   /** #149: Songs Library ⋯ menu → the existing song import dialog. */
   onOpenImportSongs?: () => void
+  /** #149 S2: duplicate check → Move to Trash, after re-pointing setlist refs. */
+  onTrashDuplicates?: (trash: string[], repoint: Record<string, string>) => boolean
   onUpdateSong?: (updated: Partial<ActiveSongState>) => boolean | void
   confirmedCatalogIds?: Set<string>
   freshCatalogIds?: Set<string>
@@ -99,6 +103,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onImportSharedSetlist,
   onImportSharedCatalogSong,
   onOpenImportSongs,
+  onTrashDuplicates,
   onUpdateSong,
   confirmedCatalogIds: propConfirmedCatalogIds,
   freshCatalogIds: propFreshCatalogIds,
@@ -506,6 +511,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return 'title'
   })
   const [libraryMenuAnchor, setLibraryMenuAnchor] = useState<HTMLElement | null>(null)
+  const [isDuplicateReviewOpen, setIsDuplicateReviewOpen] = useState(false)
 
   const [filterSetlistId, setFilterSetlistId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -1945,6 +1951,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         )
       )}
 
+      {isDuplicateReviewOpen && onTrashDuplicates && (
+        <DuplicateReviewDialog songs={songs} setlists={setlists} onTrashDuplicates={onTrashDuplicates}
+          onClose={() => setIsDuplicateReviewOpen(false)} />
+      )}
+
       {/* 3. SONGS LIBRARY PANEL */}
       {activeTab === 'my_songs' && (
       <section aria-label="Songs Library" className="rounded-2xl border border-app-border bg-app-surface p-4 sm:p-5 mb-6 shadow-xs">
@@ -2045,7 +2056,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     {optionsCollapsed ? 'Show' : 'Hide'}
                   </button>
                 )}
-                {onOpenImportSongs && (
+                {(onOpenImportSongs || onTrashDuplicates) && (
                   <>
                     <button
                       type="button"
@@ -2074,19 +2085,37 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         onClick={(e) => e.stopPropagation()}
                         className="w-48 bg-app-base border border-app-border rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
                       >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          data-testid="songs-library-menu-import"
-                          onClick={() => {
-                            setLibraryMenuAnchor(null)
-                            onOpenImportSongs()
-                          }}
-                          className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
-                        >
-                          <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
-                          <span>Import songs…</span>
-                        </button>
+                        {onOpenImportSongs && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            data-testid="songs-library-menu-import"
+                            onClick={() => {
+                              setLibraryMenuAnchor(null)
+                              onOpenImportSongs()
+                            }}
+                            className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                            <span>Import songs…</span>
+                          </button>
+                        )}
+                        {onTrashDuplicates && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            data-testid="songs-library-menu-duplicates"
+                            disabled={songs.length < 2}
+                            onClick={() => {
+                              setLibraryMenuAnchor(null)
+                              setIsDuplicateReviewOpen(true)
+                            }}
+                            className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-t border-app-border/50"
+                          >
+                            <Copy className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                            <span>AI Worker: check duplicates…</span>
+                          </button>
+                        )}
                       </div>
                     </DropdownPortal>
                   </>
