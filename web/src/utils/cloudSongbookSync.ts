@@ -303,7 +303,49 @@ export function saveCloudSyncBase(library: SyncLibrary, storage?: Storage): bool
   }
 }
 
-const withBaseWarning = <T extends CloudSyncResult>(result: T, baseSaved: boolean): T =>
+/**
+ * #190 (RFC #188 S2): the server accepts at most 2 MB per songbook upload
+ * (functions/api/songbook/sync.ts MAX_SONGBOOK_PAYLOAD_BYTES; a test keeps the two in step).
+ */
+export const SONGBOOK_UPLOAD_LIMIT_BYTES = 2 * 1024 * 1024
+/** Share of the limit from which the Cloud Songbook Sync dialog warns. */
+export const SONGBOOK_UPLOAD_WARN_RATIO = 0.75
+
+export type SongbookHeadroomLevel = 'ok' | 'warning' | 'over'
+export interface SongbookHeadroom { bytes: number; limitBytes: number; ratio: number; level: SongbookHeadroomLevel }
+
+/** Exact request body for a songbook upload; used for both the request and its size estimate. */
+function songbookUploadBody(action: 'upload' | 'resolve', data: SyncLibrary, clientChecksum: string,
+  expectedVersion: number, expectedChecksum: string | null): string {
+  return JSON.stringify({ action, data, clientChecksum, expectedVersion, expectedChecksum })
+}
+const utf8Bytes = (text: string): number => new TextEncoder().encode(text).byteLength
+
+/**
+ * Upper-bound size of uploading `library`, as the server counts it (UTF-8 bytes of the request
+ * body). Uses the longest possible revision fields, so the real upload is never larger.
+ */
+export function estimateSongbookUploadBytes(library: SyncLibrary): number {
+  return utf8Bytes(songbookUploadBody('resolve', library, `ck_${'0'.repeat(16)}`, Number.MAX_SAFE_INTEGER, `ck_${'0'.repeat(16)}`))
+}
+
+export function songbookUploadHeadroom(bytes: number): SongbookHeadroom {
+  const ratio = bytes / SONGBOOK_UPLOAD_LIMIT_BYTES
+  return { bytes, limitBytes: SONGBOOK_UPLOAD_LIMIT_BYTES, ratio,
+    level: bytes > SONGBOOK_UPLOAD_LIMIT_BYTES ? 'over' : ratio >= SONGBOOK_UPLOAD_WARN_RATIO ? 'warning' : 'ok' }
+}
+
+const megabytes = (bytes: number): string => (bytes / (1024 * 1024)).toFixed(2)
+export function songbookTooLargeMessage(bytes: number): string {
+  return `Songbook is too large to sync: ${megabytes(bytes)} MB of the ${megabytes(SONGBOOK_UPLOAD_LIMIT_BYTES)} MB cloud limit. ` +
+    'Nothing was uploaded and this device is unchanged. Export a backup; removing unused songs brings it back under the limit.'
+}
+/** Pre-flight result when an upload would exceed the server limit (no request is sent). */
+function tooLargeResult(bytes: number, state: CloudSyncState): CloudSyncResult {
+  return { success: false, status: 'ERROR', state, actionTaken: 'NONE', error: songbookTooLargeMessage(bytes) }
+}
+
+const withBaseWarning =<T extends CloudSyncResult>(result: T, baseSaved: boolean): T =>
   baseSaved ? result : { ...result, warning: SYNC_BASE_NOT_SAVED_WARNING }
 
 /**
@@ -1407,6 +1449,10 @@ async function executeCloudSongbookSync(
 
   if (actionToExecute === 'UPLOAD') {
     try {
+      const uploadBody = songbookUploadBody('upload', localLibrary, decisionResult.localChecksum,
+        cloudRecord?.version ?? 0, cloudRecord?.checksum ?? null)
+      // #190: fail before any snapshot or request when the server would reject the size.
+      if (utf8Bytes(uploadBody) > SONGBOOK_UPLOAD_LIMIT_BYTES) return tooLargeResult(utf8Bytes(uploadBody), decisionResult.state)
       // Explicit replacement must also retain the cloud revision being replaced.
       if (options?.forceAction === 'upload' && cloudRecord) {
         const recoveryKey = `gtar_sync_recovery:upload:${Date.now()}:${generateUUID()}`
@@ -1424,13 +1470,7 @@ async function executeCloudSongbookSync(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          action: 'upload',
-          data: localLibrary,
-          clientChecksum: decisionResult.localChecksum,
-          expectedVersion: cloudRecord?.version ?? 0,
-          expectedChecksum: cloudRecord?.checksum ?? null,
-        }),
+        body: uploadBody,
         signal: AbortSignal.timeout(15000),
       })
 
@@ -1444,6 +1484,7 @@ async function executeCloudSongbookSync(
       if (uploadRes.status === 409) return recoverConflict(localLibrary)
 
       if (!uploadRes.ok) {
+        if (uploadRes.status === 413) return tooLargeResult(utf8Bytes(uploadBody), decisionResult.state)
         let errStr = `Upload failed (${uploadRes.status})`
         if (uploadParsed?.error) {
           errStr = uploadParsed.error
@@ -1714,6 +1755,11 @@ async function executeCloudSongbookSync(
         }
       }
 
+      const mergedBody = songbookUploadBody('resolve', mergedLib, computeSongbookChecksum(mergedLib),
+        cloudRecord.version, cloudRecord.checksum)
+      // #190: fail before any snapshot or request when the server would reject the size.
+      if (utf8Bytes(mergedBody) > SONGBOOK_UPLOAD_LIMIT_BYTES) return tooLargeResult(utf8Bytes(mergedBody), 'CONFLICT')
+
       // Require durable recovery before attempting a merge write.
       const recoveryKey = `gtar_sync_recovery:merge:${Date.now()}:${generateUUID()}`
       const recoverySnapshot = JSON.stringify({ local: localLibrary, remote: incoming })
@@ -1735,13 +1781,7 @@ async function executeCloudSongbookSync(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          action: 'resolve',
-          data: mergedLib,
-          clientChecksum: computeSongbookChecksum(mergedLib),
-          expectedVersion: cloudRecord.version,
-          expectedChecksum: cloudRecord.checksum,
-        }),
+        body: mergedBody,
         signal: AbortSignal.timeout(15000),
       })
 
@@ -1755,6 +1795,7 @@ async function executeCloudSongbookSync(
       if (uploadRes.status === 409) return recoverConflict(mergedLib)
 
       if (!uploadRes.ok) {
+        if (uploadRes.status === 413) return tooLargeResult(utf8Bytes(mergedBody), 'CONFLICT')
         let errStr = `Upload of merged songbook failed (${uploadRes.status})`
         if (uploadParsed?.error) {
           errStr = uploadParsed.error
