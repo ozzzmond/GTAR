@@ -409,23 +409,26 @@ test('G7.3: Songbook Options toggle uses Hide and Show labels and preserves coll
       )
     )
 
-    const toggleBtn = document.querySelector('[data-testid="toggle-sort-filter-options"]')
+    // #149 (owner 2026-10-24): Hide collapses the song cards like Song Setlists; filters stay visible.
+    const toggleBtn = document.querySelector('[data-testid="toggle-songs-collapse"]')
+    const cards = document.getElementById('songbook-song-cards')
     const optionsPanel = document.getElementById('songbook-sort-filter-options')
     assert.ok(toggleBtn)
     assert.equal(toggleBtn.textContent.trim(), 'Hide')
     assert.equal(toggleBtn.getAttribute('aria-expanded'), 'true')
-    assert.equal(optionsPanel.hidden, false)
+    assert.equal(cards.hidden, false)
 
     await act(async () => toggleBtn.click())
     assert.equal(toggleBtn.textContent.trim(), 'Show')
     assert.equal(toggleBtn.getAttribute('aria-expanded'), 'false')
-    assert.equal(optionsPanel.hidden, true)
-    assert.equal(localStorage.getItem('gtar_songbook_options_collapsed'), 'true')
+    assert.equal(cards.hidden, true)
+    assert.equal(optionsPanel.hidden, false, 'filters stay visible')
+    assert.equal(localStorage.getItem('gtar_songbook_songs_collapsed'), 'true')
 
     await act(async () => toggleBtn.click())
     assert.equal(toggleBtn.textContent.trim(), 'Hide')
     assert.equal(toggleBtn.getAttribute('aria-expanded'), 'true')
-    assert.equal(optionsPanel.hidden, false)
+    assert.equal(cards.hidden, false)
   } finally {
     await act(async () => root.unmount())
   }

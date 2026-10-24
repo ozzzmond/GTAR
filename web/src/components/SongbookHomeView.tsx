@@ -521,19 +521,20 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return 'ALL'
   })
 
-  const [optionsCollapsed, setOptionsCollapsed] = useState(() => {
+  // #149: Songs Library Hide collapses the song cards (like Song Setlists); filters stay visible.
+  // New key: the old gtar_songbook_options_collapsed meant "filters hidden" and must not hide songs.
+  const [songsCollapsed, setSongsCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('gtar_songbook_options_collapsed') === 'true'
+      return localStorage.getItem('gtar_songbook_songs_collapsed') === 'true'
     } catch {
       return false
     }
   })
 
-  const toggleOptionsCollapsed = () => {
-    const next = !optionsCollapsed
-    setOptionsCollapsed(next)
+  const setSongsCollapsedPersisted = (next: boolean) => {
+    setSongsCollapsed(next)
     try {
-      localStorage.setItem('gtar_songbook_options_collapsed', String(next))
+      localStorage.setItem('gtar_songbook_songs_collapsed', String(next))
     } catch {
       /* Session preference remains usable */
     }
@@ -2085,7 +2086,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           >
             <div
               id="songbook-sort-filter-options"
-              hidden={optionsCollapsed || songs.length === 0}
+              hidden={songs.length === 0}
               className="flex items-center gap-2.5 flex-wrap"
             >
               {/* Sort Dropdown */}
@@ -2144,6 +2145,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   type="button"
                   data-testid="toggle-song-selection-mode"
                   onClick={() => {
+                    if (songsCollapsed) setSongsCollapsedPersisted(false)
                     setIsSongSelectionMode(true)
                     setSelectedSongIds(new Set())
                   }}
@@ -2220,19 +2222,27 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               {songs.length > 0 && (
                 <button
                   type="button"
-                  data-testid="toggle-sort-filter-options"
-                  aria-expanded={!optionsCollapsed}
-                  aria-controls="songbook-sort-filter-options"
-                  onClick={toggleOptionsCollapsed}
+                  data-testid="toggle-songs-collapse"
+                  aria-expanded={!songsCollapsed}
+                  aria-controls="songbook-song-cards"
+                  onClick={() => {
+                    const next = !songsCollapsed
+                    setSongsCollapsedPersisted(next)
+                    if (next) {
+                      setIsSongSelectionMode(false)
+                      setSelectedSongIds(new Set())
+                    }
+                  }}
                   className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer shrink-0"
                 >
-                  {optionsCollapsed ? 'Show' : 'Hide'}
+                  {songsCollapsed ? 'Show' : 'Hide'}
                 </button>
               )}
             </div>
           </div>
         )}
 
+        <div id="songbook-song-cards" hidden={songsCollapsed && songs.length > 0}>
         {songs.length === 0 ? (
           <div className="p-12 text-center rounded-3xl border border-app-border bg-app-surface/50 ui-secondary-text text-app-muted space-y-3">
             <Music className="ui-section-icon w-8 h-8 mx-auto text-app-action" />
@@ -2652,6 +2662,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             })}
           </div>
         )}
+        </div>
       </section>
       )}
         </>
