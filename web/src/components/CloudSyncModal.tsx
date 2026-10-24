@@ -21,6 +21,8 @@ import {
   performCloudSongbookSync,
   readCloudSyncMeta,
   computeSongbookChecksum,
+  estimateSongbookUploadBytes,
+  songbookUploadHeadroom,
   type CloudSyncStatus,
   type CloudSyncResult,
   type ConflictingItem,
@@ -218,6 +220,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         ...(currentTheme ? { themeSettings: currentTheme } : {}),
       })
     : null
+  // #190: how close an upload of this library is to the 2 MB cloud limit.
+  const headroom = currentLocal
+    ? songbookUploadHeadroom(estimateSongbookUploadBytes({
+        ...currentLocal,
+        ...(currentTheme ? { themeSettings: currentTheme } : {}),
+      }))
+    : null
+  const sizeMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2)
 
   return (
     <div
@@ -368,6 +378,20 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               </p>
             )}
 
+            {headroom && headroom.level !== 'ok' && (
+              <p
+                data-testid="cloud-sync-headroom-warning"
+                role="status"
+                className={headroom.level === 'over'
+                  ? 'text-xs text-status-error bg-[#DC6E67]/10 p-2.5 rounded-lg border border-[#DC6E67]/20'
+                  : 'text-xs text-status-warning bg-status-warning/10 p-2.5 rounded-lg border border-status-warning/20'}
+              >
+                {headroom.level === 'over'
+                  ? `Songbook is ${sizeMb(headroom.bytes)} MB, over the ${sizeMb(headroom.limitBytes)} MB cloud sync limit. Sync will not upload until it is smaller. This device keeps every song; export a backup first.`
+                  : `Songbook uses ${Math.round(headroom.ratio * 100)}% of the ${sizeMb(headroom.limitBytes)} MB cloud sync limit. Export a backup and consider removing unused songs before it fills.`}
+              </p>
+            )}
+
             {/* Metadata Details */}
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-app-border/60 text-[11px] font-mono">
               <div>
@@ -384,6 +408,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   {localChecksum || 'None'}
                 </span>
               </div>
+              {headroom && (
+                <div className="col-span-2">
+                  <span className="text-app-muted block">Cloud size</span>
+                  <span data-testid="cloud-sync-headroom" className={headroom.level === 'ok' ? 'text-app-heading font-semibold' : headroom.level === 'over' ? 'text-status-error font-semibold' : 'text-status-warning font-semibold'}>
+                    {sizeMb(headroom.bytes)} / {sizeMb(headroom.limitBytes)} MB ({Math.round(headroom.ratio * 100)}%)
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
