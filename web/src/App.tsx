@@ -1140,6 +1140,20 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 3500)
   }
 
+  // #149 S2: duplicate check. Re-points setlist refs and moves copies to Trash in one validated commit.
+  const handleTrashDuplicates = (ids: string[], repoint: Record<string, string>) => {
+    const idSet = new Set(ids)
+    const count = songs.filter(song => song.id !== undefined && idSet.has(String(song.id))).length
+    if (!count) return false
+    let next: ReturnType<typeof commitSongLifecycle>
+    try { next = commitSongLifecycle({ kind: 'trash', ids, blank: createLifecycleBlank(), repoint }) } catch { return false }
+    if (!next) return false
+    setActiveSongIndex(Math.min(activeSongIndex, next.active.length - 1))
+    setToastMessage(`Moved ${count} duplicate ${count === 1 ? 'song' : 'songs'} to Trash.`)
+    setTimeout(() => setToastMessage(null), 3500)
+    return true
+  }
+
   // Bulk add songs to destination setlist
   const handleBulkAddSongsToSetlist = (ids: Array<string | number>, setlistId: string | number) => {
     const idSet = new Set(ids.map(String))
@@ -1671,6 +1685,7 @@ function LibraryApp() {
             onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
             onImportSharedCatalogSong={handleSaveSongFromEditor}
             onOpenImportSongs={() => navigateSafely(() => setIsImportModalOpen(true))}
+            onTrashDuplicates={handleTrashDuplicates}
             onUpdateSong={handleUpdateSong}
             confirmedCatalogIds={confirmedCatalogIds}
             freshCatalogIds={freshCatalogIds}
