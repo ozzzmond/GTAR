@@ -55,6 +55,18 @@ export const RECORDS_SYNC_TOGGLE_KEY = 'gtar_records_sync_enabled'
 export const RECORDS_SYNC_DEFAULT_ON = true
 const REMOVED = recordChecksum(true, null)
 export const RECORDS_SYNC_RUN_LOCK = 'gtar-records-sync-run'
+/** Last answer from the server about per-record sync on this device: 'off' = classic fallback in use. */
+export const RECORDS_SERVER_STATE_KEY = 'gtar_records_sync_server'
+export function isRecordsServerUnavailable(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
+  try { return storage.getItem(RECORDS_SERVER_STATE_KEY) === 'off' } catch { return false }
+}
+function markRecordsServer(state: 'on' | 'off', storage: Pick<Storage, 'getItem' | 'setItem'>): boolean {
+  try {
+    const changed = storage.getItem(RECORDS_SERVER_STATE_KEY) !== state
+    storage.setItem(RECORDS_SERVER_STATE_KEY, state)
+    return changed
+  } catch { return false }
+}
 const REQUEST_TIMEOUT_MS = 15000
 const MAX_PULL_PAGES = 500
 
@@ -403,8 +415,9 @@ export async function performSongbookSync(token: string, options: { forceAction?
   const storage = options.storage ?? localStorage
   if (isRecordsSyncEnabled(storage)) {
     const result = await performRecordsSync(token, options)
-    if (result) return result
-    appLogger.info('RecordsSync', 'Server has per-record sync off; using classic sync')
+    if (result) { markRecordsServer('on', storage); return result }
+    // Logged once when it changes, not on every sync.
+    if (markRecordsServer('off', storage)) appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync')
   }
   return performCloudSongbookSync(token, options)
 }

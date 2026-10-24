@@ -208,3 +208,11 @@ test('one push uses a bounded number of D1 statements (Free plan: 50 per invocat
   assert.equal(seeded.json.head, 500)
   assert.ok(statements <= 10, `seed statements ${statements}`)
 })
+
+test('DEV alias host enables the API without the variable; PROD host still needs it', () => {
+  const env = {}
+  assert.equal(api.recordsEnabled(new Request('https://dev.gtar-web.pages.dev/api/songbook/records'), env), true)
+  assert.equal(api.recordsEnabled(new Request('https://gtar-web.pages.dev/api/songbook/records'), env), false)
+  assert.equal(api.recordsEnabled(new Request('https://abc123.gtar-web.pages.dev/api/songbook/records'), env), false)
+  assert.equal(api.recordsEnabled(new Request('https://gtar-web.pages.dev/api/songbook/records'), { SONGBOOK_RECORDS_SYNC: 'records-v1' }), true)
+})

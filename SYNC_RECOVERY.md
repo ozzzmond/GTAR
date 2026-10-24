@@ -52,8 +52,9 @@ RFC #188 (S4–S7). On DEV the Sync Center's **Sync engine** defaults to **Per-r
 switched back to **Classic** per device. PROD keeps the classic whole-songbook sync until a
 separately approved release.
 
-- **Server:** `/api/songbook/records`, enabled only when `SONGBOOK_RECORDS_SYNC=records-v1`
-  (DEV `preview` vars) and migration `0009_songbook_records.sql` is applied. Otherwise it answers
+- **Server:** `/api/songbook/records`, enabled on the DEV host (`dev.gtar-web.pages.dev`) or
+  wherever `SONGBOOK_RECORDS_SYNC=records-v1` is set, once migration `0009_songbook_records.sql`
+  is applied. The Sync Center shows "Per-record (unavailable)" while it falls back. Otherwise it answers
   as disabled and the client uses `/api/songbook/sync`. Each song, setlist and the theme
   settings are one record with a revision; writes are compare-and-swap per record. The first
   access seeds the records from the whole-document songbook, and every write mirrors the
