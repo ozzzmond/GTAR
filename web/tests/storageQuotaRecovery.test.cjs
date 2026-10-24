@@ -150,7 +150,8 @@ test('P4: hosted DEV production-mode bundle logger uses development; production 
     const result = JSON.parse(execFileSync(process.execPath, ['-e', script], { cwd: require('node:path').resolve(__dirname, '..'), env: { ...process.env, HOST: host, BUILD_ENV: env } }).toString())
     assert.equal(result.dev, expected)
     assert.match(result.header, new RegExp('Environment: ' + (expected ? 'development' : 'production')))
-    assert.match(result.init, new RegExp('Environment: ' + (expected ? 'development' : 'production')))
+    // The "Logger initialized" INFO line is recorded only with debug logging on (owner, 2026-10-24).
+    if (result.init !== undefined) assert.match(result.init, new RegExp('Environment: ' + (expected ? 'development' : 'production')))
   }
   const code = fs.readFileSync(require.resolve('../src/utils/logger.ts'), 'utf8')
   assert.equal(code.match(/Environment: \$\{isDevEnv \?/g).length, 2)
