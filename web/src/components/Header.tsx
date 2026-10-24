@@ -648,7 +648,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Cloud Sync Button & Health Indicator */}
           {isDevEnv ? (
-            <SyncStatusPill pill={syncStatus.pill} onOpen={() => setShowCloudSyncModal(true)} />
+            <SyncStatusPill pill={syncStatus.pill} recoveryDot={recoveryAttention} onOpen={() => setShowCloudSyncModal(true)} />
           ) : (() => {
             const isSyncing = isCloudSyncProcessing || cloudSyncStatus === 'SYNCING'
             const isInSync = !isSyncing && cloudSyncStatus === 'IN_SYNC'
