@@ -471,21 +471,18 @@ test('G7.4: Setlist heading rename, toolbar action order (New Setlist | Manage |
     assert.match(document.body.textContent, /Song Setlists \(3\)/)
     assert.doesNotMatch(document.body.textContent, /Gig Setlists/)
 
-    // 2. Setlist toolbar action order: New Setlist | Manage | QR | Import | Hide
+    // 2. Setlist toolbar action order (#149 owner layout): QR | Manage | ⋯ (New Setlist, Import) | Hide
     const toolbar = document.querySelector('[data-testid="setlist-toolbar"]')
     assert.ok(toolbar)
     const buttons = Array.from(toolbar.querySelectorAll('button'))
-    assert.equal(buttons.length, 5)
-    assert.equal(buttons[0].getAttribute('data-testid'), 'main-new-setlist-btn')
-    assert.equal(buttons[0].textContent.trim(), 'New Setlist')
+    assert.equal(buttons.length, 4)
+    assert.equal(buttons[0].getAttribute('data-testid'), 'main-share-setlist-btn')
+    assert.equal(buttons[0].getAttribute('aria-label'), 'Share Setlist')
     assert.equal(buttons[1].getAttribute('data-testid'), 'toggle-setlist-selection-mode')
     assert.equal(buttons[1].textContent.trim(), 'Manage')
-    assert.equal(buttons[2].getAttribute('data-testid'), 'main-share-setlist-btn')
-    assert.equal(buttons[2].getAttribute('aria-label'), 'Share Setlist')
-    assert.equal(buttons[3].getAttribute('data-testid'), 'main-import-setlist-btn')
-    assert.equal(buttons[3].textContent.trim(), 'Import')
-    assert.equal(buttons[4].getAttribute('data-testid'), 'toggle-setlists-collapse')
-    assert.equal(buttons[4].textContent.trim(), 'Hide')
+    assert.equal(buttons[2].getAttribute('data-testid'), 'setlists-menu-btn')
+    assert.equal(buttons[3].getAttribute('data-testid'), 'toggle-setlists-collapse')
+    assert.equal(buttons[3].textContent.trim(), 'Hide')
 
     // Mobile responsive layout classes present on toolbar & buttons
     assert.match(toolbar.className, /flex-wrap/)
@@ -588,11 +585,14 @@ test('G7.4: Setlist heading rename, toolbar action order (New Setlist | Manage |
     assert.equal(hideSetlistsBtn.textContent.trim(), 'Hide')
 
     // 7. New Setlist, QR, and Import actions remain functional
+    await act(async () => document.querySelector('[data-testid="setlists-menu-btn"]').click())
+    assert.equal(document.querySelector('[data-testid="main-new-setlist-btn"]').textContent.trim(), 'New Setlist')
     await act(async () =>
       document.querySelector('[data-testid="main-new-setlist-btn"]').click()
     )
     assert.equal(newSetlistClicked, 1)
 
+    await act(async () => document.querySelector('[data-testid="setlists-menu-btn"]').click())
     await act(async () =>
       document.querySelector('[data-testid="main-import-setlist-btn"]').click()
     )

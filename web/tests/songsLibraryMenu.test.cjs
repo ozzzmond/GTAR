@@ -87,3 +87,17 @@ test('#149 S2: ⋯ menu → AI Worker opens the duplicate check', async () => {
   assert.ok(document.querySelector('[data-testid="duplicate-review-dialog"]'))
   assert.match(document.querySelector('[data-testid="duplicate-summary"]').textContent, /No duplicates found/)
 })
+
+test('#149 layout: Songs Library controls sit inside the filter box, right side Manage → ⋯ → Hide', async () => {
+  await mount({ onOpenImportSongs: () => {}, onTrashDuplicates: () => true })
+  const box = document.querySelector('[data-testid="songs-library-toolbar"]')
+  assert.ok(box.querySelector('#songbook-sort-filter-options select'), 'filters are inside the box')
+  const actions = box.querySelector('[data-testid="songs-library-actions"]')
+  assert.deepEqual([...actions.querySelectorAll('button')].map(b => b.getAttribute('data-testid')),
+    ['toggle-song-selection-mode', 'songs-library-menu-btn', 'toggle-sort-filter-options'])
+  const header = document.querySelector('section[aria-label="Songs Library"] > div')
+  assert.equal(header.querySelector('button'), null, 'no controls left outside the box')
+  await act(async () => document.querySelector('[data-testid="toggle-sort-filter-options"]').click())
+  assert.equal(document.getElementById('songbook-sort-filter-options').hidden, true)
+  assert.ok(document.querySelector('[data-testid="toggle-sort-filter-options"]'), 'Show stays reachable while filters are hidden')
+})

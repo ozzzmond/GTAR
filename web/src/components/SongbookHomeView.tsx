@@ -512,6 +512,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   })
   const [libraryMenuAnchor, setLibraryMenuAnchor] = useState<HTMLElement | null>(null)
   const [isDuplicateReviewOpen, setIsDuplicateReviewOpen] = useState(false)
+  const [setlistsMenuAnchor, setSetlistsMenuAnchor] = useState<HTMLElement | null>(null)
 
   const [filterSetlistId, setFilterSetlistId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -1628,14 +1629,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 </div>
               ) : (
                 <div data-testid="setlist-toolbar" className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
+                  {/* #149 layout: QR → Manage → ⋯ (New Setlist, Import) → Hide */}
                   <button
                     type="button"
-                    data-testid="main-new-setlist-btn"
-                    onClick={onNewSetlist || onOpenSetlists}
-                    className="ui-action-text text-xs px-2.5 py-1 rounded-lg bg-app-button hover:bg-app-button text-app-button-text font-semibold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
-                    title="Create new empty gig setlist"
+                    data-testid="main-share-setlist-btn"
+                    disabled={activeSetlists.length === 0}
+                    onClick={handleMainShareSetlist}
+                    aria-label="Share Setlist"
+                    className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
+                    title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share Setlist'}
                   >
-                    New Setlist
+                    <QrCode className="w-3.5 h-3.5" />
                   </button>
                   <button
                     type="button"
@@ -1655,28 +1659,55 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   </button>
                   <button
                     type="button"
-                    data-testid="main-share-setlist-btn"
-                    disabled={activeSetlists.length === 0}
-                    onClick={handleMainShareSetlist}
-                    aria-label="Share Setlist"
-                    className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
-                    title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share Setlist'}
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="main-import-setlist-btn"
-                    onClick={() => {
-                      setImportLinkError(null)
-                      setIsImportModalOpen(true)
+                    data-testid="setlists-menu-btn"
+                    aria-label="Setlist actions"
+                    aria-haspopup="menu"
+                    aria-expanded={!!setlistsMenuAnchor}
+                    title="Setlist actions"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeAllMenus()
+                      setSetlistsMenuAnchor(setlistsMenuAnchor ? null : e.currentTarget)
                     }}
-                    className="ui-action-text text-[10px] font-bold text-app-action hover:bg-app-action/15 px-2 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-                    title="Import single setlist (.json) into your library"
+                    className="w-7 h-7 rounded-lg border border-app-border ui-secondary-text text-app-muted hover:text-app-heading hover:border-app-action/40 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                   >
-                    <Upload className="w-3 h-3" />
-                    <span>Import</span>
+                    <MoreHorizontal className="w-4 h-4" />
                   </button>
+                  <DropdownPortal anchorEl={setlistsMenuAnchor} open={!!setlistsMenuAnchor} onClose={() => setSetlistsMenuAnchor(null)} align="right">
+                    <div role="menu" onClick={(e) => e.stopPropagation()}
+                      className="w-48 bg-app-base border border-app-border rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-testid="main-new-setlist-btn"
+                        onClick={() => {
+                          setSetlistsMenuAnchor(null)
+                          if (onNewSetlist) onNewSetlist()
+                          else onOpenSetlists()
+                        }}
+                        className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                        title="Create new empty gig setlist"
+                      >
+                        <ListPlus className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                        <span>New Setlist</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-testid="main-import-setlist-btn"
+                        onClick={() => {
+                          setSetlistsMenuAnchor(null)
+                          setImportLinkError(null)
+                          setIsImportModalOpen(true)
+                        }}
+                        className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors border-t border-app-border/50"
+                        title="Import single setlist (.json) into your library"
+                      >
+                        <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                        <span>Import setlist…</span>
+                      </button>
+                    </div>
+                  </DropdownPortal>
                   <button
                     type="button"
                     data-testid="toggle-setlists-collapse"
@@ -2042,97 +2073,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   Cancel
                 </button>
               </div>
-            ) : (
-              <>
-                {songs.length > 0 && (
-                  <button
-                    type="button"
-                    data-testid="toggle-sort-filter-options"
-                    aria-expanded={!optionsCollapsed}
-                    aria-controls="songbook-sort-filter-options"
-                    onClick={toggleOptionsCollapsed}
-                    className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer shrink-0"
-                  >
-                    {optionsCollapsed ? 'Show' : 'Hide'}
-                  </button>
-                )}
-                {(onOpenImportSongs || onTrashDuplicates) && (
-                  <>
-                    <button
-                      type="button"
-                      data-testid="songs-library-menu-btn"
-                      aria-label="Songs Library actions"
-                      aria-haspopup="menu"
-                      aria-expanded={!!libraryMenuAnchor}
-                      title="Songs Library actions"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        closeAllMenus()
-                        setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
-                      }}
-                      className="w-7 h-7 rounded-lg border border-app-border ui-secondary-text text-app-muted hover:text-app-heading hover:border-app-action/40 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </button>
-                    <DropdownPortal
-                      anchorEl={libraryMenuAnchor}
-                      open={!!libraryMenuAnchor}
-                      onClose={() => setLibraryMenuAnchor(null)}
-                      align="right"
-                    >
-                      <div
-                        role="menu"
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-48 bg-app-base border border-app-border rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
-                      >
-                        {onOpenImportSongs && (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            data-testid="songs-library-menu-import"
-                            onClick={() => {
-                              setLibraryMenuAnchor(null)
-                              onOpenImportSongs()
-                            }}
-                            className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
-                          >
-                            <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
-                            <span>Import songs…</span>
-                          </button>
-                        )}
-                        {onTrashDuplicates && (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            data-testid="songs-library-menu-duplicates"
-                            disabled={songs.length < 2}
-                            onClick={() => {
-                              setLibraryMenuAnchor(null)
-                              setIsDuplicateReviewOpen(true)
-                            }}
-                            className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-t border-app-border/50"
-                          >
-                            <Copy className="ui-action-text w-3.5 h-3.5 text-app-action" />
-                            <span>AI Worker: check duplicates…</span>
-                          </button>
-                        )}
-                      </div>
-                    </DropdownPortal>
-                  </>
-                )}
-              </>
-            )}
+            ) : null}
           </div>
         </div>
 
         {/* Sort & Filter Toolbar */}
-        {songs.length > 0 && (
+        {(songs.length > 0 || onOpenImportSongs || onTrashDuplicates) && (
           <div
-            id="songbook-sort-filter-options"
-            hidden={optionsCollapsed}
-            className="flex flex-wrap items-center justify-end gap-3 mb-4 p-3 rounded-2xl bg-app-filter border border-app-border shadow-sm"
+            data-testid="songs-library-toolbar"
+            className="flex flex-wrap items-center justify-between gap-3 mb-4 p-3 rounded-2xl bg-app-filter border border-app-border shadow-sm"
           >
-            <div className="flex items-center gap-2.5 flex-wrap">
+            <div
+              id="songbook-sort-filter-options"
+              hidden={optionsCollapsed || songs.length === 0}
+              className="flex items-center gap-2.5 flex-wrap"
+            >
               {/* Sort Dropdown */}
               <div className="flex items-center gap-1.5 text-xs font-mono">
                 <span className="ui-secondary-text text-app-muted text-[11px] font-bold">Sort:</span>
@@ -2181,9 +2136,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   </select>
                 </div>
               )}
-
-              {/* Songs Library Manage Control (Beside Setlist filter) */}
-              {!isSongSelectionMode && (
+            </div>
+            <div data-testid="songs-library-actions" className="flex flex-wrap items-center gap-1.5 sm:gap-2 ml-auto">
+              {/* #149: right side, in order: Manage → ⋯ → Hide */}
+              {songs.length > 0 && !isSongSelectionMode && (
                 <button
                   type="button"
                   data-testid="toggle-song-selection-mode"
@@ -2195,6 +2151,82 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   title="Manage song selection, setlist assignment, and batch actions"
                 >
                   Manage
+                </button>
+              )}
+              {(onOpenImportSongs || onTrashDuplicates) && (
+                <>
+                  <button
+                    type="button"
+                    data-testid="songs-library-menu-btn"
+                    aria-label="Songs Library actions"
+                    aria-haspopup="menu"
+                    aria-expanded={!!libraryMenuAnchor}
+                    title="Songs Library actions"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeAllMenus()
+                      setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
+                    }}
+                    className="w-7 h-7 rounded-lg border border-app-border ui-secondary-text text-app-muted hover:text-app-heading hover:border-app-action/40 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </button>
+                  <DropdownPortal
+                    anchorEl={libraryMenuAnchor}
+                    open={!!libraryMenuAnchor}
+                    onClose={() => setLibraryMenuAnchor(null)}
+                    align="right"
+                  >
+                    <div
+                      role="menu"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-48 bg-app-base border border-app-border rounded-xl shadow-xl py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100"
+                    >
+                      {onOpenImportSongs && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-testid="songs-library-menu-import"
+                          onClick={() => {
+                            setLibraryMenuAnchor(null)
+                            onOpenImportSongs()
+                          }}
+                          className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                          <span>Import songs…</span>
+                        </button>
+                      )}
+                      {onTrashDuplicates && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-testid="songs-library-menu-duplicates"
+                          disabled={songs.length < 2}
+                          onClick={() => {
+                            setLibraryMenuAnchor(null)
+                            setIsDuplicateReviewOpen(true)
+                          }}
+                          className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-t border-app-border/50"
+                        >
+                          <Copy className="ui-action-text w-3.5 h-3.5 text-app-action" />
+                          <span>AI Worker: check duplicates…</span>
+                        </button>
+                      )}
+                    </div>
+                  </DropdownPortal>
+                </>
+              )}
+              {songs.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="toggle-sort-filter-options"
+                  aria-expanded={!optionsCollapsed}
+                  aria-controls="songbook-sort-filter-options"
+                  onClick={toggleOptionsCollapsed}
+                  className="ui-action-text text-xs px-2.5 py-1 border border-app-border rounded-lg text-app-muted hover:text-app-heading hover:border-app-action/40 font-mono font-semibold transition-colors cursor-pointer shrink-0"
+                >
+                  {optionsCollapsed ? 'Show' : 'Hide'}
                 </button>
               )}
             </div>
