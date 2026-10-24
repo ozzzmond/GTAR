@@ -255,6 +255,7 @@ New or renamed tests await a human choice of primary category.
 - [stageCast2Runtime.test.cjs](stageCast2Runtime.test.cjs)
 - [stageCast2Ui.test.cjs](stageCast2Ui.test.cjs)
 - [storageQuotaRecovery.test.cjs](storageQuotaRecovery.test.cjs)
+- [syncBaseIndexedDb.test.cjs](syncBaseIndexedDb.test.cjs)
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
 - [userManagementRootProtection.test.cjs](userManagementRootProtection.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->
