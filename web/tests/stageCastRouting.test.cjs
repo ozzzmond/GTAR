@@ -530,6 +530,8 @@ test('TV modal: unified TV Browser Presentation Page renders pairing controls wi
       assert.doesNotMatch(html, /Session URL \(does not pair devices\)/)
       assert.doesNotMatch(html, /Route: \/tv/)
       assert.match(html, /aria-label="TV Page URL"[^>]*value="https:\/\/dev.gtar-web.pages.dev\/tv"/)
+      // #214: the pop-out choice is offered exactly where a pop-out window is supported (desktop).
+      assert.equal(html.includes('data-testid="cast-popout-btn"'), caps.supportsMultiWindow, userAgent)
     }
     assert.equal(stageCast.getPresentationPageUrl(), 'https://dev.gtar-web.pages.dev/tv')
     assert.equal(stageCast.getPresentationPageUrl('192.168.1.150:5173'), 'https://192.168.1.150:5173/tv')
@@ -613,6 +615,7 @@ for (const file of ['App.tsx', 'components/StageView.tsx']) {
         transposeContext: () => ({ performanceKey: 'D' }),
         scrollContainerRef: { current: { scrollHeight: 1000, clientHeight: 500, scrollTop: 125 } },
         setIsTvPresentationModalOpen() { assert.fail('No transport fallback') },
+        stageCast2Enabled: false, // PROD builds: desktop Cast still opens the pop-out directly
       })
       inGesture = true
       const pending = handler()
@@ -654,6 +657,43 @@ for (const file of ['App.tsx', 'components/StageView.tsx']) {
       assert.match(result.error, /Allow pop-ups/)
     } finally {
       unsubscribe?.()
+      stageCast.stopPresentation()
+      restoreNavigator()
+      globalThis.window = oldWin
+    }
+  })
+}
+
+// #214: with Stage Cast 2.0 (DEV builds) desktop Cast opens the TV modal, which offers pop-out and TV pairing.
+for (const file of ['App.tsx', 'components/StageView.tsx']) {
+  test(`#214 desktop Cast with Stage Cast 2.0 opens the chooser, no pop-up yet: ${file}`, async () => {
+    const vm = require('node:vm')
+    const source = fs.readFileSync(path.resolve(__dirname, '../src', file), 'utf8')
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    let callback
+    ;(function visit(node) {
+      if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'handleTogglePresentation') callback = node.initializer.arguments[0].getText(ast)
+      ts.forEachChild(node, visit)
+    })(ast)
+    const oldWin = globalThis.window
+    let opened = 0, modal = 0
+    try {
+      setMockNavigator({ maxTouchPoints: 0, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })
+      globalThis.window = { location: { origin: 'https://dev.gtar-web.pages.dev' }, alert() {}, open() { opened++; return null } }
+      stageCast.stopPresentation()
+      const handler = vm.runInNewContext(ts.transpileModule(`const handler = ${callback}; handler;`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+      }).outputText, {
+        stageCast, window: globalThis.window, isCastActive: false,
+        currentSong: { id: 's', title: 'S', rawContent: '', transposeOffset: 0 }, song: { id: 's', title: 'S', rawContent: '' },
+        effectiveKey: 'C', transposeOffset: 0, fontSizePx: 30, fontStyle: 'mono', isTwoColumn: false, chordScale: 100,
+        fontWeight: 'regular', lineSpacing: 'normal', transposeContext: () => ({ performanceKey: 'C' }),
+        scrollContainerRef: { current: null }, setIsTvPresentationModalOpen(v) { if (v) modal++ }, stageCast2Enabled: true,
+      })
+      await handler()
+      assert.equal(modal, 1, 'chooser opened')
+      assert.equal(opened, 0, 'no pop-up until the user picks Pop-out')
+    } finally {
       stageCast.stopPresentation()
       restoreNavigator()
       globalThis.window = oldWin
