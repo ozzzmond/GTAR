@@ -1,20 +1,25 @@
 import React from 'react'
-import { AlertTriangle, Check, CloudUpload, RotateCw, Smartphone } from 'lucide-react'
+import { AlertTriangle, Check, Cloud, CloudUpload, RotateCw } from 'lucide-react'
 import type { SyncPill, SyncPillKind } from '../utils/syncStatus'
 import { recoveryDotClass } from '../utils/recoveryAttention'
 
-/** #191 (RFC #188 S3): header status pill, one of five states; always opens the Sync Center. */
-const STYLE: Record<SyncPillKind, { tone: string; Icon: typeof Check; spin?: boolean }> = {
-  device: { tone: 'text-app-muted bg-app-base border-app-border hover:border-app-action', Icon: Smartphone },
-  syncing: { tone: 'text-app-action bg-app-action/10 border-app-action/40', Icon: RotateCw, spin: true },
-  synced: { tone: 'text-status-success bg-status-success/10 border-status-success/40', Icon: Check },
-  pending: { tone: 'text-status-warning bg-status-warning/10 border-status-warning/40', Icon: CloudUpload },
-  attention: { tone: 'text-status-error bg-status-error/10 border-status-error/50', Icon: AlertTriangle },
+/**
+ * #191 (RFC #188 S3): header sync button. Keeps the original header button's look and icons
+ * (owner request 2026-10-24); the five states come from the shared status derivation and the
+ * button always opens the Sync Center.
+ */
+const BASE = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface border transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 relative'
+const STYLE: Record<SyncPillKind, { text: string; Icon: typeof Check; icon: string; button: string }> = {
+  device: { text: 'Cloud Sync', Icon: Cloud, icon: 'w-4 h-4 text-app-action', button: 'text-app-action border-app-border hover:border-app-action' },
+  syncing: { text: 'Syncing…', Icon: RotateCw, icon: 'w-4 h-4 text-app-action header-sync-spin motion-safe:animate-spin', button: 'text-app-action border-app-border hover:border-app-action' },
+  synced: { text: 'In Sync', Icon: Check, icon: 'w-4 h-4 text-app-action', button: 'text-app-action border-app-border hover:border-app-action' },
+  pending: { text: 'Not Synced', Icon: CloudUpload, icon: 'w-4 h-4 text-app-action', button: 'text-app-action border-app-border hover:border-app-action' },
+  attention: { text: 'Sync Issue', Icon: AlertTriangle, icon: 'w-4 h-4 text-status-error', button: 'text-status-error border-[#DC6E67]/50 hover:border-[#DC6E67]' },
 }
 
-/** `recoveryDot` keeps the #181 red dot for local recovery decisions on the pill. */
+/** `recoveryDot` keeps the #181 red dot for local recovery decisions. */
 export const SyncStatusPill: React.FC<{ pill: SyncPill; onOpen: () => void; recoveryDot?: boolean }> = ({ pill, onOpen, recoveryDot }) => {
-  const { tone, Icon, spin } = STYLE[pill.kind]
+  const { text, Icon, icon, button } = STYLE[pill.kind]
   return (
     <button
       type="button"
@@ -23,12 +28,10 @@ export const SyncStatusPill: React.FC<{ pill: SyncPill; onOpen: () => void; reco
       onClick={onOpen}
       title={pill.description}
       aria-label={pill.description}
-      className={`relative min-h-11 min-w-11 px-2.5 sm:px-3 rounded-full border ${tone} transition-colors flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95`}
+      className={`${BASE} ${button}`}
     >
-      <Icon aria-hidden="true" className={`w-4 h-4 shrink-0${spin ? ' motion-safe:animate-spin' : ''}`} />
-      {/* Phones show the icon (and the attention count); the full label from md up. */}
-      {pill.kind === 'attention' && <span className="md:hidden font-mono text-[11px]">{pill.attention.length}</span>}
-      <span className="hidden md:inline text-[12px] whitespace-nowrap">{pill.label}</span>
+      <Icon aria-hidden="true" className={icon} />
+      <span className="hidden md:inline font-mono text-[11px]">{text}</span>
       {recoveryDot && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
     </button>
   )

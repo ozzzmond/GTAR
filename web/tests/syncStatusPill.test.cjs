@@ -103,7 +103,7 @@ test('pill: accessible label, state attribute and click opens the Sync Center', 
   assert.equal(button.tagName, 'BUTTON')
   assert.equal(button.getAttribute('data-sync-state'), 'attention')
   assert.match(button.getAttribute('aria-label'), /needs attention/i)
-  assert.match(button.textContent, /Needs attention · 2/)
+  assert.match(button.textContent, /Sync Issue/)
   act(() => button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
   assert.equal(opened, 1)
 })
@@ -143,4 +143,14 @@ test('no render loop when the dialog re-emits its sync state on every render', a
   await act(async () => { root.render(React.createElement(Probe)) })
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
   assert.ok(renders < 6, `renders ${renders}`)
+})
+
+test('header keeps the original sync button look; DEV menu drops Debug Logs (Sync Center has it)', () => {
+  const { SyncStatusPill } = require('../src/components/SyncStatusPill.tsx')
+  act(() => root.render(React.createElement(SyncStatusPill, { pill: pill({}), onOpen: () => {} })))
+  const button = container.querySelector('[data-testid="header-cloud-sync-button"]')
+  assert.match(button.className, /rounded-xl bg-app-base/)
+  assert.match(button.textContent, /In Sync/)
+  const header = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
+  assert.match(header, /\{isDevApp && !isDevEnv && \(/)
 })
