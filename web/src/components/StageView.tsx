@@ -53,6 +53,7 @@ import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { ChordQuickPreview, type ChordQuickPreviewAnchor } from './ChordQuickPreview'
 import { BandSyncModal } from './BandSyncModal'
 import { TvPresentationModal } from './TvPresentationModal'
+import { stageCast2Enabled } from '../utils/stageCast2Local'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface StageViewProps {
@@ -1604,7 +1605,8 @@ export const StageView: React.FC<StageViewProps> = ({
       })
 
       const caps = stageCast.getPresentationCapabilities()
-      if (caps.recommendedMode === 'tv_pairing' || !caps.canDirectPresent) {
+      // #214: with Stage Cast 2.0 (DEV builds) desktop Cast offers pop-out and TV pairing in one modal.
+      if (caps.recommendedMode === 'tv_pairing' || !caps.canDirectPresent || stageCast2Enabled) {
         setIsTvPresentationModalOpen(true)
       } else {
         const res = await stageCast.requestPresentation({ preferPopup: caps.supportsMultiWindow })

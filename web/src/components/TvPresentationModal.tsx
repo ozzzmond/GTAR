@@ -1,5 +1,5 @@
 import React, { useState, useSyncExternalStore } from 'react'
-import { Tv, Copy, Check, Monitor, X } from 'lucide-react'
+import { Tv, Copy, Check, Monitor, X, ExternalLink } from 'lucide-react'
 import { stageCast } from '../utils/stageCast'
 import { stageCast2Controller } from '../utils/stageCast2Controller'
 import { StageCast2Panel } from './StageCast2Panel'
@@ -19,11 +19,21 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
   detectedLanIp,
 }) => {
   const [copied, setCopied] = useState(false)
+  const [popoutError, setPopoutError] = useState<string | null>(null)
   const connected = useSyncExternalStore(subscribe, isConnected, () => false)
 
   if (!isOpen) return null
 
   const pageUrl = stageCast.getPresentationPageUrl(detectedLanIp)
+  // #214: desktop can also pop the stage out to a window (drag it to the HDMI display / projector).
+  const canPopout = stageCast.getPresentationCapabilities().supportsMultiWindow
+  const handlePopout = async () => {
+    setPopoutError(null)
+    // Opened from this click, so the browser allows the pop-up.
+    const res = await stageCast.requestPresentation({ preferPopup: true })
+    if (res.success) onClose()
+    else setPopoutError(res.error || 'Presentation pop-up could not open. Allow pop-ups for this site and try again.')
+  }
 
   const handleCopy = async () => {
     try {
@@ -78,6 +88,27 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-sm">
+          {canPopout && (
+            <div data-testid="cast-popout-section" className="space-y-2 p-4 rounded-lg bg-app-surface/60 border border-app-border">
+              <div className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4 text-app-action" />
+                <span className="text-xs font-bold uppercase tracking-wider text-app-action">Pop-out window</span>
+              </div>
+              <p className="text-xs text-app-muted leading-relaxed">
+                For a TV or projector connected to this computer (HDMI / second screen). Drag the window there.
+              </p>
+              <button
+                type="button"
+                data-testid="cast-popout-btn"
+                onClick={handlePopout}
+                className="px-3 py-2 text-xs font-bold rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open pop-out window</span>
+              </button>
+              {popoutError && <p role="alert" data-testid="cast-popout-error" className="text-xs text-status-error">{popoutError}</p>}
+            </div>
+          )}
           {/* TV Browser Presentation Page Section */}
           <div className="space-y-4 p-4 rounded-lg bg-app-surface/60 border border-app-border">
             <div className="flex items-center justify-between">
