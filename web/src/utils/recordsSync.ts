@@ -102,6 +102,9 @@ export function pendingRecordConflicts(storage: Pick<Storage, 'getItem'> = local
 }
 
 class RecordsSyncDisabledError extends Error {}
+/** Why the server last said per-record sync is off (for the debug log). */
+let lastDisabledReason: string | null = null
+let loggedDisabledReason: string | null | undefined
 class RecordsHttpError extends Error {
   readonly status: number
   constructor(status: number, message: string) { super(message); this.status = status }
@@ -116,7 +119,12 @@ async function request<T>(token: string, method: 'GET' | 'POST', query: string, 
   })
   let json: (T & { success?: boolean; code?: string; error?: string }) | null = null
   try { json = await res.json() } catch { /* handled below */ }
-  if (res.status === 404 && json?.code === 'RECORDS_SYNC_DISABLED') throw new RecordsSyncDisabledError()
+  if (res.status === 404 && json?.code === 'RECORDS_SYNC_DISABLED') {
+    const info = json as { reason?: string; latestMigration?: string | null }
+    throw new RecordsSyncDisabledError(info.reason === 'tables'
+      ? `database has no per-record tables (newest migration: ${info.latestMigration ?? 'unknown'})`
+      : 'not enabled for this host')
+  }
   if (!res.ok || !json || json.success === false) throw new RecordsHttpError(res.status, json?.error || `Request failed (${res.status})`)
   return json
 }
@@ -393,7 +401,7 @@ async function runRecordsSync(token: string, options: { forceAction?: 'upload' |
     if (options.forceAction === 'download') return hasConflicts ? await resolveOnce(token, storage, 'use-cloud') : await replaceWithCloud(token, storage)
     return await resolveOnce(token, storage, options.forceAction === 'upload' ? 'keep-local' : 'keep-both')
   } catch (error) {
-    if (error instanceof RecordsSyncDisabledError) return null
+    if (error instanceof RecordsSyncDisabledError) { lastDisabledReason = error.message || null; return null }
     const status = error instanceof RecordsHttpError ? error.status : 0
     appLogger.warn('RecordsSync', 'Per-record sync did not finish', error instanceof Error ? error.message : String(error))
     return {
@@ -417,7 +425,11 @@ export async function performSongbookSync(token: string, options: { forceAction?
     const result = await performRecordsSync(token, options)
     if (result) { markRecordsServer('on', storage); return result }
     // Logged once when it changes, not on every sync.
-    if (markRecordsServer('off', storage)) appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync')
+    // Logged when the state or the reason changes (once per page for a given reason), not on every sync.
+    if (markRecordsServer('off', storage) || loggedDisabledReason !== lastDisabledReason) {
+      loggedDisabledReason = lastDisabledReason
+      appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync', lastDisabledReason ?? undefined)
+    }
   }
   return performCloudSongbookSync(token, options)
 }

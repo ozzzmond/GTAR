@@ -47,7 +47,19 @@ export function recordsEnabled(request: Request, env: RecordsEnv): boolean {
   try { return new URL(request.url).hostname === RECORDS_DEV_HOSTNAME } catch { return false }
 }
 
-const disabled = () => jsonResponse({ success: false, code: 'RECORDS_SYNC_DISABLED', error: 'Not found' }, 404)
+/**
+ * `reason` says why (no secrets): 'flag' = not enabled for this host; 'tables' = the bound D1
+ * database has no 0009 tables, with the newest migration it does have, to tell which database
+ * this deployment is bound to.
+ */
+const disabled = (reason: 'flag' | 'tables' = 'flag', latestMigration?: string | null) =>
+  jsonResponse({ success: false, code: 'RECORDS_SYNC_DISABLED', reason, ...(reason === 'tables' ? { latestMigration: latestMigration ?? null } : {}), error: 'Not found' }, 404)
+async function latestMigration(env: RecordsEnv): Promise<string | null> {
+  try {
+    const row = await env.DB!.prepare('SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1').first<{ name: string }>()
+    return row?.name ?? null
+  } catch { return null }
+}
 /** Migration 0009 not applied yet: behave as disabled so clients use the classic sync. */
 const missingTables = (err: unknown) => err instanceof Error && /no such table: user_songbook_(records|cursors)/.test(err.message)
 
@@ -71,7 +83,7 @@ export async function onRequestGet({ request, env }: PagesContext): Promise<Resp
     const page = await pullRecords(env.DB!, auth.user.id, since, limit, new Date().toISOString())
     return jsonResponse({ success: true, userId: auth.user.id, ...page })
   } catch (err) {
-    if (missingTables(err)) return disabled()
+    if (missingTables(err)) return disabled('tables', await latestMigration(env))
     console.error('Failed to read songbook records:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to read songbook records', 500)
   }
@@ -128,7 +140,7 @@ export async function onRequestPost({ request, env }: PagesContext): Promise<Res
     const result = await pushRecords(env.DB!, auth.user.id, changes, new Date().toISOString())
     return jsonResponse({ success: true, userId: auth.user.id, ...result })
   } catch (err) {
-    if (missingTables(err)) return disabled()
+    if (missingTables(err)) return disabled('tables', await latestMigration(env))
     console.error('Failed to write songbook records:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to write songbook records', 500)
   }
