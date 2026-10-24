@@ -25,7 +25,7 @@ import {
   type ServerRecord,
 } from '../../src/utils/songbookRecords.ts'
 import type { SyncLibrary } from '../../src/utils/syncMerge.ts'
-import { findUserSongbook, upsertUserSongbook, type D1Database, type D1PreparedStatement } from './authCore.ts'
+import { findUserSongbook, type D1Database, type D1PreparedStatement } from './authCore.ts'
 
 export const MIRROR_MAX_BYTES = 2 * 1024 * 1024
 /** D1 allows 100 bound parameters per statement. */
@@ -155,7 +155,11 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
 
   // One batch (one transaction): reserve a block of sequence numbers, then one conditional write
   // per change at its own number. A write that loses its revision check leaves a gap, never a skip.
-  if (planned.length) statements.push(db.prepare('UPDATE user_songbook_cursors SET seq = seq + ? WHERE user_id = ?').bind(planned.length, userId))
+  if (planned.length) {
+    statements.push(db.prepare('UPDATE user_songbook_cursors SET seq = seq + ? WHERE user_id = ?').bind(planned.length, userId))
+    // #208 F4: the block's top, read inside the same transaction, so acknowledgements describe this write only.
+    statements.push(db.prepare('SELECT seq FROM user_songbook_cursors WHERE user_id = ?').bind(userId))
+  }
   planned.forEach(({ change, checksum, removed, json }, position) => {
     const back = planned.length - 1 - position
     statements.push(change.baseRev === 0
@@ -175,11 +179,15 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     const changed = (index: number) => Number((results[index]?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0
     const lostRace = writes.filter(write => !changed(write.index))
     const won = writes.filter(write => changed(write.index))
-    const after = await readRows(db, userId, [...won, ...lostRace].map(write => recordKey(write.change.kind, write.change.id)))
+    // #208 F4: a won write is exactly (baseRev + 1, its own checksum, its reserved seq). Reading the
+    // rows again after the batch could report a later writer's revision and checksum instead.
+    const top = Number((results[1]?.results as Array<{ seq: number }> | undefined)?.[0]?.seq)
     for (const write of won) {
-      const row = after.get(recordKey(write.change.kind, write.change.id))
-      if (row) accepted.push({ kind: row.kind, id: row.record_id, rev: row.rev, seq: row.seq, checksum: row.checksum })
+      const position = planned.findIndex(item => item.change === write.change)
+      accepted.push({ kind: write.change.kind, id: write.change.id, rev: write.change.baseRev + 1,
+        seq: top - (planned.length - 1 - position), checksum: write.checksum })
     }
+    const after = lostRace.length ? await readRows(db, userId, lostRace.map(write => recordKey(write.change.kind, write.change.id))) : new Map<string, RecordRow>()
     // Another request changed the record between the read and the write.
     for (const write of lostRace) {
       const row = after.get(recordKey(write.change.kind, write.change.id))
@@ -192,21 +200,39 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
   return { accepted, conflicts, head, mirror }
 }
 
-/** Rebuilds the whole-document songbook (0002) from the records, for rollback and older clients. */
+/**
+ * Rebuilds the whole-document songbook (0002) from the records, for rollback and older clients.
+ * #208 F3: the records and their head are read in one transaction, and the document is written
+ * only while that head is still current. A slower mirror from an older push is then skipped
+ * ('superseded') instead of republishing stale content over a newer mirror.
+ */
 export async function mirrorToSongbook(db: D1Database, userId: string, now: string): Promise<PushResponse['mirror']> {
   try {
-    const { results } = await db.prepare(`SELECT kind, record_id, rev, seq, removed, data_json, checksum FROM user_songbook_records
-      WHERE user_id = ? AND removed = 0 ORDER BY rowid`).bind(userId).all<RecordRow>()
-    const library = recordsToLibrary((results ?? []).map(toServerRecord))
+    const [rows, cursor] = await runBatch(db, [
+      db.prepare(`SELECT kind, record_id, rev, seq, removed, data_json, checksum FROM user_songbook_records
+        WHERE user_id = ? AND removed = 0 ORDER BY rowid`).bind(userId),
+      db.prepare('SELECT seq FROM user_songbook_cursors WHERE user_id = ?').bind(userId),
+    ])
+    const head = Number((cursor?.results as Array<{ seq: number }> | undefined)?.[0]?.seq)
+    if (!Number.isFinite(head)) return 'failed'
+    const library = recordsToLibrary(((rows?.results ?? []) as RecordRow[]).map(toServerRecord))
     const json = JSON.stringify(library)
     if (new TextEncoder().encode(json).byteLength > MIRROR_MAX_BYTES) return 'skipped-size'
     const checksum = computeSongbookChecksum(library)
+    const stillCurrent = '(SELECT seq FROM user_songbook_cursors WHERE user_id = ?) = ?'
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = await findUserSongbook(db, userId)
       if (current?.checksum === checksum) return 'unchanged'
-      const written = await upsertUserSongbook(db, userId, json, checksum, now,
-        current ? { version: current.version, checksum: current.checksum } : { version: 0, checksum: null })
+      const written = current
+        ? await db.prepare(`UPDATE user_songbooks SET version = version + 1, data_json = ?, checksum = ?, updated_at = ?
+            WHERE user_id = ? AND version = ? AND checksum = ? AND version < 9007199254740991 AND ${stillCurrent}
+            RETURNING version`).bind(json, checksum, now, userId, current.version, current.checksum, userId, head).first<{ version: number }>()
+        : await db.prepare(`INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
+            SELECT ?, 1, ?, ?, ? WHERE ${stillCurrent}
+            ON CONFLICT(user_id) DO NOTHING RETURNING version`).bind(userId, json, checksum, now, userId, head).first<{ version: number }>()
       if (written) return 'updated'
+      const latest = await headSeq(db, userId)
+      if (latest !== head) return 'superseded'
     }
     return 'skipped-conflict'
   } catch {
