@@ -9,9 +9,15 @@ account from the verified session or Google identity; it does not accept an
 arbitrary destination account supplied by the browser.
 
 The device library is stored in the canonical `gtar_library_v1` localStorage
-value. The client compares local and cloud checksums with its last synchronized
-metadata to select no change, upload, download or reconciliation. It also stores
-a local base snapshot for three-way reconciliation. Sync metadata from another
+value. On DEV with library storage B1 on, it is a slim `gtar_library_v2` index in
+localStorage with chart bodies in IndexedDB (#167). The client compares local and
+cloud checksums with its last synchronized metadata to select no change, upload,
+download or reconciliation. It also stores a local base snapshot
+(`gtar_cloud_sync_base`) for three-way reconciliation. With B1 on, that base uses
+the same slim format and references chart bodies already held in IndexedDB
+(#189). If the base cannot be saved, the sync still completes and the Cloud
+Songbook Sync dialog shows a warning; the next reconciliation then has no common
+base and asks for a manual choice instead of guessing. Sync metadata from another
 account is excluded from the decision. This is not a guarantee that changing
 accounts transfers or clears the device library safely; export and review device
 data before using another account.
@@ -31,9 +37,13 @@ are best effort: storage quota failures can prevent that snapshot. A merge is
 persisted locally before its server upload; an upload failure does not undo the
 local merge. Check the reported result and preserve backups before retrying.
 
-The API updates the current D1 songbook and increments its version. It does not
-provide the former Drive revision-file history, a cross-device compare-and-swap
-transaction, or automatic rollback. These descriptions are limits of the existing
+The API updates the current D1 songbook and increments its version. Uploads are
+compare-and-swap: the client sends the cloud version and checksum it last saw
+(`expectedVersion`, `expectedChecksum`), and the server rejects a stale or
+missing base with HTTP 409 `SONGBOOK_REVISION_CONFLICT`, so the client fetches and
+reconciles before retrying. The whole songbook is one record, limited to 2 MB per
+upload. The API does not provide the former Drive revision-file history or
+automatic rollback. These descriptions are limits of the existing
 implementation, not changes to synchronization behavior.
 
 ## Device recovery
