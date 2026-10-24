@@ -216,3 +216,53 @@ test('DEV alias host enables the API without the variable; PROD host still needs
   assert.equal(api.recordsEnabled(new Request('https://abc123.gtar-web.pages.dev/api/songbook/records'), env), false)
   assert.equal(api.recordsEnabled(new Request('https://gtar-web.pages.dev/api/songbook/records'), { SONGBOOK_RECORDS_SYNC: 'records-v1' }), true)
 })
+
+// #208 F4: an accepted change is acknowledged with its own revision and checksum, even if
+// another writer changes the same record right after this batch commits.
+test('#208 F4: acknowledgement describes this write, not a later writer', async () => {
+  const { db, call, seedV1 } = await fixture()
+  await seedV1({ songs: [song('s1')], setlists: [] })
+  await call('GET')
+  const batch = db.batch.bind(db)
+  let raced = false
+  db.batch = async statements => {
+    const results = await batch(statements)
+    if (!raced && statements.some(s => /UPDATE user_songbook_records/.test(s.sql))) {
+      raced = true // writer B lands right after writer A's transaction
+      db.sqlite.prepare("UPDATE user_songbook_records SET rev = rev + 1, seq = seq + 1, data_json = ?, checksum = 'rk_writer_b' WHERE record_id = 's1'")
+        .run(JSON.stringify(song('s1', { rawContent: 'writer B' })))
+      db.sqlite.prepare("UPDATE user_songbook_cursors SET seq = seq + 1 WHERE user_id = 'user-a'").run()
+    }
+    return results
+  }
+  const mine = song('s1', { rawContent: 'writer A' })
+  const res = await call('POST', { body: { changes: [{ kind: 'song', id: 's1', baseRev: 1, data: mine }] } })
+  db.batch = batch
+  assert.equal(res.json.accepted.length, 1)
+  assert.equal(res.json.accepted[0].rev, 2, 'A wrote revision 2')
+  assert.equal(res.json.accepted[0].checksum, records.recordChecksum(false, mine), "A's own checksum")
+  assert.equal(res.json.accepted[0].seq, 2, "A's reserved sequence number")
+})
+
+// #208 F3: a slower mirror from an older push must not republish stale content over a newer mirror.
+test('#208 F3: an older mirror that finishes last is superseded, the document keeps the newer content', async () => {
+  const { db, call, seedV1 } = await fixture()
+  await seedV1({ songs: [song('s1')], setlists: [] })
+  await call('GET')
+  const batch = db.batch.bind(db)
+  let delayed = false
+  db.batch = async statements => {
+    const results = await batch(statements)
+    if (!delayed && /removed = 0 ORDER BY rowid/.test(statements[0].sql)) {
+      delayed = true // A's mirror has its snapshot; B pushes (and mirrors) before A's mirror writes
+      db.batch = batch
+      await call('POST', { body: { changes: [{ kind: 'song', id: 's1', baseRev: 2, data: song('s1', { rawContent: 'B newer' }) }] } })
+    }
+    return results
+  }
+  const a = await call('POST', { body: { changes: [{ kind: 'song', id: 's1', baseRev: 1, data: song('s1', { rawContent: 'A older' }) }] } })
+  db.batch = batch
+  assert.equal(a.json.mirror, 'superseded')
+  const doc = JSON.parse((await findUserSongbook(db, 'user-a')).data_json)
+  assert.equal(doc.songs[0].rawContent, 'B newer')
+})
