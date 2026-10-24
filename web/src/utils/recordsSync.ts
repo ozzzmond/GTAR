@@ -201,8 +201,21 @@ function conflictItems(conflicts: RecordConflict[]): ConflictingItem[] {
     reason: conflict.remote === null ? 'Missing in the cloud' : conflict.remote.removed ? 'Removed in the cloud, edited here' : 'Edited here and in the cloud' }))
 }
 
+/** #204 S1: a quiet "nothing changed" line at most every 10 minutes; changes are always logged. */
+let lastQuietSyncLog = 0
+function logSyncOutcome(state: RecordsSyncState, applied: number, pushed: number, pushFailed: string | null): void {
+  if (state.conflicts.length) { appLogger.warn('RecordsSync', `Per-record sync: ${state.conflicts.length} conflict(s) need a decision`, `cursor ${state.cursor}`); return }
+  if (pushFailed) return // already logged by the caller or carried in the result
+  if (!applied && !pushed) {
+    if (Date.now() - lastQuietSyncLog < 10 * 60 * 1000) return
+    lastQuietSyncLog = Date.now()
+  }
+  appLogger.info('RecordsSync', `✅ Per-record sync OK: ${applied} from cloud, ${pushed} uploaded`, `cursor ${state.cursor}`)
+}
+
 function finish(storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null): CloudSyncResult {
   saveState(state, storage)
+  logSyncOutcome(state, applied, pushed, pushFailed)
   const fullySynced = state.conflicts.length === 0 && !pushFailed
   if (fullySynced) {
     // Keep the classic sync metadata coherent: the header status and a fallback to /api/songbook/sync rely on it.

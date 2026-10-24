@@ -389,3 +389,20 @@ test('#208 F6: a sync that would apply remote changes under an open editor write
   assert.equal(later.success, true)
   assert.equal(read(b).songs.find(s => s.id === id(1)).rawContent, 'from A')
 })
+
+// #204 S1: a per-record sync that changes something leaves a ✅ line (INFO, recorded with the debug switch on).
+test('#204: a successful per-record sync logs a success line with counts', async () => {
+  const logger = require('../src/utils/logger.ts')
+  logger.appLogger.resume()
+  logger.setDebugLoggingEnabled(true)
+  try {
+    const w = await world({ library: base })
+    const a = w.device(base)
+    await w.run(a)
+    edit(a, lib => ({ ...lib, songs: [...lib.songs, song(9)] }))
+    await w.run(a)
+    const line = logger.appLogger.getLogs().reverse().find(l => /Per-record sync OK/.test(l.message))
+    assert.match(line.message, /✅ Per-record sync OK: 0 from cloud, 1 uploaded/)
+    assert.match(line.details, /^cursor \d+$/)
+  } finally { logger.setDebugLoggingEnabled(false) }
+})
