@@ -65,6 +65,7 @@ import type { SyncLibrary } from '../utils/syncMerge'
 import { navigateBack } from '../utils/viewHistory'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { useSyncStatus } from '../utils/useSyncStatus'
+import { useRecordsAutoSync } from '../utils/useRecordsAutoSync'
 import { SyncStatusPill } from './SyncStatusPill'
 
 interface BeforeInstallPromptEvent extends Event {
@@ -105,6 +106,8 @@ interface HeaderProps {
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
   onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | Promise<boolean>
   onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
+  /** RFC #188 S6: pause automatic sync (editor open, cross-tab conflict). */
+  autoSyncBlocked?: boolean
   onOpenCast?: () => void
   isCastActive?: boolean
 }
@@ -232,6 +235,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDirectImportOnlineSong,
   onImportSharedCatalogSong,
   onCloudSyncApplied,
+  autoSyncBlocked = false,
   onOpenCast,
   isCastActive = false,
 }) => {
@@ -307,6 +311,14 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
   // #191 (RFC #188 S3): DEV-only status pill and Sync Center until field QA makes them default.
+  // RFC #188 S6: DEV auto-sync (per-record engine only); one leader tab per browser.
+  useRecordsAutoSync({
+    enabled: isDevEnv && Boolean(currentSession),
+    token: currentSession?.sessionToken || currentSession?.idToken || currentSession?.token,
+    blocked: autoSyncBlocked || showCloudSyncModal,
+    onApplied: onCloudSyncApplied,
+    onState: (status, processing) => { setCloudSyncStatus(status); setIsCloudSyncProcessing(processing) },
+  })
   const syncStatus = useSyncStatus({ enabled: isDevEnv, signedIn: Boolean(currentSession), status: cloudSyncStatus,
     isProcessing: isCloudSyncProcessing, recoveryNeedsDecision: recoveryAttention })
 

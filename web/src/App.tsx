@@ -1568,6 +1568,7 @@ function LibraryApp() {
           onImportSharedCatalogSong={handleSaveSongFromEditor}
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
+          autoSyncBlocked={activeView === 'editor' || Boolean(crossTabConflict)}
           onCloudSyncApplied={(updated) => {
             persistedBaselineRef.current = libraryRevision()
             setCrossTabConflict(null)
