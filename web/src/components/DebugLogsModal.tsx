@@ -7,6 +7,7 @@ import {
   Terminal,
   Check,
   Filter,
+  Share2,
 } from 'lucide-react'
 import { appLogger, type LogEntry, type LogLevel } from '../utils/logger'
 
@@ -56,6 +57,19 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
   const handleClearLogs = () => {
     if (window.confirm('Are you sure you want to clear all recorded debug logs?')) {
       appLogger.clearLogs()
+    }
+  }
+
+  // #204 S2: share the export (e.g. to Messages or Mail on a phone); falls back to copying.
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+  const handleShare = async () => {
+    try {
+      const text = await appLogger.exportAllLogsAsText()
+      const file = typeof File !== 'undefined' ? new File([text], 'gtar-debug.log', { type: 'text/plain' }) : null
+      if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'GTAR debug log' })
+      else await navigator.share({ title: 'GTAR debug log', text })
+    } catch (err) {
+      if ((err as { name?: string })?.name !== 'AbortError') await handleCopyAll()
     }
   }
 
@@ -155,6 +169,19 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
                 </>
               )}
             </button>
+
+            {canShare && (
+              <button
+                type="button"
+                data-testid="debug-logs-share"
+                onClick={handleShare}
+                className="px-3 py-1.5 rounded-xl bg-app-base border border-app-border hover:border-app-action text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                title="Share the log file (emails, account ids and tokens are redacted)"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share</span>
+              </button>
+            )}
 
             <button
               type="button"

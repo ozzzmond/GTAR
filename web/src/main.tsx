@@ -17,6 +17,12 @@ const App = lazy(() => import('./App.tsx'))
 import { isDevEnv } from './utils/env'
 import { requestDurableStorage } from './utils/syncJournal'
 
+// #204 S2: capture starts before sign-in, so sign-in and One Tap problems (#132) are recorded.
+// Logs stay on this device. Off (the default) records only warnings and errors.
+if (typeof window !== 'undefined') {
+  void import('./utils/logger').then(({ appLogger }) => appLogger.resume())
+}
+
 // Best-effort request for durable browser storage (non-blocking, non-failing)
 if (typeof window !== 'undefined') {
   requestDurableStorage().catch(() => {})

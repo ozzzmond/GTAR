@@ -37,11 +37,27 @@ export function setDebugLoggingEnabled(enabled: boolean): void {
 }
 
 /**
- * Redacts OAuth tokens, access tokens, client secrets, auth cookies, and authorization headers.
+ * #204 S2: identifiers of the signed-in account (user id, Google subject) registered at sign-in,
+ * so they are redacted wherever they appear. Emails are redacted by pattern.
+ */
+const redactedIdentifiers = new Set<string>()
+export function registerRedactedIdentifiers(...values: Array<string | null | undefined>): void {
+  for (const value of values) if (typeof value === 'string' && value.trim().length >= 6) redactedIdentifiers.add(value.trim())
+}
+
+/**
+ * Redacts OAuth tokens, access tokens, client secrets, auth cookies, authorization headers,
+ * email addresses and account identifiers (#204 S2).
  */
 export function redactSensitiveData(text: string): string {
   if (!text || typeof text !== 'string') return text
-  return text
+  let out = text
+  for (const id of redactedIdentifiers) out = out.split(id).join('[REDACTED_ID]')
+  return out
+    // Email addresses
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]')
+    // Account identifier fields in JSON or query strings (record and song ids are not account ids)
+    .replace(/(\b["']?(?:userId|user_id|google_sub|sub|email)["']?\s*[:=]\s*["']?)([^"'&\s,}\\]+)(["']?)/g, '$1[REDACTED]$3')
     // Redact OAuth Bearer tokens
     .replace(/Bearer\s+[-A-Za-z0-9_.]+/gi, 'Bearer [REDACTED]')
     // Redact Google OAuth access tokens (typically start with ya29.)
@@ -100,6 +116,7 @@ class WebLoggerEngine {
   }
 
   public resume() {
+    if (this.storageEnabled && this.isInitialized) return // already capturing; reloading would drop newer memory entries
     this.storageEnabled = true
     this.loadPersistedLogs()
     this.init()
