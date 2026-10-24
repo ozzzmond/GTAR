@@ -54,6 +54,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [warningMessage, setWarningMessage] = useState<string>('')
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
 
@@ -94,12 +95,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     if (!token || !isAuthenticated) return
     setIsProcessing(true)
     setErrorMessage('')
+    setWarningMessage('')
     try {
       const result = await performCloudSongbookSync(token)
       setSyncStatus(result.status)
       setLastMeta(readCloudSyncMeta())
 
       if (result.success) {
+        setWarningMessage(result.warning || '')
         if (result.updatedLibrary) onSyncAppliedRef.current?.(result.updatedLibrary)
         const hasTheme = Boolean(result.updatedLibrary?.themeSettings)
         if (result.actionTaken === 'NONE') {
@@ -170,12 +173,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     if (!token) return
     setIsProcessing(true)
     setErrorMessage('')
+    setWarningMessage('')
     try {
       const result: CloudSyncResult = await performCloudSongbookSync(token, { forceAction })
       setSyncStatus(result.status)
       setLastMeta(readCloudSyncMeta())
       if (result.success) {
         setConflicts([])
+        setWarningMessage(result.warning || '')
         if (forceAction === 'merge_preserve') {
           setStatusMessage('Merged local and cloud songbooks safely with conflict copies.')
         } else if (forceAction === 'upload') {
@@ -348,6 +353,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             {statusMessage && (
               <p className="text-xs text-app-action bg-app-action/10 p-2.5 rounded-lg border border-app-action/20">
                 {statusMessage}
+              </p>
+            )}
+
+            {warningMessage && (
+              <p className="text-xs text-status-warning bg-status-warning/10 p-2.5 rounded-lg border border-status-warning/20" role="status">
+                {warningMessage}
               </p>
             )}
 

@@ -1,5 +1,7 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw } from './syncJournal'
+import { libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw, isLibraryIndexActive, same } from './syncJournal'
+import { confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex, isLibraryIndex, loadLibraryIndexBodies } from './libraryIndex'
+import { appLogger } from './logger'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -91,7 +93,13 @@ export interface CloudSyncResult {
   error?: string
   conflicts?: ConflictingItem[]
   updatedLibrary?: SyncLibrary
+  /** #189: the sync succeeded but its common base could not be saved on this device. */
+  warning?: string
 }
+
+/** #189: shown when a successful sync could not keep its common base for the next three-way merge. */
+export const SYNC_BASE_NOT_SAVED_WARNING =
+  'Synced, but this device could not save its sync reference. The next sync may report conflicts that need a manual choice. Free up storage or export a backup.'
 
 /**
  * Deterministic checksum of a canonical songbook library.
@@ -215,7 +223,9 @@ export function readCloudSyncBase(storage?: Storage): SyncLibrary | null {
   try {
     const raw = targetStorage.getItem(CLOUD_SYNC_BASE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<SyncLibrary>
+    // #189: a slim base (B1 index format) resolves its bodies from the in-memory cache that
+    // prepareCloudSyncBase() fills; a missing body throws and the base is treated as unavailable.
+    const parsed = decodeLibraryIndex(JSON.parse(raw)) as Partial<SyncLibrary>
     if (!parsed || !Array.isArray(parsed.songs) || !Array.isArray(parsed.setlists)) {
       return null
     }
@@ -237,17 +247,64 @@ export function readCloudSyncBase(storage?: Storage): SyncLibrary | null {
 }
 
 /**
- * Saves base snapshot library to localStorage
+ * #189: loads the chart bodies a slim sync base references from IndexedDB, so that
+ * readCloudSyncBase() can rebuild it. Plain (full) bases need nothing. Never throws: a base that
+ * cannot be loaded is logged and later reads as unavailable, which sync already handles fail-closed.
  */
-export function saveCloudSyncBase(library: SyncLibrary, storage?: Storage): void {
+export async function prepareCloudSyncBase(storage?: Storage, timeoutMs = 5000): Promise<void> {
   const targetStorage = getStorage(storage)
   if (!targetStorage) return
   try {
-    targetStorage.setItem(CLOUD_SYNC_BASE_KEY, JSON.stringify(library))
-  } catch {
-    // Storage quota or unavailable: continue in-memory
+    const raw = targetStorage.getItem(CLOUD_SYNC_BASE_KEY)
+    if (!raw || !isLibraryIndex(JSON.parse(raw))) return
+    await loadLibraryIndexBodies(raw, timeoutMs)
+  } catch (error) {
+    appLogger.warn('CloudSyncBase', 'Sync reference bodies could not be loaded; next sync runs without a common base',
+      error instanceof Error ? error.message : String(error))
   }
 }
+
+/**
+ * Saves the base snapshot used for three-way reconciliation and reports whether it was kept.
+ *
+ * #189: with library storage B1 on, the base is written in the slim index format, so chart bodies
+ * that IndexedDB already holds are referenced by hash instead of copied into localStorage again.
+ * Bodies not yet confirmed stay inline and are confirmed in the background. The write is verified
+ * by decoding it back; on any failure the previous value is restored and `false` is returned, so
+ * the caller can tell the user instead of silently losing the common base.
+ */
+export function saveCloudSyncBase(library: SyncLibrary, storage?: Storage): boolean {
+  const targetStorage = getStorage(storage)
+  if (!targetStorage) return false
+  const plain = JSON.stringify(library)
+  let previous: string | null = null
+  try {
+    previous = targetStorage.getItem(CLOUD_SYNC_BASE_KEY)
+    const encoded = isLibraryIndexActive(targetStorage) ? encodeLibraryIndex(library) : null
+    const payload = encoded ? encoded.payload : plain
+    targetStorage.setItem(CLOUD_SYNC_BASE_KEY, payload)
+    const stored = targetStorage.getItem(CLOUD_SYNC_BASE_KEY)
+    if (stored !== payload || !same(decodeLibraryIndex(JSON.parse(stored)), JSON.parse(plain))) {
+      throw new Error('Sync reference could not be verified')
+    }
+    if (encoded?.pending.length) {
+      void confirmPendingLibraryBodies(encoded.pending, error =>
+        appLogger.warn('CloudSyncBase', 'Sync reference body not yet in IndexedDB; kept inline', error instanceof Error ? error.message : String(error)))
+    }
+    return true
+  } catch (error) {
+    try {
+      if (previous === null) targetStorage.removeItem(CLOUD_SYNC_BASE_KEY)
+      else if (targetStorage.getItem(CLOUD_SYNC_BASE_KEY) !== previous) targetStorage.setItem(CLOUD_SYNC_BASE_KEY, previous)
+    } catch { /* Restore is best effort; the checksum gate ignores a stale base. */ }
+    appLogger.warn('CloudSyncBase', 'Sync reference not saved; next sync may need a manual conflict choice',
+      error instanceof Error ? error.message : String(error))
+    return false
+  }
+}
+
+const withBaseWarning = <T extends CloudSyncResult>(result: T, baseSaved: boolean): T =>
+  baseSaved ? result : { ...result, warning: SYNC_BASE_NOT_SAVED_WARNING }
 
 /**
  * Pure evaluation function for deterministic sync decision
@@ -1265,6 +1322,7 @@ async function executeCloudSongbookSync(
     }
   }
 
+  await prepareCloudSyncBase(targetStorage)
   const storedBase = readCloudSyncBase(targetStorage)
   const storedBaseFullChecksum = storedBase ? computeSongbookChecksum(storedBase) : null
   const storedBaseLegacyChecksum = storedBase
@@ -1273,6 +1331,11 @@ async function executeCloudSongbookSync(
   const baseChecksumMatches =
     Boolean(storedBase && (storedBaseFullChecksum === baseMeta.lastSyncedChecksum || storedBaseLegacyChecksum === baseMeta.lastSyncedChecksum))
   const baseSnapshot = retry?.base ?? (baseOwnerMatches && baseChecksumMatches ? storedBase : null)
+  if (!baseSnapshot && baseOwnerMatches && baseMeta.lastSyncedChecksum) {
+    // #189: previously synced on this device, but its common base is missing or stale.
+    appLogger.warn('CloudSyncBase', storedBase ? 'Sync reference does not match the last sync; reconciling without a common base'
+      : 'Sync reference unavailable; reconciling without a common base')
+  }
 
   const decisionResult = evaluateSyncDecision({
     localData: localLibrary,
@@ -1326,8 +1389,8 @@ async function executeCloudSongbookSync(
         },
         targetStorage
       )
-      saveCloudSyncBase(localLibrary, targetStorage)
-      return {
+      const baseSaved = saveCloudSyncBase(localLibrary, targetStorage)
+      return withBaseWarning({
         success: true,
         status: 'IN_SYNC',
         state: 'SAME_STATE',
@@ -1335,7 +1398,7 @@ async function executeCloudSongbookSync(
         version: cloudRecord?.version,
         checksum: decisionResult.localChecksum,
         updatedLibrary: appliedLibrary,
-      }
+      }, baseSaved)
     } catch (err) {
       return { success: false, status: 'ERROR', state: decisionResult.state, actionTaken: 'NONE',
         error: `Cannot apply reconciled songbook: ${err instanceof Error ? err.message : String(err)}. Export a backup before retrying.` }
@@ -1429,9 +1492,9 @@ async function executeCloudSongbookSync(
         },
         targetStorage
       )
-      saveCloudSyncBase(localLibrary, targetStorage)
+      const baseSaved = saveCloudSyncBase(localLibrary, targetStorage)
 
-      return {
+      return withBaseWarning({
         success: true,
         status: 'IN_SYNC',
         state: decisionResult.state,
@@ -1439,7 +1502,7 @@ async function executeCloudSongbookSync(
         version: uploadData.cloudRecord.version,
         checksum: uploadData.cloudRecord.checksum,
         updatedLibrary: appliedLibrary,
-      }
+      }, baseSaved)
     } catch (err) {
       return {
         success: false,
@@ -1557,9 +1620,9 @@ async function executeCloudSongbookSync(
         },
         targetStorage
       )
-      saveCloudSyncBase(canonicalRemoteLibrary, targetStorage)
+      const baseSaved = saveCloudSyncBase(canonicalRemoteLibrary, targetStorage)
 
-      return {
+      return withBaseWarning({
         success: true,
         status: 'IN_SYNC',
         state: decisionResult.state,
@@ -1567,7 +1630,7 @@ async function executeCloudSongbookSync(
         version: cloudRecord.version,
         checksum: cloudRecord.checksum,
         updatedLibrary: downloadedLibrary,
-      }
+      }, baseSaved)
     } catch (err) {
       return {
         success: false,
@@ -1742,9 +1805,9 @@ async function executeCloudSongbookSync(
         },
         targetStorage
       )
-      saveCloudSyncBase(mergedLib, targetStorage)
+      const baseSaved = saveCloudSyncBase(mergedLib, targetStorage)
 
-      return {
+      return withBaseWarning({
         success: true,
         status: 'IN_SYNC',
         state: 'CONFLICT',
@@ -1753,7 +1816,7 @@ async function executeCloudSongbookSync(
         checksum: uploadData.cloudRecord.checksum,
         conflicts: reconciliation.conflicts,
         updatedLibrary: appliedLibrary,
-      }
+      }, baseSaved)
     } catch (err) {
       return {
         success: false,
