@@ -53,6 +53,7 @@ export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 export const RECORDS_SYNC_TOGGLE_KEY = 'gtar_records_sync_enabled'
 export const RECORDS_SYNC_DEFAULT_ON = false
 const REMOVED = recordChecksum(true, null)
+export const RECORDS_SYNC_RUN_LOCK = 'gtar-records-sync-run'
 const REQUEST_TIMEOUT_MS = 15000
 const MAX_PULL_PAGES = 500
 
@@ -365,6 +366,13 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
  * download = use the cloud's, merge_preserve = keep both (cloud copies).
  */
 export async function performRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage } = {}): Promise<CloudSyncResult | null> {
+  // One records sync at a time across this browser's tabs (manual and automatic).
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (locks?.request) return locks.request(RECORDS_SYNC_RUN_LOCK, () => runRecordsSync(token, options))
+  return runRecordsSync(token, options)
+}
+
+async function runRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage }): Promise<CloudSyncResult | null> {
   const storage = options.storage ?? localStorage
   try {
     if (!options.forceAction) return await syncOnce(token, storage)
