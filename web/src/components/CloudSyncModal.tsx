@@ -630,7 +630,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             {confirmReplace ? (
               <div data-testid="replace-with-cloud-confirm" role="group" aria-label="Confirm replacing this device with the cloud copy"
                 className="p-3 rounded-xl bg-app-base border border-app-border space-y-2">
-                <p className="text-xs text-app-heading">Replace everything on this device with the cloud copy? Songs and setlists that are only on this device are removed here; a copy is kept in Review local recovery. Sync Now is enough for normal use.</p>
+                <p className="text-xs text-app-heading">Replace everything on this device with the cloud copy? Songs and setlists that are only on this device are removed here; a copy is kept in Review local recovery.</p>
                 <div className="flex gap-2">
                   <button type="button" data-testid="replace-with-cloud-confirm-button" onClick={handleForceDownload} disabled={isProcessing || !isAuthenticated}
                     className="flex-1 py-2 px-3 rounded-lg bg-app-action text-app-on-action text-xs font-bold cursor-pointer disabled:opacity-50">Replace this device</button>

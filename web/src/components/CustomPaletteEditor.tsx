@@ -147,7 +147,6 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                   V2
                 </span>
               </div>
-              <p className="text-[11px] ui-muted-text text-app-muted">Fine-grained performance colors & responsive dock tuning</p>
             </div>
           </div>
 

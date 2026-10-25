@@ -46,3 +46,15 @@ test('no title tooltips on HTML elements, except truncated text', () => {
   }
   assert.deepEqual(found, [])
 })
+
+// #224 slice 3: redundant subtitles and explanations removed or shortened (owner-approved wording 2026-10-25).
+test('redundant helper copy is gone; shortened wording in place; safety text kept', () => {
+  const all = fs.readdirSync(path.join(__dirname, '..', 'src', 'components')).filter(f => f.endsWith('.tsx')).map(read).join('\n')
+  for (const gone of ['Tailor stage, chrome, cards, inputs', 'Fine-grained performance colors', 'Real-time console errors, window events',
+    'Server-authoritative Google account management', 'Open chords online with 1-tap', 'Choose an import method for your songs',
+    'Manage your GTAR songbook and setlists backup', 'Setlists stay completely separate', 'deferred backend tasks', 'Sync Now is enough for normal use',
+    'immutable QR code and link snapshot', 'Historical song content and original imported snapshots']) assert.ok(!all.includes(gone), gone)
+  for (const kept of ['Tap a string to hear its pitch.', 'Follow an Android Stage Leader on the same Wi-Fi or hotspot.', 'Replaces all songs, setlists and trash.',
+    'Adds and updates songs; deletes nothing.', 'Team members can view it and save their own copy. Yours stays unchanged.', 'Choose a setlist to share:',
+    'Applies to the TV only.', 'Create a song or import charts.', 'a copy is kept in Review local recovery', 'Scan with mobile camera']) assert.ok(all.includes(kept), kept)
+})

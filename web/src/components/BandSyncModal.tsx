@@ -348,7 +348,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
           {activeTab === 'tuner' && (
             <div className="space-y-4">
               <p className="text-xs text-app-muted text-center">
-                Click any string to play standard guitar reference frequency:
+                Tap a string to hear its pitch.
               </p>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -434,7 +434,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                       Band Member Client (Sync Off)
                     </h3>
                     <p className="text-xs text-app-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
-                      Connect directly to an Android Stage Leader tablet on your local Wi-Fi or hotspot to automatically mirror songs, key changes, and autoscrolling.
+                      Follow an Android Stage Leader on the same Wi-Fi or hotspot.
                     </p>
                   </div>
                   <div className="pt-2">

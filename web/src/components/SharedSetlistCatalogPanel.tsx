@@ -371,9 +371,6 @@ export function SharedSetlistCatalogPanel({
               Team members who already imported a personal copy keep their independent copy unchanged.
               This action uses your active publisher session and cannot be undone by other users.
             </p>
-            <p className="text-[10px] text-app-muted">
-              Note: Rename and permanent deletion are deferred backend tasks. Unpublish hides this setlist from new imports only.
-            </p>
 
             {unpublishError && (
               <p

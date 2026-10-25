@@ -953,7 +953,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </button>
             </div>
             <p className="text-xs ui-muted-text text-app-muted mb-3">
-              Choose a setlist to generate an immutable QR code and link snapshot:
+              Choose a setlist to share:
             </p>
             <div className="max-h-60 overflow-y-auto space-y-1 mb-4">
               {activeSetlists.map((sl) => (
@@ -1131,7 +1131,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <span>Visible to all active GTAR members</span>
                 </p>
                 <p className="text-[11px] text-app-muted leading-relaxed">
-                  Publishing makes this song chart accessible to other GTAR members in the Shared Catalog. Your personal song copy remains independent and unchanged.
+                  Team members can view it and save their own copy. Yours stays unchanged.
                 </p>
               </div>
 
@@ -2248,7 +2248,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <Music className="ui-section-icon w-8 h-8 mx-auto text-app-action" />
             <div className="text-base font-bold ui-primary-text text-app-heading">Your Songbook is Empty</div>
             <p className="text-xs max-w-sm mx-auto">
-              Create your first song template or import chord charts from files or online web sources.
+              Create a song or import charts.
             </p>
             <button
               type="button"

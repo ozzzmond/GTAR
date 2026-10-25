@@ -113,9 +113,6 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
                   </span>
                 )}
               </div>
-              <p className="text-xs text-app-muted">
-                Real-time console errors, window events, and presentation state captures
-              </p>
             </div>
           </div>
 

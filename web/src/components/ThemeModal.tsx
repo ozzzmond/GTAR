@@ -895,9 +895,6 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         CUSTOM
                       </span>
                     </div>
-                    <span className="text-[10px] ui-muted-text text-app-muted block mt-0.5">
-                      Tailor stage, chrome, cards, inputs & floating controls
-                    </span>
                   </div>
                 </div>
 

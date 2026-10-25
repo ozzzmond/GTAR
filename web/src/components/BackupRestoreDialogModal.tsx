@@ -353,10 +353,6 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
             </div>
           ) : (
             <>
-              <p className="text-xs text-app-muted leading-relaxed">
-                Manage your GTAR songbook and setlists backup:
-              </p>
-
               {/* Option 1: Export Backup */}
               {!showExportOptions ? (
                 <button
@@ -442,7 +438,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                     Full Restore (Wipe & Replace)
                   </div>
                   <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
-                    Drops/resets existing songs & setlists, then imports complete backup
+                    Replaces all songs, setlists and trash.
                   </div>
                 </div>
               </button>
@@ -464,7 +460,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                     Restore Backup (Smart Merge)
                   </div>
                   <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
-                    Updates existing songs and appends new ones without deleting current local data
+                    Adds and updates songs; deletes nothing.
                   </div>
                 </div>
               </button>
