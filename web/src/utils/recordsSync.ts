@@ -472,9 +472,20 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
     state.known[key] = { rev: remote.rev, checksum: remote.checksum }
   }
   const next = working.library()
+  // #227 item 4: count what actually differs; when the device already equals the cloud, write nothing.
+  const mine = localRecords(before.library)
+  const theirs = localRecords(next)
+  let changed = 0
+  for (const key of new Set([...mine.keys(), ...theirs.keys()])) if (mine.get(key)?.checksum !== theirs.get(key)?.checksum) changed++
+  const replaced = { songs: next.songs.length, setlists: next.setlists.length, changed }
+  if (!changed) {
+    appLogger.info('RecordsSync', `Replace with the cloud copy: this device already matches the cloud (${next.songs.length} songs); nothing changed`)
+    return { ...finish(storage, state, before.library, 0, 0, null), replaced }
+  }
   await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
   const appliedRevision = persistApplied(storage, before, next)
-  return finish(storage, state, next, 1, 0, null, appliedRevision)
+  appLogger.info('RecordsSync', `Replaced this device with the cloud copy: ${next.songs.length} songs, ${next.setlists.length} setlists (${changed} changed); the previous device copy is in recovery`)
+  return { ...finish(storage, state, next, changed, 0, null, appliedRevision), replaced }
 }
 
 /**

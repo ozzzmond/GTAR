@@ -20,7 +20,7 @@ test('UI_COPY_CLEANUP: CloudSyncModal removes technical jargon and redundant syn
   assert.ok(modalContent.includes('Fingerprint'), 'CloudSyncModal must retain "Fingerprint"')
   assert.ok(modalContent.includes('Sync Now'), 'CloudSyncModal must retain "Sync Now"')
   assert.ok(modalContent.includes('handleForceUpload'), 'CloudSyncModal must retain underlying upload capability')
-  assert.ok(modalContent.includes('Download from Cloud'), 'CloudSyncModal must retain "Download from Cloud"')
+  assert.ok(modalContent.includes('Replace this device with the cloud copy'), 'CloudSyncModal keeps the replace-with-cloud action (#227 rename)')
   assert.ok(modalContent.includes('Offline edits preserved safely'), 'CloudSyncModal must retain "Offline edits preserved safely"')
   assert.ok(modalContent.includes('session?.user?.email'), 'CloudSyncModal must retain user/account identity block')
 })

@@ -52,7 +52,7 @@ test('CLOUD_SYNC_MANUAL_ACTION_SAFETY: Upload to Cloud button removed from norma
   assert.ok(normalActionsBlock.includes('data-testid="sync-now-button"'), 'Sync Now has explicit test ID')
   assert.ok(normalActionsBlock.includes('Sync Now'), 'Sync Now button is retained as primary action')
   assert.ok(normalActionsBlock.includes('data-testid="download-from-cloud-button"'), 'Download from Cloud has explicit test ID')
-  assert.ok(normalActionsBlock.includes('Download from Cloud'), 'Download from Cloud button is retained as secondary recovery action')
+  assert.ok(normalActionsBlock.includes('Replace this device with the cloud copy'), '#227: the secondary recovery action is named for what it does')
 
   // Secondary styling check: Download button has subtle background
   assert.ok(normalActionsBlock.includes('bg-app-base'), 'Download from Cloud retains secondary card surface')

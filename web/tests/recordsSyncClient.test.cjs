@@ -516,3 +516,34 @@ test('#227: "combine" → own song added to the cloud, samples not, existing clo
   assert.ok(cloud.includes(id(8)) && base.songs.every(s => cloud.includes(s.id)))
   assert.deepEqual(cloud.filter(i => i.startsWith('d108')), [])
 })
+
+// #227 item 4: "Replace this device with the cloud copy" writes nothing when the device already matches.
+test('#227: replace with cloud copy on a device that already matches: no archive, no write, real counts', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  const raw = journal.libraryRevision(a)
+  const archives = recoveryKeys(a).length
+  for (let i = 0; i < 3; i++) {
+    const result = await w.run(a, { forceAction: 'download' })
+    assert.equal(result.success, true, result.error)
+    assert.deepEqual(result.replaced, { songs: 3, setlists: 1, changed: 0 })
+    assert.equal(result.updatedLibrary, undefined, 'nothing to apply')
+  }
+  assert.equal(journal.libraryRevision(a), raw, 'library untouched')
+  assert.equal(recoveryKeys(a).length, archives, 'repeated presses add no archives')
+})
+
+test('#227: replace with cloud copy on a device that differs: one archive, device = cloud, changed counted', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  edit(a, lib => ({ ...lib, songs: [...lib.songs.map(s => s.id === id(1) ? { ...s, rawContent: 'local only edit' } : s), song(9)] }))
+  const archives = recoveryKeys(a).length
+  const result = await w.run(a, { forceAction: 'download' })
+  assert.equal(result.success, true, result.error)
+  assert.deepEqual(result.replaced, { songs: 3, setlists: 1, changed: 2 })
+  assert.deepEqual(songIds(a), base.songs.map(s => s.id).sort())
+  assert.equal(read(a).songs.find(s => s.id === id(1)).rawContent, base.songs[0].rawContent)
+  assert.equal(recoveryKeys(a).length, archives + 1)
+})

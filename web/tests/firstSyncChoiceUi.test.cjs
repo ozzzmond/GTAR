@@ -42,3 +42,28 @@ test('first sync with own songs: the choice is shown; each button sends its answ
   assert.deepEqual(applied, [library])
   await act(async () => root.unmount())
 })
+
+test('Replace this device with the cloud copy asks first; Cancel does nothing; an equal device says nothing changed', async () => {
+  const calls = []
+  records.performSongbookSync = async (_token, options = {}) => {
+    calls.push(options.forceAction ?? 'sync')
+    return options.forceAction === 'download'
+      ? { success: true, status: 'IN_SYNC', state: 'SAME_STATE', actionTaken: 'NONE', replaced: { songs: 4, setlists: 1, changed: 0 } }
+      : { success: true, status: 'IN_SYNC', state: 'SAME_STATE', actionTaken: 'NONE' }
+  }
+  const root = createRoot(document.getElementById('root'))
+  await act(async () => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose() {}, onSyncApplied() {} })))
+  await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  const q = id => document.querySelector(`[data-testid="${id}"]`)
+  assert.match(q('download-from-cloud-button').textContent, /Replace this device with the cloud copy/)
+  await act(async () => q('download-from-cloud-button').click())
+  assert.ok(q('replace-with-cloud-confirm'))
+  await act(async () => q('replace-with-cloud-cancel-button').click())
+  assert.equal(q('replace-with-cloud-confirm'), null)
+  assert.ok(!calls.includes('download'), 'Cancel does not replace')
+  await act(async () => q('download-from-cloud-button').click())
+  await act(async () => { q('replace-with-cloud-confirm-button').click(); await new Promise(r => setTimeout(r, 20)) })
+  assert.ok(calls.includes('download'))
+  assert.match(document.body.textContent, /already matches the cloud copy\. Nothing changed\./)
+  await act(async () => root.unmount())
+})

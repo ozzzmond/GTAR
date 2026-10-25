@@ -101,6 +101,8 @@ export interface CloudSyncResult {
   appliedRevision?: string | null
   /** #227: first sync on this device with its own songs and a cloud library: nothing written, ask the user. */
   firstSyncChoice?: { songs: number; setlists: number }
+  /** #227 item 4: "Replace this device with the cloud copy" — what the device now holds and how many records changed (0 = nothing written). */
+  replaced?: { songs: number; setlists: number; changed: number }
 }
 
 /** #189: shown when a successful sync could not keep its common base for the next three-way merge. */
