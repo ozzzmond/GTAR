@@ -103,3 +103,29 @@ test('reload: archives come back from IndexedDB', async () => {
   assert.equal(api.readRecoveryArchive('gtar_sync_recovery:download:1'), JSON.stringify(lib('kept')))
   assert.equal(api.inspectRecovery().sources.length, 1)
 })
+
+// #225: synchronous snapshots (Shared Catalog import, JSON import, cross-tab conflicts) must not be
+// refused by the 3 MiB localStorage cap when the IndexedDB archives alone exceed it.
+test('#225: with >3 MiB of archives in IndexedDB, a sync snapshot still saves (localStorage part within its own cap)', async () => {
+  await prepare()
+  for (let i = 0; i < 4; i++) await store.putRecoveryArchive(`gtar_sync_recovery:download:${i}:x`, 'x'.repeat(500000))
+  const usage = api.recoveryRetentionUsage(localStorage)
+  assert.ok(usage.indexedDb && usage.bytes > api.RECOVERY_MAX_BYTES, 'IndexedDB total is beyond the old localStorage cap')
+  const key = api.saveCrossTabConflictSnapshot(lib('current'))
+  assert.ok(localStorage.getItem(key), 'written synchronously to localStorage')
+  assert.ok(api.inspectRecovery().sources.some(s => s.key === key), 'visible in recovery review')
+  // The next startup moves it to IndexedDB.
+  store.resetRecoveryArchives()
+  await prepare()
+  assert.deepEqual(archiveKeysInLocalStorage(), [])
+  assert.ok(api.readRecoveryArchive(key))
+})
+
+test('#225: the IndexedDB total limit still applies to sync snapshots, and so does the localStorage cap', async () => {
+  await prepare()
+  for (let i = 0; i < store.IDB_RECOVERY_MAX_COUNT; i++) await store.putRecoveryArchive(`gtar_sync_recovery:download:${i}:y`, 'y')
+  assert.throws(() => api.saveCrossTabConflictSnapshot(lib('current')), err => err instanceof api.RecoveryRetentionError && err.maxCount === store.IDB_RECOVERY_MAX_COUNT)
+  store.resetRecoveryArchives(); factory = new MockIDBFactory(); await prepare()
+  localStorage.setItem('gtar_sync_recovery:merge:big', 'z'.repeat(Math.floor(api.RECOVERY_MAX_BYTES / 2)))
+  assert.throws(() => api.saveCrossTabConflictSnapshot(lib('current')), api.RecoveryRetentionError, 'localStorage part stays capped')
+})

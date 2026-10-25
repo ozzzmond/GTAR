@@ -375,11 +375,30 @@ function notifyRecoveryChanged(): void {
   try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('gtar-recovery-changed')) } catch { /* ignore */ }
 }
 
+/** Archives held in this Storage itself (localStorage), excluding the IndexedDB mirror. */
+function storageArchiveUsage(storage: Storage): { count: number; bytes: number } {
+  let count = 0, bytes = 0
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k?.startsWith(ARCHIVE_PREFIX)) { count++; bytes += 2 * (k.length + (storage.getItem(k)?.length ?? 0)) }
+  }
+  return { count, bytes }
+}
+
+/**
+ * Synchronous snapshot (callers run it in a no-await section right before a library write), so it
+ * always goes to `storage`; startup later moves it to IndexedDB. #225: with IndexedDB archives the
+ * localStorage part is held to the localStorage limits and the total to the IndexedDB limits;
+ * comparing the IndexedDB total against the 3 MiB localStorage cap refused valid snapshots.
+ */
 function writeRecoverySnapshotChecked(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
-  const { count, bytes } = recoveryRetentionUsage(storage)
+  const total = recoveryRetentionUsage(storage)
+  const local = total.indexedDb ? storageArchiveUsage(storage) : { count: total.count, bytes: total.bytes }
+  const { count, bytes } = total
   const attemptedBytes = 2 * (key.length + raw.length)
   try {
-    if (count >= RECOVERY_MAX_COUNT || bytes + attemptedBytes > RECOVERY_MAX_BYTES) throw new RecoveryRetentionError()
+    if (local.count >= RECOVERY_MAX_COUNT || local.bytes + attemptedBytes > RECOVERY_MAX_BYTES) throw new RecoveryRetentionError()
+    if (total.indexedDb && (total.count >= total.maxCount || total.bytes + attemptedBytes > total.maxBytes)) throw new RecoveryRetentionError(total.maxCount, total.maxBytes)
     if (estimate?.quota !== undefined && estimate.usage !== undefined && estimate.usage + attemptedBytes > estimate.quota) throw new DOMException('Origin quota estimate exceeded', 'QuotaExceededError')
     storage.setItem(key, raw)
     if (storage.getItem(key) !== raw) throw new Error('Snapshot readback failed')
