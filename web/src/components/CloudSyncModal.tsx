@@ -64,6 +64,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string>('')
   // #227: first sync on this device, with its own songs and an existing cloud library.
   const [firstSyncChoice, setFirstSyncChoice] = useState<{ songs: number; setlists: number } | null>(null)
+  // #227 item 4: replacing the device copy asks first.
+  const [confirmReplace, setConfirmReplace] = useState(false)
   const [warningMessage, setWarningMessage] = useState<string>('')
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
@@ -207,8 +209,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           setStatusMessage('Merged local and cloud songbooks safely with conflict copies.')
         } else if (forceAction === 'upload') {
           setStatusMessage('Uploaded local songbook to cloud.')
+        } else if (result.replaced && !result.replaced.changed) {
+          setStatusMessage('This device already matches the cloud copy. Nothing changed.')
+        } else if (result.replaced) {
+          setStatusMessage(`This device now has the cloud copy (${result.replaced.songs} songs, ${result.replaced.setlists} setlists). The previous device copy is in Review local recovery.`)
         } else {
-          setStatusMessage('Downloaded cloud songbook (local safety backup saved).')
+          setStatusMessage('Replaced this device with the cloud copy (the previous device copy is in Review local recovery).')
         }
         if (result.updatedLibrary && onSyncApplied) {
           onSyncApplied(result.updatedLibrary)
@@ -229,6 +235,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   void handleForceUpload
 
   const handleForceDownload = async () => {
+    setConfirmReplace(false)
     await handleResolveConflict('download')
   }
 
@@ -620,17 +627,30 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <span>{isProcessing ? 'Synchronizing...' : 'Sync Now'}</span>
             </button>
 
+            {confirmReplace ? (
+              <div data-testid="replace-with-cloud-confirm" role="group" aria-label="Confirm replacing this device with the cloud copy"
+                className="p-3 rounded-xl bg-app-base border border-app-border space-y-2">
+                <p className="text-xs text-app-heading">Replace everything on this device with the cloud copy? Songs and setlists that are only on this device are removed here; a copy is kept in Review local recovery. Sync Now is enough for normal use.</p>
+                <div className="flex gap-2">
+                  <button type="button" data-testid="replace-with-cloud-confirm-button" onClick={handleForceDownload} disabled={isProcessing || !isAuthenticated}
+                    className="flex-1 py-2 px-3 rounded-lg bg-app-action text-app-on-action text-xs font-bold cursor-pointer disabled:opacity-50">Replace this device</button>
+                  <button type="button" data-testid="replace-with-cloud-cancel-button" onClick={() => setConfirmReplace(false)}
+                    className="flex-1 py-2 px-3 rounded-lg border border-app-border text-app-heading text-xs font-semibold cursor-pointer">Cancel</button>
+                </div>
+              </div>
+            ) : (
             <button
               type="button"
               data-testid="download-from-cloud-button"
-              onClick={handleForceDownload}
+              onClick={() => setConfirmReplace(true)}
               disabled={isProcessing || !isAuthenticated}
               className="w-full py-2 px-3 rounded-xl bg-app-base hover:bg-app-border text-app-muted hover:text-app-action border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              title="Download from cloud library to device"
+              title="Replace this device's songbook with the cloud copy"
             >
               <CloudDownload className="w-3.5 h-3.5 text-app-link" />
-              <span>Download from Cloud</span>
+              <span>Replace this device with the cloud copy</span>
             </button>
+            )}
           </div>
           </>)}
         </div>
