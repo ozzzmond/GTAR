@@ -161,6 +161,10 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     planned.push({ change, checksum, removed, json })
   }
 
+  // #240: setlist writes go first, so a batch that drops a song from its setlists and deletes the
+  // song passes the reference check below inside the same transaction.
+  planned.sort((a, b) => Number(a.change.kind !== 'setlist') - Number(b.change.kind !== 'setlist'))
+
   // One batch (one transaction): reserve a block of sequence numbers, then one conditional write
   // per change at its own number. A write that loses its revision check leaves a gap, never a skip.
   if (planned.length) {
@@ -175,10 +179,18 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
           SELECT ?, ?, ?, 1, (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM user_songbook_records WHERE user_id = ? AND kind = ? AND record_id = ?)`)
         .bind(userId, change.kind, change.id, userId, back, removed ? 1 : 0, json, checksum, now, userId, change.kind, change.id)
-      : db.prepare(`UPDATE user_songbook_records SET rev = rev + 1, seq = (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?,
-          removed = ?, data_json = ?, checksum = ?, updated_at = ?
-          WHERE user_id = ? AND kind = ? AND record_id = ? AND rev = ?`)
-        .bind(userId, back, removed ? 1 : 0, json, checksum, now, userId, change.kind, change.id, change.baseRev))
+      : removed && change.kind === 'song'
+        // #240: a song is not deleted while a live setlist still lists it (would leave a dangling entry).
+        ? db.prepare(`UPDATE user_songbook_records SET rev = rev + 1, seq = (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?,
+            removed = 1, data_json = NULL, checksum = ?, updated_at = ?
+            WHERE user_id = ? AND kind = 'song' AND record_id = ? AND rev = ?
+              AND NOT EXISTS (SELECT 1 FROM user_songbook_records s, json_each(s.data_json, '$.songs') entry
+                WHERE s.user_id = ? AND s.kind = 'setlist' AND s.removed = 0 AND json_extract(entry.value, '$.id') = ?)`)
+          .bind(userId, back, checksum, now, userId, change.id, change.baseRev, userId, change.id)
+        : db.prepare(`UPDATE user_songbook_records SET rev = rev + 1, seq = (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?,
+            removed = ?, data_json = ?, checksum = ?, updated_at = ?
+            WHERE user_id = ? AND kind = ? AND record_id = ? AND rev = ?`)
+          .bind(userId, back, removed ? 1 : 0, json, checksum, now, userId, change.kind, change.id, change.baseRev))
     writes.push({ change, checksum, index: statements.length - 1 })
   })
 
@@ -199,7 +211,8 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     // Another request changed the record between the read and the write.
     for (const write of lostRace) {
       const row = after.get(recordKey(write.change.kind, write.change.id))
-      conflicts.push({ kind: write.change.kind, id: write.change.id, current: row ? toServerRecord(row) : null })
+      const referenced = write.change.kind === 'song' && write.change.removed === true && row && row.removed === 0 && row.rev === write.change.baseRev
+      conflicts.push({ kind: write.change.kind, id: write.change.id, current: row ? toServerRecord(row) : null, ...(referenced ? { reason: 'referenced' as const } : {}) })
     }
   }
 

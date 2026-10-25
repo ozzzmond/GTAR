@@ -42,7 +42,7 @@ import {
   validateAndResolveStageSession,
 } from './utils/stageSession'
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
-import { DEFAULT_SAMPLE_SETLISTS, DEFAULT_SETLIST, EMPTY_LIBRARY_SONG, removeUnchangedSamples } from './data/defaultLibrary'
+import { DEFAULT_SAMPLE_SETLISTS, DEFAULT_SETLIST, EMPTY_LIBRARY_SONG, cloudSyncedSetlistIds, removeUnchangedSamples } from './data/defaultLibrary'
 import { checkRecovery } from './utils/recoveryNotice'
 import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
@@ -207,7 +207,7 @@ function LibraryApp() {
     if (savedLibrary) {
       const normalized = normalizeSongbookIds(savedLibrary.songs, savedLibrary.setlists)
       // #228: former sample songs the user never changed are removed (no samples ship any more).
-      const cleaned = removeUnchangedSamples({ ...savedLibrary, songs: normalized.songs, setlists: normalized.setlists })
+      const cleaned = removeUnchangedSamples({ ...savedLibrary, songs: normalized.songs, setlists: normalized.setlists }, cloudSyncedSetlistIds())
       if (normalized.migrated || cleaned.songs.length !== normalized.songs.length || cleaned.setlists.length !== normalized.setlists.length) {
         savedLibrary = cleaned
         try {
@@ -232,7 +232,7 @@ function LibraryApp() {
     } catch { /* Keep the existing fallback. */ }
     const combined = [...storedSongs, ...storedTrash]
     const normalized = normalizeSongbookIds(combined, storedSetlists)
-    const repaired = removeUnchangedSamples(deduplicateLibrary({ songs: normalized.songs, setlists: normalized.setlists }))
+    const repaired = removeUnchangedSamples(deduplicateLibrary({ songs: normalized.songs, setlists: normalized.setlists }), cloudSyncedSetlistIds())
     try {
       persistLibrary(repaired)
       performStorageHousekeeping()

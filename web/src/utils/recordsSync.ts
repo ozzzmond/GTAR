@@ -76,7 +76,9 @@ const REQUEST_TIMEOUT_MS = 15000
 const MAX_PULL_PAGES = 500
 
 interface KnownRecord { rev: number; checksum: string }
-export interface RecordConflict { kind: RecordKind; id: string; title: string; remote: ServerRecord | null }
+export interface RecordConflict { kind: RecordKind; id: string; title: string; remote: ServerRecord | null
+  /** #240: why this record is held back, when it is not a plain two-sided edit. */
+  note?: string }
 interface RecordsSyncState { v: 1; userId: string | null; cursor: number; known: Record<string, KnownRecord>; conflicts: RecordConflict[] }
 
 const emptyState = (userId: string | null = null): RecordsSyncState => ({ v: 1, userId, cursor: 0, known: {}, conflicts: [] })
@@ -175,6 +177,78 @@ class Working {
   }
 }
 
+/**
+ * #240: cloud changes that would leave a setlist listing a song that is not in the library are held
+ * back instead of failing the whole sync. Nothing is deleted or rewritten automatically:
+ * - a cloud deletion of a song this device still lists in a setlist → the song stays on this device;
+ * - a cloud setlist that lists songs missing here → this device keeps its own version (or none).
+ * Each held record becomes a conflict (with the cloud record) for the user to decide; the rest of the
+ * round is applied normally. Returns how many records were held back.
+ */
+function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applied: Map<string, ServerRecord>,
+  state: RecordsSyncState, knownBefore: Record<string, KnownRecord>): number {
+  let held = 0
+  const hold = (key: string, note: string, localData: unknown) => {
+    const remote = applied.get(key)!
+    applied.delete(key)
+    if (knownBefore[key]) state.known[key] = knownBefore[key]
+    else delete state.known[key]
+    state.conflicts = [...state.conflicts.filter(item => recordKey(item.kind, item.id) !== key),
+      { kind: remote.kind, id: remote.id, title: recordTitle(remote.kind, localData ?? remote.data), remote, note }]
+    appLogger.warn('RecordsSync', `Held back a cloud change for "${recordTitle(remote.kind, localData ?? remote.data)}": ${note}`)
+    held++
+  }
+  for (let pass = 0; pass < 8; pass++) {
+    const { danglingReferences } = validateSongbookIntegrity(next.songs, next.setlists)
+    if (!danglingReferences.length) break
+    let progressed = false
+    for (const ref of danglingReferences) {
+      const songId = ref.songRef.id !== undefined && ref.songRef.id !== null ? String(ref.songRef.id) : null
+      const songKey = songId !== null ? recordKey('song', songId) : null
+      const setlistKey = recordKey('setlist', String(ref.setlistId))
+      const localSong = songId !== null ? local.songs.find(song => String(song.id) === songId) : undefined
+      if (songKey && localSong && applied.get(songKey)?.removed) {
+        if (!next.songs.some(song => String(song.id) === songId)) {
+          const at = Math.min(local.songs.indexOf(localSong), next.songs.length)
+          next.songs = [...next.songs.slice(0, at), localSong, ...next.songs.slice(at)]
+        }
+        hold(songKey, `Removed in the cloud, but setlist "${ref.setlistName}" on this device still lists it`, localSong)
+        progressed = true
+      } else if (applied.has(setlistKey)) {
+        const localList = local.setlists.find(list => String(list.id) === String(ref.setlistId))
+        next.setlists = localList
+          ? next.setlists.map(list => String(list.id) === String(ref.setlistId) ? localList : list)
+          : next.setlists.filter(list => String(list.id) !== String(ref.setlistId))
+        hold(setlistKey, 'The cloud version lists songs that are not in your library', localList)
+        progressed = true
+      }
+    }
+    if (!progressed) break
+  }
+  return held
+}
+
+/** #240: removes setlist entries that point to no song in the library (logged); same array when nothing is missing.
+ * Used only after an explicit user choice (conflict resolution), never on its own. */
+export function dropMissingSetlistEntries(songs: ActiveSongState[], setlists: WebSetlist[]): WebSetlist[] {
+  const { danglingReferences } = validateSongbookIntegrity(songs, setlists)
+  if (!danglingReferences.length) return setlists
+  const missing = new Map<string, Set<unknown>>()
+  for (const ref of danglingReferences) {
+    const key = String(ref.setlistId)
+    if (!missing.has(key)) missing.set(key, new Set())
+    missing.get(key)!.add(ref.songRef)
+  }
+  return setlists.map(setlist => {
+    const gone = missing.get(String(setlist.id))
+    if (!gone) return setlist
+    const kept = setlist.songs.filter(ref => !gone.has(ref))
+    appLogger.warn('RecordsSync', `Setlist "${setlist.name}": removed ${setlist.songs.length - kept.length} entr${setlist.songs.length - kept.length === 1 ? 'y' : 'ies'} for songs that no longer exist`,
+      setlist.songs.filter(ref => gone.has(ref)).map(ref => ref.title || ref.id).join(', '))
+    return { ...setlist, songs: kept }
+  })
+}
+
 /** Current local records, keyed. */
 function localRecords(library: SyncLibrary): Map<string, { kind: RecordKind; id: string; data: unknown; checksum: string }> {
   const map = new Map<string, { kind: RecordKind; id: string; data: unknown; checksum: string }>()
@@ -201,7 +275,7 @@ function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary):
 
 function conflictItems(conflicts: RecordConflict[]): ConflictingItem[] {
   return conflicts.map(conflict => ({ id: conflict.id, type: conflict.kind, title: conflict.title,
-    reason: conflict.remote === null ? 'Missing in the cloud' : conflict.remote.removed ? 'Removed in the cloud, edited here' : 'Edited here and in the cloud' }))
+    reason: conflict.note ?? (conflict.remote === null ? 'Missing in the cloud' : conflict.remote.removed ? 'Removed in the cloud, edited here' : 'Edited here and in the cloud') }))
 }
 
 /** #204 S1: a quiet "nothing changed" line at most every 10 minutes; changes are always logged. */
@@ -315,7 +389,8 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
       const key = recordKey(conflict.kind, conflict.id)
       const mine = local.get(key)
       state.conflicts = [...state.conflicts.filter(item => recordKey(item.kind, item.id) !== key),
-        { kind: conflict.kind, id: conflict.id, title: recordTitle(conflict.kind, mine?.data ?? conflict.current?.data), remote: conflict.current }]
+        { kind: conflict.kind, id: conflict.id, title: recordTitle(conflict.kind, mine?.data ?? conflict.current?.data), remote: conflict.current,
+          ...(conflict.reason === 'referenced' ? { note: 'Deleted here, but a setlist in the cloud still lists it' } : {}) }]
     }
     if (response.mirror === 'skipped-size') appLogger.warn('RecordsSync', 'Cloud copy for older clients not updated: songbook over 2 MB')
   }
@@ -355,6 +430,8 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
   }
   let applied = 0
   let restored = 0
+  const knownBefore = { ...state.known }
+  const appliedRemote = new Map<string, ServerRecord>()
 
   for (const [key, remote] of pulled.records) {
     const known = state.known[key]
@@ -362,6 +439,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
     if (hold && !mine && known && !remote.removed) {
       // Known record missing from the fallback copy: bring the cloud version back, do not delete it.
       working.apply(remote)
+      appliedRemote.set(key, remote)
       state.known[key] = { rev: remote.rev, checksum: remote.checksum }
       state.conflicts = state.conflicts.filter(item => recordKey(item.kind, item.id) !== key)
       applied++
@@ -381,6 +459,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
     const editedHere = known ? mineChecksum !== known.checksum : mine !== undefined
     if (!editedHere) {
       working.apply(remote)
+      appliedRemote.set(key, remote)
       state.known[key] = { rev: remote.rev, checksum: remote.checksum }
       applied++
       continue
@@ -390,6 +469,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
   }
 
   const next = working.library()
+  applied -= holdBackMissingReferences(next, before.library, appliedRemote, state, knownBefore)
   // #208 F6: never write remote changes under an open editor; nothing is saved, the next run repeats.
   if (applied && canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
   const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
@@ -415,7 +495,9 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   for (const conflict of state.conflicts) if (conflict.remote) cloudView.apply(conflict.remote)
 
   // Both versions stay recoverable whatever the choice.
-  const snapshot: { local: SyncLibrary; remote?: SyncLibrary } = { local: before.library }
+  // #240: the cloud records themselves are kept too, so a choice that drops a cloud version stays recoverable
+  // even when the cloud side is not a valid library on its own (e.g. a setlist listing missing songs).
+  const snapshot: { local: SyncLibrary; remote?: SyncLibrary; remoteRecords: Array<ServerRecord | null> } = { local: before.library, remoteRecords: state.conflicts.map(conflict => conflict.remote) }
   try { validateLibrary(cloudView.library()); snapshot.remote = cloudView.library() } catch { /* cloud side alone is not a complete library */ }
   await writeRecoverySnapshot(`gtar_sync_recovery:records:${Date.now()}:${generateUUID()}`, JSON.stringify(snapshot), storage)
 
@@ -444,6 +526,10 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   }
   state.conflicts = []
   const next = working.library()
+  // #240: the user chose; a setlist entry whose song is gone either way is dropped (logged) so the
+  // choice can be saved. The cleaned setlist is pushed like any other local change.
+  const cleaned = dropMissingSetlistEntries(next.songs, next.setlists)
+  if (cleaned !== next.setlists) { next.setlists = cleaned; applied++ }
   const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
   const { pushed, failed } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
   return finish(storage, state, next, applied, pushed, failed, appliedRevision)
@@ -453,11 +539,13 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
 async function adoptCloud(storage: Storage, before: LocalView, records: Map<string, ServerRecord>, state: RecordsSyncState,
   keepRecovery: boolean, canApply?: () => boolean): Promise<CloudSyncResult> {
   const working = new Working({ songs: [], setlists: [], ...(before.library.themeSettings !== undefined ? { themeSettings: before.library.themeSettings } : {}) })
+  const knownBefore = { ...state.known }
   for (const [key, remote] of records) {
     if (!remote.removed) working.apply(remote)
     state.known[key] = { rev: remote.rev, checksum: remote.checksum }
   }
   const next = working.library()
+  holdBackMissingReferences(next, before.library, new Map(records), state, knownBefore)
   if (canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
   if (keepRecovery) await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
   const appliedRevision = persistApplied(storage, before, next)
@@ -471,11 +559,13 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
   const pulled = await pullAll(token, emptyState())
   const state = pulled.state
   const working = new Working({ songs: [], setlists: [] })
+  const knownBefore = { ...state.known }
   for (const [key, remote] of pulled.records) {
     working.apply(remote)
     state.known[key] = { rev: remote.rev, checksum: remote.checksum }
   }
   const next = working.library()
+  holdBackMissingReferences(next, before.library, new Map(pulled.records), state, knownBefore)
   // #227 item 4: count what actually differs; when the device already equals the cloud, write nothing.
   const mine = localRecords(before.library)
   const theirs = localRecords(next)
@@ -520,10 +610,13 @@ async function runRecordsSync(token: string, options: { forceAction?: 'upload' |
     if (error instanceof RecordsSyncDisabledError) { lastDisabledReason = error.message || null; return null }
     if (error instanceof RecordsSyncDeferredError) return { success: false, status: 'IDLE', state: 'SAME_STATE', actionTaken: 'NONE', deferred: true }
     const status = error instanceof RecordsHttpError ? error.status : 0
+    // #240: "Offline" only for a network failure, not for any error raised on this device.
+    const offline = !(error instanceof RecordsHttpError) && ((typeof navigator !== 'undefined' && navigator.onLine === false) ||
+      error instanceof TypeError || (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')))
     appLogger.warn('RecordsSync', 'Per-record sync did not finish', error instanceof Error ? error.message : String(error))
     return {
       success: false,
-      status: status === 401 || status === 403 ? 'ERROR' : status === 0 ? 'OFFLINE' : 'ERROR',
+      status: offline ? 'OFFLINE' : 'ERROR',
       state: 'OFFLINE_OR_CLOUD_FAILURE',
       actionTaken: 'NONE',
       error: status === 401 ? 'Session expired or unauthorized. Please sign in again.'

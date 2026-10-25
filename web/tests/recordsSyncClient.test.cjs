@@ -627,3 +627,138 @@ test('#228: a device that synced the samples before removes them from the cloud 
   assert.deepEqual(cloudIds(w, 'song'), [id(7)], 'only the real song is left in the cloud')
   assert.deepEqual(cloudIds(w, 'setlist'), [])
 })
+
+// #240: a cloud setlist that still lists a song deleted in the cloud must not block sync.
+const { recordChecksum } = require('../src/utils/songbookRecords.ts')
+function removeInCloud(w, songId) {
+  const db = w.db.sqlite
+  const seq = db.prepare("SELECT seq FROM user_songbook_cursors WHERE user_id = 'user-a'").get().seq + 1
+  db.prepare("UPDATE user_songbook_records SET removed = 1, data_json = NULL, rev = rev + 1, seq = ?, checksum = ? WHERE kind = 'song' AND record_id = ?")
+    .run(seq, recordChecksum(true, null), songId)
+  db.prepare("UPDATE user_songbook_cursors SET seq = ? WHERE user_id = 'user-a'").run(seq)
+}
+const cloudSetlistRefs = (w, setlistId) => JSON.parse(w.db.sqlite.prepare("SELECT data_json FROM user_songbook_records WHERE kind = 'setlist' AND record_id = ?").get(setlistId).data_json).songs.map(r => r.id)
+
+test('#240: only a network failure reads as offline; an error on this device reads as an error', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  w.setHook(async () => { throw new TypeError('Failed to fetch') })
+  assert.equal((await w.run(a)).status, 'OFFLINE')
+  w.setHook(async () => { throw new Error('Synced songbook failed referential integrity check: x') })
+  const failed = await w.run(a)
+  assert.equal(failed.status, 'ERROR')
+  assert.match(failed.error, /integrity/)
+  w.setHook(null)
+})
+
+test('#240: sample cleanup keeps a sample setlist that is already in the cloud, and the songs it lists', () => {
+  const { removeUnchangedSamples, cloudSyncedSetlistIds } = sampleLib
+  const all = { songs: [...DEFAULT_SETLIST, song(5)], setlists: DEFAULT_SAMPLE_SETLISTS }
+  const synced = cloudSyncedSetlistIds({ getItem: () => JSON.stringify({ known: { [`setlist:${DEFAULT_SAMPLE_SETLISTS[0].id}`]: { rev: 2 }, 'song:x': {} } }) })
+  assert.deepEqual([...synced], [DEFAULT_SAMPLE_SETLISTS[0].id])
+  assert.equal(removeUnchangedSamples(all, synced), all, 'nothing removed')
+  assert.deepEqual(removeUnchangedSamples(all, new Set()).songs.map(s => s.id), [song(5).id], 'local-only samples still removed')
+  assert.deepEqual([...cloudSyncedSetlistIds({ getItem: () => 'not json' })], [])
+})
+
+// #240 reproduction: how the cloud can end up with a live setlist that lists deleted songs.
+test('#240 repro: cleanup on a device with a stale unchanged sample setlist → song tombstones accepted, setlist deletion conflicts', async () => {
+  const w = await world({ library: { songs: [], setlists: [] } })
+  const a = w.device({ songs: [song(7)], setlists: [] })
+  await w.run(a)
+  // A build before #227 uploaded the samples like any song.
+  const fingerprints = new Map(sampleLib.LEGACY_SAMPLE_SONGS); const lists = new Map(sampleLib.LEGACY_SAMPLE_SETLISTS)
+  sampleLib.LEGACY_SAMPLE_SONGS.clear(); sampleLib.LEGACY_SAMPLE_SETLISTS.clear()
+  edit(a, lib => ({ ...lib, songs: [...lib.songs, ...DEFAULT_SETLIST], setlists: DEFAULT_SAMPLE_SETLISTS }))
+  await w.run(a)
+  const b = w.device({ songs: [], setlists: [] })
+  await w.run(b)
+  // Device B edits the sample setlist (drops sample 2) and deletes sample 2: cloud setlist rev 2.
+  edit(b, lib => ({ ...lib, setlists: lib.setlists.map(l => ({ ...l, songs: l.songs.filter(r => r.id !== DEFAULT_SETLIST[1].id) })) }))
+  edit(b, lib => ({ ...lib, songs: lib.songs.filter(s => s.id !== DEFAULT_SETLIST[1].id) }))
+  await w.run(b)
+  for (const [k, v] of fingerprints) sampleLib.LEGACY_SAMPLE_SONGS.set(k, v)
+  for (const [k, v] of lists) sampleLib.LEGACY_SAMPLE_SETLISTS.set(k, v)
+
+  // Old #228 rule on A, before A pulls B's change: A's local setlist is still the unchanged sample.
+  const stale = sampleLib.removeUnchangedSamples(read(a))
+  assert.equal(stale.setlists.length, 0, 'old rule removes the stale sample setlist and its songs')
+  // The new rule keeps them because the setlist is already in the cloud.
+  assert.equal(sampleLib.removeUnchangedSamples(read(a), sampleLib.cloudSyncedSetlistIds(a)).setlists.length, 1, 'new rule keeps it')
+
+  journal.persistLibrary(stale, a, { expectedRaw: journal.libraryRevision(a) })
+  await w.run(a)
+  const conflicts = client.readRecordsSyncState(a).conflicts
+  assert.ok(conflicts.some(c => c.kind === 'setlist' && c.id === DEFAULT_SAMPLE_SETLISTS[0].id), 'setlist deletion conflicts (stale base revision)')
+  // Before #240 the song deletions were accepted here (seq 775–777 on DEV). The server now refuses them
+  // while the live cloud setlist still lists the songs, so the cloud stays consistent.
+  for (const n of [0, 2, 3]) assert.ok(conflicts.some(c => c.id === DEFAULT_SETLIST[n].id && /setlist in the cloud still lists it/.test(c.note)), `song ${n + 1} refused`)
+  const removed = w.db.sqlite.prepare("SELECT record_id FROM user_songbook_records WHERE kind = 'song' AND removed = 1").all().map(r => r.record_id)
+  assert.deepEqual(removed, [DEFAULT_SETLIST[1].id], 'only sample 2 (dropped from the setlist by B) is deleted')
+  assert.deepEqual(cloudSetlistRefs(w, DEFAULT_SAMPLE_SETLISTS[0].id), [DEFAULT_SETLIST[0].id, DEFAULT_SETLIST[2].id, DEFAULT_SETLIST[3].id])
+})
+
+// #240 non-destructive hold-back: the DEV state (live setlist, its songs deleted in the cloud).
+test('#240: a device that still has the songs keeps them; the deletions wait as conflicts; other changes apply', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base), b = w.device(base)
+  await w.run(a); await w.run(b)
+  edit(b, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(3) ? { ...s, rawContent: 'edited on B' } : s) }))
+  await w.run(b)
+  removeInCloud(w, id(2))
+  const result = await w.run(a)
+  assert.equal(result.status, 'CONFLICT')
+  assert.ok(read(a).songs.some(s => s.id === id(2)), 'song kept on this device')
+  assert.deepEqual(read(a).setlists[0].songs.map(r => r.id), [id(1), id(2)], 'setlist untouched')
+  assert.equal(read(a).songs.find(s => s.id === id(3)).rawContent, 'edited on B', 'unrelated cloud change applied')
+  const held = client.readRecordsSyncState(a).conflicts
+  assert.deepEqual(held.map(c => c.id), [id(2)])
+  assert.match(held[0].note, /Removed in the cloud, but setlist "List 1" on this device still lists it/)
+  assert.equal(result.conflicts[0].reason, held[0].note)
+  // Keep this device: the song goes back to the cloud; everyone converges.
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+  assert.ok(cloudIds(w, 'song').includes(id(2)), 'song restored in the cloud')
+  const fresh = w.device({ songs: [], setlists: [] })
+  assert.equal((await w.run(fresh)).success, true)
+  assert.deepEqual(read(fresh).setlists[0].songs.map(r => r.id), [id(1), id(2)])
+})
+
+test('#240: a new device holds back a cloud setlist that lists missing songs; everything else syncs; "use cloud" is explicit', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  removeInCloud(w, id(2))
+  const fresh = w.device({ songs: [], setlists: [] })
+  const result = await w.run(fresh)
+  assert.equal(result.status, 'CONFLICT')
+  assert.deepEqual(read(fresh).songs.map(s => s.id).sort(), [id(1), id(3)], 'songs synced')
+  assert.deepEqual(read(fresh).setlists, [], 'the setlist is held back, not rewritten')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(2)], 'nothing written to the cloud')
+  assert.match(client.readRecordsSyncState(fresh).conflicts[0].note, /lists songs that are not in your library/)
+  // The user chooses the cloud version: missing entries are dropped then, and only then.
+  assert.equal((await w.run(fresh, { forceAction: 'download' })).success, true)
+  assert.deepEqual(read(fresh).setlists[0].songs.map(r => r.id), [id(1)])
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)], 'the explicit choice is pushed')
+})
+
+test('#240 server: a song deletion is refused while a live cloud setlist lists it; dropping it from the setlist in the same push is fine', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base), b = w.device(base)
+  await w.run(a); await w.run(b)
+  // B lists song 2 in a second setlist; A has not seen it.
+  edit(b, lib => ({ ...lib, setlists: [...lib.setlists, list(2, [2, 3])] }))
+  await w.run(b)
+  // A drops song 2 from its setlist and deletes it, in one push.
+  edit(a, lib => ({ songs: lib.songs.filter(s => s.id !== id(2)), setlists: lib.setlists.map(l => ({ ...l, songs: l.songs.filter(r => r.id !== id(2)) })) }))
+  const pushed = await w.run(a)
+  assert.ok(pushed)
+  assert.ok(cloudIds(w, 'song').includes(id(2)), 'song 2 still live: "List 2" lists it')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)], 'the setlist edit itself was accepted')
+  assert.ok(client.readRecordsSyncState(a).conflicts.some(c => c.id === id(2)))
+  // When no setlist lists it, the deletion goes through.
+  const c = w.device({ songs: [], setlists: [] })
+  await w.run(c)
+  edit(c, lib => ({ songs: lib.songs.filter(s => s.id !== id(3)), setlists: lib.setlists.map(l => ({ ...l, songs: l.songs.filter(r => r.id !== id(3)) })) }))
+  await w.run(c)
+  assert.ok(!cloudIds(w, 'song').includes(id(3)), 'song 3 deleted together with its setlist entries')
+})

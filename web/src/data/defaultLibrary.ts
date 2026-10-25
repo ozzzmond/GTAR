@@ -77,12 +77,27 @@ export function isPristineSampleRecord(kind: string, data: unknown): boolean {
 }
 
 /**
+ * #240: setlist ids this device has synced through per-record sync (its saved state, key
+ * `gtar_records_sync_v1`, written by recordsSync.ts). Read directly to avoid an import cycle.
+ */
+export function cloudSyncedSetlistIds(storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage !== 'undefined' ? localStorage : undefined): Set<string> {
+  const ids = new Set<string>()
+  try {
+    const state = JSON.parse(storage?.getItem('gtar_records_sync_v1') ?? 'null') as { known?: Record<string, unknown> } | null
+    for (const key of Object.keys(state?.known ?? {})) if (key.startsWith('setlist:')) ids.add(key.slice('setlist:'.length))
+  } catch { /* no saved state: nothing synced */ }
+  return ids
+}
+
+/**
  * #228: removes former samples the user never changed. An unchanged sample setlist goes; an unchanged
  * sample song goes unless a setlist that stays still lists it. Edited samples are the user's and stay.
- * Returns the same object when there is nothing to remove.
+ * #240: a sample setlist that is already in the cloud stays (the cloud copy may be newer than this
+ * device's), and so do the songs it lists; the user can delete it. Same object when nothing is removed.
  */
-export function removeUnchangedSamples<L extends { songs: ActiveSongState[]; setlists: WebSetlist[] }>(library: L): L {
-  const setlists = library.setlists.filter(list => !isUnchangedSampleSetlist(list))
+export function removeUnchangedSamples<L extends { songs: ActiveSongState[]; setlists: WebSetlist[] }>(library: L,
+  syncedSetlistIds: Set<string> = new Set()): L {
+  const setlists = library.setlists.filter(list => !isUnchangedSampleSetlist(list) || syncedSetlistIds.has(String(list.id)))
   const referenced = new Set(setlists.flatMap(list => (list.songs || []).map(ref => String(ref?.id))))
   const songs = library.songs.filter(song => !isUnchangedSampleSong(song) || referenced.has(String(song.id)))
   if (songs.length === library.songs.length && setlists.length === library.setlists.length) return library
