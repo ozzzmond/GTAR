@@ -26,6 +26,8 @@ export interface RecordsAutoSyncInput {
   onState?: (status: CloudSyncStatus, isProcessing: boolean) => void
   /** Test hooks. */
   sync?: (token: string, options?: { canApply?: () => boolean }) => Promise<CloudSyncResult | null>
+  /** #227: first sync needs the user's choice (this tab stops auto-syncing until the page reloads or the user chooses). */
+  onFirstSyncChoice?: (choice: { songs: number; setlists: number }) => void
   /** Current library revision (#208 F6); defaults to the stored one. */
   revision?: () => string | null
   debounceMs?: number
@@ -51,6 +53,7 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
     let running = false
     let again = false
     let release: (() => void) | null = null
+    let awaitingFirstSyncChoice = false
     let timer: ReturnType<typeof setTimeout> | null = null
 
     const run = async () => {
@@ -58,13 +61,19 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
       if (!leader || disposed) return
       if (running) { again = true; return }
       const current = latest.current
-      if (current.blocked || !current.token || !isRecordsSyncEnabled() || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
+      if (awaitingFirstSyncChoice || current.blocked || !current.token || !isRecordsSyncEnabled() || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
       running = true
       current.onState?.('SYNCING', true)
       try {
         const result = await (current.sync ?? performRecordsSync)(current.token, { canApply: () => !latest.current.blocked })
         if (disposed) return
         if (!result || result.deferred) { current.onState?.('IDLE', false); return }
+        if (result.firstSyncChoice) {
+          awaitingFirstSyncChoice = true
+          latest.current.onState?.('IDLE', false)
+          latest.current.onFirstSyncChoice?.(result.firstSyncChoice)
+          return
+        }
         if (result.updatedLibrary) {
           // #208 F6: a newer local save since this sync wrote makes its library stale: drop it, sync again.
           if (!isCurrent(result)) again = true

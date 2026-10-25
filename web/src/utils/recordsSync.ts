@@ -327,15 +327,32 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
  * One sync round: pull every remote change since the checkpoint, fast-forward unedited records,
  * queue conflicts, then push local edits. Throws RecordsSyncDisabledError when the server flag is off.
  */
-async function syncOnce(token: string, storage: Storage, canApply?: () => boolean): Promise<CloudSyncResult> {
+export type FirstSyncChoice = 'cloud' | 'combine'
+
+async function syncOnce(token: string, storage: Storage, canApply?: () => boolean, firstSync?: FirstSyncChoice): Promise<CloudSyncResult> {
   const before = readLocal(storage)
   // #208 F1: after a storage fallback, read the whole feed so every record missing here can be restored.
   const hold = recordsDeleteHoldActive(storage)
   const saved = readRecordsSyncState(storage)
+  const fresh = Object.keys(saved.known).length === 0 && saved.cursor === 0 && !saved.conflicts.length
   const pulled = await pullAll(token, hold ? { ...saved, cursor: 0 } : saved)
   const state = pulled.state
   const working = new Working(before.library)
   const local = localRecords(before.library)
+
+  // #227: the first sync on this device, when the cloud already has a library. Pristine samples never
+  // count. Nothing to lose → this device simply takes the cloud library. Songs of its own → the user
+  // chooses once: take the cloud library (own songs kept in recovery) or combine.
+  if (fresh && [...pulled.records.values()].some(r => !r.removed)) {
+    const own = [...local.entries()].filter(([key, record]) => record.kind !== 'theme' && !isPristineSampleRecord(record.kind, record.data) &&
+      pulled.records.get(key)?.checksum !== record.checksum)
+    if (own.length && !firstSync) {
+      return { success: false, status: 'IDLE', state: 'SAME_STATE', actionTaken: 'NONE',
+        firstSyncChoice: { songs: own.filter(([, r]) => r.kind === 'song').length, setlists: own.filter(([, r]) => r.kind === 'setlist').length } }
+    }
+    const samplesHere = [...local.values()].some(record => isPristineSampleRecord(record.kind, record.data))
+    if (firstSync === 'cloud' || (!own.length && samplesHere)) return adoptCloud(storage, before, pulled.records, state, own.length > 0, canApply)
+  }
   let applied = 0
   let restored = 0
 
@@ -428,6 +445,22 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   return finish(storage, state, next, applied, pushed, failed, appliedRevision)
 }
 
+/** #227: this device takes the cloud library on its first sync. Own songs (if any) go to recovery first. */
+async function adoptCloud(storage: Storage, before: LocalView, records: Map<string, ServerRecord>, state: RecordsSyncState,
+  keepRecovery: boolean, canApply?: () => boolean): Promise<CloudSyncResult> {
+  const working = new Working({ songs: [], setlists: [], ...(before.library.themeSettings !== undefined ? { themeSettings: before.library.themeSettings } : {}) })
+  for (const [key, remote] of records) {
+    if (!remote.removed) working.apply(remote)
+    state.known[key] = { rev: remote.rev, checksum: remote.checksum }
+  }
+  const next = working.library()
+  if (canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
+  if (keepRecovery) await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
+  const appliedRevision = persistApplied(storage, before, next)
+  appLogger.info('RecordsSync', `First sync on this device: took the cloud library (${next.songs.length} songs)${keepRecovery ? '; this device\'s own songs kept in recovery' : ''}`)
+  return finish(storage, state, next, records.size, 0, null, appliedRevision)
+}
+
 /** Replaces the whole device library with the cloud records (explicit "Download from Cloud"). */
 async function replaceWithCloud(token: string, storage: Storage): Promise<CloudSyncResult> {
   const before = readLocal(storage)
@@ -452,17 +485,19 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
  */
 export async function performRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage;
   /** #208 F6: checked right before remote changes are written; false defers the whole round. */
-  canApply?: () => boolean } = {}): Promise<CloudSyncResult | null> {
+  canApply?: () => boolean
+  /** #227: the user's answer to a first-sync choice. */
+  firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult | null> {
   // One records sync at a time across this browser's tabs (manual and automatic).
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
   if (locks?.request) return locks.request(RECORDS_SYNC_RUN_LOCK, () => runRecordsSync(token, options))
   return runRecordsSync(token, options)
 }
 
-async function runRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean }): Promise<CloudSyncResult | null> {
+async function runRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean; firstSync?: FirstSyncChoice }): Promise<CloudSyncResult | null> {
   const storage = options.storage ?? localStorage
   try {
-    if (!options.forceAction) return await syncOnce(token, storage, options.canApply)
+    if (!options.forceAction) return await syncOnce(token, storage, options.canApply, options.firstSync)
     const hasConflicts = readRecordsSyncState(storage).conflicts.length > 0
     if (options.forceAction === 'download') return hasConflicts ? await resolveOnce(token, storage, 'use-cloud') : await replaceWithCloud(token, storage)
     return await resolveOnce(token, storage, options.forceAction === 'upload' ? 'keep-local' : 'keep-both')
@@ -486,7 +521,7 @@ async function runRecordsSync(token: string, options: { forceAction?: 'upload' |
  * The dialog's sync call: per-record sync when it is on for this device and on the server,
  * otherwise the classic whole-songbook sync. Classic sync is never mixed into a records round.
  */
-export async function performSongbookSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage } = {}): Promise<CloudSyncResult> {
+export async function performSongbookSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult> {
   const storage = options.storage ?? localStorage
   if (isRecordsSyncEnabled(storage)) {
     const result = await performRecordsSync(token, options)

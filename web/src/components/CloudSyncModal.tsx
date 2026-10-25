@@ -1,5 +1,5 @@
 import { openRecoveryReview } from '../utils/recoveryReview'
-import { isRecordsServerUnavailable, isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled } from '../utils/recordsSync'
+import { isRecordsServerUnavailable, isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled, type FirstSyncChoice } from '../utils/recordsSync'
 import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -62,6 +62,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState<string>('')
+  // #227: first sync on this device, with its own songs and an existing cloud library.
+  const [firstSyncChoice, setFirstSyncChoice] = useState<{ songs: number; setlists: number } | null>(null)
   const [warningMessage, setWarningMessage] = useState<string>('')
   const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
   const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
@@ -108,15 +110,17 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const onSyncAppliedRef = useRef(onSyncApplied)
   useEffect(() => { onSyncAppliedRef.current = onSyncApplied }, [onSyncApplied])
 
-  const refreshSyncState = useCallback(async () => {
+  const refreshSyncState = useCallback(async (firstSync?: FirstSyncChoice) => {
     if (!token || !isAuthenticated) return
     setIsProcessing(true)
     setErrorMessage('')
     setWarningMessage('')
     try {
-      const result = await performSongbookSync(token)
+      const result = await performSongbookSync(token, firstSync ? { firstSync } : {})
       setSyncStatus(result.status)
       setLastMeta(readCloudSyncMeta())
+      setFirstSyncChoice(result.firstSyncChoice ?? null)
+      if (result.firstSyncChoice) return
 
       if (result.success) {
         setWarningMessage(result.warning || '')
@@ -424,6 +428,29 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               </p>
             )}
 
+            {firstSyncChoice && (
+              <div data-testid="first-sync-choice" role="group" aria-label="Set up sync on this device" className="text-xs p-3 rounded-lg border border-app-action/40 bg-app-action/10 space-y-2">
+                <p className="font-bold text-app-heading">This device is new to your cloud library</p>
+                <p className="text-app-muted">
+                  It has {firstSyncChoice.songs} {firstSyncChoice.songs === 1 ? 'song' : 'songs'}
+                  {firstSyncChoice.setlists ? ` and ${firstSyncChoice.setlists} ${firstSyncChoice.setlists === 1 ? 'setlist' : 'setlists'}` : ''} that your cloud library does not have.
+                  Choose once how to start; after that, Sync Now keeps everything in step.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button type="button" data-testid="first-sync-use-cloud" disabled={isProcessing} onClick={() => { void refreshSyncState('cloud') }}
+                    className="px-3 py-2 rounded-lg bg-app-action text-app-on-action font-bold text-left disabled:opacity-50">
+                    Use my cloud library on this device (recommended)
+                    <span className="block font-normal opacity-90">This device's own songs are kept in Review local recovery.</span>
+                  </button>
+                  <button type="button" data-testid="first-sync-combine" disabled={isProcessing} onClick={() => { void refreshSyncState('combine') }}
+                    className="px-3 py-2 rounded-lg border border-app-border text-left disabled:opacity-50">
+                    Combine this device's songs with my cloud library
+                    <span className="block text-app-muted">They will be added to all your devices.</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {warningMessage && (
               <p className="text-xs text-status-warning bg-status-warning/10 p-2.5 rounded-lg border border-status-warning/20" role="status">
                 {warningMessage}
@@ -585,7 +612,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             <button
               type="button"
               data-testid="sync-now-button"
-              onClick={refreshSyncState}
+              onClick={() => { void refreshSyncState() }}
               disabled={isProcessing || !isAuthenticated}
               className="w-full py-2.5 px-4 rounded-xl bg-app-action hover:bg-app-action text-app-on-action font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer disabled:opacity-50"
             >

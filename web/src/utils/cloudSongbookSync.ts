@@ -99,6 +99,8 @@ export interface CloudSyncResult {
   deferred?: boolean
   /** #208 F6: the library revision the sync wrote. A newer local write since then makes `updatedLibrary` stale. */
   appliedRevision?: string | null
+  /** #227: first sync on this device with its own songs and a cloud library: nothing written, ask the user. */
+  firstSyncChoice?: { songs: number; setlists: number }
 }
 
 /** #189: shown when a successful sync could not keep its common base for the next three-way merge. */
