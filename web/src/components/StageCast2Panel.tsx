@@ -404,10 +404,16 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
           </button>
         </div>
       )}
+      {/* #224: pairing steps on demand instead of a standing paragraph. */}
       {terminal && (
-        <p className="text-xs text-app-muted mt-2">
-          On the TV, open the TV Browser Presentation Page at /tv. Scan its QR or choose a photo to fill the reference, then enter the PIN. Manual reference entry is always available.
-        </p>
+        <details data-testid="cast2-how-to-pair" className="mt-2 text-xs text-app-muted">
+          <summary className="cursor-pointer text-app-action font-semibold">How to pair</summary>
+          <ol className="list-decimal pl-5 mt-1 space-y-0.5">
+            <li>On the TV, open the page above.</li>
+            <li>Scan its QR here, or type the reference.</li>
+            <li>Enter the six-digit PIN shown on the TV.</li>
+          </ol>
+        </details>
       )}
     </div>
   )

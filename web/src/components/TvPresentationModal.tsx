@@ -71,9 +71,6 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
               <h2 id="tv-presentation-title" className="text-lg font-bold text-app-heading">
                 TV / External Display
               </h2>
-              <p className="text-xs text-app-muted">
-                Open the stage presentation page on a secondary display
-              </p>
             </div>
           </div>
           <button
@@ -93,10 +90,8 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
               <div className="flex items-center gap-2">
                 <ExternalLink className="w-4 h-4 text-app-action" />
                 <span className="text-xs font-bold uppercase tracking-wider text-app-action">Pop-out window</span>
+                <span className="text-xs text-app-muted">HDMI or second screen</span>
               </div>
-              <p className="text-xs text-app-muted leading-relaxed">
-                For a TV or projector connected to this computer (HDMI / second screen). Drag the window there.
-              </p>
               <button
                 type="button"
                 data-testid="cast-popout-btn"
@@ -121,10 +116,6 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
             </div>
 
             {!connected && <>
-              <p className="text-xs text-app-muted leading-relaxed">
-                Open this bookmarkable URL on your TV or secondary display browser:
-              </p>
-
               <div className="flex items-center gap-2">
                 <input
                   type="text"
