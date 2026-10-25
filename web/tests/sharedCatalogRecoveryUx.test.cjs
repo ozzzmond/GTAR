@@ -229,7 +229,7 @@ test('REVISION_COMPARISON & NO_AUTOMATIC_LOCAL_OVERWRITE & RECOVERY_LAZY_DETAIL_
   const staleNotice = document.querySelector('[data-testid="preview-stale-import-notice"]')
   assert.ok(staleNotice, 'Stale import notice exists')
   assert.match(staleNotice.textContent, /r1 → this is r2/)
-  assert.match(staleNotice.textContent, /only revision numbers and metadata can be compared/)
+  assert.match(staleNotice.textContent, /Only revision numbers and details are compared/)
   assert.match(staleNotice.textContent, /never overwrite existing imported setlists/)
 
   // RECOVERY_LAZY_DETAIL_DISCLOSURE: Chart details element is closed by default
@@ -294,7 +294,7 @@ test('PUBLISHER_ONLY_MANAGEMENT & NON_OWNER_ACCESS_DENIED & UNPUBLISH_CONFIRMATI
   assert.ok(confirmDialog, 'Unpublish confirmation dialog opens')
   assert.equal(confirmDialog.open, true, 'Dialog open property set via showModal')
   assert.match(confirmDialog.textContent, /Remove "Publisher Setlist" \(r1\) from the Shared Catalog\?/)
-  assert.match(confirmDialog.textContent, /Rename and permanent deletion are deferred backend tasks/)
+  assert.doesNotMatch(confirmDialog.textContent, /deferred backend tasks/, '#224: internal note removed')
 
   // UNPUBLISH_MODAL_ESCAPE_CANCEL & UNPUBLISH_MODAL_FOCUS_RESTORATION
   const cancelBtn = document.querySelector('[data-testid="setlist-unpublish-cancel"]')

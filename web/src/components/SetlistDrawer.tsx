@@ -465,9 +465,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 <div className="p-8 text-center text-xs font-mono text-app-muted space-y-2">
                   <div className="text-sm font-bold text-app-text">No Custom Setlists</div>
                   <div>Your songbook contains {songs.length} songs.</div>
-                  <div className="text-[11px] text-app-action">
-                    Setlists stay completely separate from your full library.
-                  </div>
                 </div>
               ) : filteredSetlists.length === 0 ? (
                 <div className="p-8 text-center text-xs font-mono text-app-muted space-y-2">

@@ -245,7 +245,6 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-app-heading">Import Songs &amp; Setlists</h2>
-              <p className="text-xs text-app-muted">Import chord charts, songs, or exported setlists</p>
             </div>
           </div>
           <button
@@ -259,10 +258,6 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-4">
-          <p className="text-xs text-app-muted leading-relaxed">
-            Choose an import method for your songs, chord charts, or setlists:
-          </p>
-
           {feedback && (
             <div
               className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
@@ -311,9 +306,6 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
                 Import File (.txt, .cho, .chordpro, .onsong, .json)
               </div>
-              <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
-                Select single song, chord sheet, or exported setlist JSON
-              </div>
             </div>
           </button>
 
@@ -330,16 +322,13 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               <div className="text-xs font-bold text-app-heading group-hover:text-app-action transition-colors">
                 Import Folder (Batch)
               </div>
-              <div className="text-[11px] text-app-muted mt-0.5 leading-snug">
-                Select folder to batch import all chord charts and songs
-              </div>
             </div>
           </button>
 
 
 
           <div className="p-3 rounded-xl bg-app-base/50 border border-app-border/60 text-[11px] text-app-muted leading-relaxed">
-            <span className="font-semibold text-app-link">Looking for Full Library Backup / Restore?</span> Use the profile menu (<span className="text-app-heading font-medium">Backup &amp; Restore</span>) to export or restore complete app settings, themes, and full library snapshots.
+            Full backup and restore: profile menu → <span className="text-app-heading font-medium">Backup &amp; Restore</span>.
           </div>
         </div>
 

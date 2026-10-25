@@ -37,7 +37,7 @@ test('108-dev.1c: ImportDialogModal setlist import routing vs backup restore', (
     'UI header must clarify it supports Songs & Setlists'
   )
   assert.ok(
-    content.includes('Looking for Full Library Backup / Restore?'),
+    content.includes('Full backup and restore: profile menu'),
     'UI must clarify distinction between Import dialog and Full Profile/Library Backup Restore'
   )
 })

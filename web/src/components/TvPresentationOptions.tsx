@@ -40,7 +40,7 @@ export function TvPresentationOptions() {
         TV Presentation / TV Sync
       </h3>
       <p className="text-xs text-app-muted">
-        TV display only. Controller settings above stay independent. Manage pairing and connection in Cast Options.
+        Applies to the TV only.
       </p>
 
       {/* TV Chords Row */}

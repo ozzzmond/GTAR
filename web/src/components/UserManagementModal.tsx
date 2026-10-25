@@ -210,7 +210,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-app-heading">D1 Account &amp; Access Control</h2>
               </div>
-              <p className="text-xs text-app-muted">Server-authoritative Google account management</p>
             </div>
           </div>
 

@@ -128,9 +128,6 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-app-heading">Browse Song Sources</h2>
-              <p className="text-xs text-app-muted">
-                Open chords online with 1-tap song chords import
-              </p>
             </div>
           </div>
           <button

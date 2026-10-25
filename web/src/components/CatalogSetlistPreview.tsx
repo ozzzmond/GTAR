@@ -127,7 +127,7 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
                 Your copy: r{staleImports[0].catalogSource!.revision} → this is r{revision}
               </div>
               <p className="text-[11px] text-app-muted font-sans leading-relaxed">
-                Notice: Historical song content and original imported snapshots are not retained in catalog lineage; only revision numbers and metadata can be compared. Differences in songs, ordering, or chart content require manual review. Re-import creates an independent personal copy and will never overwrite existing imported setlists.
+                Only revision numbers and details are compared; earlier song text isn't kept. Re-import makes a new copy and will never overwrite existing imported setlists.
               </p>
             </div>
           )}
@@ -196,7 +196,7 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
                     : 'Create a personal setlist and independent song for every occurrence?'}
             </p>
             <p className="text-xs text-app-muted">
-              Your personal copy is independent. Automatic updates are disabled; re-import is always explicit.
+              Your copy is independent and never updates on its own.
             </p>
             <div className="flex flex-wrap gap-2">
               <button className={buttonClass} disabled={busy} onClick={commit}>Confirm {approval === 'restore' ? 'restore' : 'import'}</button>

@@ -113,7 +113,7 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
         <span>Visible to all active GTAR members</span>
       </p>
       <p className="text-[11px] text-app-muted leading-relaxed">
-        Sharing this setlist makes it available to other team members in the Shared Catalog. Team members can view and save their own copy. Your personal setlist remains independent and unchanged.
+        Team members can view it and save their own copy. Yours stays unchanged.
       </p>
       <p className="text-[11px] text-app-muted leading-relaxed">
         If local and cloud versions differ, sync your changes first, then review again here.
