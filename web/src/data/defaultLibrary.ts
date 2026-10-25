@@ -1,184 +1,90 @@
-// First-run sample library shown before a user has any songs (moved from App.tsx, #85).
+/**
+ * #228 (owner decision 2026-10-25): GTAR ships no sample songs. The former first-run samples were
+ * commercial songs, so their charts are no longer in the app. A new device starts with an empty
+ * library and shows a short welcome chart (original text, never saved) until the user adds songs.
+ *
+ * Devices that still hold the old samples: only fingerprints are kept here, enough to recognise a
+ * sample the user never changed. Those are removed from the device (and so from the cloud), and
+ * per-record sync never uploads them.
+ */
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
-// Modern GTAR v1.0.42 Default Stage Setlist
-export const DEFAULT_SETLIST: ActiveSongState[] = [
-  {
-    id: 'd1080001-0001-4000-8000-000000000001',
-    title: 'Stand By Me',
-    artist: 'Ben E. King',
-    key: 'A',
-    capo: 'Capo 2',
-    bpm: '118',
-    format: 'CHORD_PRO',
-    transposeOffset: 0,
-    rawContent: `{title: Stand By Me}
-{artist: Ben E. King}
-{key: A}
-{capo: Capo 2}
-{tempo: 118}
+/** Kept for existing imports: no songs and no setlists ship with the app. */
+export const DEFAULT_SETLIST: ActiveSongState[] = []
+export const DEFAULT_SAMPLE_SETLISTS: WebSetlist[] = []
 
-Intro: [A] [F#m] [D] [E] [A]
-
-[Verse 1]
-When the [A]night has come
-[F#m]And the land is dark
-And the [D]moon is the [E]only light we'll [A]see
-No I [A]won't be afraid, no I [F#m]won't be afraid
-Just as [D]long as you [E]stand, stand by [A]me
-
-[Chorus]
-So darling, darling, [A]stand by me
-Oh [F#m]stand by me
-Oh [D]stand, [E]stand by me, [A]stand by me
-
-[Verse 2]
-If the [A]sky that we look upon
-[F#m]Should tumble and fall
-Or the [D]mountains should [E]crumble to the [A]sea
-I won't [A]cry, I won't cry, no I [F#m]won't shed a tear
-Just as [D]long as you [E]stand, stand by [A]me
-
-[Outro]
-[A]Whenever you're in trouble, won't you [F#m]stand by me
-Oh [D]stand by me, [E]oh stand by [A]me`,
-  },
-  {
-    id: 'd1080001-0001-4000-8000-000000000002',
-    title: 'Ang Huling El Bimbo',
-    artist: 'Eraserheads',
-    key: 'G',
-    capo: 'No Capo',
-    bpm: '124',
-    format: 'TWO_LINE',
-    transposeOffset: 0,
-    rawContent: `{title: Ang Huling El Bimbo}
-{artist: Eraserheads}
+/** Shown when the library is empty. Not part of the library; never saved or synced. */
+export const EMPTY_LIBRARY_SONG: ActiveSongState = {
+  id: 'gtar-empty-library-welcome',
+  title: 'Welcome to GTAR',
+  artist: '',
+  key: 'G',
+  capo: 'No Capo',
+  bpm: '',
+  format: 'CHORD_PRO',
+  transposeOffset: 0,
+  rawContent: `{title: Welcome to GTAR}
 {key: G}
-{capo: No Capo}
-{tempo: 124}
 
-[Intro]
-G - A7 - C - G
-[G] [A7] [C] [G]
+{comment: Get started}
+[G]Your songbook is [C]empty for now.
+[G]Add a song with [D]New song, or import a chart.
+[Em]Sign in to bring your [C]library from the [D]cloud.`,
+}
 
-[Verse 1]
-Kamukha mo si Paraluman
-Nung tayo ay bata pa
-At ang galing-galing mong sumayaw
-Mapa-Boogie man o Cha-Cha
+const norm = (text: unknown) => String(text ?? '').replace(/\r\n?/g, '\n').trim()
+/** FNV-1a over title, artist and chart; enough to recognise an unchanged legacy sample. */
+export function sampleSongFingerprint(song: { title?: unknown; artist?: unknown; rawContent?: unknown }): string {
+  const text = [norm(song.title), norm(song.artist), norm(song.rawContent)].join('\u0000')
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0 }
+  return hash.toString(16).padStart(8, '0')
+}
 
-[Chorus]
-Magkahawak ang ating kamay
-At walang kamalay-malay
-Na ang huling El Bimbo
-Ay papunta na sa dulo
+/** Former samples (ids d1080001-… / d1080002-…): song id → fingerprint; setlist id → name and song ids. */
+export const LEGACY_SAMPLE_SONGS = new Map<string, string>([
+  ['d1080001-0001-4000-8000-000000000001', 'c49b14d3'],
+  ['d1080001-0001-4000-8000-000000000002', '291db863'],
+  ['d1080001-0001-4000-8000-000000000003', 'e72ae650'],
+  ['d1080001-0001-4000-8000-000000000004', '984d5a67'],
+])
+export const LEGACY_SAMPLE_SETLISTS = new Map<string, { name: string; songs: string[] }>([
+  ['d1080002-0001-4000-8000-000000000001', { name: 'Acoustic Gig Set', songs: [...LEGACY_SAMPLE_SONGS.keys()] }],
+])
 
-[Bridge]
-At dahan-dahang lumipas
-Ang mga araw at taon
-Lumaki tayong dalawa
-Naiwan ang kahapon
-
-[Outro]
-[G] [A7] [C] [G]
-La la la la la la la la la`,
-  },
-  {
-    id: 'd1080001-0001-4000-8000-000000000003',
-    title: 'Hotel California',
-    artist: 'Eagles',
-    key: 'Bm',
-    capo: 'Capo 2',
-    bpm: '75',
-    format: 'CHORD_PRO',
-    transposeOffset: 0,
-    rawContent: `{title: Hotel California}
-{artist: Eagles}
-{key: Bm}
-{capo: Capo 2}
-{tempo: 75}
-
-Intro: [Bm] [F#7] [A] [E] [G] [D] [Em] [F#7]
-
-[Verse 1]
-On a [Bm]dark desert highway, [F#7]cool wind in my hair
-[A]Warm smell of colitas [E]rising up through the air
-[G]Up ahead in the distance, [D]I saw a shimmering light
-[Em]My head grew heavy and my sight grew dim, [F#7]I had to stop for the night
-
-[Chorus]
-[G]Welcome to the Hotel Cali[D]fornia
-Such a [F#7]lovely place, such a [Bm]lovely face
-Plenty of [G]room at the Hotel Cali[D]fornia
-Any [Em]time of year, you can [F#7]find it here`,
-  },
-  {
-    id: 'd1080001-0001-4000-8000-000000000004',
-    title: 'Hallelujah',
-    artist: 'Leonard Cohen',
-    key: 'C',
-    capo: 'No Capo',
-    bpm: '56',
-    format: 'CHORD_PRO',
-    transposeOffset: 0,
-    rawContent: `{title: Hallelujah}
-{artist: Leonard Cohen}
-{key: C}
-{capo: No Capo}
-{tempo: 56}
-
-Intro: [C] [Am] [C] [Am]
-
-[Verse 1]
-Now I've [C]heard there was a [Am]secret chord
-That [C]David played, and it [Am]pleased the Lord
-But [F]you don't really [G]care for music, [C]do you? [G]
-It [C]goes like this, the [F]fourth, the [G]fifth
-The [Am]minor fall, the [F]major lift
-The [G]baffled king com[E7]posing Halle[Am]lujah
-
-[Chorus]
-Halle[F]lujah, Halle[Am]lujah
-Halle[F]lujah, Halle[C]lu---[G]--[C]jah`,
-  },
-]
-
-export const DEFAULT_SAMPLE_SETLISTS: WebSetlist[] = [
-  {
-    id: 'd1080002-0001-4000-8000-000000000001',
-    name: 'Acoustic Gig Set',
-    songs: [
-      { id: 'd1080001-0001-4000-8000-000000000001', title: 'Stand By Me', artist: 'Ben E. King' },
-      { id: 'd1080001-0001-4000-8000-000000000002', title: 'Ang Huling El Bimbo', artist: 'Eraserheads' },
-      { id: 'd1080001-0001-4000-8000-000000000003', title: 'Hotel California', artist: 'Eagles' },
-      { id: 'd1080001-0001-4000-8000-000000000004', title: 'Hallelujah', artist: 'Leonard Cohen' },
-    ],
-  },
-]
+function isUnchangedSampleSong(value: { id?: unknown; title?: unknown; artist?: unknown; rawContent?: unknown }): boolean {
+  const fingerprint = LEGACY_SAMPLE_SONGS.get(String(value.id))
+  return !!fingerprint && sampleSongFingerprint(value) === fingerprint
+}
+function isUnchangedSampleSetlist(value: { id?: unknown; name?: unknown; songs?: unknown }): boolean {
+  const sample = LEGACY_SAMPLE_SETLISTS.get(String(value.id))
+  const songs = Array.isArray(value.songs) ? value.songs as Array<{ id?: unknown }> : null
+  return !!sample && !!songs && norm(value.name) === sample.name &&
+    songs.length === sample.songs.length && songs.every((ref, i) => String(ref?.id) === sample.songs[i])
+}
 
 /**
- * #227: a first-run sample the user has not changed. Per-record sync never uploads these, so a
- * new device or incognito session does not add the samples to the user's library everywhere.
- * Compared on what makes it the user's own (chart, title, artist; setlist name and songs), so
- * storage normalization (ids, key spelling) does not matter. Once edited, it syncs as usual.
+ * #227: a former sample the user has not changed. Per-record sync never uploads these.
+ * Compared on what makes it the user's own (chart, title, artist; setlist name and songs).
  */
-const sampleSongsById = new Map(DEFAULT_SETLIST.map(song => [String(song.id), song]))
-const sampleSetlistsById = new Map(DEFAULT_SAMPLE_SETLISTS.map(list => [String(list.id), list]))
-const norm = (text: unknown) => String(text ?? '').replace(/\r\n?/g, '\n').trim()
 export function isPristineSampleRecord(kind: string, data: unknown): boolean {
   if (!data || typeof data !== 'object') return false
-  const value = data as { id?: unknown; title?: unknown; artist?: unknown; rawContent?: unknown; name?: unknown; songs?: unknown; isDeleted?: unknown }
-  if (kind === 'song') {
-    const sample = sampleSongsById.get(String(value.id))
-    return !!sample && !value.isDeleted && norm(value.rawContent) === norm(sample.rawContent) &&
-      norm(value.title) === norm(sample.title) && norm(value.artist) === norm(sample.artist)
-  }
-  if (kind === 'setlist') {
-    const sample = sampleSetlistsById.get(String(value.id))
-    const songs = Array.isArray(value.songs) ? value.songs as Array<{ id?: unknown }> : null
-    return !!sample && !!songs && !value.isDeleted && norm(value.name) === norm(sample.name) &&
-      songs.length === sample.songs.length && songs.every((ref, i) => String(ref.id) === String(sample.songs[i].id))
-  }
+  const value = data as { isDeleted?: unknown }
+  if (value.isDeleted) return false
+  if (kind === 'song') return isUnchangedSampleSong(data as object)
+  if (kind === 'setlist') return isUnchangedSampleSetlist(data as object)
   return false
+}
+
+/**
+ * #228: removes former samples the user never changed. An unchanged sample setlist goes; an unchanged
+ * sample song goes unless a setlist that stays still lists it. Edited samples are the user's and stay.
+ * Returns the same object when there is nothing to remove.
+ */
+export function removeUnchangedSamples<L extends { songs: ActiveSongState[]; setlists: WebSetlist[] }>(library: L): L {
+  const setlists = library.setlists.filter(list => !isUnchangedSampleSetlist(list))
+  const referenced = new Set(setlists.flatMap(list => (list.songs || []).map(ref => String(ref?.id))))
+  const songs = library.songs.filter(song => !isUnchangedSampleSong(song) || referenced.has(String(song.id)))
+  if (songs.length === library.songs.length && setlists.length === library.setlists.length) return library
+  return { ...library, songs, setlists }
 }
