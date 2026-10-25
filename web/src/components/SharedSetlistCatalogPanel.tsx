@@ -206,7 +206,6 @@ export function SharedSetlistCatalogPanel({
           data-testid="catalog-setlist-refresh-button"
           className="min-h-11 px-3 py-2 rounded-xl border border-app-border bg-app-surface text-app-heading hover:border-app-action font-mono text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
           onClick={catalog.reload}
-          title="Refresh"
           aria-label="Refresh"
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -255,7 +254,6 @@ export function SharedSetlistCatalogPanel({
                     <span
                       data-testid={`setlist-revision-badge-${setlist.id}`}
                       className="px-1.5 py-0.5 rounded bg-app-base border border-app-border text-[9px] font-mono text-app-muted shrink-0"
-                      title={`Revision ${setlist.revision}`}
                       aria-label={`Revision ${setlist.revision}`}
                     >
                       r{setlist.revision}
@@ -301,7 +299,6 @@ export function SharedSetlistCatalogPanel({
                         type="button"
                         data-testid={`unpublish-setlist-btn-${setlist.id}`}
                         className="min-h-11 px-2 py-1 rounded-lg border border-app-border text-app-muted hover:text-status-error hover:border-status-error/40 font-mono text-[10px] font-bold transition-all cursor-pointer"
-                        title={`Unpublish "${setlist.name}"`}
                         aria-label={`Unpublish ${setlist.name}`}
                         onClick={(e) => {
                           unpublishTriggerRef.current = e.currentTarget

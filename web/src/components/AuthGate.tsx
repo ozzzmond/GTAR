@@ -703,7 +703,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
               <button
                 type="button"
-                title="View Debug Logs"
                 aria-label="View Debug Logs"
                 className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
                 onClick={() => setIsDebugLogsOpen(true)}
@@ -745,7 +744,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
               <button
                 type="button"
-                title="View Debug Logs"
                 aria-label="View Debug Logs"
                 className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
                 onClick={() => setIsDebugLogsOpen(true)}
@@ -840,7 +838,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
             <button
               type="button"
-              title="View Debug Logs"
               aria-label="View Debug Logs"
               className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
               onClick={() => setIsDebugLogsOpen(true)}

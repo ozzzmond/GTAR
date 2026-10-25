@@ -51,8 +51,8 @@ test('admin protection in user management comes from server role, not a configur
     const text = dom.window.document.body.textContent
     assert.match(text, /other-admin@example\.com/)
     assert.match(text, /member@example\.com/)
-    const revoke = dom.window.document.querySelectorAll('[title="Revoke access"]')
-    assert.equal(revoke.length, 1, 'only the active member can be revoked; admins and self are protected')
+    const revoke = dom.window.document.querySelectorAll('button'); const revokeButtons = [...revoke].filter(b => /Revoke/.test(b.textContent))
+    assert.equal(revokeButtons.length, 1, 'only the active member can be revoked; admins and self are protected')
     await act(async () => root.unmount())
   } finally {
     dom.window.close()

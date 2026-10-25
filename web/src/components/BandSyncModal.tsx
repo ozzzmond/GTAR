@@ -560,7 +560,6 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                               type="button"
                               onClick={handleClearHistory}
                               className="text-[10px] text-app-muted hover:text-status-error transition-colors cursor-pointer flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-red-500/10"
-                              title="Clear recent leader connection history"
                             >
                               <Trash2 className="w-3 h-3" />
                               <span>Clear History</span>
@@ -573,7 +572,6 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
                                 type="button"
                                 onClick={() => handleConnect(address)}
                                 className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-accent/20 border border-app-border hover:border-app-accent/50 text-app-heading hover:text-app-accent text-[11px] font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5 group shadow-xs active:scale-95"
-                                title={`Connect to ${address}`}
                               >
                                 <span className="w-1.5 h-1.5 rounded-full bg-app-accent/60 group-hover:bg-app-button transition-colors" />
                                 <span>{address}</span>

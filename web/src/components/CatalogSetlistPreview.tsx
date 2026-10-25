@@ -110,7 +110,6 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
           <span
             data-testid="preview-revision-badge"
             className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted"
-            title={`Revision ${revision}`}
           >
             r{revision}
           </span>

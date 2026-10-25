@@ -132,8 +132,8 @@ test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collap
   )
 
   // Preserves New Setlist and Import buttons in setlists header; canonical Side Panel is in Header
-  assert.ok(songbookSource.includes('title="Create new empty gig setlist"'), 'New Setlist button preserved')
-  assert.ok(songbookSource.includes('title="Import single setlist (.json) into your library"'), 'Import setlist button preserved')
+  assert.ok(songbookSource.includes('<span>New Setlist</span>'), 'New Setlist button preserved')
+  assert.ok(songbookSource.includes('data-testid="main-import-setlist-btn"'), 'Import setlist button preserved')
   assert.ok(songbookSource.includes("{setlistsCollapsed ? 'Show' : 'Hide'}"), 'Show/Hide toggle button preserved')
   const headerSource = readSource(path.join(webDir, 'src/components/Header.tsx'))
   assert.ok(headerSource.includes('testId="canonical-sidepanel-toggle-btn"'), 'Canonical Side Panel button in Header')
@@ -148,7 +148,7 @@ test('DEV3A_NEW_BLANK_SONG_EDITOR_ACTION: New Song icon in toolbar between Inser
   // Button exists with accessible attributes and test id
   assert.ok(editorSource.includes('data-testid="editor-new-song-button"'), 'Editor renders New Song button')
   assert.ok(editorSource.includes('aria-label="New Song"'), 'New Song button has accessible aria-label')
-  assert.ok(editorSource.includes('title="New Song (blank document)"'), 'New Song button has clear title')
+  assert.ok(editorSource.includes('aria-label="New Song"'), 'New Song button has an accessible name (#224: no hover tooltip)')
 
   // Position: between Insert section DropdownPortal and Paste button
   const insertSectionPos = editorSource.indexOf('aria-label="Insert section"')

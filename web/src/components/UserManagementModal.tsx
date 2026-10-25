@@ -218,7 +218,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-            title="Close"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -282,7 +282,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               type="button"
               onClick={handleCopyEmails}
               className="text-[11px] text-app-action hover:underline flex items-center gap-1 cursor-pointer shrink-0"
-              title="Copy active user emails"
+              aria-label="Copy active user emails"
             >
               {copied ? <Check className="w-3 h-3 text-status-success" /> : <Copy className="w-3 h-3" />}
               <span>{copied ? 'Copied!' : 'Copy Active'}</span>
@@ -372,7 +372,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                             disabled={isBusy}
                             onClick={() => void handleApprove(user.id)}
                             className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
-                            title="Approve access"
                           >
                             <Check className="w-3.5 h-3.5" />
                             <span>Approve</span>
@@ -382,7 +381,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                             disabled={isBusy}
                             onClick={() => void handleDeny(user.id, user.email)}
                             className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-[#DC322F]/20 text-status-error border border-[#DC322F]/40 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
-                            title="Deny access"
                           >
                             <Ban className="w-3.5 h-3.5" />
                             <span>Deny</span>
@@ -396,7 +394,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           disabled={isBusy}
                           onClick={() => void handleDeny(user.id, user.email)}
                           className="px-2 py-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/10 transition-colors cursor-pointer text-xs flex items-center gap-1"
-                          title="Revoke access"
                         >
                           <Ban className="w-3.5 h-3.5" />
                           <span>Revoke</span>
@@ -409,7 +406,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           disabled={isBusy}
                           onClick={() => void handleRestore(user.id)}
                           className="px-2.5 py-1 rounded-lg bg-app-action/20 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 font-bold text-xs flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
-                          title="Restore access"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           <span>Restore</span>

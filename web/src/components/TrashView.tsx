@@ -112,7 +112,6 @@ export const TrashView: React.FC<TrashViewProps> = ({
                       type="button"
                       onClick={() => onRestoreSong(song.id ?? '')}
                       className="px-3 py-1.5 rounded-xl bg-app-action/20 hover:bg-app-action/30 text-app-action border border-app-action/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
-                      title="Restore song to Songbook library"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>Restore</span>
@@ -122,7 +121,7 @@ export const TrashView: React.FC<TrashViewProps> = ({
                       type="button"
                       onClick={() => setPermanentDeleteTarget(song)}
                       className="p-1.5 rounded-xl text-status-error hover:bg-[#EF4444]/15 border border-transparent hover:border-[#EF4444]/30 transition-all cursor-pointer"
-                      title="Permanently delete this song"
+                      aria-label="Permanently delete this song"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

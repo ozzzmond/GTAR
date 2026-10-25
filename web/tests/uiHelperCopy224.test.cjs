@@ -24,3 +24,25 @@ test('TV pairing controls: status, labels and errors kept; steps behind a native
   assert.doesNotMatch(panel, /Manual reference entry is always available/)
   assert.match(panel, /<details data-testid="cast2-how-to-pair"[\s\S]*<summary[^>]*>How to pair<\/summary>/)
 })
+
+// #224 slice 2: no hover tooltips (title on HTML elements) except on truncated text, where it shows the full value.
+test('no title tooltips on HTML elements, except truncated text', () => {
+  const ts = require('typescript')
+  const dir = path.join(__dirname, '..', 'src')
+  const found = []
+  for (const rel of fs.readdirSync(dir, { recursive: true }).filter(f => f.endsWith('.tsx'))) {
+    const file = path.join(dir, rel)
+    const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const visit = node => {
+      if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && /^[a-z]/.test(node.tagName.getText(sf))) {
+        const attrs = node.attributes.properties.filter(ts.isJsxAttribute)
+        const title = attrs.find(a => a.name.getText(sf) === 'title')
+        const cls = attrs.find(a => a.name.getText(sf) === 'className')
+        if (title && !/truncate/.test(cls ? cls.getText(sf) : '')) found.push(`${rel}:${sf.getLineAndCharacterOfPosition(title.getStart(sf)).line + 1}`)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sf)
+  }
+  assert.deepEqual(found, [])
+})

@@ -421,11 +421,11 @@ test('STAGE_OPTIONS_FONT_CONTROLS_AND_REDUNDANT_HEADER_STEPPER_REMOVAL: redundan
 
   // Stage Options Modal contains font size controls
   assert.ok(
-    stageViewSource.includes('Decrease font size (Hold to adjust)'),
+    stageViewSource.includes('aria-label="Decrease font size"'),
     'Stage Options must preserve A- stepper'
   )
   assert.ok(
-    stageViewSource.includes('Increase font size (Hold to adjust)'),
+    stageViewSource.includes('aria-label="Increase font size"'),
     'Stage Options must preserve A+ stepper'
   )
   assert.ok(

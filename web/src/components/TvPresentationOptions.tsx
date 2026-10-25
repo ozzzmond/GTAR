@@ -75,7 +75,6 @@ export function TvPresentationOptions() {
               onClick={() => handleStepSize(-2)}
               disabled={tvFontSize <= MIN_TV_FONT_SIZE}
               className="px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer select-none active:scale-95 transition-transform"
-              title="Decrease TV font size (-2px)"
               aria-label="Decrease TV font size"
             >
               A-
@@ -84,7 +83,6 @@ export function TvPresentationOptions() {
               type="button"
               onClick={handleResetSize}
               className="flex-1 text-center text-sm font-mono font-bold text-app-accent hover:underline cursor-pointer select-none py-1"
-              title="Click to reset TV font size to default (32px)"
               aria-label={`TV font size: ${tvFontSize}px. Click to reset to default 32px`}
             >
               {tvFontSize}px
@@ -94,7 +92,6 @@ export function TvPresentationOptions() {
               onClick={() => handleStepSize(2)}
               disabled={tvFontSize >= MAX_TV_FONT_SIZE}
               className="px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer select-none active:scale-95 transition-transform"
-              title="Increase TV font size (+2px)"
               aria-label="Increase TV font size"
             >
               A+
@@ -117,7 +114,6 @@ export function TvPresentationOptions() {
                     ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
                     : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                 }`}
-                title={`TV ${key} (${size}px)`}
                 aria-pressed={isSelected}
               >
                 {key}

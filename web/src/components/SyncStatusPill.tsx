@@ -26,7 +26,6 @@ export const SyncStatusPill: React.FC<{ pill: SyncPill; onOpen: () => void; reco
       data-testid="header-cloud-sync-button"
       data-sync-state={pill.kind}
       onClick={onOpen}
-      title={pill.description}
       aria-label={pill.description}
       className={`${BASE} ${button}`}
     >

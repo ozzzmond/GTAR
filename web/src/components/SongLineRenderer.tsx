@@ -185,7 +185,6 @@ function renderInteractiveChordLine(
                     : undefined),
                   ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
                 }}
-                title={isNumbersMode ? undefined : `View ${cleanSub} fretboard diagram`}
               >
                 {displayToken}
               </span>
@@ -232,7 +231,6 @@ function renderInteractiveChordLine(
                   : undefined),
                 ...(isHighContrast ? { textShadow: '0 1px 2px rgba(0,0,0,0.8)' } : undefined),
               }}
-              title={isNumbersMode ? undefined : `View ${cleanToken} fretboard diagram`}
             >
               {displayToken}
             </span>

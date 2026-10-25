@@ -206,11 +206,8 @@ test('TEST:NUMBERS_NOT_CLICKABLE and CHORD_MODE_EXISTING_CLICK_BEHAVIOR_PRESERVE
     'SongLineRenderer must use cursor-default for numbers mode and cursor-pointer for chords mode'
   )
 
-  // 3. title diagram tooltip is suppressed
-  assert.ok(
-    rendererSrc.includes('title={isNumbersMode ? undefined : `View ${clean'),
-    'SongLineRenderer must suppress fretboard diagram title in numbers mode'
-  )
+  // 3. #224: no fretboard hover tooltip in either mode
+  assert.ok(!rendererSrc.includes('fretboard diagram`}'), 'SongLineRenderer has no fretboard diagram tooltip')
 })
 
 test('STAGE_OPTIONS & KEY_CONTROL contracts in StageView', () => {
@@ -223,8 +220,8 @@ test('STAGE_OPTIONS & KEY_CONTROL contracts in StageView', () => {
 
   // Key control in Numbers mode vs Transpose control in Chords mode
   assert.ok(stageSrc.includes("notation === 'numbers' ? ("), 'StageView must branch controls based on notation mode')
-  assert.ok(stageSrc.includes("title=\"Step Key Down (-1 semitone)\""), 'StageView must have Step Key Down in Numbers mode')
-  assert.ok(stageSrc.includes("title=\"Step Key Up (+1 semitone)\""), 'StageView must have Step Key Up in Numbers mode')
+  assert.ok(stageSrc.includes("aria-label=\"Step Key Down (-1 semitone)\""), 'StageView must have Step Key Down in Numbers mode')
+  assert.ok(stageSrc.includes("aria-label=\"Step Key Up (+1 semitone)\""), 'StageView must have Step Key Up in Numbers mode')
   assert.ok(stageSrc.includes("Key: ${effectivePerformanceKey || 'Not Set'}"), 'StageView must display current performance key in Numbers mode')
   assert.ok(stageSrc.includes("data-testid=\"stage-numbers-key-missing\""), 'StageView must have missing-key fail-safe notification banner')
 })

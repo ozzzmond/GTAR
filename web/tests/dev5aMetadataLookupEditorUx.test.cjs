@@ -30,7 +30,7 @@ test('ENTRY_POINT_PLACEMENT: Primary Lookup Metadata action is on main editor to
 
   // Main Action Editing Toolbar contains the lookup button
   assert.ok(editorSource.includes('data-testid="editor-lookup-metadata-button"'), 'DesktopEditor must have primary lookup button on main toolbar')
-  assert.ok(editorSource.includes('title="Lookup Metadata suggestion (Original Key, Tempo, Year)"'), 'Toolbar lookup button has descriptive suggestion tooltip')
+  assert.ok(editorSource.includes('aria-label="Lookup Metadata"'), 'Toolbar lookup button has an accessible name (#224: no hover tooltip)')
 
   // Check the Song Details & Metadata modal header does NOT have the duplicate button
   const modalSectionMatch = editorSource.match(/\{isMetadataModalOpen && \([\s\S]*?Song Details & Metadata[\s\S]*?Canonical Metadata Inputs/)

@@ -645,7 +645,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               onClick={() => setConfirmReplace(true)}
               disabled={isProcessing || !isAuthenticated}
               className="w-full py-2 px-3 rounded-xl bg-app-base hover:bg-app-border text-app-muted hover:text-app-action border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              title="Replace this device's songbook with the cloud copy"
             >
               <CloudDownload className="w-3.5 h-3.5 text-app-link" />
               <span>Replace this device with the cloud copy</span>

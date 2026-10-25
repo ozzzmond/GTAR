@@ -255,7 +255,7 @@ test('EDGE_SWIPE_13: Explicit X close button is present in drawer header', () =>
       onNewSong: () => {},
     })
   )
-  assert.ok(html.includes('title="Close Drawer"'), 'Close button with title present')
+  assert.ok(html.includes('aria-label="Close Drawer"'), 'Close button with accessible name present')
 })
 
 // -------------------------------------------------------------------------

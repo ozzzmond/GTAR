@@ -114,7 +114,7 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-2 rounded-xl text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer shrink-0"
-            title="Close preview"
+            aria-label="Close preview"
           >
             <X className="w-5 h-5" />
           </button>
