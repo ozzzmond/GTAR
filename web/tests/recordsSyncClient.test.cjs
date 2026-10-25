@@ -840,7 +840,7 @@ test('#240 F8: stale song id in a cloud setlist → detected by exact id, held b
   const conflict = client.readRecordsSyncState(fresh).conflicts[0]
   assert.equal(conflict.id, id(901))
   assert.match(conflict.note, /no song with that exact ID\): "Song 2"/)
-  assert.match(conflict.note, /"Use cloud" keeps the cloud setlist without those entries; "Keep this device"/)
+  assert.match(conflict.note, /"Download Cloud" keeps this setlist without those entries; "Keep Local Only" keeps this device's version\. Either way, the cloud version is first saved in Review local recovery\./)
   assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(77)], 'cloud entries untouched (raw id preserved)')
   // Use cloud (explicit): the stale entry is dropped, never pointed at song 2 by title; the raw cloud record is kept in recovery.
   assert.equal((await w.run(fresh, { forceAction: 'download' })).success, true)

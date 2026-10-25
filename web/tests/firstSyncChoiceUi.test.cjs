@@ -67,3 +67,24 @@ test('Replace this device with the cloud copy asks first; Cancel does nothing; a
   assert.match(document.body.textContent, /already matches the cloud copy\. Nothing changed\./)
   await act(async () => root.unmount())
 })
+
+test('#240 F8: a held-back conflict shows its reason and the Download Cloud consequence before any choice', async () => {
+  const reason = 'The cloud version lists songs that are not in your library (no song with that exact ID): "Song 2". "Download Cloud" keeps this setlist without those entries; "Keep Local Only" keeps this device\'s version. Either way, the cloud version is first saved in Review local recovery.'
+  const calls = []
+  records.performSongbookSync = async (_token, options = {}) => {
+    calls.push(options.forceAction ?? 'sync')
+    return { success: false, status: 'CONFLICT', state: 'CONFLICT', actionTaken: 'CONFLICT_DETECTED',
+      conflicts: [{ id: 'list-1', type: 'setlist', title: 'List 1', reason }], error: 'Some songs or setlists were edited here and in the cloud.' }
+  }
+  const root = createRoot(document.getElementById('root'))
+  await act(async () => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose() {}, onSyncApplied() {} })))
+  await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  const row = document.querySelector('[data-testid="conflict-item"]')
+  assert.ok(row, 'conflict listed')
+  assert.match(row.textContent, /List 1/)
+  assert.equal(row.querySelector('[data-testid="conflict-reason"]').textContent, reason, 'reason shown in full')
+  const download = [...document.querySelectorAll('button')].find(b => /Download Cloud/.test(b.textContent))
+  assert.ok(download, 'choice offered next to the explanation')
+  assert.deepEqual(calls, ['sync'], 'shown before the user chooses anything')
+  await act(async () => root.unmount())
+})

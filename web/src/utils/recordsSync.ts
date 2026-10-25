@@ -237,7 +237,8 @@ function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applie
           : next.setlists.filter(list => String(list.id) !== String(ref.setlistId))
         const absent = entriesWithoutSong(next.songs, [applied.get(setlistKey)!.data as WebSetlist]).map(item => `"${item.songRef?.title || item.songRef?.id || 'untitled'}"`)
         hold(setlistKey, `The cloud version lists songs that are not in your library (no song with that exact ID): ${absent.join(', ')}. ` +
-          '"Use cloud" keeps the cloud setlist without those entries; "Keep this device" keeps this device\'s version. The cloud copy is kept in recovery either way.', localList)
+          '"Download Cloud" keeps this setlist without those entries; "Keep Local Only" keeps this device\'s version. ' +
+          'Either way, the cloud version is first saved in Review local recovery.', localList)
         progressed = true
       }
     }

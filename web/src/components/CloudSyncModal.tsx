@@ -560,9 +560,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 Independent edits were made on this device and on the cloud. Choose how you want to resolve this:
               </p>
 
-              <div className="max-h-32 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-app-base/80 text-[11px]">
+              <ul aria-label="Conflicting items" className="max-h-48 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-app-base/80 text-[11px]">
                 {conflicts.map((item, idx) => (
-                  <div key={`${item.id}-${idx}`} className="flex items-center justify-between text-xs py-0.5">
+                  <li key={`${item.id}-${idx}`} data-testid="conflict-item" className="text-xs py-0.5">
+                  <div className="flex items-center justify-between">
                     <span className="text-app-heading font-semibold truncate flex items-center gap-1.5">
                       {item.type === 'song' ? (
                         <FileText className="w-3 h-3 text-app-action" />
@@ -575,8 +576,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                     </span>
                     <span className="text-[10px] text-status-error font-mono shrink-0">Diverged</span>
                   </div>
+                  {/* #240 F8: why this item conflicts and what the choices do, shown before any choice. */}
+                  {item.reason && <p data-testid="conflict-reason" className="mt-0.5 text-[11px] leading-snug text-app-text">{item.reason}</p>}
+                  </li>
                 ))}
-              </div>
+              </ul>
 
               <div className="space-y-2 pt-1">
                 <button
