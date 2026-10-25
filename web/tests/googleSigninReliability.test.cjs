@@ -63,6 +63,7 @@ function setupTestEnvironment() {
   resetGoogleIdentityLoader()
 
   let gisInitCallback = null
+  let gisInitCount = 0
   let gisPromptListener = null
   let buttonCredential = 'mock-gis-button-jwt-credential'
 
@@ -70,6 +71,7 @@ function setupTestEnvironment() {
     accounts: {
       id: {
         initialize(config) {
+          gisInitCount++
           gisInitCallback = config.callback
         },
         prompt(listener) {
@@ -102,6 +104,7 @@ function setupTestEnvironment() {
     dom,
     teardown,
     getGisInitCallback: () => gisInitCallback,
+    getGisInitCount: () => gisInitCount,
     getGisPromptListener: () => gisPromptListener,
     setGisInitCallback: (cb) => {
       gisInitCallback = cb
@@ -882,35 +885,53 @@ test('TEST_KEYBOARD_AND_MOBILE_COMPATIBILITY: Sign-in buttons and GIS container 
   }
 })
 
-test('TEST_INITIALIZE_DOES_NOT_OVERWRITE_ACTIVE_CALLBACKS: Subsequent initialize calls and requestGoogleCredential preserve active credential callbacks', async () => {
+test('TEST_INITIALIZE_ONCE_AND_LISTENERS (#238): initialize runs once per client id; handlers come from addCredentialListener and are removable', async () => {
   const env = setupTestEnvironment()
-  let cb1Called = false
-  let cb2Called = false
-
+  const { addCredentialListener } = require('../src/utils/googleAuth.ts')
+  const seen = []
   try {
-    // 1. Initial listener registration
-    initializeGoogleIdentity({
-      client_id: 'test-client-id',
-      callback: (res) => {
-        if (res.credential === 'test-token') cb1Called = true
-      },
-    })
+    const off1 = addCredentialListener(res => seen.push(['a', res.credential]))
+    addCredentialListener(res => seen.push(['b', res.credential]))
+    assert.equal(initializeGoogleIdentity({ client_id: 'test-client-id' }), true)
+    assert.equal(initializeGoogleIdentity({ client_id: 'test-client-id' }), true, 'second call is a no-op that still reports ready')
+    assert.equal(env.getGisInitCount(), 1, 'GIS initialize() called once')
+    env.getGisInitCallback()({ credential: 'test-token' })
+    assert.deepEqual(seen, [['a', 'test-token'], ['b', 'test-token']])
+    off1()
+    env.getGisInitCallback()({ credential: 'again' })
+    assert.deepEqual(seen.slice(2), [['b', 'again']], 'a removed listener is not called')
+    initializeGoogleIdentity({ client_id: 'other-client-id' })
+    assert.equal(env.getGisInitCount(), 2, 'a different client id initializes again')
+  } finally {
+    env.teardown()
+  }
+})
 
-    // 2. Second initialize call (e.g. StrictMode, remount, or secondary component)
-    initializeGoogleIdentity({
-      client_id: 'test-client-id',
-      callback: (res) => {
-        if (res.credential === 'test-token') cb2Called = true
-      },
-    })
-
-    // 3. Dispatch credential through GIS callback
-    const initCb = env.getGisInitCallback()
-    assert.ok(initCb, 'Init callback dispatcher must be set')
-    initCb({ credential: 'test-token' })
-
-    assert.equal(cb1Called, true, 'First callback must be called')
-    assert.equal(cb2Called, true, 'Second callback must also be called')
+test('TEST_AUTHGATE_SIGNOUT_SIGNIN_CYCLE (#238): sign in, sign out, sign in: initialize once, one session request per credential', async () => {
+  const env = setupTestEnvironment()
+  let posts = 0
+  global.fetch = async (url, init) => {
+    if (String(url).includes('/api/auth/session') && init?.method === 'POST') {
+      posts++
+      return new Response(JSON.stringify({ success: true, sessionToken: `token-${posts}`,
+        user: { id: 'usr-1', google_sub: 'sub-1', email: 'one@example.com', role: 'member', access_status: 'active' } }), { status: 200 })
+    }
+    return new Response(JSON.stringify({ success: true, revoked: true }), { status: 200 })
+  }
+  try {
+    let auth
+    function Probe() { auth = useGoogleAuth(); return React.createElement('div', { id: 'probe' }) }
+    const root = createRoot(env.dom.window.document.getElementById('root'))
+    await act(async () => { root.render(React.createElement(AuthGate, null, React.createElement(Probe))) })
+    for (let round = 1; round <= 3; round++) {
+      await act(async () => { env.getGisInitCallback()({ credential: `cred-${round}` }) })
+      assert.ok(env.dom.window.document.getElementById('probe'), `signed in, round ${round}`)
+      assert.equal(posts, round, 'one session request per credential')
+      await act(async () => { auth.signOut() })
+      await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+    }
+    assert.equal(env.getGisInitCount(), 1, 'GIS initialize() called once across the sign-out / sign-in cycles')
+    await act(async () => root.unmount())
   } finally {
     env.teardown()
   }

@@ -735,6 +735,7 @@ export type CredentialListener = (response: CredentialResponse) => void
 
 const credentialListeners = new Set<CredentialListener>()
 let isGisInitialized = false
+let gisInitializedClientId: string | null = null
 
 export function addCredentialListener(listener: CredentialListener): () => void {
   credentialListeners.add(listener)
@@ -761,6 +762,7 @@ export function resetGoogleIdentityLoader(): void {
   loading = undefined
   credentialListeners.clear()
   isGisInitialized = false
+  gisInitializedClientId = null
 }
 
 export function loadGoogleIdentity(forceRetry = false): Promise<void> {
@@ -806,19 +808,23 @@ export function loadGoogleIdentity(forceRetry = false): Promise<void> {
   return loading
 }
 
-export function initializeGoogleIdentity(config: GISIdInitConfig): boolean {
+/**
+ * #238: Google Identity Services is initialized once per page (again only for another client id);
+ * Google documents initialize() as call-once. Credentials always go to dispatchCredentialResponse:
+ * callers register their handlers with addCredentialListener, which returns the cleanup.
+ */
+export function initializeGoogleIdentity(config: Omit<GISIdInitConfig, 'callback'>): boolean {
   if (typeof window === 'undefined' || !window.google?.accounts?.id?.initialize) {
     return false
   }
+  if (isGisInitialized && gisInitializedClientId === config.client_id) return true
   try {
-    if (config.callback) {
-      credentialListeners.add(config.callback)
-    }
     window.google.accounts.id.initialize({
       ...config,
       callback: dispatchCredentialResponse,
     })
     isGisInitialized = true
+    gisInitializedClientId = config.client_id
     return true
   } catch (err) {
     console.warn('[googleAuth] Failed to initialize GIS:', err)
@@ -924,14 +930,11 @@ export function requestGoogleCredential(
     const removeListener = addCredentialListener(onCredential)
 
     try {
-      if (!isGisInitialized) {
-        initializeGoogleIdentity({
-          client_id: clientId,
-          callback: onCredential,
-          auto_select: false,
-          cancel_on_tap_outside: true,
-        })
-      }
+      initializeGoogleIdentity({
+        client_id: clientId,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      })
 
       window.google.accounts.id.prompt((notification) => {
         if (settled) return

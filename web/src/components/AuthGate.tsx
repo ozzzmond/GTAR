@@ -513,13 +513,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
           onGisCredentialResponse(response.credential)
         }
       })
+      // #238: the handler above is the only one; initialize() runs once per page.
       initializeGoogleIdentity({
         client_id: clientId,
-        callback: (response) => {
-          if (response?.credential) {
-            onGisCredentialResponse(response.credential)
-          }
-        },
         auto_select: false,
         cancel_on_tap_outside: true,
       })
