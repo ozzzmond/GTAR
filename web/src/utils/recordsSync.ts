@@ -175,6 +175,26 @@ class Working {
   }
 }
 
+/** #240: removes setlist entries that point to no song in the library (logged); same array when nothing is missing. */
+export function dropMissingSetlistEntries(songs: ActiveSongState[], setlists: WebSetlist[]): WebSetlist[] {
+  const { danglingReferences } = validateSongbookIntegrity(songs, setlists)
+  if (!danglingReferences.length) return setlists
+  const missing = new Map<string, Set<unknown>>()
+  for (const ref of danglingReferences) {
+    const key = String(ref.setlistId)
+    if (!missing.has(key)) missing.set(key, new Set())
+    missing.get(key)!.add(ref.songRef)
+  }
+  return setlists.map(setlist => {
+    const gone = missing.get(String(setlist.id))
+    if (!gone) return setlist
+    const kept = setlist.songs.filter(ref => !gone.has(ref))
+    appLogger.warn('RecordsSync', `Setlist "${setlist.name}": removed ${setlist.songs.length - kept.length} entr${setlist.songs.length - kept.length === 1 ? 'y' : 'ies'} for songs that no longer exist`,
+      setlist.songs.filter(ref => gone.has(ref)).map(ref => ref.title || ref.id).join(', '))
+    return { ...setlist, songs: kept }
+  })
+}
+
 /** Current local records, keyed. */
 function localRecords(library: SyncLibrary): Map<string, { kind: RecordKind; id: string; data: unknown; checksum: string }> {
   const map = new Map<string, { kind: RecordKind; id: string; data: unknown; checksum: string }>()
@@ -520,10 +540,13 @@ async function runRecordsSync(token: string, options: { forceAction?: 'upload' |
     if (error instanceof RecordsSyncDisabledError) { lastDisabledReason = error.message || null; return null }
     if (error instanceof RecordsSyncDeferredError) return { success: false, status: 'IDLE', state: 'SAME_STATE', actionTaken: 'NONE', deferred: true }
     const status = error instanceof RecordsHttpError ? error.status : 0
+    // #240: "Offline" only for a network failure, not for any error raised on this device.
+    const offline = !(error instanceof RecordsHttpError) && ((typeof navigator !== 'undefined' && navigator.onLine === false) ||
+      error instanceof TypeError || (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')))
     appLogger.warn('RecordsSync', 'Per-record sync did not finish', error instanceof Error ? error.message : String(error))
     return {
       success: false,
-      status: status === 401 || status === 403 ? 'ERROR' : status === 0 ? 'OFFLINE' : 'ERROR',
+      status: offline ? 'OFFLINE' : 'ERROR',
       state: 'OFFLINE_OR_CLOUD_FAILURE',
       actionTaken: 'NONE',
       error: status === 401 ? 'Session expired or unauthorized. Please sign in again.'

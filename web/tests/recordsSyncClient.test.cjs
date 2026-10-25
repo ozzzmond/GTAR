@@ -627,3 +627,88 @@ test('#228: a device that synced the samples before removes them from the cloud 
   assert.deepEqual(cloudIds(w, 'song'), [id(7)], 'only the real song is left in the cloud')
   assert.deepEqual(cloudIds(w, 'setlist'), [])
 })
+
+// #240: a cloud setlist that still lists a song deleted in the cloud must not block sync.
+const { recordChecksum } = require('../src/utils/songbookRecords.ts')
+function removeInCloud(w, songId) {
+  const db = w.db.sqlite
+  const seq = db.prepare("SELECT seq FROM user_songbook_cursors WHERE user_id = 'user-a'").get().seq + 1
+  db.prepare("UPDATE user_songbook_records SET removed = 1, data_json = NULL, rev = rev + 1, seq = ?, checksum = ? WHERE kind = 'song' AND record_id = ?")
+    .run(seq, recordChecksum(true, null), songId)
+  db.prepare("UPDATE user_songbook_cursors SET seq = ? WHERE user_id = 'user-a'").run(seq)
+}
+const cloudSetlistRefs = (w, setlistId) => JSON.parse(w.db.sqlite.prepare("SELECT data_json FROM user_songbook_records WHERE kind = 'setlist' AND record_id = ?").get(setlistId).data_json).songs.map(r => r.id)
+
+test('#240: a dangling cloud setlist entry is dropped, the sync completes, the cloud heals, other devices converge', { skip: 'auto-pruning withdrawn after design review; replaced by quarantine (#240)' }, async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  removeInCloud(w, id(2))
+  const fresh = w.device({ songs: [], setlists: [] })
+  const result = await w.run(fresh)
+  assert.equal(result.success, true, result.error)
+  assert.deepEqual(read(fresh).songs.map(s => s.id).sort(), [id(1), id(3)])
+  assert.deepEqual(read(fresh).setlists[0].songs.map(r => r.id), [id(1)], 'missing entry dropped on this device')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)], 'repaired setlist pushed: the cloud no longer lists the missing song')
+  const other = await w.run(a)
+  assert.equal(other.success, true, other.error)
+  assert.deepEqual(read(a).setlists[0].songs.map(r => r.id), [id(1)])
+  assert.ok(!read(a).songs.some(s => s.id === id(2)))
+  assert.equal(client.readRecordsSyncState(a).conflicts.length, 0)
+})
+
+test('#240: only a network failure reads as offline; an error on this device reads as an error', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  w.setHook(async () => { throw new TypeError('Failed to fetch') })
+  assert.equal((await w.run(a)).status, 'OFFLINE')
+  w.setHook(async () => { throw new Error('Synced songbook failed referential integrity check: x') })
+  const failed = await w.run(a)
+  assert.equal(failed.status, 'ERROR')
+  assert.match(failed.error, /integrity/)
+  w.setHook(null)
+})
+
+test('#240: sample cleanup keeps a sample setlist that is already in the cloud, and the songs it lists', () => {
+  const { removeUnchangedSamples, cloudSyncedSetlistIds } = sampleLib
+  const all = { songs: [...DEFAULT_SETLIST, song(5)], setlists: DEFAULT_SAMPLE_SETLISTS }
+  const synced = cloudSyncedSetlistIds({ getItem: () => JSON.stringify({ known: { [`setlist:${DEFAULT_SAMPLE_SETLISTS[0].id}`]: { rev: 2 }, 'song:x': {} } }) })
+  assert.deepEqual([...synced], [DEFAULT_SAMPLE_SETLISTS[0].id])
+  assert.equal(removeUnchangedSamples(all, synced), all, 'nothing removed')
+  assert.deepEqual(removeUnchangedSamples(all, new Set()).songs.map(s => s.id), [song(5).id], 'local-only samples still removed')
+  assert.deepEqual([...cloudSyncedSetlistIds({ getItem: () => 'not json' })], [])
+})
+
+// #240 reproduction: how the cloud can end up with a live setlist that lists deleted songs.
+test('#240 repro: cleanup on a device with a stale unchanged sample setlist → song tombstones accepted, setlist deletion conflicts', async () => {
+  const w = await world({ library: { songs: [], setlists: [] } })
+  const a = w.device({ songs: [song(7)], setlists: [] })
+  await w.run(a)
+  // A build before #227 uploaded the samples like any song.
+  const fingerprints = new Map(sampleLib.LEGACY_SAMPLE_SONGS); const lists = new Map(sampleLib.LEGACY_SAMPLE_SETLISTS)
+  sampleLib.LEGACY_SAMPLE_SONGS.clear(); sampleLib.LEGACY_SAMPLE_SETLISTS.clear()
+  edit(a, lib => ({ ...lib, songs: [...lib.songs, ...DEFAULT_SETLIST], setlists: DEFAULT_SAMPLE_SETLISTS }))
+  await w.run(a)
+  const b = w.device({ songs: [], setlists: [] })
+  await w.run(b)
+  // Device B edits the sample setlist (drops sample 2) and deletes sample 2: cloud setlist rev 2.
+  edit(b, lib => ({ ...lib, setlists: lib.setlists.map(l => ({ ...l, songs: l.songs.filter(r => r.id !== DEFAULT_SETLIST[1].id) })) }))
+  edit(b, lib => ({ ...lib, songs: lib.songs.filter(s => s.id !== DEFAULT_SETLIST[1].id) }))
+  await w.run(b)
+  for (const [k, v] of fingerprints) sampleLib.LEGACY_SAMPLE_SONGS.set(k, v)
+  for (const [k, v] of lists) sampleLib.LEGACY_SAMPLE_SETLISTS.set(k, v)
+
+  // Old #228 rule on A, before A pulls B's change: A's local setlist is still the unchanged sample.
+  const stale = sampleLib.removeUnchangedSamples(read(a))
+  assert.equal(stale.setlists.length, 0, 'old rule removes the stale sample setlist and its songs')
+  // The new rule keeps them because the setlist is already in the cloud.
+  assert.equal(sampleLib.removeUnchangedSamples(read(a), sampleLib.cloudSyncedSetlistIds(a)).setlists.length, 1, 'new rule keeps it')
+
+  journal.persistLibrary(stale, a, { expectedRaw: journal.libraryRevision(a) })
+  const result = await w.run(a)
+  assert.deepEqual(client.readRecordsSyncState(a).conflicts.map(c => c.kind + ':' + c.id), [`setlist:${DEFAULT_SAMPLE_SETLISTS[0].id}`], 'setlist deletion conflicts')
+  const removed = w.db.sqlite.prepare("SELECT record_id FROM user_songbook_records WHERE kind = 'song' AND removed = 1 ORDER BY record_id").all().map(r => r.record_id)
+  assert.deepEqual(removed, [DEFAULT_SETLIST[0].id, DEFAULT_SETLIST[1].id, DEFAULT_SETLIST[2].id, DEFAULT_SETLIST[3].id], 'sample 2 (by B) and samples 1, 3, 4 (by A) are tombstones')
+  assert.deepEqual(cloudSetlistRefs(w, DEFAULT_SAMPLE_SETLISTS[0].id), [DEFAULT_SETLIST[0].id, DEFAULT_SETLIST[2].id, DEFAULT_SETLIST[3].id], 'the live cloud setlist still lists 1, 3, 4')
+  void result
+})
