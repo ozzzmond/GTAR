@@ -369,6 +369,10 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
       continue
     }
     const mineChecksum = mine ? mine.checksum : REMOVED
+    // The feed returns this device's own uploads too (the cursor only moves on pull). A record the
+    // cloud still holds at the revision this device last synced has no remote change: nothing to
+    // apply, and a later local edit or deletion is simply pushed below, not a conflict.
+    if (known && remote.rev === known.rev && remote.checksum === known.checksum && mineChecksum !== remote.checksum) continue
     if (mineChecksum === remote.checksum) {
       state.known[key] = { rev: remote.rev, checksum: remote.checksum }
       state.conflicts = state.conflicts.filter(item => recordKey(item.kind, item.id) !== key)
