@@ -826,3 +826,26 @@ test('#240 F2 race: a song deleted by a concurrent writer between the read and t
   assert.equal(response.conflicts[0]?.reason, 'missing-songs')
   assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(2)], 'no dangling entry written')
 })
+
+// #240 F8 (Codex): a setlist entry with a stale song id whose title matches another song. Exact ids are the
+// identity; the title must not hide the problem or relink the entry.
+test('#240 F8: stale song id in a cloud setlist → detected by exact id, held back with an actionable note, rest syncs, nothing relinked', async () => {
+  const staleList = { id: id(901), name: 'List 1', songs: [{ id: id(1), title: 'Song 1', artist: 'A' }, { id: id(77), title: 'Song 2', artist: 'A' }] }
+  const w = await world({ library: { songs: [song(1), song(2), song(3)], setlists: [staleList] } })
+  const fresh = w.device({ songs: [], setlists: [] })
+  const result = await w.run(fresh)
+  assert.equal(result.status, 'CONFLICT', result.error)
+  assert.deepEqual(read(fresh).songs.map(s => s.id).sort(), [id(1), id(2), id(3)], 'unrelated records synced')
+  assert.deepEqual(read(fresh).setlists, [], 'setlist held back, not rewritten or relinked')
+  const conflict = client.readRecordsSyncState(fresh).conflicts[0]
+  assert.equal(conflict.id, id(901))
+  assert.match(conflict.note, /no song with that exact ID\): "Song 2"/)
+  assert.match(conflict.note, /"Use cloud" keeps the cloud setlist without those entries; "Keep this device"/)
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(77)], 'cloud entries untouched (raw id preserved)')
+  // Use cloud (explicit): the stale entry is dropped, never pointed at song 2 by title; the raw cloud record is kept in recovery.
+  assert.equal((await w.run(fresh, { forceAction: 'download' })).success, true)
+  assert.deepEqual(read(fresh).setlists[0].songs.map(r => r.id), [id(1)], 'no relink to song 2')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)])
+  const snapshots = Object.entries(journal.recoveryData(fresh)).filter(([k]) => k.startsWith('gtar_sync_recovery:records:')).map(([, v]) => JSON.parse(v))
+  assert.ok(snapshots.some(snap => snap.remoteRecords?.some(r => r?.data?.songs?.some(ref => ref.id === id(77)))), 'original cloud entry (stale id) preserved in recovery')
+})

@@ -178,6 +178,22 @@ class Working {
 }
 
 /**
+ * #240 F8: setlist entries whose song id is not a song in the library. Exact ids only: a matching
+ * title/artist is not an identity (the stored library and the cloud both require the exact id), so
+ * an entry with a stale id counts as missing here and is never relinked by title.
+ */
+function entriesWithoutSong(songs: ActiveSongState[], setlists: WebSetlist[]): Array<{ setlistId: string; setlistName: string; songRef: WebSetlist['songs'][number] }> {
+  const ids = new Set(songs.map(song => String(song.id)))
+  const missing: Array<{ setlistId: string; setlistName: string; songRef: WebSetlist['songs'][number] }> = []
+  for (const setlist of setlists) {
+    for (const ref of setlist.songs ?? []) {
+      if (ref?.id === undefined || ref.id === null || !ids.has(String(ref.id))) missing.push({ setlistId: String(setlist.id), setlistName: setlist.name, songRef: ref })
+    }
+  }
+  return missing
+}
+
+/**
  * #240: cloud changes that would leave a setlist listing a song that is not in the library are held
  * back instead of failing the whole sync. Nothing is deleted or rewritten automatically:
  * - a cloud deletion of a song this device still lists in a setlist → the song stays on this device;
@@ -199,7 +215,7 @@ function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applie
     held++
   }
   for (let pass = 0; pass < 8; pass++) {
-    const { danglingReferences } = validateSongbookIntegrity(next.songs, next.setlists)
+    const danglingReferences = entriesWithoutSong(next.songs, next.setlists)
     if (!danglingReferences.length) break
     let progressed = false
     for (const ref of danglingReferences) {
@@ -219,7 +235,9 @@ function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applie
         next.setlists = localList
           ? next.setlists.map(list => String(list.id) === String(ref.setlistId) ? localList : list)
           : next.setlists.filter(list => String(list.id) !== String(ref.setlistId))
-        hold(setlistKey, 'The cloud version lists songs that are not in your library', localList)
+        const absent = entriesWithoutSong(next.songs, [applied.get(setlistKey)!.data as WebSetlist]).map(item => `"${item.songRef?.title || item.songRef?.id || 'untitled'}"`)
+        hold(setlistKey, `The cloud version lists songs that are not in your library (no song with that exact ID): ${absent.join(', ')}. ` +
+          '"Use cloud" keeps the cloud setlist without those entries; "Keep this device" keeps this device\'s version. The cloud copy is kept in recovery either way.', localList)
         progressed = true
       }
     }
@@ -231,7 +249,7 @@ function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applie
 /** #240: removes setlist entries that point to no song in the library (logged); same array when nothing is missing.
  * Used only after an explicit user choice (conflict resolution), never on its own. */
 export function dropMissingSetlistEntries(songs: ActiveSongState[], setlists: WebSetlist[]): WebSetlist[] {
-  const { danglingReferences } = validateSongbookIntegrity(songs, setlists)
+  const danglingReferences = entriesWithoutSong(songs, setlists)
   if (!danglingReferences.length) return setlists
   const missing = new Map<string, Set<unknown>>()
   for (const ref of danglingReferences) {
