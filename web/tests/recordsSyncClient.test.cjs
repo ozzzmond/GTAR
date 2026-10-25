@@ -432,3 +432,40 @@ test('#208 F6: result carries the revision it wrote; a save landing during the p
   assert.equal(stored.songs.find(s => s.id === id(1)).rawContent, 'remote from A', 'with the remote change')
   assert.equal(result.updatedLibrary.songs.find(s => s.id === id(2)).rawContent, `[G]Line 2`, 'the result copy is the stale one')
 })
+
+// #227 item 2 and 3: first-run samples never reach the cloud; a real song does.
+const { DEFAULT_SETLIST, DEFAULT_SAMPLE_SETLISTS, isPristineSampleRecord } = require('../src/data/defaultLibrary.ts')
+const cloudIds = (w, kind) => w.db.sqlite.prepare('SELECT record_id FROM user_songbook_records WHERE kind = ? AND removed = 0').all(kind).map(r => r.record_id)
+test('#227: a new device with the sample library gets the cloud songs and uploads no samples', async () => {
+  const w = await world({ library: base })
+  const fresh = w.device({ songs: DEFAULT_SETLIST, setlists: DEFAULT_SAMPLE_SETLISTS })
+  const result = await w.run(fresh)
+  assert.equal(result.success, true)
+  assert.deepEqual(cloudIds(w, 'song').filter(id => id.startsWith('d108')), [], 'no sample songs in the cloud')
+  assert.deepEqual(cloudIds(w, 'setlist').filter(id => id.startsWith('d108')), [], 'no sample setlists in the cloud')
+  assert.equal(cloudIds(w, 'song').length, 3)
+  assert.ok(base.songs.every(s => read(fresh).songs.some(x => x.id === s.id)), 'cloud songs reached the new device')
+  // Nothing was deleted from the cloud by the new device, and a second sync stays quiet.
+  const again = await w.run(fresh)
+  assert.equal(again.actionTaken, 'NONE')
+})
+
+test('#227: an edited sample is the user\'s song and syncs; an empty cloud receives the device\'s real songs', async () => {
+  const w = await world({ library: { songs: [], setlists: [] } })
+  const device = w.device({ songs: [...DEFAULT_SETLIST, song(7)], setlists: DEFAULT_SAMPLE_SETLISTS })
+  await w.run(device)
+  assert.deepEqual(cloudIds(w, 'song'), [id(7)], 'empty cloud: real song uploaded, samples not')
+  edit(device, lib => ({ ...lib, songs: lib.songs.map(s => s.id === DEFAULT_SETLIST[0].id ? { ...s, rawContent: s.rawContent + '\n[G]my edit' } : s) }))
+  await w.run(device)
+  assert.ok(cloudIds(w, 'song').includes(DEFAULT_SETLIST[0].id), 'edited sample uploaded')
+})
+
+test('#227: pristine-sample detection ignores storage normalization but not real edits', () => {
+  const s = DEFAULT_SETLIST[1]
+  assert.equal(isPristineSampleRecord('song', { ...s, rawContent: s.rawContent.replace(/\n/g, '\r\n') + '\n', key: 'C', bpm: '99' }), true)
+  assert.equal(isPristineSampleRecord('song', { ...s, title: s.title + '!' }), false)
+  assert.equal(isPristineSampleRecord('song', { ...s, id: 'other' }), false)
+  const l = DEFAULT_SAMPLE_SETLISTS[0]
+  assert.equal(isPristineSampleRecord('setlist', JSON.parse(JSON.stringify(l))), true)
+  assert.equal(isPristineSampleRecord('setlist', { ...l, songs: l.songs.slice(1) }), false)
+})

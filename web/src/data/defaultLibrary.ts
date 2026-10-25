@@ -156,3 +156,29 @@ export const DEFAULT_SAMPLE_SETLISTS: WebSetlist[] = [
     ],
   },
 ]
+
+/**
+ * #227: a first-run sample the user has not changed. Per-record sync never uploads these, so a
+ * new device or incognito session does not add the samples to the user's library everywhere.
+ * Compared on what makes it the user's own (chart, title, artist; setlist name and songs), so
+ * storage normalization (ids, key spelling) does not matter. Once edited, it syncs as usual.
+ */
+const sampleSongsById = new Map(DEFAULT_SETLIST.map(song => [String(song.id), song]))
+const sampleSetlistsById = new Map(DEFAULT_SAMPLE_SETLISTS.map(list => [String(list.id), list]))
+const norm = (text: unknown) => String(text ?? '').replace(/\r\n?/g, '\n').trim()
+export function isPristineSampleRecord(kind: string, data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false
+  const value = data as { id?: unknown; title?: unknown; artist?: unknown; rawContent?: unknown; name?: unknown; songs?: unknown; isDeleted?: unknown }
+  if (kind === 'song') {
+    const sample = sampleSongsById.get(String(value.id))
+    return !!sample && !value.isDeleted && norm(value.rawContent) === norm(sample.rawContent) &&
+      norm(value.title) === norm(sample.title) && norm(value.artist) === norm(sample.artist)
+  }
+  if (kind === 'setlist') {
+    const sample = sampleSetlistsById.get(String(value.id))
+    const songs = Array.isArray(value.songs) ? value.songs as Array<{ id?: unknown }> : null
+    return !!sample && !!songs && !value.isDeleted && norm(value.name) === norm(sample.name) &&
+      songs.length === sample.songs.length && songs.every((ref, i) => String(ref.id) === String(sample.songs[i].id))
+  }
+  return false
+}
