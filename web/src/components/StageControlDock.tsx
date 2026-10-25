@@ -337,7 +337,6 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
         onDoubleClick={handleResetDefaultPosition}
-        title="Drag dock to reposition. Double-click to reset."
         aria-label="Reposition stage control dock"
         className="w-full flex items-center justify-center py-1 cursor-grab active:cursor-grabbing text-app-muted/60 hover:text-app-action transition-colors"
       >
@@ -356,7 +355,6 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
             ? 'bg-app-base/90 border border-app-border text-app-text hover:text-app-action hover:border-app-action/60 shadow-md'
             : 'bg-app-base/40 border border-app-border/30 text-app-muted/30 cursor-not-allowed'
         }`}
-        title={canPrevSection ? 'Previous Section' : 'No previous section'}
         aria-label="Jump to previous section"
       >
         <ChevronUp className="w-8 h-8 stroke-[3]" />
@@ -373,11 +371,6 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
             ? 'bg-[#EF4444] border-[#EF4444]/70 text-white hover:bg-[#DC2626] shadow-red-900/50'
             : 'bg-app-button border-app-accent/70 text-app-button-text hover:bg-app-button shadow-app-border/40'
         }`}
-        title={
-          isAutoScrolling
-            ? 'Pause autoscroll (Space) • Hold for stage options'
-            : 'Start autoscroll (Space) • Hold for stage options'
-        }
         aria-label={
           isAutoScrolling
             ? 'Pause autoscroll. Long press to open stage options'
@@ -403,7 +396,6 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
             ? 'bg-app-base/90 border border-app-border text-app-text hover:text-app-action hover:border-app-action/60 shadow-md'
             : 'bg-app-base/40 border border-app-border/30 text-app-muted/30 cursor-not-allowed'
         }`}
-        title={canNextSection ? 'Next Section' : 'No next section'}
         aria-label="Jump to next section"
       >
         <ChevronDown className="w-8 h-8 stroke-[3]" />

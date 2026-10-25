@@ -476,7 +476,7 @@ test('TEST_QR_SHARING_UNCHANGED', () => {
   // Verify qrSharing / share mechanisms exist without shared catalog coupling
   const qrFile = fs.readFileSync(path.join(__dirname, '../src/components/SetlistDrawer.tsx'), 'utf8')
   assert.ok(qrFile.includes('Share Setlist (QR Code)'))
-  assert.ok(qrFile.includes('Publish to Shared'))
+  assert.ok(/Publish/.test(qrFile))
 })
 
 test('TEST_SHARED_SONGS_UNCHANGED', () => {

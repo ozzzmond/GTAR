@@ -123,7 +123,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-            title="Close dialog"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
           </button>
@@ -156,7 +156,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               type="button"
               onClick={handleCopyAll}
               className="px-3 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-text hover:text-app-action border border-app-border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-              title="Copy entire log output to clipboard"
+              aria-label="Copy entire log output to clipboard"
             >
               {copied ? (
                 <>
@@ -177,7 +177,6 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
                 data-testid="debug-logs-share"
                 onClick={handleShare}
                 className="px-3 py-1.5 rounded-xl bg-app-base border border-app-border hover:border-app-action text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
-                title="Share the log file (emails, account ids and tokens are redacted)"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 <span>Share</span>
@@ -188,7 +187,6 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               type="button"
               onClick={handleDownload}
               className="px-3 py-1.5 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
-              title="Download clean .log file readable in Windows Notepad"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download .log</span>
@@ -198,7 +196,6 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               type="button"
               onClick={handleClearLogs}
               className="px-3 py-1.5 rounded-xl bg-[#DC6E67]/20 hover:bg-[#DC6E67] text-status-error hover:text-white border border-[#DC6E67]/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-              title="Clear all recorded logs"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Clear</span>

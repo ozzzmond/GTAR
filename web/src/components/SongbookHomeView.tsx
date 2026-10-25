@@ -1613,7 +1613,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     disabled={selectedSetlistIds.size === 0}
                     onClick={() => setIsBulkDeleteSetlistsConfirmOpen(true)}
                     className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                    title="Delete selected setlists"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete</span>
@@ -1640,7 +1639,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     onClick={handleMainShareSetlist}
                     aria-label="Share Setlist"
                     className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
-                    title={activeSetlists.length === 0 ? 'Create a setlist first to share' : 'Share Setlist'}
                   >
                     <QrCode className="w-3.5 h-3.5" />
                   </button>
@@ -1656,7 +1654,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       setSelectedSetlistIds(new Set())
                     }}
                     className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer shrink-0"
-                    title="Manage setlists"
                   >
                     Manage
                   </button>
@@ -1666,7 +1663,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-label="Setlist actions"
                     aria-haspopup="menu"
                     aria-expanded={!!setlistsMenuAnchor}
-                    title="Setlist actions"
                     onClick={(e) => {
                       e.stopPropagation()
                       closeAllMenus()
@@ -1689,7 +1685,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           else onOpenSetlists()
                         }}
                         className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
-                        title="Create new empty gig setlist"
                       >
                         <ListPlus className="ui-action-text w-3.5 h-3.5 text-app-action" />
                         <span>New Setlist</span>
@@ -1704,7 +1699,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           setIsImportModalOpen(true)
                         }}
                         className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors border-t border-app-border/50"
-                        title="Import single setlist (.json) into your library"
                       >
                         <Upload className="ui-action-text w-3.5 h-3.5 text-app-action" />
                         <span>Import setlist…</span>
@@ -1822,7 +1816,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         }
                       }}
                       className="ui-action-text w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                      title="Play setlist"
                     >
                       <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                     </button>
@@ -1842,7 +1835,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         setSongMenuAnchor(null)
                       }}
                       className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-app-base ui-secondary-text text-app-muted hover:text-app-heading flex items-center justify-center transition-colors cursor-pointer"
-                      title="Setlist actions"
                     >
                       <MoreHorizontal className="w-4 h-4" />
                     </button>
@@ -1879,7 +1871,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             type="button"
                             data-testid={`menu-publish-setlist-${sl.id}`}
                             aria-label={`Publish ${sl.name} to Shared`}
-                            title="Publish to Shared"
                             onClick={event => { event.stopPropagation(); setActiveMenuSetlistId(null); onPublishSetlist(sl) }}
                             className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
                           >
@@ -1922,7 +1913,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             type="button"
                             data-testid={`menu-delete-${sl.id}`}
                             aria-label="Delete setlist"
-                            title="Delete setlist"
                             onClick={(e) => {
                               e.stopPropagation()
                               setActiveMenuSetlistId(null)
@@ -2017,7 +2007,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   disabled={sortedIndexedSongs.length === 0}
                   onClick={handleSelectAllSongs}
                   className="ui-action-text text-xs font-mono font-semibold text-app-action hover:bg-app-action/15 px-2 py-1 rounded-lg border border-app-action/40 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title="Select all currently visible songs"
                 >
                   Select All
                 </button>
@@ -2027,7 +2016,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   disabled={selectedSongIds.size === 0}
                   onClick={handleSelectNoneSongs}
                   className="ui-action-text text-xs font-mono font-semibold text-app-muted hover:text-app-heading hover:bg-app-surface px-2 py-1 rounded-lg border border-app-border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title="Clear song selection"
                 >
                   Select None
                 </button>
@@ -2038,11 +2026,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
                   onClick={handleBulkPublishSongs}
                   className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title={
-                    !isAuthActive
-                      ? 'Sign in with an active approved account to publish to the Shared Catalog'
-                      : 'Publish selected songs to Shared Catalog'
-                  }
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
                   <span>Publish to Shared</span>
@@ -2053,7 +2036,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   disabled={selectedSongIds.size === 0}
                   onClick={() => setIsBulkAddToSetlistModalOpen(true)}
                   className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title="Add selected songs to setlist"
                 >
                   <ListPlus className="w-3.5 h-3.5" />
                   <span>Add to Setlist</span>
@@ -2064,7 +2046,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   disabled={selectedSongIds.size === 0}
                   onClick={() => setIsBulkDeleteSongsConfirmOpen(true)}
                   className="text-xs font-bold text-status-error hover:bg-[#DC6E67]/15 px-2.5 py-1 rounded-lg border border-[#DC6E67]/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title="Delete selected songs"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete</span>
@@ -2157,7 +2138,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     setSelectedSongIds(new Set())
                   }}
                   className="ui-action-text text-xs px-2.5 py-1 border border-app-action/40 rounded-lg text-app-action hover:bg-app-action/10 font-mono font-semibold cursor-pointer shrink-0"
-                  title="Manage song selection, setlist assignment, and batch actions"
                 >
                   Manage
                 </button>
@@ -2170,7 +2150,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-label="Songs Library actions"
                     aria-haspopup="menu"
                     aria-expanded={!!libraryMenuAnchor}
-                    title="Songs Library actions"
                     onClick={(e) => {
                       e.stopPropagation()
                       closeAllMenus()
@@ -2488,7 +2467,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               aria-haspopup="dialog"
                               aria-expanded={membershipPopoverSongId === (song.id ?? originalIdx)}
                               aria-controls={membershipPopoverSongId === (song.id ?? originalIdx) ? `membership-popover-${originalIdx}` : undefined}
-                              title={`Used in ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
                               data-testid={`song-setlist-indicator-${originalIdx}`}
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -2540,7 +2518,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                         }
                                       }}
                                       className="ui-link-text w-full text-left px-2 py-1.5 rounded-lg ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
-                                      title={`Manage ${sl.name}`}
                                     >
                                       <span className="truncate flex-1">{sl.name}</span>
                                       <ArrowRight className="ui-action-text ui-action-text w-3 h-3 text-app-action shrink-0" />
@@ -2574,7 +2551,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           setSetlistMenuAnchor(null)
                         }}
                         className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-lg bg-transparent hover:bg-app-base ui-secondary-text text-app-muted hover:text-app-heading flex items-center justify-center transition-colors cursor-pointer"
-                        title="Song options"
                       >
                         <MoreHorizontal className="w-4 h-4" />
                       </button>
@@ -2601,7 +2577,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               setMembershipSongId(song.id ?? null)
                             }}
                             className="w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
-                            title="Add to Setlist"
                           >
                             <ListPlus className="ui-action-text ui-action-text w-3.5 h-3.5 text-app-action" />
                             <span>Add to Setlist</span>
@@ -2616,7 +2591,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               handleOpenPublishModal(song)
                             }}
                             className="w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
-                            title="Publish to Shared Catalog"
                           >
                             <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
                             <span>Publish to Shared</span>
@@ -2631,7 +2605,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               setConfirmDeleteIdx(originalIdx)
                             }}
                             className="w-full text-left px-3 py-2 text-status-error hover:bg-app-surface hover:text-status-error flex items-center gap-2 cursor-pointer transition-colors border-t border-app-border/50"
-                            title="Delete song"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-status-error" />
                             <span>Delete Song</span>

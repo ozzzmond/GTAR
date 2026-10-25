@@ -73,7 +73,7 @@ test('SETLIST_PLAY_QUICK_ACTION: Quick play action remains directly accessible o
   }))
 
   assert.ok(html.includes('data-testid="play-setlist-sl-1"'), 'Setlist card has quick play button')
-  assert.ok(html.includes('title="Play setlist"'), 'Play button has descriptive title')
+  assert.match(html, /aria-label="Play setlist /, 'Play button has an accessible name')
   assert.ok(html.includes('aria-label="Play setlist West Coast Set"'), 'Play button has descriptive aria-label')
 })
 
@@ -160,7 +160,7 @@ test('SONG_OPTIONS_MENU: Song card has compact ellipsis button for options', () 
   }))
 
   assert.ok(html.includes('data-testid="song-menu-0"'), 'Song card includes options menu trigger')
-  assert.ok(html.includes('title="Song options"'), 'Options button has descriptive title')
+  assert.match(html, /aria-label="Song options for /, 'Options button has an accessible name')
   assert.ok(html.includes('aria-label="Song options for Comfortably Numb"'), 'Options button has accessibility label')
 })
 
@@ -170,7 +170,7 @@ test('SONG_ADD_TO_SETLIST_OPTIONS_ACTION: Add to setlist is consolidated into so
   // Menu item exists and triggers membership dialog
   assert.ok(viewCode.includes('data-testid={`menu-add-to-setlist-${originalIdx}`}'), 'Add to setlist menu button exists')
   assert.ok(viewCode.includes('setMembershipSongId(song.id ?? null)'), 'Menu button sets membershipSongId')
-  assert.ok(viewCode.includes('title="Add to Setlist"'), 'Menu button has title')
+  assert.ok(viewCode.includes('Add to Setlist'), 'Menu button labelled')
 })
 
 test('SONG_DELETE_OPTIONS_ACTION: Song delete is consolidated into options menu with confirmation guard', () => {

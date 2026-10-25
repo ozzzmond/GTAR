@@ -90,7 +90,7 @@ test('PERSISTENCE: Customized factory colors survive Save & Apply, reopen, theme
   // Change name and color
   await setInput('[aria-label="Custom theme name"]', 'Deep Red Overdrive')
   await click('[data-testid="category-tab-controls"]')
-  await click('[data-testid="color-control-actionColor"] button[title="#EC4899"]')
+  await click('[data-testid="color-control-actionColor"] button[aria-label="#EC4899"]')
   await click('[data-testid="save-apply-palette-btn"]')
 
   assert.equal(applied.length, 1)

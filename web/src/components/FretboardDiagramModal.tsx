@@ -36,7 +36,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
               type="button"
               onClick={onClose}
               className="p-1.5 rounded-full text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-              title="Close Diagram"
+              aria-label="Close Diagram"
             >
               <X className="w-5 h-5" />
             </button>
@@ -93,7 +93,7 @@ export const FretboardDiagramModal: React.FC<FretboardDiagramModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-full text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-            title="Close Diagram"
+            aria-label="Close Diagram"
           >
             <X className="w-5 h-5" />
           </button>

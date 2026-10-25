@@ -178,7 +178,7 @@ test('Legacy factory identity cannot leak into standalone defaults; Cancel prese
   const snapshot = Object.entries(localStorage)
   await render({ isOpen: true, currentTheme: 'custom', customColors: factory, onClose() {}, onApplyTheme: (mode, colors) => applied.push({ mode, colors }) })
   await click('[data-testid="custom-theme-option-card"]')
-  await click('[title="Close without saving"]')
+  await click('[aria-label="Close without saving"]')
   assert.deepEqual(Object.entries(localStorage), snapshot)
   await click('[data-testid="theme-save-apply-btn"]')
   assert.equal(applied.at(-1).colors.identity, undefined)

@@ -437,7 +437,6 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
             <span
               data-testid="catalog-offline-badge"
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-status-warning/15 text-status-warning border border-status-warning/30 text-[10px] font-mono font-bold"
-              title={isStale ? 'Cached version older than 5 minutes' : 'Showing offline cached catalog'}
             >
               <WifiOff className="w-3 h-3" />
               <span>{isStale ? 'Offline (Stale Cache)' : 'Offline (Cached)'}</span>
@@ -460,7 +459,6 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
             disabled={isRefreshing}
             onClick={handleRefresh}
             className="px-3 py-2 rounded-xl border border-app-border bg-app-surface text-app-heading hover:border-app-action font-mono text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
-            title="Refresh Shared Catalog"
             aria-label="Refresh Shared Catalog"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -543,7 +541,6 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
                         </h3>
                         <span
                           className="px-1.5 py-0.5 rounded bg-app-base border border-app-border text-[9px] font-mono text-app-muted shrink-0"
-                          title={`Revision ${song.current_revision}`}
                         >
                           r{song.current_revision}
                         </span>
@@ -571,7 +568,6 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
                               data-testid={`edit-catalog-${song.id}`}
                               onClick={(e) => handleOpenEdit(song, e)}
                               className="p-1 rounded hover:bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-                              title="Edit shared song"
                               aria-label={`Edit ${song.title}`}
                             >
                               <Edit3 className="w-3.5 h-3.5" />
@@ -585,7 +581,6 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
                                 setUnpublishError(null)
                               }}
                               className="p-1 rounded hover:bg-status-error/15 text-app-muted hover:text-status-error transition-colors cursor-pointer"
-                              title="Unpublish song"
                               aria-label={`Unpublish ${song.title}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -603,7 +598,6 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
                               ? 'bg-status-success/20 text-status-success border border-status-success/40'
                               : 'bg-app-action text-app-on-action hover:bg-app-action/90'
                           }`}
-                          title={matchingPersonal ? (matchingPersonal.publishedCatalogSongId === song.id ? "Already published from My Songs" : "Already in My Songs") : "Import copy to My Songs"}
                           aria-label={`Import ${song.title} to My Songs`}
                         >
                           <Download className="w-3 h-3" />

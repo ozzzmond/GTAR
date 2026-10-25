@@ -108,7 +108,7 @@ export const ChordQuickPreview: React.FC<ChordQuickPreviewProps> = ({
           type="button"
           onClick={onClose}
           className="p-1 rounded-md text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-          title="Dismiss Preview"
+          aria-label="Dismiss Preview"
         >
           <X className="w-3.5 h-3.5" />
         </button>

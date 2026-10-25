@@ -358,7 +358,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-surface transition-colors cursor-pointer"
-            title="Close Drawer"
+            aria-label="Close Drawer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -446,7 +446,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     type="button"
                     onClick={() => setlistFileInputRef.current?.click()}
                     className="ui-action-text px-2 py-1 rounded-lg bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-app-action/30"
-                    title="Import a single setlist (.json) into your library"
                   >
                     <Upload className="w-3 h-3" />
                     <span>Import Setlist</span>
@@ -455,7 +454,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                     type="button"
                     onClick={handleExportAll}
                     className="px-2 py-1 rounded-lg bg-app-base hover:bg-app-border text-app-muted hover:text-app-heading text-[10px] font-bold font-mono flex items-center gap-1 transition-colors cursor-pointer border border-app-border"
-                    title="Export All Data (JSON)"
                   >
                     <Download className="w-3 h-3" />
                     <span>Export All</span>
@@ -532,7 +530,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                 onClose()
                               }}
                               className="ui-action-text p-1.5 rounded-lg text-app-accent hover:text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer"
-                              title="Start Gig / Play Setlist from Beginning"
+                              aria-label="Start Gig / Play Setlist from Beginning"
                             >
                               <PlayCircle className="w-4 h-4" />
                             </button>
@@ -541,7 +539,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             <button
                               type="button"
                               aria-label={`Publish ${sl.name} to Shared`}
-                              title="Publish to Shared"
                               className="min-h-11 min-w-11 p-2 rounded-lg text-app-action hover:bg-app-surface flex items-center justify-center transition-colors cursor-pointer"
                               onClick={event => { event.stopPropagation(); onPublishSetlist(sl) }}
                             >
@@ -556,7 +553,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                 onShareSetlist(sl)
                               }}
                               className="p-1.5 rounded-lg text-app-muted hover:text-app-accent hover:bg-app-surface transition-colors cursor-pointer"
-                              title="Share Setlist (QR Code)"
+                              aria-label="Share Setlist (QR Code)"
                             >
                               <QrCode className="w-3.5 h-3.5" />
                             </button>
@@ -568,7 +565,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               handleExportSingle(sl)
                             }}
                             className="p-1.5 rounded-lg text-app-muted hover:text-app-action hover:bg-app-surface transition-colors cursor-pointer"
-                            title="Export Setlist (.json)"
+                            aria-label="Export Setlist (.json)"
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
@@ -576,7 +573,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                             type="button"
                             onClick={() => setExpandedSetlistId(isExpanded ? null : sl.id)}
                             className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-surface transition-colors cursor-pointer"
-                            title={isExpanded ? 'Collapse' : 'Expand'}
+                            aria-label={isExpanded ? 'Collapse' : 'Expand'}
                           >
                             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </button>
@@ -585,7 +582,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               type="button"
                               onClick={() => onDeleteSetlist(sl.id)}
                               className="p-1.5 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer"
-                              title="Delete Setlist"
+                              aria-label="Delete Setlist"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -661,7 +658,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                         disabled={sIdx === 0}
                                         onClick={() => onReorderSetlistSong(sl.id, sIdx, true)}
                                         className="p-1 rounded text-app-muted hover:text-app-heading hover:bg-app-surface disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
-                                        title="Move Song Up"
+                                        aria-label="Move Song Up"
                                       >
                                         <ChevronUp className="w-3.5 h-3.5" />
                                       </button>
@@ -670,7 +667,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                         disabled={sIdx === slSongs.length - 1}
                                         onClick={() => onReorderSetlistSong(sl.id, sIdx, false)}
                                         className="p-1 rounded text-app-muted hover:text-app-heading hover:bg-app-surface disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
-                                        title="Move Song Down"
+                                        aria-label="Move Song Down"
                                       >
                                         <ChevronDown className="w-3.5 h-3.5" />
                                       </button>
@@ -682,7 +679,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                                       type="button"
                                       onClick={() => onRemoveSetlistSong(sl.id, sIdx)}
                                       className="p-1 rounded text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5"
-                                      title="Remove from setlist"
+                                      aria-label="Remove from setlist"
                                     >
                                       <X className="w-3.5 h-3.5" />
                                     </button>
@@ -885,7 +882,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                         }
                       }}
                       className="p-1 rounded-lg bg-app-surface hover:bg-app-action/20 border border-app-border hover:border-app-action/40 text-app-action flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-app-action"
-                      title="Add to Setlist"
                     >
                       <ListPlus className="w-3.5 h-3.5" />
                     </button>
@@ -895,7 +891,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                       type="button"
                       onClick={(e) => item.id !== undefined && handleDeleteClick(e, item.id)}
                       className="p-1 rounded-lg text-app-muted hover:text-status-error hover:bg-[#DC6E67]/15 transition-colors cursor-pointer ml-0.5 focus:outline-none focus:ring-1 focus:ring-status-error"
-                      title="Delete song from library"
                       aria-label="Delete song from library"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -946,7 +941,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 onClose()
               }}
               className="w-full py-2.5 px-4 rounded-xl bg-app-action text-app-on-action font-bold text-xs flex items-center justify-center gap-2 hover:bg-app-action transition-all cursor-pointer shadow-md active:scale-95 select-none"
-              title="Create a new blank song template in Desktop Editor"
             >
               <span>New Song</span>
             </button>
@@ -958,7 +952,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                 onClose()
               }}
               className="w-full py-2.5 px-4 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95 select-none"
-              title="Create new setlist"
             >
               <span>New Setlist</span>
             </button>

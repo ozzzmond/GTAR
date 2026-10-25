@@ -60,11 +60,9 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Primary toolbar follows Stage Preview -> Editor
   assert.ok(!tier2Section.includes('label={`Songbook'), 'Dedicated Songbook button removed from primary toolbar')
   assert.ok(!tier2Section.includes('label={`Setlists'), 'Dedicated Setlists button removed from primary toolbar')
 
-  // Home navigation preserved via Logo entry with Alt+0 shortcut hint
-  assert.ok(
-    headerSource.includes('title="Return to Songbook Library Home (Alt+0)"'),
-    'Logo home entry preserved with Alt+0 shortcut hint'
-  )
+  // Home navigation preserved via the logo entry (#224: hover tooltip removed; Alt+0 still works)
+  assert.ok(headerSource.includes('onClick={onNavigateHome}'), 'Logo home entry preserved')
+  assert.ok(!headerSource.includes('title="Return to Songbook Library Home (Alt+0)"'), '#224: no hover tooltip')
 })
 
 // =============================================================================

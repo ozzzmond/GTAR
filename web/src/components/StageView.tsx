@@ -1770,7 +1770,6 @@ export const StageView: React.FC<StageViewProps> = ({
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
-                  title="Step Key Down (-1 semitone)"
                   aria-label="Step Key Down (-1 semitone)"
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -1786,7 +1785,6 @@ export const StageView: React.FC<StageViewProps> = ({
                   className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-app-surface transition-colors cursor-pointer ${
                     effectivePerformanceKey ? 'text-app-accent' : 'text-status-error'
                   }`}
-                  title="Choose Performance Key"
                   aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}, Tap to choose key`}
                 >
                   <span>Key: {effectivePerformanceKey || 'Not Set'}</span>
@@ -1802,7 +1800,6 @@ export const StageView: React.FC<StageViewProps> = ({
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
-                  title="Step Key Up (+1 semitone)"
                   aria-label="Step Key Up (+1 semitone)"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -1822,7 +1819,6 @@ export const StageView: React.FC<StageViewProps> = ({
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer"
-                  title="Transpose Down (-1)"
                   aria-label="Transpose Down (-1 semitone)"
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -1838,7 +1834,6 @@ export const StageView: React.FC<StageViewProps> = ({
                   className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 text-xs font-mono font-extrabold rounded hover:bg-app-surface transition-colors cursor-pointer ${
                     keyContext.displayOffset !== 0 ? 'text-app-accent' : 'text-app-text'
                   }`}
-                  title="Choose Target Key"
                   aria-label={`Transpose: ${offsetStr}, Tap to choose key`}
                 >
                   <span>Transpose: {offsetStr}</span>
@@ -1853,7 +1848,6 @@ export const StageView: React.FC<StageViewProps> = ({
                     triggerOverlaysShow()
                   }}
                   className="w-7 h-7 flex items-center justify-center text-app-text hover:text-app-action hover:bg-app-surface active:scale-90 rounded transition-all cursor-pointer"
-                  title="Transpose Up (+1)"
                   aria-label="Transpose Up (+1 semitone)"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -1871,7 +1865,6 @@ export const StageView: React.FC<StageViewProps> = ({
               }}
               className="px-2.5 py-1.5 rounded-lg bg-app-base hover:bg-app-border text-app-text text-xs font-semibold
                          flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
-              title="Exit focus mode"
               aria-label="Exit focus mode"
             >
               <Minimize2 className="w-3.5 h-3.5" />
@@ -1888,7 +1881,6 @@ export const StageView: React.FC<StageViewProps> = ({
           onClick={triggerOverlaysShow}
           className="absolute top-0 left-0 right-0 z-30 flex items-center justify-center px-4 py-1.5 pointer-events-auto cursor-pointer select-none transition-opacity duration-300"
           style={{ paddingTop: 'max(6px, env(safe-area-inset-top, 6px))' }}
-          title="Tap to reveal stage controls"
           aria-label={`${song.title || 'Untitled Song'} • Tap to reveal stage controls`}
         >
           <div className="max-w-[85vw] sm:max-w-lg md:max-w-xl px-4 py-1 rounded-full bg-app-surface/85 backdrop-blur-md border border-app-border/70 shadow-md flex items-center justify-center">
@@ -1931,11 +1923,11 @@ export const StageView: React.FC<StageViewProps> = ({
           <div className="flex items-center bg-app-base rounded-lg border border-app-border p-0.5 text-xs font-semibold">
             {(
               [
-                { id: 'mono', label: 'Mono', title: 'Monospace (Recommended for stage chord alignment)' },
-                { id: 'sans', label: 'Sans', title: 'Sans-Serif (Clean modern look)' },
-                { id: 'serif', label: 'Serif', title: 'Stage Serif (High contrast bold stage style)' },
+                { id: 'mono', label: 'Mono' },
+                { id: 'sans', label: 'Sans' },
+                { id: 'serif', label: 'Serif' },
               ] as const
-            ).map(({ id, label, title }) => (
+            ).map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
@@ -1945,7 +1937,6 @@ export const StageView: React.FC<StageViewProps> = ({
                     ? 'bg-app-action text-app-on-action font-extrabold shadow-sm'
                     : 'text-app-text hover:text-app-action'
                 }`}
-                title={title}
               >
                 {label}
               </button>
@@ -1961,7 +1952,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 ? 'bg-app-accent/20 text-app-accent border-app-accent font-bold shadow-sm'
                 : 'bg-app-base text-app-text border-app-border hover:text-app-action'
             }`}
-            title={isTwoColumn ? 'Switch to 1 Column' : 'Switch to 2 Columns'}
+            aria-label={isTwoColumn ? 'Switch to 1 Column' : 'Switch to 2 Columns'}
           >
             {isTwoColumn ? <Columns2 className="w-3.5 h-3.5 text-app-accent" /> : <Square className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isTwoColumn ? '2-Col' : '1-Col'}</span>
@@ -1975,7 +1966,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 disabled={!effectivePerformanceKey}
                 onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
-                title="Step Key Down (-1 semitone)"
                 aria-label="Step Key Down (-1 semitone)"
               >
                 <Minus className="w-3.5 h-3.5" />
@@ -1987,7 +1977,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
                   effectivePerformanceKey ? 'text-app-accent hover:bg-app-surface' : 'text-status-error hover:bg-app-surface'
                 }`}
-                title="Select Performance Key"
                 aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}`}
               >
                 <span>Key: {effectivePerformanceKey || 'Not Set'}</span>
@@ -1999,7 +1988,6 @@ export const StageView: React.FC<StageViewProps> = ({
                   type="button"
                   onClick={() => onTransposeChange(keyContext.resetOffset)}
                   className="p-1 text-app-muted hover:text-status-error cursor-pointer"
-                  title={keyContext.originalRelative ? "Reset Key to Original Key" : "Reset Key to Chart Key"}
                   aria-label={keyContext.originalRelative ? "Reset Key to Original Key" : "Reset Key to Chart Key"}
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -2011,7 +1999,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 disabled={!effectivePerformanceKey}
                 onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
-                title="Step Key Up (+1 semitone)"
                 aria-label="Step Key Up (+1 semitone)"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -2030,7 +2017,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 type="button"
                 onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer"
-                title="Transpose Down (-1)"
+                aria-label="Transpose Down (-1)"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
@@ -2041,7 +2028,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 className={`flex items-center gap-1 px-2 py-1 text-xs font-mono font-extrabold rounded cursor-pointer transition-colors ${
                   keyContext.displayOffset !== 0 ? 'text-app-accent' : 'text-app-text hover:bg-app-surface'
                 }`}
-                title="Select Target Key"
               >
                 <span>
                   Transpose: {offsetStr}
@@ -2054,7 +2040,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   type="button"
                   onClick={() => onTransposeChange(keyContext.resetOffset)}
                   className="p-1 text-app-muted hover:text-status-error cursor-pointer"
-                  title={keyContext.originalRelative ? "Reset Transposition to Original Key" : "Reset Transposition to Chart Key"}
+                  aria-label={keyContext.originalRelative ? "Reset Transposition to Original Key" : "Reset Transposition to Chart Key"}
                 >
                   <RotateCcw className="w-3 h-3" />
                 </button>
@@ -2064,7 +2050,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 type="button"
                 onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
                 className="p-1 text-app-text hover:text-app-action rounded cursor-pointer"
-                title="Transpose Up (+1)"
+                aria-label="Transpose Up (+1)"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -2080,7 +2066,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 ? 'bg-[#EF4444]/20 border-[#EF4444] text-status-error hover:bg-[#EF4444]/30 animate-pulse'
                 : 'bg-app-accent/15 border-app-accent/40 text-app-accent hover:bg-app-accent/25 hover:border-app-accent'
             }`}
-            title={isAutoScrolling ? 'Pause autoscroll (Space)' : 'Start autoscroll (Space)'}
             aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
           >
             {isAutoScrolling ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
@@ -2098,7 +2083,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
                 : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
             }`}
-            title={
+            aria-label={
               isCastActive
                 ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
                 : 'Cast / Pop-out Screen (Open distraction-free fullscreen teleprompter on secondary monitor or TV)'
@@ -2121,15 +2106,6 @@ export const StageView: React.FC<StageViewProps> = ({
                 ? 'bg-app-action/20 border-app-action text-app-action hover:bg-app-action/30'
                 : 'bg-app-base border-app-border text-app-text hover:text-app-action'
             }`}
-            title={
-              iosPwa || iosOnly
-                ? isDistractionFree
-                  ? 'Exit Focus Mode (show toolbar)'
-                  : 'Focus Mode — collapse toolbar for distraction-free stage'
-                : isFullscreen
-                ? 'Exit Fullscreen'
-                : 'Enter Fullscreen'
-            }
             aria-label={
               iosPwa || iosOnly
                 ? isDistractionFree
@@ -2302,7 +2278,7 @@ export const StageView: React.FC<StageViewProps> = ({
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
             }`}
-            title="Previous Song"
+            aria-label="Previous Song"
           >
             <SkipBack className="w-4 h-4" />
           </button>
@@ -2317,7 +2293,7 @@ export const StageView: React.FC<StageViewProps> = ({
             className={`px-3 py-2 font-extrabold text-[11px] transition-colors cursor-pointer ${
               isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
             }`}
-            title="Open setlist / library"
+            aria-label="Open setlist / library"
           >
             {isInSetlistMode
               ? `${activeSetlistSongIndex + 1}\u202f/\u202f${activeSetlistSongs.length}`
@@ -2335,7 +2311,7 @@ export const StageView: React.FC<StageViewProps> = ({
             className={`px-3 py-2 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed ${
               isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
             }`}
-            title="Next Song"
+            aria-label="Next Song"
           >
             <SkipForward className="w-4 h-4" />
           </button>
@@ -2457,7 +2433,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   disabled={notation === 'numbers' && !effectivePerformanceKey}
                   onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
                   className="p-2 text-app-text hover:text-app-action cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
-                  title={notation === 'numbers' ? 'Step Key Down (-1)' : 'Transpose Down (-1)'}
+                  aria-label={notation === 'numbers' ? 'Step Key Down (-1)' : 'Transpose Down (-1)'}
                 >
                   <Minus className="w-4 h-4" />
                 </button>
@@ -2479,7 +2455,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     type="button"
                     onClick={() => onTransposeChange(keyContext.resetOffset)}
                     className="p-2 text-app-muted hover:text-status-error cursor-pointer"
-                    title={keyContext.originalRelative ? 'Reset to Original Key' : 'Reset to Chart Key'}
+                    aria-label={keyContext.originalRelative ? 'Reset to Original Key' : 'Reset to Chart Key'}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -2489,7 +2465,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   disabled={notation === 'numbers' && !effectivePerformanceKey}
                   onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
                   className="p-2 text-app-text hover:text-app-action cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
-                  title={notation === 'numbers' ? 'Step Key Up (+1)' : 'Transpose Up (+1)'}
+                  aria-label={notation === 'numbers' ? 'Step Key Up (+1)' : 'Transpose Up (+1)'}
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -2505,7 +2481,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     type="button"
                     {...createHoldHandlers(-1)}
                     className="px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action cursor-pointer select-none active:scale-95 transition-transform"
-                    title="Decrease font size (Hold to adjust)"
+                    aria-label="Decrease font size"
                   >
                     A-
                   </button>
@@ -2513,7 +2489,6 @@ export const StageView: React.FC<StageViewProps> = ({
                     onDoubleClick={() => setStageFontSize(STAGE_SIZE_PRESETS.L)}
                     onTouchStart={handleNumericDoubleTap}
                     className="flex-1 text-center text-sm font-mono font-bold text-app-accent cursor-pointer select-none py-1"
-                    title="Double-tap to reset to Stage default (L / 24px)"
                   >
                     {fontSizePx}px
                   </span>
@@ -2521,7 +2496,7 @@ export const StageView: React.FC<StageViewProps> = ({
                     type="button"
                     {...createHoldHandlers(1)}
                     className="px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action cursor-pointer select-none active:scale-95 transition-transform"
-                    title="Increase font size (Hold to adjust)"
+                    aria-label="Increase font size"
                   >
                     A+
                   </button>
@@ -2543,7 +2518,6 @@ export const StageView: React.FC<StageViewProps> = ({
                           ? 'bg-app-button text-app-button-text border-app-accent shadow-sm'
                           : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                       }`}
-                      title={`${key} (${size}px)`}
                     >
                       {key}
                     </button>
@@ -2673,7 +2647,6 @@ export const StageView: React.FC<StageViewProps> = ({
                       ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
                       : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                   }`}
-                  title="Auto-hide navigation dock with HUD in fullscreen mode"
                 >
                   Auto-Hide
                 </button>
@@ -2686,7 +2659,6 @@ export const StageView: React.FC<StageViewProps> = ({
                       ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
                       : 'bg-app-base text-app-text border-app-border hover:border-app-action'
                   }`}
-                  title="Keep floating navigation dock visible during fullscreen mode"
                 >
                   Always Visible
                 </button>

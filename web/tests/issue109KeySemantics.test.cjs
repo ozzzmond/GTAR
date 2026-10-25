@@ -98,8 +98,8 @@ test('109: actual stage picker and controls use original-relative zero, reset, a
   assert.match(document.body.textContent,/Original KeyE.*Chart Key: G.*Performance KeyG/)
   const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)'));await act(async()=>zero.click());assert.equal(t,-3)
   await render();assert.match(document.body.textContent,/Transpose: 0/);assert.ok(document.body.textContent.includes('B/D#'))
-  t=0;await render();const reset=document.querySelector('[title="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(t,-3)
-  await render();const up=document.querySelector('[title="Step Key Up (+1 semitone)"], [title="Transpose Up (+1)"]');assert.ok(up);await act(async()=>up.click());assert.equal(t,-2)
+  t=0;await render();const reset=document.querySelector('[aria-label="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(t,-3)
+  await render();const up=document.querySelector('[aria-label="Step Key Up (+1 semitone)"], [aria-label="Transpose Up (+1)"]');assert.ok(up);await act(async()=>up.click());assert.equal(t,-2)
  }finally{await act(async()=>root.unmount())}
  // Both production call sites supply the same full source and storage-relative offset contract.
  const app=fs.readFileSync(require.resolve('../src/App.tsx'),'utf8'),stage=fs.readFileSync(require.resolve('../src/components/StageView.tsx'),'utf8')
@@ -167,7 +167,7 @@ test('109 field QA: actual stage renders the same raw E performance as its picke
   assert.match(document.body.textContent,/Original KeyE.*Chart Key: E.*Performance KeyC#/)
   const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)'));await act(async()=>zero.click());assert.equal(offset,0)
   await render();assert.deepEqual(chords(),['E','Esus4'])
-  offset=-3;await render();const reset=document.querySelector('[title="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(offset,0)
+  offset=-3;await render();const reset=document.querySelector('[aria-label="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(offset,0)
   await render();assert.deepEqual(chords(),['E','Esus4']);assert.equal(stale.key,'G');assert.equal(stale.originalKey,'E')
  }finally{await act(async()=>root.unmount())}
 })
@@ -298,7 +298,7 @@ test('111 prior review: key shorthand survives Save, repairs synchronize stale e
   const root=createRoot(document.getElementById('root'));let selected
   try{
    await act(async()=>root.render(React.createElement(StageView,{song,songs:[song],activeSongIndex:0,onSelectSongIndex(){},onOpenSetlistDrawer(){},transposeOffset:offset,onTransposeChange:n=>{selected=n}})))
-   const button=document.querySelector(delta===1?'[title="Step Key Up (+1 semitone)"], [title="Transpose Up (+1)"]':'[title="Step Key Down (-1 semitone)"], [title="Transpose Down (-1)"]');assert.ok(button);await act(async()=>button.click())
+   const button=document.querySelector(delta===1?'[aria-label="Step Key Up (+1 semitone)"], [aria-label="Transpose Up (+1)"]':'[aria-label="Step Key Down (-1 semitone)"], [aria-label="Transpose Down (-1)"]');assert.ok(button);await act(async()=>button.click())
    assert.equal(selected,transposeContext(song,offset).toStoredOffset(transposeContext(song,offset).displayOffset+delta));assert.ok(selected>=-11 && selected<=11)
   }finally{await act(async()=>root.unmount())}
  }

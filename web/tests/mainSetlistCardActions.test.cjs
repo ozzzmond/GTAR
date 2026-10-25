@@ -85,7 +85,7 @@ test('DELETE_SETLIST: Trash icon is visible on main setlist card, separate from 
   const appCode = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8')
 
   // Visible trash button on card
-  assert.ok(viewCode.includes('title="Delete setlist"'), 'Setlist card must include a visible Delete Setlist button')
+  assert.ok(viewCode.includes('aria-label="Delete setlist"'), 'Setlist card must include a visible Delete Setlist button')
   assert.ok(viewCode.includes('setConfirmDeleteSetlistId(sl.id)'), 'Clicking trash icon must trigger confirmation state')
 
   // Confirmation popover

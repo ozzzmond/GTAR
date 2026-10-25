@@ -736,7 +736,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              title="Close without saving"
+              aria-label="Close without saving"
               className="p-1.5 rounded-lg ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -828,7 +828,6 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                         setIsCustomPaletteEditorOpen(true)
                       }}
                       className="ui-button px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-base ui-primary-text text-app-text hover:text-app-heading border border-app-border text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-95 shrink-0"
-                      title={`Customize a copy of ${override?.identity?.displayName || theme.name} without altering factory preset`}
                     >
                       <Sliders className="ui-action-text w-3 h-3 text-app-accent" />
                       <span>Customize This Theme</span>

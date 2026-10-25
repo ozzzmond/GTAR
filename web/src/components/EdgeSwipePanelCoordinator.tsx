@@ -340,7 +340,6 @@ export const EdgeSwipePanelCoordinator: React.FC<EdgeSwipePanelCoordinatorProps>
           role="button"
           tabIndex={0}
           aria-label="Edge Swipe Panel Handle"
-          title="Swipe right to open Side Panel"
           className="fixed left-0 top-1/2 -translate-y-1/2 z-40 flex items-center justify-start pl-1 pr-1.5 py-4 cursor-pointer select-none group touch-none"
           style={{
             touchAction: 'none',

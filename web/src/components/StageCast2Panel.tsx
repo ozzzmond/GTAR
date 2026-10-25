@@ -337,7 +337,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
               aria-label={`Song: ${v.snapshot!.displayTitle}`}
             >
               <div className="cast2-tv-title-pill">
-                <span className="cast2-tv-title-text" title={v.snapshot!.displayTitle}>
+                <span className="cast2-tv-title-text">
                   {v.snapshot!.displayTitle}
                 </span>
               </div>

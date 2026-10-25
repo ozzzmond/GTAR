@@ -156,7 +156,6 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               type="button"
               data-testid="export-palette-btn"
               onClick={handleOpenExport}
-              title="Export palette as JSON"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium ui-primary-text text-app-text hover:text-app-heading bg-app-base/70 hover:bg-app-base border border-app-border flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <Download className="w-3.5 h-3.5 text-app-accent" />
@@ -166,7 +165,6 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               type="button"
               data-testid="import-palette-btn"
               onClick={handleOpenImport}
-              title="Import palette from JSON"
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium ui-primary-text text-app-text hover:text-app-heading bg-app-base/70 hover:bg-app-base border border-app-border flex items-center gap-1.5 cursor-pointer transition-colors"
             >
               <Upload className="w-3.5 h-3.5 text-app-action" />
@@ -176,7 +174,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               type="button"
               data-testid="close-palette-editor-btn"
               onClick={onClose}
-              title="Close without saving"
+              aria-label="Close without saving"
               className="p-1.5 rounded-lg ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer ml-1"
             >
               <X className="w-5 h-5" />
@@ -216,7 +214,6 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             type="button"
             data-testid="reset-palette-defaults-btn"
             onClick={handleResetDefaults}
-            title="Reset palette to default values"
             className="px-2.5 py-1.5 rounded-xl text-[11px] font-mono ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border/60 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -289,10 +286,10 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                         <label
                           className="relative w-8 h-8 rounded-xl border border-app-border/20 shadow-md flex items-center justify-center cursor-pointer overflow-hidden hover:scale-105 transition-transform"
                           style={{ backgroundColor: value }}
-                          title={`Choose ${item.label}`}
                         >
                           <input
                             type="color"
+                            aria-label={`Choose ${item.label}`}
                             value={value}
                             onChange={(e) => updateColor(item.key, e.target.value)}
                             className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
@@ -334,7 +331,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
                                   : 'border-app-border/30 hover:scale-110 opacity-75 hover:opacity-100'
                               }`}
                               style={{ backgroundColor: hex }}
-                              title={hex}
+                              aria-label={hex}
                             />
                           )
                         })}

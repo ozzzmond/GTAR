@@ -838,7 +838,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               type="button"
               onClick={() => requestNavigation(onClose)}
               className="p-1 sm:p-1.5 rounded-lg bg-app-base border border-app-border text-app-muted hover:text-app-heading hover:border-app-action transition-colors cursor-pointer shrink-0"
-              title="Return to Stage View"
+              aria-label="Return to Stage View"
             >
               <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
@@ -919,14 +919,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 onPointerDown={captureEditorSelection}
                 onClick={handleInsertBrackets}
                 className="flex items-center gap-1 px-2 py-1 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                title="Wrap selection in brackets or insert [] at caret"
                 aria-label="Wrap selection or insert brackets []"
               >
                 <SquareCode className="w-3.5 h-3.5" />
                 <span>[]</span>
               </button>
 
-              <button type="button" aria-label="Insert section" title="Insert section"
+              <button type="button" aria-label="Insert section"
                 aria-expanded={insertOpen} aria-haspopup="menu" onPointerDown={captureEditorSelection} onClick={event => { captureEditorSelection(); setInsertAnchor(event.currentTarget); setInsertOpen(open => !open) }}
                 className="p-1.5 rounded bg-app-surface text-app-section cursor-pointer">
                 <MoreHorizontal className="w-3.5 h-3.5" />
@@ -957,7 +956,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 data-testid="editor-new-song-button"
                 onClick={handleNewSong}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-accent/20 text-app-accent hover:text-app-accent transition-colors cursor-pointer"
-                title="New Song (blank document)"
                 aria-label="New Song"
               >
                 <FilePlus className="w-3.5 h-3.5" />
@@ -970,7 +968,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 type="button"
                 onClick={handlePasteClipboard}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action transition-colors cursor-pointer"
-                title="Paste from clipboard"
                 aria-label="Paste"
               >
                 <ClipboardPaste className="w-3.5 h-3.5" />
@@ -980,7 +977,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 type="button"
                 onClick={handleCopyAll}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer"
-                title="Copy all content"
                 aria-label="Copy"
               >
                 {copyFeedback ? <Check className="w-3.5 h-3.5 text-status-success" /> : <Copy className="w-3.5 h-3.5" />}
@@ -990,7 +986,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 type="button"
                 onClick={handleSelectAll}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer font-mono text-[10px] font-bold"
-                title="Select all text"
                 aria-label="Select All"
               >
                 <span>ALL</span>
@@ -1000,7 +995,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 type="button"
                 onClick={handleClear}
                 className="p-1.5 rounded bg-app-surface hover:bg-red-500/20 text-status-error hover:text-status-error transition-colors cursor-pointer"
-                title="Clear all text"
                 aria-label="Clear"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -1010,7 +1004,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 data-testid="editor-lookup-metadata-button"
                 onClick={handleLookupMetadata}
                 disabled={isLookingUpMetadata || !localTitle.trim()}
-                title="Lookup Metadata suggestion (Original Key, Tempo, Year)"
                 aria-label="Lookup Metadata"
                 className="px-2 py-1 rounded bg-app-surface border border-app-border hover:border-app-action text-app-action hover:text-app-heading flex items-center gap-1 font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-[11px]"
               >
@@ -1021,8 +1014,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 )}
                 <span className="hidden sm:inline">Lookup Metadata</span>
               </button>
-              <button type="button" onClick={() => setIsMetadataModalOpen(true)}
-                title="Song Details & Metadata" aria-label="Song Details & Metadata"
+              <button type="button" onClick={() => setIsMetadataModalOpen(true)} aria-label="Song Details & Metadata"
                 className="p-1.5 rounded bg-app-surface text-app-action hover:bg-app-action/20 cursor-pointer">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
               </button>
@@ -1037,7 +1029,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       ? 'bg-status-error/20 text-status-error border border-status-error/40 hover:bg-status-error/30'
                       : 'bg-app-button hover:bg-app-button text-app-button-text'
                   } shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-60`}
-                  title={isSaving ? 'Saving...' : saveStatus === 'FAILED' ? 'Save failed — click to retry' : 'Save changes'}
                   aria-label={isSaving ? 'Saving...' : 'Save changes'}
                 >
                   <Save className={`w-4 h-4 ${saveStatus === 'FAILED' ? 'text-status-error' : 'text-app-button-text'} stroke-[2.5] ${isSaving ? 'animate-spin' : ''}`} />
@@ -1144,7 +1135,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   setIsLookupPreviewOpen(false)
                 }}
                 className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-                title="Close"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
@@ -1244,7 +1234,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                             setIsLookupPreviewOpen(false)
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-app-surface hover:bg-app-base border border-app-action text-app-action hover:text-app-heading font-medium text-xs transition-colors cursor-pointer"
-                          title={`Transpose chart from ${localKey} to ${lookupResult.originalKey}`}
                         >
                           Transpose to Original Key ({lookupResult.originalKey})
                         </button>
@@ -1305,7 +1294,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   type="button"
                   onClick={() => setIsMetadataModalOpen(false)}
                   className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-                  title="Close"
+                  aria-label="Close"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1365,7 +1354,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     }}
                     placeholder="e.g. G"
                     className="w-full bg-transparent text-app-action font-bold font-mono focus:outline-none text-center text-xs"
-                    title="Chart Key of stored chords"
+                    aria-label="Chart Key of stored chords"
                   />
                 </div>
               </div>

@@ -614,7 +614,6 @@ export const Header: React.FC<HeaderProps> = ({
           <div
             onClick={onNavigateHome}
             className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95 shrink-0"
-            title="Return to Songbook Library Home (Alt+0)"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-app-base border border-app-border flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-app-action group-hover:scale-105 transition-all">
               <img
@@ -646,7 +645,6 @@ export const Header: React.FC<HeaderProps> = ({
             <div
               data-testid="dev-header-diagnostics"
               className="flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0"
-              title={`${formatDevDiagLine1(GTAR_DEV_PROVENANCE)} | ${formatDevDiagLine2(GTAR_DEV_PROVENANCE)}`}
             >
               <div data-testid="dev-header-diag-line1" className="truncate whitespace-nowrap">
                 {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
@@ -696,7 +694,6 @@ export const Header: React.FC<HeaderProps> = ({
                 data-sync-state={isSyncing ? 'syncing' : isInSync ? 'in_sync' : isIssue ? 'issue' : 'idle'}
                 onClick={() => setShowCloudSyncModal(true)}
                 className={`${btnClass} relative`}
-                title={recoveryAttention ? `${syncLabel} · local recovery needs review` : syncLabel}
                 aria-label={recoveryAttention ? `${syncLabel}, local recovery needs review` : syncLabel}
               >
                 <SyncIcon className={iconClass} />
@@ -712,7 +709,7 @@ export const Header: React.FC<HeaderProps> = ({
               type="button"
               onClick={handleTriggerInstall}
               className="px-2.5 py-1 rounded-xl bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-              title="Install GTAR App to Home Screen"
+              aria-label="Install GTAR App to Home Screen"
             >
               <Download className="w-4 h-4 header-neutral-icon" />
             </button>
@@ -723,7 +720,6 @@ export const Header: React.FC<HeaderProps> = ({
             ref={avatarPopoverRef}
             className="avatar-wrapper"
             onClick={() => setShowAvatarPopover(!showAvatarPopover)}
-            title={currentSession ? `${currentSession.user.email} (Authenticated)` : 'Sign in'}
           >
             {currentSession?.user.picture ? (
               <img
@@ -741,7 +737,6 @@ export const Header: React.FC<HeaderProps> = ({
             {isSuperAdmin && pendingCount > 0 && (
               <span
                 className="pending-badge"
-                title={`${pendingCount} pending account approval${pendingCount > 1 ? 's' : ''}`}
               >
                 {pendingCount > 99 ? '99+' : pendingCount}
               </span>
@@ -953,7 +948,7 @@ export const Header: React.FC<HeaderProps> = ({
                     setIsSearchFocused(false)
                   }}
                   className="ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
-                  title="Clear search"
+                  aria-label="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1080,7 +1075,6 @@ export const Header: React.FC<HeaderProps> = ({
                               setPreviewCatalogSong(catSong)
                             }}
                             className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-border ui-primary-text text-app-text text-[11px] font-bold flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
-                            title="Preview Shared Catalog song"
                           >
                             <Eye className="w-3 h-3 text-app-action" />
                             <span>Preview</span>
@@ -1091,7 +1085,7 @@ export const Header: React.FC<HeaderProps> = ({
                             disabled={isImporting || isImported}
                             onClick={(e) => handleImportCatalogSong(e, catSong)}
                             className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
-                            title="Import song to personal library"
+                            aria-label="Import song to personal library"
                           >
                             {isImporting ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
@@ -1221,7 +1215,6 @@ export const Header: React.FC<HeaderProps> = ({
                               setPreviewResult(onlineItem)
                             }}
                             className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-border ui-primary-text text-app-text text-[11px] font-bold flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
-                            title="Preview chord sheet"
                           >
                             <Eye className="w-3 h-3 text-app-action" />
                             <span>Preview</span>
@@ -1232,7 +1225,7 @@ export const Header: React.FC<HeaderProps> = ({
                             disabled={isImporting}
                             onClick={(e) => handleDirectImportOnline(e, onlineItem)}
                             className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
-                            title="Fetch and import chord sheet directly to library"
+                            aria-label="Fetch and import chord sheet directly to library"
                           >
                             {isImporting ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
