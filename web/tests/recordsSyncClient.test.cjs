@@ -329,9 +329,11 @@ test('#208 F2: classic upload is refused (409 SONGBOOK_RECORDS_ACTIVE) once reco
   const after = await findUserSongbook(w.db, 'user-a')
   assert.equal(after.checksum, before.checksum, 'classic document unchanged')
   assert.equal(read(b).songs.find(s => s.id === id(1)).rawContent, 'classic edit', 'edit kept on the device')
-  // Switched to per-record sync, the unsynced edit is a reviewable conflict (never silently lost) and resolves.
+  // Switched to per-record sync: first the one-time setup choice (#227), then with "combine" the
+  // unsynced edit is a reviewable conflict (never silently lost) and resolves.
   client.setRecordsSyncEnabled(true, b)
-  assert.equal((await w.runAny(b)).status, 'CONFLICT')
+  assert.deepEqual((await w.runAny(b)).firstSyncChoice, { songs: 1, setlists: 0 })
+  assert.equal((await w.runAny(b, { firstSync: 'combine' })).status, 'CONFLICT')
   assert.equal((await w.run(b, { forceAction: 'upload' })).success, true) // keep this device's version
   assert.equal(JSON.parse((await findUserSongbook(w.db, 'user-a')).data_json).songs.find(s => s.id === id(1)).rawContent, 'classic edit')
 })
@@ -468,4 +470,49 @@ test('#227: pristine-sample detection ignores storage normalization but not real
   const l = DEFAULT_SAMPLE_SETLISTS[0]
   assert.equal(isPristineSampleRecord('setlist', JSON.parse(JSON.stringify(l))), true)
   assert.equal(isPristineSampleRecord('setlist', { ...l, songs: l.songs.slice(1) }), false)
+})
+
+// #227 item 1: the first sync on a device, when the cloud already has a library.
+const songIds = store => read(store).songs.map(s => s.id).sort()
+test('#227: a new device with only samples takes the cloud library without asking (samples dropped, no archive)', async () => {
+  const w = await world({ library: base })
+  const fresh = w.device({ songs: DEFAULT_SETLIST, setlists: DEFAULT_SAMPLE_SETLISTS })
+  const archives = recoveryKeys(fresh).length
+  const result = await w.run(fresh)
+  assert.equal(result.firstSyncChoice, undefined)
+  assert.deepEqual(songIds(fresh), base.songs.map(s => s.id).sort(), 'device shows exactly the cloud library')
+  assert.equal(recoveryKeys(fresh).length, archives, 'samples need no recovery archive')
+})
+
+test('#227: a new device with its own songs is asked once; nothing is written before the answer', async () => {
+  const w = await world({ library: base })
+  const fresh = w.device({ songs: [...DEFAULT_SETLIST, song(8)], setlists: DEFAULT_SAMPLE_SETLISTS })
+  const raw = journal.libraryRevision(fresh)
+  const result = await w.run(fresh)
+  assert.deepEqual(result.firstSyncChoice, { songs: 1, setlists: 0 })
+  assert.equal(journal.libraryRevision(fresh), raw, 'library untouched')
+  assert.deepEqual(client.readRecordsSyncState(fresh).known, {}, 'sync state untouched')
+  assert.ok(!cloudIds(w, 'song').includes(id(8)), 'nothing uploaded')
+})
+
+test('#227: "use cloud library" → device = cloud, own song kept in recovery, cloud unchanged', async () => {
+  const w = await world({ library: base })
+  const fresh = w.device({ songs: [...DEFAULT_SETLIST, song(8)], setlists: DEFAULT_SAMPLE_SETLISTS })
+  const archives = recoveryKeys(fresh).length
+  const result = await w.run(fresh, { firstSync: 'cloud' })
+  assert.equal(result.success, true)
+  assert.deepEqual(songIds(fresh), base.songs.map(s => s.id).sort())
+  assert.equal(recoveryKeys(fresh).length, archives + 1, 'own songs kept in recovery')
+  assert.ok(!cloudIds(w, 'song').includes(id(8)))
+  assert.equal((await w.run(fresh)).firstSyncChoice, undefined, 'asked only once')
+})
+
+test('#227: "combine" → own song added to the cloud, samples not, existing cloud songs kept', async () => {
+  const w = await world({ library: base })
+  const fresh = w.device({ songs: [...DEFAULT_SETLIST, song(8)], setlists: DEFAULT_SAMPLE_SETLISTS })
+  const result = await w.run(fresh, { firstSync: 'combine' })
+  assert.equal(result.success, true)
+  const cloud = cloudIds(w, 'song')
+  assert.ok(cloud.includes(id(8)) && base.songs.every(s => cloud.includes(s.id)))
+  assert.deepEqual(cloud.filter(i => i.startsWith('d108')), [])
 })

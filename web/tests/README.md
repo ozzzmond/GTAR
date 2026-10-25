@@ -236,6 +236,7 @@ New or renamed tests await a human choice of primary category.
 - [debugLogsPreAuthRedaction.test.cjs](debugLogsPreAuthRedaction.test.cjs)
 - [duplicateSongCheck.test.cjs](duplicateSongCheck.test.cjs)
 - [editorLeaveSaveFeedback.test.cjs](editorLeaveSaveFeedback.test.cjs)
+- [firstSyncChoiceUi.test.cjs](firstSyncChoiceUi.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [libraryBodyShadow.test.cjs](libraryBodyShadow.test.cjs)
 - [libraryIndexB1.test.cjs](libraryIndexB1.test.cjs)

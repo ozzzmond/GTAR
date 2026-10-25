@@ -317,6 +317,8 @@ export const Header: React.FC<HeaderProps> = ({
     token: currentSession?.sessionToken || currentSession?.idToken || currentSession?.token,
     blocked: autoSyncBlocked || showCloudSyncModal,
     onApplied: onCloudSyncApplied,
+    // #227: the Sync Center asks once how this device should start (cloud library or combine).
+    onFirstSyncChoice: () => setShowCloudSyncModal(true),
     onState: (status, processing) => { setCloudSyncStatus(status); setIsCloudSyncProcessing(processing) },
   })
   const syncStatus = useSyncStatus({ enabled: isDevEnv, signedIn: Boolean(currentSession), status: cloudSyncStatus,

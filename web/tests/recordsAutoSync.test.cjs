@@ -172,3 +172,14 @@ test('#208 F6: App adopts the stored library on a sync result, never the sync co
   assert.match(handler, /partitionSongs\(stored\.songs\)/)
   assert.match(handler, /setSetlists\(stored\.setlists\)/)
 })
+
+test('#227: a first-sync choice is surfaced once and auto-sync waits for the user', async () => {
+  let runs = 0
+  const asked = []
+  mount('a', { enabled: true, token: 't', blocked: false, debounceMs: 10, onFirstSyncChoice: c => asked.push(c),
+    sync: async () => { runs++; return result({ success: false, status: 'IDLE', firstSyncChoice: { songs: 2, setlists: 1 } }) } })
+  await act(async () => { await wait(40) })
+  await act(async () => { window.dispatchEvent(new window.Event('gtar-library-persisted')); await wait(40) })
+  assert.deepEqual(asked, [{ songs: 2, setlists: 1 }])
+  assert.equal(runs, 1, 'no further automatic runs until the user chooses')
+})
