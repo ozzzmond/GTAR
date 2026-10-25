@@ -60,8 +60,9 @@ export interface ServerRecord {
 
 export interface PushAccepted { kind: RecordKind; id: string; rev: number; seq: number; checksum: string }
 export interface PushConflict { kind: RecordKind; id: string; current: ServerRecord | null
-  /** #240: a song deletion refused because a live setlist in the cloud still lists the song. */
-  reason?: 'referenced' }
+  /** #240: a song deletion refused because a live setlist still lists it ('referenced'), or a setlist
+   * write refused because it lists a song the cloud does not have live ('missing-songs'). */
+  reason?: 'referenced' | 'missing-songs' }
 export interface PushResponse { accepted: PushAccepted[]; conflicts: PushConflict[]; head: number; mirror: 'updated' | 'unchanged' | 'superseded' | 'skipped-size' | 'skipped-conflict' | 'failed' }
 export interface PullResponse { records: ServerRecord[]; cursor: number; head: number; more: boolean }
 

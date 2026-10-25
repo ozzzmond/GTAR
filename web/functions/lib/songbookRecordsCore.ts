@@ -161,9 +161,10 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     planned.push({ change, checksum, removed, json })
   }
 
-  // #240: setlist writes go first, so a batch that drops a song from its setlists and deletes the
-  // song passes the reference check below inside the same transaction.
-  planned.sort((a, b) => Number(a.change.kind !== 'setlist') - Number(b.change.kind !== 'setlist'))
+  // #240: order inside the transaction so both reference checks below see the batch's own effect:
+  // song creations/edits, then setlists (may list those songs, may drop songs), then song deletions.
+  const order = (change: RecordChange) => change.kind === 'song' ? (change.removed === true ? 2 : 0) : 1
+  planned.sort((a, b) => order(a.change) - order(b.change))
 
   // One batch (one transaction): reserve a block of sequence numbers, then one conditional write
   // per change at its own number. A write that loses its revision check leaves a gap, never a skip.
@@ -172,13 +173,24 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     // #208 F4: the block's top, read inside the same transaction, so acknowledgements describe this write only.
     statements.push(db.prepare('SELECT seq FROM user_songbook_cursors WHERE user_id = ?').bind(userId))
   }
+  // #240 F2: a setlist is written only if every song it lists by id is live in the cloud at that point
+  // of the transaction (entries without an id are matched by title on devices and are not checked).
+  const listsOnlyLiveSongs = `NOT EXISTS (SELECT 1 FROM json_each(?, '$.songs') entry
+      WHERE json_extract(entry.value, '$.id') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM user_songbook_records song
+        WHERE song.user_id = ? AND song.kind = 'song' AND song.removed = 0 AND song.record_id = CAST(json_extract(entry.value, '$.id') AS TEXT)))`
   planned.forEach(({ change, checksum, removed, json }, position) => {
     const back = planned.length - 1 - position
+    const guardSetlist = change.kind === 'setlist' && !removed
     statements.push(change.baseRev === 0
       ? db.prepare(`INSERT INTO user_songbook_records (user_id, kind, record_id, rev, seq, removed, data_json, checksum, updated_at)
           SELECT ?, ?, ?, 1, (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?, ?, ?, ?, ?
-          WHERE NOT EXISTS (SELECT 1 FROM user_songbook_records WHERE user_id = ? AND kind = ? AND record_id = ?)`)
-        .bind(userId, change.kind, change.id, userId, back, removed ? 1 : 0, json, checksum, now, userId, change.kind, change.id)
+          WHERE NOT EXISTS (SELECT 1 FROM user_songbook_records WHERE user_id = ? AND kind = ? AND record_id = ?)${guardSetlist ? ` AND ${listsOnlyLiveSongs}` : ''}`)
+        .bind(userId, change.kind, change.id, userId, back, removed ? 1 : 0, json, checksum, now, userId, change.kind, change.id, ...(guardSetlist ? [json, userId] : []))
+      : guardSetlist
+        ? db.prepare(`UPDATE user_songbook_records SET rev = rev + 1, seq = (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?,
+            removed = 0, data_json = ?, checksum = ?, updated_at = ?
+            WHERE user_id = ? AND kind = 'setlist' AND record_id = ? AND rev = ? AND ${listsOnlyLiveSongs}`)
+          .bind(userId, back, json, checksum, now, userId, change.id, change.baseRev, json, userId)
       : removed && change.kind === 'song'
         // #240: a song is not deleted while a live setlist still lists it (would leave a dangling entry).
         ? db.prepare(`UPDATE user_songbook_records SET rev = rev + 1, seq = (SELECT seq FROM user_songbook_cursors WHERE user_id = ?) - ?,
@@ -211,8 +223,12 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     // Another request changed the record between the read and the write.
     for (const write of lostRace) {
       const row = after.get(recordKey(write.change.kind, write.change.id))
-      const referenced = write.change.kind === 'song' && write.change.removed === true && row && row.removed === 0 && row.rev === write.change.baseRev
-      conflicts.push({ kind: write.change.kind, id: write.change.id, current: row ? toServerRecord(row) : null, ...(referenced ? { reason: 'referenced' as const } : {}) })
+      // Lost to a reference check rather than to another writer: the stored revision is still the base.
+      const unchanged = (row?.rev ?? 0) === write.change.baseRev
+      const referenced = unchanged && write.change.kind === 'song' && write.change.removed === true && row?.removed === 0
+      const missingSongs = unchanged && write.change.kind === 'setlist' && write.change.removed !== true
+      conflicts.push({ kind: write.change.kind, id: write.change.id, current: row ? toServerRecord(row) : null,
+        ...(referenced ? { reason: 'referenced' as const } : missingSongs ? { reason: 'missing-songs' as const } : {}) })
     }
   }
 

@@ -337,8 +337,9 @@ async function pullAll(token: string, state: RecordsSyncState): Promise<{ record
 }
 
 async function pushAll(token: string, state: RecordsSyncState, library: SyncLibrary, skip: Set<string>, force: Map<string, number> = new Map(),
-  allowRemovals = true): Promise<{ pushed: number; failed: string | null }> {
+  allowRemovals = true): Promise<{ pushed: number; failed: string | null; accepted: Set<string> }> {
   const local = localRecords(library)
+  const acceptedKeys = new Set<string>()
   const changes: RecordChange[] = []
   for (const [key, record] of local) {
     if (skip.has(key)) continue
@@ -355,6 +356,15 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
     if (local.has(key) || skip.has(key) || known.checksum === REMOVED) continue
     const [kind, ...rest] = key.split(':')
     changes.push({ kind: kind as RecordKind, id: rest.join(':'), baseRev: force.get(key) ?? known.rev, removed: true })
+  }
+  // #240 F5: a forced "keep this device" for a record this device does not have (e.g. a held-back cloud
+  // setlist it never applied) is an explicit deletion of the cloud copy, at the cloud's revision.
+  if (allowRemovals) {
+    for (const [key, rev] of force) {
+      if (local.has(key) || skip.has(key) || rev <= 0 || changes.some(change => recordKey(change.kind, change.id) === key)) continue
+      const [kind, ...rest] = key.split(':')
+      changes.push({ kind: kind as RecordKind, id: rest.join(':'), baseRev: rev, removed: true })
+    }
   }
   // #208 F5: batches are bounded by bytes as well as by count. A record the server would refuse
   // on its own is left out (kept on this device) and reported, so the rest still syncs.
@@ -379,10 +389,11 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
     let response: PushResponse
     try { response = await request<PushResponse>(token, 'POST', '', { changes: batch }) } catch (error) {
       if (error instanceof RecordsSyncDisabledError) throw error
-      return { pushed, failed: `Cloud upload stopped: ${error instanceof Error ? error.message : String(error)}. Local edits are kept; sync again later.${oversize ? ` ${oversize}` : ''}` }
+      return { pushed, accepted: acceptedKeys, failed: `Cloud upload stopped: ${error instanceof Error ? error.message : String(error)}. Local edits are kept; sync again later.${oversize ? ` ${oversize}` : ''}` }
     }
     for (const accepted of response.accepted) {
       state.known[recordKey(accepted.kind, accepted.id)] = { rev: accepted.rev, checksum: accepted.checksum }
+      acceptedKeys.add(recordKey(accepted.kind, accepted.id))
       pushed++
     }
     for (const conflict of response.conflicts) {
@@ -390,12 +401,13 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
       const mine = local.get(key)
       state.conflicts = [...state.conflicts.filter(item => recordKey(item.kind, item.id) !== key),
         { kind: conflict.kind, id: conflict.id, title: recordTitle(conflict.kind, mine?.data ?? conflict.current?.data), remote: conflict.current,
-          ...(conflict.reason === 'referenced' ? { note: 'Deleted here, but a setlist in the cloud still lists it' } : {}) }]
+          ...(conflict.reason === 'referenced' ? { note: 'Deleted here, but a setlist in the cloud still lists it' }
+            : conflict.reason === 'missing-songs' ? { note: 'Lists songs that the cloud no longer has' } : {}) }]
     }
     if (response.mirror === 'skipped-size') appLogger.warn('RecordsSync', 'Cloud copy for older clients not updated: songbook over 2 MB')
   }
   if (oversize) appLogger.warn('RecordsSync', oversize)
-  return { pushed, failed: oversize }
+  return { pushed, failed: oversize, accepted: acceptedKeys }
 }
 
 /**
@@ -524,6 +536,9 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
       }
     }
   }
+  // #240 F5: a conflict is cleared only when its choice is done: applied here (use-cloud) or
+  // acknowledged by the cloud (keep-local / keep-both). Anything else stays for the next attempt.
+  const resolving = state.conflicts
   state.conflicts = []
   const next = working.library()
   // #240: the user chose; a setlist entry whose song is gone either way is dropped (logged) so the
@@ -531,7 +546,13 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   const cleaned = dropMissingSetlistEntries(next.songs, next.setlists)
   if (cleaned !== next.setlists) { next.setlists = cleaned; applied++ }
   const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
-  const { pushed, failed } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
+  const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
+  for (const conflict of resolving) {
+    const key = recordKey(conflict.kind, conflict.id)
+    if (!force.has(key) || accepted.has(key) || state.conflicts.some(item => recordKey(item.kind, item.id) === key)) continue
+    state.conflicts = [...state.conflicts, conflict]
+  }
+  if (!failed && state.conflicts.length) appLogger.warn('RecordsSync', `${state.conflicts.length} conflict choice(s) not confirmed by the cloud yet; kept for the next attempt`)
   return finish(storage, state, next, applied, pushed, failed, appliedRevision)
 }
 
