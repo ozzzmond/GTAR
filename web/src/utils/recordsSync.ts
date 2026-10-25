@@ -51,6 +51,7 @@ import {
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { generateUUID } from './uuid'
+import { isPristineSampleRecord } from '../data/defaultLibrary'
 
 export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
@@ -268,6 +269,8 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
   for (const [key, record] of local) {
     if (skip.has(key)) continue
     const known = state.known[key]
+    // #227: unchanged first-run samples stay on this device; they are never added to the cloud.
+    if (!known && !force.has(key) && isPristineSampleRecord(record.kind, record.data)) continue
     const baseRev = force.get(key) ?? known?.rev ?? 0
     if (!force.has(key) && known?.checksum === record.checksum) continue
     changes.push({ kind: record.kind, id: record.id, baseRev, data: record.data })
