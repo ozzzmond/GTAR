@@ -436,7 +436,16 @@ test('#208 F6: result carries the revision it wrote; a save landing during the p
 })
 
 // #227 item 2 and 3: first-run samples never reach the cloud; a real song does.
-const { DEFAULT_SETLIST, DEFAULT_SAMPLE_SETLISTS, isPristineSampleRecord } = require('../src/data/defaultLibrary.ts')
+// #228: the app ships no samples; devices may still hold the former ones, recognised by fingerprint.
+// The tests stand in placeholder charts for them (same ids), registered with their own fingerprints.
+const sampleLib = require('../src/data/defaultLibrary.ts')
+const { isPristineSampleRecord } = sampleLib
+const DEFAULT_SETLIST = [1, 2, 3, 4].map(n => ({ id: `d1080001-0001-4000-8000-00000000000${n}`, title: `Legacy sample ${n}`, artist: 'GTAR test',
+  key: 'G', capo: 'No Capo', bpm: '100', format: 'CHORD_PRO', transposeOffset: 0, rawContent: `{title: Legacy sample ${n}}\n\n[G]sample line [C]${n}` }))
+sampleLib.LEGACY_SAMPLE_SONGS.clear()
+for (const sample of DEFAULT_SETLIST) sampleLib.LEGACY_SAMPLE_SONGS.set(sample.id, sampleLib.sampleSongFingerprint(sample))
+const DEFAULT_SAMPLE_SETLISTS = [{ id: 'd1080002-0001-4000-8000-000000000001', name: 'Acoustic Gig Set',
+  songs: DEFAULT_SETLIST.map(({ id, title, artist }) => ({ id, title, artist })) }]
 const cloudIds = (w, kind) => w.db.sqlite.prepare('SELECT record_id FROM user_songbook_records WHERE kind = ? AND removed = 0').all(kind).map(r => r.record_id)
 test('#227: a new device with the sample library gets the cloud songs and uploads no samples', async () => {
   const w = await world({ library: base })
@@ -580,4 +589,41 @@ test('#208: a real remote change still conflicts with a local edit after this de
   const result = await w.run(a)
   assert.equal(result.status, 'CONFLICT')
   assert.equal(read(a).songs.find(s => s.id === id(1)).rawContent, 'A2', 'local edit kept')
+})
+
+// #228: former samples the user never changed are removed from the device; edited ones stay.
+test('#228: removeUnchangedSamples drops unchanged samples and their setlist, keeps edits and referenced songs', () => {
+  const { removeUnchangedSamples } = sampleLib
+  const mine = song(5)
+  const all = { songs: [...DEFAULT_SETLIST, mine], setlists: DEFAULT_SAMPLE_SETLISTS }
+  assert.deepEqual(removeUnchangedSamples(all), { songs: [mine], setlists: [] })
+  const edited = { ...DEFAULT_SETLIST[0], rawContent: DEFAULT_SETLIST[0].rawContent + '\n[D]mine now' }
+  const myList = { id: 'my-list', name: 'Sunday', songs: [{ id: DEFAULT_SETLIST[1].id }] }
+  const kept = removeUnchangedSamples({ songs: [edited, ...DEFAULT_SETLIST.slice(1), mine], setlists: [...DEFAULT_SAMPLE_SETLISTS, myList] })
+  assert.deepEqual(kept.songs.map(s => s.id), [edited.id, DEFAULT_SETLIST[1].id, mine.id], 'edited sample and the one in my setlist stay')
+  assert.deepEqual(kept.setlists.map(l => l.id), ['my-list'])
+  const plain = { songs: [mine], setlists: [] }
+  assert.equal(removeUnchangedSamples(plain), plain, 'nothing to remove → same object')
+  assert.deepEqual(sampleLib.DEFAULT_SETLIST, [], 'no songs ship with the app')
+  assert.deepEqual(sampleLib.DEFAULT_SAMPLE_SETLISTS, [])
+})
+
+test('#228: a device that synced the samples before removes them from the cloud once they are cleaned up', async () => {
+  const w = await world({ library: { songs: [], setlists: [] } })
+  const device = w.device({ songs: [song(7)], setlists: [] })
+  await w.run(device)
+  // Simulate a build before #227, which uploaded the samples like any other song.
+  const fingerprints = new Map(sampleLib.LEGACY_SAMPLE_SONGS)
+  const setlists = new Map(sampleLib.LEGACY_SAMPLE_SETLISTS)
+  sampleLib.LEGACY_SAMPLE_SONGS.clear(); sampleLib.LEGACY_SAMPLE_SETLISTS.clear()
+  edit(device, lib => ({ ...lib, songs: [...lib.songs, ...DEFAULT_SETLIST], setlists: DEFAULT_SAMPLE_SETLISTS }))
+  await w.run(device)
+  for (const [k, v] of fingerprints) sampleLib.LEGACY_SAMPLE_SONGS.set(k, v)
+  for (const [k, v] of setlists) sampleLib.LEGACY_SAMPLE_SETLISTS.set(k, v)
+  assert.equal(cloudIds(w, 'song').length, 5, 'old build: samples in the cloud')
+  assert.equal(cloudIds(w, 'setlist').length, 1)
+  edit(device, lib => sampleLib.removeUnchangedSamples(lib))
+  await w.run(device)
+  assert.deepEqual(cloudIds(w, 'song'), [id(7)], 'only the real song is left in the cloud')
+  assert.deepEqual(cloudIds(w, 'setlist'), [])
 })
