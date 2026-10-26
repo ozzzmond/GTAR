@@ -963,3 +963,67 @@ test('#240 P2-F5: the server refuses a new setlist entry without a song id', asy
   assert.equal(response.conflicts[0]?.reason, 'missing-songs')
   assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(2)], 'cloud setlist unchanged')
 })
+
+function updateSetlistInCloud(w, setlistId, fn) {
+  const db = w.db.sqlite
+  const row = db.prepare("SELECT data_json, rev FROM user_songbook_records WHERE kind = 'setlist' AND record_id = ?").get(setlistId)
+  const data = fn(JSON.parse(row.data_json))
+  const seq = db.prepare("SELECT seq FROM user_songbook_cursors WHERE user_id = 'user-a'").get().seq + 1
+  db.prepare("UPDATE user_songbook_records SET data_json = ?, rev = rev + 1, seq = ?, checksum = ? WHERE kind = 'setlist' AND record_id = ?")
+    .run(JSON.stringify(data), seq, recordChecksum(false, data), setlistId)
+  db.prepare("UPDATE user_songbook_cursors SET seq = ? WHERE user_id = 'user-a'").run(seq)
+}
+
+test('R1A: restoring a missing song must not resurrect a deleted local setlist or report false IN_SYNC', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base), b = w.device(base)
+  await w.run(a); await w.run(b)
+
+  // Cloud setlist is updated to reference a missing song (song 77)
+  updateSetlistInCloud(w, id(901), s => ({ ...s, songs: [...s.songs, { id: id(77), title: 'Song 77', artist: 'A' }] }))
+
+  // B syncs: cloud setlist 901 is quarantined on B because song 77 is missing
+  await w.run(b)
+  assert.equal(client.readRecordsSyncState(b).conflicts.length, 1, 'setlist quarantined on B')
+  assert.equal(client.readRecordsSyncState(b).conflicts[0].dependency, true)
+  assert.equal(read(b).setlists.length, 1, 'B had retained local copy')
+
+  // B deletes the local retained setlist to establish deletion intent
+  edit(b, lib => ({ ...lib, setlists: [] }))
+  assert.equal(read(b).setlists.length, 0, 'B deleted local retained setlist')
+
+  // Recovery restores the missing cloud song 77
+  const added = await pushRaw(w, [{ kind: 'song', id: id(77), baseRev: 0, data: song(77) }])
+  assert.equal(added.accepted.length, 1, 'song 77 restored in cloud')
+
+  // Subsequent sync on B: in unfixed code, resurrects setlist and reports IN_SYNC
+  const res = await w.run(b)
+  assert.deepEqual(read(b).setlists, [], 'deleted local setlist must NOT reappear without explicit recovery')
+  assert.notEqual(res.status, 'IN_SYNC', 'must not report false IN_SYNC')
+  assert.equal(res.status, 'CONFLICT', 'must preserve conflict with actionable status')
+})
+
+test('R1B: legacy quarantined setlist conflict lacking dependency:true safely re-evaluates repaired dependencies', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  // Simulate persisted legacy conflict: lacks dependency: true
+  const state = client.readRecordsSyncState(fresh)
+  assert.equal(state.conflicts.length, 1)
+  state.conflicts = state.conflicts.map(c => {
+    const copy = { ...c }
+    delete copy.dependency
+    return copy
+  })
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+  assert.strictEqual(client.readRecordsSyncState(fresh).conflicts[0].dependency, undefined)
+
+  // Repair missing song dependency in cloud
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+  assert.ok(cloudIds(w, 'song').includes(id(2)))
+
+  // Retry on fresh device: legacy quarantine should re-evaluate and converge
+  for (let i = 0; i < 3; i++) await w.run(fresh)
+  assert.deepEqual(read(fresh).setlists.map(l => l.songs.map(r => r.id)), [[id(1), id(2)]], 'setlist applied on fresh device')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 0, 'legacy conflict cleared')
+  assert.equal((await w.run(fresh)).status, 'IN_SYNC')
+})

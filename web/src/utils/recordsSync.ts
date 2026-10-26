@@ -90,6 +90,11 @@ export interface RecordConflict { kind: RecordKind; id: string; title: string; r
   note?: string
   /** #240 P1-F1: held back only because songs it lists are missing; re-checked every round. */
   dependency?: true }
+export function isDependencyConflict(conflict: RecordConflict): boolean {
+  if (conflict.dependency) return true
+  if (conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) return false
+  return !conflict.note || /lists songs that are not in your library|no song with that exact ID|missing-songs|missing|quarantine|held/i.test(conflict.note)
+}
 interface RecordsSyncState { v: 1; userId: string | null; cursor: number; known: Record<string, KnownRecord>; conflicts: RecordConflict[] }
 
 const emptyState = (userId: string | null = null): RecordsSyncState => ({ v: 1, userId, cursor: 0, known: {}, conflicts: [] })
@@ -220,6 +225,7 @@ function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applie
     const remote = applied.get(key)!
     applied.delete(key)
     if (knownBefore[key]) state.known[key] = knownBefore[key]
+    else if (localData) state.known[key] = { rev: 0, checksum: recordChecksum(false, localData) }
     else delete state.known[key]
     state.conflicts = [...state.conflicts.filter(item => recordKey(item.kind, item.id) !== key),
       { kind: remote.kind, id: remote.id, title: recordTitle(remote.kind, localData ?? remote.data), remote, note, dependency: true }]
@@ -523,7 +529,7 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
       appliedRemote.set(key, remote)
       state.known[key] = { rev: remote.rev, checksum: remote.checksum }
       // #240 P1-F1: the current cloud version replaces a held one; hold-back below re-checks it.
-      state.conflicts = state.conflicts.filter(item => !(item.dependency && recordKey(item.kind, item.id) === key))
+      state.conflicts = state.conflicts.filter(item => !(isDependencyConflict(item) && recordKey(item.kind, item.id) === key))
       applied++
       continue
     }
@@ -531,17 +537,27 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
       { kind: remote.kind, id: remote.id, title: recordTitle(remote.kind, mine?.data ?? remote.data), remote }]
   }
 
-  // #240 P1-F1: a setlist held back because songs it lists were missing is applied once every one of
+  // #240 P1-F1 / R1: a setlist held back because songs it lists were missing is applied once every one of
   // those songs (exact id) is in the library again, provided this device has not changed it since.
   for (const conflict of [...state.conflicts]) {
-    if (!conflict.dependency || conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) continue
+    if (!isDependencyConflict(conflict) || conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) continue
     const key = recordKey('setlist', conflict.id)
     if (pulled.records.has(key)) continue
     const mine = local.get(key)
-    if (mine && mine.checksum !== knownBefore[key]?.checksum) continue
+    const mineChecksum = mine ? mine.checksum : REMOVED
+    const editedHere = knownBefore[key] ? mineChecksum !== knownBefore[key].checksum : mine !== undefined
     const songIds = new Set(working.library().songs.map(song => String(song.id)))
     const entries = ((conflict.remote.data as WebSetlist | null)?.songs ?? [])
-    if (!entries.every(ref => ref?.id !== undefined && ref.id !== null && songIds.has(String(ref.id)))) continue
+    const dependenciesMet = entries.every(ref => ref?.id !== undefined && ref.id !== null && songIds.has(String(ref.id)))
+    if (editedHere) {
+      delete conflict.dependency
+      if (dependenciesMet) delete conflict.note
+      continue
+    }
+    if (!dependenciesMet) {
+      conflict.dependency = true
+      continue
+    }
     working.apply(conflict.remote)
     appliedRemote.set(key, conflict.remote)
     state.known[key] = { rev: conflict.remote.rev, checksum: conflict.remote.checksum }
