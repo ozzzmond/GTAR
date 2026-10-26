@@ -161,7 +161,8 @@ export function readRecordsSyncState(storage: Pick<Storage, 'getItem'> = localSt
   } catch { /* unreadable state: start over, which is safe (everything re-checks by checksum) */ }
   return emptyState()
 }
-function saveState(state: RecordsSyncState, storage: Pick<Storage, 'setItem'>): void {
+function saveState(state: RecordsSyncState, storage: Storage, gen?: SessionGeneration | null): void {
+  if (gen !== undefined) assertCommitAllowed(state.userId, storage, gen)
   storage.setItem(RECORDS_SYNC_STATE_KEY, JSON.stringify(state))
 }
 export function pendingRecordConflicts(storage: Pick<Storage, 'getItem'> = localStorage): RecordConflict[] {
@@ -377,7 +378,7 @@ function logSyncOutcome(state: RecordsSyncState, applied: number, pushed: number
 
 function finish(gen: SessionGeneration | null, storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null, appliedRevision?: string | null): CloudSyncResult {
   assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3: no metadata or IN_SYNC for a round that changed hands
-  saveState(state, storage)
+  saveState(state, storage, gen)
   logSyncOutcome(state, applied, pushed, pushFailed)
   const fullySynced = state.conflicts.length === 0 && !pushFailed
   if (fullySynced) {
@@ -673,25 +674,23 @@ async function resolveOnce(gen: SessionGeneration | null, token: string, storage
 
   // #247: the saved conflicts belong to the account that pulled them; act only for that account.
   const pulled = await pullAll(token, emptyState(state.userId))
+  assertCommitAllowed(state.userId, storage, gen)
   if (!pulled.state.userId || (state.userId && pulled.state.userId !== state.userId)) throw new LibraryOwnershipError('mismatch')
+  if (!state.userId) state.userId = pulled.state.userId
   assertLibraryOwner(pulled.state.userId, storage)
+  assertCommitAllowed(state.userId, storage, gen)
 
   const before = readLocal(storage)
   const local = localRecords(before.library)
 
   // Verify that any remote records presented as current match authoritative server data:
   let serverChanged = false
+  const alreadyResolvedIndices = new Set<number>()
   for (let i = 0; i < state.conflicts.length; i++) {
     const conflict = state.conflicts[i]
     const key = recordKey(conflict.kind, conflict.id)
     const authoritativeRecord = pulled.records.get(key)
     const localRec = local.get(key)
-    const mineChecksum = localRec ? localRec.checksum : REMOVED
-    if (authoritativeRecord && mineChecksum === authoritativeRecord.checksum && authoritativeRecord.removed === (mineChecksum === REMOVED)) {
-      // The server already matches the local record (e.g. from an earlier write whose acknowledgement was lost)
-      state.known[key] = { rev: authoritativeRecord.rev, checksum: authoritativeRecord.checksum }
-      continue
-    }
     if (!conflict.remote) {
       if (authoritativeRecord && !authoritativeRecord.removed) {
         state.conflicts[i] = { ...conflict, remote: authoritativeRecord }
@@ -699,23 +698,49 @@ async function resolveOnce(gen: SessionGeneration | null, token: string, storage
       }
     } else {
       if (!authoritativeRecord) {
+        state.conflicts[i] = { ...conflict, remote: null }
         serverChanged = true
       } else {
         const matches = authoritativeRecord.kind === conflict.remote.kind &&
           authoritativeRecord.id === conflict.remote.id &&
           authoritativeRecord.rev === conflict.remote.rev &&
           authoritativeRecord.checksum === conflict.remote.checksum &&
-          authoritativeRecord.removed === conflict.remote.removed
+          authoritativeRecord.removed === conflict.remote.removed &&
+          JSON.stringify(authoritativeRecord.data) === JSON.stringify(conflict.remote.data)
         if (!matches) {
-          state.conflicts[i] = { ...conflict, remote: authoritativeRecord }
+          if (choice === 'keep-both' && !conflict.remote.removed && conflict.kind !== 'theme') {
+            const copyId = await stableCopyId(conflict.kind, conflict.id, conflict.remote.rev, conflict.remote.checksum)
+            const serverCopy = pulled.records.get(recordKey(conflict.kind, copyId))
+            const original = conflict.remote.data as { title?: string; name?: string }
+            const copy = conflict.kind === 'song'
+              ? { ...(conflict.remote.data as ActiveSongState), id: copyId, title: `${original.title ?? 'Song'} (cloud copy)` }
+              : { ...(conflict.remote.data as WebSetlist), id: copyId, name: `${original.name ?? 'Setlist'} (cloud copy)` }
+            const expectedCopyChecksum = recordChecksum(false, copy)
+            if (serverCopy && serverCopy.checksum === expectedCopyChecksum && localRec && authoritativeRecord.checksum === localRec.checksum && !authoritativeRecord.removed) {
+              // #240 P2-F3: Keep Both was already committed to the server in an earlier write whose acknowledgement was lost
+              state.known[key] = { rev: authoritativeRecord.rev, checksum: authoritativeRecord.checksum }
+              state.known[recordKey(conflict.kind, copyId)] = { rev: serverCopy.rev, checksum: serverCopy.checksum }
+              alreadyResolvedIndices.add(i)
+              continue
+            }
+          }
+          state.conflicts[i] = { ...conflict, remote: authoritativeRecord.removed ? null : authoritativeRecord }
           serverChanged = true
         }
       }
     }
   }
 
+  if (alreadyResolvedIndices.size > 0 && !serverChanged) {
+    state.conflicts = state.conflicts.filter((_, idx) => !alreadyResolvedIndices.has(idx))
+    if (!state.conflicts.length) {
+      saveState(state, storage, gen)
+      return finish(gen, storage, state, before.library, 0, 0, null)
+    }
+  }
+
   if (serverChanged) {
-    saveState(state, storage)
+    saveState(state, storage, gen)
     appLogger.warn('RecordsSync', 'Authoritative server records changed or unverified; fresh conflict requires review')
     return {
       success: false,
@@ -734,12 +759,40 @@ async function resolveOnce(gen: SessionGeneration | null, token: string, storage
   // Both versions stay recoverable whatever the choice.
   // #240: the cloud records themselves are kept too, so a choice that drops a cloud version stays recoverable
   // even when the cloud side is not a valid library on its own (e.g. a setlist listing missing songs).
+  assertCommitAllowed(state.userId, storage, gen)
   const snapshot: { local: SyncLibrary; remote?: SyncLibrary; remoteRecords: Array<ServerRecord | null> } = { local: before.library, remoteRecords: state.conflicts.map(conflict => conflict.remote) }
   try { validateLibrary(cloudView.library()); snapshot.remote = cloudView.library() } catch { /* cloud side alone is not a complete library */ }
   await writeRecoverySnapshot(`gtar_sync_recovery:records:${Date.now()}:${generateUUID()}`, JSON.stringify(snapshot), storage)
+  assertCommitAllowed(state.userId, storage, gen)
   // #240 P2-F4: an editor save during the snapshot write makes this view stale: nothing is applied or
   // uploaded; the conflicts stay and the user chooses again on the current library.
   if (libraryRevision(storage) !== before.raw) return changedDuringResolution()
+
+  // Recheck authority at commit boundary before applying or pushing any changes:
+  const recheck = await pullAll(token, pulled.state)
+  assertCommitAllowed(state.userId, storage, gen)
+  let cloudMoved = false
+  for (let i = 0; i < state.conflicts.length; i++) {
+    const conflict = state.conflicts[i]
+    const key = recordKey(conflict.kind, conflict.id)
+    if (recheck.records.has(key)) {
+      const freshRecord = recheck.records.get(key)!
+      state.conflicts[i] = { ...conflict, remote: freshRecord.removed ? null : freshRecord }
+      cloudMoved = true
+    }
+  }
+  if (cloudMoved) {
+    saveState(state, storage, gen)
+    appLogger.warn('RecordsSync', 'Authoritative server records changed during resolution; fresh conflict requires review')
+    return {
+      success: false,
+      status: 'CONFLICT',
+      state: 'CONFLICT',
+      actionTaken: 'NONE',
+      conflicts: conflictItems(state.conflicts),
+      error: 'The cloud version of some records changed since this conflict was detected. Please review the updated conflicts.',
+    }
+  }
 
   const force = new Map<string, number>()
   let applied = 0
@@ -786,7 +839,7 @@ async function resolveOnce(gen: SessionGeneration | null, token: string, storage
   if (!failed && state.conflicts.length) appLogger.warn('RecordsSync', `${state.conflicts.length} conflict choice(s) not confirmed by the cloud yet; kept for the next attempt`)
   // #240 P2-F4: a save during the upload is kept; this round is not reported as converged.
   if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) {
-    saveState(state, storage)
+    saveState(state, storage, gen)
     return { ...changedDuringResolution(), ...(failed ? { error: failed } : {}) }
   }
   return finish(gen, storage, state, next, applied, pushed, failed, appliedRevision)
@@ -817,7 +870,11 @@ async function adoptCloud(gen: SessionGeneration | null, storage: Storage, befor
   const next = working.library()
   holdBackMissingReferences(next, before.library, new Map(records), state, knownBefore)
   if (canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
-  if (keepRecovery) await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
+  if (keepRecovery) {
+    assertCommitAllowed(state.userId, storage, gen)
+    await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
+    assertCommitAllowed(state.userId, storage, gen)
+  }
   const appliedRevision = persistApplied(storage, before, next, state.userId, gen)
   appLogger.info('RecordsSync', `First sync on this device: took the cloud library (${next.songs.length} songs)${keepRecovery ? '; this device\'s own songs kept in recovery' : ''}`)
   return finish(gen, storage, state, next, records.size, 0, null, appliedRevision)
@@ -847,7 +904,9 @@ async function replaceWithCloud(gen: SessionGeneration | null, token: string, st
     appLogger.info('RecordsSync', `Replace with the cloud copy: this device already matches the cloud (${next.songs.length} songs); nothing changed`)
     return { ...finish(gen, storage, state, before.library, 0, 0, null), replaced }
   }
+  assertCommitAllowed(state.userId, storage, gen)
   await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
+  assertCommitAllowed(state.userId, storage, gen)
   const appliedRevision = persistApplied(storage, before, next, state.userId, gen)
   appLogger.info('RecordsSync', `Replaced this device with the cloud copy: ${next.songs.length} songs, ${next.setlists.length} setlists (${changed} changed); the previous device copy is in recovery`)
   return { ...finish(gen, storage, state, next, changed, 0, null, appliedRevision), replaced }

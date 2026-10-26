@@ -1310,3 +1310,170 @@ test('mismatched canonical checksum in remote envelope is rejected from recovery
   assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1)
 })
 
+test('F1: forged remote revision 101 when local equals cloud is rejected across Download Cloud, Keep Both, and Keep Device', async () => {
+  const baseLib = { songs: [song(1)], setlists: [] }
+  const choices = ['download', 'merge_preserve', 'upload']
+
+  for (const choice of choices) {
+    const w = await world({ library: baseLib })
+    const dev = w.device(baseLib)
+    await w.run(dev)
+
+    const originalTitle = read(dev).songs[0].title
+    const originalCount = w.db.sqlite.prepare("SELECT count(*) as c FROM user_songbook_records").get().c
+
+    const attackerSong = { id: id(1), title: 'ATTACKER_SONG_1', artist: 'HACKER', rawContent: '[C]Pwned' }
+    const state = client.readRecordsSyncState(dev)
+    state.conflicts = [{
+      kind: 'song',
+      id: id(1),
+      title: 'Song 1',
+      remote: {
+        kind: 'song',
+        id: id(1),
+        rev: 101, // forged remote revision
+        removed: false,
+        checksum: recordChecksum(false, attackerSong),
+        data: attackerSong
+      }
+    }]
+    dev.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+    const res = await w.run(dev, { forceAction: choice })
+    assert.equal(res.success, false, `choice ${choice} must not succeed`)
+    assert.equal(res.status, 'CONFLICT', `choice ${choice} must report CONFLICT`)
+    assert.equal(read(dev).songs[0].title, originalTitle, `local song must not be overwritten for ${choice}`)
+    assert.equal(read(dev).songs.some(s => s.title.includes('ATTACKER')), false, `no attacker content applied locally for ${choice}`)
+
+    const cloudRows = w.db.sqlite.prepare("SELECT data_json FROM user_songbook_records WHERE kind = 'song'").all()
+    assert.equal(cloudRows.some(r => r.data_json && r.data_json.includes('ATTACKER')), false, `no attacker copy uploaded for ${choice}`)
+    assert.equal(w.db.sqlite.prepare("SELECT count(*) as c FROM user_songbook_records").get().c, originalCount, `cloud record count unchanged for ${choice}`)
+
+    const endState = client.readRecordsSyncState(dev)
+    assert.equal(endState.conflicts.length, 1, `actionable conflict retained for ${choice}`)
+    assert.equal(endState.conflicts[0].id, id(1), `conflict id matches for ${choice}`)
+  }
+})
+
+test('F2: session invalidation before conflict-state save blocks stale persistence across all 9 cases (3 choices x 3 invalidations)', async () => {
+  const choices = [
+    { label: 'Download Cloud', forceAction: 'download' },
+    { label: 'Keep Device', forceAction: 'upload' },
+    { label: 'Keep Both', forceAction: 'merge_preserve' },
+  ]
+  const transitions = [
+    { label: 'logout', mutate: s => { s.removeItem('gtar_auth_session'); localStorage.removeItem('gtar_auth_session') } },
+    { label: 'account-switch', mutate: s => {
+        const val = JSON.stringify({ user: { id: 'other-user' }, sessionToken: 'tok-b' })
+        s.setItem('gtar_auth_session', val)
+        localStorage.setItem('gtar_auth_session', val)
+      } },
+    { label: 'token-rotation', mutate: s => {
+        const val = JSON.stringify({ user: { id: 'user-a' }, sessionToken: 'rotated-token' })
+        s.setItem('gtar_auth_session', val)
+        localStorage.setItem('gtar_auth_session', val)
+      } },
+  ]
+
+  for (const choice of choices) {
+    for (const trans of transitions) {
+      const baseLib = { songs: [song(1)], setlists: [] }
+      const w = await world({ library: baseLib })
+      const dev = w.device(baseLib)
+      dev.setItem('gtar_auth_session', JSON.stringify({ user: { id: 'user-a' }, sessionToken: 'token' }))
+      await w.run(dev)
+
+      // Cause a serverChanged scenario: Cloud moves song 1 to rev 2
+      const cloudV2 = song(1, { title: 'Cloud Version 2', rawContent: '[G]Cloud V2' })
+      w.db.sqlite.prepare("UPDATE user_songbook_records SET rev = 2, seq = seq + 1, data_json = ?, checksum = ? WHERE record_id = ?")
+        .run(JSON.stringify(cloudV2), recordChecksum(false, cloudV2), id(1))
+      w.db.sqlite.prepare("UPDATE user_songbook_cursors SET seq = seq + 1 WHERE user_id = 'user-a'").run()
+
+      // Staged local conflict expecting rev 1
+      const state = client.readRecordsSyncState(dev)
+      state.conflicts = [{
+        kind: 'song',
+        id: id(1),
+        title: 'Song 1',
+        remote: {
+          kind: 'song',
+          id: id(1),
+          rev: 1,
+          removed: false,
+          checksum: recordChecksum(false, baseLib.songs[0]),
+          data: baseLib.songs[0],
+        }
+      }]
+      dev.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+      // Hook during pull to invalidate session before conflict-state save
+      w.setHook(async (url) => {
+        if (url.includes('?since=')) {
+          trans.mutate(dev)
+        }
+      })
+
+      const res = await w.run(dev, { forceAction: choice.forceAction })
+      w.setHook(null)
+
+      assert.equal(res.success, false, `[${choice.label} x ${trans.label}] must fail`)
+      const stateAfter = client.readRecordsSyncState(dev)
+      assert.equal(stateAfter.conflicts[0]?.remote?.rev, 1, `[${choice.label} x ${trans.label}] must not update conflict remote to rev 2`)
+      assert.equal(read(dev).songs[0].title, 'Song 1', `[${choice.label} x ${trans.label}] local library unmutated`)
+    }
+  }
+})
+
+test('F3: cloud record changes during resolution snapshot aborts without false IN_SYNC or stale overwrite', async () => {
+  const baseLib = { songs: [song(1)], setlists: [] }
+  const w = await world({ library: baseLib })
+  const dev = w.device(baseLib)
+  await w.run(dev)
+
+  const localEdited = { songs: [song(1, { rawContent: '[G]Local edited lyrics' })], setlists: [] }
+  journal.persistLibrary(localEdited, dev)
+
+  const cloudV1 = song(1, { rawContent: '[G]Cloud lyrics v1' })
+  const checksumV1 = recordChecksum(false, cloudV1)
+  w.db.sqlite.prepare("UPDATE user_songbook_records SET rev = 1, data_json = ?, checksum = ? WHERE record_id = ?")
+    .run(JSON.stringify(cloudV1), checksumV1, id(1))
+
+  const state = client.readRecordsSyncState(dev)
+  state.conflicts = [{
+    kind: 'song',
+    id: id(1),
+    title: 'Song 1',
+    remote: {
+      kind: 'song',
+      id: id(1),
+      rev: 1,
+      removed: false,
+      checksum: checksumV1,
+      data: cloudV1,
+    }
+  }]
+  dev.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  // While resolution snapshot is happening, cloud moves to rev 2
+  w.setAfter(async (url) => {
+    if (url.includes('?since=0')) {
+      const cloudV2 = song(1, { rawContent: '[G]Cloud lyrics v2 (MOVED)' })
+      w.db.sqlite.prepare("UPDATE user_songbook_records SET rev = 2, seq = seq + 1, data_json = ?, checksum = ? WHERE record_id = ?")
+        .run(JSON.stringify(cloudV2), recordChecksum(false, cloudV2), id(1))
+      w.db.sqlite.prepare("UPDATE user_songbook_cursors SET seq = seq + 1 WHERE user_id = 'user-a'").run()
+    }
+  })
+
+  const res = await w.run(dev, { forceAction: 'download' })
+  assert.equal(res.success, false, 'must not succeed')
+  assert.equal(res.status, 'CONFLICT', 'must report CONFLICT')
+  assert.notEqual(res.status, 'IN_SYNC', 'must not report false IN_SYNC')
+
+  const libAfter = read(dev)
+  assert.equal(libAfter.songs[0].rawContent, '[G]Local edited lyrics', 'local library preserved, stale v1 not applied')
+
+  const endState = client.readRecordsSyncState(dev)
+  assert.equal(endState.conflicts.length, 1, 'conflict retained')
+  assert.equal(endState.conflicts[0].remote.rev, 2, 'conflict remote updated to fresh cloud rev 2')
+})
+
