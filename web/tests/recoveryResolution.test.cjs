@@ -329,3 +329,39 @@ test('failed V1 upgrade preserves its exact stored value and UI keeps export ava
     await click('Refresh review'); assert.equal(hasActionableRecovery(), true); assert.deepEqual(bytes(), before)
   } finally { URL.createObjectURL = create; URL.revokeObjectURL = revoke; dom.window.HTMLAnchorElement.prototype.click = anchorClick }
 })
+
+// #240: an older build saved Replace snapshots whose cloud half had a setlist listing deleted songs.
+test('#240: a snapshot with a valid device copy and an invalid cloud copy is reviewable; the cloud copy is reported, kept and not used', async () => {
+  const dangling = { songs: [song('current')], setlists: [{ id: 'list', name: 'Set', songs: [{ id: 'gone', title: 'Gone' }] }] }
+  archive('download:1792983944459:a', { local: original, remote: dangling })
+  const before = bytes()
+  const review = inspectRecovery()
+  assert.equal(review.invalid, false, 'review is not blocked')
+  const source = review.sources.find(s => s.key.startsWith('gtar_sync_recovery:download:'))
+  assert.equal(source.status, 'represented', 'device copy equals the current library')
+  assert.deepEqual(source.unreadable, ['cloud copy'])
+  assert.equal(source.canKeepCurrent, true)
+  assert.equal(hasActionableRecovery(), false, 'no red recovery notice for it')
+  assert.deepEqual(bytes(), before, 'read-only: archive bytes untouched')
+  // The note is shown in the review.
+  root = createRoot(document.getElementById('root'))
+  await act(async () => root.render(React.createElement(RecoveryReviewDialog, { onClose() {} })))
+  assert.match(document.body.textContent, /The cloud copy in this archive is not a valid library, so only this device's copy is reviewed here\. The full archive is kept/)
+})
+
+test('#240: a device copy that is not a valid library still makes the archive invalid', () => {
+  archive('download:2', { local: { songs: [song('x')], setlists: [{ id: 'l', name: 'S', songs: [{ id: 'gone', title: 'Gone' }] }] }, remote: original })
+  assert.equal(inspectRecovery().invalid, true)
+  assert.equal(hasActionableRecovery(), true)
+})
+
+test('#240: with the cloud copy unreadable, a differing device copy is actionable and Choose current library can resolve it', async () => {
+  const dangling = { songs: [], setlists: [{ id: 'list', name: 'Set', songs: [{ id: 'gone', title: 'Gone' }] }] }
+  archive('download:3', { local: { songs: [song('current', { rawContent: 'older' })], setlists: [] }, remote: dangling })
+  const review = inspectRecovery()
+  assert.equal(review.invalid, false)
+  assert.equal(review.sources[0].status, 'actionable')
+  await choose(review)
+  assert.equal(inspectRecovery().sources[0].status, 'resolved')
+  assert.equal(hasActionableRecovery(), false)
+})

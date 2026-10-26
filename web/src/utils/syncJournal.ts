@@ -211,6 +211,8 @@ export interface RecoverySourceReview {
   status: 'represented' | 'actionable' | 'invalid' | 'resolved'
   differences: RecoveryRecordDifference[]
   canKeepCurrent: boolean
+  /** #240: parts of this archive that are not a valid library and were left out of the review (still in the archive and in exports). */
+  unreadable?: Array<'cloud copy' | 'journal baseline'>
 }
 interface RecoveryDecision {
   choice: 'keep-current' | 'reopen'
@@ -232,7 +234,11 @@ export interface RecoveryReview {
   divergentVersions: number
 }
 
-function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary[]; pending: boolean } {
+function isValidLibrary(value: unknown): value is SyncLibrary {
+  try { validateLibrary(value); return true } catch { return false }
+}
+
+function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary[]; pending: boolean; unreadable?: Array<'cloud copy' | 'journal baseline'> } {
   const snapshot = JSON.parse(raw)
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('Unknown recovery format')
   if (key.startsWith('gtar_sync_v1:')) {
@@ -248,7 +254,15 @@ function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary
   } else if (Object.hasOwn(snapshot, 'songs')) candidates = [snapshot]
   else {
     if (!snapshot.local) throw new Error('Unknown recovery format')
-    candidates = [snapshot.local, snapshot.remote, snapshot.journal?.baseline].filter(value => value != null)
+    // #240: the device half must be a valid library. A cloud copy or journal baseline that is not
+    // (e.g. a cloud setlist listing deleted songs, saved by an older build just before its sync
+    // failed) is left out of the review and reported, instead of making the whole archive unreadable.
+    validateLibrary(snapshot.local)
+    const unreadable: Array<'cloud copy' | 'journal baseline'> = []
+    candidates = [snapshot.local]
+    if (snapshot.remote != null) { if (isValidLibrary(snapshot.remote)) candidates.push(snapshot.remote); else unreadable.push('cloud copy') }
+    if (snapshot.journal?.baseline != null) { if (isValidLibrary(snapshot.journal.baseline)) candidates.push(snapshot.journal.baseline); else unreadable.push('journal baseline') }
+    return { candidates, pending: Boolean(snapshot.journal?.pending), ...(unreadable.length ? { unreadable } : {}) }
   }
   candidates.forEach(validateLibrary)
   return { candidates, pending: Boolean(snapshot.journal?.pending) }
@@ -476,13 +490,15 @@ export function inspectRecovery(storage: Storage = localStorage): RecoveryReview
       review.sources.push(item)
       try {
         let candidates: SyncLibrary[], pending = false
+        let unreadable: Array<'cloud copy' | 'journal baseline'> | undefined
         if (key === 'legacy') {
           const [songRaw, trashRaw, setlistRaw] = JSON.parse(raw)
           const songs = JSON.parse(songRaw ?? '[]'), trash = JSON.parse(trashRaw ?? '[]'), setlists = JSON.parse(setlistRaw ?? '[]')
           if (!Array.isArray(songs) || !Array.isArray(trash)) throw new Error('Invalid legacy records')
           candidates = [{ songs: [...songs, ...trash.map(song => ({ ...song, isDeleted: true }))], setlists }]
           candidates.forEach(validateLibrary)
-        } else ({ candidates, pending } = recoveryCandidates(key, raw))
+        } else ({ candidates, pending, unreadable } = recoveryCandidates(key, raw))
+        if (unreadable) item.unreadable = unreadable
         if (!library) throw new Error('Canonical library unavailable')
         let represented = !pending
         for (const candidate of candidates) {
