@@ -399,7 +399,7 @@ test('ENDPOINT: User A cannot access or overwrite User B cloud songbook (strict 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${tokenA}`,
+      Authorization: `Bearer ${tokenA}`, 'X-GTAR-Library-Owner': userA.id,
     },
     body: JSON.stringify({
       action: 'upload',

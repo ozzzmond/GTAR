@@ -360,7 +360,7 @@ test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on cl
 
   const postReq = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({ action: 'upload', data: libOrder1, expectedVersion: 0, expectedChecksum: null }),
   })
 

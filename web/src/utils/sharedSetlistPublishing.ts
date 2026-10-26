@@ -218,6 +218,11 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
     // Must be durable BEFORE any request. Legacy saved intents are ambiguous.
     savePublicationLink(account, sourceId, link)
   })
+  // #247 F4: the journal write was awaited; the signed-in publisher must still be the one this request
+  // was prepared for (client-side prevention; the server authorizes only the token it receives).
+  const current = publisherSession()
+  if (current.accountId !== accountId || current.token !== token) throw new Error('Account or session changed. Reopen and review again.')
+  if (intent.method !== 'DELETE') assertPublishFromOwnLibrary()
   let result: PublicationResult
   try {
     result = await catalogFetch<PublicationResult>(`/api/catalog/setlists${intent.id ? `/${encodeURIComponent(intent.id)}` : ''}`, {

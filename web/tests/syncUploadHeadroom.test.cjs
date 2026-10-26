@@ -35,7 +35,7 @@ async function cloud() {
     if (opts.method === 'POST') posts.push(opts.body)
     return api[opts.method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env,
       request: new Request('https://example.com/api/songbook/sync', { method: opts.method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(opts.body ? { body: opts.body } : {}) }) })
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers?.['X-GTAR-Library-Owner'] ? { 'X-GTAR-Library-Owner': opts.headers['X-GTAR-Library-Owner'] } : {}) }, ...(opts.body ? { body: opts.body } : {}) }) })
   }
   return { fetch, posts }
 }

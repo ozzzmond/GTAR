@@ -52,7 +52,7 @@ import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { generateUUID } from './uuid'
 import { isPristineSampleRecord } from '../data/defaultLibrary'
-import { assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
+import { assertCommitAllowed, assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
 
 export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
@@ -283,7 +283,7 @@ function localRecords(library: SyncLibrary): Map<string, { kind: RecordKind; id:
 /** Returns the library revision this write produced (#208 F6: results are delivered only while it is still current). */
 function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary, ownerUserId?: string | null): string | null {
   // #247: a round that started for one account must not write after the library changed hands.
-  if (ownerUserId !== undefined) assertLibraryOwner(ownerUserId, storage)
+  if (ownerUserId !== undefined) assertCommitAllowed(ownerUserId, storage)
   const integrity = validateSongbookIntegrity(next.songs, next.setlists)
   if (!integrity.isValid) throw new Error(`Synced songbook failed referential integrity check: ${integrity.errors.join('; ')}`)
   const { themeSettings, ...library } = next
@@ -363,8 +363,8 @@ async function pullAll(token: string, state: RecordsSyncState): Promise<{ record
 
 async function pushAll(token: string, state: RecordsSyncState, library: SyncLibrary, skip: Set<string>, force: Map<string, number> = new Map(),
   allowRemovals = true, ownerStorage: Storage = localStorage): Promise<{ pushed: number; failed: string | null; accepted: Set<string> }> {
-  // #247: never upload a library this account does not own (also re-checked after any await before this).
-  assertLibraryOwner(state.userId, ownerStorage)
+  // #247: never upload a library this account does not own, nor after the session moved to another account.
+  assertCommitAllowed(state.userId, ownerStorage)
   const local = localRecords(library)
   const acceptedKeys = new Set<string>()
   const changes: RecordChange[] = []
@@ -415,6 +415,7 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
   for (const batch of batches) {
     let response: PushResponse
     try {
+      assertCommitAllowed(state.userId, ownerStorage) // each batch: the previous one was awaited
       const owner = readLibraryOwner(ownerStorage)
       if (!owner) throw new LibraryOwnershipError('unbound')
       response = await request<PushResponse>(token, 'POST', '', { changes: batch }, owner.userId)

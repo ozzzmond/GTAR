@@ -275,7 +275,7 @@ async function classicPost(db, library, expected) {
   const env = { DB: db, AUTH_SECRET: 'records-test-secret' }
   const token = await createSessionToken(user, env.AUTH_SECRET)
   const res = await classicApi.onRequestPost({ env, request: new Request('https://example.com/api/songbook/sync', { method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({ data: library, expectedVersion: expected.version, expectedChecksum: expected.checksum }) }) })
   return { status: res.status, json: await res.json() }
 }

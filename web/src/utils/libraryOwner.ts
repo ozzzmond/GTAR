@@ -10,7 +10,7 @@
  * - Another owner: blocked. Nothing on the device is relabelled, moved, cleared or deleted.
  * Ownership is never inferred from last-synced metadata.
  */
-import { readPersistedLibrary, recoveryData, writeRecoverySnapshot } from './syncJournal'
+import { libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot } from './syncJournal'
 import { generateUUID } from './uuid'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
@@ -74,6 +74,27 @@ export function assertLibraryOwner(userId: string | null | undefined, storage: S
   throw new LibraryOwnershipError(ownership)
 }
 
+/** #247: the signed-in account stored by AuthGate (same key as googleAuth's SESSION_STORAGE_KEY). */
+const SESSION_KEY = 'gtar_auth_session'
+function storedSessionUserId(): string | null {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null
+    const id = raw ? (JSON.parse(raw) as { user?: { id?: unknown } } | null)?.user?.id : null
+    return typeof id === 'string' && id.trim() ? id : null
+  } catch { return null }
+}
+
+/**
+ * #247 F3: right before a sync writes into the library (or reports it in step): the library still
+ * belongs to the account the round was verified for, and the signed-in session (when one is stored)
+ * is still that account. A round started for A never commits after a switch to B.
+ */
+export function assertCommitAllowed(userId: string | null | undefined, storage: Storage = localStorage): void {
+  assertLibraryOwner(userId, storage)
+  const session = storedSessionUserId()
+  if (session && userId && !sameUser(session, userId)) throw new LibraryOwnershipError('mismatch')
+}
+
 /** Same check for direct actions (publish, QR share) where the session's account id is known. */
 export function personalContentBlockReason(userId: string | null | undefined, storage: Storage = localStorage): string | null {
   try { assertLibraryOwner(userId, storage); return null } catch (error) { return error instanceof Error ? error.message : String(error) }
@@ -85,15 +106,28 @@ export function personalContentBlockReason(userId: string | null | undefined, st
  */
 export async function confirmLibraryOwner(userId: string, storage: Storage = localStorage): Promise<void> {
   if (!userId.trim()) throw new Error('Sign in first')
-  const ownership = libraryOwnership(userId, storage)
-  if (ownership === 'owned') return
-  if (ownership === 'mismatch') throw new LibraryOwnershipError('mismatch')
-  const library = readPersistedLibrary(storage)
-  if (library) {
-    const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
-    const raw = JSON.stringify({ local: library })
-    await writeRecoverySnapshot(key, raw, storage)
-    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+  // #247 F2: one confirmation at a time in this browser, and compare-and-set: the owner record, the
+  // library revision and the signed-in account must be what they were when this confirmation began.
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  const run = async () => {
+    const ownership = libraryOwnership(userId, storage)
+    if (ownership === 'owned') return
+    if (ownership === 'mismatch') throw new LibraryOwnershipError('mismatch')
+    const ownerAtStart = storage.getItem(LIBRARY_OWNER_KEY)
+    const revisionAtStart = libraryRevision(storage)
+    const library = readPersistedLibrary(storage)
+    if (library) {
+      const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
+      const raw = JSON.stringify({ local: library })
+      await writeRecoverySnapshot(key, raw, storage)
+      if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+    }
+    const session = storedSessionUserId()
+    if (storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart || libraryRevision(storage) !== revisionAtStart || (session && !sameUser(session, userId))) {
+      throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
+    }
+    writeOwner(userId, 'confirmed', storage)
   }
-  writeOwner(userId, 'confirmed', storage)
+  if (locks?.request) await locks.request('gtar-library-owner', run)
+  else await run()
 }

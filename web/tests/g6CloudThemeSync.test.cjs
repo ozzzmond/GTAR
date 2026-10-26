@@ -66,7 +66,7 @@ async function fixture() {
       env,
       request: new Request('https://example.com/api/songbook/sync', {
         method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-GTAR-Library-Owner': user.id },
         ...(body ? { body: JSON.stringify(body) } : {}),
       }),
     })

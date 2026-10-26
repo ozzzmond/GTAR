@@ -113,7 +113,7 @@ async function cloud() {
   const token = await createSessionToken(user, env.AUTH_SECRET)
   const request = (opts) => api[opts.method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env,
     request: new Request('https://example.com/api/songbook/sync', { method: opts.method,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(opts.body ? { body: opts.body } : {}) }) })
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers?.['X-GTAR-Library-Owner'] ? { 'X-GTAR-Library-Owner': opts.headers['X-GTAR-Library-Owner'] } : {}) }, ...(opts.body ? { body: opts.body } : {}) }) })
   return { db, request }
 }
 async function withFetch(request, body) {

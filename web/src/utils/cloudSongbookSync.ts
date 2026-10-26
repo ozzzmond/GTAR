@@ -5,7 +5,7 @@ import { appLogger } from './logger'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
-import { assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
+import { assertCommitAllowed, assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
 import { generateUUID } from './uuid'
 import {
   CLOUD_THEME_SETTINGS_VERSION,
@@ -73,7 +73,7 @@ export interface SyncDecisionResult {
 
 /** #247: the verified owner id to send with an upload; throws if this account does not own the library. */
 function uploadOwner(userId: string | null, storage: Storage): string {
-  assertLibraryOwner(userId, storage)
+  assertCommitAllowed(userId, storage)
   return readLibraryOwner(storage)!.userId
 }
 
@@ -1251,6 +1251,8 @@ async function executeCloudSongbookSync(
     expectedRaw: string | null,
     shouldPersistTheme = true
   ) => {
+    // #247 F3: revalidated right before every write (a recovery write or the network may have been awaited).
+    assertCommitAllowed(currentUserId, targetStorage)
     persistLibrary(libraryToApply, targetStorage, { expectedRaw })
     if (shouldPersistTheme && libraryToApply.themeSettings !== undefined) {
       try {

@@ -214,3 +214,79 @@ test('#247: shared publication and QR share are blocked when the session is not 
   assert.equal(owner.personalContentBlockReason('user-a'), null)
   localStorage.clear()
 })
+
+// ---- #247 audit of PR #248 (head 89943dc): F1–F3 ----
+const sessionKey = 'gtar_auth_session'
+const setSession = who => localStorage.setItem(sessionKey, JSON.stringify({ user: { id: who } }))
+
+test('#247 F1: a Classic upload without the owner capability (older builds) is refused; nothing reaches B', async () => {
+  const c = await cloud()
+  const legacyPost = await syncApi.onRequestPost({ env: c.env, request: new Request('https://example.com/api/songbook/sync', { method: 'POST',
+    headers: { Authorization: `Bearer ${c.tokens.b}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: libA, checksum: require('../src/utils/cloudSongbookSync.ts').computeSongbookChecksum(libA), expectedVersion: 0, expectedChecksum: null }) }) })
+  assert.equal(legacyPost.status, 409)
+  assert.equal((await legacyPost.json()).code, 'LIBRARY_OWNER_REQUIRED')
+  assert.equal(c.db.sqlite.prepare("SELECT count(*) AS n FROM user_songbooks WHERE user_id = 'user-b'").get().n, 0, 'B has no classic songbook')
+  assert.equal((await c.b(device({ songs: [], setlists: [] }))).success, true)
+  assert.equal(c.recordsOf('user-b'), 0, 'nothing seeded into B records')
+})
+
+test('#247 F2: concurrent link confirmations — a stale one cannot replace the owner saved meanwhile', async () => {
+  const c = await cloud()
+  const legacy = device(libA)
+  const original = journal.writeRecoverySnapshot
+  let release, paused = new Promise(r => { release = r }), first = true
+  journal.writeRecoverySnapshot = async (...args) => { if (first) { first = false; await paused } return original(...args) }
+  let staleA
+  try {
+    staleA = owner.confirmLibraryOwner('user-a', legacy).then(() => 'linked', e => e.message)
+    await owner.confirmLibraryOwner('user-b', legacy) // B confirms and saves while A is paused
+    release()
+  } finally { journal.writeRecoverySnapshot = original }
+  assert.match(await staleA, /changed/)
+  assert.equal(owner.readLibraryOwner(legacy).userId, 'user-b', 'B owner kept')
+  const asA = await c.a(legacy)
+  assert.equal(asA.ownership, 'mismatch')
+  assert.equal(c.recordsOf('user-a'), 0, 'A uploads nothing')
+})
+
+test('#247 F3: a Classic download paused at its recovery write does not apply after a switch to B', async () => {
+  const c = await cloud()
+  const sync = require('../src/utils/cloudSongbookSync.ts')
+  const deviceA = bound({ songs: [song(1)], setlists: [] }, 'user-a')
+  // A's classic cloud has more songs than the device.
+  const cloudA = { songs: [song(1), song(2), song(3)], setlists: [] }
+  await require('../functions/lib/authCore.ts').upsertUserSongbook(c.db, 'user-a', JSON.stringify(cloudA), sync.computeSongbookChecksum(cloudA), '2026-10-26T00:00:00Z', { version: 0, checksum: null })
+  setSession('user-a')
+  const original = journal.writeRecoverySnapshot
+  journal.writeRecoverySnapshot = async (...args) => { setSession('user-b'); return original(...args) } // switch while the write is awaited
+  const saved = global.fetch
+  global.fetch = async (url, opts = {}) => syncApi[(opts.method || 'GET') === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env: c.env,
+    request: new Request(`https://example.com${url}`, { method: opts.method || 'GET', headers: opts.headers || {}, ...(opts.body ? { body: opts.body } : {}) }) })
+  let result
+  try { result = await sync.performCloudSongbookSync(c.tokens.a, { storage: deviceA, forceAction: 'download' }) }
+  finally { global.fetch = saved; journal.writeRecoverySnapshot = original; localStorage.removeItem(sessionKey) }
+  assert.notEqual(result.status, 'IN_SYNC')
+  assert.deepEqual(read(deviceA).songs.map(s => s.id), [id(1)], 'nothing applied after the switch')
+})
+
+test('#247 F3 (records): a session switch while a per-record round waits on the network stops its apply and upload', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  await c.a(deviceA)
+  // Another device of A adds a song; this device edits locally too.
+  const other = bound(libA, 'user-a'); await c.a(other)
+  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(8)] }, other, { expectedRaw: journal.libraryRevision(other) }); await c.a(other)
+  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(9)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  setSession('user-a')
+  c.setHook(async (url, opts) => { if ((opts.method || 'GET') === 'GET') setSession('user-b') })
+  let result
+  try { result = await c.a(deviceA) } finally { c.setHook(null); localStorage.removeItem(sessionKey) }
+  assert.equal(result.ownership, 'mismatch')
+  assert.ok(!read(deviceA).songs.some(s => s.id === id(8)), 'cloud change not applied')
+  assert.ok(!c.songsOf('user-a').includes(id(9)), 'local change not uploaded')
+  // Back on A, the same device syncs normally.
+  setSession('user-a')
+  try { assert.equal((await c.a(deviceA)).success, true) } finally { localStorage.removeItem(sessionKey) }
+  assert.ok(c.songsOf('user-a').includes(id(9)))
+})

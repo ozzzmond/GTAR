@@ -154,7 +154,7 @@ test('S1_JSON_STRUCTURE_VALIDATION: Rejection of null, arrays, primitives, and m
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
+        Authorization: `Bearer ${adminToken}`, 'X-GTAR-Library-Owner': adminUser.id,
       },
       body,
     })
@@ -362,7 +362,7 @@ test('S1_PAYLOAD_SIZE_BOUNDARIES: Exact limit, 1-byte overflow, missing/invalid 
     headers: {
       'Content-Length': String(syncLimit + 1),
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
+      Authorization: `Bearer ${adminToken}`, 'X-GTAR-Library-Owner': adminUser.id,
     },
     body: JSON.stringify({ data: { songs: [], setlists: [] } }),
   })
@@ -413,7 +413,7 @@ test('S4_CANARY_SANITIZATION: Server exceptions never expose internal diagnostic
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': activeUser.id,
     },
     body: JSON.stringify({
       data: { songs: [{ title: 'Test', rawContent: 'C G Am F' }], setlists: [] },
@@ -595,7 +595,7 @@ test('CONFLICTS_AND_VALID_REQUESTS: Optimistic concurrency and valid client flow
   // 4. Revision conflict in Songbook Sync -> 409
   const conflictReq = new Request('https://gtar.local/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': activeUser.id },
     body: JSON.stringify({
       data: { songs: [{ title: 'Wonderwall', rawContent: 'Em7 G Dsus4 A7sus4' }], setlists: [] },
       expectedVersion: 5, // Non-zero version without matching valid checksum format
@@ -611,7 +611,7 @@ test('CONFLICTS_AND_VALID_REQUESTS: Optimistic concurrency and valid client flow
   // 5. Valid Songbook Sync POST with valid initial base (version: 0, checksum: null)
   const validSyncReq = new Request('https://gtar.local/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': activeUser.id },
     body: JSON.stringify({
       data: { songs: [{ title: 'Wonderwall', rawContent: 'Em7 G Dsus4 A7sus4' }], setlists: [] },
       expectedVersion: 0,

@@ -423,7 +423,7 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
   // 1. Invalid payload: setlist missing name
   const reqBadName = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({
       action: 'upload',
       expectedVersion: 0,
@@ -440,7 +440,7 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
   // 2. Invalid payload: setlist songs is not an array
   const reqBadSongs = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({
       action: 'upload',
       expectedVersion: 0,
@@ -457,7 +457,7 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
   // 3. Invalid payload: isDeleted is not a boolean
   const reqBadDeleted = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({
       action: 'upload',
       expectedVersion: 0,
@@ -476,7 +476,7 @@ test('12: api_payload_validation validates setlists, ids, names, songs array, an
   const validSongId = generateUUID()
   const reqValid = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({
       action: 'upload',
       expectedVersion: 0,

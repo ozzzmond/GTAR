@@ -965,3 +965,26 @@ test('M1 catalog parent refresh preserves server-success/local-save-failure reco
   assert.equal(byTestId('setlist-unpublish-confirm-dialog').open, true)
   dom.window.Storage.prototype.setItem = original
 })
+
+test('#247 F4: a session switch after the publication journal is saved but before the send stops the request', async () => {
+  const { link } = await intent()
+  // Storage methods cannot be patched on a Storage object, so wrap it.
+  const real = global.localStorage
+  let switched = false
+  global.localStorage = {
+    getItem: k => real.getItem(k), removeItem: k => real.removeItem(k), key: i => real.key(i), get length() { return real.length }, clear: () => real.clear(),
+    setItem: (key, value) => {
+      real.setItem(key, value)
+      if (!switched && key !== SESSION_STORAGE_KEY && String(value).includes('"publicationKey"') && String(value).includes('"pending"')) {
+        switched = true
+        global.localStorage = real
+        session('account-b')
+      }
+    },
+  }
+  try {
+    await assert.rejects(api.sendPublicationIntent('account-a', 'set-a', link), /Account|account|session/)
+  } finally { global.localStorage = real }
+  assert.ok(switched, 'switch happened after the journal write')
+  assert.equal(calls.filter(c => String(c.url).startsWith('/api/catalog/setlists') && c.method && c.method !== 'GET').length, 0, 'no publication request sent')
+})
