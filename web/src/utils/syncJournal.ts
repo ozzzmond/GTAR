@@ -204,6 +204,8 @@ export interface RecoveryRecordDifference {
   deleted: boolean
   difference: 'missing' | 'divergent'
   record: unknown
+  /** #240 P1-F2: cloud revision, for a cloud record archived by a conflict choice. */
+  revision?: number
 }
 export interface RecoverySourceReview {
   key: string
@@ -213,6 +215,8 @@ export interface RecoverySourceReview {
   canKeepCurrent: boolean
   /** #240: parts of this archive that are not a valid library and were left out of the review (still in the archive and in exports). */
   unreadable?: Array<'cloud copy' | 'journal baseline'>
+  /** #240 P1-F2: the archive holds cloud records saved by a conflict choice; they can be exported but not restored from the review. */
+  cloudRecordsOnly?: boolean
 }
 interface RecoveryDecision {
   choice: 'keep-current' | 'reopen'
@@ -238,7 +242,8 @@ function isValidLibrary(value: unknown): value is SyncLibrary {
   try { validateLibrary(value); return true } catch { return false }
 }
 
-function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary[]; pending: boolean; unreadable?: Array<'cloud copy' | 'journal baseline'> } {
+interface ArchivedCloudRecord { kind: string; id: string; rev?: number; removed?: boolean; data?: unknown }
+function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary[]; pending: boolean; unreadable?: Array<'cloud copy' | 'journal baseline'>; cloudRecords?: ArchivedCloudRecord[] } {
   const snapshot = JSON.parse(raw)
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('Unknown recovery format')
   if (key.startsWith('gtar_sync_v1:')) {
@@ -262,7 +267,12 @@ function recoveryCandidates(key: string, raw: string): { candidates: SyncLibrary
     candidates = [snapshot.local]
     if (snapshot.remote != null) { if (isValidLibrary(snapshot.remote)) candidates.push(snapshot.remote); else unreadable.push('cloud copy') }
     if (snapshot.journal?.baseline != null) { if (isValidLibrary(snapshot.journal.baseline)) candidates.push(snapshot.journal.baseline); else unreadable.push('journal baseline') }
-    return { candidates, pending: Boolean(snapshot.journal?.pending), ...(unreadable.length ? { unreadable } : {}) }
+    // #240 P1-F2: cloud records a conflict choice archived (the versions it did not keep).
+    const cloudRecords = Array.isArray(snapshot.remoteRecords)
+      ? (snapshot.remoteRecords as unknown[]).filter((record): record is ArchivedCloudRecord => !!record && typeof record === 'object' &&
+        ((record as ArchivedCloudRecord).kind === 'song' || (record as ArchivedCloudRecord).kind === 'setlist') && typeof (record as ArchivedCloudRecord).id === 'string')
+      : []
+    return { candidates, pending: Boolean(snapshot.journal?.pending), ...(unreadable.length ? { unreadable } : {}), ...(cloudRecords.length ? { cloudRecords } : {}) }
   }
   candidates.forEach(validateLibrary)
   return { candidates, pending: Boolean(snapshot.journal?.pending) }
@@ -491,13 +501,14 @@ export function inspectRecovery(storage: Storage = localStorage): RecoveryReview
       try {
         let candidates: SyncLibrary[], pending = false
         let unreadable: Array<'cloud copy' | 'journal baseline'> | undefined
+        let cloudRecords: ArchivedCloudRecord[] | undefined
         if (key === 'legacy') {
           const [songRaw, trashRaw, setlistRaw] = JSON.parse(raw)
           const songs = JSON.parse(songRaw ?? '[]'), trash = JSON.parse(trashRaw ?? '[]'), setlists = JSON.parse(setlistRaw ?? '[]')
           if (!Array.isArray(songs) || !Array.isArray(trash)) throw new Error('Invalid legacy records')
           candidates = [{ songs: [...songs, ...trash.map(song => ({ ...song, isDeleted: true }))], setlists }]
           candidates.forEach(validateLibrary)
-        } else ({ candidates, pending, unreadable } = recoveryCandidates(key, raw))
+        } else ({ candidates, pending, unreadable, cloudRecords } = recoveryCandidates(key, raw))
         if (unreadable) item.unreadable = unreadable
         if (!library) throw new Error('Canonical library unavailable')
         let represented = !pending
@@ -515,6 +526,20 @@ export function inspectRecovery(storage: Storage = localStorage): RecoveryReview
           }
           try { if (!same(library, reconcile(library, candidate))) represented = false }
           catch { represented = false }
+        }
+        // #240 P1-F2: an archived cloud record that differs from the current library is a difference too
+        // (e.g. a setlist whose entries "Download Cloud" left out). It is never counted as represented.
+        if (cloudRecords) {
+          item.cloudRecordsOnly = true
+          for (const record of cloudRecords) {
+            const kind = record.kind as 'song' | 'setlist'
+            const existing = (kind === 'song' ? library.songs : library.setlists).find(value => String(value.id) === record.id)
+            const data = record.removed ? null : record.data as { title?: unknown; name?: unknown } | null
+            if (data ? existing && same(existing, data) : !existing || (existing as { isDeleted?: boolean }).isDeleted) continue
+            item.differences.push({ kind, id: record.id, title: String((data ?? existing as { title?: unknown; name?: unknown } | undefined)?.[kind === 'song' ? 'title' : 'name'] ?? record.id),
+              deleted: !data, difference: existing ? 'divergent' : 'missing', record: data ?? { id: record.id, removed: true }, ...(typeof record.rev === 'number' ? { revision: record.rev } : {}) })
+            represented = false
+          }
         }
         item.status = represented ? 'represented' : 'actionable'
         // Unknown/pending operations and legacy access-setting conflicts require manual recovery.

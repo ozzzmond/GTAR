@@ -174,9 +174,11 @@ export async function pushRecords(db: D1Database, userId: string, changes: Recor
     statements.push(db.prepare('SELECT seq FROM user_songbook_cursors WHERE user_id = ?').bind(userId))
   }
   // #240 F2: a setlist is written only if every song it lists by id is live in the cloud at that point
-  // of the transaction (entries without an id are matched by title on devices and are not checked).
+  // of the transaction.
+  // #240 P2-F5: an entry without an exact song id is refused too (a title/artist match is not identity).
   const listsOnlyLiveSongs = `NOT EXISTS (SELECT 1 FROM json_each(?, '$.songs') entry
-      WHERE json_extract(entry.value, '$.id') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM user_songbook_records song
+      WHERE json_extract(entry.value, '$.id') IS NULL OR TRIM(CAST(json_extract(entry.value, '$.id') AS TEXT)) = ''
+        OR NOT EXISTS (SELECT 1 FROM user_songbook_records song
         WHERE song.user_id = ? AND song.kind = 'song' AND song.removed = 0 AND song.record_id = CAST(json_extract(entry.value, '$.id') AS TEXT)))`
   planned.forEach(({ change, checksum, removed, json }, position) => {
     const back = planned.length - 1 - position

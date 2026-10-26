@@ -78,7 +78,9 @@ const MAX_PULL_PAGES = 500
 interface KnownRecord { rev: number; checksum: string }
 export interface RecordConflict { kind: RecordKind; id: string; title: string; remote: ServerRecord | null
   /** #240: why this record is held back, when it is not a plain two-sided edit. */
-  note?: string }
+  note?: string
+  /** #240 P1-F1: held back only because songs it lists are missing; re-checked every round. */
+  dependency?: true }
 interface RecordsSyncState { v: 1; userId: string | null; cursor: number; known: Record<string, KnownRecord>; conflicts: RecordConflict[] }
 
 const emptyState = (userId: string | null = null): RecordsSyncState => ({ v: 1, userId, cursor: 0, known: {}, conflicts: [] })
@@ -210,7 +212,7 @@ function holdBackMissingReferences(next: SyncLibrary, local: SyncLibrary, applie
     if (knownBefore[key]) state.known[key] = knownBefore[key]
     else delete state.known[key]
     state.conflicts = [...state.conflicts.filter(item => recordKey(item.kind, item.id) !== key),
-      { kind: remote.kind, id: remote.id, title: recordTitle(remote.kind, localData ?? remote.data), remote, note }]
+      { kind: remote.kind, id: remote.id, title: recordTitle(remote.kind, localData ?? remote.data), remote, note, dependency: true }]
     appLogger.warn('RecordsSync', `Held back a cloud change for "${recordTitle(remote.kind, localData ?? remote.data)}": ${note}`)
     held++
   }
@@ -492,11 +494,32 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
       working.apply(remote)
       appliedRemote.set(key, remote)
       state.known[key] = { rev: remote.rev, checksum: remote.checksum }
+      // #240 P1-F1: the current cloud version replaces a held one; hold-back below re-checks it.
+      state.conflicts = state.conflicts.filter(item => !(item.dependency && recordKey(item.kind, item.id) === key))
       applied++
       continue
     }
     state.conflicts = [...state.conflicts.filter(item => recordKey(item.kind, item.id) !== key),
       { kind: remote.kind, id: remote.id, title: recordTitle(remote.kind, mine?.data ?? remote.data), remote }]
+  }
+
+  // #240 P1-F1: a setlist held back because songs it lists were missing is applied once every one of
+  // those songs (exact id) is in the library again, provided this device has not changed it since.
+  for (const conflict of [...state.conflicts]) {
+    if (!conflict.dependency || conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) continue
+    const key = recordKey('setlist', conflict.id)
+    if (pulled.records.has(key)) continue
+    const mine = local.get(key)
+    if (mine && mine.checksum !== knownBefore[key]?.checksum) continue
+    const songIds = new Set(working.library().songs.map(song => String(song.id)))
+    const entries = ((conflict.remote.data as WebSetlist | null)?.songs ?? [])
+    if (!entries.every(ref => ref?.id !== undefined && ref.id !== null && songIds.has(String(ref.id)))) continue
+    working.apply(conflict.remote)
+    appliedRemote.set(key, conflict.remote)
+    state.known[key] = { rev: conflict.remote.rev, checksum: conflict.remote.checksum }
+    state.conflicts = state.conflicts.filter(item => recordKey(item.kind, item.id) !== key)
+    appLogger.info('RecordsSync', `Applied the held-back cloud setlist "${conflict.title}": its songs are available again`)
+    applied++
   }
 
   const next = working.library()
@@ -531,6 +554,9 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   const snapshot: { local: SyncLibrary; remote?: SyncLibrary; remoteRecords: Array<ServerRecord | null> } = { local: before.library, remoteRecords: state.conflicts.map(conflict => conflict.remote) }
   try { validateLibrary(cloudView.library()); snapshot.remote = cloudView.library() } catch { /* cloud side alone is not a complete library */ }
   await writeRecoverySnapshot(`gtar_sync_recovery:records:${Date.now()}:${generateUUID()}`, JSON.stringify(snapshot), storage)
+  // #240 P2-F4: an editor save during the snapshot write makes this view stale: nothing is applied or
+  // uploaded; the conflicts stay and the user chooses again on the current library.
+  if (libraryRevision(storage) !== before.raw) return changedDuringResolution()
 
   const force = new Map<string, number>()
   let applied = 0
@@ -545,7 +571,8 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
       // Local copy wins this record; the cloud copy is replaced (keep-local) or kept as a copy (keep-both).
       force.set(key, remote?.rev ?? 0)
       if (choice === 'keep-both' && remote && !remote.removed && conflict.kind !== 'theme') {
-        const copyId = generateUUID()
+        // #240 P2-F3: one copy per cloud version, whatever the retries or devices (no duplicate copies).
+        const copyId = await stableCopyId(conflict.kind, conflict.id, remote.rev, remote.checksum)
         const original = remote.data as { title?: string; name?: string }
         const copy = conflict.kind === 'song'
           ? { ...(remote.data as ActiveSongState), id: copyId, title: `${original.title ?? 'Song'} (cloud copy)` }
@@ -565,6 +592,7 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   const cleaned = dropMissingSetlistEntries(next.songs, next.setlists)
   if (cleaned !== next.setlists) { next.setlists = cleaned; applied++ }
   const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
+  if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) return changedDuringResolution()
   const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
   for (const conflict of resolving) {
     const key = recordKey(conflict.kind, conflict.id)
@@ -572,7 +600,25 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
     state.conflicts = [...state.conflicts, conflict]
   }
   if (!failed && state.conflicts.length) appLogger.warn('RecordsSync', `${state.conflicts.length} conflict choice(s) not confirmed by the cloud yet; kept for the next attempt`)
+  // #240 P2-F4: a save during the upload is kept; this round is not reported as converged.
+  if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) {
+    saveState(state, storage)
+    return { ...changedDuringResolution(), ...(failed ? { error: failed } : {}) }
+  }
   return finish(storage, state, next, applied, pushed, failed, appliedRevision)
+}
+
+function changedDuringResolution(): CloudSyncResult {
+  appLogger.info('RecordsSync', 'The songbook changed during a conflict choice; nothing was overwritten. Sync again to finish.')
+  return { success: false, status: 'IDLE', state: 'SAME_STATE', actionTaken: 'NONE', deferred: true,
+    error: 'Your songbook changed while this choice was being applied. Nothing was lost; choose again to finish.' }
+}
+
+/** #240 P2-F3: a stable id for the "keep both" copy of one cloud version (UUID-shaped SHA-256). */
+async function stableCopyId(kind: RecordKind, id: string, rev: number, checksum: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`gtar-keep-both:${kind}:${id}:${rev}:${checksum}`)))
+  const hex = Array.from(digest.slice(0, 16), byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
 /** #227: this device takes the cloud library on its first sync. Own songs (if any) go to recovery first. */
