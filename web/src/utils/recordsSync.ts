@@ -52,7 +52,7 @@ import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { generateUUID } from './uuid'
 import { isPristineSampleRecord } from '../data/defaultLibrary'
-import { assertCommitAllowed, assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
+import { assertCommitAllowed, assertLibraryOwner, assertRoundStillCurrent, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
 
 export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
@@ -316,6 +316,7 @@ function logSyncOutcome(state: RecordsSyncState, applied: number, pushed: number
 }
 
 function finish(storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null, appliedRevision?: string | null): CloudSyncResult {
+  assertRoundStillCurrent(state.userId, storage, pushed) // #247 F3: no metadata or IN_SYNC for a round that changed hands
   saveState(state, storage)
   logSyncOutcome(state, applied, pushed, pushFailed)
   const fullySynced = state.conflicts.length === 0 && !pushFailed
@@ -544,6 +545,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
   const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold, storage)
+  assertRoundStillCurrent(state.userId, storage, pushed) // #247 F3: the last await is over; re-check before any write
   if (hold && !failed) {
     try { storage.removeItem(RECORDS_DELETE_HOLD_KEY) } catch { /* stays on; next sync repeats the safe path */ }
     appLogger.warn('RecordsSync', `Storage fallback recovered: ${restored} ${restored === 1 ? 'record' : 'records'} restored from the cloud; no cloud deletes sent`)
@@ -612,6 +614,7 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   const appliedRevision = applied ? persistApplied(storage, before, next, state.userId) : undefined
   if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) return changedDuringResolution()
   const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage), storage)
+  assertRoundStillCurrent(state.userId, storage, pushed) // #247 F3
   for (const conflict of resolving) {
     const key = recordKey(conflict.kind, conflict.id)
     if (!force.has(key) || accepted.has(key) || state.conflicts.some(item => recordKey(item.kind, item.id) === key)) continue

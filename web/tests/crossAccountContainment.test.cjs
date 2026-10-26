@@ -40,12 +40,15 @@ async function cloud() {
   const env = { DB: db, AUTH_SECRET: 'cross-account-secret', SONGBOOK_RECORDS_SYNC: 'records-v1' }
   const tokens = { a: await createSessionToken(users.a, env.AUTH_SECRET), b: await createSessionToken(users.b, env.AUTH_SECRET) }
   let hook = null
+  let after = null
   const fetch = async (url, opts = {}) => {
     if (hook) await hook(url, opts)
     const target = url.startsWith('/api/songbook/records') ? recordsApi : syncApi
     const method = opts.method || 'GET'
-    return target[method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env, request: new Request(`https://example.com${url}`, {
+    const response = await target[method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env, request: new Request(`https://example.com${url}`, {
       method, headers: opts.headers || {}, ...(opts.body ? { body: opts.body } : {}) }) })
+    if (after) await after(url, opts, response) // server work done; the response is not yet delivered
+    return response
   }
   const as = who => async (store, options = {}) => {
     const saved = global.fetch
@@ -54,7 +57,7 @@ async function cloud() {
   }
   const songsOf = userId => db.sqlite.prepare("SELECT record_id FROM user_songbook_records WHERE user_id = ? AND kind = 'song' AND removed = 0").all(userId).map(r => r.record_id)
   const recordsOf = userId => db.sqlite.prepare('SELECT count(*) AS n FROM user_songbook_records WHERE user_id = ?').get(userId).n
-  return { db, a: as('a'), b: as('b'), songsOf, recordsOf, setHook: h => { hook = h }, tokens, env }
+  return { db, a: as('a'), b: as('b'), songsOf, recordsOf, setHook: h => { hook = h }, setAfter: h => { after = h }, tokens, env }
 }
 const device = lib => { const s = storage(); journal.persistLibrary(lib, s); return s }
 const read = store => journal.readPersistedLibrary(store)
@@ -289,4 +292,90 @@ test('#247 F3 (records): a session switch while a per-record round waits on the 
   setSession('user-a')
   try { assert.equal((await c.a(deviceA)).success, true) } finally { localStorage.removeItem(sessionKey) }
   assert.ok(c.songsOf('user-a').includes(id(9)))
+})
+
+// ---- #247 re-audit of PR #248 (head 7e8bd32): F3 late Records response ----
+const snapshot = store => { const out = {}; for (let i = 0; i < store.length; i++) { const k = store.key(i); out[k] = store.getItem(k) } return out }
+
+test('#247 F3 late response: session switches A→B while A\'s upload response is in flight → no IN_SYNC, no metadata, device untouched', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  setSession('user-a')
+  try {
+    assert.equal((await c.a(deviceA)).success, true)
+    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(11)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    let before = null
+    c.setAfter(async (url, opts) => {
+      if ((opts.method || 'GET') !== 'POST' || !url.startsWith('/api/songbook/records')) return
+      setSession('user-b') // the server accepted A's upload; the browser is now signed in as B
+      before = snapshot(deviceA)
+    })
+    let result
+    try { result = await c.a(deviceA) } finally { c.setAfter(null) }
+    assert.ok(before, 'upload response was intercepted')
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.equal(result.ownership, 'mismatch')
+    assert.match(result.error, /already accepted by the cloud stay in the account that started/)
+    assert.doesNotMatch(result.error, /Nothing was uploaded/)
+    assert.deepEqual(snapshot(deviceA), before, 'no sync state, metadata, base or library written after the switch')
+    assert.ok(c.songsOf('user-a').includes(id(11)), 'the accepted upload is reported honestly: it stays in A')
+    assert.equal(c.recordsOf('user-b'), 0)
+    // Back on A: retry reconciles safely.
+    setSession('user-a')
+    const again = await c.a(deviceA)
+    assert.equal(again.success, true)
+    assert.equal(again.status, 'IN_SYNC')
+    assert.deepEqual(read(deviceA).songs.map(s => s.id).sort(), [...libA.songs.map(s => s.id), id(11)].sort())
+  } finally { localStorage.removeItem(sessionKey) }
+})
+
+test('#247 F3 late response: library linked to B (with B\'s songs) while A\'s upload response is in flight → B library and context untouched', async () => {
+  const c = await cloud()
+  const store = bound(libA, 'user-a')
+  assert.equal((await c.a(store)).success, true)
+  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(12)] }, store, { expectedRaw: journal.libraryRevision(store) })
+  const libB = { songs: [song(50)], setlists: [] }
+  let before = null
+  c.setAfter(async (url, opts) => {
+    if ((opts.method || 'GET') !== 'POST' || !url.startsWith('/api/songbook/records')) return
+    // Another tab hands the device to B: B's library and owner replace A's.
+    journal.persistLibrary(libB, store, { expectedRaw: journal.libraryRevision(store) })
+    store.setItem(owner.LIBRARY_OWNER_KEY, JSON.stringify({ v: 1, userId: 'user-b', env: owner.libraryEnv(), boundAt: 2, reason: 'confirmed' }))
+    before = snapshot(store)
+  })
+  let result
+  try { result = await c.a(store) } finally { c.setAfter(null) }
+  assert.ok(before)
+  assert.equal(result.success, false)
+  assert.notEqual(result.status, 'IN_SYNC')
+  assert.equal(result.ownership, 'mismatch')
+  assert.deepEqual(snapshot(store), before, 'no A completion metadata or base written into B\'s context')
+  assert.deepEqual(read(store).songs.map(s => s.id), [id(50)])
+  assert.equal(c.recordsOf('user-b'), 0)
+})
+
+test('#247 F3 late response: conflict resolution upload — session switch before the response → no IN_SYNC, nothing saved', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a'); await c.a(deviceA)
+  const other = bound(libA, 'user-a'); await c.a(other)
+  const edited = n => ({ ...libA, songs: libA.songs.map(s => s.id === id(1) ? { ...s, rawContent: `[C]${n}` } : s) })
+  journal.persistLibrary(edited('cloud'), other, { expectedRaw: journal.libraryRevision(other) }); await c.a(other)
+  journal.persistLibrary(edited('mine'), deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  setSession('user-a')
+  try {
+    assert.equal((await c.a(deviceA)).status, 'CONFLICT')
+    let before = null
+    c.setAfter(async (url, opts) => {
+      if ((opts.method || 'GET') !== 'POST' || !url.startsWith('/api/songbook/records')) return
+      setSession('user-b'); before = snapshot(deviceA)
+    })
+    let result
+    try { result = await c.a(deviceA, { forceAction: 'upload' }) } finally { c.setAfter(null) }
+    assert.ok(before)
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.deepEqual(snapshot(deviceA), before)
+    assert.equal(c.recordsOf('user-b'), 0)
+  } finally { localStorage.removeItem(sessionKey) }
 })

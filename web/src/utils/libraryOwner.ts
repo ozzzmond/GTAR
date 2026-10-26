@@ -46,10 +46,10 @@ export function libraryOwnership(userId: string | null | undefined, storage: Sto
 
 export class LibraryOwnershipError extends Error {
   readonly ownership: 'unbound' | 'mismatch'
-  constructor(ownership: 'unbound' | 'mismatch') {
-    super(ownership === 'mismatch'
+  constructor(ownership: 'unbound' | 'mismatch', message?: string) {
+    super(message ?? (ownership === 'mismatch'
       ? 'This device\'s songbook belongs to another GTAR account. Sign in with that account to sync it. Nothing was uploaded and your songbook stays on this device.'
-      : 'This device\'s songbook is not linked to an account yet. Link it to this account in Sync Center to sync. Nothing was uploaded.')
+      : 'This device\'s songbook is not linked to an account yet. Link it to this account in Sync Center to sync. Nothing was uploaded.'))
     this.ownership = ownership
     this.name = 'LibraryOwnershipError'
   }
@@ -93,6 +93,20 @@ export function assertCommitAllowed(userId: string | null | undefined, storage: 
   assertLibraryOwner(userId, storage)
   const session = storedSessionUserId()
   if (session && userId && !sameUser(session, userId)) throw new LibraryOwnershipError('mismatch')
+}
+
+/**
+ * #247 F3 (late response): after a sync round's last network wait, before it saves sync metadata or
+ * reports success. Uploads the server already accepted stay in that account's cloud and are not
+ * described as undone; nothing of the round is recorded on this device.
+ */
+export function assertRoundStillCurrent(userId: string | null | undefined, storage: Storage = localStorage, uploaded = 0): void {
+  try { assertCommitAllowed(userId, storage) } catch (error) {
+    if (!(error instanceof LibraryOwnershipError)) throw error
+    throw new LibraryOwnershipError(error.ownership, `The signed-in account or this songbook's owner changed while syncing. ${uploaded
+      ? `${uploaded} ${uploaded === 1 ? 'change' : 'changes'} already accepted by the cloud stay in the account that started the sync. `
+      : ''}Nothing from that sync was saved on this device and it was not marked as synced. Sync again with the account that owns this songbook.`)
+  }
 }
 
 /** Same check for direct actions (publish, QR share) where the session's account id is known. */
