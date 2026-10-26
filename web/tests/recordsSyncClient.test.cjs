@@ -55,7 +55,7 @@ async function world({ enabled = true, library } = {}) {
     global.fetch = fetch
     try { return await client.performSongbookSync('token', { storage: store, ...options }) } finally { global.fetch = saved }
   }
-  return { db, device, run, runAny, setHook: h => { hook = h } }
+  return { db, device, run, runAny, api: fetch, setHook: h => { hook = h } }
 }
 const read = store => journal.readPersistedLibrary(store)
 const edit = (store, fn) => { const lib = read(store); journal.persistLibrary(fn(lib), store, { expectedRaw: journal.libraryRevision(store) }) }
@@ -761,4 +761,91 @@ test('#240 server: a song deletion is refused while a live cloud setlist lists i
   edit(c, lib => ({ songs: lib.songs.filter(s => s.id !== id(3)), setlists: lib.setlists.map(l => ({ ...l, songs: l.songs.filter(r => r.id !== id(3)) })) }))
   await w.run(c)
   assert.ok(!cloudIds(w, 'song').includes(id(3)), 'song 3 deleted together with its setlist entries')
+})
+
+// #240 residual (Codex audit) F2: the server must not accept a setlist write that lists a deleted song.
+const pushRaw = async (w, changes) => (await w.api('/api/songbook/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes }) })).json()
+const cloudRec = (w, kind, rid) => w.db.sqlite.prepare('SELECT rev, removed, data_json FROM user_songbook_records WHERE kind = ? AND record_id = ?').get(kind, rid)
+test('#240 F2: unlink → delete song → write setlist listing the deleted song is refused atomically', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  edit(a, lib => ({ songs: lib.songs.filter(s => s.id !== id(2)), setlists: lib.setlists.map(l => ({ ...l, songs: l.songs.filter(r => r.id !== id(2)) })) }))
+  await w.run(a)
+  assert.equal(cloudRec(w, 'song', id(2)).removed, 1, 'song 2 deleted after being unlinked')
+  const setlist = cloudRec(w, 'setlist', id(901))
+  const stale = { ...JSON.parse(setlist.data_json), songs: [{ id: id(1), title: 'Song 1', artist: 'A' }, { id: id(2), title: 'Song 2', artist: 'A' }] }
+  const response = await pushRaw(w, [{ kind: 'setlist', id: id(901), baseRev: setlist.rev, data: stale }])
+  assert.deepEqual(response.accepted, [], 'not accepted')
+  assert.equal(response.conflicts[0]?.reason, 'missing-songs')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)], 'cloud setlist unchanged')
+  // A brand-new setlist listing a missing song is refused too; one listing a song created in the same push is accepted.
+  const created = await pushRaw(w, [{ kind: 'setlist', id: id(950), baseRev: 0, data: list(50, [1, 2]) }])
+  assert.equal(created.conflicts[0]?.reason, 'missing-songs')
+  assert.equal(cloudRec(w, 'setlist', id(950)), undefined)
+  const both = await pushRaw(w, [{ kind: 'setlist', id: id(951), baseRev: 0, data: list(51, [1, 60]) }, { kind: 'song', id: id(60), baseRev: 0, data: song(60) }])
+  assert.equal(both.accepted.length, 2, 'song and the setlist listing it, in one push')
+})
+
+// F5: "Keep this device" for a held-back cloud setlist this device does not have must delete it in the cloud.
+test('#240 F5: keep this device on a held-back setlist that is not here → cloud tombstone, conflict cleared only on acknowledgement', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  removeInCloud(w, id(2))
+  const fresh = w.device({ songs: [], setlists: [] })
+  await w.run(fresh)
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1)
+  // Upload fails: nothing is reported as resolved, the conflict stays.
+  w.setHook(async (url, opts) => { if ((opts.method || 'GET') === 'POST') throw new TypeError('Failed to fetch') })
+  const offline = await w.run(fresh, { forceAction: 'upload' })
+  w.setHook(null)
+  assert.notEqual(offline.success, true, 'no false success')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, 'conflict kept until the cloud confirms')
+  const done = await w.run(fresh, { forceAction: 'upload' })
+  assert.equal(done.success, true, done.error)
+  assert.equal(cloudRec(w, 'setlist', id(901)).removed, 1, 'cloud setlist tombstoned')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 0)
+  assert.deepEqual(cloudIds(w, 'song').sort(), [id(1), id(3)], 'unrelated records intact')
+  const again = await w.run(a)
+  assert.equal(again.success, true, again.error)
+  assert.deepEqual(read(a).setlists, [], 'other device converges')
+})
+
+test('#240 F2 race: a song deleted by a concurrent writer between the read and the write still blocks the setlist write', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  const setlist = cloudRec(w, 'setlist', id(901))
+  let fired = false
+  w.db.beforeBatchStatement = () => { if (!fired) { fired = true; removeInCloud(w, id(3)) } }
+  const response = await pushRaw(w, [{ kind: 'setlist', id: id(901), baseRev: setlist.rev, data: list(1, [1, 3]) }])
+  w.db.beforeBatchStatement = null
+  assert.ok(fired, 'the concurrent deletion ran inside the push')
+  assert.deepEqual(response.accepted, [])
+  assert.equal(response.conflicts[0]?.reason, 'missing-songs')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(2)], 'no dangling entry written')
+})
+
+// #240 F8 (Codex): a setlist entry with a stale song id whose title matches another song. Exact ids are the
+// identity; the title must not hide the problem or relink the entry.
+test('#240 F8: stale song id in a cloud setlist → detected by exact id, held back with an actionable note, rest syncs, nothing relinked', async () => {
+  const staleList = { id: id(901), name: 'List 1', songs: [{ id: id(1), title: 'Song 1', artist: 'A' }, { id: id(77), title: 'Song 2', artist: 'A' }] }
+  const w = await world({ library: { songs: [song(1), song(2), song(3)], setlists: [staleList] } })
+  const fresh = w.device({ songs: [], setlists: [] })
+  const result = await w.run(fresh)
+  assert.equal(result.status, 'CONFLICT', result.error)
+  assert.deepEqual(read(fresh).songs.map(s => s.id).sort(), [id(1), id(2), id(3)], 'unrelated records synced')
+  assert.deepEqual(read(fresh).setlists, [], 'setlist held back, not rewritten or relinked')
+  const conflict = client.readRecordsSyncState(fresh).conflicts[0]
+  assert.equal(conflict.id, id(901))
+  assert.match(conflict.note, /no song with that exact ID\): "Song 2"/)
+  assert.match(conflict.note, /"Download Cloud" keeps this setlist without those entries; "Keep Local Only" keeps this device's version\. Either way, the cloud version is first saved in Review local recovery\./)
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(77)], 'cloud entries untouched (raw id preserved)')
+  // Use cloud (explicit): the stale entry is dropped, never pointed at song 2 by title; the raw cloud record is kept in recovery.
+  assert.equal((await w.run(fresh, { forceAction: 'download' })).success, true)
+  assert.deepEqual(read(fresh).setlists[0].songs.map(r => r.id), [id(1)], 'no relink to song 2')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)])
+  const snapshots = Object.entries(journal.recoveryData(fresh)).filter(([k]) => k.startsWith('gtar_sync_recovery:records:')).map(([, v]) => JSON.parse(v))
+  assert.ok(snapshots.some(snap => snap.remoteRecords?.some(r => r?.data?.songs?.some(ref => ref.id === id(77)))), 'original cloud entry (stale id) preserved in recovery')
 })
