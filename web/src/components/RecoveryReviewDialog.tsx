@@ -285,6 +285,11 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
 
               <div className="px-3 pb-3 space-y-2 text-xs font-mono">
                 <p className="text-app-muted break-all">{retention.indexedDb ? 'IndexedDB' : 'localStorage'}: {source.key} · {source.raw.length.toLocaleString()} chars · {((source.key.length + source.raw.length) * 2).toLocaleString()} bytes (UTF-16 estimate)</p>
+                {source.unreadable && (
+                  <p data-testid={`source-unreadable-note-${index}`} className="p-2 rounded bg-status-warning/8 border border-status-warning/30 text-[11px] text-app-text font-sans">
+                    The {source.unreadable.join(' and ')} in this archive is not a valid library, so only this device's copy is reviewed here. The full archive is kept and is included in “Export all recovery data”.
+                  </p>
+                )}
                 {/* Resolved history note */}
                 {isResolved && (
                   <p
