@@ -95,6 +95,21 @@ export function isDependencyConflict(conflict: RecordConflict): boolean {
   if (conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) return false
   return !conflict.note || /lists songs that are not in your library|no song with that exact ID|missing-songs|missing|quarantine|held/i.test(conflict.note)
 }
+export function isValidRecoverableConflict(conflict: RecordConflict): conflict is RecordConflict & { remote: ServerRecord } {
+  if (conflict.kind !== 'setlist' || !conflict.id) return false
+  const remote = conflict.remote
+  if (!remote || typeof remote !== 'object' || remote.removed) return false
+  if (remote.kind !== conflict.kind || String(remote.id) !== String(conflict.id)) return false
+  if (typeof remote.rev !== 'number' || !Number.isFinite(remote.rev) || remote.rev < 0) return false
+  if (typeof remote.checksum !== 'string' || !remote.checksum) return false
+  const data = remote.data as WebSetlist | null
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+  if (data.id === undefined || data.id === null || String(data.id) !== String(conflict.id)) return false
+  if (!Array.isArray(data.songs)) return false
+  if (remote.checksum !== recordChecksum(false, data)) return false
+  return true
+}
+
 interface RecordsSyncState { v: 1; userId: string | null; cursor: number; known: Record<string, KnownRecord>; conflicts: RecordConflict[] }
 
 const emptyState = (userId: string | null = null): RecordsSyncState => ({ v: 1, userId, cursor: 0, known: {}, conflicts: [] })
@@ -540,7 +555,7 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
   // #240 P1-F1 / R1: a setlist held back because songs it lists were missing is applied once every one of
   // those songs (exact id) is in the library again, provided this device has not changed it since.
   for (const conflict of [...state.conflicts]) {
-    if (!isDependencyConflict(conflict) || conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) continue
+    if (!isDependencyConflict(conflict) || !isValidRecoverableConflict(conflict)) continue
     const key = recordKey('setlist', conflict.id)
     if (pulled.records.has(key)) continue
     const mine = local.get(key)

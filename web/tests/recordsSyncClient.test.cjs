@@ -1027,3 +1027,87 @@ test('R1B: legacy quarantined setlist conflict lacking dependency:true safely re
   assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 0, 'legacy conflict cleared')
   assert.equal((await w.run(fresh)).status, 'IN_SYNC')
 })
+
+test('F1: malformed legacy conflict with inconsistent remote kind or ID is rejected from automatic recovery', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+
+  // Cloud setlist 901 exists in the cloud
+  assert.ok(cloudIds(w, 'setlist').includes(id(901)), 'cloud has setlist 901')
+
+  // Repair missing song dependency in cloud so dependencies are met
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+  assert.ok(cloudIds(w, 'song').includes(id(2)))
+
+  // Fresh device has held-back conflict for setlist 901, but remote has inconsistent ID (setlist 999)
+  const malformedData = { id: id(999), name: 'Setlist 999', songs: [{ id: id(1), title: 'Song 1' }, { id: id(2), title: 'Song 2' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(999), // inconsistent with conflict.id
+      rev: 2,
+      removed: false,
+      checksum: recordChecksum(false, malformedData),
+      data: malformedData
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  const res = await w.run(fresh)
+  assert.notEqual(res.status, 'IN_SYNC', 'must not return false IN_SYNC')
+  assert.equal(res.status, 'CONFLICT', 'must report actionable CONFLICT')
+  assert.ok(cloudIds(w, 'setlist').includes(id(901)), 'cloud setlist 901 must not be tombstoned')
+  assert.ok(!cloudIds(w, 'setlist').includes(id(999)), 'inconsistent setlist 999 must not be uploaded to cloud')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, 'conflict preserved')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts[0].id, id(901), 'conflict identity preserved')
+})
+
+
+
+test('F2: malformed legacy conflict with mismatched remote song identity must not overwrite existing song', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base), b = w.device(base)
+  await w.run(a); await w.run(b)
+
+  // Initial song 1 title
+  const originalTitle = read(b).songs.find(s => s.id === id(1)).title
+  assert.ok(originalTitle, 'original song 1 exists')
+
+  // B has a legacy conflict for setlist 901, but remote is a song targeting song 1
+  const malformedSongData = { id: id(1), title: 'MALICIOUS_OVERWRITE_SONG_1', artist: 'HACKER', rawContent: '[C]Hacked' }
+  const state = client.readRecordsSyncState(b)
+  state.conflicts = [{
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'song',
+      id: id(1),
+      rev: 5,
+      removed: false,
+      checksum: recordChecksum(false, malformedSongData),
+      data: malformedSongData
+    }
+  }]
+  b.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  const res = await w.run(b)
+  assert.notEqual(res.status, 'IN_SYNC', 'must not return false IN_SYNC')
+  assert.equal(res.status, 'CONFLICT', 'must report actionable CONFLICT')
+  const songOnB = read(b).songs.find(s => s.id === id(1))
+  assert.equal(songOnB.title, originalTitle, 'local song 1 must not be overwritten')
+  // Cloud song 1 must not be overwritten
+  const cloudRow = w.db.sqlite.prepare("SELECT data_json FROM user_songbook_records WHERE kind = 'song' AND record_id = ?").get(id(1))
+  assert.equal(JSON.parse(cloudRow.data_json).title, originalTitle, 'cloud song 1 must not be overwritten')
+  // Conflict must be preserved
+  assert.equal(client.readRecordsSyncState(b).conflicts.length, 1, 'conflict preserved')
+})
+
