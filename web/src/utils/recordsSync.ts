@@ -25,7 +25,7 @@ import {
   writeRecoverySnapshot,
 } from './syncJournal'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
-import { normalizeCloudThemeSettings, persistCloudThemeSettings, readCloudThemeSettings, type CloudThemeSettings } from './backupSettings'
+import { normalizeCloudThemeSettings, persistCloudThemeSettings, readCloudThemeSettings, validateCloudThemeSettings, type CloudThemeSettings } from './backupSettings'
 import {
   computeSongbookChecksum,
   performCloudSongbookSync,
@@ -39,8 +39,12 @@ import {
   MAX_PUSH_CHANGES,
   MAX_PUSH_BODY_BYTES,
   MAX_RECORD_BYTES,
+  MAX_RECORD_ID_LENGTH,
+  RECORD_KINDS,
+  THEME_RECORD_ID,
   libraryToRecords,
   recordChecksum,
+  recordDataError,
   recordKey,
   type PullResponse,
   type PushResponse,
@@ -95,18 +99,43 @@ export function isDependencyConflict(conflict: RecordConflict): boolean {
   if (conflict.kind !== 'setlist' || !conflict.remote || conflict.remote.removed) return false
   return !conflict.note || /lists songs that are not in your library|no song with that exact ID|missing-songs|missing|quarantine|held/i.test(conflict.note)
 }
+export function isValidConflictEnvelope(conflict: unknown): conflict is RecordConflict {
+  if (!conflict || typeof conflict !== 'object' || Array.isArray(conflict)) return false
+  const c = conflict as Record<string, unknown>
+  if (typeof c.kind !== 'string' || !RECORD_KINDS.includes(c.kind as RecordKind)) return false
+  if (typeof c.id !== 'string' || !c.id || c.id.length > MAX_RECORD_ID_LENGTH) return false
+  if (c.kind === 'theme' && c.id !== THEME_RECORD_ID) return false
+  if (c.remote === null || c.remote === undefined) {
+    return c.remote === null
+  }
+  if (typeof c.remote !== 'object' || Array.isArray(c.remote)) return false
+  const r = c.remote as Record<string, unknown>
+  if (r.kind !== c.kind) return false
+  if (typeof r.id !== 'string' || r.id !== c.id) return false
+  if (typeof r.rev !== 'number' || !Number.isSafeInteger(r.rev) || r.rev <= 0) return false
+  if (typeof r.removed !== 'boolean') return false
+  if (typeof r.checksum !== 'string' || !r.checksum) return false
+
+  if (r.removed) {
+    if (r.data !== null && r.data !== undefined) return false
+    if (r.checksum !== recordChecksum(true, null)) return false
+    return true
+  }
+
+  if (!r.data || typeof r.data !== 'object' || Array.isArray(r.data)) return false
+  const problem = recordDataError(r.kind as RecordKind, r.id, r.data)
+  if (problem) return false
+  if (r.kind === 'theme') {
+    if (validateCloudThemeSettings(r.data).length > 0) return false
+  }
+  if (r.checksum !== recordChecksum(false, r.data)) return false
+  return true
+}
+
 export function isValidRecoverableConflict(conflict: RecordConflict): conflict is RecordConflict & { remote: ServerRecord } {
   if (conflict.kind !== 'setlist' || !conflict.id) return false
-  const remote = conflict.remote
-  if (!remote || typeof remote !== 'object' || remote.removed) return false
-  if (remote.kind !== conflict.kind || String(remote.id) !== String(conflict.id)) return false
-  if (typeof remote.rev !== 'number' || !Number.isFinite(remote.rev) || remote.rev < 0) return false
-  if (typeof remote.checksum !== 'string' || !remote.checksum) return false
-  const data = remote.data as WebSetlist | null
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
-  if (data.id === undefined || data.id === null || String(data.id) !== String(conflict.id)) return false
-  if (!Array.isArray(data.songs)) return false
-  if (remote.checksum !== recordChecksum(false, data)) return false
+  if (!isValidConflictEnvelope(conflict)) return false
+  if (!conflict.remote || conflict.remote.removed) return false
   return true
 }
 
@@ -554,6 +583,7 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
 
   // #240 P1-F1 / R1: a setlist held back because songs it lists were missing is applied once every one of
   // those songs (exact id) is in the library again, provided this device has not changed it since.
+  let authoritativeCache: Map<string, ServerRecord> | null = null
   for (const conflict of [...state.conflicts]) {
     if (!isDependencyConflict(conflict) || !isValidRecoverableConflict(conflict)) continue
     const key = recordKey('setlist', conflict.id)
@@ -571,6 +601,28 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
     }
     if (!dependenciesMet) {
       conflict.dependency = true
+      continue
+    }
+    let authRecord: ServerRecord | undefined = pulled.records.get(key)
+    if (!authRecord) {
+      if (!authoritativeCache) {
+        authoritativeCache = (await pullAll(token, emptyState(state.userId))).records
+      }
+      authRecord = authoritativeCache.get(key)
+    }
+    if (!authRecord) {
+      appLogger.warn('RecordsSync', `Automatic recovery rejected for "${conflict.title}": record not found on server`)
+      continue
+    }
+    const matches = authRecord.kind === conflict.remote.kind &&
+      authRecord.id === conflict.remote.id &&
+      authRecord.rev === conflict.remote.rev &&
+      authRecord.checksum === conflict.remote.checksum &&
+      authRecord.removed === conflict.remote.removed
+    if (!matches) {
+      appLogger.warn('RecordsSync', `Automatic recovery rejected for "${conflict.title}": server record has rev ${authRecord.rev}, conflict claimed rev ${conflict.remote.rev}`)
+      conflict.remote = authRecord
+      delete conflict.dependency
       continue
     }
     working.apply(conflict.remote)
@@ -603,11 +655,78 @@ export type ConflictChoice = 'keep-local' | 'use-cloud' | 'keep-both'
 async function resolveOnce(gen: SessionGeneration | null, token: string, storage: Storage, choice: ConflictChoice): Promise<CloudSyncResult> {
   const state = readRecordsSyncState(storage)
   if (!state.conflicts.length) return syncOnce(gen, token, storage)
+
+  // Fail-closed identity and integrity check on all persisted conflicts before any mutation or snapshot:
+  for (const conflict of state.conflicts) {
+    if (!isValidConflictEnvelope(conflict)) {
+      appLogger.warn('RecordsSync', 'Persisted conflict rejected: invalid identity or integrity boundary')
+      return {
+        success: false,
+        status: 'CONFLICT',
+        state: 'CONFLICT',
+        actionTaken: 'NONE',
+        conflicts: conflictItems(state.conflicts),
+        error: 'Some saved conflicts have invalid identity or data integrity. Your library was not modified.',
+      }
+    }
+  }
+
   // #247: the saved conflicts belong to the account that pulled them; act only for that account.
-  const who = await request<{ userId?: string }>(token, 'GET', `?since=${state.cursor}&limit=1`)
-  if (!who.userId || who.userId !== state.userId) throw new LibraryOwnershipError('mismatch')
-  assertLibraryOwner(who.userId, storage)
+  const pulled = await pullAll(token, emptyState(state.userId))
+  if (!pulled.state.userId || (state.userId && pulled.state.userId !== state.userId)) throw new LibraryOwnershipError('mismatch')
+  assertLibraryOwner(pulled.state.userId, storage)
+
   const before = readLocal(storage)
+  const local = localRecords(before.library)
+
+  // Verify that any remote records presented as current match authoritative server data:
+  let serverChanged = false
+  for (let i = 0; i < state.conflicts.length; i++) {
+    const conflict = state.conflicts[i]
+    const key = recordKey(conflict.kind, conflict.id)
+    const authoritativeRecord = pulled.records.get(key)
+    const localRec = local.get(key)
+    const mineChecksum = localRec ? localRec.checksum : REMOVED
+    if (authoritativeRecord && mineChecksum === authoritativeRecord.checksum && authoritativeRecord.removed === (mineChecksum === REMOVED)) {
+      // The server already matches the local record (e.g. from an earlier write whose acknowledgement was lost)
+      state.known[key] = { rev: authoritativeRecord.rev, checksum: authoritativeRecord.checksum }
+      continue
+    }
+    if (!conflict.remote) {
+      if (authoritativeRecord && !authoritativeRecord.removed) {
+        state.conflicts[i] = { ...conflict, remote: authoritativeRecord }
+        serverChanged = true
+      }
+    } else {
+      if (!authoritativeRecord) {
+        serverChanged = true
+      } else {
+        const matches = authoritativeRecord.kind === conflict.remote.kind &&
+          authoritativeRecord.id === conflict.remote.id &&
+          authoritativeRecord.rev === conflict.remote.rev &&
+          authoritativeRecord.checksum === conflict.remote.checksum &&
+          authoritativeRecord.removed === conflict.remote.removed
+        if (!matches) {
+          state.conflicts[i] = { ...conflict, remote: authoritativeRecord }
+          serverChanged = true
+        }
+      }
+    }
+  }
+
+  if (serverChanged) {
+    saveState(state, storage)
+    appLogger.warn('RecordsSync', 'Authoritative server records changed or unverified; fresh conflict requires review')
+    return {
+      success: false,
+      status: 'CONFLICT',
+      state: 'CONFLICT',
+      actionTaken: 'NONE',
+      conflicts: conflictItems(state.conflicts),
+      error: 'The cloud version of some records changed since this conflict was detected. Please review the updated conflicts.',
+    }
+  }
+
   const working = new Working(before.library)
   const cloudView = new Working(before.library)
   for (const conflict of state.conflicts) if (conflict.remote) cloudView.apply(conflict.remote)

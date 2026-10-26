@@ -1068,18 +1068,53 @@ test('F1: malformed legacy conflict with inconsistent remote kind or ID is rejec
   assert.equal(client.readRecordsSyncState(fresh).conflicts[0].id, id(901), 'conflict identity preserved')
 })
 
+test('F1: explicit Download Cloud resolution blocks rogue cloud setlist creation from malformed conflict', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
 
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
 
-test('F2: malformed legacy conflict with mismatched remote song identity must not overwrite existing song', async () => {
+  const initialRecoveryKeys = recoveryKeys(fresh).length
+  const initialLocalSetlists = read(fresh).setlists.length
+  const initialCursor = client.readRecordsSyncState(fresh).cursor
+
+  const malformedData = { id: id(999), name: 'Setlist 999', songs: [{ id: id(1), title: 'Song 1' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(999),
+      rev: 2,
+      removed: false,
+      checksum: recordChecksum(false, malformedData),
+      data: malformedData
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  // Explicit Download Cloud resolution with malformed conflict
+  const res = await w.run(fresh, { forceAction: 'download' })
+  assert.equal(res.success, false, 'must fail resolution')
+  assert.equal(res.status, 'CONFLICT', 'must return CONFLICT status')
+  assert.ok(!cloudIds(w, 'setlist').includes(id(999)), 'rogue setlist 999 must not be created in cloud')
+  assert.equal(read(fresh).setlists.length, initialLocalSetlists, 'local library must not be mutated')
+  assert.equal(recoveryKeys(fresh).length, initialRecoveryKeys, 'recovery evidence must not be mutated from invalid identity')
+  assert.equal(client.readRecordsSyncState(fresh).cursor, initialCursor, 'cursor must not be mutated')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, 'actionable conflict must be preserved')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts[0].id, id(901))
+})
+
+test('F1: explicit Download Cloud resolution blocks local and cloud song overwrite from mismatched remote kind', async () => {
   const w = await world({ library: base })
   const a = w.device(base), b = w.device(base)
   await w.run(a); await w.run(b)
 
-  // Initial song 1 title
   const originalTitle = read(b).songs.find(s => s.id === id(1)).title
-  assert.ok(originalTitle, 'original song 1 exists')
-
-  // B has a legacy conflict for setlist 901, but remote is a song targeting song 1
   const malformedSongData = { id: id(1), title: 'MALICIOUS_OVERWRITE_SONG_1', artist: 'HACKER', rawContent: '[C]Hacked' }
   const state = client.readRecordsSyncState(b)
   state.conflicts = [{
@@ -1099,15 +1134,179 @@ test('F2: malformed legacy conflict with mismatched remote song identity must no
   }]
   b.setItem('gtar_records_sync_v1', JSON.stringify(state))
 
-  const res = await w.run(b)
-  assert.notEqual(res.status, 'IN_SYNC', 'must not return false IN_SYNC')
-  assert.equal(res.status, 'CONFLICT', 'must report actionable CONFLICT')
-  const songOnB = read(b).songs.find(s => s.id === id(1))
-  assert.equal(songOnB.title, originalTitle, 'local song 1 must not be overwritten')
-  // Cloud song 1 must not be overwritten
+  const res = await w.run(b, { forceAction: 'download' })
+  assert.equal(res.success, false)
+  assert.equal(res.status, 'CONFLICT')
+  assert.equal(read(b).songs.find(s => s.id === id(1)).title, originalTitle, 'local song 1 must not be overwritten')
   const cloudRow = w.db.sqlite.prepare("SELECT data_json FROM user_songbook_records WHERE kind = 'song' AND record_id = ?").get(id(1))
   assert.equal(JSON.parse(cloudRow.data_json).title, originalTitle, 'cloud song 1 must not be overwritten')
-  // Conflict must be preserved
-  assert.equal(client.readRecordsSyncState(b).conflicts.length, 1, 'conflict preserved')
+  assert.equal(client.readRecordsSyncState(b).conflicts.length, 1, 'actionable conflict preserved')
+})
+
+test('F2: automatic recovery rejects fractional revision 1.5 in remote envelope', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+
+  const validData = { id: id(901), name: 'Setlist 901', songs: [{ id: id(1), title: 'Song 1' }, { id: id(2), title: 'Song 2' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(901),
+      rev: 1.5, // fractional revision
+      removed: false,
+      checksum: recordChecksum(false, validData),
+      data: validData
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  const res = await w.run(fresh)
+  assert.notEqual(res.status, 'IN_SYNC', 'must not return false IN_SYNC')
+  assert.equal(res.status, 'CONFLICT', 'must report actionable CONFLICT')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, 'conflict preserved')
+  assert.equal(read(fresh).setlists.some(l => l.id === id(901)), false, 'unverified setlist not applied')
+})
+
+test('F2: automatic recovery checks authoritative server data and rejects forged integer revision 101', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+
+  // Cloud setlist 901 is at revision 1
+  const cloudRow = w.db.sqlite.prepare("SELECT rev, checksum FROM user_songbook_records WHERE kind = 'setlist' AND record_id = ?").get(id(901))
+  assert.equal(cloudRow.rev, 1, 'cloud setlist 901 is at rev 1')
+
+  // Setlist 901 with forged rev 101 and valid checksum
+  const validData = { id: id(901), name: 'Setlist 901', songs: [{ id: id(1), title: 'Song 1' }, { id: id(2), title: 'Song 2' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(901),
+      rev: 101, // forged revision
+      removed: false,
+      checksum: recordChecksum(false, validData),
+      data: validData
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  const res = await w.run(fresh)
+  assert.notEqual(res.status, 'IN_SYNC', 'must not report false IN_SYNC')
+  assert.equal(res.status, 'CONFLICT', 'must report actionable CONFLICT')
+  assert.equal(read(fresh).setlists.some(l => l.id === id(901)), false, 'forged setlist not applied to library')
+  assert.equal(client.readRecordsSyncState(fresh).known['setlist:' + id(901)], undefined, 'forged rev 101 not recorded in known')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, 'conflict preserved')
+})
+
+test('F2: Download Cloud rejects forged integer revision and detects remote changed between validation and mutation', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+
+  const validData = { id: id(901), name: 'Setlist 901', songs: [{ id: id(1), title: 'Song 1' }, { id: id(2), title: 'Song 2' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(901),
+      rev: 101, // forged revision
+      removed: false,
+      checksum: recordChecksum(false, validData),
+      data: validData
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  const res = await w.run(fresh, { forceAction: 'download' })
+  assert.equal(res.success, false)
+  assert.equal(res.status, 'CONFLICT')
+  // Conflict remote updated with the real authoritative record (rev 1)
+  const updatedConflict = client.readRecordsSyncState(fresh).conflicts[0]
+  assert.equal(updatedConflict.remote.rev, 1, 'remote updated with authoritative server revision')
+  assert.equal(read(fresh).setlists.some(l => l.id === id(901)), false, 'stale/forged snapshot not applied')
+})
+
+test('F1 & F2: repeated retries preserve actionable conflicts and original data', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+
+  const malformedData = { id: id(999), name: 'Setlist 999', songs: [{ id: id(1), title: 'Song 1' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(999),
+      rev: 2,
+      removed: false,
+      checksum: recordChecksum(false, malformedData),
+      data: malformedData
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  for (let i = 0; i < 3; i++) {
+    const res = await w.run(fresh, { forceAction: 'download' })
+    assert.equal(res.success, false, `retry ${i} must fail`)
+    assert.equal(res.status, 'CONFLICT', `retry ${i} must be CONFLICT`)
+    assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, `conflict kept on retry ${i}`)
+    assert.equal(client.readRecordsSyncState(fresh).conflicts[0].id, id(901))
+  }
+})
+
+test('mismatched canonical checksum in remote envelope is rejected from recovery', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  await w.run(a)
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true)
+
+  const data = { id: id(901), name: 'Setlist 901', songs: [{ id: id(1), title: 'Song 1' }, { id: id(2), title: 'Song 2' }] }
+  const state = client.readRecordsSyncState(fresh)
+  state.conflicts[0] = {
+    kind: 'setlist',
+    id: id(901),
+    title: 'Setlist 901',
+    dependency: true,
+    note: 'missing-songs',
+    remote: {
+      kind: 'setlist',
+      id: id(901),
+      rev: 2,
+      removed: false,
+      checksum: 'rk_badchecksum000000', // mismatched checksum
+      data
+    }
+  }
+  fresh.setItem('gtar_records_sync_v1', JSON.stringify(state))
+
+  const res1 = await w.run(fresh)
+  assert.equal(res1.status, 'CONFLICT')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1)
+
+  const res2 = await w.run(fresh, { forceAction: 'download' })
+  assert.equal(res2.status, 'CONFLICT')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1)
 })
 
