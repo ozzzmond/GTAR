@@ -3,12 +3,16 @@ import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION } from '../types/gtar'
-import { readBackupSettings, validateBackupSettings, type BackupSettings } from './backupSettings'
+import { readBackupSettingsV2, settingsFromLegacy, validateBackupSettings, validateBackupSettingsV2, type BackupSettings, type BackupSettingsV2 } from './backupSettings'
 import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
 import { detectSongKey } from './songParser'
 import { canonicalSongKey, normalizeMusicalKey } from './musicalKey'
+import { recordBackupStatus } from './backupStatus'
 
-export const GTAR_BACKUP_SCHEMA_VERSION = 1
+/** #251: v2 moves settings under `settings.appearance` / `settings.preferences`. v1 files still import. */
+export const GTAR_BACKUP_SCHEMA_VERSION = 2
+/** Largest backup offered for "Copy JSON"; larger libraries use Save or Download. */
+export const COPY_JSON_MAX_BYTES = 1024 * 1024
 export const RESTORE_SNAPSHOT_KEY = 'gtar_restore_safety_snapshot_v1'
 
 export interface BackupMetadata {
@@ -22,7 +26,7 @@ export interface BackupMetadata {
   trashCount: number
 }
 
-export interface FullBackupPayload extends BackupSettings {
+export interface FullBackupPayload {
   app: 'GTAR'
   schemaVersion: number
   version: string
@@ -31,11 +35,16 @@ export interface FullBackupPayload extends BackupSettings {
   songCount: number
   setlistCount: number
   trashCount: number
+  settings: BackupSettingsV2
   songs: ActiveSongState[]
   setlists: WebSetlist[]
   allowedUsers?: string[]
 }
 export interface ParsedBackupResult extends BackupSettings {
+  /** Settings in v2 groups, also for v1 files (all v1 settings are appearance). */
+  settings: BackupSettingsV2
+  /** Fields present in the file that this version does not restore (shown to the user, never silently dropped). */
+  ignoredFields: string[]
   isValid: boolean
   isSingleSetlist: boolean
   singleSetlistName?: string
@@ -87,17 +96,81 @@ export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetli
     songCount: partition.active.length,
     setlistCount: exportedSetlists.length,
     trashCount: partition.deleted.length,
-    ...readBackupSettings(),
+    settings: readBackupSettingsV2(),
     songs: normalized,
     setlists: exportedSetlists,
     ...(allowedUsers && Array.isArray(allowedUsers) ? { allowedUsers } : {})
   }
 }
 
+/** JSON with sorted object keys, for comparing values regardless of key order. */
+export function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(k => [k, (item as Record<string, unknown>)[k]])) : item)
+}
+
+/** cyrb53: fast, synchronous 53-bit change detector (not a security hash). */
+function cyrb53(text: string): string {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0')
+}
+
+/** Fingerprint of the library content a backup would hold (songs incl. trash, setlists). No content is stored, only this digest. */
+export function libraryFingerprint(songs: ActiveSongState[], setlists: WebSetlist[]): string {
+  const normalized = ensureSongIds(songs).map(normalizeBackupSong)
+  return `c53:${cyrb53(JSON.stringify([normalized, bindLegacySetlists(setlists, normalized)]))}`
+}
+
+export interface BackupCounts { songs: number; trash: number; setlists: number }
+export interface VerifiedBackup {
+  json: string
+  fileName: string
+  bytes: number
+  counts: BackupCounts
+  fingerprint: string
+  schemaVersion: number
+}
+
+/**
+ * Re-reads exactly the bytes about to be handed out and checks they restore to the same library
+ * and settings. Throws (nothing is exported) when anything differs.
+ */
+export function verifyBackupJson(json: string, payload: FullBackupPayload): BackupCounts {
+  const parsed = parseBackupJson(json)
+  if (!parsed.isValid) throw new Error(`Backup verification failed: ${parsed.error}`)
+  const counts = { songs: parsed.metadata?.songCount ?? -1, trash: parsed.metadata?.trashCount ?? -1, setlists: parsed.setlists.length }
+  if (counts.songs !== payload.songCount || counts.trash !== payload.trashCount || counts.setlists !== payload.setlistCount ||
+    parsed.songs.length !== payload.songs.length) throw new Error('Backup verification failed: record counts differ after re-reading the file')
+  if (JSON.stringify(parsed.songs) !== JSON.stringify(payload.songs)) throw new Error('Backup verification failed: songs differ after re-reading the file')
+  if (stableStringify(parsed.setlists) !== stableStringify(payload.setlists)) throw new Error('Backup verification failed: setlists differ after re-reading the file')
+  if (stableStringify(parsed.settings) !== stableStringify(payload.settings)) throw new Error('Backup verification failed: settings differ after re-reading the file')
+  return counts
+}
+
+export const backupFileName = (date = new Date()) => `gtar-stage-backup-${date.toISOString().slice(0, 10)}.json`
+
+/** Builds the full backup and verifies its bytes before anything is shown, shared or downloaded. */
+export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION): VerifiedBackup {
+  const payload = createBackupPayload(songs, setlists, version)
+  const json = JSON.stringify(payload, null, 2)
+  const counts = verifyBackupJson(json, payload)
+  return { json, fileName: backupFileName(), bytes: new TextEncoder().encode(json).length, counts,
+    fingerprint: `c53:${cyrb53(JSON.stringify([payload.songs, payload.setlists]))}`, schemaVersion: payload.schemaVersion }
+}
+
+/** Download-only export (menus). Verified before the download starts; records the backup status. */
 export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[]): string {
-  const filename = `gtar-stage-backup-${new Date().toISOString().slice(0, 10)}.json`
-  triggerDownload(JSON.stringify(createBackupPayload(songs, setlists), null, 2), filename)
-  return filename
+  const backup = buildVerifiedBackup(songs, setlists)
+  triggerDownload(backup.json, backup.fileName)
+  recordBackupStatus(backup, 'download')
+  return backup.fileName
 }
 
 export function createSingleSetlistPayload(setlist: WebSetlist, songs: ActiveSongState[]) {
@@ -161,21 +234,66 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
   return errors
 }
 
+const LEGACY_SETTING_FIELDS = ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const
+const KNOWN_TOP_LEVEL = new Set(['app', 'schemaVersion', 'version', 'exportedAt', 'exportType', 'songCount', 'setlistCount', 'trashCount',
+  'songs', 'setlists', 'allowedUsers', 'settings', 'metadata', 'setlist', ...LEGACY_SETTING_FIELDS])
+const KNOWN_SONG_FIELDS = new Set(['id', 'title', 'artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format',
+  'transposeOffset', 'rawContent', 'content', 'tags', 'isFavorite', 'isDeleted', 'createdAt', 'lastOpenedAt', 'isMissing',
+  'sharedSourceSongId', 'sharedSourceRevision', 'sharedSourcePublisherId', 'sharedSourcePublisherName', 'publishedCatalogSongId'])
+const KNOWN_SETLIST_FIELDS = new Set(['id', 'name', 'createdAt', 'isDeleted', 'songs', 'catalogSource'])
+const KNOWN_REF_FIELDS = new Set(['id', 'title', 'artist'])
+
+function legacySettingsOf(settings: BackupSettingsV2): BackupSettings {
+  const out: BackupSettings = {}
+  for (const field of LEGACY_SETTING_FIELDS) if (settings.appearance[field] !== undefined) Object.assign(out, { [field]: settings.appearance[field] })
+  return out
+}
+
+/** Field names in the file that a restore will not keep. Reported, never silently dropped. */
+function unknownBackupFields(data: Record<string, unknown> | unknown[], single: boolean): string[] {
+  const found = new Set<string>()
+  const scan = (value: unknown, known: Set<string>, path: string) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) for (const field of Object.keys(value)) if (!known.has(field)) found.add(`${path}${field}`)
+  }
+  if (Array.isArray(data)) { data.forEach(song => scan(song, KNOWN_SONG_FIELDS, 'songs[].')); return [...found].sort() }
+  if (!single) {
+    scan(data, KNOWN_TOP_LEVEL, '')
+    if (Array.isArray(data.songs)) data.songs.forEach(song => scan(song, KNOWN_SONG_FIELDS, 'songs[].'))
+    if (Array.isArray(data.setlists)) data.setlists.forEach(list => {
+      scan(list, KNOWN_SETLIST_FIELDS, 'setlists[].')
+      const refs = (list as { songs?: unknown })?.songs
+      if (Array.isArray(refs)) refs.forEach(ref => scan(ref, KNOWN_REF_FIELDS, 'setlists[].songs[].'))
+    })
+  }
+  return [...found].sort()
+}
+
 export interface BackupParseOptions { mode?: 'replace' | 'merge'; existingSongs?: ActiveSongState[] }
 
 export function parseBackupJson(rawText: string, options: BackupParseOptions = {}): ParsedBackupResult {
   const invalid = (errors: string[], single = false): ParsedBackupResult => ({ isValid: false, isSingleSetlist: single,
-    songs: [], setlists: [], error: `Backup rejected:\n${errors.map(error => `- ${error}`).join('\n')}` })
+    songs: [], setlists: [], settings: { appearance: {}, preferences: {} }, ignoredFields: [], error: `Backup rejected:\n${errors.map(error => `- ${error}`).join('\n')}` })
   try {
     const data = JSON.parse(rawText)
     if (!data || typeof data !== 'object') return invalid(['Expected a backup object or song array'])
     if (data.exportType === 'RECOVERY_ARCHIVE') return invalid(['Recovery archive: preserves raw data for manual recovery; not a supported restore-ready backup'])
     const single = data.exportType === 'SINGLE_SETLIST' || 'setlist' in data
     const settings: BackupSettings = {}
-    for (const field of ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const) {
+    for (const field of LEGACY_SETTING_FIELDS) {
       if (field in data) Object.assign(settings, { [field]: data[field] })
     }
     const errors = validateBackupSettings(settings as Record<string, unknown>)
+    const v2 = data.schemaVersion === 2
+    let settingsV2: BackupSettingsV2 = settingsFromLegacy(settings)
+    if (v2) {
+      if (Object.keys(settings).length) errors.push('settings: a schema v2 backup keeps settings under "settings", not at the top level')
+      if ('settings' in data) {
+        errors.push(...validateBackupSettingsV2(data.settings))
+        settingsV2 = { appearance: { ...(data.settings?.appearance ?? {}) }, preferences: { ...(data.settings?.preferences ?? {}) } }
+      }
+    } else if ('settings' in data && !single) {
+      errors.push('settings: only schema v2 backups may contain a "settings" object')
+    }
     if ('schemaVersion' in data && data.schemaVersion !== undefined && data.schemaVersion !== null) {
       if (typeof data.schemaVersion !== 'number' || !Number.isSafeInteger(data.schemaVersion) || data.schemaVersion < 1) {
         errors.push('schemaVersion: must be a positive integer')
@@ -268,7 +386,8 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       trashCount: partition.deleted.length,
     }
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
-      ...settings, songs, setlists: bindLegacySetlists(boundIncoming, combined),
+      ...legacySettingsOf(settingsV2), settings: settingsV2, ignoredFields: unknownBackupFields(data, single),
+      songs, setlists: bindLegacySetlists(boundIncoming, combined),
       metadata,
       ...(allowedUsers ? { allowedUsers } : {}) }
   } catch (err) { return invalid([err instanceof Error ? err.message : 'Invalid JSON']) }
@@ -337,7 +456,7 @@ export function restoreFromSafetySnapshot(storage: Storage = localStorage): { so
   return snapshot.library
 }
 
-function triggerDownload(content: string, fileName: string) {
+export function triggerDownload(content: string, fileName: string) {
   if (typeof window === 'undefined') return
   const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }))
   const a = document.createElement('a')

@@ -318,7 +318,7 @@ test('COMPATIBILITY: DEV.3g V2 JSON import/export and backup/restore round-trip'
     // Backup round-trip with factory overrides
     const payload = createBackupPayload([], [])
     const parsed = parseBackupJson(JSON.stringify(payload), [], [])
-    assert.deepEqual(parsed.factoryThemeOverrides, payload.factoryThemeOverrides)
+    assert.deepEqual(parsed.factoryThemeOverrides, payload.settings.appearance.factoryThemeOverrides) // #251: v2 keeps settings under settings.appearance
   } finally {
     dom.window.close()
     delete global.localStorage

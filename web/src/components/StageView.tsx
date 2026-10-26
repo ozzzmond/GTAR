@@ -1,6 +1,6 @@
 import { TvPresentationOptions } from './TvPresentationOptions'
 import { transposeContext } from '../utils/songKeySemantics'
-import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from '../utils/backupSettings'
+import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings, readStageAppearanceExtras } from '../utils/backupSettings'
 import React, { useState, useLayoutEffect, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
@@ -441,6 +441,12 @@ export const StageView: React.FC<StageViewProps> = ({
       if (stage?.scrollSpeed !== undefined) setScrollSpeed(stage.scrollSpeed)
       if (stage?.fontStyle !== undefined) setLocalFontStyle(stage.fontStyle)
       if (stage?.isTwoColumn !== undefined) setLocalIsTwoColumn(stage.isTwoColumn)
+      // #251: stage typography restored from a v2 backup applies without reopening the stage.
+      const extras = readStageAppearanceExtras()
+      if (extras.chordScale !== undefined) setChordScaleState(extras.chordScale as StageChordScale)
+      if (extras.fontWeight !== undefined) setFontWeightState(extras.fontWeight)
+      if (extras.lineSpacing !== undefined) setLineSpacingState(extras.lineSpacing)
+      if (extras.notation !== undefined) setNotationState(extras.notation)
     }
     window.addEventListener(SETTINGS_CHANGED, reloadSettings)
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)

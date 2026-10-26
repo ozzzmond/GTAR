@@ -79,7 +79,8 @@ import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
-import { exportAllDataJson } from './utils/jsonBackup'
+import { exportAllDataJson, libraryFingerprint } from './utils/jsonBackup'
+import { backupReminderDue, backupReminderMessage, readBackupStatus } from './utils/backupStatus'
 import { isDevEnv } from './utils/env'
 import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
 
@@ -391,6 +392,23 @@ function LibraryApp() {
     persistedBaselineRef, crossTabConflict, setCrossTabConflict, conflictRecoverySaved, setConflictRecoverySaved,
     getConflictDraft, handleStorageWriteFailure,
   } = useLibraryPersistence({ songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef })
+
+  // #251: one non-blocking backup reminder per app start (no upload; the user saves the file).
+  const backupReminderLibraryRef = useRef({ songs, deletedSongs, setlists })
+  useEffect(() => { backupReminderLibraryRef.current = { songs, deletedSongs, setlists } }, [songs, deletedSongs, setlists])
+  useEffect(() => {
+    let hide: ReturnType<typeof setTimeout> | undefined
+    const show = setTimeout(() => {
+      const library = backupReminderLibraryRef.current
+      const message = backupReminderMessage(backupReminderDue(readBackupStatus(),
+        { songs: library.songs.length, trash: library.deletedSongs.length, setlists: library.setlists.length },
+        () => libraryFingerprint([...library.songs, ...library.deletedSongs], library.setlists)))
+      if (!message) return
+      setToastMessage(message)
+      hide = setTimeout(() => setToastMessage(current => current === message ? null : current), 8000)
+    }, 6000)
+    return () => { clearTimeout(show); if (hide) clearTimeout(hide) }
+  }, [])
   // Best-effort non-blocking durable storage request (Gap 2)
   useEffect(() => {
     requestDurableStorage().catch(() => {})

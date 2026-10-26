@@ -44,12 +44,12 @@ const mockTrash = { id: 'song-3', title: 'Deleted Song', artist: 'Artist Three',
 const mockSetlist = { id: 'set-1', name: 'Gig 1', songs: [{ id: 'song-1', title: 'Song One', artist: 'Artist One' }] }
 
 // ACTION 3: Dedicated backup schema version + counts
-test('new exports include schemaVersion 1 and accurate counts matching payload', () => {
+test('new exports include schemaVersion 2 and accurate counts matching payload', () => {
   const songs = [mockSong1, mockSong2, mockTrash]
   const setlists = [mockSetlist]
   const payload = createBackupPayload(songs, setlists, '1.1.105')
 
-  assert.equal(payload.schemaVersion, 1)
+  assert.equal(payload.schemaVersion, 2)
   assert.equal(payload.version, '1.1.105')
   assert.equal(payload.songCount, 2) // 2 active
   assert.equal(payload.trashCount, 1) // 1 trash
@@ -338,7 +338,7 @@ test('wipe & replace flow requires explicit preview confirmation; cancel causes 
   const modalText = document.body.textContent
   assert.match(modalText, /Confirm Full Restore|Destructive Wipe & Replace/)
   assert.match(modalText, /1\.1\.105/) // App version
-  assert.match(modalText, /v1/) // Schema version
+  assert.match(modalText, /v2/) // Schema version (#251)
   assert.match(modalText, /Active Songs/)
   assert.match(modalText, /Setlists/)
   assert.match(modalText, /Trash Bin/)
@@ -366,12 +366,14 @@ test('confirmed wipe & replace creates safety snapshot before restore, and retai
       allSongs: [mockSong2],
       setlists: [],
       onImportAllSongs: () => {},
-      onFullRestore: () => {
+      onFullRestore: (songs, setlists) => {
         fullRestoreCalled = true
         // Check that safety snapshot exists BEFORE restore mutation runs
         if (dom.window.localStorage.getItem(RESTORE_SNAPSHOT_KEY)) {
           snapshotExistedDuringRestore = true
         }
+        // #251: success is reported only after the saved library is read back.
+        persistLibrary({ songs, setlists })
       },
     }))
   })
@@ -455,7 +457,7 @@ test('smart merge flow does not prompt for destructive confirmation and coordina
       allSongs: [mockSong1],
       setlists: [],
       onImportAllSongs: () => {},
-      onSmartMerge: () => { smartMergeCalled = true },
+      onSmartMerge: (songs, setlists) => { smartMergeCalled = true; persistLibrary({ songs, setlists }) },
     }))
   })
 
@@ -643,7 +645,7 @@ for (const settings of [{ factoryThemeOverrides: {}, stageSettings: {} }, {}]) {
   test(`modal preserves intentional empty overrides and legacy absent settings: ${JSON.stringify(settings)}`, withJsdom(async ({ dom, root }) => {
     const previous = completeSettings()
     settingsApi.restoreBackupSettings(previous)
-    await mountRestore(root, { onFullRestore: () => {} })
+    await mountRestore(root, { onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }) })
     await selectBackup(dom, { songs: [mockSong1], setlists: [], ...settings })
     await confirmRestore()
     assert.match(document.body.textContent, /Backup restored:/)

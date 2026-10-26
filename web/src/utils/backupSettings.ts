@@ -649,3 +649,201 @@ export function restoreBackupSettings(settings: BackupSettings, storage: Pick<St
     window.dispatchEvent(new Evt(SETTINGS_CHANGED))
   }
 }
+
+/*
+ * #251 Cloud V2 P0: backup schema v2 settings. Every field maps to exactly one existing runtime
+ * storage key with the same encoding the app already uses, so a restore is read back by the
+ * running code unchanged. `appearance` is a superset of the v1 settings (theme, palettes, stage
+ * text and scroll speed); `preferences` are songbook/UI behaviour. Device and session state
+ * (auth, band-sync addresses, cast, dock position, recovery, sync journals, debug logs, backup
+ * status) is never part of a backup.
+ */
+export const BACKUP_SETTINGS_GROUPS = ['appearance', 'preferences'] as const
+export type BackupSettingsGroup = typeof BACKUP_SETTINGS_GROUPS[number]
+
+interface ExtraSettingSpec {
+  key: string
+  /** Stored string → value, or undefined when the stored value is not one the app would use. */
+  read(raw: string): unknown
+  write(value: unknown): string
+  validate(value: unknown): boolean
+}
+const enumSetting = (key: string, values: readonly string[]): ExtraSettingSpec => ({
+  key, read: raw => values.includes(raw) ? raw : undefined, write: String,
+  validate: value => typeof value === 'string' && values.includes(value),
+})
+const textBoolSetting = (key: string): ExtraSettingSpec => ({
+  key, read: raw => raw === 'true' ? true : raw === 'false' ? false : undefined, write: String,
+  validate: value => typeof value === 'boolean',
+})
+const STAGE_CHORD_SCALES = [1, 1.1, 1.2, 1.3]
+const isPalette = (value: unknown) => !!value && typeof value === 'object' && !Array.isArray(value) &&
+  !('identity' in value) && validateBackupSettings({ customThemeColors: value }).length === 0
+const parseJson = (raw: string): unknown => { try { return JSON.parse(raw) } catch { return undefined } }
+
+/** v2-only appearance fields (the v1 fields are handled by validateBackupSettings/SETTINGS_KEYS). */
+export const APPEARANCE_EXTRA_SETTINGS = {
+  standaloneCustomThemeColors: { key: STANDALONE_PALETTE_KEY, read: raw => { const v = parseJson(raw); return isPalette(v) ? v : undefined },
+    write: value => JSON.stringify(value), validate: isPalette },
+  chordScale: { key: 'gtar_stage_chord_scale', read: raw => { const v = parseFloat(raw); return STAGE_CHORD_SCALES.includes(v) ? v : undefined },
+    write: String, validate: value => typeof value === 'number' && STAGE_CHORD_SCALES.includes(value) },
+  fontWeight: enumSetting('gtar_stage_font_weight', ['regular', 'medium', 'bold']),
+  lineSpacing: enumSetting('gtar_stage_line_spacing', ['compact', 'normal', 'relaxed']),
+  notation: enumSetting('gtar_stage_notation', ['chords', 'numbers']),
+  tvFontSize: { key: 'gtar_tv_font_size', read: raw => { const v = /^\d{1,3}$/.test(raw) ? Number(raw) : NaN; return v >= 20 && v <= 56 ? v : undefined },
+    write: String, validate: value => Number.isSafeInteger(value) && (value as number) >= 20 && (value as number) <= 56 },
+} satisfies Record<string, ExtraSettingSpec>
+
+export const PREFERENCE_SETTINGS = {
+  edgeSwipePanel: { key: 'gtar_edge_swipe_panel', read: raw => { const v = parseJson(raw); return typeof v === 'boolean' ? v : undefined },
+    write: value => JSON.stringify(value), validate: value => typeof value === 'boolean' },
+  songbookSort: enumSetting('gtar_songbook_sort', ['title', 'artist', 'date']),
+  songbookFilterMetadata: enumSetting('gtar_songbook_filter_metadata', ['ALL', 'METADATA_OK', 'NEEDS_METADATA']),
+  songbookFilterSetlist: { key: 'gtar_songbook_filter_setlist', read: raw => raw.trim() && raw.length <= 200 ? raw : undefined,
+    write: String, validate: value => typeof value === 'string' && !!value.trim() && value.length <= 200 },
+  songbookSetlistsCollapsed: textBoolSetting('gtar_songbook_setlists_collapsed'),
+  songbookSongsCollapsed: textBoolSetting('gtar_songbook_songs_collapsed'),
+} satisfies Record<string, ExtraSettingSpec>
+
+export type AppearanceExtraField = keyof typeof APPEARANCE_EXTRA_SETTINGS
+export type PreferenceField = keyof typeof PREFERENCE_SETTINGS
+export interface AppearanceSettings extends BackupSettings {
+  standaloneCustomThemeColors?: CustomThemeColors
+  chordScale?: number
+  fontWeight?: 'regular' | 'medium' | 'bold'
+  lineSpacing?: 'compact' | 'normal' | 'relaxed'
+  notation?: 'chords' | 'numbers'
+  tvFontSize?: number
+}
+export interface PreferenceSettings {
+  edgeSwipePanel?: boolean
+  songbookSort?: 'title' | 'artist' | 'date'
+  songbookFilterMetadata?: 'ALL' | 'METADATA_OK' | 'NEEDS_METADATA'
+  songbookFilterSetlist?: string
+  songbookSetlistsCollapsed?: boolean
+  songbookSongsCollapsed?: boolean
+}
+export interface BackupSettingsV2 { appearance: AppearanceSettings; preferences: PreferenceSettings }
+export interface SettingsRestoreChoice { appearance: boolean; preferences: boolean }
+/** Recommended defaults (#251; not owner-approved): restore appearance, keep this device's preferences. */
+export const DEFAULT_SETTINGS_RESTORE_CHOICE: SettingsRestoreChoice = { appearance: true, preferences: false }
+
+const LEGACY_SETTING_FIELDS = ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const
+const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
+
+/** Every storage key a v2 settings restore may write (and nothing else). */
+export function backupSettingsStorageKeys(): string[] {
+  return [...Object.values(SETTINGS_KEYS), ...Object.values(APPEARANCE_EXTRA_SETTINGS).map(s => s.key), ...Object.values(PREFERENCE_SETTINGS).map(s => s.key)]
+}
+
+/** Validates a v2 `settings` object; unknown groups or fields are errors (never silently dropped). */
+export function validateBackupSettingsV2(value: unknown): string[] {
+  if (!isObject(value)) return ['settings: must be an object']
+  const errors: string[] = []
+  for (const group of Object.keys(value)) if (!BACKUP_SETTINGS_GROUPS.includes(group as BackupSettingsGroup)) errors.push(`settings.${group}: unknown settings group`)
+  const appearance = value.appearance
+  if (appearance !== undefined) {
+    if (!isObject(appearance)) errors.push('settings.appearance: must be an object')
+    else {
+      const legacy: Record<string, unknown> = {}
+      for (const [field, item] of Object.entries(appearance)) {
+        if ((LEGACY_SETTING_FIELDS as readonly string[]).includes(field)) legacy[field] = item
+        else if (field in APPEARANCE_EXTRA_SETTINGS) {
+          if (!APPEARANCE_EXTRA_SETTINGS[field as AppearanceExtraField].validate(item)) errors.push(`settings.appearance.${field}: invalid value`)
+        } else errors.push(`settings.appearance.${field}: unknown setting`)
+      }
+      errors.push(...validateBackupSettings(legacy).map(error => `settings.appearance.${error}`))
+    }
+  }
+  const preferences = value.preferences
+  if (preferences !== undefined) {
+    if (!isObject(preferences)) errors.push('settings.preferences: must be an object')
+    else for (const [field, item] of Object.entries(preferences)) {
+      if (!(field in PREFERENCE_SETTINGS)) errors.push(`settings.preferences.${field}: unknown setting`)
+      else if (!PREFERENCE_SETTINGS[field as PreferenceField].validate(item)) errors.push(`settings.preferences.${field}: invalid value`)
+    }
+  }
+  return errors
+}
+
+/** v1 settings (top-level fields) are all appearance in v2. */
+export function settingsFromLegacy(settings: BackupSettings): BackupSettingsV2 {
+  const appearance: AppearanceSettings = {}
+  for (const field of LEGACY_SETTING_FIELDS) if (settings[field] !== undefined) Object.assign(appearance, { [field]: settings[field] })
+  return { appearance, preferences: {} }
+}
+
+/** Reads every backed-up setting. v1 fields throw on malformed storage (as before); v2-only fields the app would ignore are skipped. */
+export function readBackupSettingsV2(storage: Pick<Storage, 'getItem'> = localStorage): BackupSettingsV2 {
+  const appearance: AppearanceSettings = { ...readBackupSettings(storage) }
+  for (const [field, spec] of Object.entries(APPEARANCE_EXTRA_SETTINGS)) {
+    const raw = storage.getItem(spec.key)
+    const value = raw === null ? undefined : spec.read(raw)
+    if (value !== undefined) Object.assign(appearance, { [field]: value })
+  }
+  const preferences: PreferenceSettings = {}
+  for (const [field, spec] of Object.entries(PREFERENCE_SETTINGS)) {
+    const raw = storage.getItem(spec.key)
+    const value = raw === null ? undefined : spec.read(raw)
+    if (value !== undefined) Object.assign(preferences, { [field]: value })
+  }
+  return { appearance, preferences }
+}
+
+/** Stage typography fields for live reload after a restore. */
+export function readStageAppearanceExtras(storage: Pick<Storage, 'getItem'> = localStorage): Pick<AppearanceSettings, 'chordScale' | 'fontWeight' | 'lineSpacing' | 'notation'> {
+  const out: Record<string, unknown> = {}
+  for (const field of ['chordScale', 'fontWeight', 'lineSpacing', 'notation'] as const) {
+    try {
+      const raw = storage.getItem(APPEARANCE_EXTRA_SETTINGS[field].key)
+      const value = raw === null ? undefined : APPEARANCE_EXTRA_SETTINGS[field].read(raw)
+      if (value !== undefined) out[field] = value
+    } catch { /* storage unavailable */ }
+  }
+  return out
+}
+
+export interface SettingsRestoreResult { written: string[]; groups: BackupSettingsGroup[] }
+
+/**
+ * Restores only the chosen groups and only fields present in the backup; every other key on the
+ * device is left as it is. Validates everything before the first write and reads each write back.
+ * A failure part-way leaves earlier writes in place (disclosed by the caller, as in v1).
+ */
+export function restoreBackupSettingsV2(settings: BackupSettingsV2, choice: SettingsRestoreChoice,
+  storage: Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'getItem'>> = localStorage): SettingsRestoreResult {
+  const errors = validateBackupSettingsV2(settings)
+  if (errors.length) throw new Error(errors.join('\n'))
+  const writes: Array<[string, string]> = []
+  const groups: BackupSettingsGroup[] = []
+  if (choice.appearance) {
+    const a = settings.appearance ?? {}
+    // v1 order kept: overrides, mode, active palette, stage.
+    if (a.factoryThemeOverrides !== undefined) writes.push([SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(a.factoryThemeOverrides)])
+    if (a.themeMode !== undefined) writes.push([SETTINGS_KEYS.themeMode, a.themeMode])
+    if (a.customThemeColors !== undefined) writes.push([SETTINGS_KEYS.customThemeColors, JSON.stringify(a.customThemeColors)])
+    for (const [key, value] of Object.entries(a.stageSettings ?? {})) writes.push([SETTINGS_KEYS[key as keyof NonNullable<BackupSettings['stageSettings']>], String(value)])
+    for (const [field, spec] of Object.entries(APPEARANCE_EXTRA_SETTINGS)) {
+      const value = (a as Record<string, unknown>)[field]
+      if (value !== undefined) writes.push([spec.key, spec.write(value)])
+    }
+    groups.push('appearance')
+  }
+  if (choice.preferences) {
+    const p = settings.preferences ?? {}
+    for (const [field, spec] of Object.entries(PREFERENCE_SETTINGS)) {
+      const value = (p as Record<string, unknown>)[field]
+      if (value !== undefined) writes.push([spec.key, spec.write(value)])
+    }
+    groups.push('preferences')
+  }
+  for (const [key, value] of writes) {
+    storage.setItem(key, value)
+    if (typeof storage.getItem === 'function' && storage.getItem(key) !== value) throw new Error(`Setting ${key} could not be verified after saving`)
+  }
+  if (writes.length && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    const Evt = typeof window.Event === 'function' ? window.Event : Event
+    window.dispatchEvent(new Evt(SETTINGS_CHANGED))
+  }
+  return { written: writes.map(([key]) => key), groups }
+}
