@@ -230,6 +230,7 @@ New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [appModalsReducer.test.cjs](appModalsReducer.test.cjs)
+- [backupV2.test.cjs](backupV2.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
 - [crossAccountContainment.test.cjs](crossAccountContainment.test.cjs)
