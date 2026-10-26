@@ -233,12 +233,12 @@ test('enabled QR round trip, Sync CAS conflict, body limits, and AI budgets rema
     assert.equal((await share.onRequestGet({ env: f.env, request: f.request('GET', undefined, `https://example.invalid?token=${token}`) })).status, 200)
     const data = { songs: [], setlists: [] }
     const body = { data, expectedVersion: 0, expectedChecksum: null }
-    assert.equal((await sync.onRequestPost({ env: f.env, request: f.request('POST', body) })).status, 200)
-    assert.equal((await sync.onRequestPost({ env: f.env, request: f.request('POST', body) })).status, 409)
+    assert.equal((await sync.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'X-GTAR-Library-Owner': f.user.id }) })).status, 200)
+    assert.equal((await sync.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'X-GTAR-Library-Owner': f.user.id }) })).status, 409)
     for (const [api, bytes, body] of [[share, share.MAX_SHARE_PAYLOAD_BYTES, payload],
       [sync, sync.MAX_SONGBOOK_PAYLOAD_BYTES, { data }], [metadata, metadata.MAX_METADATA_PAYLOAD_BYTES, { title: 'Song' }],
       [session, session.MAX_SESSION_PAYLOAD_BYTES, {}]]) {
-      assert.equal((await api.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'Content-Length': String(bytes + 1) }) })).status, 413)
+      assert.equal((await api.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'Content-Length': String(bytes + 1), 'X-GTAR-Library-Owner': f.user.id }) })).status, 413)
     }
     let runs = 0
     f.env.AI.run = async (model, input) => { runs++; assert.equal(input.max_tokens, 300); return { response: '{}' } }

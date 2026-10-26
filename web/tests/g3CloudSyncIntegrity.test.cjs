@@ -1,3 +1,4 @@
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -23,8 +24,10 @@ const copies = (merged, id) => merged.songs.filter((s) => s.id !== id)
 
 function storage() {
   const map = new Map()
-  return { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k),
+  const store = { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k),
     key: i => [...map.keys()][i] ?? null, get length() { return map.size } }
+  bindOwner(store, 'user-a') // #247: devices in these tests belong to user-a
+  return store
 }
 async function fixture() {
   const db = createSongbookSqlite()
@@ -36,7 +39,7 @@ async function fixture() {
   const token = await createSessionToken(user, env.AUTH_SECRET)
   const request = async (method, body) => api[method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env,
     request: new Request('https://example.com/api/songbook/sync', { method,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-GTAR-Library-Owner': user.id },
       ...(body ? { body: JSON.stringify(body) } : {}) }) })
   return { db, request }
 }

@@ -21,6 +21,7 @@ const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts'
 const { computeSongbookChecksum } = require('../src/utils/cloudSongbookSync.ts')
 const { LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
+const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
 const { CatalogApiError } = require('../src/types/sharedCatalog.ts')
 const { PublishSetlistModal } = require('../src/components/PublishSetlistModal.tsx')
 const { SharedCatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
@@ -36,6 +37,8 @@ function session(account = 'account-a', role = 'admin', access = 'active') {
     authenticatedAt: Date.now(), lastVerifiedAt: Date.now(), localExpiresAt: Date.now() + 3600000, expiresAt: Date.now() + 3600000,
     sessionToken: `token-${account}`, role, access_status: access }
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
+  // #247: the device library belongs to the first account signed in on this test device.
+  if (!localStorage.getItem(OWNER_KEY)) bindOwner(localStorage, account)
   return value
 }
 function persist() { localStorage.setItem(LIBRARY_KEY, JSON.stringify(library)) }

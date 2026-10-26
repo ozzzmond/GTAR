@@ -314,7 +314,7 @@ test('REQUEST_SIZE_BOUNDING: Streaming and byte-level limits enforced across end
     assert.equal(songbookSync.MAX_SONGBOOK_PAYLOAD_BYTES, 2 * 1024 * 1024)
     const overLimitSync = new Request('https://gtar.local/api/songbook/sync', {
       method: 'POST',
-      headers: { 'content-length': String(2 * 1024 * 1024 + 1), 'content-type': 'application/json' },
+      headers: { 'content-length': String(2 * 1024 * 1024 + 1), 'content-type': 'application/json', 'X-GTAR-Library-Owner': 'usr_test' },
       body: JSON.stringify({ data: { songs: [], setlists: [] } }),
     })
     const syncRes = await songbookSync.onRequestPost({ request: overLimitSync, env: { DB: {} } })

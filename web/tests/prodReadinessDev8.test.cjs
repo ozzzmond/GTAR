@@ -50,6 +50,7 @@ const syncApi = require('../functions/api/songbook/sync.ts')
 const { generateUUID, isValidUUID } = require('../src/utils/uuid.ts')
 const { normalizeSongbookIds, validateSongbookIntegrity } = require('../src/utils/songbookFoundation.ts')
 const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { parseStoredSession, createDurableSession } = require('../src/utils/googleAuth.ts')
 
 function createMockStorage(initial = {}) {
@@ -176,63 +177,43 @@ test('DEV8_AUTH_02: 403 Forbidden returns status ERROR and preserves local libra
   }
 })
 
-test('DEV8_AUTH_03: Multi-user isolation on shared device clears previous user base snapshot', async () => {
+test('DEV8_AUTH_03 (#247): a device library owned by User A is never uploaded to or merged into User B', async () => {
   const storage = createMockStorage()
   const localLib = {
-    songs: [{ id: generateUUID(), title: 'User B Local Song', rawContent: '[C]Chord' }],
+    songs: [{ id: generateUUID(), title: 'User A Local Song', rawContent: '[C]Chord' }],
     setlists: [],
   }
   persistLibrary(localLib, storage)
-
-  // Stale base metadata in storage belongs to User A
-  saveCloudSyncMeta({
+  bindOwner(storage, 'user_a_uuid')
+  const metaBefore = {
     lastSyncedChecksum: 'ck_user_a_stale_checksum',
     lastSyncedAt: Date.now() - 100000,
     cloudVersion: 5,
     lastSyncedUserId: 'user_a_uuid',
-  }, storage)
+  }
+  saveCloudSyncMeta(metaBefore, storage)
 
   const originalFetch = global.fetch
+  let posts = 0
   global.fetch = async (url, options) => {
     if (options?.method === 'GET') {
-      return {
-        ok: true,
-        json: async () => ({
-          success: true,
-          cloudRecord: null, // User B has no cloud record yet
-          userId: 'user_b_uuid',
-        }),
-      }
+      return { ok: true, json: async () => ({ success: true, cloudRecord: null, userId: 'user_b_uuid' }) }
     }
-    if (options?.method === 'POST') {
-      return {
-        ok: true,
-        json: async () => ({
-          success: true,
-          cloudRecord: { version: 1, checksum: 'ck_user_b_v1', updatedAt: new Date().toISOString() },
-          userId: 'user_b_uuid',
-        }),
-      }
-    }
+    if (options?.method === 'POST') posts++
     throw new Error(`Unexpected request: ${url}`)
   }
 
   try {
     const result = await performCloudSongbookSync('token_for_user_b', { storage })
-    assert.equal(result.success, true)
-    assert.equal(result.actionTaken, 'UPLOADED')
-
-    // Stored metadata must now belong to User B, not User A
-    const updatedMeta = readCloudSyncMeta(storage)
-    assert.equal(updatedMeta.lastSyncedUserId, 'user_b_uuid')
+    assert.equal(result.success, false)
+    assert.equal(result.ownership, 'mismatch')
+    assert.equal(posts, 0, 'nothing uploaded to User B')
+    assert.deepEqual(readPersistedLibrary(storage).songs.map(s => s.title), ['User A Local Song'], 'User A library untouched')
+    assert.equal(readCloudSyncMeta(storage).lastSyncedUserId, 'user_a_uuid', 'metadata not handed to User B')
   } finally {
     global.fetch = originalFetch
   }
 })
-
-// ===========================================================================
-// SECTION 2: DATA INTEGRITY & MALFORMED REMOTE RECOVERY
-// ===========================================================================
 
 test('DEV8_DATA_01: Malformed cloud payload (missing arrays) is rejected safely without data loss', async () => {
   const storage = createMockStorage()
@@ -241,6 +222,7 @@ test('DEV8_DATA_01: Malformed cloud payload (missing arrays) is rejected safely 
     setlists: [{ id: generateUUID(), name: 'Album Tracklist', songs: [] }],
   }
   persistLibrary(localLib, storage)
+  bindOwner(storage, 'user_1') // #247
 
   const originalFetch = global.fetch
   // Remote sends corrupted data payload where songs is not an array
@@ -280,6 +262,7 @@ test('DEV8_DATA_02: Cloud payload failing referential integrity check is rejecte
     setlists: [],
   }
   persistLibrary(localLib, storage)
+  bindOwner(storage, 'user_1') // #247
 
   const badSongId = generateUUID()
   const originalFetch = global.fetch
@@ -377,7 +360,7 @@ test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on cl
 
   const postReq = new Request('https://gtar.dev/api/songbook/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
     body: JSON.stringify({ action: 'upload', data: libOrder1, expectedVersion: 0, expectedChecksum: null }),
   })
 
@@ -503,6 +486,7 @@ test('DEV8_FRESH_02: First cloud sync on empty remote uploads initial library cl
     { id: generateUUID(), name: 'First Setlist', songs: [{ id: initialSongs[0].id, title: 'First Song' }] },
   ]
   persistLibrary({ songs: initialSongs, setlists: initialSetlists }, storage)
+  bindOwner(storage, 'fresh_user_1') // #247
 
   let uploadedPayload = null
   const originalFetch = global.fetch
@@ -552,6 +536,7 @@ test('DEV8_FRESH_03: Repeated/replayed sync operations produce identical stable 
   }
   const ck = computeSongbookChecksum(lib)
   persistLibrary(lib, storage)
+  bindOwner(storage, 'idempotent_user') // #247
   saveCloudSyncMeta({ lastSyncedChecksum: ck, lastSyncedAt: Date.now(), cloudVersion: 1 }, storage)
   saveCloudSyncBase(lib, storage)
 

@@ -88,3 +88,32 @@ test('#240 F8: a held-back conflict shows its reason and the Download Cloud cons
   assert.deepEqual(calls, ['sync'], 'shown before the user chooses anything')
   await act(async () => root.unmount())
 })
+
+test('#247: an unlinked songbook shows an explicit link step; linking saves a recovery copy, then syncs again', async () => {
+  const journal = require('../src/utils/syncJournal.ts')
+  const owner = require('../src/utils/libraryOwner.ts')
+  localStorage.clear()
+  journal.persistLibrary({ songs: [{ id: 's1', title: 'Mine', rawContent: 'x' }], setlists: [] }, localStorage)
+  auth.useOptionalGoogleAuth = () => ({ session: { token: 'token', user: { id: 'user-a', email: 'a@example.com' } }, accessStatus: 'active' })
+  const calls = []
+  records.performSongbookSync = async () => {
+    calls.push(owner.readLibraryOwner(localStorage)?.userId ?? null)
+    return owner.readLibraryOwner(localStorage)
+      ? { success: true, status: 'IN_SYNC', state: 'SAME_STATE', actionTaken: 'NONE' }
+      : { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', ownership: 'unbound', error: 'not linked' }
+  }
+  const root = createRoot(document.getElementById('root'))
+  await act(async () => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose() {}, onSyncApplied() {} })))
+  await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  const panel = document.querySelector('[data-testid="library-owner-link"]')
+  assert.ok(panel, 'link step shown')
+  assert.match(panel.textContent, /1 songs, 0 setlists/)
+  assert.match(panel.textContent, /a@example\.com/)
+  await act(async () => { document.querySelector('[data-testid="library-owner-link-button"]').click(); await new Promise(r => setTimeout(r, 30)) })
+  assert.equal(owner.readLibraryOwner(localStorage).userId, 'user-a')
+  assert.ok(Object.keys(journal.recoveryData(localStorage)).some(k => k.startsWith('gtar_sync_recovery:owner-confirm:')))
+  assert.deepEqual(calls, [null, 'user-a'], 'synced again after linking')
+  assert.equal(document.querySelector('[data-testid="library-owner-link"]'), null)
+  await act(async () => root.unmount())
+  localStorage.clear()
+})

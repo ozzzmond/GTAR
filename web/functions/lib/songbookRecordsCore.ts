@@ -66,6 +66,9 @@ export async function recordsActiveForUser(db: D1Database, userId: string): Prom
  * Creates the user's cursor and, when a whole-document songbook exists, its records (rev 1).
  * Concurrent first calls are safe: only the call whose token claimed the cursor inserts records.
  */
+/** #247: the whole-document songbook exists but is not a readable library; records are not seeded from it. */
+export const CLASSIC_SOURCE_UNREADABLE = 'CLASSIC_SOURCE_UNREADABLE'
+
 export async function ensureRecordsSeeded(db: D1Database, userId: string, now: string): Promise<number> {
   // #208 F2: the cursor is created only if the whole-document songbook is still the version the
   // records were built from. A classic write that lands meanwhile makes this round insert nothing,
@@ -76,7 +79,13 @@ export async function ensureRecordsSeeded(db: D1Database, userId: string, now: s
     let records: ReturnType<typeof libraryToRecords> = []
     const legacy = await findUserSongbook(db, userId)
     if (legacy) {
-      try { records = libraryToRecords(JSON.parse(legacy.data_json) as SyncLibrary) } catch { records = [] }
+      // #247: an unreadable document must not become an empty per-record songbook (the device would
+      // then upload over it). Nothing is seeded; the request fails and the document is untouched.
+      try {
+        const parsed = JSON.parse(legacy.data_json) as SyncLibrary
+        if (!parsed || !Array.isArray(parsed.songs) || !Array.isArray(parsed.setlists)) throw new Error('not a library')
+        records = libraryToRecords(parsed)
+      } catch { throw new Error(CLASSIC_SOURCE_UNREADABLE) }
     }
     const token = `${now}#${crypto.randomUUID()}`
     // Two statements whatever the library size (D1 counts statements per invocation): the cursor,

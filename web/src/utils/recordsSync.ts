@@ -52,6 +52,8 @@ import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { generateUUID } from './uuid'
 import { isPristineSampleRecord } from '../data/defaultLibrary'
+import { assertCommitAllowed, assertLibraryOwner, assertRoundStillCurrent, captureSessionGeneration, LibraryOwnershipError, readLibraryOwner,
+  sameUser, StaleSyncRoundError, type SessionGeneration } from './libraryOwner'
 
 export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
@@ -65,7 +67,14 @@ export const RECORDS_SERVER_STATE_KEY = 'gtar_records_sync_server'
 export function isRecordsServerUnavailable(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
   try { return storage.getItem(RECORDS_SERVER_STATE_KEY) === 'off' } catch { return false }
 }
-function markRecordsServer(state: 'on' | 'off', storage: Pick<Storage, 'getItem' | 'setItem'>): boolean {
+function isSessionGenerationCurrent(expected: SessionGeneration | null, storage?: Pick<Storage, 'getItem'>): boolean {
+  if (!expected || !expected.userId) return false
+  const current = captureSessionGeneration(storage)
+  if (!current || !current.userId) return false
+  return sameUser(current.userId, expected.userId) && current.token === expected.token
+}
+function markRecordsServer(state: 'on' | 'off', storage: Pick<Storage, 'getItem' | 'setItem'>, gen?: SessionGeneration | null): boolean {
+  if (gen !== undefined && !isSessionGenerationCurrent(gen, storage)) return false
   try {
     const changed = storage.getItem(RECORDS_SERVER_STATE_KEY) !== state
     storage.setItem(RECORDS_SERVER_STATE_KEY, state)
@@ -121,10 +130,11 @@ class RecordsHttpError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status }
 }
 
-async function request<T>(token: string, method: 'GET' | 'POST', query: string, body?: unknown): Promise<T> {
+async function request<T>(token: string, method: 'GET' | 'POST', query: string, body?: unknown, owner?: string): Promise<T> {
   const res = await fetch(`/api/songbook/records${query}`, {
     method,
-    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    // #247: uploads state which account owns the library they come from; the server refuses a mismatch.
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(owner ? { 'X-GTAR-Library-Owner': owner } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
@@ -279,7 +289,11 @@ function localRecords(library: SyncLibrary): Map<string, { kind: RecordKind; id:
 
 /** Persists the library (revision-gated) and theme together; restores the library if the theme write fails. */
 /** Returns the library revision this write produced (#208 F6: results are delivered only while it is still current). */
-function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary): string | null {
+function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary, ownerUserId?: string | null,
+  gen?: SessionGeneration | null): string | null {
+  // #247: a round that started for one account must not write after the library changed hands.
+  // Revalidates session generation immediately before any local library write.
+  if (ownerUserId !== undefined) assertCommitAllowed(ownerUserId, storage, gen)
   const integrity = validateSongbookIntegrity(next.songs, next.setlists)
   if (!integrity.isValid) throw new Error(`Synced songbook failed referential integrity check: ${integrity.errors.join('; ')}`)
   const { themeSettings, ...library } = next
@@ -311,7 +325,8 @@ function logSyncOutcome(state: RecordsSyncState, applied: number, pushed: number
   appLogger.info('RecordsSync', `✅ Per-record sync OK: ${applied} from cloud, ${pushed} uploaded`, `cursor ${state.cursor}`)
 }
 
-function finish(storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null, appliedRevision?: string | null): CloudSyncResult {
+function finish(gen: SessionGeneration | null, storage: Storage, state: RecordsSyncState, library: SyncLibrary, applied: number, pushed: number, pushFailed: string | null, appliedRevision?: string | null): CloudSyncResult {
+  assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3: no metadata or IN_SYNC for a round that changed hands
   saveState(state, storage)
   logSyncOutcome(state, applied, pushed, pushFailed)
   const fullySynced = state.conflicts.length === 0 && !pushFailed
@@ -358,7 +373,9 @@ async function pullAll(token: string, state: RecordsSyncState): Promise<{ record
 }
 
 async function pushAll(token: string, state: RecordsSyncState, library: SyncLibrary, skip: Set<string>, force: Map<string, number> = new Map(),
-  allowRemovals = true): Promise<{ pushed: number; failed: string | null; accepted: Set<string> }> {
+  allowRemovals = true, ownerStorage: Storage = localStorage, gen: SessionGeneration | null = null): Promise<{ pushed: number; failed: string | null; accepted: Set<string> }> {
+  // #247: never upload a library this account does not own, nor after the session moved to another account.
+  assertCommitAllowed(state.userId, ownerStorage, gen)
   const local = localRecords(library)
   const acceptedKeys = new Set<string>()
   const changes: RecordChange[] = []
@@ -408,8 +425,17 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
   let pushed = 0
   for (const batch of batches) {
     let response: PushResponse
-    try { response = await request<PushResponse>(token, 'POST', '', { changes: batch }) } catch (error) {
+    try {
+      assertCommitAllowed(state.userId, ownerStorage, gen) // each batch: the previous one was awaited
+      const owner = readLibraryOwner(ownerStorage)
+      if (!owner) throw new LibraryOwnershipError('unbound')
+      response = await request<PushResponse>(token, 'POST', '', { changes: batch }, owner.userId)
+    } catch (error) {
+      if (error instanceof LibraryOwnershipError) throw error
       if (error instanceof RecordsSyncDisabledError) throw error
+      if (error instanceof StaleSyncRoundError) {
+        throw new StaleSyncRoundError(error.reason, pushed)
+      }
       return { pushed, accepted: acceptedKeys, failed: `Cloud upload stopped: ${error instanceof Error ? error.message : String(error)}. Local edits are kept; sync again later.${oversize ? ` ${oversize}` : ''}` }
     }
     for (const accepted of response.accepted) {
@@ -437,7 +463,7 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
  */
 export type FirstSyncChoice = 'cloud' | 'combine'
 
-async function syncOnce(token: string, storage: Storage, canApply?: () => boolean, firstSync?: FirstSyncChoice): Promise<CloudSyncResult> {
+async function syncOnce(gen: SessionGeneration | null, token: string, storage: Storage, canApply?: () => boolean, firstSync?: FirstSyncChoice): Promise<CloudSyncResult> {
   const before = readLocal(storage)
   // #208 F1: after a storage fallback, read the whole feed so every record missing here can be restored.
   const hold = recordsDeleteHoldActive(storage)
@@ -445,6 +471,8 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
   const fresh = Object.keys(saved.known).length === 0 && saved.cursor === 0 && !saved.conflicts.length
   const pulled = await pullAll(token, hold ? { ...saved, cursor: 0 } : saved)
   const state = pulled.state
+  // #247: the library is applied to and uploaded from only for the account that owns it.
+  assertLibraryOwner(state.userId, storage)
   const working = new Working(before.library)
   const local = localRecords(before.library)
 
@@ -459,7 +487,7 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
         firstSyncChoice: { songs: own.filter(([, r]) => r.kind === 'song').length, setlists: own.filter(([, r]) => r.kind === 'setlist').length } }
     }
     const samplesHere = [...local.values()].some(record => isPristineSampleRecord(record.kind, record.data))
-    if (firstSync === 'cloud' || (!own.length && samplesHere)) return adoptCloud(storage, before, pulled.records, state, own.length > 0, canApply)
+    if (firstSync === 'cloud' || (!own.length && samplesHere)) return adoptCloud(gen, storage, before, pulled.records, state, own.length > 0, canApply)
   }
   let applied = 0
   let restored = 0
@@ -526,23 +554,28 @@ async function syncOnce(token: string, storage: Storage, canApply?: () => boolea
   applied -= holdBackMissingReferences(next, before.library, appliedRemote, state, knownBefore)
   // #208 F6: never write remote changes under an open editor; nothing is saved, the next run repeats.
   if (applied && canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
-  const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
+  const appliedRevision = applied ? persistApplied(storage, before, next, state.userId, gen) : undefined
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
-  const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold)
+  const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold, storage, gen)
+  assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3: the last await is over; re-check before any write
   if (hold && !failed) {
     try { storage.removeItem(RECORDS_DELETE_HOLD_KEY) } catch { /* stays on; next sync repeats the safe path */ }
     appLogger.warn('RecordsSync', `Storage fallback recovered: ${restored} ${restored === 1 ? 'record' : 'records'} restored from the cloud; no cloud deletes sent`)
   }
-  return finish(storage, state, next, applied, pushed, failed, appliedRevision)
+  return finish(gen, storage, state, next, applied, pushed, failed, appliedRevision)
 }
 
 export type ConflictChoice = 'keep-local' | 'use-cloud' | 'keep-both'
 
 /** Resolves every queued conflict the same way, after saving a recovery snapshot of both sides. */
-async function resolveOnce(token: string, storage: Storage, choice: ConflictChoice): Promise<CloudSyncResult> {
+async function resolveOnce(gen: SessionGeneration | null, token: string, storage: Storage, choice: ConflictChoice): Promise<CloudSyncResult> {
   const state = readRecordsSyncState(storage)
-  if (!state.conflicts.length) return syncOnce(token, storage)
+  if (!state.conflicts.length) return syncOnce(gen, token, storage)
+  // #247: the saved conflicts belong to the account that pulled them; act only for that account.
+  const who = await request<{ userId?: string }>(token, 'GET', `?since=${state.cursor}&limit=1`)
+  if (!who.userId || who.userId !== state.userId) throw new LibraryOwnershipError('mismatch')
+  assertLibraryOwner(who.userId, storage)
   const before = readLocal(storage)
   const working = new Working(before.library)
   const cloudView = new Working(before.library)
@@ -591,9 +624,10 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
   // choice can be saved. The cleaned setlist is pushed like any other local change.
   const cleaned = dropMissingSetlistEntries(next.songs, next.setlists)
   if (cleaned !== next.setlists) { next.setlists = cleaned; applied++ }
-  const appliedRevision = applied ? persistApplied(storage, before, next) : undefined
+  const appliedRevision = applied ? persistApplied(storage, before, next, state.userId, gen) : undefined
   if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) return changedDuringResolution()
-  const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage))
+  const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage), storage, gen)
+  assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3
   for (const conflict of resolving) {
     const key = recordKey(conflict.kind, conflict.id)
     if (!force.has(key) || accepted.has(key) || state.conflicts.some(item => recordKey(item.kind, item.id) === key)) continue
@@ -605,7 +639,7 @@ async function resolveOnce(token: string, storage: Storage, choice: ConflictChoi
     saveState(state, storage)
     return { ...changedDuringResolution(), ...(failed ? { error: failed } : {}) }
   }
-  return finish(storage, state, next, applied, pushed, failed, appliedRevision)
+  return finish(gen, storage, state, next, applied, pushed, failed, appliedRevision)
 }
 
 function changedDuringResolution(): CloudSyncResult {
@@ -622,7 +656,7 @@ async function stableCopyId(kind: RecordKind, id: string, rev: number, checksum:
 }
 
 /** #227: this device takes the cloud library on its first sync. Own songs (if any) go to recovery first. */
-async function adoptCloud(storage: Storage, before: LocalView, records: Map<string, ServerRecord>, state: RecordsSyncState,
+async function adoptCloud(gen: SessionGeneration | null, storage: Storage, before: LocalView, records: Map<string, ServerRecord>, state: RecordsSyncState,
   keepRecovery: boolean, canApply?: () => boolean): Promise<CloudSyncResult> {
   const working = new Working({ songs: [], setlists: [], ...(before.library.themeSettings !== undefined ? { themeSettings: before.library.themeSettings } : {}) })
   const knownBefore = { ...state.known }
@@ -634,16 +668,17 @@ async function adoptCloud(storage: Storage, before: LocalView, records: Map<stri
   holdBackMissingReferences(next, before.library, new Map(records), state, knownBefore)
   if (canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
   if (keepRecovery) await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
-  const appliedRevision = persistApplied(storage, before, next)
+  const appliedRevision = persistApplied(storage, before, next, state.userId, gen)
   appLogger.info('RecordsSync', `First sync on this device: took the cloud library (${next.songs.length} songs)${keepRecovery ? '; this device\'s own songs kept in recovery' : ''}`)
-  return finish(storage, state, next, records.size, 0, null, appliedRevision)
+  return finish(gen, storage, state, next, records.size, 0, null, appliedRevision)
 }
 
 /** Replaces the whole device library with the cloud records (explicit "Download from Cloud"). */
-async function replaceWithCloud(token: string, storage: Storage): Promise<CloudSyncResult> {
+async function replaceWithCloud(gen: SessionGeneration | null, token: string, storage: Storage): Promise<CloudSyncResult> {
   const before = readLocal(storage)
   const pulled = await pullAll(token, emptyState())
   const state = pulled.state
+  assertLibraryOwner(state.userId, storage)
   const working = new Working({ songs: [], setlists: [] })
   const knownBefore = { ...state.known }
   for (const [key, remote] of pulled.records) {
@@ -660,12 +695,12 @@ async function replaceWithCloud(token: string, storage: Storage): Promise<CloudS
   const replaced = { songs: next.songs.length, setlists: next.setlists.length, changed }
   if (!changed) {
     appLogger.info('RecordsSync', `Replace with the cloud copy: this device already matches the cloud (${next.songs.length} songs); nothing changed`)
-    return { ...finish(storage, state, before.library, 0, 0, null), replaced }
+    return { ...finish(gen, storage, state, before.library, 0, 0, null), replaced }
   }
   await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
-  const appliedRevision = persistApplied(storage, before, next)
+  const appliedRevision = persistApplied(storage, before, next, state.userId, gen)
   appLogger.info('RecordsSync', `Replaced this device with the cloud copy: ${next.songs.length} songs, ${next.setlists.length} setlists (${changed} changed); the previous device copy is in recovery`)
-  return { ...finish(storage, state, next, changed, 0, null, appliedRevision), replaced }
+  return { ...finish(gen, storage, state, next, changed, 0, null, appliedRevision), replaced }
 }
 
 /**
@@ -679,22 +714,67 @@ export async function performRecordsSync(token: string, options: { forceAction?:
   canApply?: () => boolean
   /** #227: the user's answer to a first-sync choice. */
   firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult | null> {
+  const targetStorage = options.storage ?? (typeof localStorage !== 'undefined' ? localStorage : undefined)
+  const gen = captureSessionGeneration(targetStorage) // #247 F3: the sign-in this round was started under (before any wait)
+  // Fail closed when authenticated session cannot be established at request time:
+  // no unsafe queued execution, stale completion or sync persistence. Preserve valid local data and pending changes.
+  if (!gen || !gen.userId) {
+    appLogger.warn('RecordsSync', 'Sync blocked: missing authenticated request-time session')
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: 'Session expired or unauthorized. Please sign in again.',
+    }
+  }
   // One records sync at a time across this browser's tabs (manual and automatic).
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-  if (locks?.request) return locks.request(RECORDS_SYNC_RUN_LOCK, () => runRecordsSync(token, options))
-  return runRecordsSync(token, options)
+  if (locks?.request) return locks.request(RECORDS_SYNC_RUN_LOCK, () => runRecordsSync(gen, token, options))
+  return runRecordsSync(gen, token, options)
 }
 
-async function runRecordsSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean; firstSync?: FirstSyncChoice }): Promise<CloudSyncResult | null> {
+async function runRecordsSync(gen: SessionGeneration, token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean; firstSync?: FirstSyncChoice }): Promise<CloudSyncResult | null> {
   const storage = options.storage ?? localStorage
+  // Revalidate session generation and account at actual queue execution before any network request or mutation.
+  // Stale queued work must fail closed.
+  const currentGen = captureSessionGeneration(storage)
+  if (!currentGen || !currentGen.userId) {
+    appLogger.warn('RecordsSync', 'Queued sync discarded: session expired or signed out before execution')
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: 'Session expired or unauthorized. Please sign in again.',
+    }
+  }
+  if (!sameUser(currentGen.userId, gen.userId ?? '') || currentGen.token !== gen.token) {
+    appLogger.warn('RecordsSync', 'Queued sync discarded: session changed or token rotated before execution')
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: 'Session expired or unauthorized. Please sign in again.',
+    }
+  }
   try {
-    if (!options.forceAction) return await syncOnce(token, storage, options.canApply, options.firstSync)
+    if (!options.forceAction) return await syncOnce(gen, token, storage, options.canApply, options.firstSync)
     const hasConflicts = readRecordsSyncState(storage).conflicts.length > 0
-    if (options.forceAction === 'download') return hasConflicts ? await resolveOnce(token, storage, 'use-cloud') : await replaceWithCloud(token, storage)
-    return await resolveOnce(token, storage, options.forceAction === 'upload' ? 'keep-local' : 'keep-both')
+    if (options.forceAction === 'download') return hasConflicts ? await resolveOnce(gen, token, storage, 'use-cloud') : await replaceWithCloud(gen, token, storage)
+    return await resolveOnce(gen, token, storage, options.forceAction === 'upload' ? 'keep-local' : 'keep-both')
   } catch (error) {
     if (error instanceof RecordsSyncDisabledError) { lastDisabledReason = error.message || null; return null }
     if (error instanceof RecordsSyncDeferredError) return { success: false, status: 'IDLE', state: 'SAME_STATE', actionTaken: 'NONE', deferred: true }
+    if (error instanceof StaleSyncRoundError) {
+      appLogger.warn('RecordsSync', `Sync round discarded: ${error.reason}`)
+      return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message }
+    }
+    if (error instanceof LibraryOwnershipError) {
+      appLogger.warn('RecordsSync', `Sync blocked: library ownership ${error.ownership}`)
+      return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message, ownership: error.ownership }
+    }
     const status = error instanceof RecordsHttpError ? error.status : 0
     // #240: "Offline" only for a network failure, not for any error raised on this device.
     const offline = !(error instanceof RecordsHttpError) && ((typeof navigator !== 'undefined' && navigator.onLine === false) ||
@@ -717,14 +797,28 @@ async function runRecordsSync(token: string, options: { forceAction?: 'upload' |
  */
 export async function performSongbookSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult> {
   const storage = options.storage ?? localStorage
+  const gen = captureSessionGeneration(storage)
   if (isRecordsSyncEnabled(storage)) {
     const result = await performRecordsSync(token, options)
-    if (result) { markRecordsServer('on', storage); return result }
+    if (result) {
+      if (isSessionGenerationCurrent(gen, storage)) markRecordsServer('on', storage, gen)
+      return result
+    }
     // Logged once when it changes, not on every sync.
     // Logged when the state or the reason changes (once per page for a given reason), not on every sync.
-    if (markRecordsServer('off', storage) || loggedDisabledReason !== lastDisabledReason) {
-      loggedDisabledReason = lastDisabledReason
-      appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync', lastDisabledReason ?? undefined)
+    if (isSessionGenerationCurrent(gen, storage)) {
+      if (markRecordsServer('off', storage, gen) || loggedDisabledReason !== lastDisabledReason) {
+        loggedDisabledReason = lastDisabledReason
+        appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync', lastDisabledReason ?? undefined)
+      }
+    } else {
+      return {
+        success: false,
+        status: 'ERROR',
+        state: 'OFFLINE_OR_CLOUD_FAILURE',
+        actionTaken: 'NONE',
+        error: 'Session expired or unauthorized. Please sign in again.',
+      }
     }
   }
   return performCloudSongbookSync(token, options)

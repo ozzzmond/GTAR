@@ -173,6 +173,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const rejection = await enforceAbuseLimit(env, 'sync-write', auth.user.id)
   if (rejection) return rejection
+  // #247 F1 writer fence: builds that check library ownership send X-GTAR-Library-Owner; it is a
+  // capability marker that must equal the signed-in account. Builds without it (older clients) are
+  // refused: they could upload another account's library. It does not prove where the data came
+  // from; a client that forges the header is not stopped here.
+  const owner = request.headers.get('X-GTAR-Library-Owner')
+  if (!owner || owner.trim().toLowerCase() !== String(auth.user.id).trim().toLowerCase()) {
+    return jsonResponse({ success: false, code: owner ? 'LIBRARY_OWNER_MISMATCH' : 'LIBRARY_OWNER_REQUIRED',
+      error: owner ? "Upload refused: this device's songbook belongs to another account." : 'Upload refused: update GTAR (reload the page) to sync.' }, 409)
+  }
 
   const readRes = await readBoundedJson(request, MAX_SONGBOOK_PAYLOAD_BYTES, { requireObject: true })
   if (readRes.error) {

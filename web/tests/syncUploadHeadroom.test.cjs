@@ -1,4 +1,5 @@
 // #190 (RFC #188 S2): upload size estimate, headroom levels and a clear message before the 2 MB server limit.
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -16,8 +17,10 @@ const { persistLibrary, recoveryData } = require('../src/utils/syncJournal.ts')
 
 function storage() {
   const map = new Map()
-  return { getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, String(value)),
+  const store = { getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, String(value)),
     removeItem: key => map.delete(key), key: index => [...map.keys()][index] ?? null, get length() { return map.size } }
+  bindOwner(store, 'user-a') // #247
+  return store
 }
 async function cloud() {
   const db = createSongbookSqlite()
@@ -32,7 +35,7 @@ async function cloud() {
     if (opts.method === 'POST') posts.push(opts.body)
     return api[opts.method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env,
       request: new Request('https://example.com/api/songbook/sync', { method: opts.method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(opts.body ? { body: opts.body } : {}) }) })
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers?.['X-GTAR-Library-Owner'] ? { 'X-GTAR-Library-Owner': opts.headers['X-GTAR-Library-Owner'] } : {}) }, ...(opts.body ? { body: opts.body } : {}) }) })
   }
   return { fetch, posts }
 }

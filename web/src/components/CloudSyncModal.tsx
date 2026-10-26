@@ -1,3 +1,4 @@
+import { confirmLibraryOwner } from '../utils/libraryOwner'
 import { openRecoveryReview } from '../utils/recoveryReview'
 import { isRecordsServerUnavailable, isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled, type FirstSyncChoice } from '../utils/recordsSync'
 import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
@@ -64,6 +65,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string>('')
   // #227: first sync on this device, with its own songs and an existing cloud library.
   const [firstSyncChoice, setFirstSyncChoice] = useState<{ songs: number; setlists: number } | null>(null)
+  // #247: sync refused because this device's songbook has no verified owner, or another one.
+  const [ownership, setOwnership] = useState<'unbound' | 'mismatch' | null>(null)
+  const [linking, setLinking] = useState(false)
   // #227 item 4: replacing the device copy asks first.
   const [confirmReplace, setConfirmReplace] = useState(false)
   const [warningMessage, setWarningMessage] = useState<string>('')
@@ -122,6 +126,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setSyncStatus(result.status)
       setLastMeta(readCloudSyncMeta())
       setFirstSyncChoice(result.firstSyncChoice ?? null)
+      setOwnership(result.ownership ?? null)
       if (result.firstSyncChoice) return
 
       if (result.success) {
@@ -170,6 +175,21 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     }
   }, [token, isAuthenticated])
 
+  const linkSongbook = async () => {
+    const userId = session?.user?.id
+    if (!userId) return
+    setLinking(true)
+    setErrorMessage('')
+    try {
+      await confirmLibraryOwner(userId)
+      setOwnership(null)
+      await refreshSyncState()
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Could not link the songbook.')
+    } finally {
+      setLinking(false)
+    }
+  }
   useEffect(() => {
     if (isOpen && isAuthenticated) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Start the external sync request with its existing synchronous busy guard.
@@ -433,6 +453,15 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <p className="text-xs text-app-action bg-app-action/10 p-2.5 rounded-lg border border-app-action/20">
                 {statusMessage}
               </p>
+            )}
+
+            {ownership === 'unbound' && (
+              <div data-testid="library-owner-link" role="group" aria-label="Link this songbook to your account" className="text-xs p-3 rounded-lg border border-app-action/40 bg-app-action/10 space-y-2">
+                <p className="text-app-heading">This device's songbook ({(readPersistedLibrary()?.songs.length ?? 0)} songs, {(readPersistedLibrary()?.setlists.length ?? 0)} setlists) is not linked to an account yet, so nothing was uploaded.</p>
+                <p className="text-app-muted">Link it to <strong>{session?.user?.email || 'this account'}</strong> only if it is yours. A full copy is saved in Review local recovery first.</p>
+                <button type="button" data-testid="library-owner-link-button" disabled={linking || isProcessing} onClick={() => { void linkSongbook() }}
+                  className="w-full py-2 px-3 rounded-lg bg-app-action text-app-on-action font-bold cursor-pointer disabled:opacity-50">Link this songbook to {session?.user?.email || 'this account'}</button>
+              </div>
             )}
 
             {firstSyncChoice && (

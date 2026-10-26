@@ -48,16 +48,34 @@ async function world({ enabled = true, library } = {}) {
     if (after) await after(url, opts)
     return response
   }
-  const device = lib => { const s = storage(); journal.persistLibrary(lib, s); return s }
+  // #247: test devices hold user-a's library (linked to user-a, as after an explicit link).
+  const device = lib => { const s = storage(); journal.persistLibrary(lib, s)
+    s.setItem('gtar_library_owner_v1', JSON.stringify({ v: 1, userId: user.id, env: require('../src/utils/libraryOwner.ts').libraryEnv(), boundAt: 0, reason: 'confirmed' })); return s }
   const run = async (store, options) => {
     const saved = global.fetch
     global.fetch = fetch
-    try { return await client.performRecordsSync('token', { storage: store, ...options }) } finally { global.fetch = saved }
+    const hadSession = localStorage.getItem('gtar_auth_session') !== null
+    if (!hadSession) {
+      localStorage.setItem('gtar_auth_session', JSON.stringify({ user: { id: user.id }, sessionToken: 'token' }))
+    }
+    try { return await client.performRecordsSync('token', { storage: store, ...options }) }
+    finally {
+      if (!hadSession) localStorage.removeItem('gtar_auth_session')
+      global.fetch = saved
+    }
   }
   const runAny = async (store, options) => {
     const saved = global.fetch
     global.fetch = fetch
-    try { return await client.performSongbookSync('token', { storage: store, ...options }) } finally { global.fetch = saved }
+    const hadSession = localStorage.getItem('gtar_auth_session') !== null
+    if (!hadSession) {
+      localStorage.setItem('gtar_auth_session', JSON.stringify({ user: { id: user.id }, sessionToken: 'token' }))
+    }
+    try { return await client.performSongbookSync('token', { storage: store, ...options }) }
+    finally {
+      if (!hadSession) localStorage.removeItem('gtar_auth_session')
+      global.fetch = saved
+    }
   }
   return { db, device, run, runAny, api: fetch, setHook: h => { hook = h }, setAfter: h => { after = h } }
 }
@@ -768,7 +786,7 @@ test('#240 server: a song deletion is refused while a live cloud setlist lists i
 })
 
 // #240 residual (Codex audit) F2: the server must not accept a setlist write that lists a deleted song.
-const pushRaw = async (w, changes) => (await w.api('/api/songbook/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes }) })).json()
+const pushRaw = async (w, changes) => (await w.api('/api/songbook/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-GTAR-Library-Owner': 'user-a' }, body: JSON.stringify({ changes }) })).json()
 const cloudRec = (w, kind, rid) => w.db.sqlite.prepare('SELECT rev, removed, data_json FROM user_songbook_records WHERE kind = ? AND record_id = ?').get(kind, rid)
 test('#240 F2: unlink → delete song → write setlist listing the deleted song is refused atomically', async () => {
   const w = await world({ library: base })

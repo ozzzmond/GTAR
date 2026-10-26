@@ -232,6 +232,7 @@ New or renamed tests await a human choice of primary category.
 - [appModalsReducer.test.cjs](appModalsReducer.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
+- [crossAccountContainment.test.cjs](crossAccountContainment.test.cjs)
 - [debugLogStore.test.cjs](debugLogStore.test.cjs)
 - [debugLogsPreAuthRedaction.test.cjs](debugLogsPreAuthRedaction.test.cjs)
 - [duplicateSongCheck.test.cjs](duplicateSongCheck.test.cjs)

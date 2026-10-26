@@ -1,4 +1,5 @@
 // #189 (RFC #188 S1): slim cloud sync base with chart bodies in IndexedDB; base-write failures are reported.
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { test, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -24,7 +25,7 @@ const BASE = sync.CLOUD_SYNC_BASE_KEY
 const flush = () => new Promise(resolve => setTimeout(resolve, 10))
 let factory
 const newTab = () => { index.forgetLibraryBodies(); index.setLibraryBodyBackend(bodies.libraryBodyBackend({ indexedDBFactory: factory })) }
-beforeEach(() => { localStorage.clear(); factory = new MockIDBFactory(); newTab() })
+beforeEach(() => { localStorage.clear(); bindOwner(localStorage, 'user-a'); factory = new MockIDBFactory(); newTab() })
 const seed = (n = 12) => { journal.persistLibrary(makeLibrary(n, 2, { chars: 2500 }), localStorage); return journal.readPersistedLibrary(localStorage) }
 const b1On = async () => { seed(); await journal.enableLibraryIndex(localStorage); return journal.readPersistedLibrary(localStorage) }
 
@@ -112,7 +113,7 @@ async function cloud() {
   const token = await createSessionToken(user, env.AUTH_SECRET)
   const request = (opts) => api[opts.method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env,
     request: new Request('https://example.com/api/songbook/sync', { method: opts.method,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(opts.body ? { body: opts.body } : {}) }) })
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers?.['X-GTAR-Library-Owner'] ? { 'X-GTAR-Library-Owner': opts.headers['X-GTAR-Library-Owner'] } : {}) }, ...(opts.body ? { body: opts.body } : {}) }) })
   return { db, request }
 }
 async function withFetch(request, body) {
