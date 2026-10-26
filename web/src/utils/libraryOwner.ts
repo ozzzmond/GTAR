@@ -76,12 +76,35 @@ export function assertLibraryOwner(userId: string | null | undefined, storage: S
 
 /** #247: the signed-in account stored by AuthGate (same key as googleAuth's SESSION_STORAGE_KEY). */
 const SESSION_KEY = 'gtar_auth_session'
-function storedSessionUserId(): string | null {
+function storedSession(): { userId: string | null; token: string | null } | null {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null
-    const id = raw ? (JSON.parse(raw) as { user?: { id?: unknown } } | null)?.user?.id : null
-    return typeof id === 'string' && id.trim() ? id : null
+    const value = raw ? JSON.parse(raw) as { user?: { id?: unknown }; sessionToken?: unknown; token?: unknown } | null : null
+    if (!value || typeof value !== 'object') return null
+    const id = value.user?.id
+    const token = typeof value.sessionToken === 'string' && value.sessionToken ? value.sessionToken : typeof value.token === 'string' && value.token ? value.token : null
+    return { userId: typeof id === 'string' && id.trim() ? id : null, token }
   } catch { return null }
+}
+function storedSessionUserId(): string | null { return storedSession()?.userId ?? null }
+
+/**
+ * #247 F3: the sign-in a sync round started under (account + session token). Captured when the round
+ * starts; null when no session is stored then (nothing to compare against).
+ */
+export interface SessionGeneration { userId: string | null; token: string | null }
+export function captureSessionGeneration(): SessionGeneration | null { return storedSession() }
+
+/** The sign-in a round started under ended (logout) or was replaced (other account, new token). */
+export class StaleSyncRoundError extends Error {
+  readonly reason: 'signed-out' | 'session-changed'
+  constructor(reason: 'signed-out' | 'session-changed', uploaded: number) {
+    super(`${reason === 'signed-out' ? 'You signed out' : 'The sign-in changed'} while syncing. ${uploaded
+      ? `${uploaded} ${uploaded === 1 ? 'change' : 'changes'} already accepted by the cloud stay in the account that started the sync. `
+      : ''}Nothing from that sync was saved on this device and it was not marked as synced. Your songbook on this device is unchanged; sign in and sync again.`)
+    this.reason = reason
+    this.name = 'StaleSyncRoundError'
+  }
 }
 
 /**
@@ -100,12 +123,19 @@ export function assertCommitAllowed(userId: string | null | undefined, storage: 
  * reports success. Uploads the server already accepted stay in that account's cloud and are not
  * described as undone; nothing of the round is recorded on this device.
  */
-export function assertRoundStillCurrent(userId: string | null | undefined, storage: Storage = localStorage, uploaded = 0): void {
+export function assertRoundStillCurrent(userId: string | null | undefined, storage: Storage = localStorage, uploaded = 0,
+  generation: SessionGeneration | null = null): void {
   try { assertCommitAllowed(userId, storage) } catch (error) {
     if (!(error instanceof LibraryOwnershipError)) throw error
     throw new LibraryOwnershipError(error.ownership, `The signed-in account or this songbook's owner changed while syncing. ${uploaded
       ? `${uploaded} ${uploaded === 1 ? 'change' : 'changes'} already accepted by the cloud stay in the account that started the sync. `
       : ''}Nothing from that sync was saved on this device and it was not marked as synced. Sync again with the account that owns this songbook.`)
+  }
+  if (generation) {
+    // Logout or a replaced sign-in (another account, rotated token) since the round started: stale.
+    const now = storedSession()
+    if (!now) throw new StaleSyncRoundError('signed-out', uploaded)
+    if ((now.userId ?? '') !== (generation.userId ?? '') || now.token !== generation.token) throw new StaleSyncRoundError('session-changed', uploaded)
   }
 }
 

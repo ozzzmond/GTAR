@@ -379,3 +379,73 @@ test('#247 F3 late response: conflict resolution upload — session switch befor
     assert.equal(c.recordsOf('user-b'), 0)
   } finally { localStorage.removeItem(sessionKey) }
 })
+
+// ---- #247 re-audit of PR #248 (head 78089b4): F3 logout / token rotation before completion ----
+const uploadAfter = (c, fn) => { let hit = null; c.setAfter(async (url, opts) => {
+  if ((opts.method || 'GET') !== 'POST' || !url.startsWith('/api/songbook/records') || hit) return
+  fn(); hit = true }); return () => hit }
+
+test('#247 F3 logout: A logs out while A\'s accepted upload response is in flight → no IN_SYNC, no metadata/base, local data kept', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  setSession('user-a')
+  try {
+    assert.equal((await c.a(deviceA)).success, true)
+    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(21)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    let before = null
+    const hit = uploadAfter(c, () => { localStorage.removeItem(sessionKey); before = snapshot(deviceA) }) // sign-out (googleAuth removes the stored session)
+    let result
+    try { result = await c.a(deviceA) } finally { c.setAfter(null) }
+    assert.ok(hit())
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.match(result.error, /signed out while syncing/)
+    assert.match(result.error, /already accepted by the cloud stay in the account that started/)
+    assert.deepEqual(snapshot(deviceA), before, 'no sync state, metadata or base written after logout')
+    assert.ok(read(deviceA).songs.some(s => s.id === id(21)), 'local data preserved')
+    assert.ok(c.songsOf('user-a').includes(id(21)), 'accepted upload not described as undone: it is in A')
+    setSession('user-a')
+    const again = await c.a(deviceA)
+    assert.equal(again.status, 'IN_SYNC')
+  } finally { localStorage.removeItem(sessionKey) }
+})
+
+test('#247 F3 logout: conflict-resolution upload — logout before the response → no IN_SYNC, nothing saved', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a'); await c.a(deviceA)
+  const other = bound(libA, 'user-a'); await c.a(other)
+  const edited = n => ({ ...libA, songs: libA.songs.map(s => s.id === id(1) ? { ...s, rawContent: `[C]${n}` } : s) })
+  journal.persistLibrary(edited('cloud'), other, { expectedRaw: journal.libraryRevision(other) }); await c.a(other)
+  journal.persistLibrary(edited('mine'), deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  setSession('user-a')
+  try {
+    assert.equal((await c.a(deviceA)).status, 'CONFLICT')
+    let before = null
+    const hit = uploadAfter(c, () => { localStorage.removeItem(sessionKey); before = snapshot(deviceA) })
+    let result
+    try { result = await c.a(deviceA, { forceAction: 'upload' }) } finally { c.setAfter(null) }
+    assert.ok(hit())
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.deepEqual(snapshot(deviceA), before)
+  } finally { localStorage.removeItem(sessionKey) }
+})
+
+test('#247 F3 token rotation: the session token changes (same account) before completion → round not marked synced; retry converges', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  const withToken = t => localStorage.setItem(sessionKey, JSON.stringify({ user: { id: 'user-a' }, sessionToken: t }))
+  withToken('tok-1')
+  try {
+    assert.equal((await c.a(deviceA)).success, true)
+    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(22)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    let before = null
+    const hit = uploadAfter(c, () => { withToken('tok-2'); before = snapshot(deviceA) })
+    let result
+    try { result = await c.a(deviceA) } finally { c.setAfter(null) }
+    assert.ok(hit())
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.match(result.error, /sign-in changed while syncing/)
+    assert.deepEqual(snapshot(deviceA), before)
+    assert.equal((await c.a(deviceA)).status, 'IN_SYNC')
+  } finally { localStorage.removeItem(sessionKey) }
+})
