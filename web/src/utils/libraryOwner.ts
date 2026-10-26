@@ -23,7 +23,7 @@ export function libraryEnv(): string {
   try { return typeof location !== 'undefined' && location.host ? location.host : 'unknown' } catch { return 'unknown' }
 }
 
-const sameUser = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+export const sameUser = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
 export function readLibraryOwner(storage: Pick<Storage, 'getItem'> = localStorage): LibraryOwner | null {
   try {
@@ -163,20 +163,24 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
   // library revision and the signed-in account must be what they were when this confirmation began.
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
   const run = async () => {
+    const sessionAtStart = storedSession(storage)
     const ownership = libraryOwnership(userId, storage)
     if (ownership === 'owned') return
     if (ownership === 'mismatch') throw new LibraryOwnershipError('mismatch')
     const ownerAtStart = storage.getItem(LIBRARY_OWNER_KEY)
     const revisionAtStart = libraryRevision(storage)
-    const library = readPersistedLibrary(storage)
-    if (library) {
-      const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
-      const raw = JSON.stringify({ local: library })
-      await writeRecoverySnapshot(key, raw, storage)
-      if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
-    }
-    const session = storedSessionUserId()
-    if (storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart || libraryRevision(storage) !== revisionAtStart || (session && !sameUser(session, userId))) {
+    const library = readPersistedLibrary(storage) ?? { songs: [], setlists: [] }
+    const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
+    const raw = JSON.stringify({ local: library })
+    await writeRecoverySnapshot(key, raw, storage)
+    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+    const session = storedSession(storage)
+    if (
+      storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
+      libraryRevision(storage) !== revisionAtStart ||
+      (sessionAtStart && (!session || !session.userId || !sameUser(session.userId, userId) || session.token !== sessionAtStart.token)) ||
+      (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))
+    ) {
       throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
     }
     writeOwner(userId, 'confirmed', storage)

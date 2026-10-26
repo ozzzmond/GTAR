@@ -53,7 +53,7 @@ import type { SyncLibrary } from './syncMerge'
 import { generateUUID } from './uuid'
 import { isPristineSampleRecord } from '../data/defaultLibrary'
 import { assertCommitAllowed, assertLibraryOwner, assertRoundStillCurrent, captureSessionGeneration, LibraryOwnershipError, readLibraryOwner,
-  StaleSyncRoundError, type SessionGeneration } from './libraryOwner'
+  sameUser, StaleSyncRoundError, type SessionGeneration } from './libraryOwner'
 
 export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
@@ -366,9 +366,9 @@ async function pullAll(token: string, state: RecordsSyncState): Promise<{ record
 }
 
 async function pushAll(token: string, state: RecordsSyncState, library: SyncLibrary, skip: Set<string>, force: Map<string, number> = new Map(),
-  allowRemovals = true, ownerStorage: Storage = localStorage): Promise<{ pushed: number; failed: string | null; accepted: Set<string> }> {
+  allowRemovals = true, ownerStorage: Storage = localStorage, gen: SessionGeneration | null = null): Promise<{ pushed: number; failed: string | null; accepted: Set<string> }> {
   // #247: never upload a library this account does not own, nor after the session moved to another account.
-  assertCommitAllowed(state.userId, ownerStorage)
+  assertCommitAllowed(state.userId, ownerStorage, gen)
   const local = localRecords(library)
   const acceptedKeys = new Set<string>()
   const changes: RecordChange[] = []
@@ -419,13 +419,16 @@ async function pushAll(token: string, state: RecordsSyncState, library: SyncLibr
   for (const batch of batches) {
     let response: PushResponse
     try {
-      assertCommitAllowed(state.userId, ownerStorage) // each batch: the previous one was awaited
+      assertCommitAllowed(state.userId, ownerStorage, gen) // each batch: the previous one was awaited
       const owner = readLibraryOwner(ownerStorage)
       if (!owner) throw new LibraryOwnershipError('unbound')
       response = await request<PushResponse>(token, 'POST', '', { changes: batch }, owner.userId)
     } catch (error) {
       if (error instanceof LibraryOwnershipError) throw error
       if (error instanceof RecordsSyncDisabledError) throw error
+      if (error instanceof StaleSyncRoundError) {
+        throw new StaleSyncRoundError(error.reason, pushed)
+      }
       return { pushed, accepted: acceptedKeys, failed: `Cloud upload stopped: ${error instanceof Error ? error.message : String(error)}. Local edits are kept; sync again later.${oversize ? ` ${oversize}` : ''}` }
     }
     for (const accepted of response.accepted) {
@@ -547,7 +550,7 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
   const appliedRevision = applied ? persistApplied(storage, before, next, state.userId, gen) : undefined
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
-  const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold, storage)
+  const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold, storage, gen)
   assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3: the last await is over; re-check before any write
   if (hold && !failed) {
     try { storage.removeItem(RECORDS_DELETE_HOLD_KEY) } catch { /* stays on; next sync repeats the safe path */ }
@@ -616,7 +619,7 @@ async function resolveOnce(gen: SessionGeneration | null, token: string, storage
   if (cleaned !== next.setlists) { next.setlists = cleaned; applied++ }
   const appliedRevision = applied ? persistApplied(storage, before, next, state.userId, gen) : undefined
   if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) return changedDuringResolution()
-  const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage), storage)
+  const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage), storage, gen)
   assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3
   for (const conflict of resolving) {
     const key = recordKey(conflict.kind, conflict.id)
@@ -726,6 +729,29 @@ export async function performRecordsSync(token: string, options: { forceAction?:
 
 async function runRecordsSync(gen: SessionGeneration, token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean; firstSync?: FirstSyncChoice }): Promise<CloudSyncResult | null> {
   const storage = options.storage ?? localStorage
+  // Revalidate session generation and account at actual queue execution before any network request or mutation.
+  // Stale queued work must fail closed.
+  const currentGen = captureSessionGeneration(storage)
+  if (!currentGen || !currentGen.userId) {
+    appLogger.warn('RecordsSync', 'Queued sync discarded: session expired or signed out before execution')
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: 'Session expired or unauthorized. Please sign in again.',
+    }
+  }
+  if (!sameUser(currentGen.userId, gen.userId ?? '') || currentGen.token !== gen.token) {
+    appLogger.warn('RecordsSync', 'Queued sync discarded: session changed or token rotated before execution')
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: 'Session expired or unauthorized. Please sign in again.',
+    }
+  }
   try {
     if (!options.forceAction) return await syncOnce(gen, token, storage, options.canApply, options.firstSync)
     const hasConflicts = readRecordsSyncState(storage).conflicts.length > 0

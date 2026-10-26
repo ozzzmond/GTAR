@@ -5,7 +5,8 @@ import { appLogger } from './logger'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
-import { assertCommitAllowed, assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
+import { assertCommitAllowed, assertLibraryOwner, assertRoundStillCurrent, captureSessionGeneration, LibraryOwnershipError, readLibraryOwner,
+  StaleSyncRoundError, type SessionGeneration } from './libraryOwner'
 import { generateUUID } from './uuid'
 import {
   CLOUD_THEME_SETTINGS_VERSION,
@@ -72,8 +73,8 @@ export interface SyncDecisionResult {
 }
 
 /** #247: the verified owner id to send with an upload; throws if this account does not own the library. */
-function uploadOwner(userId: string | null, storage: Storage): string {
-  assertCommitAllowed(userId, storage)
+function uploadOwner(userId: string | null, storage: Storage, gen?: SessionGeneration | null): string {
+  assertCommitAllowed(userId, storage, gen)
   return readLibraryOwner(storage)!.userId
 }
 
@@ -1180,6 +1181,7 @@ async function executeCloudSongbookSync(
   retry?: { attempt: number; base: SyncLibrary; userId: string | null }
 ): Promise<CloudSyncResult> {
   const targetStorage = options?.storage || (typeof localStorage !== 'undefined' ? localStorage : ({} as Storage))
+  const gen = captureSessionGeneration(targetStorage)
 
   // 1. Read and normalize local library and theme settings
   const persistedAtStart = readPersistedLibrary(targetStorage)
@@ -1252,7 +1254,7 @@ async function executeCloudSongbookSync(
     shouldPersistTheme = true
   ) => {
     // #247 F3: revalidated right before every write (a recovery write or the network may have been awaited).
-    assertCommitAllowed(currentUserId, targetStorage)
+    assertCommitAllowed(currentUserId, targetStorage, gen)
     persistLibrary(libraryToApply, targetStorage, { expectedRaw })
     if (shouldPersistTheme && libraryToApply.themeSettings !== undefined) {
       try {
@@ -1521,7 +1523,7 @@ async function executeCloudSongbookSync(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
           // #247: re-checked right before the upload (an account switch may have happened meanwhile).
-          'X-GTAR-Library-Owner': uploadOwner(currentUserId, targetStorage),
+          'X-GTAR-Library-Owner': uploadOwner(currentUserId, targetStorage, gen),
         },
         body: uploadBody,
         signal: AbortSignal.timeout(15000),
@@ -1566,6 +1568,7 @@ async function executeCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
+      assertRoundStillCurrent(currentUserId, targetStorage, 1, gen)
       const expectedRaw = libraryRevision(targetStorage)
       const latestFull = readLatestWithTheme()
       if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
@@ -1599,6 +1602,26 @@ async function executeCloudSongbookSync(
         updatedLibrary: appliedLibrary,
       }, baseSaved)
     } catch (err) {
+      if (err instanceof StaleSyncRoundError) {
+        appLogger.warn('CloudSync', `Sync round discarded: ${err.reason}`)
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'OFFLINE_OR_CLOUD_FAILURE',
+          actionTaken: 'NONE',
+          error: err.message,
+        }
+      }
+      if (err instanceof LibraryOwnershipError) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'OFFLINE_OR_CLOUD_FAILURE',
+          actionTaken: 'NONE',
+          error: err.message,
+          ownership: err.ownership,
+        }
+      }
       return {
         success: false,
         status: 'OFFLINE',
@@ -1671,6 +1694,7 @@ async function executeCloudSongbookSync(
       }
 
       // A download must not replace edits made while GET was in flight.
+      assertRoundStillCurrent(currentUserId, targetStorage, 0, gen)
       const expectedRaw = libraryRevision(targetStorage)
       const latest = readPersistedLibrary(targetStorage)
       const latestTheme = readCloudThemeSettings(targetStorage)
@@ -1835,7 +1859,7 @@ async function executeCloudSongbookSync(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
           // #247: re-checked right before the upload (an account switch may have happened meanwhile).
-          'X-GTAR-Library-Owner': uploadOwner(currentUserId, targetStorage),
+          'X-GTAR-Library-Owner': uploadOwner(currentUserId, targetStorage, gen),
         },
         body: mergedBody,
         signal: AbortSignal.timeout(15000),
@@ -1880,6 +1904,7 @@ async function executeCloudSongbookSync(
       }
 
       const uploadData = uploadParsed
+      assertRoundStillCurrent(currentUserId, targetStorage, 1, gen)
       const expectedRaw = libraryRevision(targetStorage)
       const latestFull = readLatestWithTheme()
       if (persistedAtStart && !latestFull) throw new Error('Local library removed during sync. Retry before replacing it.')
@@ -1916,6 +1941,26 @@ async function executeCloudSongbookSync(
         updatedLibrary: appliedLibrary,
       }, baseSaved)
     } catch (err) {
+      if (err instanceof StaleSyncRoundError) {
+        appLogger.warn('CloudSync', `Sync round discarded: ${err.reason}`)
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'OFFLINE_OR_CLOUD_FAILURE',
+          actionTaken: 'NONE',
+          error: err.message,
+        }
+      }
+      if (err instanceof LibraryOwnershipError) {
+        return {
+          success: false,
+          status: 'ERROR',
+          state: 'OFFLINE_OR_CLOUD_FAILURE',
+          actionTaken: 'NONE',
+          error: err.message,
+          ownership: err.ownership,
+        }
+      }
       return {
         success: false,
         status: 'ERROR',

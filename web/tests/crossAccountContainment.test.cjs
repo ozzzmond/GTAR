@@ -581,3 +581,196 @@ test('#248 F2: Records GET paused -> token rotates before resume -> no remote re
   }
 })
 
+// ---- PR #248 Final Lifecycle Residuals (F1 PENDING_UPLOAD_AFTER_LOGOUT, F2 QUEUED_SYNC_AFTER_TOKEN_ROTATION, F3 EMPTY_LIBRARY_OWNER_AFTER_LOGOUT) ----
+
+test('PR #248 F1: multi-batch pending upload -> logout after batch 1 -> no batch 2 dispatched, local state untouched, accepted batch 1 reported honestly', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  setSession('user-a')
+  try {
+    assert.equal((await c.a(deviceA)).success, true)
+    // Create 55 songs to exceed MAX_PUSH_CHANGES (50), guaranteeing at least 2 push batches
+    const manySongs = []
+    for (let i = 100; i < 155; i++) {
+      manySongs.push(song(i))
+    }
+    journal.persistLibrary({ songs: [...libA.songs, ...manySongs], setlists: [] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+
+    let postCalls = 0
+    let before = null
+    c.setHook(async (url, opts) => {
+      if ((opts.method || 'GET') === 'POST' && url.startsWith('/api/songbook/records')) {
+        postCalls++
+        if (postCalls === 1) {
+          // Logout triggered while batch 1 is in-flight before completion
+          localStorage.removeItem(sessionKey)
+          before = snapshot(deviceA)
+        }
+      }
+    })
+
+    let result
+    try {
+      result = await c.a(deviceA)
+    } finally {
+      c.setHook(null)
+    }
+
+    assert.equal(postCalls, 1, 'No new request dispatched after invalidation: batch 2 was never sent')
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.match(result.error, /signed out while syncing/)
+    assert.match(result.error, /already accepted by the cloud stay in the account that started/)
+    assert.doesNotMatch(result.error, /Nothing was uploaded/)
+    assert.deepEqual(snapshot(deviceA), before, 'local library, cursor, baseline, and sync metadata untouched after invalidation')
+    // Server-side acceptance verified for batch 1 (25 songs uploaded)
+    assert.ok(c.songsOf('user-a').length >= 25, 'already-dispatched authenticated request completed server-side')
+  } finally {
+    localStorage.removeItem(sessionKey)
+  }
+})
+
+test('PR #248 F1: Classic sync pending upload -> logout while in flight -> server accepts, client local state untouched, no IN_SYNC', async () => {
+  const c = await cloud()
+  const sync = require('../src/utils/cloudSongbookSync.ts')
+  const deviceA = bound(libA, 'user-a')
+  setSession('user-a')
+  const savedFetch = global.fetch
+  let triggerLogout = false
+  let before = null
+  global.fetch = async (url, opts = {}) => {
+    if (triggerLogout && (opts.method || 'GET') === 'POST' && url.startsWith('/api/songbook/sync')) {
+      localStorage.removeItem(sessionKey)
+      before = snapshot(deviceA)
+    }
+    return syncApi[(opts.method || 'GET') === 'GET' ? 'onRequestGet' : 'onRequestPost']({
+      env: c.env,
+      request: new Request(`https://example.com${url}`, {
+        method: opts.method || 'GET',
+        headers: opts.headers || {},
+        ...(opts.body ? { body: opts.body } : {}),
+      }),
+    })
+  }
+
+  try {
+    // Initial sync
+    const initial = await sync.performCloudSongbookSync(c.tokens.a, { storage: deviceA })
+    assert.equal(initial.success, true)
+
+    // Add a new song locally
+    journal.persistLibrary({ songs: [...libA.songs, song(88)], setlists: [] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+
+    triggerLogout = true
+    const result = await sync.performCloudSongbookSync(c.tokens.a, { storage: deviceA })
+
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.match(result.error, /signed out while syncing/)
+    assert.match(result.error, /already accepted by the cloud stay in the account that started/)
+    assert.deepEqual(snapshot(deviceA), before, 'Classic sync: local library, baseline, metadata untouched after logout')
+  } finally {
+    localStorage.removeItem(sessionKey)
+  }
+})
+
+test('PR #248 F2: Queued Records sync -> token rotates before queued execution -> revalidates and fails closed without network dispatch or mutation', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  const withToken = t => localStorage.setItem(sessionKey, JSON.stringify({ user: { id: 'user-a' }, sessionToken: t }))
+  withToken('tok-initial')
+
+  try {
+    // Seed device
+    assert.equal((await c.a(deviceA)).success, true)
+    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(99)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+
+    // Simulate lock queue: lock is held by ongoing task
+    let releaseLock
+    const lockWait = new Promise(resolve => { releaseLock = resolve })
+    let queueExecuted = false
+    let networkCalls = 0
+
+    const savedLocks = navigator.locks
+    let queuedAction = null
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: async (name, action) => {
+          if (name === client.RECORDS_SYNC_RUN_LOCK && !queuedAction) {
+            queuedAction = action
+            // Hold the lock until released
+            await lockWait
+            queueExecuted = true
+            return action()
+          }
+          return action()
+        },
+      },
+    })
+
+    c.setHook(async () => {
+      networkCalls++
+    })
+
+    let queuedSyncPromise
+    try {
+      // Start sync 1 which enters the lock queue
+      queuedSyncPromise = c.a(deviceA)
+
+      // Rotate token while sync 1 is queued waiting for execution
+      withToken('tok-rotated')
+      const beforeSnapshot = snapshot(deviceA)
+
+      // Release lock so queued sync 1 actually begins execution
+      releaseLock()
+      const result = await queuedSyncPromise
+
+      assert.ok(queueExecuted, 'Queue execution took place')
+      assert.equal(result.success, false)
+      assert.equal(result.status, 'ERROR')
+      assert.match(result.error, /Session expired or unauthorized/)
+      assert.equal(networkCalls, 0, 'No network requests dispatched for stale queued sync')
+      assert.deepEqual(snapshot(deviceA), beforeSnapshot, 'Zero mutations to device storage')
+    } finally {
+      Object.defineProperty(navigator, 'locks', { configurable: true, value: savedLocks })
+      c.setHook(null)
+    }
+  } finally {
+    localStorage.removeItem(sessionKey)
+  }
+})
+
+test('PR #248 F3: Empty library ownership confirmation -> logout while pending -> fails closed, no owner bound, empty library & recovery preserved', async () => {
+  const store = storage()
+  journal.persistLibrary({ songs: [], setlists: [] }, store)
+  localStorage.setItem(sessionKey, JSON.stringify({ user: { id: 'user-a' }, sessionToken: 'tok-a' }))
+
+  const originalWriteRecovery = journal.writeRecoverySnapshot
+  let loggedOut = false
+  journal.writeRecoverySnapshot = async (...args) => {
+    // Logout while confirmation is pending
+    localStorage.removeItem(sessionKey)
+    loggedOut = true
+    return originalWriteRecovery(...args)
+  }
+
+  let error = null
+  try {
+    await owner.confirmLibraryOwner('user-a', store)
+  } catch (err) {
+    error = err
+  } finally {
+    journal.writeRecoverySnapshot = originalWriteRecovery
+  }
+
+  assert.ok(loggedOut, 'Logout was triggered while confirmation was pending')
+  assert.ok(error, 'Confirmation must reject on logout')
+  assert.match(error.message, /The songbook or the signed-in account changed while linking/)
+  assert.equal(owner.readLibraryOwner(store), null, 'No ownership binding after logout')
+  assert.deepEqual(read(store), { songs: [], setlists: [] }, 'Empty library preserved')
+  const recoveryCopies = Object.entries(journal.recoveryData(store)).filter(([k]) => k.startsWith('gtar_sync_recovery:owner-confirm:'))
+  assert.equal(recoveryCopies.length, 1, 'Recovery state preserved in storage')
+  localStorage.removeItem(sessionKey)
+})
+
