@@ -11,6 +11,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 const { JSDOM } = require('jsdom')
 const dom = new JSDOM('', { url: 'https://dev.gtar-web.pages.dev' })
 Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage })
+Object.defineProperty(global, 'navigator', { configurable: true, value: { userAgent: 'GTAR test', locks: { request: async (_name, action) => (typeof action === 'function' ? action() : typeof _name === 'function' ? _name() : undefined) } } })
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
 const { createSessionToken } = require('../functions/lib/authCore.ts')
 const recordsApi = require('../functions/api/songbook/records.ts')
@@ -53,7 +54,17 @@ async function cloud() {
   const as = who => async (store, options = {}) => {
     const saved = global.fetch
     global.fetch = fetch
-    try { return await client.performRecordsSync(tokens[who], { storage: store, ...options }) } finally { global.fetch = saved }
+    const hadSession = localStorage.getItem('gtar_auth_session') !== null
+    if (!hadSession && !options.noSession) {
+      localStorage.setItem('gtar_auth_session', JSON.stringify({ user: { id: `user-${who}` }, sessionToken: tokens[who] }))
+    }
+    try { return await client.performRecordsSync(tokens[who], { storage: store, ...options }) }
+    finally {
+      if (!hadSession && !options.noSession) {
+        localStorage.removeItem('gtar_auth_session')
+      }
+      global.fetch = saved
+    }
   }
   const songsOf = userId => db.sqlite.prepare("SELECT record_id FROM user_songbook_records WHERE user_id = ? AND kind = 'song' AND removed = 0").all(userId).map(r => r.record_id)
   const recordsOf = userId => db.sqlite.prepare('SELECT count(*) AS n FROM user_songbook_records WHERE user_id = ?').get(userId).n
@@ -449,3 +460,124 @@ test('#247 F3 token rotation: the session token changes (same account) before co
     assert.equal((await c.a(deviceA)).status, 'IN_SYNC')
   } finally { localStorage.removeItem(sessionKey) }
 })
+
+// ---- #248 Final F3 Lifecycle Containment (F1 missing initial session, F2 GET persistence race) ----
+const getAfter = (c, fn) => {
+  let hit = null
+  c.setAfter(async (url, opts) => {
+    if ((opts.method || 'GET') !== 'GET' || !url.startsWith('/api/songbook/records') || hit) return
+    fn()
+    hit = true
+  })
+  return () => hit
+}
+
+test('#248 F1: missing initial session with valid token fails closed; no queued execution, no sync state/base written', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  localStorage.removeItem(sessionKey)
+  const before = snapshot(deviceA)
+  const result = await c.a(deviceA, { noSession: true })
+  assert.equal(result.success, false)
+  assert.equal(result.status, 'ERROR')
+  assert.match(result.error, /Session expired or unauthorized/)
+  assert.deepEqual(snapshot(deviceA), before, 'local storage completely untouched; no base, no metadata')
+  assert.deepEqual(read(deviceA), libA, 'local library preserved')
+})
+
+test('#248 F1: missing-session -> login -> logout sequence fails closed; no stale completion or sync persistence', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  localStorage.removeItem(sessionKey)
+  const before = snapshot(deviceA)
+  c.setHook(async () => {
+    setSession('user-a')
+    localStorage.removeItem(sessionKey)
+  })
+  let result
+  try {
+    result = await c.a(deviceA, { noSession: true })
+  } finally {
+    c.setHook(null)
+    localStorage.removeItem(sessionKey)
+  }
+  assert.equal(result.success, false)
+  assert.notEqual(result.status, 'IN_SYNC')
+  assert.deepEqual(snapshot(deviceA), before, 'nothing persisted on device after logout sequence')
+})
+
+test('#248 F2: Records GET paused -> logout before resume -> no remote records written to local library', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  setSession('user-a')
+  try {
+    assert.equal((await c.a(deviceA)).success, true)
+    const other = bound(libA, 'user-a')
+    await c.a(other)
+    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(31)] }, other, { expectedRaw: journal.libraryRevision(other) })
+    assert.equal((await c.a(other)).success, true)
+    assert.ok(c.songsOf('user-a').includes(id(31)))
+
+    let before = null
+    const hit = getAfter(c, () => {
+      localStorage.removeItem(sessionKey)
+      before = snapshot(deviceA)
+    })
+    let result
+    try {
+      result = await c.a(deviceA)
+    } finally {
+      c.setAfter(null)
+    }
+    assert.ok(hit())
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.match(result.error, /signed out while syncing/)
+    assert.deepEqual(snapshot(deviceA), before, 'device storage untouched by remote records')
+    assert.ok(!read(deviceA).songs.some(s => s.id === id(31)), 'stale remote song 31 was NOT written to device library')
+    assert.deepEqual(read(deviceA).songs.map(s => s.id), libA.songs.map(s => s.id), 'device library preserved')
+  } finally {
+    localStorage.removeItem(sessionKey)
+  }
+})
+
+test('#248 F2: Records GET paused -> token rotates before resume -> no remote records written to local library', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  const withToken = t => localStorage.setItem(sessionKey, JSON.stringify({ user: { id: 'user-a' }, sessionToken: t }))
+  withToken('tok-initial')
+  try {
+    assert.equal((await c.a(deviceA)).success, true)
+    const other = bound(libA, 'user-a')
+    await c.a(other)
+    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(32)] }, other, { expectedRaw: journal.libraryRevision(other) })
+    assert.equal((await c.a(other)).success, true)
+    assert.ok(c.songsOf('user-a').includes(id(32)))
+
+    let before = null
+    const hit = getAfter(c, () => {
+      withToken('tok-rotated')
+      before = snapshot(deviceA)
+    })
+    let result
+    try {
+      result = await c.a(deviceA)
+    } finally {
+      c.setAfter(null)
+    }
+    assert.ok(hit())
+    assert.equal(result.success, false)
+    assert.notEqual(result.status, 'IN_SYNC')
+    assert.match(result.error, /sign-in changed while syncing/)
+    assert.deepEqual(snapshot(deviceA), before, 'device storage untouched by remote records')
+    assert.ok(!read(deviceA).songs.some(s => s.id === id(32)), 'stale remote song 32 was NOT written to device library')
+    assert.deepEqual(read(deviceA).songs.map(s => s.id), libA.songs.map(s => s.id), 'device library preserved')
+
+    const retry = await c.a(deviceA)
+    assert.equal(retry.status, 'IN_SYNC')
+    assert.ok(read(deviceA).songs.some(s => s.id === id(32)), 'retry successfully incorporates remote song')
+  } finally {
+    localStorage.removeItem(sessionKey)
+  }
+})
+

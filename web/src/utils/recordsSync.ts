@@ -282,9 +282,11 @@ function localRecords(library: SyncLibrary): Map<string, { kind: RecordKind; id:
 
 /** Persists the library (revision-gated) and theme together; restores the library if the theme write fails. */
 /** Returns the library revision this write produced (#208 F6: results are delivered only while it is still current). */
-function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary, ownerUserId?: string | null): string | null {
+function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary, ownerUserId?: string | null,
+  gen?: SessionGeneration | null): string | null {
   // #247: a round that started for one account must not write after the library changed hands.
-  if (ownerUserId !== undefined) assertCommitAllowed(ownerUserId, storage)
+  // Revalidates session generation immediately before any local library write.
+  if (ownerUserId !== undefined) assertCommitAllowed(ownerUserId, storage, gen)
   const integrity = validateSongbookIntegrity(next.songs, next.setlists)
   if (!integrity.isValid) throw new Error(`Synced songbook failed referential integrity check: ${integrity.errors.join('; ')}`)
   const { themeSettings, ...library } = next
@@ -542,7 +544,7 @@ async function syncOnce(gen: SessionGeneration | null, token: string, storage: S
   applied -= holdBackMissingReferences(next, before.library, appliedRemote, state, knownBefore)
   // #208 F6: never write remote changes under an open editor; nothing is saved, the next run repeats.
   if (applied && canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
-  const appliedRevision = applied ? persistApplied(storage, before, next, state.userId) : undefined
+  const appliedRevision = applied ? persistApplied(storage, before, next, state.userId, gen) : undefined
   // Conflicted records are not pushed until the user decides.
   const skip = new Set(state.conflicts.map(item => recordKey(item.kind, item.id)))
   const { pushed, failed } = await pushAll(token, state, next, skip, new Map(), !hold, storage)
@@ -612,7 +614,7 @@ async function resolveOnce(gen: SessionGeneration | null, token: string, storage
   // choice can be saved. The cleaned setlist is pushed like any other local change.
   const cleaned = dropMissingSetlistEntries(next.songs, next.setlists)
   if (cleaned !== next.setlists) { next.setlists = cleaned; applied++ }
-  const appliedRevision = applied ? persistApplied(storage, before, next, state.userId) : undefined
+  const appliedRevision = applied ? persistApplied(storage, before, next, state.userId, gen) : undefined
   if (libraryRevision(storage) !== (appliedRevision ?? before.raw)) return changedDuringResolution()
   const { pushed, failed, accepted } = await pushAll(token, state, next, new Set(), force, !recordsDeleteHoldActive(storage), storage)
   assertRoundStillCurrent(state.userId, storage, pushed, gen) // #247 F3
@@ -656,7 +658,7 @@ async function adoptCloud(gen: SessionGeneration | null, storage: Storage, befor
   holdBackMissingReferences(next, before.library, new Map(records), state, knownBefore)
   if (canApply && !canApply()) throw new RecordsSyncDeferredError('Sync deferred: the songbook is being edited')
   if (keepRecovery) await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
-  const appliedRevision = persistApplied(storage, before, next, state.userId)
+  const appliedRevision = persistApplied(storage, before, next, state.userId, gen)
   appLogger.info('RecordsSync', `First sync on this device: took the cloud library (${next.songs.length} songs)${keepRecovery ? '; this device\'s own songs kept in recovery' : ''}`)
   return finish(gen, storage, state, next, records.size, 0, null, appliedRevision)
 }
@@ -686,7 +688,7 @@ async function replaceWithCloud(gen: SessionGeneration | null, token: string, st
     return { ...finish(gen, storage, state, before.library, 0, 0, null), replaced }
   }
   await writeRecoverySnapshot(`gtar_sync_recovery:download:${Date.now()}:${generateUUID()}`, JSON.stringify({ local: before.library, remote: next }), storage)
-  const appliedRevision = persistApplied(storage, before, next, state.userId)
+  const appliedRevision = persistApplied(storage, before, next, state.userId, gen)
   appLogger.info('RecordsSync', `Replaced this device with the cloud copy: ${next.songs.length} songs, ${next.setlists.length} setlists (${changed} changed); the previous device copy is in recovery`)
   return { ...finish(gen, storage, state, next, changed, 0, null, appliedRevision), replaced }
 }
@@ -702,14 +704,27 @@ export async function performRecordsSync(token: string, options: { forceAction?:
   canApply?: () => boolean
   /** #227: the user's answer to a first-sync choice. */
   firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult | null> {
+  const targetStorage = options.storage ?? (typeof localStorage !== 'undefined' ? localStorage : undefined)
+  const gen = captureSessionGeneration(targetStorage) // #247 F3: the sign-in this round was started under (before any wait)
+  // Fail closed when authenticated session cannot be established at request time:
+  // no unsafe queued execution, stale completion or sync persistence. Preserve valid local data and pending changes.
+  if (!gen || !gen.userId) {
+    appLogger.warn('RecordsSync', 'Sync blocked: missing authenticated request-time session')
+    return {
+      success: false,
+      status: 'ERROR',
+      state: 'OFFLINE_OR_CLOUD_FAILURE',
+      actionTaken: 'NONE',
+      error: 'Session expired or unauthorized. Please sign in again.',
+    }
+  }
   // One records sync at a time across this browser's tabs (manual and automatic).
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-  const gen = captureSessionGeneration() // #247 F3: the sign-in this round was started under (before any wait)
   if (locks?.request) return locks.request(RECORDS_SYNC_RUN_LOCK, () => runRecordsSync(gen, token, options))
   return runRecordsSync(gen, token, options)
 }
 
-async function runRecordsSync(gen: SessionGeneration | null, token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean; firstSync?: FirstSyncChoice }): Promise<CloudSyncResult | null> {
+async function runRecordsSync(gen: SessionGeneration, token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; canApply?: () => boolean; firstSync?: FirstSyncChoice }): Promise<CloudSyncResult | null> {
   const storage = options.storage ?? localStorage
   try {
     if (!options.forceAction) return await syncOnce(gen, token, storage, options.canApply, options.firstSync)
