@@ -54,12 +54,28 @@ async function world({ enabled = true, library } = {}) {
   const run = async (store, options) => {
     const saved = global.fetch
     global.fetch = fetch
-    try { return await client.performRecordsSync('token', { storage: store, ...options }) } finally { global.fetch = saved }
+    const hadSession = localStorage.getItem('gtar_auth_session') !== null
+    if (!hadSession) {
+      localStorage.setItem('gtar_auth_session', JSON.stringify({ user: { id: user.id }, sessionToken: 'token' }))
+    }
+    try { return await client.performRecordsSync('token', { storage: store, ...options }) }
+    finally {
+      if (!hadSession) localStorage.removeItem('gtar_auth_session')
+      global.fetch = saved
+    }
   }
   const runAny = async (store, options) => {
     const saved = global.fetch
     global.fetch = fetch
-    try { return await client.performSongbookSync('token', { storage: store, ...options }) } finally { global.fetch = saved }
+    const hadSession = localStorage.getItem('gtar_auth_session') !== null
+    if (!hadSession) {
+      localStorage.setItem('gtar_auth_session', JSON.stringify({ user: { id: user.id }, sessionToken: 'token' }))
+    }
+    try { return await client.performSongbookSync('token', { storage: store, ...options }) }
+    finally {
+      if (!hadSession) localStorage.removeItem('gtar_auth_session')
+      global.fetch = saved
+    }
   }
   return { db, device, run, runAny, api: fetch, setHook: h => { hook = h }, setAfter: h => { after = h } }
 }
