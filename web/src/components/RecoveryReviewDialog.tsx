@@ -285,6 +285,11 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
 
               <div className="px-3 pb-3 space-y-2 text-xs font-mono">
                 <p className="text-app-muted break-all">{retention.indexedDb ? 'IndexedDB' : 'localStorage'}: {source.key} · {source.raw.length.toLocaleString()} chars · {((source.key.length + source.raw.length) * 2).toLocaleString()} bytes (UTF-16 estimate)</p>
+                {source.cloudRecordsOnly && (
+                  <p data-testid={`source-cloud-records-note-${index}`} className="p-2 rounded bg-status-warning/8 border border-status-warning/30 text-[11px] text-app-text font-sans">
+                    This archive also holds the cloud versions a conflict choice did not keep (listed below with their cloud revision). They are included in “Export all recovery data” but cannot be restored from this review.
+                  </p>
+                )}
                 {source.unreadable && (
                   <p data-testid={`source-unreadable-note-${index}`} className="p-2 rounded bg-status-warning/8 border border-status-warning/30 text-[11px] text-app-text font-sans">
                     The {source.unreadable.join(' and ')} in this archive is not a valid library, so only this device's copy is reviewed here. The full archive is kept and is included in “Export all recovery data”.
@@ -335,7 +340,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
                           {record.kind === 'song' ? '♪' : '☰'} {record.title}
                         </span>
                         <span className="text-app-muted ml-2">
-                          {classifyMissing(record)} · ID {record.id}
+                          {classifyMissing(record)} · ID {record.id}{typeof record.revision === 'number' ? ` · cloud revision ${record.revision}` : ''}
                         </span>
                       </li>
                     ))}

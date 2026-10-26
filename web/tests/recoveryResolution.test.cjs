@@ -365,3 +365,21 @@ test('#240: with the cloud copy unreadable, a differing device copy is actionabl
   assert.equal(inspectRecovery().sources[0].status, 'resolved')
   assert.equal(hasActionableRecovery(), false)
 })
+
+test('#240 P1-F2: archived cloud records of a conflict choice are differences with their revision, disclosed in the review', async () => {
+  const cloudSetlist = { id: 'list', name: 'Set', songs: [{ id: 'current', title: 'Same title' }, { id: 'gone', title: 'Gone' }] }
+  archive('records:1:a', { local: original, remoteRecords: [{ kind: 'setlist', id: 'list', rev: 4, removed: false, checksum: 'x', data: cloudSetlist }, null] })
+  const before = bytes()
+  const source = inspectRecovery().sources.find(s => s.key.startsWith('gtar_sync_recovery:records:'))
+  assert.equal(source.status, 'actionable')
+  assert.equal(source.cloudRecordsOnly, true)
+  assert.deepEqual(source.differences.map(d => [d.kind, d.id, d.difference, d.revision]), [['setlist', 'list', 'missing', 4]])
+  assert.deepEqual(bytes(), before)
+  root = createRoot(document.getElementById('root'))
+  await act(async () => root.render(React.createElement(RecoveryReviewDialog, { onClose() {} })))
+  assert.match(document.body.textContent, /cloud versions a conflict choice did not keep .* cannot be restored from this review/)
+  const details = document.querySelector('[data-testid^="recovery-source-"]')
+  details.open = true
+  await act(async () => {})
+  assert.match(document.body.textContent, /cloud revision 4/)
+})

@@ -37,12 +37,16 @@ async function world({ enabled = true, library } = {}) {
   const token = await createSessionToken(user, env.AUTH_SECRET)
   if (library) await upsertUserSongbook(db, 'user-a', JSON.stringify(library), sync.computeSongbookChecksum(library), '2026-10-24T00:00:00Z', { version: 0, checksum: null })
   let hook = null
+  let after = null
   const fetch = async (url, opts = {}) => {
     if (hook) await hook(url, opts)
     const target = url.startsWith('/api/songbook/records') ? recordsApi : syncApi
     const method = opts.method || 'GET'
-    return target[method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env, request: new Request(`https://example.com${url}`, {
+    const response = await target[method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env, request: new Request(`https://example.com${url}`, {
       method, headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}` }, ...(opts.body ? { body: opts.body } : {}) }) })
+    // Test hook: runs after the server handled the request (e.g. to lose the acknowledgement).
+    if (after) await after(url, opts)
+    return response
   }
   const device = lib => { const s = storage(); journal.persistLibrary(lib, s); return s }
   const run = async (store, options) => {
@@ -55,7 +59,7 @@ async function world({ enabled = true, library } = {}) {
     global.fetch = fetch
     try { return await client.performSongbookSync('token', { storage: store, ...options }) } finally { global.fetch = saved }
   }
-  return { db, device, run, runAny, api: fetch, setHook: h => { hook = h } }
+  return { db, device, run, runAny, api: fetch, setHook: h => { hook = h }, setAfter: h => { after = h } }
 }
 const read = store => journal.readPersistedLibrary(store)
 const edit = (store, fn) => { const lib = read(store); journal.persistLibrary(fn(lib), store, { expectedRaw: journal.libraryRevision(store) }) }
@@ -848,4 +852,96 @@ test('#240 F8: stale song id in a cloud setlist → detected by exact id, held b
   assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1)])
   const snapshots = Object.entries(journal.recoveryData(fresh)).filter(([k]) => k.startsWith('gtar_sync_recovery:records:')).map(([, v]) => JSON.parse(v))
   assert.ok(snapshots.some(snap => snap.remoteRecords?.some(r => r?.data?.songs?.some(ref => ref.id === id(77)))), 'original cloud entry (stale id) preserved in recovery')
+})
+
+// ---- #240 five confirmed recovery/convergence defects (base 5a5482b) ----
+const heldSetlistWorld = async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  removeInCloud(w, id(2))
+  const fresh = w.device({ songs: [], setlists: [] })
+  await w.run(fresh)
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1, 'setlist held back on the fresh device')
+  return { w, a, fresh }
+}
+
+test('#240 P1-F1: a held-back setlist is applied automatically once its missing song is back in the cloud', async () => {
+  const { w, a, fresh } = await heldSetlistWorld()
+  await w.run(a) // A still has song 2: the cloud deletion is held there
+  assert.equal((await w.run(a, { forceAction: 'upload' })).success, true) // Keep Local Only restores song 2 in the cloud
+  assert.ok(cloudIds(w, 'song').includes(id(2)))
+  for (let i = 0; i < 3; i++) await w.run(fresh)
+  assert.deepEqual(read(fresh).setlists.map(l => l.songs.map(r => r.id)), [[id(1), id(2)]], 'setlist now on the fresh device')
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 0, 'dependency conflict cleared')
+  assert.equal((await w.run(fresh)).status, 'IN_SYNC')
+})
+
+test('#240 P1-F1: a dependency conflict stays while the song is still missing (nothing applied, nothing pruned)', async () => {
+  const { w, fresh } = await heldSetlistWorld()
+  for (let i = 0; i < 2; i++) await w.run(fresh)
+  assert.deepEqual(read(fresh).setlists, [])
+  assert.equal(client.readRecordsSyncState(fresh).conflicts.length, 1)
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(2)])
+})
+
+test('#240 P1-F2: after Download Cloud drops entries, the recovery review shows the archived cloud setlist as a difference', async () => {
+  const { w, fresh } = await heldSetlistWorld()
+  assert.equal((await w.run(fresh, { forceAction: 'download' })).success, true)
+  assert.deepEqual(read(fresh).setlists[0].songs.map(r => r.id), [id(1)])
+  const review = journal.inspectRecovery(fresh)
+  const source = review.sources.find(s => s.key.startsWith('gtar_sync_recovery:records:'))
+  assert.ok(source, 'resolution snapshot exists')
+  assert.notEqual(source.status, 'represented', 'not falsely represented')
+  const diff = source.differences.find(d => d.kind === 'setlist' && d.id === id(901))
+  assert.ok(diff, 'original cloud setlist listed')
+  assert.deepEqual(diff.record.songs.map(r => r.id), [id(1), id(2)], 'with the omitted entry')
+  assert.equal(diff.revision, 1, 'cloud revision shown')
+  assert.ok(source.cloudRecordsOnly, 'restore-from-review not supported is disclosed')
+  assert.ok(!journal.planRecoveryCleanup(review).some(item => item.key === source.key), 'cleanup cannot remove it before an explicit choice')
+})
+
+test('#240 P2-F3: Keep Both whose acknowledgement is lost creates exactly one copy on retry', async () => {
+  const { w, b } = await conflicted()
+  w.setAfter(async (url, opts) => { if ((opts.method || 'GET') === 'POST') throw new TypeError('Failed to fetch') })
+  const lost = await w.run(b, { forceAction: 'merge_preserve' })
+  w.setAfter(null)
+  assert.notEqual(lost.success, true)
+  const retry = await w.run(b, { forceAction: 'merge_preserve' })
+  assert.equal(retry.success, true, retry.error)
+  const copies = s => s.filter(x => /cloud copy/.test(x.title))
+  assert.equal(copies(read(b).songs).length, 1, 'one copy on this device')
+  const cloudCopies = w.db.sqlite.prepare("SELECT data_json FROM user_songbook_records WHERE kind = 'song' AND removed = 0").all().map(r => JSON.parse(r.data_json)).filter(x => /cloud copy/.test(x.title))
+  assert.equal(cloudCopies.length, 1, 'one copy in the cloud')
+})
+
+test('#240 P2-F4: an editor save during Keep Local is kept and the round is not reported as in sync', async () => {
+  const { w, b } = await conflicted()
+  const original = journal.writeRecoverySnapshot
+  journal.writeRecoverySnapshot = async (...args) => {
+    edit(b, lib => ({ ...lib, songs: lib.songs.map(s => s.id === id(3) ? { ...s, rawContent: 'saved during sync' } : s) }))
+    return original(...args)
+  }
+  let result
+  try { result = await w.run(b, { forceAction: 'upload' }) } finally { journal.writeRecoverySnapshot = original }
+  assert.notEqual(result.status, 'IN_SYNC', 'not reported as converged')
+  assert.equal(read(b).songs.find(s => s.id === id(3)).rawContent, 'saved during sync', 'editor save kept')
+  const again = await w.run(b, { forceAction: 'upload' })
+  assert.equal(again.success, true, again.error)
+  const settled = await w.run(b)
+  assert.equal(settled.status, 'IN_SYNC')
+  assert.equal(JSON.parse(cloudRec(w, 'song', id(3)).data_json).rawContent, 'saved during sync', 'cloud has the newer save')
+  assert.equal(JSON.parse(cloudRec(w, 'song', id(1)).data_json).rawContent, 'B version', 'keep-local choice applied')
+})
+
+test('#240 P2-F5: the server refuses a new setlist entry without a song id', async () => {
+  const w = await world({ library: base })
+  const a = w.device(base)
+  await w.run(a)
+  const setlist = cloudRec(w, 'setlist', id(901))
+  const idless = { ...JSON.parse(setlist.data_json), songs: [{ id: id(1), title: 'Song 1', artist: 'A' }, { title: 'Song 2', artist: 'A' }] }
+  const response = await pushRaw(w, [{ kind: 'setlist', id: id(901), baseRev: setlist.rev, data: idless }])
+  assert.deepEqual(response.accepted, [])
+  assert.equal(response.conflicts[0]?.reason, 'missing-songs')
+  assert.deepEqual(cloudSetlistRefs(w, id(901)), [id(1), id(2)], 'cloud setlist unchanged')
 })
