@@ -1,4 +1,4 @@
-import { catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
+import { assertPublishFromOwnLibrary, catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
 import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudSongbookSync'
@@ -71,6 +71,7 @@ export function publicationError(error: unknown): string {
 }
 
 export async function preparePublication(sourceId: string | number, getLocal: () => SyncLibrary, blocked: () => boolean): Promise<SourcePreview> {
+  assertPublishFromOwnLibrary()
   const { token, accountId } = publisherSession()
   const local = getLocal()
   if (blocked()) throw new Error('Save your edits and resolve local recovery or cross-tab conflicts before publishing.')
@@ -197,6 +198,8 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
 export async function sendPublicationIntent(account: string, sourceId: string | number, link: PublicationLink): Promise<{ result: PublicationResult; saved: boolean }> {
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
+  // #247: a create/update sends a snapshot of this device's setlist; unpublishing sends none.
+  if (link.pending.method !== 'DELETE') assertPublishFromOwnLibrary()
   // Detach from caller-owned objects before crossing any asynchronous boundary.
   link = JSON.parse(JSON.stringify(link)) as PublicationLink
   const intent = link.pending!

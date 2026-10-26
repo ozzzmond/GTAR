@@ -21,6 +21,7 @@ const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts'
 const { computeSongbookChecksum } = require('../src/utils/cloudSongbookSync.ts')
 const { LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
+const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
 
 let dom, root, library, cloud, version, calls, responder
 
@@ -40,6 +41,8 @@ function session(account = 'account-edge-admin', role = 'admin', access = 'activ
     access_status: access,
   }
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
+  // #247: the device library belongs to the first account signed in on this test device.
+  if (!localStorage.getItem(OWNER_KEY)) bindOwner(localStorage, account)
   return value
 }
 

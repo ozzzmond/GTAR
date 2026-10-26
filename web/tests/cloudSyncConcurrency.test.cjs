@@ -1,3 +1,4 @@
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -44,6 +45,7 @@ const postBody = (data, rev) => ({ data, expectedVersion: rev.version, expectedC
 function seedStorage(local, base) {
   const store = storage()
   persistLibrary(local, store)
+  bindOwner(store, 'user-a') // #247: the device library belongs to user-a
   if (base) {
     sync.saveCloudSyncBase(base, store)
     sync.saveCloudSyncMeta({ lastSyncedChecksum: sync.computeSongbookChecksum(base), cloudVersion: 1,
@@ -327,7 +329,9 @@ test('CLIENT: changed account during 409 refresh cannot receive the previous acc
   }, async () => {
     const result = await sync.performCloudSongbookSync('token', { storage: store })
     assert.equal(result.status, 'ERROR')
-    assert.match(result.error, /Account changed/)
+    // #247: the device library belongs to user-a; the refreshed session is user-b → refused before any merge.
+    assert.match(result.error, /belongs to another GTAR account/)
+    assert.equal(result.ownership, 'mismatch')
   })
   assert.equal(posts, 1)
   assert.equal(readPersistedLibrary(store).songs[0].rawContent, 'local')
@@ -363,6 +367,7 @@ test('F1: identical merged-content race applies remote additions to React and pe
     remote.songs.push({ id: listId, title: 'Remote addition', rawContent: 'addition' })
     await write(db, base, emptyRevision)
     persistLibrary(local, localStorage)
+    bindOwner(localStorage, 'user-a')
     sync.saveCloudSyncBase(base, localStorage)
     sync.saveCloudSyncMeta({ lastSyncedUserId: 'user-a', lastSyncedChecksum: sync.computeSongbookChecksum(base) }, localStorage)
     let posts = 0

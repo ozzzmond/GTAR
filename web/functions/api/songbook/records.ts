@@ -16,7 +16,7 @@ import {
   readBoundedJson,
   type AuthEnv,
 } from '../../lib/authCore.ts'
-import { pullRecords, pushRecords } from '../../lib/songbookRecordsCore.ts'
+import { CLASSIC_SOURCE_UNREADABLE, pullRecords, pushRecords } from '../../lib/songbookRecordsCore.ts'
 import {
   MAX_PUSH_CHANGES,
   MAX_PULL_RECORDS,
@@ -84,6 +84,9 @@ export async function onRequestGet({ request, env }: PagesContext): Promise<Resp
     return jsonResponse({ success: true, userId: auth.user.id, ...page })
   } catch (err) {
     if (missingTables(err)) return disabled('tables', await latestMigration(env))
+    if (err instanceof Error && err.message === CLASSIC_SOURCE_UNREADABLE) {
+      return jsonResponse({ success: false, code: CLASSIC_SOURCE_UNREADABLE, error: 'Your cloud songbook could not be read for per-record sync. Nothing was changed.' }, 409)
+    }
     console.error('Failed to read songbook records:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to read songbook records', 500)
   }
@@ -131,6 +134,13 @@ export async function onRequestPost({ request, env }: PagesContext): Promise<Res
   if ('error' in auth) return errorResponse(auth.error, auth.status)
   const rejection = await enforceAbuseLimit(env, 'sync-write', auth.user.id)
   if (rejection) return rejection
+  // #247 writer fence: an upload must state the account that owns the device library it comes from,
+  // and it must be the signed-in account. Builds without this check (no header) are refused.
+  const owner = request.headers.get('X-GTAR-Library-Owner')
+  if (!owner || owner.trim().toLowerCase() !== String(auth.user.id).trim().toLowerCase()) {
+    return jsonResponse({ success: false, code: owner ? 'LIBRARY_OWNER_MISMATCH' : 'LIBRARY_OWNER_REQUIRED',
+      error: owner ? 'Upload refused: this device\'s songbook belongs to another account.' : 'Upload refused: update GTAR (reload the page) to sync.' }, 409)
+  }
 
   const body = await readBoundedJson(request, MAX_RECORDS_PUSH_BYTES, { requireObject: true })
   if (body.error) return body.status === 413 ? errorResponse('Payload exceeds maximum allowed size of 2MB', 413) : errorResponse('Malformed JSON request body', 400)
@@ -141,6 +151,9 @@ export async function onRequestPost({ request, env }: PagesContext): Promise<Res
     return jsonResponse({ success: true, userId: auth.user.id, ...result })
   } catch (err) {
     if (missingTables(err)) return disabled('tables', await latestMigration(env))
+    if (err instanceof Error && err.message === CLASSIC_SOURCE_UNREADABLE) {
+      return jsonResponse({ success: false, code: CLASSIC_SOURCE_UNREADABLE, error: 'Your cloud songbook could not be read for per-record sync. Nothing was changed.' }, 409)
+    }
     console.error('Failed to write songbook records:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to write songbook records', 500)
   }

@@ -25,10 +25,11 @@ async function fixture({ enabled = true } = {}) {
     ? { sql, bound: [], bind(id) { return { first: async () => users[id] ?? null } } } : original(sql)
   const env = { DB: db, AUTH_SECRET: 'records-test-secret', ...(enabled ? { SONGBOOK_RECORDS_SYNC: 'records-v1' } : {}) }
   const tokens = { 'user-a': await createSessionToken(users['user-a'], env.AUTH_SECRET), 'user-b': await createSessionToken(users['user-b'], env.AUTH_SECRET) }
-  const call = async (method, { user = 'user-a', since = 0, limit, body } = {}) => {
+  // #247: uploads state the library owner (the signed-in user unless a test says otherwise).
+  const call = async (method, { user = 'user-a', since = 0, limit, body, owner = user } = {}) => {
     const url = `https://example.com/api/songbook/records?since=${since}${limit ? `&limit=${limit}` : ''}`
     const res = await api[method === 'GET' ? 'onRequestGet' : 'onRequestPost']({ env, request: new Request(url, { method,
-      headers: { Authorization: `Bearer ${tokens[user]}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }) })
+      headers: { Authorization: `Bearer ${tokens[user]}`, 'Content-Type': 'application/json', ...(owner ? { 'X-GTAR-Library-Owner': owner } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }) })
     return { status: res.status, json: await res.json() }
   }
   const seedV1 = async (library, user = 'user-a') => upsertUserSongbook(db, user, JSON.stringify(library),
@@ -329,4 +330,28 @@ test('#208 F2: a classic write landing while the seed is in flight → the seed 
   await call('POST', { body: { changes: [{ kind: 'song', id: 's2', baseRev: 0, data: song('s2') }] } })
   const doc = JSON.parse((await findUserSongbook(db, 'user-a')).data_json)
   assert.equal(doc.songs.find(s => s.id === 's1').rawContent, 'classic edit', 'classic edit not erased')
+})
+
+// #247 writer fence: per-record uploads must state the signed-in account as the library owner.
+test('#247: records push without an owner header, or with another account, is refused and writes nothing', async () => {
+  const { call, db } = await fixture()
+  const change = { kind: 'song', id: 's1', baseRev: 0, data: song('s1') }
+  const missing = await call('POST', { body: { changes: [change] }, owner: null })
+  assert.equal(missing.status, 409); assert.equal(missing.json.code, 'LIBRARY_OWNER_REQUIRED')
+  const other = await call('POST', { body: { changes: [change] }, owner: 'user-b' })
+  assert.equal(other.status, 409); assert.equal(other.json.code, 'LIBRARY_OWNER_MISMATCH')
+  assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM user_songbook_records').get().n, 0)
+  const ok = await call('POST', { body: { changes: [change] } })
+  assert.equal(ok.status, 200); assert.equal(ok.json.accepted.length, 1)
+})
+
+test('#247: an unreadable classic songbook is not seeded as an empty per-record songbook', async () => {
+  const { call, db } = await fixture()
+  db.sqlite.prepare("INSERT INTO user_songbooks (user_id, data_json, checksum, version, updated_at) VALUES ('user-a', '{not json', 'x', 3, 'now')").run()
+  const res = await call('GET')
+  assert.equal(res.status, 409); assert.equal(res.json.code, 'CLASSIC_SOURCE_UNREADABLE')
+  assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM user_songbook_cursors WHERE user_id = 'user-a'").get().n, 0, 'no cursor')
+  const push = await call('POST', { body: { changes: [{ kind: 'song', id: 's1', baseRev: 0, data: song('s1') }] } })
+  assert.equal(push.status, 409, 'nothing uploaded over it')
+  assert.equal(db.sqlite.prepare("SELECT data_json FROM user_songbooks WHERE user_id = 'user-a'").get().data_json, '{not json', 'document untouched')
 })

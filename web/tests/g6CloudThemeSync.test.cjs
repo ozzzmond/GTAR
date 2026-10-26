@@ -20,6 +20,7 @@ for (const extension of ['.ts', '.tsx']) {
 }
 
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { upsertUserSongbook, findUserSongbook, createSessionToken } = require('../functions/lib/authCore.ts')
 const api = require('../functions/api/songbook/sync.ts')
 const sync = require('../src/utils/cloudSongbookSync.ts')
@@ -37,7 +38,7 @@ const {
 
 function createStorage() {
   const map = new Map()
-  return {
+  const store = {
     getItem: (key) => map.get(key) ?? null,
     setItem: (key, value) => map.set(key, String(value)),
     removeItem: (key) => map.delete(key),
@@ -46,6 +47,8 @@ function createStorage() {
       return map.size
     },
   }
+  bindOwner(store, 'user-a') // #247: devices in these tests belong to user-a
+  return store
 }
 
 async function fixture() {

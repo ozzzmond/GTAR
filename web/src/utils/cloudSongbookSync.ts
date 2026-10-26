@@ -5,6 +5,7 @@ import { appLogger } from './logger'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
+import { assertLibraryOwner, LibraryOwnershipError, readLibraryOwner } from './libraryOwner'
 import { generateUUID } from './uuid'
 import {
   CLOUD_THEME_SETTINGS_VERSION,
@@ -70,6 +71,12 @@ export interface SyncDecisionResult {
   baseChecksum: string | null
 }
 
+/** #247: the verified owner id to send with an upload; throws if this account does not own the library. */
+function uploadOwner(userId: string | null, storage: Storage): string {
+  assertLibraryOwner(userId, storage)
+  return readLibraryOwner(storage)!.userId
+}
+
 export interface ConflictingItem {
   id: string
   type: 'song' | 'setlist' | 'theme'
@@ -101,6 +108,8 @@ export interface CloudSyncResult {
   appliedRevision?: string | null
   /** #227: first sync on this device with its own songs and a cloud library: nothing written, ask the user. */
   firstSyncChoice?: { songs: number; setlists: number }
+  /** #247: cloud sync refused because this device's library has no verified owner or another owner. */
+  ownership?: 'unbound' | 'mismatch'
   /** #227 item 4: "Replace this device with the cloud copy" — what the device now holds and how many records changed (0 = nothing written). */
   replaced?: { songs: number; setlists: number; changed: number }
 }
@@ -1316,6 +1325,14 @@ async function executeCloudSongbookSync(
     }
   }
 
+  // #247: the device library is read, merged and uploaded only for the account that owns it.
+  try { assertLibraryOwner(currentUserId, targetStorage) } catch (err) {
+    if (err instanceof LibraryOwnershipError) {
+      return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: err.message, ownership: err.ownership }
+    }
+    throw err
+  }
+
   if (retry && retry.userId !== currentUserId) {
     return { success: false, status: 'ERROR', state: 'CONFLICT', actionTaken: 'NONE',
       error: 'Account changed during reconciliation. Local data preserved; sign in again and export a backup.' }
@@ -1501,6 +1518,8 @@ async function executeCloudSongbookSync(
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          // #247: re-checked right before the upload (an account switch may have happened meanwhile).
+          'X-GTAR-Library-Owner': uploadOwner(currentUserId, targetStorage),
         },
         body: uploadBody,
         signal: AbortSignal.timeout(15000),
@@ -1813,6 +1832,8 @@ async function executeCloudSongbookSync(
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          // #247: re-checked right before the upload (an account switch may have happened meanwhile).
+          'X-GTAR-Library-Owner': uploadOwner(currentUserId, targetStorage),
         },
         body: mergedBody,
         signal: AbortSignal.timeout(15000),

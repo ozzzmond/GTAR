@@ -173,6 +173,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const rejection = await enforceAbuseLimit(env, 'sync-write', auth.user.id)
   if (rejection) return rejection
+  // #247 writer fence (additive): a client that states the library owner must state the signed-in
+  // account. Older clients send no header and are still accepted on this classic route (PROD
+  // compatibility); per-record uploads require the header.
+  const owner = request.headers.get('X-GTAR-Library-Owner')
+  if (owner !== null && owner.trim().toLowerCase() !== String(auth.user.id).trim().toLowerCase()) {
+    return jsonResponse({ success: false, code: 'LIBRARY_OWNER_MISMATCH', error: "Upload refused: this device's songbook belongs to another account." }, 409)
+  }
 
   const readRes = await readBoundedJson(request, MAX_SONGBOOK_PAYLOAD_BYTES, { requireObject: true })
   if (readRes.error) {

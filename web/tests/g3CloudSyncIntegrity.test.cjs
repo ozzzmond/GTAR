@@ -1,3 +1,4 @@
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -23,8 +24,10 @@ const copies = (merged, id) => merged.songs.filter((s) => s.id !== id)
 
 function storage() {
   const map = new Map()
-  return { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k),
+  const store = { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k),
     key: i => [...map.keys()][i] ?? null, get length() { return map.size } }
+  bindOwner(store, 'user-a') // #247: devices in these tests belong to user-a
+  return store
 }
 async function fixture() {
   const db = createSongbookSqlite()
