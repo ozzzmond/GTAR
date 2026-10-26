@@ -67,7 +67,14 @@ export const RECORDS_SERVER_STATE_KEY = 'gtar_records_sync_server'
 export function isRecordsServerUnavailable(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
   try { return storage.getItem(RECORDS_SERVER_STATE_KEY) === 'off' } catch { return false }
 }
-function markRecordsServer(state: 'on' | 'off', storage: Pick<Storage, 'getItem' | 'setItem'>): boolean {
+function isSessionGenerationCurrent(expected: SessionGeneration | null, storage?: Pick<Storage, 'getItem'>): boolean {
+  if (!expected || !expected.userId) return false
+  const current = captureSessionGeneration(storage)
+  if (!current || !current.userId) return false
+  return sameUser(current.userId, expected.userId) && current.token === expected.token
+}
+function markRecordsServer(state: 'on' | 'off', storage: Pick<Storage, 'getItem' | 'setItem'>, gen?: SessionGeneration | null): boolean {
+  if (gen !== undefined && !isSessionGenerationCurrent(gen, storage)) return false
   try {
     const changed = storage.getItem(RECORDS_SERVER_STATE_KEY) !== state
     storage.setItem(RECORDS_SERVER_STATE_KEY, state)
@@ -790,14 +797,28 @@ async function runRecordsSync(gen: SessionGeneration, token: string, options: { 
  */
 export async function performSongbookSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult> {
   const storage = options.storage ?? localStorage
+  const gen = captureSessionGeneration(storage)
   if (isRecordsSyncEnabled(storage)) {
     const result = await performRecordsSync(token, options)
-    if (result) { markRecordsServer('on', storage); return result }
+    if (result) {
+      if (isSessionGenerationCurrent(gen, storage)) markRecordsServer('on', storage, gen)
+      return result
+    }
     // Logged once when it changes, not on every sync.
     // Logged when the state or the reason changes (once per page for a given reason), not on every sync.
-    if (markRecordsServer('off', storage) || loggedDisabledReason !== lastDisabledReason) {
-      loggedDisabledReason = lastDisabledReason
-      appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync', lastDisabledReason ?? undefined)
+    if (isSessionGenerationCurrent(gen, storage)) {
+      if (markRecordsServer('off', storage, gen) || loggedDisabledReason !== lastDisabledReason) {
+        loggedDisabledReason = lastDisabledReason
+        appLogger.warn('RecordsSync', 'Server has per-record sync off; using classic sync', lastDisabledReason ?? undefined)
+      }
+    } else {
+      return {
+        success: false,
+        status: 'ERROR',
+        state: 'OFFLINE_OR_CLOUD_FAILURE',
+        actionTaken: 'NONE',
+        error: 'Session expired or unauthorized. Please sign in again.',
+      }
     }
   }
   return performCloudSongbookSync(token, options)

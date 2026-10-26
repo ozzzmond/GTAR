@@ -68,7 +68,7 @@ async function cloud() {
   }
   const songsOf = userId => db.sqlite.prepare("SELECT record_id FROM user_songbook_records WHERE user_id = ? AND kind = 'song' AND removed = 0").all(userId).map(r => r.record_id)
   const recordsOf = userId => db.sqlite.prepare('SELECT count(*) AS n FROM user_songbook_records WHERE user_id = ?').get(userId).n
-  return { db, a: as('a'), b: as('b'), songsOf, recordsOf, setHook: h => { hook = h }, setAfter: h => { after = h }, tokens, env }
+  return { db, a: as('a'), b: as('b'), songsOf, recordsOf, setHook: h => { hook = h }, setAfter: h => { after = h }, tokens, env, fetch }
 }
 const device = lib => { const s = storage(); journal.persistLibrary(lib, s); return s }
 const read = store => journal.readPersistedLibrary(store)
@@ -772,5 +772,83 @@ test('PR #248 F3: Empty library ownership confirmation -> logout while pending -
   const recoveryCopies = Object.entries(journal.recoveryData(store)).filter(([k]) => k.startsWith('gtar_sync_recovery:owner-confirm:'))
   assert.equal(recoveryCopies.length, 1, 'Recovery state preserved in storage')
   localStorage.removeItem(sessionKey)
+})
+
+test('PR #248 F4: Public Records sync wrapper -> stale queued sync preserves off state, zero network/mutation, fresh sync enables on', async () => {
+  const c = await cloud()
+  const deviceA = bound(libA, 'user-a')
+  const withToken = t => localStorage.setItem(sessionKey, JSON.stringify({ user: { id: 'user-a' }, sessionToken: t }))
+  withToken('tok-initial')
+
+  const savedFetch = global.fetch
+  global.fetch = c.fetch
+  try {
+    // 1. Initial state: server state flag is 'off', sync enabled is '1'
+    deviceA.setItem(client.RECORDS_SERVER_STATE_KEY, 'off')
+    deviceA.setItem(client.RECORDS_SYNC_TOGGLE_KEY, '1')
+    assert.equal(client.isRecordsServerUnavailable(deviceA), true)
+
+    let releaseLock
+    const lockWait = new Promise(resolve => { releaseLock = resolve })
+    let queueExecuted = false
+    let networkCalls = 0
+
+    const savedLocks = navigator.locks
+    let queuedAction = null
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: async (name, action) => {
+          if (name === client.RECORDS_SYNC_RUN_LOCK && !queuedAction) {
+            queuedAction = action
+            await lockWait
+            queueExecuted = true
+            return action()
+          }
+          return action()
+        },
+      },
+    })
+
+    c.setHook(async () => {
+      networkCalls++
+    })
+
+    let queuedSyncPromise
+    try {
+      // Call actual public Records sync wrapper
+      queuedSyncPromise = client.performSongbookSync('tok-initial', { storage: deviceA })
+
+      // Rotate token while queued before execution
+      withToken('tok-rotated')
+      const beforeSnapshot = snapshot(deviceA)
+      assert.equal(beforeSnapshot[client.RECORDS_SERVER_STATE_KEY], 'off')
+
+      // Release lock so queued execution runs
+      releaseLock()
+      const result = await queuedSyncPromise
+
+      assert.ok(queueExecuted, 'Queue execution took place')
+      assert.equal(result.success, false)
+      assert.equal(result.status, 'ERROR')
+      assert.match(result.error, /Session expired or unauthorized/)
+      assert.equal(networkCalls, 0, 'No network requests dispatched for stale queued sync')
+      assert.equal(deviceA.getItem(client.RECORDS_SERVER_STATE_KEY), 'off', 'gtar_records_sync_server preserved as off')
+      assert.deepEqual(snapshot(deviceA), beforeSnapshot, 'Zero unauthorized mutations to storage including gtar_records_sync_server')
+    } finally {
+      Object.defineProperty(navigator, 'locks', { configurable: true, value: savedLocks })
+      c.setHook(null)
+    }
+
+    // 2. Fresh authenticated sync: legitimate sync enables server flag from off to on
+    withToken(c.tokens.a)
+    const freshResult = await client.performSongbookSync(c.tokens.a, { storage: deviceA })
+    assert.equal(freshResult.success, true)
+    assert.equal(deviceA.getItem(client.RECORDS_SERVER_STATE_KEY), 'on', 'Fresh sync enables gtar_records_sync_server flag')
+    assert.equal(client.isRecordsServerUnavailable(deviceA), false)
+  } finally {
+    global.fetch = savedFetch
+    localStorage.removeItem(sessionKey)
+  }
 })
 
