@@ -113,6 +113,16 @@ export function holdMessage(hold: B2Hold): string {
 function readJson(storage: Pick<Storage, 'getItem'>, key: string): unknown {
   try { const raw = storage.getItem(key); return raw ? JSON.parse(raw) : null } catch { return null }
 }
+/**
+ * The signed-in session, read like libraryOwner.storedSession (#248): from `storage`, or from the
+ * page's localStorage when `storage` holds none (the app always passes localStorage itself).
+ */
+function readSession(storage: Pick<Storage, 'getItem'>): unknown {
+  let raw: string | null
+  try { raw = storage.getItem(SESSION_KEY) } catch { raw = null }
+  if (!raw) { try { if (typeof localStorage !== 'undefined' && storage !== localStorage) raw = localStorage.getItem(SESSION_KEY) } catch { raw = null } }
+  try { return raw ? JSON.parse(raw) : null } catch { return null }
+}
 export function readStoredOwner(storage: Pick<Storage, 'getItem'>): { userId: string; env: string } | null {
   const value = readJson(storage, OWNER_KEY) as { v?: unknown; userId?: unknown; env?: unknown } | null
   return value && value.v === 1 && typeof value.userId === 'string' && value.userId.trim() && typeof value.env === 'string'
@@ -120,14 +130,14 @@ export function readStoredOwner(storage: Pick<Storage, 'getItem'>): { userId: st
 }
 /** #258 R1: the sign-in (account + session token) an operation started under. */
 export function readSessionGeneration(storage: Pick<Storage, 'getItem'>): string | null {
-  const value = readJson(storage, SESSION_KEY) as { user?: { id?: unknown }; sessionToken?: unknown; token?: unknown } | null
+  const value = readSession(storage) as { user?: { id?: unknown }; sessionToken?: unknown; token?: unknown } | null
   const id = value?.user?.id
   if (typeof id !== 'string' || !id.trim()) return null
   const token = typeof value?.sessionToken === 'string' ? value.sessionToken : typeof value?.token === 'string' ? value.token : ''
   return `${id.trim().toLowerCase()}\u0000${token}`
 }
 export function readSessionUserId(storage: Pick<Storage, 'getItem'>): string | null {
-  const value = readJson(storage, SESSION_KEY) as { user?: { id?: unknown } } | null
+  const value = readSession(storage) as { user?: { id?: unknown } } | null
   const id = value?.user?.id
   return typeof id === 'string' && id.trim() ? id.trim() : null
 }
@@ -143,8 +153,8 @@ const sameUser = (a: string | null, b: string | null) => !!a && !!b && a.trim().
  */
 export interface PartitionChoice { kind: 'device' | 'account'; userId: string | null; legacy: boolean; blocked: boolean }
 export function resolvePartition(storage: Pick<Storage, 'getItem'>, env = currentEnv()): PartitionChoice {
-  let ownerRaw: string | null
-  try { ownerRaw = storage.getItem(OWNER_KEY) } catch { ownerRaw = 'unreadable' }
+  // An unreadable storage throws here: callers fail closed with the storage error itself.
+  const ownerRaw = storage.getItem(OWNER_KEY)
   const owner = readStoredOwner(storage)
   const session = readSessionUserId(storage)
   // #258 F5: an owner record that cannot be read, or that names another environment, is an unknown
@@ -354,8 +364,19 @@ export const isB2Token = (raw: string | null | undefined) => typeof raw === 'str
 
 /** B2 is the active storage of this tab for `storage` (prepared, enabled, head present). */
 export function b2Active(storage: Pick<Storage, 'getItem'>): boolean {
+  return b2Open(storage) && partitionIsCurrent(state!)
+}
+/** This tab opened B2 for `storage` (whoever is signed in now). */
+function b2Open(storage: Pick<Storage, 'getItem'>): boolean {
   if (!state || state.storage !== storage) return false
   try { return storage.getItem(B2_FLAG_KEY) === '1' && storage.getItem(b2HeadKey(state.identity.scope)) !== null } catch { return false }
+}
+/**
+ * #258 read authorization: this tab has a partition open, but the signed-in account (or sign-out)
+ * no longer maps to it. Nothing of it may be read, decoded, exported or saved until a reload.
+ */
+export function b2Stale(storage: Pick<Storage, 'getItem'>): boolean {
+  return b2Open(storage) && !partitionIsCurrent(state!)
 }
 export function b2Identity(): PartitionIdentity | null { return state?.identity ?? null }
 export function b2Enabled(storage: Pick<Storage, 'getItem'>): boolean {
@@ -389,11 +410,8 @@ function setHold(storage: Storage, hold: B2Hold): void {
 export function legacyAccessBlocked(storage: Pick<Storage, 'getItem'>): boolean {
   if (b2Active(storage)) return false
   const where = resolvePartition(storage)
-  if (b2Enabled(storage)) return where.blocked || !where.legacy
-  // B2 off: closed whenever an account is signed in that is not the verified owner (another account,
-  // or an owner record that cannot be verified). Signed out, no account can receive it here; the app
-  // still shows nothing then (libraryClosedForSignIn).
-  return readSessionUserId(storage) !== null && (where.blocked || !where.legacy)
+  // Signed out, another account, or an owner record that cannot be verified: closed (B2 on or off).
+  return where.blocked || !where.legacy
 }
 /**
  * App startup: the earlier library is shown only to its verified owner (or, never linked, on this
@@ -436,6 +454,7 @@ const copyOf = (library: SyncLibrary): SyncLibrary => ({ ...library, songs: [...
 /** Full library for a revision token. Throws B2RevisionUnavailableError when this tab has not loaded it. */
 export function b2Decode(raw: string): SyncLibrary {
   if (!state) throw new B2RevisionUnavailableError(raw)
+  if (!partitionIsCurrent(state)) throw new LibraryPartitionError()
   const library = state.snapshots.get(raw)
   if (!library) throw new B2RevisionUnavailableError(raw)
   return copyOf(library)
@@ -443,6 +462,7 @@ export function b2Decode(raw: string): SyncLibrary {
 /** Current library (records are frozen; arrays are copies). */
 export function b2Read(): SyncLibrary {
   if (!state) throw new Error('B2 storage is not prepared')
+  if (!partitionIsCurrent(state)) throw new LibraryPartitionError()
   return copyOf(state.library)
 }
 
@@ -451,7 +471,7 @@ export function b2Read(): SyncLibrary {
  * library: unchanged records are recognized by object identity (immutable React updates).
  */
 export function b2Matches(candidate: { songs: Song[]; setlists: Setlist[] }, raw: string | null): boolean {
-  if (!state || raw === null || raw !== state.token) return false
+  if (!state || raw === null || raw !== state.token || !partitionIsCurrent(state)) return false
   try { return isEmptyDiff(diff(state, candidate)) } catch { return false }
 }
 
@@ -1195,11 +1215,14 @@ export async function b2LoadRevision(raw: string, timeoutMs = 5000): Promise<voi
   const s = state
   const target = parseB2Token(raw)
   if (!s || !target || target.scope !== s.identity.scope) throw new B2RevisionUnavailableError(raw)
+  if (!partitionIsCurrent(s)) throw new LibraryPartitionError()
   if (s.snapshots.has(raw)) return
   await s.queue
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const loaded = await loadPartition(s.db, { identity: s.identity, receipt: true, verifyBodies: false }, s)
+    // The sign-in may have changed while waiting: never install or return another partition's records.
+    if (state !== s || !partitionIsCurrent(s)) throw new LibraryPartitionError()
     if (loaded.rev >= target.rev) {
       if (state !== s || s.pending) throw new B2RevisionUnavailableError(raw)
       // Already superseded: load the newest committed revision under its own token (when the head
@@ -1267,6 +1290,7 @@ export async function disableB2(deps: {
 }): Promise<void> {
   const { storage } = deps
   const s = state
+  if (b2Stale(storage)) throw new B2SwitchError(SWITCH_ACCOUNT) // #258 R1: opened for another sign-in
   if (!s || !b2Active(storage)) {
     // Not in use here (hold, or never opened): the earlier library may come back only for its own partition.
     const where = resolvePartition(storage)

@@ -11,7 +11,7 @@ import { LIBRARY_B1_KEY, LIBRARY_B1_OPTOUT_KEY, LIBRARY_V2_KEY, confirmPendingLi
   loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 import { B2StaleWriteError, b2Active, b2Decode, b2Enabled, b2HeadKey, b2Identity, b2LoadRevision, b2Matches, b2Persist, b2Read, b2Restore,
   b2Status, disableB2, enableB2, isB2HeadKey, isB2Token, prepareB2, readB2Hold, type B2Preparation, type B2Source, type B2Status,
-  LibraryPartitionBlockedError, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed, libraryClosedForSignIn } from './libraryB2'
+  LibraryPartitionBlockedError, LibraryPartitionError, b2Stale, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed, libraryClosedForSignIn } from './libraryB2'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -393,6 +393,10 @@ function usesIdbArchives(storage: Storage): boolean {
 }
 /** Reads one archive from wherever it is held. */
 export function readRecoveryArchive(key: string, storage: Storage = localStorage): string | null {
+  // #258: a direct lookup obeys the same ownership and partition scope as the listings.
+  let scopes: Record<string, string>
+  try { scopes = readArchiveScopes(storage) } catch { return null }
+  if (!archiveVisible(key, recoveryView(storage), scopes)) return null
   return (usesIdbArchives(storage) ? recoveryArchiveGet(key) : null) ?? storage.getItem(key)
 }
 
@@ -748,6 +752,8 @@ const lastKnownLibraryRawByStorage = new WeakMap<Storage, string | null>()
 /** B1 is active only when toggled on and its index exists; otherwise v1 stays the source of truth. */
 function activeLibraryKey(storage: Storage): string {
   // #252 B2: the head token of the open partition is the revision (unless a legacy read is requested).
+  // #258: a partition opened for an account that is no longer signed in is closed until reload.
+  if (!legacyOnly && b2Stale(storage)) throw new LibraryPartitionError()
   if (!legacyOnly && b2Active(storage)) return b2HeadKey(b2Identity()!.scope)
   // #258 F5: with B2 enabled, the earlier library opens only for its own partition.
   if (!legacyOnly && legacyAccessBlocked(storage)) throw new LibraryPartitionBlockedError()
@@ -891,6 +897,7 @@ export function persistLibrary(
   options?: PersistLibraryOptions
 ) {
   validateLibrary(library)
+  if (!legacyOnly && b2Stale(storage)) throw new LibraryPartitionError()
   if (isLibraryB2Active(storage)) { persistB2(library, storage, options); return }
   // #258 F1: the frozen legacy source is not saved into by a tab that did not open B2 (or opened it).
   if (!legacyOnly && !legacyWritesAllowed(storage)) {
@@ -1187,6 +1194,8 @@ export function recordsDeleteHoldActive(storage: Pick<Storage, 'getItem'> = loca
 }
 
 export async function prepareLibraryStorage(storage: Storage = localStorage, timeoutMs = 5000): Promise<LibraryStoragePreparation> {
+  // #258: nothing of an owner-bound library is loaded or restored for another (or no) sign-in.
+  if (isLegacyLibraryBlocked(storage)) return { indexed: false, fellBack: false }
   if (storage.getItem(LIBRARY_B1_KEY) !== '1') return { indexed: false, fellBack: false }
   const raw = storage.getItem(LIBRARY_V2_KEY)
   try {

@@ -50,7 +50,10 @@ async function world({ enabled = true, library } = {}) {
   }
   // #247: test devices hold user-a's library (linked to user-a, as after an explicit link).
   const device = lib => { const s = storage(); journal.persistLibrary(lib, s)
-    s.setItem('gtar_library_owner_v1', JSON.stringify({ v: 1, userId: user.id, env: require('../src/utils/libraryOwner.ts').libraryEnv(), boundAt: 0, reason: 'confirmed' })); return s }
+    s.setItem('gtar_library_owner_v1', JSON.stringify({ v: 1, userId: user.id, env: require('../src/utils/libraryOwner.ts').libraryEnv(), boundAt: 0, reason: 'confirmed' }))
+    // #258: the linked device is used by its owner (an owner-bound library opens only for its owner).
+    if (s.getItem('gtar_auth_session') === null) s.setItem('gtar_auth_session', JSON.stringify({ user: { id: user.id }, sessionToken: 'token' }))
+    return s }
   const run = async (store, options) => {
     const saved = global.fetch
     global.fetch = fetch

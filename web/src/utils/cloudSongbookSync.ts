@@ -2,6 +2,7 @@ import { canonicalCatalogLineage } from './catalogSetlistLineage'
 import { B2_SYNC_PAUSED_MESSAGE, personalSyncPausedByB2, libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw, isLibraryIndexActive, same } from './syncJournal'
 import { confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex, isLibraryIndex, loadLibraryIndexBodies } from './libraryIndex'
 import { appLogger } from './logger'
+import { LibraryPartitionBlockedError } from './libraryB2'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1189,7 +1190,12 @@ async function executeCloudSongbookSync(
   const gen = captureSessionGeneration(targetStorage)
 
   // 1. Read and normalize local library and theme settings
-  const persistedAtStart = readPersistedLibrary(targetStorage)
+  let persistedAtStart: SyncLibrary | null
+  try { persistedAtStart = readPersistedLibrary(targetStorage) } catch (err) {
+    // #258: the device library is closed for this sign-in: nothing read, merged or uploaded.
+    if (err instanceof LibraryPartitionBlockedError) return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: err.message, ownership: 'mismatch' }
+    throw err
+  }
   const rawLocal = options?.localLibraryOverride || persistedAtStart
   if (!rawLocal) {
     return {

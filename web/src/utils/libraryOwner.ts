@@ -182,16 +182,16 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
     const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
     const raw = JSON.stringify({ local: library })
     await writeRecoverySnapshot(key, raw, storage)
-    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+    // Owner record and sign-in first (#258: once another owner is saved, this account may not read the library).
     const session = storedSession(storage)
-    if (
-      storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
-      libraryRevision(storage) !== revisionAtStart ||
+    const changed = () => { throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.') }
+    if (storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
       (sessionAtStart && (!session || !session.userId || !sameUser(session.userId, userId) || session.token !== sessionAtStart.token)) ||
-      (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))
-    ) {
-      throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
-    }
+      (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))) changed()
+    let revisionNow: string | null
+    try { revisionNow = libraryRevision(storage) } catch { return changed() }
+    if (revisionNow !== revisionAtStart) changed()
+    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
     writeOwner(userId, 'confirmed', storage)
   }
   if (locks?.request) await locks.request('gtar-library-owner', run)

@@ -94,6 +94,8 @@ test('#247: an unlinked songbook shows an explicit link step; linking saves a re
   const owner = require('../src/utils/libraryOwner.ts')
   localStorage.clear()
   journal.persistLibrary({ songs: [{ id: 's1', title: 'Mine', rawContent: 'x' }], setlists: [] }, localStorage)
+  // The signed-in account (stored by AuthGate); once linked, the library opens only for it (#258).
+  localStorage.setItem('gtar_auth_session', JSON.stringify({ user: { id: 'user-a' }, sessionToken: 'token' }))
   auth.useOptionalGoogleAuth = () => ({ session: { token: 'token', user: { id: 'user-a', email: 'a@example.com' } }, accessStatus: 'active' })
   const calls = []
   records.performSongbookSync = async () => {

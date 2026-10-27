@@ -13,6 +13,7 @@
  */
 import { isDevEnv } from './env'
 import { appLogger } from './logger'
+import { LibraryPartitionBlockedError } from './libraryB2'
 import {
   libraryRevision,
   persistLibrary,
@@ -777,6 +778,11 @@ async function runRecordsSync(gen: SessionGeneration, token: string, options: { 
     if (error instanceof StaleSyncRoundError) {
       appLogger.warn('RecordsSync', `Sync round discarded: ${error.reason}`)
       return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message }
+    }
+    // #258: the device library is closed for this sign-in (another owner, or owner unknown).
+    if (error instanceof LibraryPartitionBlockedError) {
+      appLogger.warn('RecordsSync', 'Sync blocked: library ownership mismatch (library closed for this sign-in)')
+      return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message, ownership: 'mismatch' }
     }
     if (error instanceof LibraryOwnershipError) {
       appLogger.warn('RecordsSync', `Sync blocked: library ownership ${error.ownership}`)
