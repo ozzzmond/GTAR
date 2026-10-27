@@ -13,7 +13,7 @@ import { mergeBackupLibrary } from './setlistSongs'
 import { mergeImportedSetlists } from './importIdentity'
 import { canonicalSongKey } from './musicalKey'
 import { recordBackupStatus, type BackupDelivery } from './backupStatus'
-import { isQuotaError, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
+import { isLibraryB2Active, isQuotaError, libraryMatchesRevision, libraryRevision, noteSafetySnapshotRevision, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
 import { generateUUID } from './uuid'
 
 export interface ExportEnvironment {
@@ -97,23 +97,35 @@ export interface SafetySnapshotResult { location: 'restore-snapshot' | 'recovery
  * caller must not change the library then.
  */
 export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
+  const result = await writeRestoreSafetySnapshot(library, storage)
+  // #252 B2: the restore that follows may rely on this verified copy to preserve the stored revision.
+  try { if (isLibraryB2Active(storage)) { const revision = libraryRevision(storage); noteSafetySnapshotRevision(libraryMatchesRevision(library, revision) ? revision : null) } } catch { /* not covered */ }
+  return result
+}
+async function writeRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
+  // #258 F6: with B2 the snapshot is a recovery archive of this account's partition, never the
+  // single shared snapshot key (which another account's restore would replace or read).
+  if (isLibraryB2Active(storage)) return archiveSafetySnapshot(library, storage, null)
   try {
     createRestoreSafetySnapshot(library, storage)
     return { location: 'restore-snapshot', key: RESTORE_SNAPSHOT_KEY }
   } catch (error) {
     const cause = (error as { cause?: unknown }).cause
     if (!isQuotaError(cause) && !isQuotaError(error)) throw error
-    const key = `gtar_sync_recovery:restore-snapshot:${generateUUID()}`
-    // #257 review: `local` is the recovery format Recovery Review reads (choose / export / cleanup).
-    const raw = JSON.stringify({ local: library, restoreSnapshotAt: new Date().toISOString() })
-    try {
-      await writeRecoverySnapshot(key, raw, storage)
-      if (readRecoveryArchive(key, storage) !== raw) throw new Error('Safety snapshot archive could not be verified', { cause: error })
-    } catch (archiveError) {
-      throw new Error('Pre-restore safety snapshot creation failed', { cause: archiveError })
-    }
-    return { location: 'recovery-archive', key }
+    return archiveSafetySnapshot(library, storage, error)
   }
+}
+async function archiveSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage, cause: unknown): Promise<SafetySnapshotResult> {
+  const key = `gtar_sync_recovery:restore-snapshot:${generateUUID()}`
+  // #257 review: `local` is the recovery format Recovery Review reads (choose / export / cleanup).
+  const raw = JSON.stringify({ local: library, restoreSnapshotAt: new Date().toISOString() })
+  try {
+    await writeRecoverySnapshot(key, raw, storage)
+    if (readRecoveryArchive(key, storage) !== raw) throw new Error('Safety snapshot archive could not be verified', { cause })
+  } catch (archiveError) {
+    throw new Error('Pre-restore safety snapshot creation failed', { cause: archiveError })
+  }
+  return { location: 'recovery-archive', key }
 }
 
 type Library = { songs: ActiveSongState[]; setlists: WebSetlist[] }

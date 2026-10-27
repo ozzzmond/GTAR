@@ -70,8 +70,20 @@ async function cloud() {
   const recordsOf = userId => db.sqlite.prepare('SELECT count(*) AS n FROM user_songbook_records WHERE user_id = ?').get(userId).n
   return { db, a: as('a'), b: as('b'), songsOf, recordsOf, setHook: h => { hook = h }, setAfter: h => { after = h }, tokens, env, fetch }
 }
+// #258: an owner-bound library opens only for its owner. The test oracle (reading, and edits made on
+// the device by its owner between rounds) acts as the device's owner; sync rounds keep their own sign-in.
+const asOwnerOf = (store, fn) => {
+  const linked = owner.readLibraryOwner(store)
+  if (!linked) return fn()
+  const previous = store.getItem('gtar_auth_session')
+  store.setItem('gtar_auth_session', JSON.stringify({ user: { id: linked.userId }, sessionToken: 'owner-oracle' }))
+  try { return fn() } finally { if (previous === null) store.removeItem('gtar_auth_session'); else store.setItem('gtar_auth_session', previous) }
+}
+const ownerPersist = (lib, store, options) => asOwnerOf(store, () => journal.persistLibrary(lib, store, options))
+const ownerRevision = store => asOwnerOf(store, () => journal.libraryRevision(store))
+const ownerRecoveryData = store => asOwnerOf(store, () => journal.recoveryData(store))
 const device = lib => { const s = storage(); journal.persistLibrary(lib, s); return s }
-const read = store => journal.readPersistedLibrary(store)
+const read = store => asOwnerOf(store, () => journal.readPersistedLibrary(store))
 
 test('#247 repro: A syncs, the same browser signs in as empty B → none of A\'s records reach B', async () => {
   const c = await cloud()
@@ -104,7 +116,7 @@ test('#247: populated B — a device owned by A neither uploads to B nor takes B
   const deviceB = device({ songs: [], setlists: [] })
   await c.b(deviceB) // links to B
   const libB = { songs: [{ id: id(50), title: 'B song', artist: 'B', rawContent: '[C]b' }], setlists: [] }
-  journal.persistLibrary(libB, deviceB, { expectedRaw: journal.libraryRevision(deviceB) })
+  ownerPersist(libB, deviceB, { expectedRaw: ownerRevision(deviceB) })
   await c.b(deviceB)
   assert.deepEqual(c.songsOf('user-b'), [id(50)])
   const deviceA = bound(libA, 'user-a')
@@ -118,7 +130,7 @@ test('#247: B → A — a device owned by B does not upload to A', async () => {
   const c = await cloud()
   const deviceB = device({ songs: [], setlists: [] })
   await c.b(deviceB)
-  journal.persistLibrary({ songs: [song(7)], setlists: [] }, deviceB, { expectedRaw: journal.libraryRevision(deviceB) })
+  ownerPersist({ songs: [song(7)], setlists: [] }, deviceB, { expectedRaw: ownerRevision(deviceB) })
   await c.b(deviceB)
   const asA = await c.a(deviceB)
   assert.equal(asA.ownership, 'mismatch')
@@ -134,7 +146,7 @@ test('#247: unknown legacy owner fails closed; explicit link saves a verified re
   assert.equal(c.recordsOf('user-a'), 0, 'nothing uploaded before the explicit link')
   assert.equal(ownerOf(legacy), null, 'not inferred')
   await owner.confirmLibraryOwner('user-a', legacy)
-  const copies = Object.entries(journal.recoveryData(legacy)).filter(([k]) => k.startsWith('gtar_sync_recovery:owner-confirm:'))
+  const copies = Object.entries(ownerRecoveryData(legacy)).filter(([k]) => k.startsWith('gtar_sync_recovery:owner-confirm:'))
   assert.equal(copies.length, 1)
   assert.deepEqual(JSON.parse(copies[0][1]).local, libA, 'full copy preserved')
   assert.equal((await c.a(legacy)).success, true)
@@ -167,7 +179,7 @@ test('#247: switch during async work — a round whose library changed hands mid
   const c = await cloud()
   const deviceA = bound(libA, 'user-a')
   await c.a(deviceA)
-  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(4)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  ownerPersist({ ...libA, songs: [...libA.songs, song(4)] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
   c.setHook(async (url, opts) => {
     // While A's round waits on the network, the library is linked to B (e.g. in another tab).
     if ((opts.method || 'GET') === 'GET') deviceA.setItem(owner.LIBRARY_OWNER_KEY, JSON.stringify({ v: 1, userId: 'user-b', env: owner.libraryEnv(), boundAt: 1, reason: 'confirmed' }))
@@ -216,7 +228,7 @@ test('#247: shared publication and QR share are blocked when the session is not 
   const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
   const catalog = require('../src/utils/sharedCatalogClient.ts')
   localStorage.clear()
-  journal.persistLibrary(libA, localStorage)
+  ownerPersist(libA, localStorage)
   localStorage.setItem(owner.LIBRARY_OWNER_KEY, JSON.stringify({ v: 1, userId: 'user-a', env: owner.libraryEnv(), boundAt: 0, reason: 'confirmed' }))
   const sessionFor = who => localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ version: 1, user: { id: who, sub: who, email: `${who}@x`, role: 'member', access_status: 'active', email_verified: true },
     authenticatedAt: Date.now(), lastVerifiedAt: Date.now(), localExpiresAt: Date.now() + 3600000, expiresAt: Date.now() + 3600000, sessionToken: `t-${who}`, role: 'member', access_status: 'active' }))
@@ -290,8 +302,8 @@ test('#247 F3 (records): a session switch while a per-record round waits on the 
   await c.a(deviceA)
   // Another device of A adds a song; this device edits locally too.
   const other = bound(libA, 'user-a'); await c.a(other)
-  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(8)] }, other, { expectedRaw: journal.libraryRevision(other) }); await c.a(other)
-  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(9)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  ownerPersist({ ...libA, songs: [...libA.songs, song(8)] }, other, { expectedRaw: ownerRevision(other) }); await c.a(other)
+  ownerPersist({ ...libA, songs: [...libA.songs, song(9)] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
   setSession('user-a')
   c.setHook(async (url, opts) => { if ((opts.method || 'GET') === 'GET') setSession('user-b') })
   let result
@@ -314,7 +326,7 @@ test('#247 F3 late response: session switches A→B while A\'s upload response i
   setSession('user-a')
   try {
     assert.equal((await c.a(deviceA)).success, true)
-    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(11)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    ownerPersist({ ...libA, songs: [...libA.songs, song(11)] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
     let before = null
     c.setAfter(async (url, opts) => {
       if ((opts.method || 'GET') !== 'POST' || !url.startsWith('/api/songbook/records')) return
@@ -345,13 +357,13 @@ test('#247 F3 late response: library linked to B (with B\'s songs) while A\'s up
   const c = await cloud()
   const store = bound(libA, 'user-a')
   assert.equal((await c.a(store)).success, true)
-  journal.persistLibrary({ ...libA, songs: [...libA.songs, song(12)] }, store, { expectedRaw: journal.libraryRevision(store) })
+  ownerPersist({ ...libA, songs: [...libA.songs, song(12)] }, store, { expectedRaw: ownerRevision(store) })
   const libB = { songs: [song(50)], setlists: [] }
   let before = null
   c.setAfter(async (url, opts) => {
     if ((opts.method || 'GET') !== 'POST' || !url.startsWith('/api/songbook/records')) return
     // Another tab hands the device to B: B's library and owner replace A's.
-    journal.persistLibrary(libB, store, { expectedRaw: journal.libraryRevision(store) })
+    ownerPersist(libB, store, { expectedRaw: ownerRevision(store) })
     store.setItem(owner.LIBRARY_OWNER_KEY, JSON.stringify({ v: 1, userId: 'user-b', env: owner.libraryEnv(), boundAt: 2, reason: 'confirmed' }))
     before = snapshot(store)
   })
@@ -371,8 +383,8 @@ test('#247 F3 late response: conflict resolution upload — session switch befor
   const deviceA = bound(libA, 'user-a'); await c.a(deviceA)
   const other = bound(libA, 'user-a'); await c.a(other)
   const edited = n => ({ ...libA, songs: libA.songs.map(s => s.id === id(1) ? { ...s, rawContent: `[C]${n}` } : s) })
-  journal.persistLibrary(edited('cloud'), other, { expectedRaw: journal.libraryRevision(other) }); await c.a(other)
-  journal.persistLibrary(edited('mine'), deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  ownerPersist(edited('cloud'), other, { expectedRaw: ownerRevision(other) }); await c.a(other)
+  ownerPersist(edited('mine'), deviceA, { expectedRaw: ownerRevision(deviceA) })
   setSession('user-a')
   try {
     assert.equal((await c.a(deviceA)).status, 'CONFLICT')
@@ -402,7 +414,7 @@ test('#247 F3 logout: A logs out while A\'s accepted upload response is in fligh
   setSession('user-a')
   try {
     assert.equal((await c.a(deviceA)).success, true)
-    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(21)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    ownerPersist({ ...libA, songs: [...libA.songs, song(21)] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
     let before = null
     const hit = uploadAfter(c, () => { localStorage.removeItem(sessionKey); before = snapshot(deviceA) }) // sign-out (googleAuth removes the stored session)
     let result
@@ -426,8 +438,8 @@ test('#247 F3 logout: conflict-resolution upload — logout before the response 
   const deviceA = bound(libA, 'user-a'); await c.a(deviceA)
   const other = bound(libA, 'user-a'); await c.a(other)
   const edited = n => ({ ...libA, songs: libA.songs.map(s => s.id === id(1) ? { ...s, rawContent: `[C]${n}` } : s) })
-  journal.persistLibrary(edited('cloud'), other, { expectedRaw: journal.libraryRevision(other) }); await c.a(other)
-  journal.persistLibrary(edited('mine'), deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+  ownerPersist(edited('cloud'), other, { expectedRaw: ownerRevision(other) }); await c.a(other)
+  ownerPersist(edited('mine'), deviceA, { expectedRaw: ownerRevision(deviceA) })
   setSession('user-a')
   try {
     assert.equal((await c.a(deviceA)).status, 'CONFLICT')
@@ -448,7 +460,7 @@ test('#247 F3 token rotation: the session token changes (same account) before co
   withToken('tok-1')
   try {
     assert.equal((await c.a(deviceA)).success, true)
-    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(22)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    ownerPersist({ ...libA, songs: [...libA.songs, song(22)] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
     let before = null
     const hit = uploadAfter(c, () => { withToken('tok-2'); before = snapshot(deviceA) })
     let result
@@ -514,7 +526,7 @@ test('#248 F2: Records GET paused -> logout before resume -> no remote records w
     assert.equal((await c.a(deviceA)).success, true)
     const other = bound(libA, 'user-a')
     await c.a(other)
-    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(31)] }, other, { expectedRaw: journal.libraryRevision(other) })
+    ownerPersist({ ...libA, songs: [...libA.songs, song(31)] }, other, { expectedRaw: ownerRevision(other) })
     assert.equal((await c.a(other)).success, true)
     assert.ok(c.songsOf('user-a').includes(id(31)))
 
@@ -550,7 +562,7 @@ test('#248 F2: Records GET paused -> token rotates before resume -> no remote re
     assert.equal((await c.a(deviceA)).success, true)
     const other = bound(libA, 'user-a')
     await c.a(other)
-    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(32)] }, other, { expectedRaw: journal.libraryRevision(other) })
+    ownerPersist({ ...libA, songs: [...libA.songs, song(32)] }, other, { expectedRaw: ownerRevision(other) })
     assert.equal((await c.a(other)).success, true)
     assert.ok(c.songsOf('user-a').includes(id(32)))
 
@@ -594,7 +606,7 @@ test('PR #248 F1: multi-batch pending upload -> logout after batch 1 -> no batch
     for (let i = 100; i < 155; i++) {
       manySongs.push(song(i))
     }
-    journal.persistLibrary({ songs: [...libA.songs, ...manySongs], setlists: [] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    ownerPersist({ songs: [...libA.songs, ...manySongs], setlists: [] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
 
     let postCalls = 0
     let before = null
@@ -659,7 +671,7 @@ test('PR #248 F1: Classic sync pending upload -> logout while in flight -> serve
     assert.equal(initial.success, true)
 
     // Add a new song locally
-    journal.persistLibrary({ songs: [...libA.songs, song(88)], setlists: [] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    ownerPersist({ songs: [...libA.songs, song(88)], setlists: [] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
 
     triggerLogout = true
     const result = await sync.performCloudSongbookSync(c.tokens.a, { storage: deviceA })
@@ -683,7 +695,7 @@ test('PR #248 F2: Queued Records sync -> token rotates before queued execution -
   try {
     // Seed device
     assert.equal((await c.a(deviceA)).success, true)
-    journal.persistLibrary({ ...libA, songs: [...libA.songs, song(99)] }, deviceA, { expectedRaw: journal.libraryRevision(deviceA) })
+    ownerPersist({ ...libA, songs: [...libA.songs, song(99)] }, deviceA, { expectedRaw: ownerRevision(deviceA) })
 
     // Simulate lock queue: lock is held by ongoing task
     let releaseLock
@@ -743,7 +755,7 @@ test('PR #248 F2: Queued Records sync -> token rotates before queued execution -
 
 test('PR #248 F3: Empty library ownership confirmation -> logout while pending -> fails closed, no owner bound, empty library & recovery preserved', async () => {
   const store = storage()
-  journal.persistLibrary({ songs: [], setlists: [] }, store)
+  ownerPersist({ songs: [], setlists: [] }, store)
   localStorage.setItem(sessionKey, JSON.stringify({ user: { id: 'user-a' }, sessionToken: 'tok-a' }))
 
   const originalWriteRecovery = journal.writeRecoverySnapshot
@@ -769,7 +781,7 @@ test('PR #248 F3: Empty library ownership confirmation -> logout while pending -
   assert.match(error.message, /The songbook or the signed-in account changed while linking/)
   assert.equal(owner.readLibraryOwner(store), null, 'No ownership binding after logout')
   assert.deepEqual(read(store), { songs: [], setlists: [] }, 'Empty library preserved')
-  const recoveryCopies = Object.entries(journal.recoveryData(store)).filter(([k]) => k.startsWith('gtar_sync_recovery:owner-confirm:'))
+  const recoveryCopies = Object.entries(ownerRecoveryData(store)).filter(([k]) => k.startsWith('gtar_sync_recovery:owner-confirm:'))
   assert.equal(recoveryCopies.length, 1, 'Recovery state preserved in storage')
   localStorage.removeItem(sessionKey)
 })

@@ -2,7 +2,7 @@ import { assertPublishFromOwnLibrary, catalogFetch, getAuthenticatedSessionToken
 import { CatalogApiError } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
 import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudSongbookSync'
-import { readPersistedLibrary } from './syncJournal'
+import { B2_SETLIST_PUBLISH_MESSAGE, personalSyncPausedByB2, readPersistedLibrary } from './syncJournal'
 import type { SyncLibrary } from './syncMerge'
 import { snapshotFromSongbook } from './sharedSetlistSnapshot'
 import { generateUUID } from './uuid'
@@ -71,6 +71,8 @@ export function publicationError(error: unknown): string {
 }
 
 export async function preparePublication(sourceId: string | number, getLocal: () => SyncLibrary, blocked: () => boolean): Promise<SourcePreview> {
+  // #258 F7: the server snapshots the personal cloud songbook, which is paused while B2 is on.
+  if (personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   assertPublishFromOwnLibrary()
   const { token, accountId } = publisherSession()
   const local = getLocal()
@@ -196,6 +198,8 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
 }
 
 export async function sendPublicationIntent(account: string, sourceId: string | number, link: PublicationLink): Promise<{ result: PublicationResult; saved: boolean }> {
+  // #258 F7: create/update need the paused personal cloud copy; unpublishing sends no content.
+  if (link.pending?.method !== 'DELETE' && personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
   // #247: a create/update sends a snapshot of this device's setlist; unpublishing sends none.

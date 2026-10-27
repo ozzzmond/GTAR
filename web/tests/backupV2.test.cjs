@@ -75,9 +75,9 @@ const APPEARANCE_KEYS = [...Object.values(bs.SETTINGS_KEYS), ...Object.values(bs
 const PREFERENCE_KEYS = Object.values(bs.PREFERENCE_SETTINGS).map(s => s.key)
 /** Device/session state that must never enter a backup. */
 const EXCLUDED = {
-  gtar_auth_session: 'SECRET-auth-token', gtar_google_session: 'SECRET-google', gtar_web_debug_logs: '[{"message":"SECRET-log"}]',
+  gtar_auth_session: JSON.stringify({ user: { id: 'SECRET-owner-id' }, sessionToken: 'SECRET-auth-token' }), gtar_google_session: 'SECRET-google', gtar_web_debug_logs: '[{"message":"SECRET-log"}]',
   'gtar_sync_recovery:x': 'SECRET-recovery', gtar_records_sync_v1: 'SECRET-records', gtar_cloud_sync_base: 'SECRET-base',
-  gtar_cloud_sync_meta: 'SECRET-meta', gtar_library_owner_v1: 'SECRET-owner', gtar_band_sync_leader_ip: 'SECRET-ip',
+  gtar_cloud_sync_meta: 'SECRET-meta', gtar_library_owner_v1: JSON.stringify({ v: 1, userId: 'SECRET-owner-id', env: require('../src/utils/libraryOwner.ts').libraryEnv(), boundAt: 1, reason: 'confirmed' }), gtar_band_sync_leader_ip: 'SECRET-ip',
   gtar_stage_dock_pos: 'SECRET-dock', gtar_cast_session_id: 'SECRET-cast', gtar_debug_logs_enabled: 'SECRET-logs-on',
   gtar_backup_status_v1: '{"SECRET":"status"}', gtar_backup_reminder_v1: '{"SECRET":"reminder"}', gtar_pending_share_token: 'SECRET-share',
 }

@@ -14,7 +14,7 @@ import {
   type SongbookHeadroom,
   type SyncReferenceState,
 } from './cloudSongbookSync'
-import { isLibraryIndexActive, peekPersistedLibrary } from './syncJournal'
+import { isLibraryB2Active, isLibraryIndexActive, peekPersistedLibrary } from './syncJournal'
 import { tryReadCloudThemeSettings } from './backupSettings'
 import { deriveSyncPill, type SyncPill } from './syncStatus'
 import type { SyncLibrary } from './syncMerge'
@@ -37,11 +37,13 @@ export async function readSyncDeviceFacts(storage: Storage = localStorage): Prom
   let library: SyncLibrary | null
   try { library = peekPersistedLibrary(storage) as SyncLibrary | null } catch { library = null }
   const theme = tryReadCloudThemeSettings(storage)
-  const full = library ? { ...library, ...(theme ? { themeSettings: theme } : {}) } : null
+  // #252: with B2 personal sync is paused; skip whole-library checksum and upload-size estimates (10,000+ songs).
+  const b2 = (() => { try { return isLibraryB2Active(storage) } catch { return false } })()
+  const full = library && !b2 ? { ...library, ...(theme ? { themeSettings: theme } : {}) } : null
   let syncReference: SyncReferenceState
   try { syncReference = await inspectSyncReference(storage) } catch { syncReference = 'missing' }
   let chartsInIndexedDb = false
-  try { chartsInIndexedDb = isLibraryIndexActive(storage) } catch { /* storage unavailable */ }
+  try { chartsInIndexedDb = b2 || isLibraryIndexActive(storage) } catch { /* storage unavailable */ }
   return {
     lastSyncedAt: meta.lastSyncedAt,
     localChanged: Boolean(full && meta.lastSyncedChecksum && computeSongbookChecksum(full) !== meta.lastSyncedChecksum),

@@ -284,24 +284,39 @@ test('M: tags and isFavorite are reconciled on the survivor rather than discarde
   assert.equal(group.survivorId, songB.id, 'Candidate with favorite/tags preferred as survivor')
 })
 
-test('N: actual recovery file dry-run snapshot execution', () => {
-  const path = require('node:path')
-  const recoveryPath = 'E:/Downloads/GTAR-storage-recovery.json'
-  if (!fs.existsSync(recoveryPath)) return
+// N: previously read a machine-local recovery export (E:/Downloads/GTAR-storage-recovery.json), so the
+// result depended on whose computer ran it and touched private data. Now a deterministic synthetic
+// export of the same shape; every expected count follows from how the fixture is built.
+test('N: recovery-export shaped library dry-run snapshot (synthetic, no local files)', () => {
+  const realRead = fs.readFileSync, realExists = fs.existsSync
+  const touched = []
+  fs.readFileSync = (file, ...rest) => { if (/GTAR-storage-recovery|Downloads/i.test(String(file))) touched.push(String(file)); return realRead(file, ...rest) }
+  fs.existsSync = file => { if (/GTAR-storage-recovery|Downloads/i.test(String(file))) touched.push(String(file)); return realExists(file) }
+  try {
+    const song = (id, title, rawContent) => makeSong({ id, title, rawContent })
+    const unique = Array.from({ length: 6 }, (_, i) => song(`unique-${i}`, `Unique Song ${i}`, `[G]unique line ${i}`))
+    const tripled = ['dup-x-1', 'dup-x-2', 'dup-x-3'].map(id => song(id, 'Tripled Song', '[C]same chart x'))
+    const doubled = ['dup-y-1', 'dup-y-2'].map(id => song(id, 'Doubled Song', '[D]same chart y'))
+    const divergent = [song('div-z-1', 'Same Title Z', '[E]version one'), song('div-z-2', 'Same Title Z', '[E]version two')]
+    const songs = [...unique, ...tripled, ...doubled, ...divergent]
+    const setlists = [{ id: 'set-1', name: 'Synthetic Set', songs: [...tripled, unique[0]].map(s => ({ id: s.id, title: s.title, artist: s.artist })) }]
+    // Same shape as an exported recovery file: the library is a JSON string under gtar_library_v1.
+    const data = JSON.parse(JSON.stringify({ gtar_library_v1: JSON.stringify({ songs, setlists }) }))
+    const lib = typeof data.gtar_library_v1 === 'string' ? JSON.parse(data.gtar_library_v1) : data.gtar_library_v1
 
-  const data = JSON.parse(fs.readFileSync(recoveryPath, 'utf8'))
-  const lib = typeof data.gtar_library_v1 === 'string' ? JSON.parse(data.gtar_library_v1) : data.gtar_library_v1
+    const report = analyzeRepairDryRun(lib.songs, lib.setlists || [])
 
-  const report = analyzeRepairDryRun(lib.songs, lib.setlists || [])
-
-  assert.equal(report.totalSongs, 1182)
-  assert.equal(report.semanticGroupCount, 790)
-  assert.equal(report.exactDuplicateGroupCount, 390)
-  assert.equal(report.exactDuplicateRecordCount, 392)
-  assert.equal(report.divergentSameTitleGroupCount, 385)
-  assert.equal(report.projectedSongCountAfterExactDedupe, 790)
-  assert.equal(report.setlistRefsAffected, 20)
-  assert.equal(report.orphanRefsBeforeRepair, 0)
-  assert.equal(report.orphanRefsAfterRepair, 0)
-  assert.equal(report.isMutationSafe, true)
+    assert.equal(report.totalSongs, 13)
+    assert.equal(report.semanticGroupCount, 10, '6 unique + 1 tripled + 1 doubled + 2 divergent versions')
+    assert.equal(report.exactDuplicateGroupCount, 2)
+    assert.equal(report.exactDuplicateRecordCount, 3, 'copies beyond each survivor: 2 + 1')
+    assert.equal(report.divergentSameTitleGroupCount, 1)
+    assert.equal(report.projectedSongCountAfterExactDedupe, 10)
+    assert.equal(report.setlistRefsAffected, 2, 'two of the three tripled copies are remapped to the survivor')
+    assert.equal(report.orphanRefsBeforeRepair, 0)
+    assert.equal(report.orphanRefsAfterRepair, 0)
+    assert.equal(report.isMutationSafe, true)
+    assert.deepEqual(analyzeRepairDryRun(lib.songs, lib.setlists || []), report, 'idempotent')
+  } finally { fs.readFileSync = realRead; fs.existsSync = realExists }
+  assert.deepEqual(touched, [], 'no machine-local recovery file is read')
 })

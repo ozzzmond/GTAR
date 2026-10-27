@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { inspectRecovery, recordRecoveryChoice, recoveryData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage, isLibraryIndexActive, enableLibraryIndex, disableLibraryIndex } from '../utils/syncJournal'
+import { inspectRecovery, recordRecoveryChoice, recoveryExportData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage, isLibraryIndexActive, enableLibraryIndex, disableLibraryIndex,
+  isLibraryB2Active, enableLibraryB2, disableLibraryB2, libraryB2Status } from '../utils/syncJournal'
+import { B2_FLAG_KEY, clearB2Hold, holdMessage } from '../utils/libraryB2'
 
 import { isDevEnv } from '../utils/env'
 import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
@@ -8,7 +10,7 @@ import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
 export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [review, setReview] = useState(() => inspectRecovery())
-  const [choice, setChoice] = useState<'keep-current' | 'reopen' | 'cleanup' | 'shadow' | 'b1' | null>(null)
+  const [choice, setChoice] = useState<'keep-current' | 'reopen' | 'cleanup' | 'shadow' | 'b1' | 'b2' | null>(null)
   const [approved, setApproved] = useState(false)
   const [shadow, setShadow] = useState<ShadowCleanupPlan | null>(null)
   const cleanup = planRecoveryCleanup(review)
@@ -31,6 +33,10 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
 
   const hasNoActionable = actionable.length === 0
   const b1On = isDevEnv && isLibraryIndexActive()
+  // #252 B2 (DEV toggle, off by default): per-record IndexedDB storage.
+  const b2 = libraryB2Status()
+  const b2Enabled = (() => { try { return localStorage.getItem(B2_FLAG_KEY) === '1' } catch { return false } })()
+  const b2On = isDevEnv && isLibraryB2Active()
   const retention = recoveryRetentionUsage(localStorage)
   const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(2)
   // Distinct missing records across actionable sources; titles stay behind a disclosure.
@@ -63,6 +69,17 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
         })
         window.location.reload()
         return
+      } else if (choice === 'b2') {
+        // #252 B2 (DEV): turning on runs the verified migration on the next start; turning off writes back first.
+        if (!navigator.locks?.request) throw new Error('Library storage switch requires Web Locks support.')
+        await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, async lock => {
+          if (!lock || blocked()) throw new Error('Resolve editor edits or cross-tab conflicts first.')
+          if (b2.hold) clearB2Hold(localStorage)
+          else if (b2On || b2Enabled) await disableLibraryB2()
+          else enableLibraryB2()
+        })
+        window.location.reload()
+        return
       } else if (choice === 'keep-current' || choice === 'reopen') await recordRecoveryChoice(review, choice, blocked)
       refresh()
     }
@@ -80,7 +97,7 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
 
   function exportSources() {
     try {
-      const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryData(), null, 2)], { type: 'application/json' }))
+      const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryExportData(), null, 2)], { type: 'application/json' }))
       const link = document.createElement('a'); link.href = url; link.download = 'GTAR-storage-recovery.json'; link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch { setError('Recovery export failed. Keep browser storage intact and retry.') }
@@ -358,13 +375,21 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
           historical raw recovery may require manual recovery.
         </p>
 
-        <p className="text-xs text-app-muted">{isLibraryIndexActive() ? 'localStorage gtar_library_v2 (B1 index)' : 'localStorage gtar_library_v1'}: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: {retention.maxCount} archives / {mib(retention.maxBytes)} MiB{retention.indexedDb ? ' (archives in IndexedDB)' : ''}; review is required when full.</p>
+        {isDevEnv && (b2On || b2Enabled || b2.hold) && <p className="text-xs text-app-muted" data-testid="library-b2-status">
+          {b2On
+            ? `Library storage B2: on (${b2.identity?.kind === 'account' ? 'account' : 'this device, not linked'}) · ${b2.songs.toLocaleString()} songs, ${b2.setlists.toLocaleString()} setlists · revision ${b2.libraryRev}${b2.pending ? `, ${b2.pending} saving` : ''}. Personal cloud sync is paused; use Backup for an off-device copy.`
+            : b2.hold ? `Library storage B2 on hold: ${holdMessage(b2.hold)}` : 'Library storage B2: on after reload.'}
+        </p>}
+        <p className="text-xs text-app-muted">{b2On ? 'IndexedDB gtar_library_b2 (B2, per record)' : isLibraryIndexActive() ? 'localStorage gtar_library_v2 (B1 index)' : 'localStorage gtar_library_v1'}: {(2 * (review.libraryRaw?.length ?? 0)).toLocaleString()} bytes; gtar_recovery_decisions_v1: {(2 * (review.decisionRaw?.length ?? 0)).toLocaleString()} bytes. Browser storage: approximately {localStorageBytes(localStorage).toLocaleString()} bytes in localStorage. {cleanup.length} decided archives eligible for confirmed cleanup. Undecided archives are never removed. Retention limit: {retention.maxCount} archives / {mib(retention.maxBytes)} MiB{retention.indexedDb ? ' (archives in IndexedDB)' : ''}; review is required when full.</p>
         {/* Action buttons */}
         <div className="flex flex-wrap gap-2">
           <button className={button} disabled={busy || review.invalid || !review.decisionRaw} onClick={() => { setChoice('cleanup'); setApproved(false) }} data-testid="review-cleanup-btn">Review decided archive cleanup</button>
           {isDevEnv && <button className={button} disabled={busy} onClick={reviewShadow}>Review shadow storage</button>}
           {isDevEnv && <button className={button} disabled={busy} onClick={() => { setChoice('b1'); setApproved(false) }} data-testid="library-b1-toggle-btn">
             Library storage B1: {b1On ? 'On — turn off' : 'Off — turn on'}
+          </button>}
+          {isDevEnv && <button className={button} disabled={busy} onClick={() => { setChoice('b2'); setApproved(false) }} data-testid="library-b2-toggle-btn">
+            Library storage B2: {b2.hold ? 'On hold — retry' : b2On || b2Enabled ? 'On — turn off' : 'Off — turn on'}
           </button>}
           <button className={button} disabled={busy} onClick={exportSources} data-testid="export-recovery-btn">
             Export all recovery data
@@ -418,6 +443,12 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
                 ? (b1On
                   ? 'Turn off B1: write the full library (with every edit made while on) back to gtar_library_v1, verify it, then reload. IndexedDB bodies stay.'
                   : 'Turn on B1: copy every chart body to IndexedDB, verify, write the slim gtar_library_v2 index, then reload. On DEV, the next clean startup retires gtar_library_v1 to a verified IndexedDB copy. Export recovery data first.')
+                : choice === 'b2'
+                ? (b2.hold
+                  ? 'Retry B2: on reload the move is checked again from the start. Nothing was deleted; if it fails again the earlier library stays in use.'
+                  : b2On || b2Enabled
+                  ? 'Turn off B2: save a copy of the earlier library in recovery, write the B2 library (with every edit made while on) back to it, verify, then reload. The B2 copy stays on this device. Personal cloud sync resumes.'
+                  : 'Turn on B2: on reload every song and setlist is copied into per-record IndexedDB storage for this account, read back and checked (counts and checksums) before it is used. The earlier library is kept unchanged. Personal cloud sync pauses while B2 is on. Export a backup first.')
                 : choice === 'shadow'
                 ? `IndexedDB gtar_library_bodies_db / bodies: ${shadow?.totalCount ?? 0} bodies, approximately ${shadow?.totalBytes ?? 0} bytes. Remove ${shadow?.records.length ?? 0} unreferenced bodies (${shadow?.orphanBytes ?? 0} bytes). Bodies referenced by your Songbook and retained recovery history are protected. Superseded chart history will be removed.`
                 : choice === 'keep-current'

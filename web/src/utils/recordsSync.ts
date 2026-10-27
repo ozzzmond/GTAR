@@ -13,6 +13,7 @@
  */
 import { isDevEnv } from './env'
 import { appLogger } from './logger'
+import { LibraryPartitionBlockedError } from './libraryB2'
 import {
   libraryRevision,
   persistLibrary,
@@ -20,6 +21,8 @@ import {
   recordsDeleteHoldActive,
   readPersistedLibrary,
   restoreLibraryRevision,
+  personalSyncPausedByB2,
+  B2_SYNC_PAUSED_MESSAGE,
   setLastKnownPersistedLibraryRaw,
   validateLibrary,
   writeRecoverySnapshot,
@@ -716,6 +719,11 @@ export async function performRecordsSync(token: string, options: { forceAction?:
   firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult | null> {
   const targetStorage = options.storage ?? (typeof localStorage !== 'undefined' ? localStorage : undefined)
   const gen = captureSessionGeneration(targetStorage) // #247 F3: the sign-in this round was started under (before any wait)
+  // #252: personal cloud sync never reads or writes B2 partitions (or a held fallback copy).
+  if (personalSyncPausedByB2(targetStorage)) {
+    appLogger.warn('RecordsSync', 'Sync skipped: personal cloud sync is paused while B2 storage is on')
+    return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: B2_SYNC_PAUSED_MESSAGE }
+  }
   // Fail closed when authenticated session cannot be established at request time:
   // no unsafe queued execution, stale completion or sync persistence. Preserve valid local data and pending changes.
   if (!gen || !gen.userId) {
@@ -771,6 +779,11 @@ async function runRecordsSync(gen: SessionGeneration, token: string, options: { 
       appLogger.warn('RecordsSync', `Sync round discarded: ${error.reason}`)
       return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message }
     }
+    // #258: the device library is closed for this sign-in (another owner, or owner unknown).
+    if (error instanceof LibraryPartitionBlockedError) {
+      appLogger.warn('RecordsSync', 'Sync blocked: library ownership mismatch (library closed for this sign-in)')
+      return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message, ownership: 'mismatch' }
+    }
     if (error instanceof LibraryOwnershipError) {
       appLogger.warn('RecordsSync', `Sync blocked: library ownership ${error.ownership}`)
       return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: error.message, ownership: error.ownership }
@@ -797,6 +810,11 @@ async function runRecordsSync(gen: SessionGeneration, token: string, options: { 
  */
 export async function performSongbookSync(token: string, options: { forceAction?: 'upload' | 'download' | 'merge_preserve'; storage?: Storage; firstSync?: FirstSyncChoice } = {}): Promise<CloudSyncResult> {
   const storage = options.storage ?? localStorage
+  // #252: personal cloud sync never reads or writes B2 partitions (or a held fallback copy).
+  if (personalSyncPausedByB2(storage)) {
+    appLogger.warn('RecordsSync', 'Sync skipped: personal cloud sync is paused while B2 storage is on')
+    return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: B2_SYNC_PAUSED_MESSAGE }
+  }
   const gen = captureSessionGeneration(storage)
   if (isRecordsSyncEnabled(storage)) {
     const result = await performRecordsSync(token, options)

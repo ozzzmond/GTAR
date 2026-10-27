@@ -1,7 +1,8 @@
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
-import { libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw, isLibraryIndexActive, same } from './syncJournal'
+import { B2_SYNC_PAUSED_MESSAGE, personalSyncPausedByB2, libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw, isLibraryIndexActive, same } from './syncJournal'
 import { confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex, isLibraryIndex, loadLibraryIndexBodies } from './libraryIndex'
 import { appLogger } from './logger'
+import { LibraryPartitionBlockedError } from './libraryB2'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 import { normalizeSongbookIds, validateSongbookIntegrity } from './songbookFoundation'
@@ -1181,10 +1182,20 @@ async function executeCloudSongbookSync(
   retry?: { attempt: number; base: SyncLibrary; userId: string | null }
 ): Promise<CloudSyncResult> {
   const targetStorage = options?.storage || (typeof localStorage !== 'undefined' ? localStorage : ({} as Storage))
+  // #252: personal cloud sync never reads or writes B2 partitions (or a held fallback copy).
+  if (personalSyncPausedByB2(targetStorage)) {
+    appLogger.warn('CloudSync', 'Sync skipped: personal cloud sync is paused while B2 storage is on')
+    return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: B2_SYNC_PAUSED_MESSAGE }
+  }
   const gen = captureSessionGeneration(targetStorage)
 
   // 1. Read and normalize local library and theme settings
-  const persistedAtStart = readPersistedLibrary(targetStorage)
+  let persistedAtStart: SyncLibrary | null
+  try { persistedAtStart = readPersistedLibrary(targetStorage) } catch (err) {
+    // #258: the device library is closed for this sign-in: nothing read, merged or uploaded.
+    if (err instanceof LibraryPartitionBlockedError) return { success: false, status: 'ERROR', state: 'OFFLINE_OR_CLOUD_FAILURE', actionTaken: 'NONE', error: err.message, ownership: 'mismatch' }
+    throw err
+  }
   const rawLocal = options?.localLibraryOverride || persistedAtStart
   if (!rawLocal) {
     return {

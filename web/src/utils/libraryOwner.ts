@@ -10,7 +10,8 @@
  * - Another owner: blocked. Nothing on the device is relabelled, moved, cleared or deleted.
  * Ownership is never inferred from last-synced metadata.
  */
-import { libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot } from './syncJournal'
+import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot } from './syncJournal'
+import { b2Identity } from './libraryB2'
 import { generateUUID } from './uuid'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
@@ -39,6 +40,13 @@ function hasContent(storage: Storage): boolean {
 }
 
 export function libraryOwnership(userId: string | null | undefined, storage: Storage = localStorage): LibraryOwnership {
+  // #252 B2: the open partition is the library. An account partition belongs to its account; the
+  // device partition (a library never linked) stays unbound and is never claimed automatically.
+  if (isLibraryB2Active(storage)) {
+    const partition = b2Identity()
+    if (partition?.kind === 'account') return userId && partition.userId && sameUser(partition.userId, userId) && partition.env === libraryEnv() ? 'owned' : 'mismatch'
+    return 'unbound'
+  }
   const owner = readLibraryOwner(storage)
   if (owner) return userId && sameUser(owner.userId, userId) && owner.env === libraryEnv() ? 'owned' : 'mismatch'
   return hasContent(storage) ? 'unbound' : 'unbound-empty'
@@ -163,6 +171,7 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
   // library revision and the signed-in account must be what they were when this confirmation began.
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
   const run = async () => {
+    if (isLibraryB2Active(storage)) throw new Error('Linking is not available while library storage B2 is on. Turn B2 off in Review local recovery, link, then turn B2 on again.')
     const sessionAtStart = storedSession(storage)
     const ownership = libraryOwnership(userId, storage)
     if (ownership === 'owned') return
@@ -173,16 +182,16 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
     const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
     const raw = JSON.stringify({ local: library })
     await writeRecoverySnapshot(key, raw, storage)
-    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+    // Owner record and sign-in first (#258: once another owner is saved, this account may not read the library).
     const session = storedSession(storage)
-    if (
-      storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
-      libraryRevision(storage) !== revisionAtStart ||
+    const changed = () => { throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.') }
+    if (storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
       (sessionAtStart && (!session || !session.userId || !sameUser(session.userId, userId) || session.token !== sessionAtStart.token)) ||
-      (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))
-    ) {
-      throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
-    }
+      (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))) changed()
+    let revisionNow: string | null
+    try { revisionNow = libraryRevision(storage) } catch { return changed() }
+    if (revisionNow !== revisionAtStart) changed()
+    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
     writeOwner(userId, 'confirmed', storage)
   }
   if (locks?.request) await locks.request('gtar-library-owner', run)

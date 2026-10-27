@@ -16,12 +16,17 @@ import {
   preserveStoredLibrary,
   same,
   performStorageHousekeeping,
-  recoveryData,
   requestDurableStorage,
   prepareLibraryStorage,
   autoEnableLibraryIndex,
   retireLibraryV1,
+  prepareLibraryB2,
+  recoveryExportData,
+  isLibraryB2Active,
+  isLibraryClosedForSignIn,
+  enableLibraryB2,
 } from './utils/syncJournal'
+import { B2_FLAG_KEY, LibraryPartitionError, clearB2Hold, flushB2, holdMessage, readB2Hold, type B2Hold } from './utils/libraryB2'
 import { LIBRARY_B1_KEY } from './utils/libraryIndex'
 import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
 import { appLogger } from './utils/logger'
@@ -111,7 +116,7 @@ function App() {
 const needsArchiveStartup = () => isDevEnv && typeof indexedDB !== 'undefined' && !recoveryArchivesInIndexedDb()
 function LibraryStartup() {
   const [ready, setReady] = useState(() => {
-    try { return localStorage.getItem(LIBRARY_B1_KEY) !== '1' && !needsArchiveStartup() } catch { return true }
+    try { return localStorage.getItem(LIBRARY_B1_KEY) !== '1' && !needsArchiveStartup() && localStorage.getItem(B2_FLAG_KEY) !== '1' } catch { return true }
   })
   useEffect(() => {
     if (ready) return
@@ -128,7 +133,24 @@ function LibraryStartup() {
       if (isDevEnv && prepared.indexed) await retireLibraryV1().catch(warn('LibraryIndex', 'gtar_library_v1 retirement deferred'))
     }
     const timeout = new Promise(resolve => setTimeout(resolve, 15000))
-    Promise.race([startup(), timeout]).finally(() => { if (live) setReady(true) })
+    // #252: B2 opens (or migrates into) this account's partition after the legacy source is readable.
+    // No timeout here: rendering before it finishes would show one storage and save into another.
+    const b2 = async () => {
+      if (localStorage.getItem(B2_FLAG_KEY) !== '1') return
+      try {
+        const prepared = await prepareLibraryB2()
+        if (prepared.active) appLogger.info('LibraryB2', `B2 ready in ${prepared.ms} ms: ${prepared.songs} songs, ${prepared.setlists} setlists${prepared.migrated ? ' (moved now)' : ''}${prepared.replayed ? `, ${prepared.replayed} journalled saves replayed` : ''}`)
+      } catch (error) {
+        if (error instanceof LibraryPartitionError) {
+          // Another account in this page: finish this partition's saves, then start clean for the new account.
+          await flushB2().catch(() => undefined)
+          window.location.reload()
+          return new Promise<void>(() => {})
+        }
+        warn('LibraryB2', 'B2 storage unavailable; the earlier library stays in use')(error)
+      }
+    }
+    Promise.race([startup(), timeout]).then(b2).finally(() => { if (live) setReady(true) })
     return () => { live = false }
   }, [ready])
   if (!ready) return <p role="status" className="p-4 text-app-muted">Loading library…</p>
@@ -136,19 +158,49 @@ function LibraryStartup() {
 }
 
 function LibraryStartupReady() {
+  // #258 F5: with B2 on, this sign-in may not open the earlier library (another account's, or owner
+  // unknown) and has no B2 partition open: show nothing of it, change nothing, offer no export of it.
+  const [partitionBlocked] = useState(() => isLibraryClosedForSignIn())
+  if (partitionBlocked) return <PartitionBlocked />
+  return <LibraryStartupReadyInner />
+}
+function PartitionBlocked() {
+  const hold = readB2Hold(localStorage)
+  const b2On = (() => { try { return localStorage.getItem(B2_FLAG_KEY) === '1' } catch { return true } })()
+  return <aside role="alert" data-testid="library-partition-blocked" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
+    <span className="flex-1 min-w-0">{hold ? `${holdMessage(hold)} ` : ''}The songbook on this device belongs to another account, or its owner is unknown, so it is not shown and nothing in it was changed. Sign in with the account that owns it{hold ? ', or retry the new device storage' : ''}.</span>
+    {hold && <button className="underline cursor-pointer" onClick={() => { clearB2Hold(localStorage); window.location.reload() }}>Retry</button>}
+    {/* DEV: a separate (empty) songbook for this account in the new device storage; the other one is untouched. */}
+    {!hold && !b2On && isDevEnv && <button className="underline cursor-pointer" data-testid="open-own-b2-songbook" onClick={() => { enableLibraryB2(); window.location.reload() }}>Use a separate songbook for this account (B2)</button>}
+  </aside>
+}
+function LibraryStartupReadyInner() {
   const [repairPreview, setRepairPreview] = useState<DanglingReferenceRepair | null>(null)
   const [repairError, setRepairError] = useState<string | null>(null)
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
+  const [b2Hold, setB2Hold] = useState<B2Hold | null>(() => { try { return localStorage.getItem(B2_FLAG_KEY) === '1' ? readB2Hold(localStorage) : null } catch { return null } })
   useEffect(() => {
-    const refresh = () => setStatus(checkRecovery())
+    const onHold = () => setB2Hold(readB2Hold(localStorage))
+    window.addEventListener('gtar-library-b2-hold', onHold)
+    return () => window.removeEventListener('gtar-library-b2-hold', onHold)
+  }, [])
+  useEffect(() => {
+    // #252: with B2 (10,000+ songs) a full recovery review per save is costly; coalesce bursts of saves.
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const refreshNow = () => setStatus(checkRecovery())
+    const refresh = () => {
+      if (!isLibraryB2Active()) { refreshNow(); return }
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(() => { timer = null; refreshNow() }, 300)
+    }
     window.addEventListener('gtar-library-persisted', refresh)
     window.addEventListener('storage', refresh)
     // Child startup migration can persist before this listener is installed.
-    refresh()
-    return () => { window.removeEventListener('gtar-library-persisted', refresh); window.removeEventListener('storage', refresh) }
+    refreshNow()
+    return () => { if (timer !== null) clearTimeout(timer); window.removeEventListener('gtar-library-persisted', refresh); window.removeEventListener('storage', refresh) }
   }, [])
   const exportRecovery = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryData(), null, 2)], { type: 'application/json' }))
+    const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryExportData(), null, 2)], { type: 'application/json' }))
     const link = document.createElement('a')
     link.href = url
     link.download = 'GTAR-storage-recovery.json'
@@ -168,6 +220,13 @@ function LibraryStartupReady() {
   // #181: only a damaged library gets the full-width alert (the app cannot load). Actionable recovery
   // is shown as a red dot on the Cloud Sync button and on "Review local recovery" (DEV only).
   return <>
+    {b2Hold && <aside role="alert" data-testid="library-b2-hold" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
+      <span className="flex-1 min-w-0">{holdMessage(b2Hold)}</span>
+      <span className="flex gap-3">
+        <button className="underline cursor-pointer" onClick={exportRecovery}>Export recovery data</button>
+        <button className="underline cursor-pointer" onClick={() => { clearB2Hold(localStorage); window.location.reload() }}>Retry</button>
+      </span>
+    </aside>}
     {status.damaged && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
       <div className="flex-1 min-w-0">
         <span>Device library needs recovery. Original browser data has been preserved.</span>

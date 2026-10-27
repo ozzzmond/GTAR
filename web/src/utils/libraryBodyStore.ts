@@ -7,7 +7,7 @@
  * here deletes, rewrites or migrates user data. Shadow writes and load-time verification only
  * report into Debug Logs so the next phase can be judged on field evidence.
  */
-import { isLibraryIndexActive, isLibraryStorageKey, isQuotaError, recoveryData, inspectRecovery, RESTORE_SNAPSHOT_KEY } from './syncJournal'
+import { isLibraryIndexActive, isLibraryStorageKey, isQuotaError, recoveryData, inspectRecovery, personalSyncPausedByB2, RESTORE_SNAPSHOT_KEY } from './syncJournal'
 
 export const BODY_DB_NAME = 'gtar_library_bodies_db'
 export const BODY_DB_VERSION = 1
@@ -235,6 +235,8 @@ export async function inspectShadowCleanup(storage: Storage = localStorage, opti
   if (inspectRecovery(storage).invalid) throw new Error('Invalid recovery data; shadow cleanup unavailable. Export recovery data.')
   // #171 B1: the index depends on these bodies and other tabs cache them; cleanup waits for B1 off.
   if (isLibraryIndexActive(storage)) throw new Error('Library storage B1 is on. Turn it off before shadow cleanup.')
+  // #258 F6: with B2 the recovery view is per account, so it cannot prove a body unreferenced.
+  if (personalSyncPausedByB2(storage)) throw new Error('Library storage B2 is on. Turn it off before shadow cleanup.')
   const storageRaw = shadowStorageRaw(storage)
   const protectedSet = await protectedHashes(storageRaw)
   const db = await openBodyDatabase(options)
