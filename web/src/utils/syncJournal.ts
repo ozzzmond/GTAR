@@ -1263,6 +1263,7 @@ export async function prepareLibraryB2(storage: Storage = localStorage, options:
     readSource: () => legacySource(storage),
     sourceRevision: () => legacyRevision(storage),
     archive: archiveRecovery(storage),
+    archiveExists: key => readRecoveryArchive(key, storage) !== null,
     validate: library => validateLibrary(library),
     ...(options.failAt ? { failAt: options.failAt } : {}),
     ...(options.verifyBodies !== undefined ? { verifyBodies: options.verifyBodies } : {}),

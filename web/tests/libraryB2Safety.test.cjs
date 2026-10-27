@@ -267,3 +267,166 @@ test('F7: with B2 on, shared setlist create/update is refused with a B2-specific
     assert.doesNotMatch(String(unpublish?.message ?? ''), /new device storage \(B2\)/, 'unpublish is not blocked by B2')
   } finally { global.fetch = realFetch }
 })
+
+// R1 (#258 re-audit): turning B2 off from a tab whose sign-in is no longer current
+const v1Titles = storage => JSON.parse(storage.getItem(V1)).songs.map(s => s.title)
+function rotateToken(storage, userId) {
+  const session = JSON.parse(storage.getItem('gtar_auth_session'))
+  storage.setItem('gtar_auth_session', JSON.stringify({ ...session, user: { ...session.user, id: userId }, sessionToken: `rotated-${Math.random()}` }))
+}
+async function freshViewOf(storage, factory) {
+  const view = await open(storage, factory)
+  let songs
+  try { songs = view.tab.sj.readPersistedLibrary(storage)?.songs ?? [] } catch { songs = [] }
+  return songs
+}
+
+test('R1a: account A tab, session switched to B: turning B2 off is refused; legacy, flag and head unchanged; B sees nothing of A', async () => {
+  const { storage, factory } = device()
+  const a = await open(storage, factory)
+  edit(a.tab, storage, 0, { title: 'A private B2 edit' })
+  await a.tab.b2.flushB2()
+  const v1 = storage.getItem(V1), head = storage.getItem(`gtar_library_b2_head::${a.prepared.identity.scope}`)
+  h.signIn(storage, 'user-b')
+  await assert.rejects(a.tab.sj.disableLibraryB2(storage), /not the one this tab opened|sign-in changed/)
+  assert.equal(storage.getItem(V1), v1)
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+  assert.equal(storage.getItem(`gtar_library_b2_head::${a.prepared.identity.scope}`), head)
+  const bSongs = await freshViewOf(storage, factory)
+  assert.equal(bSongs.some(s => /Synthetic|A private/.test(s.title)), false, 'zero A content for B')
+})
+
+test('R1b: ordinary A turn-off still works and keeps every A edit', async () => {
+  const { storage, factory } = device()
+  const a = await open(storage, factory)
+  edit(a.tab, storage, 1, { title: 'Kept on turn-off' })
+  await a.tab.sj.disableLibraryB2(storage)
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), null)
+  assert.equal(v1Titles(storage)[1], 'Kept on turn-off')
+})
+
+test('R1c: sign-out before turn-off: refused, nothing changed; a stale save after sign-out is refused too', async () => {
+  const { storage, factory } = device()
+  const a = await open(storage, factory)
+  const v1 = storage.getItem(V1)
+  h.signIn(storage, null)
+  await assert.rejects(a.tab.sj.disableLibraryB2(storage))
+  assert.throws(() => edit(a.tab, storage, 2, { title: 'stale after sign-out' }), /account changed/)
+  assert.equal(storage.getItem(V1), v1)
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+})
+
+for (const [label, change] of [['token rotation', s => rotateToken(s, 'user-a')], ['switch to account B', s => h.signIn(s, 'user-b')], ['sign-out', s => h.signIn(s, null)]]) {
+  test(`R1d: ${label} during turn-off (after the source archive): refused before any legacy write; B2 stays on`, async () => {
+    const { storage, factory } = device()
+    const a = await open(storage, factory)
+    edit(a.tab, storage, 3, { title: 'A edit before turn-off' })
+    const v1 = storage.getItem(V1)
+    const setItem = storage.setItem.bind(storage)
+    let fired = false
+    storage.setItem = (key, value) => { setItem(key, value); if (!fired && key.startsWith('gtar_sync_recovery:b2-disable-source:')) { fired = true; change(storage) } }
+    await assert.rejects(a.tab.sj.disableLibraryB2(storage))
+    storage.setItem = setItem
+    assert.ok(fired)
+    assert.equal(storage.getItem(V1), v1, 'legacy untouched')
+    assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+    if (label === 'switch to account B') assert.equal((await freshViewOf(storage, factory)).some(s => /Synthetic|A edit/.test(s.title)), false)
+  })
+}
+
+test('R1e: a stale A tab on hold cannot turn B2 off once B is signed in', async () => {
+  const { storage, factory } = device()
+  factory.faults.open = () => new Error('IndexedDB unavailable')
+  const a = await open(storage, factory)
+  factory.faults.open = undefined
+  assert.equal(a.prepared.hold.reason, 'open-failed')
+  h.signIn(storage, 'user-b')
+  await assert.rejects(a.tab.sj.disableLibraryB2(storage))
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+})
+
+// R2 (#258 re-audit): interrupted re-move after a legitimate legacy change must be retryable
+const holdKeys = storage => [...storage.map.keys()].filter(k => k.startsWith('gtar_library_b2_hold::'))
+const retry = storage => { for (const k of holdKeys(storage)) storage.removeItem(k) }
+for (const phase of ['source', 'write', 'readback', 'verify', 'receipt', 'activate']) {
+  test(`R2a: re-move interrupted at ${phase}: held, then Retry converges to the newer legacy library (older B2 archived)`, async () => {
+    const { storage, factory } = device()
+    assert.equal((await open(storage, factory)).prepared.active, true)
+    oldBuildEdit(storage, 2, 'Legacy change')
+    const first = await open(storage, factory, { failAt: phase })
+    assert.equal(first.prepared.active, false, 'never activates an incomplete re-move')
+    assert.equal(first.tab.sj.readPersistedLibrary(storage).songs[2].title, 'Legacy change', 'frozen source in use')
+    retry(storage)
+    const again = await open(storage, factory, { failAt: phase }) // repeated failure stays held, recoverable
+    assert.equal(again.prepared.active, false)
+    retry(storage)
+    const done = await open(storage, factory)
+    assert.equal(done.prepared.active, true, JSON.stringify(done.prepared.hold))
+    assert.equal(done.tab.sj.readPersistedLibrary(storage).songs[2].title, 'Legacy change')
+    assert.ok([...storage.map.keys()].some(k => k.startsWith('gtar_sync_recovery:b2-superseded:')))
+    assert.equal([...storage.map.keys()].some(k => k.startsWith('gtar_library_b2_remigrate::')), false, 'marker cleared on activation')
+    const later = await open(storage, factory)
+    assert.equal(later.prepared.active, true, 'stable on the next start')
+  })
+}
+
+test('R2b: source changes again while the re-move is interrupted: Retry moves the latest source', async () => {
+  const { storage, factory } = device()
+  await open(storage, factory)
+  oldBuildEdit(storage, 2, 'First change')
+  await open(storage, factory, { failAt: 'readback' })
+  oldBuildEdit(storage, 3, 'Second change')
+  retry(storage)
+  const done = await open(storage, factory)
+  assert.equal(done.prepared.active, true, JSON.stringify(done.prepared.hold))
+  assert.deepEqual(done.tab.sj.readPersistedLibrary(storage).songs.slice(2, 4).map(s => s.title), ['First change', 'Second change'])
+})
+
+test('R2c: interrupted re-move with a corrupted target is rebuilt from the source on Retry', async () => {
+  const { storage, factory } = device()
+  await open(storage, factory)
+  oldBuildEdit(storage, 2, 'Legacy change')
+  await open(storage, factory, { failAt: 'activate' })
+  const db = b2Db(factory)[0]
+  const record = [...records(factory, db, 'songs').values()][4]
+  record.data = { ...record.data, title: 'Corrupted' }
+  retry(storage)
+  const done = await open(storage, factory)
+  assert.equal(done.prepared.active, true, JSON.stringify(done.prepared.hold))
+  const songs = done.tab.sj.readPersistedLibrary(storage).songs
+  assert.equal(songs[2].title, 'Legacy change')
+  assert.equal(songs.some(s => s.title === 'Corrupted'), false)
+})
+
+test('R2d: ambiguous states stay held and keep every record: no receipt without a re-move marker; marker without its archive', async () => {
+  {
+    const { storage, factory } = device()
+    const a = await open(storage, factory)
+    edit(a.tab, storage, 0, { title: 'Only in B2' })
+    await a.tab.b2.flushB2()
+    const db = b2Db(factory)[0]
+    records(factory, db, 'meta').delete('receipt')
+    for (let i = 0; i < 2; i++) {
+      retry(storage)
+      const page = await open(storage, factory)
+      assert.equal(page.prepared.active, false)
+    }
+    assert.ok([...records(factory, db, 'songs').values()].some(r => r.data.title === 'Only in B2'), 'edit kept')
+  }
+  {
+    const { storage, factory } = device()
+    await open(storage, factory)
+    oldBuildEdit(storage, 2, 'Legacy change')
+    await open(storage, factory, { failAt: 'write' })
+    const marker = [...storage.map.keys()].find(k => k.startsWith('gtar_library_b2_remigrate::'))
+    const archive = JSON.parse(storage.getItem(marker)).archiveKey
+    const saved = storage.getItem(archive)
+    storage.removeItem(archive)
+    retry(storage)
+    const page = await open(storage, factory)
+    assert.equal(page.prepared.hold.reason, 'remigration-unverified')
+    storage.setItem(archive, saved) // evidence restored: resumes
+    retry(storage)
+    assert.equal((await open(storage, factory)).prepared.active, true)
+  }
+})

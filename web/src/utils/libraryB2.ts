@@ -29,6 +29,12 @@ export const B2_OPTOUT_KEY = 'gtar_library_b2_optout'
 /** Per partition: set when B2 could not be used safely; that partition stays off until the user retries. */
 export const B2_HOLD_PREFIX = 'gtar_library_b2_hold::'
 export const B2_HEAD_PREFIX = 'gtar_library_b2_head::'
+/**
+ * #258 R2: set (after the older B2 copy is archived and verified) before a re-move resets the
+ * partition, removed when the re-moved partition is activated. While present and the head is still
+ * the pre-reset one, the partition holds only migration output and can be rebuilt from the source.
+ */
+export const B2_REMIGRATE_PREFIX = 'gtar_library_b2_remigrate::'
 export const B2_WAL_PREFIX = 'gtar_library_b2_wal::'
 export const B2_DB_PREFIX = 'gtar_library_b2::'
 export const B2_SCHEMA_VERSION = 1
@@ -46,7 +52,7 @@ type Extra = Record<string, unknown>
 
 export type B2Phase = 'source' | 'open' | 'write' | 'readback' | 'verify' | 'receipt' | 'activate'
 export type B2HoldReason = 'migration-failed' | 'open-failed' | 'load-failed' | 'missing-body' | 'corrupt-body' | 'order-mismatch'
-  | 'commit-failed' | 'commit-conflict' | 'wal-unreplayable' | 'head-ahead' | 'diverged' | 'quota' | 'integrity-failed' | 'source-changed'
+  | 'commit-failed' | 'commit-conflict' | 'wal-unreplayable' | 'head-ahead' | 'diverged' | 'quota' | 'integrity-failed' | 'source-changed' | 'remigration-unverified'
 
 /** `legacy`: this partition is the one the earlier (v1/B1) library belongs to. */
 export interface PartitionIdentity { kind: 'device' | 'account'; userId: string | null; env: string; scope: string; legacy: boolean }
@@ -96,6 +102,7 @@ export function holdMessage(hold: B2Hold): string {
     case 'integrity-failed': return `The new device storage failed its integrity check (${hold.detail ?? 'record check'}). ${keep}`
     case 'diverged': return 'The new device storage and the earlier library copy were both changed. Neither was replaced. Export a backup of each before choosing one in Review local recovery.'
     case 'commit-conflict': return 'Saving is paused: another tab or window changed the same song. Your edit is kept in recovery data; export it, then reload.'
+    case 'remigration-unverified': return `An interrupted move of the newer earlier library cannot be resumed: its saved copy of the older B2 songbook was not found. ${keep}`
     case 'wal-unreplayable': return `An unsaved edit from an earlier session could not be applied safely, so it was kept in recovery data and nothing was overwritten. ${keep}`
     case 'quota': return 'Saving is paused: device storage is full. Free space or export a backup, then reload.'
     default: return `The new device storage could not be read safely (${hold.reason}). ${keep}`
@@ -110,6 +117,14 @@ export function readStoredOwner(storage: Pick<Storage, 'getItem'>): { userId: st
   const value = readJson(storage, OWNER_KEY) as { v?: unknown; userId?: unknown; env?: unknown } | null
   return value && value.v === 1 && typeof value.userId === 'string' && value.userId.trim() && typeof value.env === 'string'
     ? { userId: value.userId.trim(), env: value.env } : null
+}
+/** #258 R1: the sign-in (account + session token) an operation started under. */
+export function readSessionGeneration(storage: Pick<Storage, 'getItem'>): string | null {
+  const value = readJson(storage, SESSION_KEY) as { user?: { id?: unknown }; sessionToken?: unknown; token?: unknown } | null
+  const id = value?.user?.id
+  if (typeof id !== 'string' || !id.trim()) return null
+  const token = typeof value?.sessionToken === 'string' ? value.sessionToken : typeof value?.token === 'string' ? value.token : ''
+  return `${id.trim().toLowerCase()}\u0000${token}`
 }
 export function readSessionUserId(storage: Pick<Storage, 'getItem'>): string | null {
   const value = readJson(storage, SESSION_KEY) as { user?: { id?: unknown } } | null
@@ -485,9 +500,14 @@ function rememberInputs(s: State, d: Diff): void {
 }
 
 /** Throws unless the signed-in account still maps to the open partition (stale work fails closed). */
-function assertPartition(s: State): void {
+/** The signed-in account still maps to the open partition (#258 R1: signed out / unknown owner does not). */
+function partitionIsCurrent(s: State): boolean {
   const now = resolvePartition(s.storage, s.identity.env)
-  if (now.kind !== s.identity.kind || (now.kind === 'account' && !sameUser(now.userId, s.identity.userId))) throw new LibraryPartitionError()
+  return !now.blocked && now.kind === s.identity.kind && now.legacy === s.identity.legacy &&
+    (now.kind === 'device' ? now.userId === null : sameUser(now.userId, s.identity.userId))
+}
+function assertPartition(s: State): void {
+  if (!partitionIsCurrent(s)) throw new LibraryPartitionError()
 }
 
 export type B2PersistResult = 'unchanged' | 'saved'
@@ -812,6 +832,8 @@ export interface B2Deps {
   sourceRevision: () => string | null
   /** Saves a copy into recovery archives; `scope` tags it for one partition (null: the earlier library's owner). */
   archive?: (key: string, raw: string, scope: string | null) => Promise<void>
+  /** True when a recovery archive with this key exists (verifies re-move evidence). */
+  archiveExists?: (key: string) => boolean
   /** Full library validation (syncJournal.validateLibrary). */
   validate?: (library: SyncLibrary) => void
   env?: string
@@ -1016,7 +1038,23 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
 
   try {
     const headKey = b2HeadKey(identity.scope)
-    const headRaw = storage.getItem(headKey)
+    let headRaw = storage.getItem(headKey)
+    const markerKey = B2_REMIGRATE_PREFIX + identity.scope
+    let marker: RemigrateMarker | null = null
+    const markerRaw = storage.getItem(markerKey)
+    if (markerRaw !== null) {
+      marker = readMarker(markerRaw)
+      if (!marker) throw new B2LoadError('remigration-unverified', 'Unreadable re-move marker')
+      if (headRaw !== null && headRaw !== marker.oldHead) {
+        // The re-moved partition was activated before; the marker is only left over.
+        storage.removeItem(markerKey)
+        marker = null
+      } else {
+        // #258 R2: an interrupted re-move. Resume only with its recovery evidence present.
+        if (!deps.archiveExists?.(marker.archiveKey)) throw new B2LoadError('remigration-unverified', `Recovery copy ${marker.archiveKey} not found`)
+        headRaw = null // the pre-reset head names records that no longer exist
+      }
+    }
     let migrated = false
     let expectSource: string | null | undefined
     const hasReceipt = await (async () => {
@@ -1039,10 +1077,23 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
         return hold('migration-failed', error instanceof Error ? error.message : String(error))
       }
     }
-    const replayed = await replayWal(db, storage, identity, deps)
-    let loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
     const validate = (value: Loaded) => { try { deps.validate?.(libraryOf(value)) } catch (error) { throw new B2LoadError('integrity-failed', error instanceof Error ? error.message : String(error)) } }
-    validate(loaded)
+    let replayed = 0
+    let loaded: Loaded
+    try {
+      replayed = await replayWal(db, storage, identity, deps)
+      loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
+      validate(loaded)
+    } catch (error) {
+      // #258 R2: a resumed re-move holds only migration output (never activated, never edited): rebuild
+      // it from the source. Anything else stays as it is and holds.
+      if (!marker || migrated) throw error
+      appLogger.warn('LibraryB2', 'Interrupted re-move found incomplete; rebuilding it from the earlier library', error instanceof Error ? error.message : String(error))
+      await resetPartition(db)
+      await migrate()
+      loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
+      validate(loaded)
+    }
     if (identity.legacy && !migrated) {
       // #258 F1/F4: the legacy source must still be what this partition last equalled.
       const raw = deps.sourceRevision()
@@ -1051,7 +1102,15 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
         if (loaded.sourceSync.rev !== loaded.rev) throw new B2LoadError('diverged', 'Both copies changed since they were last the same')
         // B2 is unchanged since then: keep it in recovery, then move the newer legacy library in.
         if (!deps.archive) throw new B2LoadError('diverged', 'No recovery archive available to keep the older B2 copy')
-        await deps.archive(`gtar_sync_recovery:b2-superseded:${Date.now()}:${identity.scope}`, JSON.stringify({ local: libraryOf(loaded) }), archiveTag(identity))
+        const archiveKey = `gtar_sync_recovery:b2-superseded:${Date.now()}:${identity.scope}`
+        await deps.archive(archiveKey, JSON.stringify({ local: libraryOf(loaded) }), archiveTag(identity))
+        if (deps.archiveExists && !deps.archiveExists(archiveKey)) throw new B2LoadError('remigration-unverified', 'The older B2 copy could not be verified in recovery')
+        // #258 R2: recorded before the reset, so an interruption resumes instead of holding forever.
+        const next: RemigrateMarker = { v: 1, oldHead: marker ? marker.oldHead : storage.getItem(headKey), archiveKey, at: Date.now() }
+        storage.setItem(markerKey, JSON.stringify(next))
+        if (readMarker(storage.getItem(markerKey))?.archiveKey !== archiveKey) throw new B2LoadError('remigration-unverified', 'Re-move marker could not be saved')
+        marker = next
+        headRaw = null
         await resetPartition(db)
         await migrate()
         loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
@@ -1065,12 +1124,23 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
       if (parsed.rev < loaded.rev) appLogger.warn('LibraryB2', `Head token ${parsed.rev} older than stored ${loaded.rev}; using the stored revision`)
     }
     const existingToken = !migrated && headRaw !== null && parseB2Token(headRaw)?.rev === loaded.rev ? headRaw : undefined
-    return activate(deps, db, identity, loaded, migrated, replayed, started, existingToken, expectSource)
+    const prepared = activate(deps, db, identity, loaded, migrated, replayed, started, existingToken, expectSource)
+    if (marker) storage.removeItem(markerKey)
+    return prepared
   } catch (error) {
     try { db.close() } catch { /* ignore */ }
     const reason: B2HoldReason = error instanceof B2LoadError ? error.reason : error instanceof B2MigrationError ? 'migration-failed' : isQuota(error) ? 'quota' : 'load-failed'
     return hold(reason, error instanceof Error ? error.message : String(error))
   }
+}
+
+interface RemigrateMarker { v: 1; oldHead: string | null; archiveKey: string; at: number }
+function readMarker(raw: string | null): RemigrateMarker | null {
+  try {
+    const value = raw === null ? null : JSON.parse(raw) as Partial<RemigrateMarker> | null
+    return value && value.v === 1 && typeof value.archiveKey === 'string' && value.archiveKey.startsWith('gtar_sync_recovery:') &&
+      (value.oldHead === null || typeof value.oldHead === 'string') && typeof value.at === 'number' ? value as RemigrateMarker : null
+  } catch { return null }
 }
 
 async function resetPartition(db: IDBDatabase): Promise<void> {
@@ -1162,7 +1232,8 @@ export function enableB2(storage: Storage): void {
 export class B2SwitchError extends Error {
   constructor(message: string) { super(message); this.name = 'B2SwitchError' }
 }
-const SWITCH_CHANGED = 'The songbook changed in another tab while turning off the new device storage. Nothing was switched; B2 stays on. Try again.'
+const SWITCH_CHANGED = 'The songbook or the sign-in changed while turning off the new device storage. Nothing was switched; B2 stays on. Try again.'
+const SWITCH_ACCOUNT = 'The signed-in account is not the one this tab opened. Nothing was changed; reload this tab.'
 
 /**
  * Turns B2 off (#258 F4). Only the partition that owns the earlier library may do so (F5). The legacy
@@ -1191,14 +1262,21 @@ export async function disableB2(deps: {
     return
   }
   if (!s.identity.legacy) throw new B2SwitchError('Only the account that owns this device\'s earlier songbook can turn the new device storage off. Your songbook stays in B2 on this device. Nothing was changed.')
+  // #258 R1: this tab's partition must still be the signed-in account's, under the same sign-in
+  // (no switch, sign-out or token change) from here to the final switch.
+  const signIn = readSessionGeneration(storage)
+  const signedIn = () => partitionIsCurrent(s) && readSessionGeneration(storage) === signIn
+  if (!signedIn()) throw new B2SwitchError(SWITCH_ACCOUNT)
   await flushB2()
   const token = s.token
   const headKey = b2HeadKey(s.identity.scope)
-  const current = () => storage.getItem(headKey) === token && s.token === token && s.pending === 0 && !s.failure && state === s
+  const current = () => signedIn() && storage.getItem(headKey) === token && s.token === token && s.pending === 0 && !s.failure && state === s
   if (!current()) throw new B2SwitchError(SWITCH_CHANGED)
   const rawBefore = deps.sourceRevision()
   const sync = await readSourceSync(s.db)
+  if (!current()) throw new B2SwitchError(SWITCH_CHANGED)
   if (!sync || await legacyDigest(rawBefore) !== sync.sourceDigest) {
+    if (!current()) throw new B2SwitchError(SWITCH_CHANGED)
     // The earlier library was changed while B2 was on: both copies stay; nothing is overwritten.
     try { await deps.archive(`gtar_sync_recovery:b2-diverged:${Date.now()}:${s.identity.scope}`, JSON.stringify({ local: s.library }), null) } catch { /* B2 records are kept regardless */ }
     s.failure = { reason: 'diverged', at: Date.now(), scope: s.identity.scope, detail: 'The earlier library changed while B2 was on' }
