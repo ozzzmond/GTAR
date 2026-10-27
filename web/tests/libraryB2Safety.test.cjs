@@ -15,8 +15,10 @@ function device({ owner = 'user-a', session = 'user-a', n = 12, setlists = 2, st
   const factory = new h.Factory()
   const tab = h.newTab()
   if (owner) h.bindOwner(storage, owner)
-  h.signIn(storage, session)
+  // The earlier library is built by its owner (#258: another signed-in account cannot open it).
+  h.signIn(storage, owner ?? session)
   if (n) tab.sj.persistLibrary(h.library(n, setlists), storage)
+  h.signIn(storage, session)
   tab.sj.enableLibraryB2(storage)
   return { storage, factory }
 }

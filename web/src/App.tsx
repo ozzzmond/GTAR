@@ -23,7 +23,8 @@ import {
   prepareLibraryB2,
   recoveryExportData,
   isLibraryB2Active,
-  isLegacyLibraryBlocked,
+  isLibraryClosedForSignIn,
+  enableLibraryB2,
 } from './utils/syncJournal'
 import { B2_FLAG_KEY, LibraryPartitionError, clearB2Hold, flushB2, holdMessage, readB2Hold, type B2Hold } from './utils/libraryB2'
 import { LIBRARY_B1_KEY } from './utils/libraryIndex'
@@ -159,15 +160,18 @@ function LibraryStartup() {
 function LibraryStartupReady() {
   // #258 F5: with B2 on, this sign-in may not open the earlier library (another account's, or owner
   // unknown) and has no B2 partition open: show nothing of it, change nothing, offer no export of it.
-  const [partitionBlocked] = useState(() => isLegacyLibraryBlocked())
+  const [partitionBlocked] = useState(() => isLibraryClosedForSignIn())
   if (partitionBlocked) return <PartitionBlocked />
   return <LibraryStartupReadyInner />
 }
 function PartitionBlocked() {
   const hold = readB2Hold(localStorage)
+  const b2On = (() => { try { return localStorage.getItem(B2_FLAG_KEY) === '1' } catch { return true } })()
   return <aside role="alert" data-testid="library-partition-blocked" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
-    <span className="flex-1 min-w-0">{hold ? `${holdMessage(hold)} ` : ''}This device's earlier songbook belongs to another account, or its owner is unknown, so it is not shown and nothing in it was changed. Sign in with the account that owns it{hold ? ', or retry the new device storage' : ''}.</span>
+    <span className="flex-1 min-w-0">{hold ? `${holdMessage(hold)} ` : ''}The songbook on this device belongs to another account, or its owner is unknown, so it is not shown and nothing in it was changed. Sign in with the account that owns it{hold ? ', or retry the new device storage' : ''}.</span>
     {hold && <button className="underline cursor-pointer" onClick={() => { clearB2Hold(localStorage); window.location.reload() }}>Retry</button>}
+    {/* DEV: a separate (empty) songbook for this account in the new device storage; the other one is untouched. */}
+    {!hold && !b2On && isDevEnv && <button className="underline cursor-pointer" data-testid="open-own-b2-songbook" onClick={() => { enableLibraryB2(); window.location.reload() }}>Use a separate songbook for this account (B2)</button>}
   </aside>
 }
 function LibraryStartupReadyInner() {

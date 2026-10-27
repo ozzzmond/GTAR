@@ -11,7 +11,7 @@ import { LIBRARY_B1_KEY, LIBRARY_B1_OPTOUT_KEY, LIBRARY_V2_KEY, confirmPendingLi
   loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 import { B2StaleWriteError, b2Active, b2Decode, b2Enabled, b2HeadKey, b2Identity, b2LoadRevision, b2Matches, b2Persist, b2Read, b2Restore,
   b2Status, disableB2, enableB2, isB2HeadKey, isB2Token, prepareB2, readB2Hold, type B2Preparation, type B2Source, type B2Status,
-  LibraryPartitionBlockedError, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed } from './libraryB2'
+  LibraryPartitionBlockedError, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed, libraryClosedForSignIn } from './libraryB2'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -1303,6 +1303,10 @@ export function personalSyncPausedByB2(storage: Pick<Storage, 'getItem' | 'key' 
 /** #258 F5: the earlier library is closed for this sign-in (another account's, or owner unknown). */
 export function isLegacyLibraryBlocked(storage: Storage = localStorage): boolean {
   try { return legacyAccessBlocked(storage) } catch { return true }
+}
+/** App startup gate (#258): the library is shown only to its verified owner; signed out included. */
+export function isLibraryClosedForSignIn(storage: Storage = localStorage): boolean {
+  try { return libraryClosedForSignIn(storage) } catch { return true }
 }
 /** #258 F7: shared setlist create/update builds its snapshot from the paused personal cloud copy. */
 export const B2_SETLIST_PUBLISH_MESSAGE = 'Publishing or updating a shared setlist is not available while the new device storage (B2) is on: the shared copy is built from your personal cloud songbook, which is paused. Song publishing, QR sharing and unpublishing still work. Nothing was published.'

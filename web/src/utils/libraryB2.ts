@@ -381,11 +381,26 @@ function setHold(storage: Storage, hold: B2Hold): void {
 }
 
 /**
- * #258 F5: with B2 enabled, the earlier (v1/B1) library may be read only by its own partition, and
- * only while this tab is not using B2 (a hold of that partition). Everyone else: blocked.
+ * #258 F5 + legacy isolation: the earlier (v1/B1) library is origin-wide, so with B2 on, off or
+ * unavailable it opens only for its verified owner (or, never linked, for this device). Another
+ * account, a signed-out session or an unreadable / other-environment owner record: closed.
+ * Nothing is relabelled, moved, copied or cleared; the owner reopens it by signing in.
  */
 export function legacyAccessBlocked(storage: Pick<Storage, 'getItem'>): boolean {
-  if (!b2Enabled(storage) || b2Active(storage)) return false
+  if (b2Active(storage)) return false
+  const where = resolvePartition(storage)
+  if (b2Enabled(storage)) return where.blocked || !where.legacy
+  // B2 off: closed whenever an account is signed in that is not the verified owner (another account,
+  // or an owner record that cannot be verified). Signed out, no account can receive it here; the app
+  // still shows nothing then (libraryClosedForSignIn).
+  return readSessionUserId(storage) !== null && (where.blocked || !where.legacy)
+}
+/**
+ * App startup: the earlier library is shown only to its verified owner (or, never linked, on this
+ * device). Stricter than legacyAccessBlocked: a signed-out page with an owned library shows nothing.
+ */
+export function libraryClosedForSignIn(storage: Pick<Storage, 'getItem'>): boolean {
+  if (b2Active(storage)) return false
   const where = resolvePartition(storage)
   return where.blocked || !where.legacy
 }
