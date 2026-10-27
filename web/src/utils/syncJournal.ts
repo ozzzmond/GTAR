@@ -10,7 +10,8 @@ import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, getReti
 import { LIBRARY_B1_KEY, LIBRARY_B1_OPTOUT_KEY, LIBRARY_V2_KEY, confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex,
   loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 import { B2StaleWriteError, b2Active, b2Decode, b2Enabled, b2HeadKey, b2Identity, b2LoadRevision, b2Matches, b2Persist, b2Read, b2Restore,
-  b2Status, disableB2, enableB2, isB2HeadKey, isB2Token, prepareB2, readB2Hold, type B2Preparation, type B2Source, type B2Status } from './libraryB2'
+  b2Status, disableB2, enableB2, isB2HeadKey, isB2Token, prepareB2, readB2Hold, type B2Preparation, type B2Source, type B2Status,
+  LibraryPartitionBlockedError, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed } from './libraryB2'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -176,20 +177,64 @@ function resolvePending(base: SyncLibrary | null, value: unknown): SyncLibrary {
   return result
 }
 
+/*
+ * #258 F6: recovery data is scoped by account partition. Archives written by a B2 partition other than
+ * the earlier library's own are tagged with that partition (ARCHIVE_SCOPES_KEY); untagged archives and
+ * the legacy keys belong to the earlier library's owner. Nothing is relabelled, moved or deleted: a
+ * view only leaves out what is not this account's. Unknown ownership sees nothing.
+ */
+export const ARCHIVE_SCOPES_KEY = 'gtar_recovery_scopes_v1'
+interface RecoveryView { legacy: boolean; scope: string | null }
+export function recoveryView(storage: Storage = localStorage): RecoveryView {
+  if (isLibraryB2Active(storage)) { const id = b2Identity()!; return { legacy: id.legacy, scope: id.scope } }
+  if (legacyAccessBlocked(storage)) return { legacy: false, scope: null }
+  return { legacy: true, scope: null }
+}
+function readArchiveScopes(storage: Storage): Record<string, string> {
+  const raw = storage.getItem(ARCHIVE_SCOPES_KEY)
+  if (raw === null) return {}
+  const value = JSON.parse(raw) as unknown // unreadable: throws, the caller fails closed
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Unreadable recovery scope index')
+  return value as Record<string, string>
+}
+/** Recovery tag for archives written now: the open partition, unless it is the earlier library's own. */
+function currentArchiveScope(storage: Storage): string | null {
+  return isLibraryB2Active(storage) && !b2Identity()!.legacy ? b2Identity()!.scope : null
+}
+/** Records the archive's partition before the archive is written (a failed tag writes no archive). */
+function tagArchive(key: string, scope: string | null, storage: Storage): void {
+  if (scope === null) return
+  const scopes = readArchiveScopes(storage)
+  scopes[key] = scope
+  const payload = JSON.stringify(scopes)
+  storage.setItem(ARCHIVE_SCOPES_KEY, payload)
+  if (storage.getItem(ARCHIVE_SCOPES_KEY) !== payload) throw new Error('Recovery scope could not be recorded. Nothing was archived.')
+}
+function archiveVisible(key: string, view: RecoveryView, scopes: Record<string, string>): boolean {
+  const tag = Object.hasOwn(scopes, key) ? scopes[key] : null
+  return tag === null ? view.legacy : tag === view.scope
+}
+
 export function recoveryData(storage: Storage = localStorage): Record<string, string> {
   const data: Record<string, string> = {}
+  const view = recoveryView(storage)
+  let scopes: Record<string, string>
+  try { scopes = readArchiveScopes(storage) } catch { return data } // fail closed
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i)
-    if (k && (k === LIBRARY_KEY || k === ownerKey || k === RECOVERY_DECISIONS_KEY || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:') || k.startsWith('gtar_sync_recovery:'))) data[k] = storage.getItem(k) ?? ''
+    if (!k) continue
+    if (k.startsWith('gtar_sync_recovery:')) { if (archiveVisible(k, view, scopes)) data[k] = storage.getItem(k) ?? ''; continue }
+    if (view.legacy && (k === LIBRARY_KEY || k === ownerKey || k === RECOVERY_DECISIONS_KEY || legacyKeys.includes(k) || k.startsWith('gtar_sync_v1:'))) data[k] = storage.getItem(k) ?? ''
   }
   // #167 B1c: archives held in IndexedDB are part of the same recovery set.
-  if (usesIdbArchives(storage)) for (const [key, raw] of recoveryArchiveEntries()) if (!(key in data)) data[key] = raw
+  if (usesIdbArchives(storage)) for (const [key, raw] of recoveryArchiveEntries()) if (!(key in data) && archiveVisible(key, view, scopes)) data[key] = raw
+  if (!view.legacy) return data
   // #171 B1: exports always carry the full current library, never the slim index alone.
   const indexRaw = storage.getItem(LIBRARY_V2_KEY)
   if (indexRaw !== null) {
     let full: string | null = null
-    if (activeLibraryKey(storage) === LIBRARY_V2_KEY) {
-      try { full = JSON.stringify(decodeLibraryRevision(indexRaw)) } catch { /* bodies unavailable: keep both raw forms */ }
+    if (legacyLibraryKey(storage) === LIBRARY_V2_KEY) {
+      try { full = JSON.stringify(decodeLibraryIndex(JSON.parse(indexRaw))) } catch { /* bodies unavailable: keep both raw forms */ }
     }
     if (full !== null) data[LIBRARY_KEY] = full
     else data[LIBRARY_V2_KEY] = indexRaw
@@ -374,7 +419,8 @@ export function recoverySnapshotFailureMessage(error: unknown, retry: 'sync' | '
 
 // Estimates cover the whole origin, not Safari's separate localStorage limit.
 // Always attempt the actual guarded write unless retention or reported quota blocks it.
-export async function writeRecoverySnapshot(key: string, raw: string, storage: Storage): Promise<void> {
+export async function writeRecoverySnapshot(key: string, raw: string, storage: Storage, scope: string | null = currentArchiveScope(storage)): Promise<void> {
+  tagArchive(key, scope, storage) // #258 F6
   let estimate: StorageEstimate | undefined
   try { estimate = await navigator.storage?.estimate?.() } catch { /* advisory only */ }
   if (usesIdbArchives(storage)) {
@@ -393,9 +439,15 @@ export async function writeRecoverySnapshot(key: string, raw: string, storage: S
     }
     return
   }
-  writeRecoverySnapshotChecked(key, raw, storage, estimate)
+  writeRecoverySnapshotCheckedTagged(key, raw, storage, estimate)
   notifyRecoveryChanged()
 }
+/** writeRecoverySnapshotChecked for an archive that writeRecoverySnapshot has already tagged. */
+function writeRecoverySnapshotCheckedTagged(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
+  skipTag = true
+  try { writeRecoverySnapshotChecked(key, raw, storage, estimate) } finally { skipTag = false }
+}
+let skipTag = false
 /** #181: same-tab signal for the recovery attention dot (other tabs get `storage` or the archive channel). */
 function notifyRecoveryChanged(): void {
   try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('gtar-recovery-changed')) } catch { /* ignore */ }
@@ -418,6 +470,7 @@ function storageArchiveUsage(storage: Storage): { count: number; bytes: number }
  * comparing the IndexedDB total against the 3 MiB localStorage cap refused valid snapshots.
  */
 function writeRecoverySnapshotChecked(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
+  if (!skipTag) tagArchive(key, currentArchiveScope(storage), storage) // #258 F6
   const total = recoveryRetentionUsage(storage)
   const local = total.indexedDb ? storageArchiveUsage(storage) : { count: total.count, bytes: total.bytes }
   const { count, bytes } = total
@@ -454,6 +507,8 @@ export function planRecoveryCleanup(review: RecoveryReview): { key: string; raw:
 
 // Confirmed UI action only. The lock and exact preview recheck protect editor/cross-tab changes.
 export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: boolean, blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
+  // #258 F6: decisions and cleanup act on the earlier library's archives; other partitions only export.
+  if (!recoveryView(storage).legacy) throw new Error('Recovery choices and cleanup are not available for this account\'s songbook in the new device storage yet. Export recovery data instead; nothing was changed.')
   if (!confirmed) throw new Error('Explicit cleanup confirmation required.')
   if (!navigator.locks?.request) throw new Error('Safe recovery cleanup requires Web Locks support.')
   await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, async lock => {
@@ -486,7 +541,8 @@ export function inspectRecovery(storage: Storage = localStorage): RecoveryReview
   try {
     review.libraryRaw = libraryRevision(storage)
     const library = readPersistedLibrary(storage)
-    review.decisionRaw = storage.getItem(RECOVERY_DECISIONS_KEY)
+    // #258 F6: decisions belong to the earlier library's owner.
+    review.decisionRaw = recoveryView(storage).legacy ? storage.getItem(RECOVERY_DECISIONS_KEY) : null
     let decisions: RecoveryDecision[] = []
     try { decisions = readRecoveryDecisions(review.decisionRaw) } catch { review.invalid = true }
     const sources = recoveryData(storage)
@@ -573,6 +629,8 @@ export function hasActionableRecovery(storage: Storage = localStorage): boolean 
 // Explicit operator choice only. No library write, source replacement, pruning or cloud action.
 // V1 history stays verbatim; new events reference sources instead of duplicating them.
 export async function recordRecoveryChoice(review: RecoveryReview, choice: RecoveryDecision['choice'], blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
+  // #258 F6: decisions and cleanup act on the earlier library's archives; other partitions only export.
+  if (!recoveryView(storage).legacy) throw new Error('Recovery choices and cleanup are not available for this account\'s songbook in the new device storage yet. Export recovery data instead; nothing was changed.')
   if (!navigator.locks?.request) throw new Error('Safe recovery resolution requires Web Locks support.')
   await navigator.locks.request('gtar-catalog-setlist-import', { mode: 'exclusive', ifAvailable: true }, lock => {
     if (!lock || blocked()) throw new Error('Resolve editor edits or active cross-tab conflicts before choosing a recovery version.')
@@ -691,6 +749,8 @@ const lastKnownLibraryRawByStorage = new WeakMap<Storage, string | null>()
 function activeLibraryKey(storage: Storage): string {
   // #252 B2: the head token of the open partition is the revision (unless a legacy read is requested).
   if (!legacyOnly && b2Active(storage)) return b2HeadKey(b2Identity()!.scope)
+  // #258 F5: with B2 enabled, the earlier library opens only for its own partition.
+  if (!legacyOnly && legacyAccessBlocked(storage)) throw new LibraryPartitionBlockedError()
   return legacyLibraryKey(storage)
 }
 function legacyLibraryKey(storage: Storage): string {
@@ -832,6 +892,10 @@ export function persistLibrary(
 ) {
   validateLibrary(library)
   if (isLibraryB2Active(storage)) { persistB2(library, storage, options); return }
+  // #258 F1: the frozen legacy source is not saved into by a tab that did not open B2 (or opened it).
+  if (!legacyOnly && !legacyWritesAllowed(storage)) {
+    throw new StaleWriteConflictError('The songbook moved to the new device storage in another tab. Reload this tab; your edits are kept in recovery data.', null, library)
+  }
   const { themeSettings: _ignoredTheme, ...libraryWithoutTheme } = library
   void _ignoredTheme
   const canonicalized: SyncLibrary = {
@@ -1190,7 +1254,7 @@ function legacySource(storage: Storage): B2Source {
   })
 }
 function legacyRevision(storage: Storage): string | null { return withLegacySource(() => libraryRevision(storage)) }
-const archiveRecovery = (storage: Storage) => (key: string, raw: string) => writeRecoverySnapshot(key, raw, storage)
+const archiveRecovery = (storage: Storage) => (key: string, raw: string, scope: string | null) => writeRecoverySnapshot(key, raw, storage, scope)
 
 export async function prepareLibraryB2(storage: Storage = localStorage, options: { factory?: IDBFactory | null; failAt?: Parameters<typeof prepareB2>[0]['failAt']; verifyBodies?: boolean } = {}): Promise<B2Preparation> {
   return prepareB2({
@@ -1199,6 +1263,7 @@ export async function prepareLibraryB2(storage: Storage = localStorage, options:
     readSource: () => legacySource(storage),
     sourceRevision: () => legacyRevision(storage),
     archive: archiveRecovery(storage),
+    validate: library => validateLibrary(library),
     ...(options.failAt ? { failAt: options.failAt } : {}),
     ...(options.verifyBodies !== undefined ? { verifyBodies: options.verifyBodies } : {}),
   })
@@ -1231,6 +1296,12 @@ export { readB2Hold }
 
 /** Personal cloud sync (Cloud V1) never runs against B2 data or a held fallback. */
 export const B2_SYNC_PAUSED_MESSAGE = 'Personal cloud sync is paused while the new device storage (B2) is on. Your songbook stays on this device; use Backup to keep a copy elsewhere.'
-export function personalSyncPausedByB2(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
-  return b2Enabled(storage) || readB2Hold(storage) !== null
+export function personalSyncPausedByB2(storage: Pick<Storage, 'getItem' | 'key' | 'length'> = localStorage): boolean {
+  return b2Enabled(storage) || anyB2Hold(storage as Storage)
 }
+/** #258 F5: the earlier library is closed for this sign-in (another account's, or owner unknown). */
+export function isLegacyLibraryBlocked(storage: Storage = localStorage): boolean {
+  try { return legacyAccessBlocked(storage) } catch { return true }
+}
+/** #258 F7: shared setlist create/update builds its snapshot from the paused personal cloud copy. */
+export const B2_SETLIST_PUBLISH_MESSAGE = 'Publishing or updating a shared setlist is not available while the new device storage (B2) is on: the shared copy is built from your personal cloud songbook, which is paused. Song publishing, QR sharing and unpublishing still work. Nothing was published.'

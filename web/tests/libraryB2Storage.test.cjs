@@ -102,15 +102,15 @@ test('a crash during the migration write transaction leaves no record in B2', as
   for (const store of ['songs', 'bodies', 'setlists', 'meta']) assert.deepEqual(factory.dump(db, store), [], store)
 })
 
-test('source edited in another tab during the move: verification refuses, nothing switches', async () => {
+test('source edited by an older build during the move: verification refuses, nothing switches', async () => {
   const { storage, factory, tab, source } = await device(30, 3)
   tab.sj.enableLibraryB2(storage)
-  const legacyTab = h.newTab()
   let edited = false
   factory.faults.put = (dbName, store) => {
     if (!edited && store === 'meta' && dbName.startsWith('gtar_library_b2::')) {
       edited = true
-      legacyTab.sj.persistLibrary({ ...source, songs: source.songs.map((s, i) => i === 0 ? { ...s, title: 'Edited elsewhere' } : s) }, storage)
+      // An older build (no B2 code) writes the legacy key directly; current builds refuse (libraryB2Safety F1b).
+      storage.setItem(V1, JSON.stringify({ ...source, songs: source.songs.map((s, i) => i === 0 ? { ...s, title: 'Edited elsewhere' } : s) }))
     }
     return null
   }
@@ -202,7 +202,7 @@ test('closing the tab before IndexedDB commits: the journalled save is replayed 
   tab.sj.persistLibrary(edited, storage, { expectedRaw: tab.sj.libraryRevision(storage) })
   await tab.b2.flushB2().catch(() => {})
   assert.ok(storage.getItem(`gtar_library_b2_wal::${tab.b2.b2Identity().scope}`), 'journal kept')
-  storage.removeItem('gtar_library_b2_hold') // the closed tab never saw its failure
+  storage.removeItem(`gtar_library_b2_hold::${tab.b2.b2Identity().scope}`) // the closed tab never saw its failure
   factory.faults.commit = undefined
   const page = await reopen(storage, factory)
   assert.equal(page.prepared.active, true, JSON.stringify(page.prepared.hold))

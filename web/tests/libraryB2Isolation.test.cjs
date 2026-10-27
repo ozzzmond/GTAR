@@ -246,8 +246,11 @@ for (const mode of ['replace', 'merge']) {
     await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
     if (mode === 'replace') await act(async () => button('Confirm Wipe & Replace').click())
     assert.match(document.body.textContent, /Backup restored: .*\(verified after saving\)/)
-    assert.ok(storage.getItem(jb.RESTORE_SNAPSHOT_KEY), 'safety snapshot written first')
-    assert.deepEqual(JSON.parse(storage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.songs.map(s => s.id), ['cur-1', 'cur-2'])
+    // #258 F6: with B2 the safety snapshot is a recovery archive of this partition, not the shared single key.
+    assert.equal(storage.getItem(jb.RESTORE_SNAPSHOT_KEY), null)
+    const snapshots = [...storage.map.entries()].filter(([k]) => k.startsWith('gtar_sync_recovery:restore-snapshot:')).map(([, v]) => JSON.parse(v))
+    assert.equal(snapshots.length, 1, 'safety snapshot written first')
+    assert.deepEqual(snapshots[0].local.songs.map(s => s.id), ['cur-1', 'cur-2'])
     await tab.b2.flushB2()
     // A new page reads exactly the expected library from B2.
     const page = await open(storage, factory)

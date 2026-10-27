@@ -21,12 +21,13 @@ import { appLogger } from './logger'
 import { canonicalImportId } from './importIdentity'
 import { canonicalSongKey } from './musicalKey'
 import { MissingLibraryBodyError } from './libraryIndex'
+import { recoverySourceDigest } from './recoverySourceDigest'
 import type { SyncLibrary } from './syncMerge'
 
 export const B2_FLAG_KEY = 'gtar_library_b2_enabled'
 export const B2_OPTOUT_KEY = 'gtar_library_b2_optout'
-/** Set when B2 could not be used safely; B2 stays off (frozen source in use) until the user retries. */
-export const B2_HOLD_KEY = 'gtar_library_b2_hold'
+/** Per partition: set when B2 could not be used safely; that partition stays off until the user retries. */
+export const B2_HOLD_PREFIX = 'gtar_library_b2_hold::'
 export const B2_HEAD_PREFIX = 'gtar_library_b2_head::'
 export const B2_WAL_PREFIX = 'gtar_library_b2_wal::'
 export const B2_DB_PREFIX = 'gtar_library_b2::'
@@ -45,9 +46,10 @@ type Extra = Record<string, unknown>
 
 export type B2Phase = 'source' | 'open' | 'write' | 'readback' | 'verify' | 'receipt' | 'activate'
 export type B2HoldReason = 'migration-failed' | 'open-failed' | 'load-failed' | 'missing-body' | 'corrupt-body' | 'order-mismatch'
-  | 'commit-failed' | 'commit-conflict' | 'wal-unreplayable' | 'head-ahead' | 'diverged' | 'quota'
+  | 'commit-failed' | 'commit-conflict' | 'wal-unreplayable' | 'head-ahead' | 'diverged' | 'quota' | 'integrity-failed' | 'source-changed'
 
-export interface PartitionIdentity { kind: 'device' | 'account'; userId: string | null; env: string; scope: string }
+/** `legacy`: this partition is the one the earlier (v1/B1) library belongs to. */
+export interface PartitionIdentity { kind: 'device' | 'account'; userId: string | null; env: string; scope: string; legacy: boolean }
 export interface B2Hold { reason: B2HoldReason; at: number; scope?: string; detail?: string }
 export interface B2Receipt {
   key: 'receipt'; schemaVersion: number; migratedAt: number; source: string; sourceFingerprint: string | null
@@ -76,6 +78,11 @@ export class B2HoldError extends Error {
   readonly hold: B2Hold
   constructor(hold: B2Hold) { super(holdMessage(hold)); this.name = 'B2HoldError'; this.hold = hold }
 }
+/** #258 F5: the signed-in account (or an unknown one) may not open the earlier library on this device. */
+export class LibraryPartitionBlockedError extends Error {
+  readonly code = 'LIBRARY_PARTITION_BLOCKED' as const
+  constructor() { super('This device\'s earlier songbook belongs to another account, or its owner is unknown. It stays on this device unchanged. Sign in with the account that owns it, or retry the new device storage.'); this.name = 'LibraryPartitionBlockedError' }
+}
 export class B2MigrationError extends Error {
   readonly phase: B2Phase
   constructor(phase: B2Phase, message: string, options?: { cause?: unknown }) { super(`B2 migration stopped at ${phase}: ${message}`, options); this.name = 'B2MigrationError'; this.phase = phase }
@@ -85,8 +92,11 @@ export function holdMessage(hold: B2Hold): string {
   const keep = 'Nothing was deleted: the earlier library copy is in use and the B2 copy is kept on this device. Export a backup, then open Review local recovery.'
   switch (hold.reason) {
     case 'migration-failed': return `Moving the songbook to the new device storage did not finish (${hold.detail ?? 'unknown step'}). ${keep}`
+    case 'source-changed': return `The earlier library changed while it was being moved, so the move was not used. ${keep}`
+    case 'integrity-failed': return `The new device storage failed its integrity check (${hold.detail ?? 'record check'}). ${keep}`
     case 'diverged': return 'The new device storage and the earlier library copy were both changed. Neither was replaced. Export a backup of each before choosing one in Review local recovery.'
-    case 'commit-conflict': return 'Saving is paused: another tab or window changed the same song. Reload this tab; your edit is kept in recovery data.'
+    case 'commit-conflict': return 'Saving is paused: another tab or window changed the same song. Your edit is kept in recovery data; export it, then reload.'
+    case 'wal-unreplayable': return `An unsaved edit from an earlier session could not be applied safely, so it was kept in recovery data and nothing was overwritten. ${keep}`
     case 'quota': return 'Saving is paused: device storage is full. Free space or export a backup, then reload.'
     default: return `The new device storage could not be read safely (${hold.reason}). ${keep}`
   }
@@ -116,14 +126,21 @@ const sameUser = (a: string | null, b: string | null) => !!a && !!b && a.trim().
  * is migrated only into that owner's partition, or into `device` when it was never linked.
  * Another account gets its own (initially empty) partition. Ownership is never inferred.
  */
-export function resolvePartition(storage: Pick<Storage, 'getItem'>, env = currentEnv()): { kind: 'device' | 'account'; userId: string | null; legacy: boolean } {
+export interface PartitionChoice { kind: 'device' | 'account'; userId: string | null; legacy: boolean; blocked: boolean }
+export function resolvePartition(storage: Pick<Storage, 'getItem'>, env = currentEnv()): PartitionChoice {
+  let ownerRaw: string | null
+  try { ownerRaw = storage.getItem(OWNER_KEY) } catch { ownerRaw = 'unreadable' }
   const owner = readStoredOwner(storage)
   const session = readSessionUserId(storage)
-  const ownerHere = owner && owner.env === env ? owner : null
-  if (!session) return ownerHere ? { kind: 'account', userId: ownerHere.userId, legacy: true } : { kind: 'device', userId: null, legacy: true }
-  if (!ownerHere) return { kind: 'device', userId: null, legacy: true }
-  if (sameUser(ownerHere.userId, session)) return { kind: 'account', userId: ownerHere.userId, legacy: true }
-  return { kind: 'account', userId: session, legacy: false }
+  // #258 F5: an owner record that cannot be read, or that names another environment, is an unknown
+  // owner: the earlier library is opened for nobody (it stays on the device unchanged).
+  if (ownerRaw !== null && (!owner || owner.env !== env)) {
+    return session ? { kind: 'account', userId: session, legacy: false, blocked: false } : { kind: 'device', userId: null, legacy: false, blocked: true }
+  }
+  if (!owner) return { kind: 'device', userId: null, legacy: true, blocked: false } // never linked: the device library
+  if (!session) return { kind: 'account', userId: owner.userId, legacy: false, blocked: true } // signed out: owner unknown
+  if (sameUser(owner.userId, session)) return { kind: 'account', userId: owner.userId, legacy: true, blocked: false }
+  return { kind: 'account', userId: session, legacy: false, blocked: false }
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -169,16 +186,40 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 const titleKey = (song: Song) => `${String(song.title ?? '').trim().toLowerCase()}\u0000${String(song.artist ?? '').trim().toLowerCase()}`
 
-// IndexedDB records
-interface SongRecord { key: string; data: Record<string, unknown>; bodyAt: number; contentHash: string; rev: number; updatedAt: number; deleted: 0 | 1; titleKey: string }
+// IndexedDB records. Every record carries `sum`: SHA-256 of its other fields (#258 F2), so any
+// changed metadata (not only a chart body) is detected on load.
+interface SongRecord { key: string; data: Record<string, unknown>; bodyAt: number; contentHash: string; rev: number; updatedAt: number; deleted: 0 | 1; titleKey: string; sum: string }
 interface BodyRecord { hash: string; body: string; chars: number; storedAt: number }
-interface SetlistRecord { key: string; data: Setlist; rev: number; updatedAt: number }
-interface HeadRecord { key: 'head'; schemaVersion: number; libraryRev: number; updatedAt: number }
-interface OrderRecord { key: 'songOrder' | 'setlistOrder'; keys: string[] }
-interface ExtraRecord { key: 'extra'; value: Extra }
-interface OwnerRecord { key: 'owner'; kind: 'device' | 'account'; userId: string | null; env: string; scope: string; createdAt: number }
-/** Last revision at which this partition equalled the legacy source (migration or write-back). */
-interface SourceSyncRecord { key: 'sourceSync'; rev: number; fingerprint: string; at: number }
+interface SetlistRecord { key: string; data: Setlist; rev: number; updatedAt: number; sum: string }
+/** `recent`: tokens of the last applied saves, so a journal entry is matched by identity (#258 F3). */
+interface HeadRecord { key: 'head'; schemaVersion: number; libraryRev: number; updatedAt: number; recent: string[]; sum: string }
+interface OrderRecord { key: 'songOrder' | 'setlistOrder'; keys: string[]; sum: string }
+interface ExtraRecord { key: 'extra'; value: Extra; sum: string }
+interface OwnerRecord { key: 'owner'; kind: 'device' | 'account'; userId: string | null; env: string; scope: string; legacy: boolean; createdAt: number; sum: string }
+/**
+ * Last revision at which this partition equalled the legacy source (migration or write-back), and
+ * the digest of the legacy revision then (#258 F1/F4: any later legacy change is detected).
+ */
+interface SourceSyncRecord { key: 'sourceSync'; rev: number; fingerprint: string; sourceDigest: string; at: number; sum: string }
+const RECENT_TOKENS = 512
+type Unsealed<T> = Omit<T, 'sum'>
+/** Small records: synchronous SHA-256, usable inside a transaction. */
+function seal<T extends { sum: string }>(record: Unsealed<T>): T {
+  return { ...record, sum: recoverySourceDigest(stableStringify(record)) } as T
+}
+/** Song and setlist records: Web Crypto, computed before the transaction opens. */
+async function sealAsync<T extends { sum: string }>(record: Unsealed<T>): Promise<T> {
+  return { ...record, sum: 'sha256:' + await sha256Hex(stableStringify(record)) } as T
+}
+async function sealedOk(record: { sum?: unknown } & Record<string, unknown>, sync: boolean): Promise<boolean> {
+  if (typeof record.sum !== 'string') return false
+  const { sum, ...rest } = record
+  return sync ? recoverySourceDigest(stableStringify(rest)) === sum : 'sha256:' + await sha256Hex(stableStringify(rest)) === sum
+}
+/** Digest of a legacy revision token (null: no legacy library). */
+export async function legacyDigest(raw: string | null): Promise<string> {
+  return raw === null ? 'none' : `sha256:${raw.length}:` + await sha256Hex(raw)
+}
 
 function splitSong(song: Song): { data: Record<string, unknown>; bodyAt: number; body: string } {
   const data: Record<string, unknown> = {}
@@ -242,8 +283,8 @@ export function openB2Database(factory: IDBFactory, scope: string): Promise<IDBD
 }
 
 // In-memory state of the active partition.
-interface SongEntry { song: Song; rev: number; updatedAt: number }
-interface SetlistEntry { list: Setlist; rev: number; updatedAt: number }
+interface SongEntry { song: Song; rev: number; updatedAt: number; sum?: string }
+interface SetlistEntry { list: Setlist; rev: number; updatedAt: number; sum?: string }
 interface SongOp { key: string; baseRev: number; rev: number; updatedAt: number; song: Song | null }
 interface SetlistOp { key: string; baseRev: number; rev: number; updatedAt: number; list: Setlist | null }
 interface WalEntry {
@@ -278,6 +319,10 @@ interface State {
 }
 
 let state: State | null = null
+/** #258 F1/F5: this tab prepared B2 for a legacy partition and is using the earlier library on hold. */
+let legacyFallback = false
+/** Hold of the partition this tab tried to open (shown by the UI; holds of other partitions are not). */
+let currentHold: B2Hold | null = null
 let channel: BroadcastChannel | null = null
 let tabNonce = Math.random().toString(36).slice(2, 8)
 
@@ -301,15 +346,43 @@ export function b2Identity(): PartitionIdentity | null { return state?.identity 
 export function b2Enabled(storage: Pick<Storage, 'getItem'>): boolean {
   try { return storage.getItem(B2_FLAG_KEY) === '1' } catch { return false }
 }
-export function readB2Hold(storage: Pick<Storage, 'getItem'>): B2Hold | null {
-  const value = readJson(storage, B2_HOLD_KEY) as B2Hold | null
+export const b2HoldKey = (scope: string) => B2_HOLD_PREFIX + scope
+/** Hold of one partition, or (no scope) the hold of the partition this tab opened. */
+export function readB2Hold(storage: Pick<Storage, 'getItem'>, scope?: string): B2Hold | null {
+  if (scope === undefined) return state?.failure ?? currentHold
+  const value = readJson(storage, b2HoldKey(scope)) as B2Hold | null
   return value && typeof value.reason === 'string' ? value : null
 }
+/** True when any partition on this device is on hold. */
+export function anyB2Hold(storage: Pick<Storage, 'length' | 'key'>): boolean {
+  try { for (let i = 0; i < storage.length; i++) if (storage.key(i)?.startsWith(B2_HOLD_PREFIX)) return true } catch { return true }
+  return false
+}
 function setHold(storage: Storage, hold: B2Hold): void {
-  try { storage.setItem(B2_HOLD_KEY, JSON.stringify(hold)) } catch { /* the in-memory failure still blocks writes */ }
+  currentHold = hold
+  try { if (hold.scope) storage.setItem(b2HoldKey(hold.scope), JSON.stringify(hold)) } catch { /* the in-memory failure still blocks writes */ }
   appLogger.error('LibraryB2', holdMessage(hold), undefined, JSON.stringify(hold))
   notify('gtar-library-b2-hold')
 }
+
+/**
+ * #258 F5: with B2 enabled, the earlier (v1/B1) library may be read only by its own partition, and
+ * only while this tab is not using B2 (a hold of that partition). Everyone else: blocked.
+ */
+export function legacyAccessBlocked(storage: Pick<Storage, 'getItem'>): boolean {
+  if (!b2Enabled(storage) || b2Active(storage)) return false
+  const where = resolvePartition(storage)
+  return where.blocked || !where.legacy
+}
+/**
+ * #258 F1: with B2 enabled the legacy library is frozen. Only a tab that prepared B2 and fell back to
+ * it on hold may save into it; a tab opened before the switch (or a B2 tab) may not.
+ */
+export function legacyWritesAllowed(storage: Pick<Storage, 'getItem'>): boolean {
+  return !b2Enabled(storage) || (legacyFallback && !b2Active(storage))
+}
+/** True when the open B2 partition is the earlier library's own partition. */
+export function b2PartitionIsLegacy(): boolean { return !!state?.identity.legacy }
 function notify(name: string): void {
   try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event(name)) } catch { /* ignore */ }
 }
@@ -523,7 +596,7 @@ function enqueue(s: State, commit: PendingCommit): void {
     try {
       await commitToDb(s.db, commit, s.identity.scope)
       s.committedRev = commit.wal.target
-      dropWalEntry(s.storage, s.identity.scope, commit.wal.target)
+      dropWalEntry(s.storage, s.identity.scope, commit.wal.token)
       try { channel?.postMessage({ type: 'committed', scope: s.identity.scope, rev: commit.wal.target, token: commit.wal.token }) } catch { /* other tabs poll */ }
     } catch (error) {
       const reason: B2HoldReason = error instanceof B2CommitConflict ? 'commit-conflict' : isQuota(error) ? 'quota' : 'commit-failed'
@@ -532,10 +605,11 @@ function enqueue(s: State, commit: PendingCommit): void {
     } finally { s.pending-- }
   })
 }
-function dropWalEntry(storage: Storage, scope: string, target: number): void {
+/** #258 F3: removes exactly the committed entry (by its token), never another entry with the same revision. */
+function dropWalEntry(storage: Storage, scope: string, token: string): void {
   const key = b2WalKey(scope)
   try {
-    const remaining = readWal(storage.getItem(key)).filter(entry => entry.target !== target)
+    const remaining = readWal(storage.getItem(key)).filter(entry => entry.token !== token)
     if (remaining.length) storage.setItem(key, JSON.stringify(remaining))
     else storage.removeItem(key)
   } catch (error) { appLogger.warn('LibraryB2', 'Write-ahead entry not cleared (replayed safely on next start)', error instanceof Error ? error.message : String(error)) }
@@ -551,6 +625,11 @@ class B2CommitConflict extends Error { constructor(detail: string) { super(`B2 r
 async function commitToDb(db: IDBDatabase, commit: PendingCommit, scope: string): Promise<void> {
   const hashes = new Map<string, string>()
   for (const op of commit.songs) if (op.song && !hashes.has(op.song.rawContent)) hashes.set(op.song.rawContent, await b2BodyHash(op.song.rawContent))
+  // Sealed records are computed before the transaction (no other awaits are allowed inside it).
+  const songPuts = new Map<string, SongRecord>()
+  for (const op of commit.songs) if (op.song) songPuts.set(op.key, await songRecord(op.key, op.song, hashes.get(op.song.rawContent)!, op.rev, op.updatedAt))
+  const setlistPuts = new Map<string, SetlistRecord>()
+  for (const op of commit.setlists) if (op.list) setlistPuts.set(op.key, await sealAsync<SetlistRecord>({ key: op.key, data: op.list, rev: op.rev, updatedAt: op.updatedAt }))
   const tx = db.transaction([...STORES], 'readwrite')
   const finished = done(tx)
   try {
@@ -571,24 +650,29 @@ async function commitToDb(db: IDBDatabase, commit: PendingCommit, scope: string)
       if (storedBodies.get(hash)?.body !== body) bodies.put({ hash, body, chars: body.length, storedAt: now } satisfies BodyRecord)
     }
     for (const op of commit.songs) {
-      if (!op.song) { songs.delete(op.key); continue }
-      const { data, bodyAt, body } = splitSong(op.song)
-      songs.put({ key: op.key, data, bodyAt, contentHash: hashes.get(body)!, rev: op.rev, updatedAt: op.updatedAt, deleted: op.song.isDeleted ? 1 : 0, titleKey: titleKey(op.song) } satisfies SongRecord)
+      if (!op.song) songs.delete(op.key)
+      else songs.put(songPuts.get(op.key)!)
     }
     for (const op of commit.setlists) {
       if (!op.list) setlists.delete(op.key)
-      else setlists.put({ key: op.key, data: op.list, rev: op.rev, updatedAt: op.updatedAt } satisfies SetlistRecord)
+      else setlists.put(setlistPuts.get(op.key)!)
     }
-    if (commit.songOrder) meta.put({ key: 'songOrder', keys: commit.songOrder } satisfies OrderRecord)
-    if (commit.setlistOrder) meta.put({ key: 'setlistOrder', keys: commit.setlistOrder } satisfies OrderRecord)
-    if (commit.extra) meta.put({ key: 'extra', value: commit.extra } satisfies ExtraRecord)
-    meta.put({ key: 'head', schemaVersion: B2_SCHEMA_VERSION, libraryRev: commit.wal.target, updatedAt: now } satisfies HeadRecord)
+    if (commit.songOrder) meta.put(seal<OrderRecord>({ key: 'songOrder', keys: commit.songOrder }))
+    if (commit.setlistOrder) meta.put(seal<OrderRecord>({ key: 'setlistOrder', keys: commit.setlistOrder }))
+    if (commit.extra) meta.put(seal<ExtraRecord>({ key: 'extra', value: commit.extra }))
+    const recent = [...(Array.isArray(head.recent) ? head.recent : []), commit.wal.token].slice(-RECENT_TOKENS)
+    meta.put(seal<HeadRecord>({ key: 'head', schemaVersion: B2_SCHEMA_VERSION, libraryRev: commit.wal.target, updatedAt: now, recent }))
   } catch (error) {
     try { tx.abort() } catch { /* already finished */ }
     await finished.catch(() => undefined)
     throw error
   }
   await finished
+}
+
+async function songRecord(key: string, song: Song, contentHash: string, rev: number, updatedAt: number): Promise<SongRecord> {
+  const { data, bodyAt } = splitSong(song)
+  return sealAsync<SongRecord>({ key, data, bodyAt, contentHash, rev, updatedAt, deleted: song.isDeleted ? 1 : 0, titleKey: titleKey(song) })
 }
 
 /** Resolves when every queued save of this tab is committed (or has failed into a hold). */
@@ -603,7 +687,7 @@ export async function flushB2(): Promise<void> {
 // Loading a partition
 interface Loaded {
   songs: Map<string, SongEntry>; setlists: Map<string, SetlistEntry>; songOrder: string[]; setlistOrder: string[]; extra: Extra
-  rev: number; receipt: B2Receipt | null; owner: OwnerRecord | null; sourceSync: SourceSyncRecord | null; bodies: number
+  rev: number; receipt: B2Receipt | null; owner: OwnerRecord | null; sourceSync: SourceSyncRecord | null; bodies: number; recent: string[]
 }
 class B2LoadError extends Error { readonly reason: B2HoldReason; constructor(reason: B2HoldReason, message: string) { super(message); this.reason = reason; this.name = 'B2LoadError' } }
 
@@ -621,43 +705,71 @@ async function readAll(db: IDBDatabase) {
 }
 
 /**
- * Reads and verifies a partition: every body present and matching its SHA-256, orders covering
- * exactly the stored records. `reuse` keeps already frozen records whose revision is unchanged.
+ * Reads and verifies a partition (#258 F2): supported schema, owner record of this partition, sealed
+ * head/order/top-level/receipt records, every song and setlist record sealed and consistent (key =
+ * canonical id, revision within the head revision, trash flag), every body present and matching its
+ * SHA-256, orders covering exactly the stored records. Any failure throws (callers hold, fail closed).
+ * `reuse` keeps already frozen, verified records whose seal is unchanged.
  */
-async function loadPartition(db: IDBDatabase, reuse?: State | null, verifyBodies = true): Promise<Loaded> {
+interface LoadExpect { identity: PartitionIdentity; receipt: boolean; verifyBodies?: boolean }
+async function loadPartition(db: IDBDatabase, expect: LoadExpect, reuse?: State | null): Promise<Loaded> {
+  const fail = (detail: string): never => { throw new B2LoadError('integrity-failed', detail) }
   const all = await readAll(db)
-  const head = all.meta.get('head') as HeadRecord | undefined
-  const receipt = (all.meta.get('receipt') as B2Receipt | undefined) ?? null
+  function meta<T>(key: string) { return all.meta.get(key) as (T & Record<string, unknown>) | undefined }
+  const head = meta<HeadRecord>('head')
+  if (!head || !await sealedOk(head, true)) fail('head record missing or changed')
+  if (head!.schemaVersion !== B2_SCHEMA_VERSION) fail(`unsupported schema version ${String(head!.schemaVersion)}`)
+  const rev = head!.libraryRev
+  if (!Number.isSafeInteger(rev) || rev < 1 || !Array.isArray(head!.recent)) fail('head revision invalid')
+  const owner = meta<OwnerRecord>('owner')
+  if (!owner || !await sealedOk(owner, true)) fail('owner record missing or changed')
+  const id = expect.identity
+  if (owner!.scope !== id.scope || owner!.kind !== id.kind || owner!.env !== id.env || owner!.legacy !== id.legacy ||
+      (owner!.userId ?? '').trim().toLowerCase() !== (id.userId ?? '').trim().toLowerCase()) fail('partition owner does not match this account')
+  const receipt = meta<B2Receipt & { sum?: string }>('receipt') ?? null
+  if (expect.receipt && (!receipt || !await sealedOk(receipt, true) || receipt.schemaVersion !== B2_SCHEMA_VERSION)) fail('migration receipt missing or changed')
+  const sourceSync = meta<SourceSyncRecord>('sourceSync') ?? null
+  if (sourceSync && (!await sealedOk(sourceSync, true) || !Number.isSafeInteger(sourceSync.rev) || sourceSync.rev > rev)) fail('source marker changed')
+  const songOrderRecord = meta<OrderRecord>('songOrder'), setlistOrderRecord = meta<OrderRecord>('setlistOrder'), extraRecord = meta<ExtraRecord>('extra')
+  for (const record of [songOrderRecord, setlistOrderRecord, extraRecord]) if (!record || !await sealedOk(record, true)) fail('order or top-level record missing or changed')
+  const validRev = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= rev
+  const canonicalKey = (value: unknown) => { try { return canonicalImportId(value) } catch { return null } }
+
   const bodyByHash = new Map(all.bodies.map(record => [record.hash, record.body]))
   const songs = new Map<string, SongEntry>()
   const needed = new Set<string>()
   for (const record of all.songs) {
     const kept = reuse?.songs.get(record.key)
-    if (kept && kept.rev === record.rev) { songs.set(record.key, kept); continue }
+    if (kept && kept.sum !== undefined && kept.sum === record.sum && kept.rev === record.rev) { songs.set(record.key, kept); continue }
+    if (!await sealedOk(record as unknown as Record<string, unknown>, false)) fail(`song record ${record.key} changed`)
+    if (!record.data || canonicalKey(record.data.id) !== record.key) fail(`song record ${record.key} does not match its id`)
+    if (!validRev(record.rev)) fail(`song record ${record.key} revision ${record.rev} outside 1..${rev}`)
+    if (record.deleted !== (record.data.isDeleted === true ? 1 : 0)) fail(`song record ${record.key} trash flag disagrees`)
+    if (typeof record.contentHash !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(record.contentHash)) fail(`song record ${record.key} body reference invalid`)
     const body = bodyByHash.get(record.contentHash)
     if (body === undefined) throw new B2LoadError('missing-body', `Chart body missing for song ${record.key}`)
     needed.add(record.contentHash)
-    songs.set(record.key, { song: deepFreeze(joinSong(record.data, record.bodyAt, body)), rev: record.rev, updatedAt: record.updatedAt })
+    songs.set(record.key, { song: deepFreeze(joinSong(record.data, record.bodyAt, body)), rev: record.rev, updatedAt: record.updatedAt, sum: record.sum })
   }
-  if (verifyBodies) {
+  if (expect.verifyBodies ?? true) {
     for (const hash of needed) if (await b2BodyHash(bodyByHash.get(hash)!) !== hash) throw new B2LoadError('corrupt-body', `Chart body ${hash.slice(0, 19)}… does not match its checksum`)
   }
   const setlists = new Map<string, SetlistEntry>()
   for (const record of all.setlists) {
     const kept = reuse?.setlists.get(record.key)
-    setlists.set(record.key, kept && kept.rev === record.rev ? kept : { list: deepFreeze(record.data), rev: record.rev, updatedAt: record.updatedAt })
+    if (kept && kept.sum !== undefined && kept.sum === record.sum && kept.rev === record.rev) { setlists.set(record.key, kept); continue }
+    if (!await sealedOk(record as unknown as Record<string, unknown>, false)) fail(`setlist record ${record.key} changed`)
+    if (!record.data || canonicalKey(record.data.id) !== record.key) fail(`setlist record ${record.key} does not match its id`)
+    if (!validRev(record.rev)) fail(`setlist record ${record.key} revision outside 1..${rev}`)
+    setlists.set(record.key, { list: deepFreeze(record.data), rev: record.rev, updatedAt: record.updatedAt, sum: record.sum })
   }
-  const songOrder = (all.meta.get('songOrder') as OrderRecord | undefined)?.keys ?? []
-  const setlistOrder = (all.meta.get('setlistOrder') as OrderRecord | undefined)?.keys ?? []
-  const covers = (order: string[], map: Map<string, unknown>) => order.length === map.size && new Set(order).size === order.length && order.every(key => map.has(key))
+  const songOrder = songOrderRecord!.keys, setlistOrder = setlistOrderRecord!.keys
+  const covers = (order: unknown, map: Map<string, unknown>) => Array.isArray(order) && order.length === map.size && new Set(order).size === order.length && order.every(key => map.has(key))
   if (!covers(songOrder, songs) || !covers(setlistOrder, setlists)) throw new B2LoadError('order-mismatch', 'Stored record order does not match the stored records')
   return {
     songs, setlists, songOrder, setlistOrder,
-    extra: ((all.meta.get('extra') as ExtraRecord | undefined)?.value) ?? {},
-    rev: head?.libraryRev ?? 0, receipt,
-    owner: (all.meta.get('owner') as OwnerRecord | undefined) ?? null,
-    sourceSync: (all.meta.get('sourceSync') as SourceSyncRecord | undefined) ?? null,
-    bodies: all.bodies.length,
+    extra: extraRecord!.value ?? {},
+    rev, receipt, owner: owner!, sourceSync, bodies: all.bodies.length, recent: head!.recent,
   }
 }
 const libraryOf = (loaded: Pick<Loaded, 'songs' | 'setlists' | 'songOrder' | 'setlistOrder' | 'extra'>): SyncLibrary =>
@@ -698,8 +810,10 @@ export interface B2Deps {
   readSource: () => B2Source
   /** Current legacy revision token (cheap). */
   sourceRevision: () => string | null
-  /** Saves a full copy into recovery archives before anything that replaces B2 records. */
-  archive?: (key: string, raw: string) => Promise<void>
+  /** Saves a copy into recovery archives; `scope` tags it for one partition (null: the earlier library's owner). */
+  archive?: (key: string, raw: string, scope: string | null) => Promise<void>
+  /** Full library validation (syncJournal.validateLibrary). */
+  validate?: (library: SyncLibrary) => void
   env?: string
   /** Tests: fail at a migration phase. */
   failAt?: B2Phase
@@ -711,6 +825,8 @@ export interface B2Preparation {
   identity: PartitionIdentity | null
   migrated: boolean
   hold: B2Hold | null
+  /** #258 F5: no partition may open the earlier library for this sign-in (unknown owner). */
+  blocked: boolean
   ms: number
   songs: number
   setlists: number
@@ -720,6 +836,7 @@ export interface B2Preparation {
 function check(deps: B2Deps, phase: B2Phase): void {
   if (deps.failAt === phase) throw new B2MigrationError(phase, 'injected failure')
 }
+const archiveTag = (identity: PartitionIdentity) => identity.legacy ? null : identity.scope
 
 /** Writes the canonical library into a partition that has never been activated, then verifies it. */
 async function migrateInto(db: IDBDatabase, identity: PartitionIdentity, source: B2Source, deps: B2Deps): Promise<B2Receipt> {
@@ -731,10 +848,15 @@ async function migrateInto(db: IDBDatabase, identity: PartitionIdentity, source:
   } as SyncLibrary
   const songKeys = keysOf(canonical.songs, 'Songs'), setlistKeys = keysOf(canonical.setlists, 'Setlists')
   const expected = await libraryFingerprintB2(canonical as SyncLibrary & Record<string, unknown>, true)
+  const sourceDigest = await legacyDigest(source.revision)
   const hashes = new Map<string, string>()
   for (const song of canonical.songs) if (!hashes.has(song.rawContent)) hashes.set(song.rawContent, await b2BodyHash(song.rawContent))
-  check(deps, 'write')
   const now = Date.now()
+  const songRecords: SongRecord[] = []
+  for (let i = 0; i < canonical.songs.length; i++) songRecords.push(await songRecord(songKeys[i], canonical.songs[i], hashes.get(canonical.songs[i].rawContent)!, 1, now))
+  const setlistRecords: SetlistRecord[] = []
+  for (let i = 0; i < canonical.setlists.length; i++) setlistRecords.push(await sealAsync<SetlistRecord>({ key: setlistKeys[i], data: canonical.setlists[i], rev: 1, updatedAt: now }))
+  check(deps, 'write')
   const tx = db.transaction([...STORES], 'readwrite')
   const finished = done(tx)
   try {
@@ -744,16 +866,13 @@ async function migrateInto(db: IDBDatabase, identity: PartitionIdentity, source:
     for (const name of STORES) tx.objectStore(name).clear()
     const songs = tx.objectStore('songs'), bodies = tx.objectStore('bodies'), setlists = tx.objectStore('setlists')
     for (const [body, hash] of hashes) bodies.put({ hash, body, chars: body.length, storedAt: now } satisfies BodyRecord)
-    canonical.songs.forEach((song, i) => {
-      const { data, bodyAt, body } = splitSong(song)
-      songs.put({ key: songKeys[i], data, bodyAt, contentHash: hashes.get(body)!, rev: 1, updatedAt: now, deleted: song.isDeleted ? 1 : 0, titleKey: titleKey(song) } satisfies SongRecord)
-    })
-    canonical.setlists.forEach((list, i) => setlists.put({ key: setlistKeys[i], data: list, rev: 1, updatedAt: now } satisfies SetlistRecord))
-    meta.put({ key: 'songOrder', keys: songKeys } satisfies OrderRecord)
-    meta.put({ key: 'setlistOrder', keys: setlistKeys } satisfies OrderRecord)
-    meta.put({ key: 'extra', value: extraOf(canonical as unknown as Record<string, unknown>) } satisfies ExtraRecord)
-    meta.put({ key: 'owner', kind: identity.kind, userId: identity.userId, env: identity.env, scope: identity.scope, createdAt: now } satisfies OwnerRecord)
-    meta.put({ key: 'head', schemaVersion: B2_SCHEMA_VERSION, libraryRev: 1, updatedAt: now } satisfies HeadRecord)
+    for (const record of songRecords) songs.put(record)
+    for (const record of setlistRecords) setlists.put(record)
+    meta.put(seal<OrderRecord>({ key: 'songOrder', keys: songKeys }))
+    meta.put(seal<OrderRecord>({ key: 'setlistOrder', keys: setlistKeys }))
+    meta.put(seal<ExtraRecord>({ key: 'extra', value: extraOf(canonical as unknown as Record<string, unknown>) }))
+    meta.put(seal<OwnerRecord>({ key: 'owner', kind: identity.kind, userId: identity.userId, env: identity.env, scope: identity.scope, legacy: identity.legacy, createdAt: now }))
+    meta.put(seal<HeadRecord>({ key: 'head', schemaVersion: B2_SCHEMA_VERSION, libraryRev: 1, updatedAt: now, recent: [] }))
   } catch (error) {
     try { tx.abort() } catch { /* finished */ }
     await finished.catch(() => undefined)
@@ -763,7 +882,7 @@ async function migrateInto(db: IDBDatabase, identity: PartitionIdentity, source:
 
   check(deps, 'readback')
   let loaded: Loaded
-  try { loaded = await loadPartition(db, null, true) } catch (error) { throw new B2MigrationError('readback', error instanceof Error ? error.message : String(error), { cause: error }) }
+  try { loaded = await loadPartition(db, { identity, receipt: false, verifyBodies: true }) } catch (error) { throw new B2MigrationError('readback', error instanceof Error ? error.message : String(error), { cause: error }) }
 
   check(deps, 'verify')
   const back = libraryOf(loaded)
@@ -781,8 +900,8 @@ async function migrateInto(db: IDBDatabase, identity: PartitionIdentity, source:
     songs: back.songs.length, setlists: back.setlists.length, bodies: loaded.bodies, aggregate: actual.aggregate, libraryRev: 1, ms: Date.now() - started,
   }
   const rtx = db.transaction(['meta'], 'readwrite')
-  rtx.objectStore('meta').put(receipt)
-  rtx.objectStore('meta').put({ key: 'sourceSync', rev: 1, fingerprint: expected.aggregate, at: receipt.migratedAt } satisfies SourceSyncRecord)
+  rtx.objectStore('meta').put(seal<B2Receipt & { sum: string }>(receipt))
+  rtx.objectStore('meta').put(seal<SourceSyncRecord>({ key: 'sourceSync', rev: 1, fingerprint: expected.aggregate, sourceDigest, at: receipt.migratedAt }))
   try { await done(rtx) } catch (error) { throw new B2MigrationError('receipt', error instanceof Error ? error.message : String(error), { cause: error }) }
   return receipt
 }
@@ -801,32 +920,49 @@ function install(storage: Storage, factory: IDBFactory, db: IDBDatabase, identit
   return s
 }
 
-/** Replays write-ahead entries left by a closed tab. Returns how many were applied. */
-async function replayWal(db: IDBDatabase, storage: Storage, scope: string, deps: B2Deps): Promise<number> {
-  const key = b2WalKey(scope)
+/**
+ * Replays write-ahead entries left by a closed tab (#258 F3). An entry is applied only when its token
+ * is not among the stored head's recent tokens, it follows the stored revision exactly and its record
+ * CAS holds. Anything else is kept: the journal is archived and left in place, and B2 holds. The
+ * journal is removed only when every entry is proven applied.
+ */
+async function replayWal(db: IDBDatabase, storage: Storage, identity: PartitionIdentity, deps: B2Deps): Promise<number> {
+  const key = b2WalKey(identity.scope)
   const raw = storage.getItem(key)
   if (raw === null) return 0
+  const keep = async (detail: string, reason: B2HoldReason = 'wal-unreplayable'): Promise<never> => {
+    try { await deps.archive?.(`gtar_sync_recovery:b2-journal:${Date.now()}:${identity.scope}`, JSON.stringify({ b2Journal: raw, detail }), archiveTag(identity)) }
+    catch (error) { appLogger.warn('LibraryB2', 'Journal archive failed; the journal itself is kept', error instanceof Error ? error.message : String(error)) }
+    throw new B2LoadError(reason, detail)
+  }
   let entries: WalEntry[]
-  try { entries = readWal(raw) } catch { throw new B2LoadError('wal-unreplayable', 'Unreadable write-ahead journal') }
+  try { entries = readWal(raw) } catch { return keep('Unreadable write-ahead journal') }
+  const loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: false })
+  const recent = new Set(loaded.recent)
+  let current = loaded.rev
   let applied = 0
-  let current = (await loadPartition(db, null, false)).rev
-  for (const entry of entries.sort((a, b) => a.target - b.target)) {
-    if (entry.target <= current) continue // committed before the tab closed
-    if (entry.base !== current || entry.large) {
-      await deps.archive?.(`gtar_sync_recovery:b2-journal:${Date.now()}:${scope}`, JSON.stringify({ b2Journal: entries })).catch(() => undefined)
-      throw new B2LoadError('wal-unreplayable', entry.large ? 'A large save (restore or import) was interrupted before it was stored; restore it again from its backup file' : `Journal entry ${entry.target} does not follow stored revision ${current}`)
+  for (const entry of [...entries].sort((a, b) => a.target - b.target)) {
+    if (typeof entry?.token !== 'string') return keep('Journal entry without identity')
+    if (recent.has(entry.token)) continue // committed before the tab closed
+    if (entry.large) return keep('A large save (restore or import) was interrupted before it was stored; restore it again from its backup file')
+    if (entry.base !== current) return keep(`Journal entry ${entry.target} (based on ${entry.base}) does not follow stored revision ${current}`)
+    try {
+      await commitToDb(db, {
+        wal: entry,
+        songs: entry.songs.map(op => ({ key: op.key, baseRev: op.baseRev, rev: op.rev, updatedAt: op.updatedAt, song: op.song ?? null })),
+        setlists: entry.setlists.map(op => ({ key: op.key, baseRev: op.baseRev, rev: op.rev, updatedAt: op.updatedAt, list: op.list ?? null })),
+        ...(entry.songOrder ? { songOrder: entry.songOrder } : {}), ...(entry.setlistOrder ? { setlistOrder: entry.setlistOrder } : {}),
+        ...(entry.extra ? { extra: entry.extra } : {}),
+      }, identity.scope)
+    } catch (error) {
+      return keep(error instanceof Error ? error.message : String(error), isQuota(error) ? 'quota' : 'wal-unreplayable')
     }
-    await commitToDb(db, {
-      wal: entry,
-      songs: entry.songs.map(op => ({ key: op.key, baseRev: op.baseRev, rev: op.rev, updatedAt: op.updatedAt, song: op.song ?? null })),
-      setlists: entry.setlists.map(op => ({ key: op.key, baseRev: op.baseRev, rev: op.rev, updatedAt: op.updatedAt, list: op.list ?? null })),
-      ...(entry.songOrder ? { songOrder: entry.songOrder } : {}), ...(entry.setlistOrder ? { setlistOrder: entry.setlistOrder } : {}),
-      ...(entry.extra ? { extra: entry.extra } : {}),
-    }, scope).catch(error => { throw new B2LoadError(error instanceof B2CommitConflict ? 'wal-unreplayable' : isQuota(error) ? 'quota' : 'commit-failed', error instanceof Error ? error.message : String(error)) })
+    recent.add(entry.token)
     current = entry.target
     applied++
   }
-  storage.removeItem(key)
+  // Every entry is applied; remove only the journal that was read (a newer one is kept).
+  if (storage.getItem(key) === raw) storage.removeItem(key)
   return applied
 }
 
@@ -839,29 +975,38 @@ function setupChannel(): void {
   } catch { channel = null }
 }
 
+async function readSourceSync(db: IDBDatabase): Promise<SourceSyncRecord | null> {
+  const tx = db.transaction(['meta'], 'readonly')
+  const record = await request(tx.objectStore('meta').get('sourceSync')) as (SourceSyncRecord & Record<string, unknown>) | undefined
+  return record && await sealedOk(record, true) ? record : null
+}
+
 /**
- * Startup. With B2 enabled (and no hold): open this account's partition, migrate the legacy
- * library into it when it has none (non-destructive, verified, receipt, then switch), replay the
- * journal, verify bodies and make B2 the active storage. Any failure: hold, frozen source stays.
+ * Startup. With B2 enabled (and no hold for this partition): open this account's partition, migrate
+ * the legacy library into it when it has none (non-destructive, verified, receipt, then switch),
+ * replay the journal, verify every record and make B2 the active storage. Any failure: hold; the
+ * frozen source stays in use only for its own partition (#258 F5).
  */
 export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
   const started = Date.now()
   const { storage } = deps
-  const result = (extra: Partial<B2Preparation>): B2Preparation => ({ active: false, identity: null, migrated: false, hold: null, ms: Date.now() - started, songs: 0, setlists: 0, replayed: 0, ...extra })
-  if (!b2Enabled(storage)) return result({})
-  const existingHold = readB2Hold(storage)
-  if (existingHold) return result({ hold: existingHold })
+  const result = (extra: Partial<B2Preparation>): B2Preparation => ({ active: false, identity: null, migrated: false, hold: null, blocked: false, ms: Date.now() - started, songs: 0, setlists: 0, replayed: 0, ...extra })
+  if (!b2Enabled(storage)) { legacyFallback = false; return result({}) }
   const env = deps.env ?? currentEnv()
   const where = resolvePartition(storage, env)
-  const identity: PartitionIdentity = { kind: where.kind, userId: where.userId, env, scope: await partitionScope(where.kind, where.userId, env) }
+  if (where.blocked) { legacyFallback = false; currentHold = null; return result({ blocked: true }) }
+  const identity: PartitionIdentity = { kind: where.kind, userId: where.userId, env, scope: await partitionScope(where.kind, where.userId, env), legacy: where.legacy }
   if (state) {
     if (state.identity.scope === identity.scope && state.storage === storage) return result({ active: b2Active(storage), identity, songs: state.songOrder.length, setlists: state.setlistOrder.length })
     // Another account in the same page: callers reload instead of reusing in-memory state.
     throw new LibraryPartitionError()
   }
+  const existingHold = readB2Hold(storage, identity.scope)
+  if (existingHold) { currentHold = existingHold; legacyFallback = identity.legacy; return result({ identity, hold: existingHold }) }
   const hold = (reason: B2HoldReason, detail: string) => {
     const value: B2Hold = { reason, at: Date.now(), scope: identity.scope, detail }
     setHold(storage, value)
+    legacyFallback = identity.legacy
     return result({ identity, hold: value })
   }
   if (!deps.factory) return hold('open-failed', 'IndexedDB is not available')
@@ -871,56 +1016,56 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
 
   try {
     const headKey = b2HeadKey(identity.scope)
-    let migrated = false
-    let receipt = await (async () => {
-      const tx = db.transaction(['meta'], 'readonly')
-      const value = await request(tx.objectStore('meta').get('receipt')) as B2Receipt | undefined
-      return value ?? null
-    })()
     const headRaw = storage.getItem(headKey)
-    if (!receipt) {
-      if (headRaw !== null) throw new B2LoadError('load-failed', 'Partition has a head token but no migration receipt')
-      try {
-        check(deps, 'source')
-        // A partition of another account starts empty: the legacy library is not this account's.
-        const source: B2Source = where.legacy ? deps.readSource() : { key: 'empty', revision: null, library: { songs: [], setlists: [] } }
-        receipt = await migrateInto(db, identity, source, where.legacy ? deps : { ...deps, sourceRevision: () => null })
-      } catch (error) {
-        try { db.close() } catch { /* ignore */ }
-        return hold('migration-failed', error instanceof Error ? error.message : String(error))
-      }
+    let migrated = false
+    let expectSource: string | null | undefined
+    const hasReceipt = await (async () => {
+      const tx = db.transaction(['meta'], 'readonly')
+      return !!await request(tx.objectStore('meta').get('receipt'))
+    })()
+    const migrate = async () => {
+      // A partition of another account starts empty: the legacy library is not this account's.
+      check(deps, 'source')
+      const source: B2Source = identity.legacy ? deps.readSource() : { key: 'empty', revision: null, library: { songs: [], setlists: [] } }
+      const receipt = await migrateInto(db, identity, source, identity.legacy ? deps : { ...deps, sourceRevision: () => null })
+      expectSource = identity.legacy ? source.revision : undefined
       migrated = true
       appLogger.info('LibraryB2', `Moved ${receipt.songs} songs and ${receipt.setlists} setlists into device storage B2 (${identity.kind}); source ${receipt.source} kept unchanged`, JSON.stringify({ ms: receipt.ms, aggregate: receipt.aggregate }))
     }
-    const replayed = await replayWal(db, storage, identity.scope, deps)
-    const loaded = await loadPartition(db, null, deps.verifyBodies ?? true)
-    if (loaded.owner && loaded.owner.scope !== identity.scope) throw new B2LoadError('load-failed', 'Partition owner record does not match')
-    if (headRaw === null && !migrated && where.legacy) {
-      // Re-enabled after being off: the legacy copy may have changed meanwhile.
-      const legacy = deps.readSource()
-      const legacyPrint = (await libraryFingerprintB2(legacy.library as SyncLibrary & Record<string, unknown>)).aggregate
-      const b2Print = (await libraryFingerprintB2(libraryOf(loaded) as SyncLibrary & Record<string, unknown>, true)).aggregate
-      if (legacyPrint !== b2Print) {
-        if (!loaded.sourceSync || loaded.sourceSync.rev !== loaded.rev) throw new B2LoadError('diverged', 'Both copies changed since they were last the same')
-        // B2 is an older copy of the legacy library: keep it in recovery, then move the current one in.
-        const archived = JSON.stringify({ local: libraryOf(loaded) })
-        if (!deps.archive) throw new B2LoadError('diverged', 'No recovery archive available to keep the older B2 copy')
-        await deps.archive(`gtar_sync_recovery:b2-superseded:${Date.now()}:${identity.scope}`, archived)
-        await resetPartition(db)
-        check(deps, 'source')
-        receipt = await migrateInto(db, identity, legacy, deps)
-        migrated = true
-        const reloaded = await loadPartition(db, null, deps.verifyBodies ?? true)
-        return activate(deps, db, identity, reloaded, true, replayed, started)
+    if (!hasReceipt) {
+      if (headRaw !== null) throw new B2LoadError('load-failed', 'Partition has a head token but no migration receipt')
+      try { await migrate() } catch (error) {
+        try { db.close() } catch { /* ignore */ }
+        return hold('migration-failed', error instanceof Error ? error.message : String(error))
       }
     }
-    if (headRaw !== null) {
+    const replayed = await replayWal(db, storage, identity, deps)
+    let loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
+    const validate = (value: Loaded) => { try { deps.validate?.(libraryOf(value)) } catch (error) { throw new B2LoadError('integrity-failed', error instanceof Error ? error.message : String(error)) } }
+    validate(loaded)
+    if (identity.legacy && !migrated) {
+      // #258 F1/F4: the legacy source must still be what this partition last equalled.
+      const raw = deps.sourceRevision()
+      if (!loaded.sourceSync) throw new B2LoadError('integrity-failed', 'source marker missing')
+      if (await legacyDigest(raw) !== loaded.sourceSync.sourceDigest) {
+        if (loaded.sourceSync.rev !== loaded.rev) throw new B2LoadError('diverged', 'Both copies changed since they were last the same')
+        // B2 is unchanged since then: keep it in recovery, then move the newer legacy library in.
+        if (!deps.archive) throw new B2LoadError('diverged', 'No recovery archive available to keep the older B2 copy')
+        await deps.archive(`gtar_sync_recovery:b2-superseded:${Date.now()}:${identity.scope}`, JSON.stringify({ local: libraryOf(loaded) }), archiveTag(identity))
+        await resetPartition(db)
+        await migrate()
+        loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
+        validate(loaded)
+      } else expectSource = raw
+    }
+    if (!migrated && headRaw !== null) {
       const parsed = parseB2Token(headRaw)
       if (!parsed || parsed.scope !== identity.scope) throw new B2LoadError('load-failed', 'Unreadable head token')
       if (parsed.rev > loaded.rev) throw new B2LoadError('head-ahead', `Saved revision ${parsed.rev} is newer than stored revision ${loaded.rev}`)
       if (parsed.rev < loaded.rev) appLogger.warn('LibraryB2', `Head token ${parsed.rev} older than stored ${loaded.rev}; using the stored revision`)
     }
-    return activate(deps, db, identity, loaded, migrated, replayed, started, parseB2Token(headRaw)?.rev === loaded.rev ? headRaw! : undefined)
+    const existingToken = !migrated && headRaw !== null && parseB2Token(headRaw)?.rev === loaded.rev ? headRaw : undefined
+    return activate(deps, db, identity, loaded, migrated, replayed, started, existingToken, expectSource)
   } catch (error) {
     try { db.close() } catch { /* ignore */ }
     const reason: B2HoldReason = error instanceof B2LoadError ? error.reason : error instanceof B2MigrationError ? 'migration-failed' : isQuota(error) ? 'quota' : 'load-failed'
@@ -934,22 +1079,32 @@ async function resetPartition(db: IDBDatabase): Promise<void> {
   await done(tx)
 }
 
-function activate(deps: B2Deps, db: IDBDatabase, identity: PartitionIdentity, loaded: Loaded, migrated: boolean, replayed: number, started: number, existingToken?: string): B2Preparation {
+/**
+ * Final handoff (synchronous): the legacy source must still be the revision this partition was
+ * verified against (#258 F1); only then does the head token switch storage to B2.
+ */
+function activate(deps: B2Deps, db: IDBDatabase, identity: PartitionIdentity, loaded: Loaded, migrated: boolean, replayed: number, started: number,
+  existingToken: string | undefined, expectSource: string | null | undefined): B2Preparation {
   const { storage } = deps
   check(deps, 'activate')
+  if (expectSource !== undefined && deps.sourceRevision() !== expectSource) {
+    throw new B2LoadError('source-changed', 'The earlier library changed after it was checked; B2 was not switched on')
+  }
   const token = existingToken ?? makeB2Token(identity.scope, loaded.rev)
   if (!existingToken) {
     storage.setItem(b2HeadKey(identity.scope), token)
     if (storage.getItem(b2HeadKey(identity.scope)) !== token) throw new B2LoadError('load-failed', 'Head token could not be verified')
   }
   state = install(storage, deps.factory!, db, identity, loaded, token)
+  currentHold = null
+  legacyFallback = false
   setupChannel()
-  return { active: true, identity, migrated, hold: null, ms: Date.now() - started, songs: loaded.songOrder.length, setlists: loaded.setlistOrder.length, replayed }
+  return { active: true, identity, migrated, hold: null, blocked: false, ms: Date.now() - started, songs: loaded.songOrder.length, setlists: loaded.setlistOrder.length, replayed }
 }
 
 /**
  * Another tab saved `raw`: wait until its transaction is committed, then reload the changed records
- * (unchanged ones are reused). Resolves once `raw` can be decoded here.
+ * (unchanged verified ones are reused). Resolves once `raw` can be decoded here.
  */
 export async function b2LoadRevision(raw: string, timeoutMs = 5000): Promise<void> {
   const s = state
@@ -959,7 +1114,7 @@ export async function b2LoadRevision(raw: string, timeoutMs = 5000): Promise<voi
   await s.queue
   const deadline = Date.now() + timeoutMs
   for (;;) {
-    const loaded = await loadPartition(s.db, s, false)
+    const loaded = await loadPartition(s.db, { identity: s.identity, receipt: true, verifyBodies: false }, s)
     if (loaded.rev >= target.rev) {
       if (state !== s || s.pending) throw new B2RevisionUnavailableError(raw)
       // Already superseded: load the newest committed revision under its own token (when the head
@@ -994,21 +1149,26 @@ export function b2Status(storage: Pick<Storage, 'getItem'> = localStorage): B2St
   const s = state
   return {
     active: b2Active(storage), identity: s?.identity ?? null, libraryRev: s?.rev ?? 0, committedRev: s?.committedRev ?? 0, pending: s?.pending ?? 0,
-    songs: s?.songOrder.length ?? 0, setlists: s?.setlistOrder.length ?? 0, hold: s?.failure ?? readB2Hold(storage), receipt: s?.receipt ?? null,
+    songs: s?.songOrder.length ?? 0, setlists: s?.setlistOrder.length ?? 0, hold: s?.failure ?? currentHold, receipt: s?.receipt ?? null,
   }
 }
 
 /** Turns B2 on for the next start (the page reloads to run the verified migration). */
 export function enableB2(storage: Storage): void {
   storage.removeItem(B2_OPTOUT_KEY)
-  storage.removeItem(B2_HOLD_KEY)
   storage.setItem(B2_FLAG_KEY, '1')
 }
 
+export class B2SwitchError extends Error {
+  constructor(message: string) { super(message); this.name = 'B2SwitchError' }
+}
+const SWITCH_CHANGED = 'The songbook changed in another tab while turning off the new device storage. Nothing was switched; B2 stays on. Try again.'
+
 /**
- * Turns B2 off. The B2 library is written back to the legacy source first (after archiving the
- * frozen source), so no edit is lost; the B2 partition itself is kept. Throws, leaving B2 on,
- * when the write-back cannot be verified.
+ * Turns B2 off (#258 F4). Only the partition that owns the earlier library may do so (F5). The legacy
+ * source must be exactly what this partition last equalled, and the B2 head must be this tab's,
+ * unchanged, through the archived, verified write-back and the switch; otherwise B2 stays on (a
+ * changed legacy source holds as diverged). The B2 partition itself is kept.
  */
 export async function disableB2(deps: {
   storage: Storage
@@ -1017,48 +1177,74 @@ export async function disableB2(deps: {
   readSource: () => B2Source
   /** Writes the library into the legacy source with B2 bypassed; must verify by reading back. */
   writeSource: (library: SyncLibrary, expectedRaw: string | null) => void
-  archive: (key: string, raw: string) => Promise<void>
+  archive: (key: string, raw: string, scope: string | null) => Promise<void>
 }): Promise<void> {
   const { storage } = deps
   const s = state
   if (!s || !b2Active(storage)) {
+    // Not in use here (hold, or never opened): the earlier library may come back only for its own partition.
+    const where = resolvePartition(storage)
+    if (where.blocked || !where.legacy) throw new B2SwitchError('Only the account that owns this device\'s earlier songbook can turn the new device storage off. Nothing was changed.')
     storage.setItem(B2_OPTOUT_KEY, '1')
     storage.removeItem(B2_FLAG_KEY)
+    legacyFallback = false
     return
   }
+  if (!s.identity.legacy) throw new B2SwitchError('Only the account that owns this device\'s earlier songbook can turn the new device storage off. Your songbook stays in B2 on this device. Nothing was changed.')
   await flushB2()
+  const token = s.token
+  const headKey = b2HeadKey(s.identity.scope)
+  const current = () => storage.getItem(headKey) === token && s.token === token && s.pending === 0 && !s.failure && state === s
+  if (!current()) throw new B2SwitchError(SWITCH_CHANGED)
+  const rawBefore = deps.sourceRevision()
+  const sync = await readSourceSync(s.db)
+  if (!sync || await legacyDigest(rawBefore) !== sync.sourceDigest) {
+    // The earlier library was changed while B2 was on: both copies stay; nothing is overwritten.
+    try { await deps.archive(`gtar_sync_recovery:b2-diverged:${Date.now()}:${s.identity.scope}`, JSON.stringify({ local: s.library }), null) } catch { /* B2 records are kept regardless */ }
+    s.failure = { reason: 'diverged', at: Date.now(), scope: s.identity.scope, detail: 'The earlier library changed while B2 was on' }
+    setHold(storage, s.failure)
+    throw new B2HoldError(s.failure)
+  }
   const library = copyOf(s.library)
   const source = deps.readSource()
-  if (source.revision !== null) {
-    await deps.archive(`gtar_sync_recovery:b2-disable-source:${Date.now()}:${s.identity.scope}`, JSON.stringify({ local: source.library }))
-  }
-  if (s.identity.kind === 'account' && !resolvePartition(storage, s.identity.env).legacy) {
-    // This partition never held the legacy library (another account's); nothing is written back.
-    await deps.archive(`gtar_sync_recovery:b2-disable:${Date.now()}:${s.identity.scope}`, JSON.stringify({ local: library }))
-  } else {
-    deps.writeSource(library, source.revision)
-    const after = await libraryFingerprintB2(deps.readSource().library as SyncLibrary & Record<string, unknown>)
-    const expected = await libraryFingerprintB2(library as SyncLibrary & Record<string, unknown>, true)
-    if (after.aggregate !== expected.aggregate) throw new Error('Written-back library did not verify. B2 stays on.')
-    const tx = s.db.transaction(['meta'], 'readwrite')
-    tx.objectStore('meta').put({ key: 'sourceSync', rev: s.rev, fingerprint: expected.aggregate, at: Date.now() } satisfies SourceSyncRecord)
-    await done(tx)
-  }
+  if (source.revision !== null) await deps.archive(`gtar_sync_recovery:b2-disable-source:${Date.now()}:${s.identity.scope}`, JSON.stringify({ local: source.library }), null)
+  // Synchronous handoff: nothing else in this tab runs between these checks and the write.
+  if (!current() || deps.sourceRevision() !== rawBefore) throw new B2SwitchError(SWITCH_CHANGED)
+  deps.writeSource(library, rawBefore)
+  const rawAfter = deps.sourceRevision()
+  const marker = seal<SourceSyncRecord>({ key: 'sourceSync', rev: s.rev, fingerprint: 'write-back', sourceDigest: await legacyDigest(rawAfter), at: Date.now() })
+  const tx = s.db.transaction(['meta'], 'readwrite')
+  tx.objectStore('meta').put(marker)
+  await done(tx)
+  // Final switch, synchronous: B2 head and legacy source must still be exactly what was written.
+  if (!current() || deps.sourceRevision() !== rawAfter) throw new B2SwitchError(SWITCH_CHANGED)
   storage.setItem(B2_OPTOUT_KEY, '1')
   storage.removeItem(B2_FLAG_KEY)
-  storage.removeItem(b2HeadKey(s.identity.scope))
+  storage.removeItem(headKey)
   try { s.db.close() } catch { /* ignore */ }
   state = null
+  legacyFallback = false
   appLogger.info('LibraryB2', `B2 off: ${library.songs.length} songs written back to the earlier storage; B2 copy kept on this device`)
 }
 
-/** Explicit retry after a hold: clears it so the next start tries again (nothing is deleted). */
-export function clearB2Hold(storage: Storage): void { storage.removeItem(B2_HOLD_KEY) }
+/** Explicit retry after a hold: clears this partition's hold so the next start tries again (nothing is deleted). */
+export function clearB2Hold(storage: Storage): void {
+  const scope = state?.identity.scope ?? currentHold?.scope
+  if (scope) storage.removeItem(b2HoldKey(scope))
+  else {
+    const keys: string[] = []
+    for (let i = 0; i < storage.length; i++) { const key = storage.key(i); if (key?.startsWith(B2_HOLD_PREFIX)) keys.push(key) }
+    for (const key of keys) storage.removeItem(key)
+  }
+  currentHold = null
+}
 
 /** Tests / diagnostics: forget the in-memory partition (does not touch any storage). */
 export function resetB2ForTests(): void {
   try { state?.db.close() } catch { /* ignore */ }
   state = null
+  currentHold = null
+  legacyFallback = false
   try { channel?.close() } catch { /* ignore */ }
   channel = null
   tabNonce = Math.random().toString(36).slice(2, 8)
