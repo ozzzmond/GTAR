@@ -386,6 +386,15 @@ function withJsdom(fn) {
   }
 }
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text))
+/** Waits (act-wrapped) until `check()` is truthy; tolerant of slow CI scheduling, fails after `ms`. */
+async function waitFor(check, ms = 3000) {
+  const end = Date.now() + ms
+  while (!check()) {
+    if (Date.now() > end) return false
+    await act(async () => new Promise(r => setTimeout(r, 15)))
+  }
+  return true
+}
 const checkbox = text => [...document.querySelectorAll('label')].find(l => l.textContent.includes(text)).querySelector('input')
 async function pick(dom, label, payload) {
   await act(async () => button(label).click())
@@ -1159,16 +1168,13 @@ test('P2 dialog: same-tab settings writes with no event update the warning while
   assert.match(statusText(), /Nothing changed since this file was made/)
   // A component in this tab writes a backed-up key directly (no event).
   localStorage.setItem('gtar_stage_font_weight', 'bold')
-  // Poll tick (20 ms) → re-check scheduled → flushed by the next act turn.
-  await act(async () => new Promise(r => setTimeout(r, 80)))
-  await act(async () => new Promise(r => setTimeout(r, 10)))
+  await waitFor(() => /Your settings changed after this backup/.test(statusText()))
   assert.match(statusText(), /Your settings changed after this backup/)
   assert.doesNotMatch(statusText(), /Your library changed/)
   // A key that is not a backup setting does not count.
   localStorage.setItem('gtar_stage_font_weight', 'regular'); localStorage.removeItem('gtar_stage_font_weight')
   localStorage.setItem('gtar_auth_session', 'x')
-  await act(async () => new Promise(r => setTimeout(r, 80)))
-  await act(async () => new Promise(r => setTimeout(r, 10)))
+  await waitFor(() => /Nothing changed since this file was made/.test(statusText()))
   assert.match(statusText(), /Nothing changed since this file was made/)
 }))
 
@@ -1259,7 +1265,6 @@ test('C2 dialog: writing U+0001 to an absent key is noticed as a settings change
   await act(async () => new Promise(r => setTimeout(r, 10)))
   assert.match(statusText(), /Nothing changed since this file was made/)
   localStorage.setItem('gtar_songbook_filter_setlist', '\u0001')
-  await act(async () => new Promise(r => setTimeout(r, 80)))
-  await act(async () => new Promise(r => setTimeout(r, 10)))
+  await waitFor(() => /Your settings changed after this backup/.test(statusText()))
   assert.match(statusText(), /Your settings changed after this backup/)
 }))
