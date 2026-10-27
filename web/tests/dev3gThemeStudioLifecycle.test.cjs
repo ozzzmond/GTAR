@@ -179,10 +179,10 @@ test('Palette previews expose accent effects; Cancel never persists names, color
   backup.restoreBackupSettings({ themeMode: 'custom', customThemeColors: colors, factoryThemeOverrides: { 'azure-stage': colors } })
   const payload = createBackupPayload([], [])
   const parsed = parseBackupJson(JSON.stringify(payload), [], [])
-  assert.deepEqual(parsed.factoryThemeOverrides, payload.factoryThemeOverrides)
+  assert.deepEqual(parsed.factoryThemeOverrides, payload.settings.appearance.factoryThemeOverrides) // #251: v2 keeps settings under settings.appearance
   assert.equal(parsed.customThemeColors.identity.displayName, 'Red Yahoo')
   localStorage.clear(); backup.restoreBackupSettings(parsed)
-  assert.deepEqual(backup.readBackupSettings().factoryThemeOverrides, payload.factoryThemeOverrides)
+  assert.deepEqual(backup.readBackupSettings().factoryThemeOverrides, payload.settings.appearance.factoryThemeOverrides)
 }))
 
 test('Multiple factory overrides retain slots; restoring an inactive slot preserves the active customization and backup', async () => harness(async ({ render, click }) => {
