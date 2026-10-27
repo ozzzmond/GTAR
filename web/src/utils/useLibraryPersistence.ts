@@ -7,10 +7,10 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import type { ActiveSongState } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import {
-  decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryRevision, persistLibrary,
-  same, saveCrossTabConflictSnapshot, setupCrossTabLibraryConflictGuard,
+  decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
+  persistLibrary, saveCrossTabConflictSnapshot, setupCrossTabLibraryConflictGuard,
 } from './syncJournal'
-import { isMissingLibraryBodyError, loadLibraryIndexBodies } from './libraryIndex'
+import { isMissingLibraryBodyError } from './libraryIndex'
 import { partitionSongs } from './setlistSongs'
 
 export interface LibraryPersistenceInput {
@@ -91,16 +91,8 @@ export function useLibraryPersistence({
       const baselineRaw = persistedBaselineRef.current
       // Match JSON storage semantics, including omitted optional editor fields.
       let hasLocalChanges = !isAdoptedState(local)
-      if (hasLocalChanges && baselineRaw) {
-        try {
-          const parsedBase = decodeLibraryRevision(baselineRaw)
-          if (same(parsedBase, JSON.parse(JSON.stringify(currentLocal)))) {
-            hasLocalChanges = false
-          }
-        } catch {
-          hasLocalChanges = true
-        }
-      }
+      // #252: with B2 this compares records by identity instead of stringifying the library.
+      if (hasLocalChanges && baselineRaw && libraryMatchesRevision(currentLocal, baselineRaw)) hasLocalChanges = false
 
       if (editorRecoveryDraftRef.current?.()) hasLocalChanges = true
 
@@ -131,8 +123,9 @@ export function useLibraryPersistence({
             adopt()
           } catch (error) {
             // #171 B1: another tab saved charts this tab has not loaded; fetch them before adopting.
+            // #252 B2: another tab's save is loaded from IndexedDB once its transaction committed.
             if (isMissingLibraryBodyError(error)) {
-              loadLibraryIndexBodies(externalRaw)
+              loadLibraryRevision(externalRaw)
                 .then(() => { if (libraryRevision() === externalRaw) adopt() })
                 .catch(() => {
                   setCrossTabConflict({ remoteRaw: externalRaw, detectedAt: Date.now() })
@@ -151,10 +144,8 @@ export function useLibraryPersistence({
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (isAdoptedState({ songs, deletedSongs, setlists })) return
-      try {
-        const raw = persistedBaselineRef.current
-        if (raw !== null && same(decodeLibraryRevision(raw), JSON.parse(JSON.stringify({ songs: [...songs, ...deletedSongs], setlists })))) return
-      } catch { /* An unreadable baseline cannot establish durability. */ }
+      // An unreadable baseline cannot establish durability.
+      if (libraryMatchesRevision({ songs: [...songs, ...deletedSongs], setlists }, persistedBaselineRef.current)) return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -169,15 +160,7 @@ export function useLibraryPersistence({
     }
     if (isAdoptedState({ songs, deletedSongs, setlists })) return
     const candidate = { songs: [...songs, ...deletedSongs], setlists }
-    const baselineRaw = persistedBaselineRef.current
-    if (baselineRaw) {
-      try {
-        const parsedBase = decodeLibraryRevision(baselineRaw)
-        if (same(parsedBase, JSON.parse(JSON.stringify(candidate)))) {
-          return
-        }
-      } catch { /* proceed to persist */ }
-    }
+    if (libraryMatchesRevision(candidate, persistedBaselineRef.current)) return
     try {
       persistLibrary(candidate, localStorage, { expectedRaw: persistedBaselineRef.current })
       persistedBaselineRef.current = libraryRevision()

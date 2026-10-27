@@ -88,6 +88,8 @@ Cloud reconciliation, local persistence, backup, import recovery, and retirement
 - [g3CloudSyncIntegrity.test.cjs](g3CloudSyncIntegrity.test.cjs)
 - [jsonBackup.test.cjs](jsonBackup.test.cjs)
 - [legacyImportCompatibility.test.cjs](legacyImportCompatibility.test.cjs)
+- [libraryB2Isolation.test.cjs](libraryB2Isolation.test.cjs)
+- [libraryB2Storage.test.cjs](libraryB2Storage.test.cjs)
 - [localStorageHardening.test.cjs](localStorageHardening.test.cjs)
 - [mergeDuplicationFix.test.cjs](mergeDuplicationFix.test.cjs)
 - [persistenceDataIntegrity.test.cjs](persistenceDataIntegrity.test.cjs)

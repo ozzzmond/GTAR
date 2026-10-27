@@ -13,7 +13,7 @@ import { mergeBackupLibrary } from './setlistSongs'
 import { mergeImportedSetlists } from './importIdentity'
 import { canonicalSongKey } from './musicalKey'
 import { recordBackupStatus, type BackupDelivery } from './backupStatus'
-import { isQuotaError, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
+import { isLibraryB2Active, isQuotaError, libraryMatchesRevision, libraryRevision, noteSafetySnapshotRevision, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
 import { generateUUID } from './uuid'
 
 export interface ExportEnvironment {
@@ -97,6 +97,12 @@ export interface SafetySnapshotResult { location: 'restore-snapshot' | 'recovery
  * caller must not change the library then.
  */
 export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
+  const result = await writeRestoreSafetySnapshot(library, storage)
+  // #252 B2: the restore that follows may rely on this verified copy to preserve the stored revision.
+  try { if (isLibraryB2Active(storage)) { const revision = libraryRevision(storage); noteSafetySnapshotRevision(libraryMatchesRevision(library, revision) ? revision : null) } } catch { /* not covered */ }
+  return result
+}
+async function writeRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
   try {
     createRestoreSafetySnapshot(library, storage)
     return { location: 'restore-snapshot', key: RESTORE_SNAPSHOT_KEY }

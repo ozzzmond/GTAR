@@ -7,6 +7,7 @@ import { ExportSongsDialog } from './ExportSongsDialog'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
 import React, { useState, useMemo, useRef, useCallback } from 'react'
+import { useListWindow } from '../utils/listWindow'
 import {
   ListPlus,
   Music,
@@ -628,6 +629,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     })
     return list
   }, [filteredIndexedSongs, sortBy])
+
+  // #252: long lists render only the rows near the viewport (no change below the threshold).
+  const songGridRef = useRef<HTMLDivElement>(null)
+  const songWindow = useListWindow(sortedIndexedSongs.length, songGridRef)
+  const visibleIndexedSongs = useMemo(() => songWindow.active ? sortedIndexedSongs.slice(songWindow.start, songWindow.end) : sortedIndexedSongs,
+    [sortedIndexedSongs, songWindow.active, songWindow.start, songWindow.end])
 
   // Filter setlists by search query (matching setlist name or tracks inside setlist)
   const filteredSetlists = useMemo(() => {
@@ -2275,8 +2282,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-2.5">
-            {sortedIndexedSongs.map(({ song, originalIdx }, displayIdx) => {
+          <div ref={songGridRef} data-testid="song-grid" data-window={songWindow.active ? `${songWindow.start}-${songWindow.end}` : undefined}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-2.5"
+            style={songWindow.active ? { paddingTop: songWindow.padTop, paddingBottom: songWindow.padBottom } : undefined}>
+            {visibleIndexedSongs.map(({ song, originalIdx }, visibleIdx) => {
+              const displayIdx = songWindow.start + visibleIdx
               const isSelected = originalIdx === activeSongIndex
               const isDeleting = confirmDeleteIdx === originalIdx
               const isMenuOpen = activeMenuSongIdx === originalIdx

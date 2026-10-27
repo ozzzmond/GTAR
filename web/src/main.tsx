@@ -31,14 +31,15 @@ if (typeof window !== 'undefined') {
 // #167 phase B0, DEV only: shadow-copy chart bodies to IndexedDB and verify them on load.
 // Read-only with respect to the library; localStorage stays the source of truth. Never loaded in PROD.
 if (typeof window !== 'undefined' && isDevEnv) {
-  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger'), import('./utils/syncJournal'), import('./utils/libraryIndex')]).then(([store, { appLogger }, { peekPersistedLibrary }, { setLibraryBodyBackend }]) => {
+  Promise.all([import('./utils/libraryBodyStore'), import('./utils/logger'), import('./utils/syncJournal'), import('./utils/libraryIndex')]).then(([store, { appLogger }, { peekPersistedLibrary, isLibraryB2Active }, { setLibraryBodyBackend }]) => {
     // #171 B1: IndexedDB access for the slim library index (used only when the DEV toggle is on).
     setLibraryBodyBackend(store.libraryBodyBackend())
     store.installLibraryBodyShadow({
       enabled: true,
       logger: appLogger,
       // Raw parse only: readPersistedLibrary() would move the cross-tab conflict baseline.
-      readLibrary: () => peekPersistedLibrary() as Parameters<typeof store.shadowWriteBodies>[0] | null,
+      // #252: B2 keeps its own verified bodies; the shadow pass (hashes the whole library) is skipped.
+      readLibrary: () => isLibraryB2Active() ? null : peekPersistedLibrary() as Parameters<typeof store.shadowWriteBodies>[0] | null,
     })
   }).catch(() => { /* shadow copy is optional */ })
 }
