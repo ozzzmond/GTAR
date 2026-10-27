@@ -20,6 +20,9 @@ const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
 const { makeLibrary, QuotaStorage } = require('./helpers/syntheticSongbook.cjs')
+const { FakeLockManager, installNavigatorLocks } = require('./helpers/fakeLocks.cjs')
+// Settings restore requires Web Locks (#257); tests share one origin-wide lock manager like real tabs.
+const sharedLocks = installNavigatorLocks()
 
 class MemoryStorage extends QuotaStorage { constructor() { super(Number.MAX_SAFE_INTEGER) } }
 global.localStorage = new MemoryStorage()
@@ -89,7 +92,7 @@ function largeLibrary() {
   return { songs, setlists }
 }
 
-test('10,000 songs + 300 setlists + trash + every setting: export → verify → import is lossless', () => {
+test('10,000 songs + 300 setlists + trash + every setting: export → verify → import is lossless', async () => {
   const { storage, raw } = fullSettingsStorage()
   for (const [k, v] of Object.entries(EXCLUDED)) storage.setItem(k, v)
   global.localStorage = storage
@@ -110,7 +113,7 @@ test('10,000 songs + 300 setlists + trash + every setting: export → verify →
 
   // Restoring every group into a clean device reproduces every key byte-for-byte, and nothing else.
   const target = new MemoryStorage()
-  const result = bs.restoreBackupSettingsV2(parsed.settings, { appearance: true, preferences: true }, target)
+  const result = await bs.restoreBackupSettingsV2(parsed.settings, { appearance: true, preferences: true }, target)
   assert.deepEqual(new Set(result.written), new Set(Object.keys(raw)))
   for (const [k, v] of Object.entries(raw)) assert.equal(target.getItem(k), v, k)
   // The previous-settings copy is retired after a verified success (#257).
@@ -119,13 +122,13 @@ test('10,000 songs + 300 setlists + trash + every setting: export → verify →
   global.localStorage = new MemoryStorage()
 })
 
-test('the backup keys are exactly the documented appearance + preference keys', () => {
+test('the backup keys are exactly the documented appearance + preference keys', async () => {
   assert.deepEqual(new Set(bs.backupSettingsStorageKeys()), new Set([...APPEARANCE_KEYS, ...PREFERENCE_KEYS]))
   const { raw } = fullSettingsStorage()
   assert.deepEqual(new Set(Object.keys(raw)), new Set(bs.backupSettingsStorageKeys()))
 })
 
-test('values the app would ignore are not exported; malformed v1 storage still blocks export', () => {
+test('values the app would ignore are not exported; malformed v1 storage still blocks export', async () => {
   const storage = new MemoryStorage()
   storage.setItem('gtar_stage_chord_scale', '9'); storage.setItem('gtar_tv_font_size', '20px'); storage.setItem('gtar_edge_swipe_panel', 'yes')
   storage.setItem('gtar_songbook_sort', 'random'); storage.setItem('gtar_stage_font_weight', 'heavy')
@@ -134,7 +137,7 @@ test('values the app would ignore are not exported; malformed v1 storage still b
   assert.throws(() => bs.readBackupSettingsV2(storage))
 })
 
-test('v1 backups still import: all v1 settings become appearance and restore to the same keys', () => {
+test('v1 backups still import: all v1 settings become appearance and restore to the same keys', async () => {
   const v1 = { app: 'GTAR', schemaVersion: 1, version: '1.1.139', exportType: 'FULL_BACKUP', songCount: 1, setlistCount: 0, trashCount: 0,
     themeMode: 'paper-light', customThemeColors: palette(), stageSettings: { fontStyle: 'mono', fontSizePx: 20, isTwoColumn: true, scrollSpeed: 40 },
     songs: [{ id: 'a', title: 'A', artist: '', rawContent: '[C]a' }], setlists: [] }
@@ -146,14 +149,14 @@ test('v1 backups still import: all v1 settings become appearance and restore to 
   assert.deepEqual(parsed.stageSettings, v1.stageSettings) // legacy fields stay on the result for older callers
   const legacy = new MemoryStorage(); const v2 = new MemoryStorage()
   bs.restoreBackupSettings(parsed, legacy)
-  bs.restoreBackupSettingsV2(parsed.settings, bs.DEFAULT_SETTINGS_RESTORE_CHOICE, v2)
+  await bs.restoreBackupSettingsV2(parsed.settings, bs.DEFAULT_SETTINGS_RESTORE_CHOICE, v2)
   v2.removeItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
   assert.deepEqual([...v2.map], [...legacy.map])
   // Unversioned (pre-schema) song arrays still import.
   assert.equal(jb.parseBackupJson(JSON.stringify([{ id: 'x', title: 'X', rawContent: '' }])).isValid, true)
 })
 
-test('invalid, incomplete and corrupted backups are rejected before any write', () => {
+test('invalid, incomplete and corrupted backups are rejected before any write', async () => {
   const good = JSON.parse(JSON.stringify(jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }], [])))
   const cases = [
     ['truncated', JSON.stringify(good).slice(0, -20)],
@@ -177,10 +180,10 @@ test('invalid, incomplete and corrupted backups are rejected before any write', 
     assert.equal(typeof parsed.error, 'string', label)
   }
   const storage = { setItem() { assert.fail('wrote settings') }, getItem: () => null }
-  assert.throws(() => bs.restoreBackupSettingsV2({ appearance: { glow: 1 }, preferences: {} }, { appearance: true, preferences: true }, storage))
+  await assert.rejects(() => bs.restoreBackupSettingsV2({ appearance: { glow: 1 }, preferences: {} }, { appearance: true, preferences: true }, storage))
 })
 
-test('fields this version does not know are reported, not silently dropped', () => {
+test('fields this version does not know are reported, not silently dropped', async () => {
   const payload = JSON.parse(JSON.stringify(jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }], [{ id: 's', name: 'S', songs: [{ id: 'a', title: 'A' }] }])))
   delete payload.contentFingerprint // a hand-made or older file; an edited v2 file with a fingerprint is rejected (F4)
   payload.futureThing = 1; payload.songs[0].mood = 'happy'; payload.setlists[0].color = 'red'; payload.setlists[0].songs[0].note = 'n'
@@ -189,7 +192,7 @@ test('fields this version does not know are reported, not silently dropped', () 
   assert.deepEqual(parsed.ignoredFields, ['futureThing', 'setlists[].color', 'setlists[].songs[].note', 'songs[].mood'])
 })
 
-test('verification refuses bytes that do not restore to the same library', () => {
+test('verification refuses bytes that do not restore to the same library', async () => {
   global.localStorage = new MemoryStorage()
   const payload = jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }, { id: 'b', title: 'B', rawContent: 'y', isDeleted: true }], [])
   const json = JSON.stringify(payload)
@@ -297,7 +300,7 @@ test('safety snapshot falls back to a verified recovery archive when the single 
   assert.equal(none.length, 0)
 })
 
-test('verifyRestoredLibrary compares the complete canonical library (replace and merge)', () => {
+test('verifyRestoredLibrary compares the complete canonical library (replace and merge)', async () => {
   const a = { id: 'a', title: 'A', artist: '', key: 'G', capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0, rawContent: 'x', tags: 't1' }
   const b = { ...a, id: 'b', title: 'B', rawContent: 'y', tags: undefined }
   const sl = { id: 's', name: 'S', songs: [{ id: 'a', title: 'A', artist: '' }, { id: 'b', title: 'B', artist: '' }] }
@@ -341,7 +344,7 @@ test('verifyRestoredLibrary compares the complete canonical library (replace and
   assert.match(ex.verifyRestoredLibrary({ songs: [], setlists: [] }, { songs: [a], setlists: [] }, 'replace', store)[0], /song a differs in key/)
 })
 
-test('reminders: never, stale with changes, large change, disabled, and not due', () => {
+test('reminders: never, stale with changes, large change, disabled, and not due', async () => {
   const day = 86400000, now = Date.parse('2026-10-27T00:00:00Z')
   const lib = { songs: 100, trash: 2, setlists: 5 }
   const on = { enabled: true, intervalDays: 14 }
@@ -510,7 +513,7 @@ test('dialog shows when the library changed after the last backup', withJsdom(as
   assert.match(document.body.textContent, /Your library changed after this backup; the newer edits are not in it\./)
 }))
 
-test('menu export (download) is verified and recorded; Cloud V1 library keys are not touched', () => {
+test('menu export (download) is verified and recorded; Cloud V1 library keys are not touched', async () => {
   const storage = new MemoryStorage()
   global.localStorage = storage
   persistLibrary({ songs: [current], setlists: [] }, storage)
@@ -555,7 +558,7 @@ function deviceSettings(storage) {
   return new Map(storage.map)
 }
 
-test('F2: a failed settings write at the start, middle or end is rolled back and read back', () => {
+test('F2: a failed settings write at the start, middle or end is rolled back and read back', async () => {
   const settings = backedUpSettings()
   const total = bs.backupSettingsStorageKeys().length
   for (const [label, choice, count] of [['all', ALL_SETTINGS, total], ['appearance', { appearance: true, preferences: false }, 13], ['preferences', { appearance: false, preferences: true }, 6]]) {
@@ -563,7 +566,7 @@ test('F2: a failed settings write at the start, middle or end is rolled back and
       const storage = new FailingWrites(failAt)
       const before = deviceSettings(storage)
       storage.armed = true
-      assert.throws(() => bs.restoreBackupSettingsV2(settings, choice, storage), error => {
+      await assert.rejects(() => bs.restoreBackupSettingsV2(settings, choice, storage), error => {
         assert.equal(error.state, 'rolled-back', `${label} @${failAt}`)
         assert.match(error.message, /every setting was put back and verified/)
         assert.ok(error.failedKey)
@@ -575,13 +578,13 @@ test('F2: a failed settings write at the start, middle or end is rolled back and
   }
 })
 
-test('F2: when putting settings back also fails, the verified snapshot restores the previous settings', () => {
+test('F2: when putting settings back also fails, the verified snapshot restores the previous settings', async () => {
   const settings = backedUpSettings()
   const storage = new FailingWrites(5, { failPutBack: true })
   const before = deviceSettings(storage)
   storage.armed = true
   let failure
-  assert.throws(() => bs.restoreBackupSettingsV2(settings, ALL_SETTINGS, storage), error => { failure = error; return true })
+  await assert.rejects(() => bs.restoreBackupSettingsV2(settings, ALL_SETTINGS, storage), error => { failure = error; return true })
   assert.equal(failure.state, 'partial')
   assert.ok(failure.unresolvedKeys.length > 0)
   assert.match(failure.message, /could not be put back/)
@@ -590,21 +593,21 @@ test('F2: when putting settings back also fails, the verified snapshot restores 
   assert.equal(snapshot.values[bs.SETTINGS_KEYS.customThemeColors], null)
   // Storage recovers; the snapshot puts everything back exactly.
   storage.armed = false
-  assert.deepEqual(bs.restorePreviousSettings(storage), { unresolved: [], cleared: true })
+  assert.deepEqual(await bs.restorePreviousSettings(storage), { unresolved: [], cleared: true })
   const after = new Map(storage.map); after.delete(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
   assert.deepEqual([...after].sort(), [...before].sort())
 })
 
-test('F2: if the previous-settings snapshot cannot be saved, no setting is written', () => {
+test('F2: if the previous-settings snapshot cannot be saved, no setting is written', async () => {
   const storage = new FailingWrites(99, { failSnapshot: true })
   const before = deviceSettings(storage)
   storage.armed = true
-  assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'snapshot' && /no setting was changed/.test(error.message))
+  await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'snapshot' && /no setting was changed/.test(error.message))
   assert.equal(storage.writes, 0)
   assert.deepEqual([...storage.map], [...before])
   // A snapshot never lists keys outside the backup allowlist (device/session state stays out).
   const kept = new FailingWrites(3, { failPutBack: true }); deviceSettings(kept); kept.armed = true
-  assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, kept), error => error.state === 'partial')
+  await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, kept), error => error.state === 'partial')
   const snap = bs.readSettingsRestoreSnapshot(kept)
   assert.equal('gtar_auth_session' in snap.values, false)
   assert.deepEqual(snap.keys, [...bs.backupSettingsStorageKeys()].sort())
@@ -742,7 +745,7 @@ test('F3: a prepared file is not reused after the library or settings change; re
   assert.ok(button('Save backup file'), 'a new opening does not offer the old prepared file')
 }))
 
-test('F4: declared counts or fingerprint that do not match the content are rejected; files without them still import', () => {
+test('F4: declared counts or fingerprint that do not match the content are rejected; files without them still import', async () => {
   global.localStorage = new MemoryStorage()
   const songs = [{ id: 'a', title: 'A', rawContent: 'x' }, { id: 'b', title: 'B', rawContent: 'y', isDeleted: true }]
   const setlists = [{ id: 's', name: 'S', songs: [{ id: 'a', title: 'A' }] }]
@@ -792,17 +795,17 @@ test('F4 dialog: a backup with an inconsistent manifest changes nothing', withJs
 }))
 
 // #257 round 2: snapshot integrity, durable recovery UI, reactive changed-since-backup warning.
-function pendingSnapshotStorage() {
+async function pendingSnapshotStorage() {
   const storage = new FailingWrites(4, { failPutBack: true })
   deviceSettings(storage)
   storage.armed = true
-  assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'partial')
+  await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'partial')
   storage.armed = false
   return storage
 }
 
-test('R1: truncated, emptied, edited or inconsistent snapshots are rejected before any settings change', () => {
-  const good = JSON.parse(pendingSnapshotStorage().getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY))
+test('R1: truncated, emptied, edited or inconsistent snapshots are rejected before any settings change', async () => {
+  const good = JSON.parse((await pendingSnapshotStorage()).getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY))
   const raw = JSON.stringify(good)
   const variants = {
     truncated: raw.slice(0, raw.length - 40),
@@ -825,50 +828,50 @@ test('R1: truncated, emptied, edited or inconsistent snapshots are rejected befo
     const recovery = bs.inspectSettingsRecovery(storage)
     assert.equal(recovery.state, 'invalid', label)
     assert.equal(bs.readSettingsRestoreSnapshot(storage), null, label)
-    assert.throws(() => bs.restorePreviousSettings(storage), /not usable/, label)
-    assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked', label)
+    await assert.rejects(() => bs.restorePreviousSettings(storage), /not usable/, label)
+    await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked', label)
     assert.deepEqual([...storage.map], before, `${label}: nothing changed`)
   }
 })
 
-test('R1: an unfinished snapshot is never overwritten; retries keep the original values until a verified put-back', () => {
-  const storage = pendingSnapshotStorage()
+test('R1: an unfinished snapshot is never overwritten; retries keep the original values until a verified put-back', async () => {
+  const storage = await pendingSnapshotStorage()
   const original = storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
   const theme = bs.readSettingsRestoreSnapshot(storage).values[bs.SETTINGS_KEYS.themeMode]
   assert.equal(theme, 'oled-black')
   for (let i = 0; i < 3; i++) {
-    assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked' && /did not finish/.test(e.message))
+    await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked' && /did not finish/.test(e.message))
     assert.equal(storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), original, `retry ${i}: snapshot unchanged`)
   }
   // A put-back that fails part-way leaves the snapshot byte-identical for the next attempt.
   class FlakyPutBack extends MemoryStorage { constructor(map) { super(); this.map = map; this.fail = true }
     setItem(k, v) { if (this.fail && k === bs.SETTINGS_KEYS.themeMode) throw new Error('disk'); super.setItem(k, v) } }
   const flaky = new FlakyPutBack(storage.map)
-  const first = bs.restorePreviousSettings(flaky)
+  const first = await bs.restorePreviousSettings(flaky)
   assert.deepEqual(first, { unresolved: [bs.SETTINGS_KEYS.themeMode], cleared: false })
   assert.equal(flaky.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), original)
   flaky.fail = false
-  assert.deepEqual(bs.restorePreviousSettings(flaky), { unresolved: [], cleared: true })
+  assert.deepEqual(await bs.restorePreviousSettings(flaky), { unresolved: [], cleared: true })
   assert.equal(flaky.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
   assert.equal(flaky.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
   // Now a new restore may start, and finishes clean.
-  bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, flaky)
+  await bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, flaky)
   assert.equal(flaky.getItem(bs.SETTINGS_KEYS.themeMode), 'azure-stage')
   assert.equal(bs.inspectSettingsRecovery(flaky).state, 'none')
 })
 
-test('R1: a crash after the snapshot (process killed mid-restore) is detected as unfinished', () => {
+test('R1: a crash after the snapshot (process killed mid-restore) is detected as unfinished', async () => {
   const storage = new MemoryStorage(); deviceSettings(storage)
   const previous = Object.fromEntries(bs.backupSettingsStorageKeys().map(k => [k, storage.getItem(k)]))
   storage.setItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY, JSON.stringify(bs.makeSettingsRestoreSnapshot(previous)))
   storage.setItem(bs.SETTINGS_KEYS.themeMode, 'azure-stage') // first write landed, then the tab died
   assert.equal(bs.inspectSettingsRecovery(storage).state, 'pending')
-  assert.deepEqual(bs.restorePreviousSettings(storage), { unresolved: [], cleared: true })
+  assert.deepEqual(await bs.restorePreviousSettings(storage), { unresolved: [], cleared: true })
   assert.equal(storage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
 })
 
 test('R2 dialog: unfinished settings restore is shown on mount and put back without another import', withJsdom(async ({ root }) => {
-  const source = pendingSnapshotStorage()
+  const source = await pendingSnapshotStorage()
   for (const [k, v] of source.map) localStorage.setItem(k, v)
   const changedTheme = localStorage.getItem(bs.SETTINGS_KEYS.themeMode)
   assert.notEqual(changedTheme, 'oled-black')
@@ -908,7 +911,7 @@ test('R2 dialog: damaged recovery data stays unresolved until explicitly discard
 }))
 
 test('R2 dialog: a restore with settings ticked is refused while recovery is unfinished; library-only restore still works', withJsdom(async ({ dom, root }) => {
-  const source = pendingSnapshotStorage()
+  const source = await pendingSnapshotStorage()
   for (const [k, v] of source.map) localStorage.setItem(k, v)
   const snapshot = localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
   persistLibrary({ songs: [current], setlists: [] })
@@ -978,4 +981,193 @@ test('R3: changed-since-backup follows later library edits, edits during share, 
   localStorage.removeItem('gtar_songbook_sort')
   await show(lib1, false); await show(lib1); await settle()
   assert.doesNotMatch(statusText(), /Nothing changed since/)
+}))
+
+// #257 round 3: cross-tab exclusivity, same-tab settings freshness, finished-restore copy.
+/** A "tab" over a shared localStorage map: optional hook before each write, optional failures. */
+class TabStorage {
+  constructor(map, { beforeSet, failSetAt, failPutBack = false } = {}) { this.map = map; this.beforeSet = beforeSet; this.failSetAt = failSetAt; this.failPutBack = failPutBack; this.sets = 0; this.broken = false }
+  get length() { return this.map.size }
+  key(i) { return [...this.map.keys()][i] ?? null }
+  getItem(k) { return this.map.has(k) ? this.map.get(k) : null }
+  setItem(k, v) {
+    this.beforeSet?.(k, v)
+    if (k !== bs.SETTINGS_RESTORE_SNAPSHOT_KEY && bs.backupSettingsStorageKeys().includes(k)) {
+      this.sets++
+      if (this.broken && this.failPutBack) throw new Error('disk error (put back)')
+      if (this.sets === this.failSetAt) { this.broken = true; throw new Error('disk error') }
+    }
+    this.map.set(k, String(v))
+  }
+  removeItem(k) { if (this.broken && this.failPutBack && k !== bs.SETTINGS_RESTORE_SNAPSHOT_KEY) throw new Error('disk error (put back)'); this.map.delete(k) }
+}
+const callAsync = fn => { try { return Promise.resolve(fn()) } catch (error) { return Promise.reject(error) } }
+const SORT = 'gtar_songbook_sort'
+const prefsSort = { appearance: {}, preferences: { songbookSort: 'artist', songbookFilterMetadata: 'NEEDS_METADATA' } }
+
+test('P1 interleaving restore/restore: a paused tab can never overwrite or delete another tab\'s recovery copy', async () => {
+  const locks = new FakeLockManager()
+  const map = new Map([[SORT, 'date']])
+  let tabB
+  // Tab B: preferences restore; first write lands (sort=artist), second fails, put-back fails → keeps its copy.
+  const storageB = new TabStorage(map, { failSetAt: 2, failPutBack: true })
+  // Tab A: appearance restore that is interrupted right at its first storage write, while B runs completely.
+  const storageA = new TabStorage(map, { beforeSet: () => { if (!tabB) tabB = callAsync(() => bs.restoreBackupSettingsV2(prefsSort, ALL_SETTINGS, storageB, { locks })) } })
+  const resultA = await callAsync(() => bs.restoreBackupSettingsV2(backedUpSettings(), { appearance: true, preferences: false }, storageA, { locks })).then(v => ({ ok: v }), e => ({ error: e }))
+  const resultB = await tabB.then(v => ({ ok: v }), e => ({ error: e }))
+  // Invariant first: the original sort is either still in place or recoverable from a valid copy.
+  const copy = bs.readSettingsRestoreSnapshot(new TabStorage(map))
+  assert.ok(map.get(SORT) === 'date' || copy?.values[SORT] === 'date', `original sort lost: sort=${map.get(SORT)}, copy=${JSON.stringify(copy?.values)}`)
+  assert.ok(resultA.ok, 'tab A completes')
+  assert.equal(resultB.error?.state, 'busy', 'tab B is refused while A holds the settings lock')
+  assert.equal(map.get(SORT), 'date')
+  assert.equal(bs.inspectSettingsRecovery(new TabStorage(map)).state, 'none')
+})
+
+test('P1 interleaving restore/put-back: a restore started during another tab\'s put-back is refused; the copy survives until verified', async () => {
+  const locks = new FakeLockManager()
+  const map = new Map([[SORT, 'date']])
+  await assert.rejects(() => bs.restoreBackupSettingsV2(prefsSort, ALL_SETTINGS, new TabStorage(map, { failSetAt: 2, failPutBack: true }), { locks }), e => e.state === 'partial')
+  const copyRaw = map.get(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+  assert.equal(map.get(SORT), 'artist')
+  let other
+  const putBackTab = new TabStorage(map, { beforeSet: () => { if (!other) other = callAsync(() => bs.restoreBackupSettingsV2(prefsSort, ALL_SETTINGS, new TabStorage(map), { locks })) } })
+  const result = await bs.restorePreviousSettings(putBackTab, { locks })
+  assert.deepEqual(result, { unresolved: [], cleared: true })
+  await assert.rejects(other, e => e.state === 'busy')
+  assert.equal(map.get(SORT), 'date')
+  assert.equal(map.has(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), false)
+  assert.ok(copyRaw)
+})
+
+test('P1: busy, lock failure, no Web Locks and stale-owner removal never change settings or the copy', async () => {
+  const locks = new FakeLockManager()
+  const map = new Map([[SORT, 'date']])
+  await assert.rejects(() => bs.restoreBackupSettingsV2(prefsSort, ALL_SETTINGS, new TabStorage(map, { failSetAt: 2, failPutBack: true }), { locks }), e => e.state === 'partial')
+  const copyRaw = map.get(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+  const before = JSON.stringify([...map])
+  // Another tab mid-operation holds the lock.
+  const held = locks.hold(bs.SETTINGS_RESTORE_LOCK); await held.acquired
+  await assert.rejects(() => bs.restorePreviousSettings(new TabStorage(map), { locks }), e => e.state === 'busy')
+  await assert.rejects(() => bs.discardSettingsRecovery(copyRaw, new TabStorage(map), { locks }), e => e.state === 'busy')
+  held.release(); await new Promise(r => setTimeout(r, 0))
+  // The lock request itself fails.
+  locks.failNext = new Error('SecurityError')
+  await assert.rejects(() => bs.restorePreviousSettings(new TabStorage(map), { locks }), e => e.state === 'unavailable')
+  // No Web Locks at all: refused, never unsafely allowed.
+  await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, new TabStorage(new Map()), { locks: null }), e => e.state === 'unavailable')
+  // A stale operation holding older bytes cannot delete another owner's copy.
+  const foreign = JSON.stringify(bs.makeSettingsRestoreSnapshot({ [SORT]: 'title' }))
+  assert.equal(await bs.discardSettingsRecovery(foreign, new TabStorage(map), { locks }), false)
+  assert.equal(JSON.stringify([...map]), before, 'settings and copy untouched')
+  assert.notEqual(JSON.parse(copyRaw).owner, JSON.parse(foreign).owner)
+})
+
+test('P1: an owner interrupted mid-restore releases the lock; its copy is reported unfinished and put back by another tab', async () => {
+  const locks = new FakeLockManager()
+  const map = new Map([[SORT, 'date'], [bs.SETTINGS_KEYS.themeMode, 'oled-black']])
+  // The owner stops after two writes (storage fails, put-back fails) – the lock is released when its callback ends.
+  await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, new TabStorage(map, { failSetAt: 3, failPutBack: true }), { locks }), e => e.state === 'partial')
+  assert.equal(locks.held.get(bs.SETTINGS_RESTORE_LOCK), false)
+  const tab2 = new TabStorage(map)
+  assert.equal(bs.inspectSettingsRecovery(tab2).state, 'pending')
+  await assert.rejects(() => bs.restoreBackupSettingsV2(prefsSort, ALL_SETTINGS, tab2, { locks }), e => e.state === 'blocked')
+  assert.deepEqual(await bs.restorePreviousSettings(tab2, { locks }), { unresolved: [], cleared: true })
+  assert.equal(map.get(SORT), 'date'); assert.equal(map.get(bs.SETTINGS_KEYS.themeMode), 'oled-black')
+})
+
+/** Storage whose removal of the recovery copy fails (optionally also re-marking it). */
+class StickyCopy extends MemoryStorage {
+  constructor({ failMark = false } = {}) { super(); this.sticky = true; this.failMark = failMark }
+  removeItem(k) { if (this.sticky && k === bs.SETTINGS_RESTORE_SNAPSHOT_KEY) throw new Error('cannot remove'); super.removeItem(k) }
+  setItem(k, v) { if (this.sticky && this.failMark && k === bs.SETTINGS_RESTORE_SNAPSHOT_KEY && super.getItem(k) !== null) throw new Error('cannot rewrite'); super.setItem(k, v) }
+}
+
+test('P2: a finished restore whose copy cannot be removed is marked committed, not unfinished; undo and keep are explicit', async () => {
+  const storage = new StickyCopy(); deviceSettings(storage)
+  const result = await bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage)
+  assert.equal(result.recoveryCopy, 'kept-committed')
+  assert.equal(storage.getItem(bs.SETTINGS_KEYS.themeMode), 'azure-stage')
+  const recovery = bs.inspectSettingsRecovery(storage)
+  assert.equal(recovery.state, 'committed')
+  assert.equal(recovery.snapshot.values[bs.SETTINGS_KEYS.themeMode], 'oled-black')
+  // Still evidence: a new settings restore is blocked until the user decides.
+  await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked' && /from before the last restore/.test(e.message))
+  // Undo with a failing put-back leaves the copy byte-identical.
+  const raw = storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+  const realSet = storage.setItem.bind(storage)
+  storage.setItem = (k, v) => { if (k === bs.SETTINGS_KEYS.themeMode) throw new Error('disk'); realSet(k, v) }
+  const failed = await bs.restorePreviousSettings(storage)
+  assert.ok(failed.unresolved.includes(bs.SETTINGS_KEYS.themeMode)); assert.equal(failed.cleared, false)
+  assert.equal(storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), raw)
+  storage.setItem = realSet
+  // "Keep current settings": removes the copy (storage healthy again), settings unchanged.
+  storage.sticky = false
+  const current = storage.getItem(bs.SETTINGS_KEYS.customThemeColors)
+  assert.equal(await bs.discardSettingsRecovery(raw, storage), true)
+  assert.equal(bs.inspectSettingsRecovery(storage).state, 'none')
+  assert.equal(storage.getItem(bs.SETTINGS_KEYS.customThemeColors), current)
+})
+
+test('P2: when the copy can be neither removed nor re-marked, the result says so (stale) instead of claiming a clean finish', async () => {
+  const storage = new StickyCopy({ failMark: true }); deviceSettings(storage)
+  const result = await bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage)
+  assert.equal(result.recoveryCopy, 'stale')
+  assert.equal(bs.inspectSettingsRecovery(storage).state, 'pending')
+})
+
+test('P2 dialog: committed copy after remount offers Keep current settings / Undo that restore with the consequence stated', withJsdom(async ({ dom, root }) => {
+  fullSettingsStorage(localStorage)
+  const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
+  localStorage.clear()
+  persistLibrary({ songs: [current], setlists: [] })
+  localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
+  const proto = dom.window.Storage.prototype
+  const realRemove = proto.removeItem
+  let sticky = true
+  proto.removeItem = function (k) { if (sticky && k === bs.SETTINGS_RESTORE_SNAPSHOT_KEY) throw new Error('cannot remove'); return realRemove.call(this, k) }
+  const props = { isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }, localStorage, { force: true }) }
+  try {
+    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props)))
+    await pick(dom, 'Full Restore (Wipe & Replace)', payload)
+    await act(async () => button('Confirm Wipe & Replace').click())
+    assert.match(document.body.textContent, /Backup restored: 1 songs.*could not be removed; it is kept and marked as finished/)
+  } finally { sticky = false; proto.removeItem = realRemove }
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props, isOpen: false })))
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props)))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  const banner = document.querySelector('[data-testid="settings-recovery"]').textContent
+  assert.match(banner, /The last settings restore finished .*Putting it back undoes that restore/)
+  assert.doesNotMatch(banner, /did not finish/)
+  assert.equal(button('Put back previous settings'), undefined)
+  await act(async () => button('Undo that restore').click())
+  assert.match(document.body.textContent, /The last settings restore was undone/)
+  assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
+  assert.equal(document.querySelector('[data-testid="settings-recovery"]'), null)
+}))
+
+test('P2 dialog: same-tab settings writes with no event update the warning while open; library signal stays independent', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  const { env } = fakeEnv()
+  const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env, settingsPollMs: 20,
+  })))
+  await act(async () => button('Export Backup').click())
+  await act(async () => button('Save backup file').click())
+  await act(async () => new Promise(r => setTimeout(r, 10)))
+  assert.match(statusText(), /Nothing changed since this file was made/)
+  // A component in this tab writes a backed-up key directly (no event).
+  localStorage.setItem('gtar_stage_font_weight', 'bold')
+  // Poll tick (20 ms) → re-check scheduled → flushed by the next act turn.
+  await act(async () => new Promise(r => setTimeout(r, 80)))
+  await act(async () => new Promise(r => setTimeout(r, 10)))
+  assert.match(statusText(), /Your settings changed after this backup/)
+  assert.doesNotMatch(statusText(), /Your library changed/)
+  // A key that is not a backup setting does not count.
+  localStorage.setItem('gtar_stage_font_weight', 'regular'); localStorage.removeItem('gtar_stage_font_weight')
+  localStorage.setItem('gtar_auth_session', 'x')
+  await act(async () => new Promise(r => setTimeout(r, 80)))
+  await act(async () => new Promise(r => setTimeout(r, 10)))
+  assert.match(statusText(), /Nothing changed since this file was made/)
 }))

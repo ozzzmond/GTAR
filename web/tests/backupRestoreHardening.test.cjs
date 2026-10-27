@@ -19,6 +19,8 @@ for (const ext of ['.ts', '.tsx']) {
 require.extensions['.png'] = module => { module.exports = '/logo.png' }
 
 const { JSDOM } = require('jsdom')
+// #257: settings restore requires Web Locks; install an origin-wide lock manager like a real browser.
+require('./helpers/fakeLocks.cjs').installNavigatorLocks()
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')

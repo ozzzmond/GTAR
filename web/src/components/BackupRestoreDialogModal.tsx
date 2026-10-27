@@ -15,7 +15,8 @@ import {
 } from '../utils/jsonBackup'
 import {
   DEFAULT_SETTINGS_RESTORE_CHOICE, SETTINGS_CHANGED, discardSettingsRecovery, inspectSettingsRecovery, isSettingsRestoreError,
-  readBackupSettingsV2, restoreBackupSettingsV2, restorePreviousSettings, type SettingsRecoveryState, type SettingsRestoreChoice,
+  readBackupSettingsV2, restoreBackupSettingsV2, restorePreviousSettings, settingsSignature,
+  type SettingsLockManager, type SettingsRecoveryState, type SettingsRestoreChoice,
 } from '../utils/backupSettings'
 import { isQuotaError } from '../utils/syncJournal'
 import {
@@ -46,6 +47,10 @@ interface BackupRestoreDialogModalProps {
   storage?: Storage
   /** Test seam for the share sheet, file and download APIs. */
   exportEnv?: ExportEnvironment
+  /** Test seam for the cross-tab settings lock (defaults to navigator.locks). */
+  settingsLocks?: SettingsLockManager | null
+  /** How often the open dialog re-reads the backed-up settings keys to notice same-tab changes (ms). */
+  settingsPollMs?: number
 }
 
 export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> = ({
@@ -60,7 +65,10 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
   onOpenAdvancedBridge,
   storage,
   exportEnv,
+  settingsLocks,
+  settingsPollMs = 500,
 }) => {
+  const lockOptions = settingsLocks === undefined ? undefined : { locks: settingsLocks }
   const targetStorage = storage || (typeof localStorage !== 'undefined' ? localStorage : ({} as Storage))
   const restoreFileInputRef = useRef<HTMLInputElement>(null)
   const [isWipeAndReplace, setIsWipeAndReplace] = useState(false)
@@ -116,7 +124,17 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     const bump = () => setSettingsTick(tick => tick + 1)
     window.addEventListener(SETTINGS_CHANGED, bump)
     window.addEventListener('storage', bump)
-    return () => { clearTimeout(timer); window.removeEventListener(SETTINGS_CHANGED, bump); window.removeEventListener('storage', bump) }
+    // #257 P2: many components write settings keys directly in this tab without an event (stage text,
+    // songbook sort, TV size from a cast receiver…). While open, the dialog re-reads the raw values of
+    // the backed-up keys (a few string reads, no parsing, no library work) and re-checks only on change.
+    let signature = settingsSignature(targetStorage)
+    const poll = setInterval(() => {
+      const next = settingsSignature(targetStorage)
+      if (next !== signature) { signature = next; bump() }
+    }, settingsPollMs)
+    return () => { clearTimeout(timer); clearInterval(poll); window.removeEventListener(SETTINGS_CHANGED, bump); window.removeEventListener('storage', bump) }
+    // targetStorage/settingsPollMs are fixed for a dialog instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
   // #257 F3: re-compared on opening, whenever the library changes (App passes a memoized array, so this
@@ -222,13 +240,14 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     reportExport(backup, await copyBackup(backup, exportEnv))
   }
 
-  const handlePutBackSettings = () => {
+  const handlePutBackSettings = async () => {
+    const undo = settingsRecovery.state === 'committed'
     try {
-      const result = restorePreviousSettings(targetStorage)
+      const result = await restorePreviousSettings(targetStorage, lockOptions)
       refreshSettingsRecovery()
       if (result.unresolved.length) showFeedback('error', `These settings could not be put back: ${result.unresolved.join(', ')}. The saved previous settings are kept; try again after reloading.`)
-      else if (!result.cleared) showFeedback('error', 'Previous settings were put back and verified, but the recovery copy could not be removed. It is kept; you can put back again safely.')
-      else showFeedback('info', 'Previous settings put back and verified.')
+      else if (!result.cleared) showFeedback('error', 'Previous settings were put back and verified, but the saved copy could not be removed. It is kept; putting back again is safe.')
+      else showFeedback('info', undo ? 'The last settings restore was undone: previous settings put back and verified.' : 'Previous settings put back and verified.')
     } catch (error) {
       refreshSettingsRecovery()
       showFeedback('error', error instanceof Error ? error.message : String(error))
@@ -236,15 +255,24 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
   }
 
   const handleDownloadSettingsRecovery = () => {
-    if (settingsRecovery.state !== 'invalid') return
-    exportRecoveryData({ settingsRestoreSnapshot: settingsRecovery.raw, reason: settingsRecovery.reason })
+    if (settingsRecovery.state === 'none') return
+    exportRecoveryData({ settingsRestoreSnapshot: settingsRecovery.raw, state: settingsRecovery.state,
+      ...(settingsRecovery.state === 'invalid' ? { reason: settingsRecovery.reason } : {}) })
   }
 
-  const handleDiscardSettingsRecovery = () => {
-    if (settingsRecovery.state !== 'invalid') return
-    const removed = discardSettingsRecovery(settingsRecovery.raw, targetStorage)
-    refreshSettingsRecovery()
-    showFeedback(removed ? 'info' : 'error', removed ? 'Damaged settings recovery data discarded. No setting was changed.' : 'Recovery data changed or could not be removed; it is kept.')
+  const handleDiscardSettingsRecovery = async () => {
+    if (settingsRecovery.state === 'none') return
+    const committed = settingsRecovery.state === 'committed'
+    try {
+      const removed = await discardSettingsRecovery(settingsRecovery.raw, targetStorage, lockOptions)
+      refreshSettingsRecovery()
+      showFeedback(removed ? 'info' : 'error', removed
+        ? committed ? 'Kept the current settings; the copy from before the last restore was removed.' : 'Settings recovery data discarded. No setting was changed.'
+        : 'The saved copy changed or could not be removed; it is kept.')
+    } catch (error) {
+      refreshSettingsRecovery()
+      showFeedback('error', error instanceof Error ? error.message : String(error))
+    }
   }
 
   const updateReminder = (next: BackupReminderSettings) => {
@@ -258,7 +286,7 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     if (recovery.state !== 'none' && (restoreChoice.appearance || restoreChoice.preferences)) {
       setPendingRestore(null)
       setSettingsRecovery(recovery)
-      showFeedback('error', 'Restore not started: an earlier settings restore did not finish. Put back the previous settings first (see above), or untick Appearance and Preferences to restore only the library. Nothing was changed.')
+      showFeedback('error', `Restore not started: ${recovery.state === 'pending' ? 'an earlier settings restore did not finish' : recovery.state === 'committed' ? 'a copy of the settings from before the last restore is still kept' : 'settings recovery data is damaged'}. Resolve it first (see above), or untick Appearance and Preferences to restore only the library. Nothing was changed.`)
       return
     }
     setIsRestoring(true)
@@ -312,11 +340,14 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
       // an aborted library write when settings fail after the library has been saved.
       let settingsNote = ''
       try {
-        const written = restoreBackupSettingsV2(parsed.settings, restoreChoice, targetStorage)
+        const written = await restoreBackupSettingsV2(parsed.settings, restoreChoice, targetStorage, lockOptions)
         const kept = (['appearance', 'preferences'] as const).filter(group => !restoreChoice[group] && fieldCount(parsed.settings[group]))
         if (written.written.length) settingsNote += ` Restored ${written.groups.join(' and ')} settings.`
         if (kept.length) settingsNote += ` Kept this device's ${kept.join(' and ')}.`
         if (restoreChoice.preferences && fieldCount(parsed.settings.preferences)) settingsNote += ' Reopen GTAR to apply every restored preference.'
+        if (written.recoveryCopy === 'kept-committed') settingsNote += ' The copy of your settings from before this restore could not be removed; it is kept and marked as finished (see above).'
+        if (written.recoveryCopy === 'stale') settingsNote += ' The copy of your settings from before this restore could not be removed or updated, so GTAR will list it as an unfinished restore; putting it back would undo this restore.'
+        refreshSettingsRecovery()
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         setPendingRestore(null)
@@ -493,36 +524,54 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
 
           {settingsRecovery.state !== 'none' && (
             <div role="alert" data-testid="settings-recovery" className="p-3 rounded-xl border border-[#DC6E67]/40 bg-[#DC6E67]/10 text-xs space-y-2">
-              {settingsRecovery.state === 'pending' ? (
-                <>
-                  <p className="font-semibold text-app-heading">
-                    An earlier settings restore did not finish. This device&apos;s previous settings ({settingsRecovery.snapshot.keys.length}) are saved from {new Date(settingsRecovery.snapshot.at).toLocaleString()}.
-                  </p>
+              {settingsRecovery.state === 'pending' && (
+                <p className="font-semibold text-app-heading">
+                  An earlier settings restore did not finish. This device&apos;s previous settings ({settingsRecovery.snapshot.keys.length}) are saved from {new Date(settingsRecovery.snapshot.at).toLocaleString()}.
+                </p>
+              )}
+              {settingsRecovery.state === 'committed' && (
+                <p className="font-semibold text-app-heading">
+                  The last settings restore finished ({new Date(settingsRecovery.snapshot.committedAt!).toLocaleString()}), but the copy of your settings from before it is still kept. Putting it back undoes that restore.
+                </p>
+              )}
+              {settingsRecovery.state === 'invalid' && (
+                <p className="font-semibold text-app-heading">
+                  Previous-settings recovery data on this device cannot be used: {settingsRecovery.reason}. It was not applied and is kept until you decide.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {settingsRecovery.state === 'pending' && (
                   <button type="button" onClick={handlePutBackSettings} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
                     Put back previous settings
                   </button>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold text-app-heading">
-                    Previous-settings recovery data on this device cannot be used: {settingsRecovery.reason}. It was not applied and is kept until you decide.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={handleDownloadSettingsRecovery} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
+                )}
+                {settingsRecovery.state === 'committed' && (
+                  <>
+                    <button type="button" onClick={handleDiscardSettingsRecovery} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
+                      Keep current settings
+                    </button>
+                    <button type="button" onClick={handlePutBackSettings} className="px-2 py-1 rounded-lg border border-current cursor-pointer">
+                      Undo that restore
+                    </button>
+                  </>
+                )}
+                {settingsRecovery.state !== 'committed' && (
+                  <>
+                    <button type="button" onClick={handleDownloadSettingsRecovery} className="px-2 py-1 rounded-lg border border-current cursor-pointer">
                       Download recovery data
                     </button>
                     {confirmDiscard ? (
                       <button type="button" onClick={handleDiscardSettingsRecovery} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
-                        Confirm discard
+                        Confirm discard{settingsRecovery.state === 'pending' ? ' (the saved previous settings are lost)' : ''}
                       </button>
                     ) : (
                       <button type="button" onClick={() => setConfirmDiscard(true)} className="px-2 py-1 rounded-lg border border-current cursor-pointer">
-                        Discard damaged recovery data
+                        {settingsRecovery.state === 'pending' ? 'Discard saved previous settings' : 'Discard damaged recovery data'}
                       </button>
                     )}
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 

@@ -807,32 +807,55 @@ export function readStageAppearanceExtras(storage: Pick<Storage, 'getItem'> = lo
 export interface SettingsRestoreResult { written: string[]; groups: BackupSettingsGroup[] }
 
 /**
- * #251 F2 / #257: previous values of exactly the keys a settings restore is about to write. While
- * this key exists, a settings restore has not finished cleanly (crash, or a failed put-back): the
- * dialog offers "Put back previous settings", and no new settings restore may start (it would
- * replace the only copy of the original values). It is removed only after a verified success,
- * a verified rollback, or a verified put-back of every key.
+ * #251 F2 / #257: previous values of exactly the keys a settings restore is about to write.
+ *
+ * Lifecycle (all mutations run under the cross-tab Web Lock SETTINGS_RESTORE_LOCK):
+ * - `pending`: written and verified before the first settings write. Still present after a crash,
+ *   a closed tab or a failed put-back → the restore did not finish; "Put back previous settings".
+ * - `committed`: every settings write was verified but removing the copy failed, so the copy is
+ *   re-marked as belonging to a finished restore. Putting it back would undo that restore.
+ * - removed: after a verified success, a verified rollback, or a verified put-back of every key.
+ * While any copy exists, no new settings restore may start (it would replace the only copy).
+ * Each copy carries a random `owner`; removals compare the exact stored bytes, so a stale
+ * operation can never delete or replace another operation's copy.
  */
 export const SETTINGS_RESTORE_SNAPSHOT_KEY = 'gtar_settings_restore_snapshot_v1'
+export const SETTINGS_RESTORE_LOCK = 'gtar-settings-restore'
 export interface SettingsRestoreSnapshot {
   v: 2
   at: string
+  /** Random id of the restore that wrote this copy. */
+  owner: string
   /** Exact key inventory, sorted; `values` has exactly these keys (null = the key was absent). */
   keys: string[]
   values: Record<string, string | null>
-  /** c53 over { keys, values }: a truncated, emptied or edited snapshot does not match. */
+  /** Set when every write of that restore was verified (cleanup of this copy failed). */
+  committedAt?: string
+  /** c53 over { keys, values, owner, committedAt }: a truncated, emptied or edited copy does not match. */
   fingerprint: string
 }
 export type SettingsRecoveryState =
   | { state: 'none' }
-  | { state: 'pending'; snapshot: SettingsRestoreSnapshot }
+  | { state: 'pending'; snapshot: SettingsRestoreSnapshot; raw: string }
+  | { state: 'committed'; snapshot: SettingsRestoreSnapshot; raw: string }
   | { state: 'invalid'; raw: string; reason: string }
 
-const snapshotFingerprint = (keys: string[], values: Record<string, string | null>) => `c53:${cyrb53(stableStringify({ keys, values }))}`
+const snapshotFingerprint = (s: Pick<SettingsRestoreSnapshot, 'keys' | 'values' | 'owner' | 'committedAt'>) =>
+  `c53:${cyrb53(stableStringify({ keys: s.keys, values: s.values, owner: s.owner, committedAt: s.committedAt ?? null }))}`
 
-export function makeSettingsRestoreSnapshot(values: Record<string, string | null>, now = new Date()): SettingsRestoreSnapshot {
+const randomOwner = () => {
+  try { if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID() } catch { /* fallback */ }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+}
+
+export function makeSettingsRestoreSnapshot(values: Record<string, string | null>, now = new Date(), owner = randomOwner()): SettingsRestoreSnapshot {
   const keys = Object.keys(values).sort()
-  return { v: 2, at: now.toISOString(), keys, values: Object.fromEntries(keys.map(key => [key, values[key]])), fingerprint: snapshotFingerprint(keys, values) }
+  const ordered = Object.fromEntries(keys.map(key => [key, values[key]]))
+  return { v: 2, at: now.toISOString(), owner, keys, values: ordered, fingerprint: snapshotFingerprint({ keys, values: ordered, owner }) }
+}
+function committedCopy(snapshot: SettingsRestoreSnapshot, now = new Date()): SettingsRestoreSnapshot {
+  const next = { ...snapshot, committedAt: now.toISOString() }
+  return { ...next, fingerprint: snapshotFingerprint(next) }
 }
 
 /** Why a stored snapshot cannot be trusted, or null when it is complete and consistent. */
@@ -840,6 +863,8 @@ function snapshotProblem(value: unknown): string | null {
   if (!isObject(value)) return 'not an object'
   if (value.v !== 2) return `unsupported version ${String(value.v)}`
   if (typeof value.at !== 'string' || !Number.isFinite(Date.parse(value.at))) return 'missing or invalid time'
+  if (typeof value.owner !== 'string' || !value.owner) return 'missing owner'
+  if (value.committedAt !== undefined && (typeof value.committedAt !== 'string' || !Number.isFinite(Date.parse(value.committedAt)))) return 'invalid commit time'
   if (!Array.isArray(value.keys) || !value.keys.length) return 'missing or empty key inventory'
   if (!isObject(value.values)) return 'missing values'
   const keys = value.keys as unknown[]
@@ -849,11 +874,11 @@ function snapshotProblem(value: unknown): string | null {
   const valueKeys = Object.keys(value.values).sort()
   if (valueKeys.join('\n') !== (keys as string[]).join('\n')) return 'values do not match the key inventory'
   if (Object.values(value.values).some(v => v !== null && typeof v !== 'string')) return 'a value is neither text nor absent'
-  if (typeof value.fingerprint !== 'string' || value.fingerprint !== snapshotFingerprint(keys as string[], value.values as Record<string, string | null>)) return 'fingerprint does not match (truncated or edited)'
+  if (typeof value.fingerprint !== 'string' || value.fingerprint !== snapshotFingerprint(value as unknown as SettingsRestoreSnapshot)) return 'fingerprint does not match (truncated or edited)'
   return null
 }
 
-/** Inspects the previous-settings snapshot without changing anything. */
+/** Inspects the previous-settings copy without changing anything. */
 export function inspectSettingsRecovery(storage: Pick<Storage, 'getItem'> = localStorage): SettingsRecoveryState {
   let raw: string | null
   try { raw = storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) } catch (error) { return { state: 'invalid', raw: '', reason: `could not be read (${errorText(error)})` } }
@@ -861,22 +886,25 @@ export function inspectSettingsRecovery(storage: Pick<Storage, 'getItem'> = loca
   let value: unknown
   try { value = JSON.parse(raw) } catch { return { state: 'invalid', raw, reason: 'not valid JSON (truncated or damaged)' } }
   const problem = snapshotProblem(value)
-  return problem ? { state: 'invalid', raw, reason: problem } : { state: 'pending', snapshot: value as SettingsRestoreSnapshot }
+  if (problem) return { state: 'invalid', raw, reason: problem }
+  const snapshot = value as SettingsRestoreSnapshot
+  return snapshot.committedAt ? { state: 'committed', snapshot, raw } : { state: 'pending', snapshot, raw }
 }
 
-/** A complete, verified snapshot, or null (absent or untrustworthy; use inspectSettingsRecovery to tell which). */
+/** A complete, verified copy (pending or committed), or null (absent or untrustworthy). */
 export function readSettingsRestoreSnapshot(storage: Pick<Storage, 'getItem'> = localStorage): SettingsRestoreSnapshot | null {
   const recovery = inspectSettingsRecovery(storage)
-  return recovery.state === 'pending' ? recovery.snapshot : null
+  return recovery.state === 'pending' || recovery.state === 'committed' ? recovery.snapshot : null
 }
 
-export type SettingsRestoreFailure = 'snapshot' | 'blocked' | 'rolled-back' | 'partial'
+export type SettingsRestoreFailure = 'unavailable' | 'busy' | 'snapshot' | 'blocked' | 'rolled-back' | 'partial'
 /**
+ * `unavailable`: exclusive cross-tab access (Web Locks) cannot be guaranteed; nothing was written.
+ * `busy`: another tab holds the settings lock; nothing was written.
  * `snapshot`: the copy of current settings could not be saved and verified; nothing was written.
- * `blocked`: an unfinished earlier settings restore (or damaged recovery data) exists; nothing was
- * written, so the original values in that snapshot are kept.
+ * `blocked`: an earlier copy (unfinished, finished-but-kept, or damaged) exists; nothing was written.
  * `rolled-back`: a write failed and every key was put back and read back as before.
- * `partial`: a write failed and putting the old values back also failed; the verified snapshot
+ * `partial`: a write failed and putting the old values back also failed; the verified copy
  * (SETTINGS_RESTORE_SNAPSHOT_KEY) still holds them for restorePreviousSettings().
  */
 export class SettingsRestoreError extends Error {
@@ -896,6 +924,42 @@ export const isSettingsRestoreError = (error: unknown): error is SettingsRestore
 type SettingsStorage = Pick<Storage, 'setItem' | 'getItem' | 'removeItem'>
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 
+/** The subset of the Web Locks API used here (navigator.locks, or an injected equivalent). */
+export interface SettingsLockManager {
+  request<T>(name: string, options: { mode: 'exclusive'; ifAvailable: true }, callback: (lock: unknown) => T | Promise<T>): Promise<T>
+}
+export interface SettingsLockOptions {
+  /** Defaults to navigator.locks. null = no lock manager (settings are then never changed). */
+  locks?: SettingsLockManager | null
+}
+function defaultLocks(): SettingsLockManager | null {
+  try {
+    const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: SettingsLockManager }).locks : undefined
+    return locks && typeof locks.request === 'function' ? locks : null
+  } catch { return null }
+}
+
+/**
+ * Runs `fn` while holding the exclusive cross-tab settings lock (ifAvailable: never waits behind
+ * another tab). A tab that closes or crashes releases its Web Lock; a copy it left behind stays
+ * and is reported as unfinished. Without Web Locks nothing runs: settings are left unchanged.
+ */
+async function withSettingsLock<T>(options: SettingsLockOptions | undefined, fn: () => T): Promise<T> {
+  const locks = options?.locks === undefined ? defaultLocks() : options.locks
+  if (!locks) throw new SettingsRestoreError('unavailable', 'this browser cannot make sure only one GTAR tab changes settings at a time (Web Locks unavailable); no setting was changed')
+  let ran = false
+  try {
+    return await locks.request(SETTINGS_RESTORE_LOCK, { mode: 'exclusive', ifAvailable: true }, lock => {
+      if (!lock) throw new SettingsRestoreError('busy', 'another GTAR tab is changing settings right now; try again when it has finished. No setting was changed')
+      ran = true
+      return fn()
+    })
+  } catch (error) {
+    if (ran || error instanceof SettingsRestoreError) throw error
+    throw new SettingsRestoreError('unavailable', `the settings lock could not be taken (${errorText(error)}); no setting was changed`, { cause: error })
+  }
+}
+
 /** Puts one key back to its previous value (absent → removed) and reads it back. */
 function putBack(storage: SettingsStorage, key: string, previous: string | null): boolean {
   try {
@@ -905,7 +969,7 @@ function putBack(storage: SettingsStorage, key: string, previous: string | null)
   } catch { return false }
 }
 
-/** Removes the snapshot only when it is still exactly the one this operation verified. */
+/** Removes the copy only when it is still exactly the bytes this operation verified. */
 function clearSnapshot(storage: SettingsStorage, expectedRaw: string): boolean {
   try {
     if (storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) !== expectedRaw) return false
@@ -923,37 +987,56 @@ function settingsChanged(): void {
 
 export interface PreviousSettingsResult { unresolved: string[]; cleared: boolean }
 /**
- * Puts back every key of a valid snapshot and reads each one back. The snapshot is removed only
- * when every key is verified; otherwise it is left exactly as it was for another attempt.
- * A missing, truncated, emptied or edited snapshot is refused before anything is written.
+ * Puts back every key of a valid copy (pending, or committed = undo the finished restore) and
+ * reads each one back, under the settings lock. The copy is removed only when every key is
+ * verified; otherwise it is left exactly as it was. A missing, truncated, emptied or edited copy
+ * is refused before anything is written.
  */
-export function restorePreviousSettings(storage: SettingsStorage = localStorage): PreviousSettingsResult {
-  const recovery = inspectSettingsRecovery(storage)
-  if (recovery.state === 'none') throw new Error('No previous-settings snapshot on this device')
-  if (recovery.state === 'invalid') throw new Error(`Previous-settings snapshot is not usable: ${recovery.reason}. Nothing was changed.`)
-  const raw = storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY)!
-  const { snapshot } = recovery
-  const unresolved = snapshot.keys.filter(key => !putBack(storage, key, snapshot.values[key]))
-  const cleared = unresolved.length === 0 && clearSnapshot(storage, raw)
-  settingsChanged()
-  return { unresolved, cleared }
+export function restorePreviousSettings(storage: SettingsStorage = localStorage, options?: SettingsLockOptions): Promise<PreviousSettingsResult> {
+  return withSettingsLock(options, () => {
+    const recovery = inspectSettingsRecovery(storage)
+    if (recovery.state === 'none') throw new Error('No previous-settings copy on this device')
+    if (recovery.state === 'invalid') throw new Error(`Previous-settings copy is not usable: ${recovery.reason}. Nothing was changed.`)
+    const { snapshot, raw } = recovery
+    const unresolved = snapshot.keys.filter(key => !putBack(storage, key, snapshot.values[key]))
+    const cleared = unresolved.length === 0 && clearSnapshot(storage, raw)
+    settingsChanged()
+    return { unresolved, cleared }
+  })
 }
 
-/** Explicit user choice only: removes damaged recovery data after the user has seen (or exported) it. */
-export function discardSettingsRecovery(expectedRaw: string, storage: SettingsStorage = localStorage): boolean {
-  return clearSnapshot(storage, expectedRaw)
+/** Explicit user choice only: removes the copy whose exact bytes the user was shown. No setting changes. */
+export function discardSettingsRecovery(expectedRaw: string, storage: SettingsStorage = localStorage, options?: SettingsLockOptions): Promise<boolean> {
+  return withSettingsLock(options, () => clearSnapshot(storage, expectedRaw))
+}
+
+export type RecoveryCopyOutcome = 'removed' | 'kept-committed' | 'stale'
+export interface SettingsRestoreResult {
+  written: string[]
+  groups: BackupSettingsGroup[]
+  /**
+   * After a verified success: the pre-restore copy was removed; or its removal failed and it was
+   * re-marked as belonging to this finished restore (`kept-committed`); or neither could be done
+   * (`stale`: it will show as unfinished, and putting it back would undo this restore).
+   */
+  recoveryCopy?: RecoveryCopyOutcome
+}
+
+function blockedMessage(existing: Exclude<SettingsRecoveryState, { state: 'none' }>): string {
+  if (existing.state === 'pending') return 'an earlier settings restore did not finish; put back the previous settings first. No setting was changed'
+  if (existing.state === 'committed') return 'a copy of the settings from before the last restore is still kept; keep the current settings or undo that restore first. No setting was changed'
+  return `previous-settings recovery data is damaged (${existing.reason}); review it first. No setting was changed`
 }
 
 /**
  * Restores only the chosen groups and only fields present in the backup; every other key on the
- * device is left as it is. Validates everything first, saves and reads back a snapshot of the
- * previous values of exactly the keys it will write, writes each key and reads it back. If a
- * write fails, every key is put back to its previous value and read back (`rolled-back`); if
- * that also fails, the snapshot stays for restorePreviousSettings() (`partial`). Not atomic:
- * other tabs can observe intermediate values during the few synchronous writes.
+ * device is left as it is. Runs under the exclusive cross-tab settings lock. Validates everything
+ * first, saves and verifies an owned copy of the previous values of exactly the keys it will
+ * write, writes each key and reads it back. If a write fails, every key is put back and read back
+ * (`rolled-back`); if that also fails, the copy stays for restorePreviousSettings() (`partial`).
  */
-export function restoreBackupSettingsV2(settings: BackupSettingsV2, choice: SettingsRestoreChoice,
-  storage: SettingsStorage = localStorage): SettingsRestoreResult {
+export async function restoreBackupSettingsV2(settings: BackupSettingsV2, choice: SettingsRestoreChoice,
+  storage: SettingsStorage = localStorage, options?: SettingsLockOptions): Promise<SettingsRestoreResult> {
   const errors = validateBackupSettingsV2(settings)
   if (errors.length) throw new Error(errors.join('\n'))
   const writes: Array<[string, string]> = []
@@ -981,47 +1064,64 @@ export function restoreBackupSettingsV2(settings: BackupSettingsV2, choice: Sett
   }
   if (!writes.length) return { written: [], groups }
 
-  // Never replace the only copy of an unfinished restore's original values.
-  const existing = inspectSettingsRecovery(storage)
-  if (existing.state !== 'none') {
-    throw new SettingsRestoreError('blocked', existing.state === 'pending'
-      ? 'an earlier settings restore did not finish; put back the previous settings first. No setting was changed'
-      : `previous-settings recovery data is damaged (${existing.reason}); review it first. No setting was changed`)
-  }
-  const previous: Record<string, string | null> = {}
-  let snapshotRaw: string
-  try {
-    for (const [key] of writes) previous[key] = storage.getItem(key)
-    snapshotRaw = JSON.stringify(makeSettingsRestoreSnapshot(previous))
-    storage.setItem(SETTINGS_RESTORE_SNAPSHOT_KEY, snapshotRaw)
-    if (storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) !== snapshotRaw) throw new Error('snapshot readback differs')
-    const check = inspectSettingsRecovery(storage)
-    if (check.state !== 'pending' || stableStringify(check.snapshot.values) !== stableStringify(previous)) throw new Error('snapshot does not verify')
-  } catch (error) {
-    // Only our own unverified write is removed; an earlier snapshot was ruled out above.
-    try { if (storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) !== null && inspectSettingsRecovery(storage).state !== 'pending') storage.removeItem(SETTINGS_RESTORE_SNAPSHOT_KEY) } catch { /* left for review */ }
-    throw new SettingsRestoreError('snapshot', `could not save a copy of the current settings first (${errorText(error)}); no setting was changed`, { cause: error })
-  }
-
-  const attempted: string[] = []
-  for (const [key, value] of writes) {
-    attempted.push(key)
+  return withSettingsLock(options, () => {
+    // Under the lock: no other tab can create, replace or remove a copy between this check and the write.
+    const existing = inspectSettingsRecovery(storage)
+    if (existing.state !== 'none') throw new SettingsRestoreError('blocked', blockedMessage(existing))
+    const previous: Record<string, string | null> = {}
+    let snapshot: SettingsRestoreSnapshot
+    let snapshotRaw = ''
     try {
-      storage.setItem(key, value)
-      if (storage.getItem(key) !== value) throw new Error(`${key} could not be verified after saving`)
+      for (const [key] of writes) previous[key] = storage.getItem(key)
+      snapshot = makeSettingsRestoreSnapshot(previous)
+      snapshotRaw = JSON.stringify(snapshot)
+      storage.setItem(SETTINGS_RESTORE_SNAPSHOT_KEY, snapshotRaw)
+      const check = inspectSettingsRecovery(storage)
+      if (check.state !== 'pending' || check.raw !== snapshotRaw) throw new Error('copy does not verify after saving')
     } catch (error) {
-      const unresolvedKeys = attempted.filter(k => !putBack(storage, k, previous[k]))
-      if (!unresolvedKeys.length) {
-        // Verified rollback: the snapshot is no longer needed (kept if its removal cannot be verified).
-        clearSnapshot(storage, snapshotRaw)
-        throw new SettingsRestoreError('rolled-back', `saving ${key} failed (${errorText(error)}); every setting was put back and verified`, { cause: error, failedKey: key })
-      }
-      throw new SettingsRestoreError('partial', `saving ${key} failed (${errorText(error)}) and ${unresolvedKeys.length} setting(s) could not be put back (${unresolvedKeys.join(', ')})`,
-        { cause: error, failedKey: key, unresolvedKeys })
+      // Only a copy that is not a valid one of ours or anyone's is removed; a valid foreign copy is kept.
+      try {
+        const stored = storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY)
+        if (stored !== null && (stored === snapshotRaw || inspectSettingsRecovery(storage).state === 'invalid')) storage.removeItem(SETTINGS_RESTORE_SNAPSHOT_KEY)
+      } catch { /* left for review */ }
+      throw new SettingsRestoreError('snapshot', `could not save a copy of the current settings first (${errorText(error)}); no setting was changed`, { cause: error })
     }
-  }
-  // Every write verified: the restore finished, so the previous-settings copy is retired.
-  clearSnapshot(storage, snapshotRaw)
-  settingsChanged()
-  return { written: writes.map(([key]) => key), groups }
+
+    const attempted: string[] = []
+    for (const [key, value] of writes) {
+      attempted.push(key)
+      try {
+        storage.setItem(key, value)
+        if (storage.getItem(key) !== value) throw new Error(`${key} could not be verified after saving`)
+      } catch (error) {
+        const unresolvedKeys = attempted.filter(k => !putBack(storage, k, previous[k]))
+        if (!unresolvedKeys.length) {
+          // Verified rollback: the copy is no longer needed (kept as pending if its removal fails: put-back is then a no-op).
+          clearSnapshot(storage, snapshotRaw)
+          throw new SettingsRestoreError('rolled-back', `saving ${key} failed (${errorText(error)}); every setting was put back and verified`, { cause: error, failedKey: key })
+        }
+        throw new SettingsRestoreError('partial', `saving ${key} failed (${errorText(error)}) and ${unresolvedKeys.length} setting(s) could not be put back (${unresolvedKeys.join(', ')})`,
+          { cause: error, failedKey: key, unresolvedKeys })
+      }
+    }
+    // Every write verified: retire the copy, or mark it as belonging to this finished restore.
+    let recoveryCopy: RecoveryCopyOutcome = 'removed'
+    if (!clearSnapshot(storage, snapshotRaw)) {
+      recoveryCopy = 'stale'
+      try {
+        if (storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) === snapshotRaw) {
+          const committed = JSON.stringify(committedCopy(snapshot))
+          storage.setItem(SETTINGS_RESTORE_SNAPSHOT_KEY, committed)
+          if (inspectSettingsRecovery(storage).state === 'committed' && storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) === committed) recoveryCopy = 'kept-committed'
+        }
+      } catch { /* stays as written: reported as stale */ }
+    }
+    settingsChanged()
+    return { written: writes.map(([key]) => key), groups, recoveryCopy }
+  })
+}
+
+/** Raw values of every backed-up setting, for cheap same-tab change detection (no parsing). */
+export function settingsSignature(storage: Pick<Storage, 'getItem'> = localStorage): string {
+  try { return backupSettingsStorageKeys().map(key => storage.getItem(key) ?? '\u0001').join('\u0000') } catch { return '' }
 }
