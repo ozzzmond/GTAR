@@ -241,9 +241,11 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
   }
 
   const handlePutBackSettings = async () => {
+    if (settingsRecovery.state !== 'pending' && settingsRecovery.state !== 'committed') return
     const undo = settingsRecovery.state === 'committed'
     try {
-      const result = await restorePreviousSettings(targetStorage, lockOptions)
+      // Consent covers the copy on screen only; a replaced copy is refused under the lock.
+      const result = await restorePreviousSettings(targetStorage, { ...lockOptions, expectedRaw: settingsRecovery.raw })
       refreshSettingsRecovery()
       if (result.unresolved.length) showFeedback('error', `These settings could not be put back: ${result.unresolved.join(', ')}. The saved previous settings are kept; try again after reloading.`)
       else if (!result.cleared) showFeedback('error', 'Previous settings were put back and verified, but the saved copy could not be removed. It is kept; putting back again is safe.')

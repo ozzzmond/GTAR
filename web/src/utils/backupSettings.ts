@@ -897,10 +897,11 @@ export function readSettingsRestoreSnapshot(storage: Pick<Storage, 'getItem'> = 
   return recovery.state === 'pending' || recovery.state === 'committed' ? recovery.snapshot : null
 }
 
-export type SettingsRestoreFailure = 'unavailable' | 'busy' | 'snapshot' | 'blocked' | 'rolled-back' | 'partial'
+export type SettingsRestoreFailure = 'unavailable' | 'busy' | 'stale' | 'snapshot' | 'blocked' | 'rolled-back' | 'partial'
 /**
  * `unavailable`: exclusive cross-tab access (Web Locks) cannot be guaranteed; nothing was written.
  * `busy`: another tab holds the settings lock; nothing was written.
+ * `stale`: the copy on the device is not the one the user was shown (replaced or changed); nothing was written.
  * `snapshot`: the copy of current settings could not be saved and verified; nothing was written.
  * `blocked`: an earlier copy (unfinished, finished-but-kept, or damaged) exists; nothing was written.
  * `rolled-back`: a write failed and every key was put back and read back as before.
@@ -992,10 +993,17 @@ export interface PreviousSettingsResult { unresolved: string[]; cleared: boolean
  * verified; otherwise it is left exactly as it was. A missing, truncated, emptied or edited copy
  * is refused before anything is written.
  */
-export function restorePreviousSettings(storage: SettingsStorage = localStorage, options?: SettingsLockOptions): Promise<PreviousSettingsResult> {
+export function restorePreviousSettings(storage: SettingsStorage, options: SettingsLockOptions & {
+  /** Exact bytes of the copy the user was shown and agreed to put back (#257: consent is for that copy only). */
+  expectedRaw: string
+}): Promise<PreviousSettingsResult> {
   return withSettingsLock(options, () => {
     const recovery = inspectSettingsRecovery(storage)
     if (recovery.state === 'none') throw new Error('No previous-settings copy on this device')
+    // Checked under the lock, before any write: a copy replaced or changed since it was shown is never applied.
+    if (recovery.raw !== options.expectedRaw) {
+      throw new SettingsRestoreError('stale', 'the saved settings copy changed since it was shown (another tab or restore replaced it); nothing was changed. Review the current copy and choose again')
+    }
     if (recovery.state === 'invalid') throw new Error(`Previous-settings copy is not usable: ${recovery.reason}. Nothing was changed.`)
     const { snapshot, raw } = recovery
     const unresolved = snapshot.keys.filter(key => !putBack(storage, key, snapshot.values[key]))
@@ -1121,7 +1129,11 @@ export async function restoreBackupSettingsV2(settings: BackupSettingsV2, choice
   })
 }
 
-/** Raw values of every backed-up setting, for cheap same-tab change detection (no parsing). */
-export function settingsSignature(storage: Pick<Storage, 'getItem'> = localStorage): string {
-  try { return backupSettingsStorageKeys().map(key => storage.getItem(key) ?? '\u0001').join('\u0000') } catch { return '' }
+/**
+ * Raw values of every backed-up setting, for cheap same-tab change detection (no parsing of the
+ * values). JSON of the ordered value list: absent (null), empty and any stored text, including
+ * control characters, map to distinct signatures. Unreadable storage → null.
+ */
+export function settingsSignature(storage: Pick<Storage, 'getItem'> = localStorage): string | null {
+  try { return JSON.stringify(backupSettingsStorageKeys().map(key => storage.getItem(key))) } catch { return null }
 }
