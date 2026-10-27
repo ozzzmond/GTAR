@@ -805,13 +805,75 @@ export function readStageAppearanceExtras(storage: Pick<Storage, 'getItem'> = lo
 
 export interface SettingsRestoreResult { written: string[]; groups: BackupSettingsGroup[] }
 
+/** #251 F2: previous values of exactly the keys a settings restore is about to write (null = absent). */
+export const SETTINGS_RESTORE_SNAPSHOT_KEY = 'gtar_settings_restore_snapshot_v1'
+export interface SettingsRestoreSnapshot { v: 1; at: string; values: Record<string, string | null> }
+
+export type SettingsRestoreFailure = 'snapshot' | 'rolled-back' | 'partial'
+/**
+ * `snapshot`: the copy of current settings could not be saved, nothing was written.
+ * `rolled-back`: a write failed and every key was put back and read back as before.
+ * `partial`: a write failed and putting the old values back also failed; the verified
+ * snapshot (SETTINGS_RESTORE_SNAPSHOT_KEY) still holds them for restorePreviousSettings().
+ */
+export class SettingsRestoreError extends Error {
+  readonly state: SettingsRestoreFailure
+  readonly failedKey?: string
+  readonly unresolvedKeys: string[]
+  constructor(state: SettingsRestoreFailure, message: string, options: { cause?: unknown; failedKey?: string; unresolvedKeys?: string[] } = {}) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause })
+    this.name = 'SettingsRestoreError'
+    this.state = state
+    this.failedKey = options.failedKey
+    this.unresolvedKeys = options.unresolvedKeys ?? []
+  }
+}
+export const isSettingsRestoreError = (error: unknown): error is SettingsRestoreError => error instanceof SettingsRestoreError
+
+type SettingsStorage = Pick<Storage, 'setItem' | 'getItem' | 'removeItem'>
+const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+/** Puts one key back to its previous value (absent → removed) and reads it back. */
+function putBack(storage: SettingsStorage, key: string, previous: string | null): boolean {
+  try {
+    if (previous === null) storage.removeItem(key)
+    else storage.setItem(key, previous)
+    return storage.getItem(key) === previous
+  } catch { return false }
+}
+
+/** Restores the settings saved before the last settings restore (after a `partial` failure). */
+export function restorePreviousSettings(storage: SettingsStorage = localStorage): string[] {
+  const snapshot = readSettingsRestoreSnapshot(storage)
+  if (!snapshot) throw new Error('No previous-settings snapshot on this device')
+  const unresolved = Object.entries(snapshot.values).filter(([key, value]) => !putBack(storage, key, value)).map(([key]) => key)
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    const Evt = typeof window.Event === 'function' ? window.Event : Event
+    window.dispatchEvent(new Evt(SETTINGS_CHANGED))
+  }
+  return unresolved
+}
+
+export function readSettingsRestoreSnapshot(storage: Pick<Storage, 'getItem'> = localStorage): SettingsRestoreSnapshot | null {
+  try {
+    const value = JSON.parse(storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) ?? 'null') as SettingsRestoreSnapshot | null
+    if (!value || value.v !== 1 || !isObject(value.values)) return null
+    const allowed = new Set(backupSettingsStorageKeys())
+    if (Object.entries(value.values).some(([key, v]) => !allowed.has(key) || (v !== null && typeof v !== 'string'))) return null
+    return value
+  } catch { return null }
+}
+
 /**
  * Restores only the chosen groups and only fields present in the backup; every other key on the
- * device is left as it is. Validates everything before the first write and reads each write back.
- * A failure part-way leaves earlier writes in place (disclosed by the caller, as in v1).
+ * device is left as it is. Validates everything first, saves and reads back a snapshot of the
+ * previous values of exactly the keys it will write, writes each key and reads it back. If a
+ * write fails, every key is put back to its previous value and read back (`rolled-back`); if
+ * that also fails, the snapshot stays for restorePreviousSettings() (`partial`). Not atomic:
+ * other tabs can observe intermediate values during the few synchronous writes.
  */
 export function restoreBackupSettingsV2(settings: BackupSettingsV2, choice: SettingsRestoreChoice,
-  storage: Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'getItem'>> = localStorage): SettingsRestoreResult {
+  storage: SettingsStorage = localStorage): SettingsRestoreResult {
   const errors = validateBackupSettingsV2(settings)
   if (errors.length) throw new Error(errors.join('\n'))
   const writes: Array<[string, string]> = []
@@ -837,11 +899,34 @@ export function restoreBackupSettingsV2(settings: BackupSettingsV2, choice: Sett
     }
     groups.push('preferences')
   }
-  for (const [key, value] of writes) {
-    storage.setItem(key, value)
-    if (typeof storage.getItem === 'function' && storage.getItem(key) !== value) throw new Error(`Setting ${key} could not be verified after saving`)
+  if (!writes.length) return { written: [], groups }
+
+  const previous: Record<string, string | null> = {}
+  try {
+    for (const [key] of writes) previous[key] = storage.getItem(key)
+    const snapshot = JSON.stringify({ v: 1, at: new Date().toISOString(), values: previous } satisfies SettingsRestoreSnapshot)
+    storage.setItem(SETTINGS_RESTORE_SNAPSHOT_KEY, snapshot)
+    if (storage.getItem(SETTINGS_RESTORE_SNAPSHOT_KEY) !== snapshot) throw new Error('snapshot readback differs')
+  } catch (error) {
+    throw new SettingsRestoreError('snapshot', `could not save a copy of the current settings first (${errorText(error)}); no setting was changed`, { cause: error })
   }
-  if (writes.length && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+
+  const attempted: string[] = []
+  for (const [key, value] of writes) {
+    attempted.push(key)
+    try {
+      storage.setItem(key, value)
+      if (storage.getItem(key) !== value) throw new Error(`${key} could not be verified after saving`)
+    } catch (error) {
+      const unresolvedKeys = attempted.filter(k => !putBack(storage, k, previous[k]))
+      if (!unresolvedKeys.length) {
+        throw new SettingsRestoreError('rolled-back', `saving ${key} failed (${errorText(error)}); every setting was put back and verified`, { cause: error, failedKey: key })
+      }
+      throw new SettingsRestoreError('partial', `saving ${key} failed (${errorText(error)}) and ${unresolvedKeys.length} setting(s) could not be put back (${unresolvedKeys.join(', ')})`,
+        { cause: error, failedKey: key, unresolvedKeys })
+    }
+  }
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     const Evt = typeof window.Event === 'function' ? window.Event : Event
     window.dispatchEvent(new Evt(SETTINGS_CHANGED))
   }

@@ -8,7 +8,10 @@
  * GTAR; saving is confirmed by the user, not by the app.
  */
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
-import { COPY_JSON_MAX_BYTES, RESTORE_SNAPSHOT_KEY, createRestoreSafetySnapshot, normalizeBackupSong, triggerDownload, type VerifiedBackup } from './jsonBackup'
+import { COPY_JSON_MAX_BYTES, RESTORE_SNAPSHOT_KEY, createRestoreSafetySnapshot, stableStringify, triggerDownload, type VerifiedBackup } from './jsonBackup'
+import { mergeBackupLibrary } from './setlistSongs'
+import { mergeImportedSetlists } from './importIdentity'
+import { canonicalSongKey } from './musicalKey'
 import { recordBackupStatus, type BackupDelivery } from './backupStatus'
 import { isQuotaError, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
 import { generateUUID } from './uuid'
@@ -101,7 +104,8 @@ export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongSt
     const cause = (error as { cause?: unknown }).cause
     if (!isQuotaError(cause) && !isQuotaError(error)) throw error
     const key = `gtar_sync_recovery:restore-snapshot:${generateUUID()}`
-    const raw = JSON.stringify({ createdAt: new Date().toISOString(), library })
+    // #257 review: `local` is the recovery format Recovery Review reads (choose / export / cleanup).
+    const raw = JSON.stringify({ local: library, restoreSnapshotAt: new Date().toISOString() })
     try {
       await writeRecoverySnapshot(key, raw, storage)
       if (readRecoveryArchive(key, storage) !== raw) throw new Error('Safety snapshot archive could not be verified', { cause: error })
@@ -112,36 +116,53 @@ export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongSt
   }
 }
 
-const songShape = (song: Partial<ActiveSongState>) => {
-  const s = normalizeBackupSong(song as ActiveSongState)
-  return JSON.stringify([s.title, s.artist, s.rawContent, !!s.isDeleted])
+type Library = { songs: ActiveSongState[]; setlists: WebSetlist[] }
+
+/** The persisted representation: JSON round-trip (undefined fields dropped) and canonical song keys, as persistLibrary stores them. */
+function canonicalLibrary(library: Library): Library {
+  const plain = JSON.parse(JSON.stringify({ songs: library.songs, setlists: library.setlists })) as Library
+  return { songs: plain.songs.map(song => song.key === undefined ? song : { ...song, key: canonicalSongKey(song.key) }), setlists: plain.setlists }
+}
+
+/** What the restore handlers must have saved: the backup itself (replace) or the existing merge rules applied to it (merge). */
+export function expectedRestoredLibrary(before: Library, incoming: Library, mode: 'replace' | 'merge'): Library {
+  if (mode === 'replace') return { songs: incoming.songs, setlists: incoming.setlists }
+  const merged = mergeBackupLibrary(before.songs, incoming.songs, incoming.setlists)
+  return { songs: merged.songs, setlists: mergeImportedSetlists(before.setlists, merged.setlists) }
+}
+
+function recordDiff(kind: 'song' | 'setlist', expected: Record<string, unknown>[], saved: Record<string, unknown>[], out: string[]): void {
+  if (expected.length !== saved.length) out.push(`${kind} count ${saved.length} saved, ${expected.length} expected`)
+  const n = Math.max(expected.length, saved.length)
+  for (let i = 0; i < n && out.length < 6; i++) {
+    const want = expected[i], got = saved[i]
+    if (!want || !got) continue
+    if (String(want.id) !== String(got.id)) { out.push(`${kind} order or membership differs at position ${i + 1} (${String(got.id)} saved, ${String(want.id)} expected)`); continue }
+    if (stableStringify(want) === stableStringify(got)) continue
+    const fields = [...new Set([...Object.keys(want), ...Object.keys(got)])].filter(f => stableStringify(want[f]) !== stableStringify(got[f])).sort()
+    out.push(`${kind} ${String(want.id)} differs in ${fields.join(', ')}`)
+  }
 }
 
 /**
- * Reads the saved library back and checks the restored records are really there. Replace: the
- * saved library is exactly the backup (same song and setlist ids, same charts). Merge: every
- * song and setlist from the backup is present with the backup's chart; other records may exist.
+ * #251 F1: reads the saved library back and compares the complete canonical library with what the
+ * restore should have produced: every song and setlist, every supported field, chart content,
+ * order, setlist membership and references, trash state. Any unexplained difference is an error.
  */
-export function verifyRestoredLibrary(
-  expected: { songs: ActiveSongState[]; setlists: WebSetlist[] }, mode: 'replace' | 'merge', storage: Storage,
-): string[] {
-  let saved: { songs: ActiveSongState[]; setlists: WebSetlist[] } | null
+export function verifyRestoredLibrary(before: Library, incoming: Library, mode: 'replace' | 'merge', storage: Storage): string[] {
+  let saved: Library | null
   try { saved = readPersistedLibrary(storage) } catch (error) {
     return [`saved library could not be read back (${error instanceof Error ? error.message : String(error)})`]
   }
   if (!saved) return ['saved library could not be read back']
+  let expected: Library
+  try { expected = canonicalLibrary(expectedRestoredLibrary(before, incoming, mode)) } catch (error) {
+    return [`expected library could not be computed (${error instanceof Error ? error.message : String(error)})`]
+  }
+  const actual = canonicalLibrary(saved)
   const errors: string[] = []
-  const savedSongs = new Map(saved.songs.map(song => [String(song.id), song]))
-  for (const song of expected.songs) {
-    const found = savedSongs.get(String(song.id))
-    if (!found) errors.push(`song ${String(song.id)} missing after restore`)
-    else if (songShape(found) !== songShape(song)) errors.push(`song ${String(song.id)} differs after restore`)
-    if (errors.length >= 5) break
-  }
-  const savedSetlists = new Set(saved.setlists.map(list => String(list.id)))
-  for (const list of expected.setlists) if (!savedSetlists.has(String(list.id))) errors.push(`setlist ${String(list.id)} missing after restore`)
-  if (mode === 'replace' && !errors.length && (saved.songs.length !== expected.songs.length || saved.setlists.length !== expected.setlists.length)) {
-    errors.push(`saved library has ${saved.songs.length} songs / ${saved.setlists.length} setlists; backup has ${expected.songs.length} / ${expected.setlists.length}`)
-  }
+  recordDiff('song', expected.songs as unknown as Record<string, unknown>[], actual.songs as unknown as Record<string, unknown>[], errors)
+  recordDiff('setlist', expected.setlists as unknown as Record<string, unknown>[], actual.setlists as unknown as Record<string, unknown>[], errors)
+  if (!errors.length && stableStringify(expected) !== stableStringify(actual)) errors.push('saved library differs from the backup')
   return errors
 }

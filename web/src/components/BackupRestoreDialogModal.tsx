@@ -9,10 +9,14 @@ import {
   buildVerifiedBackup,
   libraryFingerprint,
   parseBackupJson,
+  settingsFingerprint,
   type ParsedBackupResult,
   type VerifiedBackup,
 } from '../utils/jsonBackup'
-import { DEFAULT_SETTINGS_RESTORE_CHOICE, restoreBackupSettingsV2, type SettingsRestoreChoice } from '../utils/backupSettings'
+import {
+  DEFAULT_SETTINGS_RESTORE_CHOICE, isSettingsRestoreError, readBackupSettingsV2, restoreBackupSettingsV2, restorePreviousSettings,
+  type SettingsRestoreChoice,
+} from '../utils/backupSettings'
 import { isQuotaError } from '../utils/syncJournal'
 import {
   canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, shareOrDownloadBackup, verifyRestoredLibrary,
@@ -71,18 +75,27 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
   const [changedSinceBackup, setChangedSinceBackup] = useState<boolean | null>(null)
   const [reminder, setReminder] = useState<BackupReminderSettings>(() => readBackupReminder())
+  const [settingsSnapshotPending, setSettingsSnapshotPending] = useState(false)
+  // Latest library for work done after render (App passes a new array on every render).
+  const libraryRef = useRef({ songs: allSongs, setlists })
+  useEffect(() => { libraryRef.current = { songs: allSongs, setlists } }, [allSongs, setlists])
+  const currentFingerprint = () => {
+    try { return libraryFingerprint(libraryRef.current.songs, libraryRef.current.setlists) } catch { return null }
+  }
 
   useEffect(() => {
     if (!isOpen) return
-    // Reads the status, and the whole library once, after the dialog has rendered.
+    // Each opening starts a new export session: a file prepared earlier is dropped (#257 review), and
+    // the status and the whole library are read once, after the dialog has rendered.
     const timer = setTimeout(() => {
+      setPreparedBackup(null)
       const status = readBackupStatus()
       setBackupStatus(status)
-      if (!status) { setChangedSinceBackup(null); return }
-      try { setChangedSinceBackup(libraryFingerprint(allSongs, setlists) !== status.fingerprint) } catch { setChangedSinceBackup(null) }
+      const current = status ? currentFingerprint() : null
+      setChangedSinceBackup(status && current !== null ? current !== status.fingerprint : null)
     }, 0)
     return () => clearTimeout(timer)
-  }, [isOpen, allSongs, setlists])
+  }, [isOpen])
   const [pendingRestore, setPendingRestore] = useState<{
     rawText: string
     parsed: ParsedBackupResult
@@ -124,7 +137,9 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     if (outcome.kind === 'share-cancelled') { showFeedback('info', 'Share cancelled. No backup was saved.'); return }
     if (outcome.kind === 'failed') { showFeedback('error', `Backup not exported: ${outcome.message}`); return }
     setBackupStatus(readBackupStatus())
-    setChangedSinceBackup(false)
+    // The status describes the file just handed out; compare it with the library as it is now.
+    const current = currentFingerprint()
+    setChangedSinceBackup(current === null ? null : current !== backup.fingerprint)
     const verified = `Backup file verified (${countsText(backup.counts)}, ${mb(backup.bytes)})`
     if (outcome.kind === 'shared') showFeedback('info', `${verified} and sent to the share sheet. GTAR cannot see where it was saved; check that it is in Files, iCloud Drive or your cloud drive.`)
     else if (outcome.kind === 'copied') showFeedback('info', `${verified} and copied to the clipboard. Paste it somewhere safe; GTAR cannot see where it went.`)
@@ -135,8 +150,25 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     if (isExporting) return
     setIsExporting(true)
     try {
-      const backup = preparedBackup ?? prepareBackup()
-      if (backup) reportExport(backup, await shareOrDownloadBackup(backup, exportEnv))
+      // #251 F3: a prepared file is reused only while it still matches the library and settings.
+      let backup = preparedBackup
+      let rebuilt = false
+      if (backup) {
+        const prepared = backup
+        const fresh = (() => {
+          try { return currentFingerprint() === prepared.fingerprint && settingsFingerprint(readBackupSettingsV2()) === prepared.settingsFingerprint } catch { return false }
+        })()
+        if (!fresh) { setPreparedBackup(null); backup = null; rebuilt = true }
+      }
+      backup = backup ?? prepareBackup()
+      if (!backup) return
+      const outcome = await shareOrDownloadBackup(backup, exportEnv)
+      if (rebuilt && outcome.kind === 'needs-tap') {
+        setPreparedBackup(backup)
+        showFeedback('info', `Your library or settings changed after the earlier file was prepared, so a new backup was created and verified (${countsText(backup.counts)}). Tap "Open share sheet" to save it.`)
+        return
+      }
+      reportExport(backup, outcome)
     } finally { setIsExporting(false) }
   }
 
@@ -164,7 +196,8 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     setIsRestoring(true)
     try {
       const replace = isDestructive && !parsed.isSingleSetlist
-      const verifiable = replace ? !!(onFullRestore || onFullRestoreSongs) : !!onSmartMerge
+      // Songs-only replacement leaves setlists to the caller, so it cannot be compared with the backup.
+      const verifiable = replace ? !!onFullRestore : !!onSmartMerge
       // #251: merges overwrite songs with the same id, so they get the same verified safety snapshot as a wipe.
       if (!replace && verifiable) {
         try {
@@ -192,8 +225,8 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
 
       // #251: success is claimed only after the saved library is read back and matches the backup.
       if (verifiable) {
-        const expected = { songs: parsed.songs, setlists: onFullRestoreSongs && !onFullRestore ? [] : parsed.setlists }
-        const problems = verifyRestoredLibrary(expected, replace && onFullRestore ? 'replace' : 'merge', targetStorage)
+        const problems = verifyRestoredLibrary({ songs: allSongs, setlists }, { songs: parsed.songs, setlists: parsed.setlists },
+          replace ? 'replace' : 'merge', targetStorage)
         if (problems.length) {
           setPendingRestore(null)
           showFeedback('error', `Restore could not be verified: ${problems.join('; ')}. Settings were not changed. The previous library is kept in the safety snapshot (Review local recovery).`)
@@ -201,7 +234,9 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
         }
       } else {
         setPendingRestore(null)
-        showFeedback('info', `Imported ${parsed.songs.length} songs as new copies. Setlists and settings were not restored.`)
+        showFeedback('info', replace && onFullRestoreSongs
+          ? `Songs replaced (${parsed.songs.length}); not verified against the backup. Setlists and settings were not restored.`
+          : `Imported ${parsed.songs.length} songs as new copies. Setlists and settings were not restored.`)
         return
       }
 
@@ -217,7 +252,13 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         setPendingRestore(null)
-        showFeedback('error', `Partial restore: library saved, but settings restoration failed (${msg}). Some settings may have been applied. Reload to inspect the saved state before retrying. Recovery data retained.`)
+        const library = `Library restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists (verified after saving)`
+        if (isSettingsRestoreError(err) && err.state !== 'partial') {
+          showFeedback('error', `${library}, but settings were not restored: ${msg}. This device's previous settings are unchanged.`)
+        } else {
+          setSettingsSnapshotPending(isSettingsRestoreError(err))
+          showFeedback('error', `Partial restore: library saved, but settings restoration failed (${msg}). Some settings may have been applied. ${isSettingsRestoreError(err) ? 'The previous settings are kept in a verified snapshot; use "Put back previous settings" before retrying.' : 'Reload to inspect the saved state before retrying.'} Recovery data retained.`)
+        }
         return
       }
       if (parsed.ignoredFields.length) settingsNote += ` Not restored (unknown to this version): ${parsed.ignoredFields.slice(0, 8).join(', ')}${parsed.ignoredFields.length > 8 ? ', …' : ''}.`
@@ -378,6 +419,25 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                 <AlertCircle className="w-4 h-4 shrink-0" />
               )}
               <span className="whitespace-pre-wrap">{feedback.message}</span>
+              {settingsSnapshotPending && feedback.type === 'error' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const unresolved = restorePreviousSettings(targetStorage)
+                      setSettingsSnapshotPending(unresolved.length > 0)
+                      showFeedback(unresolved.length ? 'error' : 'info', unresolved.length
+                        ? `These settings could not be put back: ${unresolved.join(', ')}. Reload and try again.`
+                        : 'Previous settings put back and verified.')
+                    } catch (error) {
+                      showFeedback('error', error instanceof Error ? error.message : String(error))
+                    }
+                  }}
+                  className="shrink-0 px-2 py-1 rounded-lg border border-current text-[11px] font-bold cursor-pointer"
+                >
+                  Put back previous settings
+                </button>
+              )}
             </div>
           )}
 

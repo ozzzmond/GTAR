@@ -78,6 +78,7 @@ Cloud reconciliation, local persistence, backup, import recovery, and retirement
 - [backupResiduals.test.cjs](backupResiduals.test.cjs)
 - [backupRestoreHardening.test.cjs](backupRestoreHardening.test.cjs)
 - [backupRoundTrip.test.cjs](backupRoundTrip.test.cjs)
+- [backupV2.test.cjs](backupV2.test.cjs)
 - [cloudSetlistSync.test.cjs](cloudSetlistSync.test.cjs)
 - [cloudSongbookSync.test.cjs](cloudSongbookSync.test.cjs)
 - [cloudSyncConcurrency.test.cjs](cloudSyncConcurrency.test.cjs)
@@ -230,7 +231,6 @@ New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [appModalsReducer.test.cjs](appModalsReducer.test.cjs)
-- [backupV2.test.cjs](backupV2.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
 - [crossAccountContainment.test.cjs](crossAccountContainment.test.cjs)

@@ -28,7 +28,17 @@ const jb = require('../src/utils/jsonBackup.ts')
 const bs = require('../src/utils/backupSettings.ts')
 const status = require('../src/utils/backupStatus.ts')
 const ex = require('../src/utils/backupExport.ts')
-const { persistLibrary, readPersistedLibrary, LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
+const { persistLibrary, readPersistedLibrary, LIBRARY_KEY, inspectRecovery } = require('../src/utils/syncJournal.ts')
+const { mergeBackupLibrary } = require('../src/utils/setlistSongs.ts')
+const { mergeImportedSetlists } = require('../src/utils/importIdentity.ts')
+/** The App's smart-merge persistence (useLibraryImports.handleSmartMerge), for dialog tests. */
+function appMerge(storage = localStorage) {
+  return (songs, setlists) => {
+    const before = readPersistedLibrary(storage) ?? { songs: [], setlists: [] }
+    const merged = mergeBackupLibrary(before.songs, songs, setlists)
+    persistLibrary({ songs: merged.songs, setlists: mergeImportedSetlists(before.setlists, merged.setlists) }, storage, { force: true })
+  }
+}
 const { BackupRestoreDialogModal } = require('../src/components/BackupRestoreDialogModal.tsx')
 
 const palette = (bg = '#123456') => ({ bgHex: bg, textHex: '#ffffff', chordHex: '#abcdef', sectionHex: '#654321', headerBg: '#112233' })
@@ -103,7 +113,9 @@ test('10,000 songs + 300 setlists + trash + every setting: export → verify →
   const result = bs.restoreBackupSettingsV2(parsed.settings, { appearance: true, preferences: true }, target)
   assert.deepEqual(new Set(result.written), new Set(Object.keys(raw)))
   for (const [k, v] of Object.entries(raw)) assert.equal(target.getItem(k), v, k)
-  assert.equal(target.length, Object.keys(raw).length)
+  // Plus the verified copy of the previous (absent) values of exactly those keys (#251 F2).
+  assert.equal(target.length, Object.keys(raw).length + 1)
+  assert.deepEqual(Object.keys(bs.readSettingsRestoreSnapshot(target).values).sort(), Object.keys(raw).sort())
   global.localStorage = new MemoryStorage()
 })
 
@@ -135,6 +147,7 @@ test('v1 backups still import: all v1 settings become appearance and restore to 
   const legacy = new MemoryStorage(); const v2 = new MemoryStorage()
   bs.restoreBackupSettings(parsed, legacy)
   bs.restoreBackupSettingsV2(parsed.settings, bs.DEFAULT_SETTINGS_RESTORE_CHOICE, v2)
+  v2.removeItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
   assert.deepEqual([...v2.map], [...legacy.map])
   // Unversioned (pre-schema) song arrays still import.
   assert.equal(jb.parseBackupJson(JSON.stringify([{ id: 'x', title: 'X', rawContent: '' }])).isValid, true)
@@ -169,6 +182,7 @@ test('invalid, incomplete and corrupted backups are rejected before any write', 
 
 test('fields this version does not know are reported, not silently dropped', () => {
   const payload = JSON.parse(JSON.stringify(jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }], [{ id: 's', name: 'S', songs: [{ id: 'a', title: 'A' }] }])))
+  delete payload.contentFingerprint // a hand-made or older file; an edited v2 file with a fingerprint is rejected (F4)
   payload.futureThing = 1; payload.songs[0].mood = 'happy'; payload.setlists[0].color = 'red'; payload.setlists[0].songs[0].note = 'n'
   const parsed = jb.parseBackupJson(JSON.stringify(payload))
   assert.equal(parsed.isValid, true, parsed.error)
@@ -180,8 +194,10 @@ test('verification refuses bytes that do not restore to the same library', () =>
   const payload = jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }, { id: 'b', title: 'B', rawContent: 'y', isDeleted: true }], [])
   const json = JSON.stringify(payload)
   assert.deepEqual(jb.verifyBackupJson(json, payload), { songs: 1, trash: 1, setlists: 0 })
-  assert.throws(() => jb.verifyBackupJson(json.replace('"x"', '"z"'), payload), /songs differ/)
-  assert.throws(() => jb.verifyBackupJson(JSON.stringify({ ...payload, songs: payload.songs.slice(0, 1) }), payload), /counts differ/)
+  assert.throws(() => jb.verifyBackupJson(json.replace('"x"', '"z"'), payload), /verification failed.*contentFingerprint/s)
+  assert.throws(() => jb.verifyBackupJson(JSON.stringify({ ...payload, songs: payload.songs.slice(0, 1) }), payload), /verification failed/)
+  const noPrint = { ...payload }; delete noPrint.contentFingerprint
+  assert.throws(() => jb.verifyBackupJson(JSON.stringify(noPrint).replace('"x"', '"z"'), noPrint), /songs differ/)
   assert.throws(() => jb.verifyBackupJson(json.slice(0, -2), payload), /verification failed/)
 })
 
@@ -265,26 +281,64 @@ test('safety snapshot falls back to a verified recovery archive when the single 
   }
   const storage = new SnapshotQuota()
   const library = { songs: [{ id: 'a', title: 'A', rawContent: 'x' }], setlists: [] }
+  persistLibrary(library, storage)
   const result = await ex.ensureRestoreSafetySnapshot(library, storage)
   assert.equal(result.location, 'recovery-archive')
   assert.match(result.key, /^gtar_sync_recovery:restore-snapshot:/)
-  assert.deepEqual(JSON.parse(storage.getItem(result.key)).library, library)
+  assert.deepEqual(JSON.parse(storage.getItem(result.key)).local, library)
+  // #257 review: the archive is in a format Recovery Review reads (not "invalid").
+  const review = inspectRecovery(storage)
+  const source = review.sources.find(item => item.key === result.key)
+  assert.ok(source, 'archive listed in recovery review')
+  assert.notEqual(source.status, 'invalid')
   // Neither fits: throws, nothing changes.
   const none = new QuotaStorage(10)
   await assert.rejects(ex.ensureRestoreSafetySnapshot(library, none), /safety snapshot/)
   assert.equal(none.length, 0)
 })
 
-test('verifyRestoredLibrary: replace must match exactly; merge must contain every backup record', () => {
-  const storage = new MemoryStorage()
-  const a = { id: 'a', title: 'A', artist: '', rawContent: 'x' }, b = { id: 'b', title: 'B', artist: '', rawContent: 'y' }
-  const sl = { id: 's', name: 'S', songs: [{ id: 'a', title: 'A', artist: '' }] }
-  assert.match(ex.verifyRestoredLibrary({ songs: [a], setlists: [] }, 'replace', storage)[0], /could not be read back/)
-  persistLibrary({ songs: [a, b], setlists: [sl] }, storage)
-  assert.deepEqual(ex.verifyRestoredLibrary({ songs: [a], setlists: [sl] }, 'merge', storage), [])
-  assert.match(ex.verifyRestoredLibrary({ songs: [a], setlists: [sl] }, 'replace', storage)[0], /saved library has 2 songs/)
-  assert.match(ex.verifyRestoredLibrary({ songs: [{ ...a, rawContent: 'changed' }], setlists: [] }, 'merge', storage)[0], /differs/)
-  assert.match(ex.verifyRestoredLibrary({ songs: [{ id: 'c', title: 'C', rawContent: '' }], setlists: [] }, 'merge', storage)[0], /missing/)
+test('verifyRestoredLibrary compares the complete canonical library (replace and merge)', () => {
+  const a = { id: 'a', title: 'A', artist: '', key: 'G', capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0, rawContent: 'x', tags: 't1' }
+  const b = { ...a, id: 'b', title: 'B', rawContent: 'y', tags: undefined }
+  const sl = { id: 's', name: 'S', songs: [{ id: 'a', title: 'A', artist: '' }, { id: 'b', title: 'B', artist: '' }] }
+  const empty = new MemoryStorage()
+  assert.match(ex.verifyRestoredLibrary({ songs: [], setlists: [] }, { songs: [a], setlists: [] }, 'replace', empty)[0], /could not be read back/)
+  for (const mode of ['replace', 'merge']) {
+    const before = { songs: [{ ...a, id: 'keep', title: 'Keep' }], setlists: [] }
+    const incoming = { songs: [a, b], setlists: [sl] }
+    const good = ex.expectedRestoredLibrary(before, incoming, mode)
+    const storage = new MemoryStorage()
+    persistLibrary(good, storage)
+    assert.deepEqual(ex.verifyRestoredLibrary(before, incoming, mode, storage), [], mode)
+    const faults = {
+      key: lib => { lib.songs.find(s => s.id === 'a').key = 'A' },
+      tags: lib => { delete lib.songs.find(s => s.id === 'a').tags },
+      transpose: lib => { lib.songs.find(s => s.id === 'a').transposeOffset = 2 },
+      content: lib => { lib.songs.find(s => s.id === 'b').rawContent = 'y!' },
+      trash: lib => { lib.songs.find(s => s.id === 'b').isDeleted = true },
+      'setlist name': lib => { lib.setlists[0].name = 'Renamed' },
+      membership: lib => { lib.setlists[0].songs.pop() },
+      reference: lib => { lib.setlists[0].songs[1] = { id: 'a', title: 'A', artist: '' } },
+      'reference order': lib => { lib.setlists[0].songs.reverse() },
+      'song order': lib => { lib.songs.reverse() },
+      'missing song': lib => { lib.songs = lib.songs.filter(s => s.id !== 'b'); lib.setlists[0].songs.pop() },
+      'extra song': lib => { lib.songs.push({ ...a, id: 'z', title: 'Z' }) },
+      'missing setlist': lib => { lib.setlists = [] },
+      'other song changed (merge damage)': lib => { const k = lib.songs.find(s => s.id === 'keep'); if (k) k.title = 'Changed'; else lib.songs[0].artist = 'X' },
+    }
+    for (const [label, mutate] of Object.entries(faults)) {
+      const bad = JSON.parse(JSON.stringify(good))
+      mutate(bad)
+      const store = new MemoryStorage()
+      persistLibrary(bad, store, { force: true })
+      const problems = ex.verifyRestoredLibrary(before, incoming, mode, store)
+      assert.ok(problems.length > 0, `${mode}: ${label} must fail verification`)
+    }
+  }
+  const store = new MemoryStorage()
+  const bad = { songs: [{ ...a, key: 'A' }], setlists: [] }
+  persistLibrary(bad, store)
+  assert.match(ex.verifyRestoredLibrary({ songs: [], setlists: [] }, { songs: [a], setlists: [] }, 'replace', store)[0], /song a differs in key/)
 })
 
 test('reminders: never, stale with changes, large change, disabled, and not due', () => {
@@ -394,7 +448,7 @@ test('restore that does not read back correctly is not reported as success and l
   })))
   await pick(dom, 'Full Restore (Wipe & Replace)', payload)
   await act(async () => button('Confirm Wipe & Replace').click())
-  assert.match(document.body.textContent, /Restore could not be verified: song inc missing after restore/)
+  assert.match(document.body.textContent, /Restore could not be verified: song order or membership differs/)
   assert.doesNotMatch(document.body.textContent, /Backup restored:/)
   assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
   assert.equal(JSON.parse(localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.songs[0].id, 'cur')
@@ -449,6 +503,8 @@ test('dialog shows when the library changed after the last backup', withJsdom(as
   await act(async () => button('Export Backup').click())
   await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.doesNotMatch(document.body.textContent, /newer edits are not in it/)
+  // Computed when the dialog opens (App re-renders constantly; the library is read once per opening).
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { isOpen: false, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
   await render([{ ...current, rawContent: '[G]edited' }])
   await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.match(document.body.textContent, /Your library changed after this backup; the newer edits are not in it\./)
@@ -471,3 +527,264 @@ test('menu export (download) is verified and recorded; Cloud V1 library keys are
     assert.equal(storage.getItem(LIBRARY_KEY), before)
   } finally { global.URL = priorUrl; delete global.window; delete global.document }
 })
+
+// #257 audit remediation: F2 settings rollback, F3 stale prepared export, F4 manifest validation, F1 through the dialog.
+const ALL_SETTINGS = { appearance: true, preferences: true }
+/** Storage that fails the nth settings write (the previous-settings snapshot write does not count). */
+class FailingWrites extends MemoryStorage {
+  constructor(failAt, { failPutBack = false, failSnapshot = false } = {}) { super(); this.failAt = failAt; this.writes = 0; this.failPutBack = failPutBack; this.failSnapshot = failSnapshot; this.armed = false }
+  setItem(k, v) {
+    if (this.armed && k === bs.SETTINGS_RESTORE_SNAPSHOT_KEY) { if (this.failSnapshot) throw Object.assign(new Error('full'), { name: 'QuotaExceededError' }); return super.setItem(k, v) }
+    if (this.armed) {
+      this.writes++
+      if (this.writes === this.failAt) throw Object.assign(new Error('Storage full'), { name: 'QuotaExceededError' })
+      if (this.failPutBack && this.writes > this.failAt) throw new Error('still broken')
+    }
+    super.setItem(k, v)
+  }
+  removeItem(k) { if (this.armed && this.failPutBack && this.writes >= this.failAt) throw new Error('still broken'); super.removeItem(k) }
+}
+function backedUpSettings() {
+  const { storage } = fullSettingsStorage()
+  return bs.readBackupSettingsV2(storage)
+}
+function deviceSettings(storage) {
+  // A different, partly empty device: some keys absent, some with other values.
+  storage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black'); storage.setItem('gtar_stage_font_weight', 'medium'); storage.setItem('gtar_songbook_sort', 'date')
+  storage.setItem('gtar_auth_session', 'SECRET-auth-token')
+  return new Map(storage.map)
+}
+
+test('F2: a failed settings write at the start, middle or end is rolled back and read back', () => {
+  const settings = backedUpSettings()
+  const total = bs.backupSettingsStorageKeys().length
+  for (const [label, choice, count] of [['all', ALL_SETTINGS, total], ['appearance', { appearance: true, preferences: false }, 13], ['preferences', { appearance: false, preferences: true }, 6]]) {
+    for (const failAt of [1, Math.ceil(count / 2), count]) {
+      const storage = new FailingWrites(failAt)
+      const before = deviceSettings(storage)
+      storage.armed = true
+      assert.throws(() => bs.restoreBackupSettingsV2(settings, choice, storage), error => {
+        assert.equal(error.state, 'rolled-back', `${label} @${failAt}`)
+        assert.match(error.message, /every setting was put back and verified/)
+        assert.ok(error.failedKey)
+        return true
+      })
+      const after = new Map(storage.map); after.delete(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+      assert.deepEqual([...after].sort(), [...before].sort(), `${label} @${failAt}: device settings identical after rollback`)
+    }
+  }
+})
+
+test('F2: when putting settings back also fails, the verified snapshot restores the previous settings', () => {
+  const settings = backedUpSettings()
+  const storage = new FailingWrites(5, { failPutBack: true })
+  const before = deviceSettings(storage)
+  storage.armed = true
+  let failure
+  assert.throws(() => bs.restoreBackupSettingsV2(settings, ALL_SETTINGS, storage), error => { failure = error; return true })
+  assert.equal(failure.state, 'partial')
+  assert.ok(failure.unresolvedKeys.length > 0)
+  assert.match(failure.message, /could not be put back/)
+  const snapshot = bs.readSettingsRestoreSnapshot(storage)
+  assert.equal(snapshot.values[bs.SETTINGS_KEYS.themeMode], 'oled-black')
+  assert.equal(snapshot.values[bs.SETTINGS_KEYS.customThemeColors], null)
+  // Storage recovers; the snapshot puts everything back exactly.
+  storage.armed = false
+  assert.deepEqual(bs.restorePreviousSettings(storage), [])
+  const after = new Map(storage.map); after.delete(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+  assert.deepEqual([...after].sort(), [...before].sort())
+})
+
+test('F2: if the previous-settings snapshot cannot be saved, no setting is written', () => {
+  const storage = new FailingWrites(99, { failSnapshot: true })
+  const before = deviceSettings(storage)
+  storage.armed = true
+  assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'snapshot' && /no setting was changed/.test(error.message))
+  assert.equal(storage.writes, 0)
+  assert.deepEqual([...storage.map], [...before])
+  // A snapshot never lists keys outside the backup allowlist (device/session state stays out).
+  const ok = new MemoryStorage(); deviceSettings(ok)
+  bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, ok)
+  assert.equal('gtar_auth_session' in bs.readSettingsRestoreSnapshot(ok).values, false)
+})
+
+for (const mode of ['replace', 'merge']) {
+  test(`F2 dialog (${mode}): settings failure after a verified library save is rolled back and reported precisely`, withJsdom(async ({ dom, root }) => {
+    fullSettingsStorage(localStorage)
+    const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
+    localStorage.clear()
+    persistLibrary({ songs: [current], setlists: [] })
+    localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
+    const before = new Map(Object.entries({ ...localStorage }))
+    const realSet = dom.window.Storage.prototype.setItem
+    let settingsWrites = 0
+    dom.window.Storage.prototype.setItem = function (k, v) {
+      if (bs.backupSettingsStorageKeys().includes(k) && ++settingsWrites === 3) throw new dom.window.DOMException('Storage full', 'QuotaExceededError')
+      return realSet.call(this, k, v)
+    }
+    try {
+      await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+        isOpen: true, onClose: () => assert.fail('closed'), allSongs: [current], setlists: [], onImportAllSongs: () => {},
+        onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }, localStorage, { force: true }), onSmartMerge: appMerge(),
+      })))
+      await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
+      if (mode === 'replace') await act(async () => button('Confirm Wipe & Replace').click())
+    } finally { dom.window.Storage.prototype.setItem = realSet }
+    const text = document.body.textContent
+    assert.match(text, /Library restored: 1 songs, 0 setlists \(verified after saving\), but settings were not restored: saving .* failed .*every setting was put back and verified\. This device's previous settings are unchanged\./)
+    assert.doesNotMatch(text, /Backup restored:/)
+    for (const key of bs.backupSettingsStorageKeys()) assert.equal(localStorage.getItem(key), before.get(key) ?? null, key)
+  }))
+}
+
+test('F2 dialog: unresolved partial settings state offers "Put back previous settings"', withJsdom(async ({ dom, root }) => {
+  fullSettingsStorage(localStorage)
+  const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
+  localStorage.clear()
+  persistLibrary({ songs: [current], setlists: [] })
+  localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
+  const proto = dom.window.Storage.prototype
+  const realSet = proto.setItem, realRemove = proto.removeItem
+  let broken = false, writes = 0
+  proto.setItem = function (k, v) {
+    if (bs.backupSettingsStorageKeys().includes(k)) { writes++; if (writes === 4) broken = true; if (broken) throw new Error('disk error') }
+    return realSet.call(this, k, v)
+  }
+  proto.removeItem = function (k) { if (broken && bs.backupSettingsStorageKeys().includes(k)) throw new Error('disk error'); return realRemove.call(this, k) }
+  try {
+    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+      isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {},
+      onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }, localStorage, { force: true }),
+    })))
+    await pick(dom, 'Full Restore (Wipe & Replace)', payload)
+    await act(async () => button('Confirm Wipe & Replace').click())
+    assert.match(document.body.textContent, /Partial restore: library saved, but settings restoration failed .*could not be put back.*kept in a verified snapshot/)
+    broken = false
+  } finally { proto.setItem = realSet; proto.removeItem = realRemove }
+  await act(async () => button('Put back previous settings').click())
+  assert.match(document.body.textContent, /Previous settings put back and verified/)
+  assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
+  for (const key of bs.backupSettingsStorageKeys().filter(k => k !== bs.SETTINGS_KEYS.themeMode)) assert.equal(localStorage.getItem(key), null, key)
+}))
+
+for (const [label, mutate] of [
+  ['key', lib => { lib.songs[0].key = 'D' }], ['tags', lib => { delete lib.songs[0].tags }], ['transpose', lib => { lib.songs[0].transposeOffset = 3 }],
+  ['setlist name', lib => { lib.setlists[0].name = 'X' }], ['membership', lib => { lib.setlists[0].songs = [] }], ['content', lib => { lib.songs[0].rawContent += '!' }],
+]) {
+  for (const mode of ['replace', 'merge']) {
+    test(`F1 dialog (${mode}): a handler that saves a different ${label} is never reported as verified`, withJsdom(async ({ dom, root }) => {
+      const song = { ...incoming, key: 'C', tags: 'worship', transposeOffset: 1 }
+      const payload = JSON.parse(jb.buildVerifiedBackup([song], [{ id: 'set', name: 'Set', songs: [{ id: song.id, title: song.title, artist: '' }] }]).json)
+      localStorage.clear()
+      persistLibrary({ songs: [current], setlists: [] })
+      localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
+      const faulty = (songs, setlists) => {
+        const lib = JSON.parse(JSON.stringify(mode === 'merge' ? { songs: [current, ...songs], setlists } : { songs, setlists }))
+        mutate({ songs: lib.songs.filter(s => s.id === song.id), setlists: lib.setlists })
+        persistLibrary(lib, localStorage, { force: true })
+      }
+      await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+        isOpen: true, onClose: () => assert.fail('closed'), allSongs: [current], setlists: [], onImportAllSongs: () => {}, onFullRestore: faulty, onSmartMerge: faulty,
+      })))
+      await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
+      if (mode === 'replace') await act(async () => button('Confirm Wipe & Replace').click())
+      assert.match(document.body.textContent, /Restore could not be verified: (song|setlist) /)
+      assert.doesNotMatch(document.body.textContent, /verified after saving|Backup restored:/)
+      assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black', 'settings untouched')
+      assert.equal(JSON.parse(localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.songs[0].id, 'cur', 'recovery state kept')
+    }))
+  }
+}
+
+test('F3: a prepared file is not reused after the library or settings change; reopening starts fresh', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  const files = []
+  const { env, calls } = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
+  env.makeFile = (json, name) => { files.push(json); return { name, size: json.length } }
+  const props = songs => ({ isOpen: true, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {}, exportEnv: env })
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props([current]))))
+  await act(async () => button('Export Backup').click())
+  await act(async () => button('Save backup file').click())
+  assert.ok(button('Open share sheet'))
+  // Library edited while the old file waits for a tap.
+  const edited = { ...current, rawContent: '[G]edited after prepare' }
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props([edited]))))
+  await act(async () => button('Open share sheet').click())
+  assert.equal(calls.share, 2)
+  const shared = files[files.length - 1]
+  assert.ok(shared.includes('edited after prepare'), 'the shared bytes are the current library')
+  const saved = status.readBackupStatus()
+  assert.equal(saved.fingerprint, jb.libraryFingerprint([edited], []))
+  assert.doesNotMatch(document.body.textContent, /newer edits are not in it/)
+  // Settings change alone also invalidates a prepared file.
+  calls.share = 0
+  const env2 = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
+  const files2 = []; env2.env.makeFile = (json, name) => { files2.push(json); return { name, size: json.length } }
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), exportEnv: env2.env })))
+  await act(async () => button('Save backup file').click())
+  localStorage.setItem('gtar_songbook_sort', 'artist')
+  await act(async () => button('Open share sheet').click())
+  assert.ok(files2[files2.length - 1].includes('"songbookSort": "artist"'))
+  // Closing and reopening drops a waiting file.
+  const env3 = fakeEnv({ shareError: named('NotAllowedError') })
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), exportEnv: env3.env })))
+  await act(async () => button('Save backup file').click())
+  assert.ok(button('Open share sheet'))
+  const edited2 = { ...edited, rawContent: '[G]second edit' }
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited2]), exportEnv: env3.env })))
+  await act(async () => button('Open share sheet').click())
+  assert.match(document.body.textContent, /changed after the earlier file was prepared, so a new backup was created and verified/)
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), isOpen: false })))
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), exportEnv: env3.env })))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  assert.ok(button('Save backup file'), 'a new opening does not offer the old prepared file')
+}))
+
+test('F4: declared counts or fingerprint that do not match the content are rejected; files without them still import', () => {
+  global.localStorage = new MemoryStorage()
+  const songs = [{ id: 'a', title: 'A', rawContent: 'x' }, { id: 'b', title: 'B', rawContent: 'y', isDeleted: true }]
+  const setlists = [{ id: 's', name: 'S', songs: [{ id: 'a', title: 'A' }] }]
+  const good = JSON.parse(jb.buildVerifiedBackup(songs, setlists).json)
+  assert.equal(jb.parseBackupJson(JSON.stringify(good)).isValid, true)
+  const cases = [
+    ['songCount', { ...good, songCount: 2 }, /songCount: file declares 2 but contains 1/],
+    ['trashCount', { ...good, trashCount: 0 }, /trashCount: file declares 0 but contains 1/],
+    ['setlistCount', { ...good, setlistCount: 999 }, /setlistCount: file declares 999 but contains 1/],
+    ['fingerprint', { ...good, contentFingerprint: 'c53:00000000000000' }, /contentFingerprint: songs or setlists do not match/],
+    ['fingerprint format', { ...good, contentFingerprint: 'sha1:abc' }, /contentFingerprint: invalid format/],
+    ['song edited, manifest kept', { ...good, songs: [{ ...good.songs[0], rawContent: 'edited' }, good.songs[1]] }, /contentFingerprint/],
+    ['song removed', { ...good, songs: [good.songs[0]] }, /trashCount: file declares 1 but contains 0/],
+    ['v1 with counts off', { ...good, schemaVersion: 1, settings: undefined, contentFingerprint: undefined, songCount: 5 }, /songCount: file declares 5/],
+    ['fingerprint in v1', { ...good, schemaVersion: 1, settings: undefined, contentFingerprint: good.contentFingerprint }, /only schema v2 backups carry a content fingerprint/],
+  ]
+  for (const [label, payload, pattern] of cases) {
+    const parsed = jb.parseBackupJson(JSON.stringify(payload))
+    assert.equal(parsed.isValid, false, label)
+    assert.match(parsed.error, pattern, label)
+    assert.deepEqual(parsed.songs, [], label)
+  }
+  // Legitimate older files: v1 with correct counts, and files with no manifest at all.
+  const v1 = { app: 'GTAR', schemaVersion: 1, exportType: 'FULL_BACKUP', songCount: 1, setlistCount: 1, trashCount: 1, songs, setlists }
+  assert.equal(jb.parseBackupJson(JSON.stringify(v1)).isValid, true)
+  assert.equal(jb.parseBackupJson(JSON.stringify({ songs, setlists })).isValid, true)
+  assert.equal(jb.parseBackupJson(JSON.stringify(songs)).isValid, true)
+})
+
+test('F4 dialog: a backup with an inconsistent manifest changes nothing', withJsdom(async ({ dom, root }) => {
+  global.localStorage = localStorage
+  const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
+  payload.songCount = 3
+  localStorage.clear()
+  persistLibrary({ songs: [current], setlists: [] })
+  localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
+  const before = JSON.stringify({ ...localStorage })
+  for (const label of ['Full Restore (Wipe & Replace)', 'Restore Backup (Smart Merge)']) {
+    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+      isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => assert.fail('import'),
+      onFullRestore: () => assert.fail('replaced'), onSmartMerge: () => assert.fail('merged'),
+    })))
+    await pick(dom, label, payload)
+    assert.match(document.body.textContent, /songCount: file declares 3 but contains 1/)
+    assert.equal(JSON.stringify({ ...localStorage }), before, `${label}: zero library/settings/snapshot change`)
+  }
+}))

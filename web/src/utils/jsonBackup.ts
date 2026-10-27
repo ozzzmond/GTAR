@@ -35,6 +35,8 @@ export interface FullBackupPayload {
   songCount: number
   setlistCount: number
   trashCount: number
+  /** #251 F4: fingerprint of songs + setlists; a v2 file whose content does not match is rejected. */
+  contentFingerprint: string
   settings: BackupSettingsV2
   songs: ActiveSongState[]
   setlists: WebSetlist[]
@@ -96,6 +98,7 @@ export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetli
     songCount: partition.active.length,
     setlistCount: exportedSetlists.length,
     trashCount: partition.deleted.length,
+    contentFingerprint: libraryFingerprint(normalized, exportedSetlists),
     settings: readBackupSettingsV2(),
     songs: normalized,
     setlists: exportedSetlists,
@@ -135,8 +138,13 @@ export interface VerifiedBackup {
   bytes: number
   counts: BackupCounts
   fingerprint: string
+  /** Identity of the settings in the file, to detect a stale prepared file (#251 F3). */
+  settingsFingerprint: string
   schemaVersion: number
 }
+
+export const settingsFingerprint = (settings: BackupSettingsV2) => `c53:${cyrb53(stableStringify(settings))}`
+const FINGERPRINT_PATTERN = /^c53:[0-9a-f]{14}$/
 
 /**
  * Re-reads exactly the bytes about to be handed out and checks they restore to the same library
@@ -162,7 +170,7 @@ export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetli
   const json = JSON.stringify(payload, null, 2)
   const counts = verifyBackupJson(json, payload)
   return { json, fileName: backupFileName(), bytes: new TextEncoder().encode(json).length, counts,
-    fingerprint: `c53:${cyrb53(JSON.stringify([payload.songs, payload.setlists]))}`, schemaVersion: payload.schemaVersion }
+    fingerprint: payload.contentFingerprint, settingsFingerprint: settingsFingerprint(payload.settings), schemaVersion: payload.schemaVersion }
 }
 
 /** Download-only export (menus). Verified before the download starts; records the backup status. */
@@ -235,7 +243,7 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
 }
 
 const LEGACY_SETTING_FIELDS = ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const
-const KNOWN_TOP_LEVEL = new Set(['app', 'schemaVersion', 'version', 'exportedAt', 'exportType', 'songCount', 'setlistCount', 'trashCount',
+const KNOWN_TOP_LEVEL = new Set(['app', 'schemaVersion', 'version', 'exportedAt', 'exportType', 'songCount', 'setlistCount', 'trashCount', 'contentFingerprint',
   'songs', 'setlists', 'allowedUsers', 'settings', 'metadata', 'setlist', ...LEGACY_SETTING_FIELDS])
 const KNOWN_SONG_FIELDS = new Set(['id', 'title', 'artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format',
   'transposeOffset', 'rawContent', 'content', 'tags', 'isFavorite', 'isDeleted', 'createdAt', 'lastOpenedAt', 'isMissing',
@@ -370,6 +378,22 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     // merging that backup into a matching library does not create ambiguity.
     const boundIncoming = bindLegacySetlists(setlists, songs)
     errors.push(...validateSetlistReferences(boundIncoming, combined))
+    // #251 F4: a declared manifest must describe the content. Counts exist only in exports made since
+    // 2026-09 (always these semantics); files without them (older, unversioned, hand-made) still import.
+    if (!single) {
+      const incoming = partitionSongs(songs)
+      const actual = { songCount: incoming.active.length, trashCount: incoming.deleted.length, setlistCount: setlists.length }
+      for (const field of ['songCount', 'trashCount', 'setlistCount'] as const) {
+        if (typeof data[field] === 'number' && data[field] !== actual[field]) {
+          errors.push(`${field}: file declares ${data[field]} but contains ${actual[field]} (damaged or edited backup)`)
+        }
+      }
+      if ('contentFingerprint' in data) {
+        if (!v2) errors.push('contentFingerprint: only schema v2 backups carry a content fingerprint')
+        else if (typeof data.contentFingerprint !== 'string' || !FINGERPRINT_PATTERN.test(data.contentFingerprint)) errors.push('contentFingerprint: invalid format')
+        else if (libraryFingerprint(songs, boundIncoming) !== data.contentFingerprint) errors.push('contentFingerprint: songs or setlists do not match the fingerprint (damaged or edited backup)')
+      }
+    }
     if (errors.length) return invalid(errors, single)
     const allowedUsers = Array.isArray(data.allowedUsers)
       ? data.allowedUsers.filter((u: unknown) => typeof u === 'string' && (u as string).trim().length > 0)
