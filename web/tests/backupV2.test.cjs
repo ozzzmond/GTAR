@@ -113,9 +113,9 @@ test('10,000 songs + 300 setlists + trash + every setting: export → verify →
   const result = bs.restoreBackupSettingsV2(parsed.settings, { appearance: true, preferences: true }, target)
   assert.deepEqual(new Set(result.written), new Set(Object.keys(raw)))
   for (const [k, v] of Object.entries(raw)) assert.equal(target.getItem(k), v, k)
-  // Plus the verified copy of the previous (absent) values of exactly those keys (#251 F2).
-  assert.equal(target.length, Object.keys(raw).length + 1)
-  assert.deepEqual(Object.keys(bs.readSettingsRestoreSnapshot(target).values).sort(), Object.keys(raw).sort())
+  // The previous-settings copy is retired after a verified success (#257).
+  assert.equal(target.length, Object.keys(raw).length)
+  assert.equal(target.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
   global.localStorage = new MemoryStorage()
 })
 
@@ -590,7 +590,7 @@ test('F2: when putting settings back also fails, the verified snapshot restores 
   assert.equal(snapshot.values[bs.SETTINGS_KEYS.customThemeColors], null)
   // Storage recovers; the snapshot puts everything back exactly.
   storage.armed = false
-  assert.deepEqual(bs.restorePreviousSettings(storage), [])
+  assert.deepEqual(bs.restorePreviousSettings(storage), { unresolved: [], cleared: true })
   const after = new Map(storage.map); after.delete(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
   assert.deepEqual([...after].sort(), [...before].sort())
 })
@@ -603,9 +603,11 @@ test('F2: if the previous-settings snapshot cannot be saved, no setting is writt
   assert.equal(storage.writes, 0)
   assert.deepEqual([...storage.map], [...before])
   // A snapshot never lists keys outside the backup allowlist (device/session state stays out).
-  const ok = new MemoryStorage(); deviceSettings(ok)
-  bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, ok)
-  assert.equal('gtar_auth_session' in bs.readSettingsRestoreSnapshot(ok).values, false)
+  const kept = new FailingWrites(3, { failPutBack: true }); deviceSettings(kept); kept.armed = true
+  assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, kept), error => error.state === 'partial')
+  const snap = bs.readSettingsRestoreSnapshot(kept)
+  assert.equal('gtar_auth_session' in snap.values, false)
+  assert.deepEqual(snap.keys, [...bs.backupSettingsStorageKeys()].sort())
 })
 
 for (const mode of ['replace', 'merge']) {
@@ -787,4 +789,193 @@ test('F4 dialog: a backup with an inconsistent manifest changes nothing', withJs
     assert.match(document.body.textContent, /songCount: file declares 3 but contains 1/)
     assert.equal(JSON.stringify({ ...localStorage }), before, `${label}: zero library/settings/snapshot change`)
   }
+}))
+
+// #257 round 2: snapshot integrity, durable recovery UI, reactive changed-since-backup warning.
+function pendingSnapshotStorage() {
+  const storage = new FailingWrites(4, { failPutBack: true })
+  deviceSettings(storage)
+  storage.armed = true
+  assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'partial')
+  storage.armed = false
+  return storage
+}
+
+test('R1: truncated, emptied, edited or inconsistent snapshots are rejected before any settings change', () => {
+  const good = JSON.parse(pendingSnapshotStorage().getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY))
+  const raw = JSON.stringify(good)
+  const variants = {
+    truncated: raw.slice(0, raw.length - 40),
+    empty: '',
+    'empty object': '{}',
+    'empty values': JSON.stringify({ ...good, values: {} }),
+    'empty inventory': JSON.stringify({ ...good, keys: [], values: {} }),
+    'value missing': JSON.stringify({ ...good, values: Object.fromEntries(Object.entries(good.values).slice(1)) }),
+    'inventory shortened with matching values': JSON.stringify({ ...good, keys: good.keys.slice(1), values: Object.fromEntries(Object.entries(good.values).slice(1)) }),
+    'value edited': JSON.stringify({ ...good, values: { ...good.values, [bs.SETTINGS_KEYS.themeMode]: 'paper-light' } }),
+    'foreign key': JSON.stringify({ ...good, keys: [...good.keys, 'gtar_auth_session'].sort(), values: { ...good.values, gtar_auth_session: 'x' } }),
+    'old v1 format': JSON.stringify({ v: 1, at: good.at, values: good.values }),
+    'wrong value type': JSON.stringify({ ...good, values: { ...good.values, [good.keys[0]]: 7 } }),
+  }
+  for (const [label, text] of Object.entries(variants)) {
+    const storage = new MemoryStorage()
+    deviceSettings(storage)
+    storage.setItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY, text)
+    const before = [...storage.map]
+    const recovery = bs.inspectSettingsRecovery(storage)
+    assert.equal(recovery.state, 'invalid', label)
+    assert.equal(bs.readSettingsRestoreSnapshot(storage), null, label)
+    assert.throws(() => bs.restorePreviousSettings(storage), /not usable/, label)
+    assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked', label)
+    assert.deepEqual([...storage.map], before, `${label}: nothing changed`)
+  }
+})
+
+test('R1: an unfinished snapshot is never overwritten; retries keep the original values until a verified put-back', () => {
+  const storage = pendingSnapshotStorage()
+  const original = storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+  const theme = bs.readSettingsRestoreSnapshot(storage).values[bs.SETTINGS_KEYS.themeMode]
+  assert.equal(theme, 'oled-black')
+  for (let i = 0; i < 3; i++) {
+    assert.throws(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), e => e.state === 'blocked' && /did not finish/.test(e.message))
+    assert.equal(storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), original, `retry ${i}: snapshot unchanged`)
+  }
+  // A put-back that fails part-way leaves the snapshot byte-identical for the next attempt.
+  class FlakyPutBack extends MemoryStorage { constructor(map) { super(); this.map = map; this.fail = true }
+    setItem(k, v) { if (this.fail && k === bs.SETTINGS_KEYS.themeMode) throw new Error('disk'); super.setItem(k, v) } }
+  const flaky = new FlakyPutBack(storage.map)
+  const first = bs.restorePreviousSettings(flaky)
+  assert.deepEqual(first, { unresolved: [bs.SETTINGS_KEYS.themeMode], cleared: false })
+  assert.equal(flaky.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), original)
+  flaky.fail = false
+  assert.deepEqual(bs.restorePreviousSettings(flaky), { unresolved: [], cleared: true })
+  assert.equal(flaky.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
+  assert.equal(flaky.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
+  // Now a new restore may start, and finishes clean.
+  bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, flaky)
+  assert.equal(flaky.getItem(bs.SETTINGS_KEYS.themeMode), 'azure-stage')
+  assert.equal(bs.inspectSettingsRecovery(flaky).state, 'none')
+})
+
+test('R1: a crash after the snapshot (process killed mid-restore) is detected as unfinished', () => {
+  const storage = new MemoryStorage(); deviceSettings(storage)
+  const previous = Object.fromEntries(bs.backupSettingsStorageKeys().map(k => [k, storage.getItem(k)]))
+  storage.setItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY, JSON.stringify(bs.makeSettingsRestoreSnapshot(previous)))
+  storage.setItem(bs.SETTINGS_KEYS.themeMode, 'azure-stage') // first write landed, then the tab died
+  assert.equal(bs.inspectSettingsRecovery(storage).state, 'pending')
+  assert.deepEqual(bs.restorePreviousSettings(storage), { unresolved: [], cleared: true })
+  assert.equal(storage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
+})
+
+test('R2 dialog: unfinished settings restore is shown on mount and put back without another import', withJsdom(async ({ root }) => {
+  const source = pendingSnapshotStorage()
+  for (const [k, v] of source.map) localStorage.setItem(k, v)
+  const changedTheme = localStorage.getItem(bs.SETTINGS_KEYS.themeMode)
+  assert.notEqual(changedTheme, 'oled-black')
+  const render = open => act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    isOpen: open, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {},
+  })))
+  await render(true)
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  assert.match(document.querySelector('[data-testid="settings-recovery"]').textContent, /An earlier settings restore did not finish/)
+  // Survives close/reopen (remount of the content).
+  await render(false); await render(true)
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  await act(async () => button('Put back previous settings').click())
+  assert.match(document.body.textContent, /Previous settings put back and verified/)
+  assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
+  assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
+  assert.equal(document.querySelector('[data-testid="settings-recovery"]'), null)
+  assert.equal(localStorage.getItem('gtar_auth_session'), 'SECRET-auth-token')
+}))
+
+test('R2 dialog: damaged recovery data stays unresolved until explicitly discarded; never applied', withJsdom(async ({ root }) => {
+  deviceSettings(localStorage)
+  localStorage.setItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY, '{"v":2,"at":"2026-10-27T00:00:00Z","keys":["gtar_theme_store"],"values":{}')
+  const before = JSON.stringify({ ...localStorage })
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { isOpen: true, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  const banner = () => document.querySelector('[data-testid="settings-recovery"]')
+  assert.match(banner().textContent, /cannot be used: not valid JSON/)
+  assert.equal(button('Put back previous settings'), undefined, 'no false recovery action')
+  assert.equal(JSON.stringify({ ...localStorage }), before)
+  await act(async () => button('Discard damaged recovery data').click())
+  assert.equal(JSON.stringify({ ...localStorage }), before, 'first click only asks for confirmation')
+  await act(async () => button('Confirm discard').click())
+  assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
+  assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black', 'no setting changed')
+  assert.equal(banner(), null)
+}))
+
+test('R2 dialog: a restore with settings ticked is refused while recovery is unfinished; library-only restore still works', withJsdom(async ({ dom, root }) => {
+  const source = pendingSnapshotStorage()
+  for (const [k, v] of source.map) localStorage.setItem(k, v)
+  const snapshot = localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
+  persistLibrary({ songs: [current], setlists: [] })
+  const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
+  let calls = 0
+  const save = (songs, setlists) => { calls++; persistLibrary({ songs, setlists }, localStorage, { force: true }) }
+  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, onFullRestore: save, onSmartMerge: appMerge(),
+  })))
+  await pick(dom, 'Full Restore (Wipe & Replace)', payload)
+  await act(async () => button('Confirm Wipe & Replace').click())
+  assert.match(document.body.textContent, /Restore not started: an earlier settings restore did not finish/)
+  assert.equal(calls, 0)
+  assert.equal(readPersistedLibrary().songs[0].id, 'cur')
+  assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot)
+  await act(async () => checkbox('Appearance').click())
+  await pick(dom, 'Full Restore (Wipe & Replace)', payload)
+  await act(async () => button('Confirm Wipe & Replace').click())
+  assert.match(document.body.textContent, /Backup restored: 1 songs/)
+  assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot, 'unfinished recovery evidence untouched')
+}))
+
+test('R3: changed-since-backup follows later library edits, edits during share, settings-only changes and remounts', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  let releaseShare
+  const env = {
+    makeFile: (json, name) => ({ name, size: json.length }), download: () => {},
+    navigator: { canShare: () => true, share: () => new Promise(resolve => { releaseShare = resolve }) },
+  }
+  const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
+  const show = (songs, open = true) => act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    isOpen: open, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {}, exportEnv: env,
+  })))
+  const settle = () => act(async () => new Promise(r => setTimeout(r, 5)))
+  const lib1 = [current]
+  await show(lib1); await act(async () => button('Export Backup').click())
+  // Edit during share: the share sheet is open while the library changes.
+  let sharing
+  await act(async () => { sharing = button('Save backup file').click() })
+  const lib2 = [{ ...current, rawContent: '[G]edited while sharing' }]
+  await show(lib2); await settle()
+  await act(async () => { releaseShare(); await sharing; await new Promise(r => setTimeout(r, 0)) })
+  await settle()
+  assert.match(statusText(), /Last backup: .*sent to the share sheet/)
+  assert.match(statusText(), /Your library changed after this backup/)
+  // Back to the exported content: no warning, and nothing claims the file was saved off-device.
+  await show(lib1); await settle()
+  assert.doesNotMatch(statusText(), /changed after this backup/)
+  assert.match(statusText(), /Nothing changed since this file was made \(GTAR still cannot confirm it was saved\)/)
+  // Edit after export, without reopening.
+  const lib3 = [{ ...current, title: 'Renamed later' }]
+  await show(lib3); await settle()
+  assert.match(statusText(), /Your library changed after this backup/)
+  // Settings-only change (another tab or a restore in this one signals it).
+  await show(lib1); await settle()
+  localStorage.setItem('gtar_songbook_sort', 'artist')
+  await act(async () => { window.dispatchEvent(new window.Event(bs.SETTINGS_CHANGED)) })
+  await settle()
+  assert.match(statusText(), /Your settings changed after this backup/)
+  assert.doesNotMatch(statusText(), /Your library changed/)
+  // Remount: computed again from storage.
+  await show(lib1, false); await show(lib1); await settle()
+  assert.match(statusText(), /Your settings changed after this backup/)
+  // A status without settings identity (older format) never claims "nothing changed".
+  const saved = status.readBackupStatus(); delete saved.settingsFingerprint
+  localStorage.setItem(status.BACKUP_STATUS_KEY, JSON.stringify(saved))
+  localStorage.removeItem('gtar_songbook_sort')
+  await show(lib1, false); await show(lib1); await settle()
+  assert.doesNotMatch(statusText(), /Nothing changed since/)
 }))

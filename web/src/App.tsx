@@ -393,6 +393,9 @@ function LibraryApp() {
     getConflictDraft, handleStorageWriteFailure,
   } = useLibraryPersistence({ songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef })
 
+  // #257 F3: a stable array, so the backup dialog re-checks "changed since backup" only when the library really changes.
+  const backupDialogSongs = useMemo(() => [...songs, ...deletedSongs], [songs, deletedSongs])
+
   // #251: one non-blocking backup reminder per app start (no upload; the user saves the file).
   const backupReminderLibraryRef = useRef({ songs, deletedSongs, setlists })
   useEffect(() => { backupReminderLibraryRef.current = { songs, deletedSongs, setlists } }, [songs, deletedSongs, setlists])
@@ -1876,7 +1879,7 @@ function LibraryApp() {
         isOpen={isBackupRestoreModalOpen}
         onClose={() => setIsBackupRestoreModalOpen(false)}
         currentSong={currentSong}
-        allSongs={[...songs, ...deletedSongs]}
+        allSongs={backupDialogSongs}
         setlists={setlists}
         onImportAllSongs={handleImportAllSongs}
         onFullRestore={handleFullRestore}

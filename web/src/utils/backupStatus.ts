@@ -22,6 +22,8 @@ export interface BackupStatus {
   trash: number
   setlists: number
   fingerprint: string
+  /** Settings in the file (#257 F3); absent on statuses written before it existed. */
+  settingsFingerprint?: string
 }
 export interface BackupReminderSettings { enabled: boolean; intervalDays: number }
 export const BACKUP_REMINDER_INTERVALS = [7, 14, 30] as const
@@ -39,17 +41,19 @@ export function readBackupStatus(storage: Pick<Storage, 'getItem'> | null = defa
     if (!value || value.v !== 1 || typeof value.at !== 'string' || !Number.isFinite(Date.parse(value.at)) ||
       !['share', 'download', 'copy'].includes(String(value.delivery)) || typeof value.fingerprint !== 'string') return null
     for (const field of ['schemaVersion', 'bytes', 'songs', 'trash', 'setlists'] as const) if (!Number.isSafeInteger(value[field])) return null
+    if (value.settingsFingerprint !== undefined && typeof value.settingsFingerprint !== 'string') return null
     return value as BackupStatus
   } catch { return null }
 }
 
 /** Best effort: a status write failure never affects the backup itself. */
 export function recordBackupStatus(
-  backup: { bytes: number; counts: { songs: number; trash: number; setlists: number }; fingerprint: string; schemaVersion: number },
+  backup: { bytes: number; counts: { songs: number; trash: number; setlists: number }; fingerprint: string; settingsFingerprint?: string; schemaVersion: number },
   delivery: BackupDelivery, storage: Store | null = defaultStore(), now = new Date(),
 ): BackupStatus | null {
   const status: BackupStatus = { v: 1, at: now.toISOString(), delivery, schemaVersion: backup.schemaVersion, bytes: backup.bytes,
-    songs: backup.counts.songs, trash: backup.counts.trash, setlists: backup.counts.setlists, fingerprint: backup.fingerprint }
+    songs: backup.counts.songs, trash: backup.counts.trash, setlists: backup.counts.setlists, fingerprint: backup.fingerprint,
+    ...(backup.settingsFingerprint ? { settingsFingerprint: backup.settingsFingerprint } : {}) }
   try { storage?.setItem(BACKUP_STATUS_KEY, JSON.stringify(status)); return status } catch { return null }
 }
 

@@ -14,8 +14,8 @@ import {
   type VerifiedBackup,
 } from '../utils/jsonBackup'
 import {
-  DEFAULT_SETTINGS_RESTORE_CHOICE, isSettingsRestoreError, readBackupSettingsV2, restoreBackupSettingsV2, restorePreviousSettings,
-  type SettingsRestoreChoice,
+  DEFAULT_SETTINGS_RESTORE_CHOICE, SETTINGS_CHANGED, discardSettingsRecovery, inspectSettingsRecovery, isSettingsRestoreError,
+  readBackupSettingsV2, restoreBackupSettingsV2, restorePreviousSettings, type SettingsRecoveryState, type SettingsRestoreChoice,
 } from '../utils/backupSettings'
 import { isQuotaError } from '../utils/syncJournal'
 import {
@@ -73,29 +73,64 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
   const [preparedBackup, setPreparedBackup] = useState<VerifiedBackup | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
-  const [changedSinceBackup, setChangedSinceBackup] = useState<boolean | null>(null)
+  // #257 F3: what changed after the last backup, per part (null = unknown).
+  const [changedSinceBackup, setChangedSinceBackup] = useState<{ library: boolean | null; settings: boolean | null }>({ library: null, settings: null })
   const [reminder, setReminder] = useState<BackupReminderSettings>(() => readBackupReminder())
-  const [settingsSnapshotPending, setSettingsSnapshotPending] = useState(false)
-  // Latest library for work done after render (App passes a new array on every render).
+  // #257 F2: unfinished settings restore found on this device (survives remounts and reloads).
+  const [settingsRecovery, setSettingsRecovery] = useState<SettingsRecoveryState>({ state: 'none' })
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // Re-check trigger for settings changes (restore in this tab, or another tab via `storage`).
+  const [settingsTick, setSettingsTick] = useState(0)
+  // Latest library for work done after render.
   const libraryRef = useRef({ songs: allSongs, setlists })
   useEffect(() => { libraryRef.current = { songs: allSongs, setlists } }, [allSongs, setlists])
   const currentFingerprint = () => {
     try { return libraryFingerprint(libraryRef.current.songs, libraryRef.current.setlists) } catch { return null }
   }
+  const currentSettingsFingerprint = () => {
+    try { return settingsFingerprint(readBackupSettingsV2(targetStorage)) } catch { return null }
+  }
+  const compareWithBackup = (status: BackupStatus | null) => {
+    if (!status) return { library: null, settings: null }
+    const library = currentFingerprint(), settings = currentSettingsFingerprint()
+    return {
+      library: library === null ? null : library !== status.fingerprint,
+      settings: settings === null || !status.settingsFingerprint ? null : settings !== status.settingsFingerprint,
+    }
+  }
+  const refreshSettingsRecovery = () => {
+    setSettingsRecovery(inspectSettingsRecovery(targetStorage))
+    setConfirmDiscard(false)
+  }
+  // Effects below read the latest helpers through this ref (they close over current props).
+  const helpersRef = useRef({ compareWithBackup, refreshSettingsRecovery })
+  useEffect(() => { helpersRef.current = { compareWithBackup, refreshSettingsRecovery } })
 
   useEffect(() => {
     if (!isOpen) return
-    // Each opening starts a new export session: a file prepared earlier is dropped (#257 review), and
-    // the status and the whole library are read once, after the dialog has rendered.
+    // Each opening starts a new export session: a file prepared earlier is dropped (#257 review).
     const timer = setTimeout(() => {
       setPreparedBackup(null)
+      helpersRef.current.refreshSettingsRecovery()
+    }, 0)
+    const bump = () => setSettingsTick(tick => tick + 1)
+    window.addEventListener(SETTINGS_CHANGED, bump)
+    window.addEventListener('storage', bump)
+    return () => { clearTimeout(timer); window.removeEventListener(SETTINGS_CHANGED, bump); window.removeEventListener('storage', bump) }
+  }, [isOpen])
+
+  // #257 F3: re-compared on opening, whenever the library changes (App passes a memoized array, so this
+  // does not run on unrelated renders) and whenever settings change; once per change, after render.
+  useEffect(() => {
+    if (!isOpen) return
+    const timer = setTimeout(() => {
       const status = readBackupStatus()
       setBackupStatus(status)
-      const current = status ? currentFingerprint() : null
-      setChangedSinceBackup(status && current !== null ? current !== status.fingerprint : null)
+      setChangedSinceBackup(helpersRef.current.compareWithBackup(status))
+      helpersRef.current.refreshSettingsRecovery()
     }, 0)
     return () => clearTimeout(timer)
-  }, [isOpen])
+  }, [isOpen, allSongs, setlists, settingsTick])
   const [pendingRestore, setPendingRestore] = useState<{
     rawText: string
     parsed: ParsedBackupResult
@@ -136,10 +171,10 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     setPreparedBackup(null)
     if (outcome.kind === 'share-cancelled') { showFeedback('info', 'Share cancelled. No backup was saved.'); return }
     if (outcome.kind === 'failed') { showFeedback('error', `Backup not exported: ${outcome.message}`); return }
-    setBackupStatus(readBackupStatus())
-    // The status describes the file just handed out; compare it with the library as it is now.
-    const current = currentFingerprint()
-    setChangedSinceBackup(current === null ? null : current !== backup.fingerprint)
+    // The status describes the file just handed out; compare it with the library and settings as they are now.
+    const status = readBackupStatus()
+    setBackupStatus(status)
+    setChangedSinceBackup(compareWithBackup(status))
     const verified = `Backup file verified (${countsText(backup.counts)}, ${mb(backup.bytes)})`
     if (outcome.kind === 'shared') showFeedback('info', `${verified} and sent to the share sheet. GTAR cannot see where it was saved; check that it is in Files, iCloud Drive or your cloud drive.`)
     else if (outcome.kind === 'copied') showFeedback('info', `${verified} and copied to the clipboard. Paste it somewhere safe; GTAR cannot see where it went.`)
@@ -187,12 +222,45 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
     reportExport(backup, await copyBackup(backup, exportEnv))
   }
 
+  const handlePutBackSettings = () => {
+    try {
+      const result = restorePreviousSettings(targetStorage)
+      refreshSettingsRecovery()
+      if (result.unresolved.length) showFeedback('error', `These settings could not be put back: ${result.unresolved.join(', ')}. The saved previous settings are kept; try again after reloading.`)
+      else if (!result.cleared) showFeedback('error', 'Previous settings were put back and verified, but the recovery copy could not be removed. It is kept; you can put back again safely.')
+      else showFeedback('info', 'Previous settings put back and verified.')
+    } catch (error) {
+      refreshSettingsRecovery()
+      showFeedback('error', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const handleDownloadSettingsRecovery = () => {
+    if (settingsRecovery.state !== 'invalid') return
+    exportRecoveryData({ settingsRestoreSnapshot: settingsRecovery.raw, reason: settingsRecovery.reason })
+  }
+
+  const handleDiscardSettingsRecovery = () => {
+    if (settingsRecovery.state !== 'invalid') return
+    const removed = discardSettingsRecovery(settingsRecovery.raw, targetStorage)
+    refreshSettingsRecovery()
+    showFeedback(removed ? 'info' : 'error', removed ? 'Damaged settings recovery data discarded. No setting was changed.' : 'Recovery data changed or could not be removed; it is kept.')
+  }
+
   const updateReminder = (next: BackupReminderSettings) => {
     setReminder(next)
     saveBackupReminder(next)
   }
 
   const executeRestore = async (parsed: ParsedBackupResult, isDestructive: boolean) => {
+    // #257 F1: a new settings restore would replace the only copy of an unfinished one's original values.
+    const recovery = inspectSettingsRecovery(targetStorage)
+    if (recovery.state !== 'none' && (restoreChoice.appearance || restoreChoice.preferences)) {
+      setPendingRestore(null)
+      setSettingsRecovery(recovery)
+      showFeedback('error', 'Restore not started: an earlier settings restore did not finish. Put back the previous settings first (see above), or untick Appearance and Preferences to restore only the library. Nothing was changed.')
+      return
+    }
     setIsRestoring(true)
     try {
       const replace = isDestructive && !parsed.isSingleSetlist
@@ -253,10 +321,10 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
         const msg = err instanceof Error ? err.message : String(err)
         setPendingRestore(null)
         const library = `Library restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists (verified after saving)`
+        refreshSettingsRecovery()
         if (isSettingsRestoreError(err) && err.state !== 'partial') {
           showFeedback('error', `${library}, but settings were not restored: ${msg}. This device's previous settings are unchanged.`)
         } else {
-          setSettingsSnapshotPending(isSettingsRestoreError(err))
           showFeedback('error', `Partial restore: library saved, but settings restoration failed (${msg}). Some settings may have been applied. ${isSettingsRestoreError(err) ? 'The previous settings are kept in a verified snapshot; use "Put back previous settings" before retrying.' : 'Reload to inspect the saved state before retrying.'} Recovery data retained.`)
         }
         return
@@ -419,24 +487,41 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                 <AlertCircle className="w-4 h-4 shrink-0" />
               )}
               <span className="whitespace-pre-wrap">{feedback.message}</span>
-              {settingsSnapshotPending && feedback.type === 'error' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const unresolved = restorePreviousSettings(targetStorage)
-                      setSettingsSnapshotPending(unresolved.length > 0)
-                      showFeedback(unresolved.length ? 'error' : 'info', unresolved.length
-                        ? `These settings could not be put back: ${unresolved.join(', ')}. Reload and try again.`
-                        : 'Previous settings put back and verified.')
-                    } catch (error) {
-                      showFeedback('error', error instanceof Error ? error.message : String(error))
-                    }
-                  }}
-                  className="shrink-0 px-2 py-1 rounded-lg border border-current text-[11px] font-bold cursor-pointer"
-                >
-                  Put back previous settings
-                </button>
+
+            </div>
+          )}
+
+          {settingsRecovery.state !== 'none' && (
+            <div role="alert" data-testid="settings-recovery" className="p-3 rounded-xl border border-[#DC6E67]/40 bg-[#DC6E67]/10 text-xs space-y-2">
+              {settingsRecovery.state === 'pending' ? (
+                <>
+                  <p className="font-semibold text-app-heading">
+                    An earlier settings restore did not finish. This device&apos;s previous settings ({settingsRecovery.snapshot.keys.length}) are saved from {new Date(settingsRecovery.snapshot.at).toLocaleString()}.
+                  </p>
+                  <button type="button" onClick={handlePutBackSettings} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
+                    Put back previous settings
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-app-heading">
+                    Previous-settings recovery data on this device cannot be used: {settingsRecovery.reason}. It was not applied and is kept until you decide.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={handleDownloadSettingsRecovery} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
+                      Download recovery data
+                    </button>
+                    {confirmDiscard ? (
+                      <button type="button" onClick={handleDiscardSettingsRecovery} className="px-2 py-1 rounded-lg border border-current font-bold cursor-pointer">
+                        Confirm discard
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => setConfirmDiscard(true)} className="px-2 py-1 rounded-lg border border-current cursor-pointer">
+                        Discard damaged recovery data
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -617,7 +702,9 @@ export const BackupRestoreDialogModal: React.FC<BackupRestoreDialogModalProps> =
                       {backupStatus
                         ? `Last backup: ${new Date(backupStatus.at).toLocaleString()} (${countsText(backupStatus)}), ${DELIVERY_LABEL[backupStatus.delivery]}. GTAR cannot confirm where the file was saved.`
                         : 'No backup made from this device yet.'}
-                      {backupStatus && changedSinceBackup ? ' Your library changed after this backup; the newer edits are not in it.' : ''}
+                      {backupStatus && changedSinceBackup.library ? ' Your library changed after this backup; the newer edits are not in it.' : ''}
+                      {backupStatus && changedSinceBackup.settings ? ' Your settings changed after this backup; the newer settings are not in it.' : ''}
+                      {backupStatus && changedSinceBackup.library === false && changedSinceBackup.settings === false ? ' Nothing changed since this file was made (GTAR still cannot confirm it was saved).' : ''}
                     </p>
                     <label className="flex items-center gap-2">
                       <input type="checkbox" checked={reminder.enabled} onChange={e => updateReminder({ ...reminder, enabled: e.target.checked })} />
