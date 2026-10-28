@@ -431,6 +431,7 @@ export interface LinkingTransactionAuthority {
   readonly generation: string | null
   readonly key: string
   readonly expectedRaw: string
+  readonly ownerAtStart: string | null
   readonly createdAt: number
 }
 
@@ -440,9 +441,9 @@ export function beginLinkingTransaction(
   storage: Storage,
   userId: string
 ): { key: string; raw: string } {
-  const sessionUser = readSessionUserId(storage)
-  if (!sessionUser || !sameUser(sessionUser, userId)) {
-    throw new LibraryOwnershipError('unbound', 'Authenticated session required for linking')
+  const currentUserId = readSessionUserId(storage)
+  if (currentUserId && !sameUser(currentUserId, userId)) {
+    throw new LibraryOwnershipError('unbound', 'Authenticated session mismatch for linking')
   }
   const token = readSessionToken(storage)
   const generation = readSessionGeneration(storage)
@@ -453,11 +454,12 @@ export function beginLinkingTransaction(
 
   const authority: LinkingTransactionAuthority = {
     id: generateUUID(),
-    userId: sessionUser.trim(),
+    userId: userId.trim(),
     token,
     generation,
     key,
     expectedRaw: raw,
+    ownerAtStart: storage.getItem('gtar_library_owner_v1'),
     createdAt: Date.now(),
   }
 
@@ -467,13 +469,6 @@ export function beginLinkingTransaction(
 
 export function clearLinkingTransaction(storage: Storage): void {
   activeLinkingTransactions.delete(storage)
-}
-
-export async function discardLinkingSnapshot(key: string, raw: string, storage: Storage): Promise<void> {
-  if (storage.getItem(key) !== null) storage.removeItem(key)
-  if (usesIdbArchives(storage)) {
-    try { await removeRecoveryArchive(key, raw) } catch { /* ignore */ }
-  }
 }
 
 // Deprecated escape hatch rejected: arbitrary caller-controlled key/payload is forbidden
@@ -494,32 +489,31 @@ export function clearLinkingSnapshotAuthorization(storage: Storage): void {
 }
 
 function assertRecoveryMutationAllowed(key: string, raw: string, storage: Storage): void {
-  const isReadOnly = isUnboundDeviceLibraryReadOnly(storage)
-  const isUnboundPopulated = !readStoredOwner(storage) && hasPersistedContent(storage)
-  if (isReadOnly || isUnboundPopulated) {
-    if (readRecoveryArchive(key, storage) !== null) {
-      throw new LibraryOwnershipError(
-        'unbound',
-        'Cannot overwrite recovery archives for an unlinked songbook.'
-      )
-    }
-    const auth = activeLinkingTransactions.get(storage)
+  const isPopulated = hasPersistedContent(storage)
+  const auth = activeLinkingTransactions.get(storage)
+  const isLinkingKey = key.startsWith('gtar_sync_recovery:owner-confirm:')
+
+  if (auth || isLinkingKey) {
     if (!auth) {
+      if (storage.getItem('gtar_library_owner_v1') !== null) {
+        throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
+      }
       throw new LibraryOwnershipError(
         'unbound',
-        'Cannot create recovery snapshots for an unlinked songbook.'
+        'Cannot create recovery snapshots for an unlinked songbook without a verified transaction.'
       )
     }
     const currentUserId = readSessionUserId(storage)
     const currentToken = readSessionToken(storage)
-    const currentGen = readSessionGeneration(storage)
-    if (!currentUserId || !sameUser(currentUserId, auth.userId)) {
+    if (auth.ownerAtStart !== storage.getItem('gtar_library_owner_v1')) {
       activeLinkingTransactions.delete(storage)
-      throw new StaleSyncRoundError('signed-out', 0)
+      throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
     }
-    if (currentGen !== auth.generation || currentToken !== auth.token) {
-      activeLinkingTransactions.delete(storage)
-      throw new StaleSyncRoundError('session-changed', 0)
+    if (isPopulated && (auth.generation !== null || auth.token !== null || currentUserId !== null)) {
+      if (!currentUserId || !sameUser(currentUserId, auth.userId) || (auth.token !== null && currentToken !== auth.token)) {
+        activeLinkingTransactions.delete(storage)
+        throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.')
+      }
     }
     if (auth.key !== key || auth.expectedRaw !== raw) {
       activeLinkingTransactions.delete(storage)
@@ -528,9 +522,21 @@ function assertRecoveryMutationAllowed(key: string, raw: string, storage: Storag
         'Unauthorized recovery snapshot target or payload.'
       )
     }
-    // One-use lifetime: consume the transaction authority
     activeLinkingTransactions.delete(storage)
     return
+  }
+
+  if (isUnboundDeviceLibraryReadOnly(storage)) {
+    if (readRecoveryArchive(key, storage) !== null) {
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Cannot overwrite recovery archives for an unlinked songbook.'
+      )
+    }
+    throw new LibraryOwnershipError(
+      'unbound',
+      'Cannot create recovery snapshots for an unlinked songbook.'
+    )
   }
 }
 

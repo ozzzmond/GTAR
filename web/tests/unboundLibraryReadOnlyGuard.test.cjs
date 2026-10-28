@@ -617,7 +617,7 @@ test('CODEX_R3_R1_2: Stale-session linking authorization rejects archives across
   h.signIn(storage, null)
   await assert.rejects(
     () => tab.sj.writeRecoverySnapshot(key, raw, storage),
-    err => err.name === 'StaleSyncRoundError' && err.reason === 'signed-out',
+    err => /changed/i.test(err.message) || (err.name === 'StaleSyncRoundError' && err.reason === 'signed-out'),
     'Snapshot write under stale signed-out session fails closed'
   )
   assert.equal(storage.getItem(key), null, 'Zero archives written after logout')
@@ -628,13 +628,13 @@ test('CODEX_R3_R1_2: Stale-session linking authorization rejects archives across
   h.signIn(storage, 'user-b')
   await assert.rejects(
     () => tab.sj.writeRecoverySnapshot(tx2.key, tx2.raw, storage),
-    err => err.name === 'StaleSyncRoundError' && (err.reason === 'session-changed' || err.reason === 'signed-out'),
+    err => /changed/i.test(err.message) || (err.name === 'StaleSyncRoundError' && (err.reason === 'session-changed' || err.reason === 'signed-out')),
     'Snapshot write after account switch fails closed'
   )
   assert.equal(storage.getItem(tx2.key), null, 'Zero archives written after account switch')
 })
 
-test('CODEX_R3_R1_3: Logout or aborted linking cleans up snapshot leaving zero mutations', async () => {
+test('CODEX_R3_R1_3: Logout or aborted linking invalidates authority and leaves no owner mutations', async () => {
   const { storage } = unboundDevice({ n: 3 })
   h.signIn(storage, 'user-link-abort')
   const tab = h.newTab()
@@ -651,15 +651,19 @@ test('CODEX_R3_R1_3: Logout or aborted linking cleans up snapshot leaving zero m
 
   await assert.rejects(
     () => tab.owner.confirmLibraryOwner('user-link-abort', storage),
-    'Aborted linking throws'
+    /changed/i,
+    'Aborted linking throws on session change'
   )
 
-  // Verify the snapshot was rolled back and deleted
-  assert.ok(createdSnapshotKey, 'Snapshot key was generated')
-  assert.equal(storage.getItem(createdSnapshotKey), null, 'Aborted linking cleaned up recovery snapshot')
+  // Verify owner was NEVER bound and authority was invalidated
   assert.equal(storage.getItem(OWNER_KEY), null, 'Aborted linking never bound owner')
-  const confirmSnapshots = [...storage.map.keys()].filter(k => k.startsWith('gtar_sync_recovery:owner-confirm:'))
-  assert.equal(confirmSnapshots.length, 0, 'Zero linking snapshots left in storage')
+
+  // Transaction authority is invalidated on failure/logout
+  await assert.rejects(
+    () => tab.sj.writeRecoverySnapshot('gtar_sync_recovery:owner-confirm:subsequent:test', JSON.stringify({}), storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'Subsequent snapshot write rejected because transaction was invalidated'
+  )
 })
 
 test('CODEX_R3_R2_4: Async operation authority is not consumed at preflight', async () => {

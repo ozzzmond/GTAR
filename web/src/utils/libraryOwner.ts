@@ -11,7 +11,7 @@
  * Ownership is never inferred from last-synced metadata.
  */
 import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot,
-  clearOnboardingCreator, beginLinkingTransaction, clearLinkingTransaction, discardLinkingSnapshot } from './syncJournal'
+  clearOnboardingCreator, beginLinkingTransaction, clearLinkingTransaction } from './syncJournal'
 import { b2Identity, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
 
 export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
@@ -160,10 +160,8 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
     const ownerAtStart = storage.getItem(LIBRARY_OWNER_KEY)
     const revisionAtStart = libraryRevision(storage)
     const { key, raw } = beginLinkingTransaction(storage, userId)
-    let snapshotWritten = false
     try {
       await writeRecoverySnapshot(key, raw, storage)
-      snapshotWritten = true
       // Owner record and sign-in first (#258: once another owner is saved, this account may not read the library).
       const session = storedSession(storage)
       const changed = () => { throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.') }
@@ -178,9 +176,6 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
       writeOwner(userId, 'confirmed', storage)
     } catch (err) {
       clearLinkingTransaction(storage)
-      if (snapshotWritten) {
-        await discardLinkingSnapshot(key, raw, storage)
-      }
       throw err
     }
   }
