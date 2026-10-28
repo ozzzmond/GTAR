@@ -1088,7 +1088,7 @@ function LibraryApp() {
 
   // Delete setlist (tombstone for cloud sync propagation)
   const handleDeleteSetlist = (setlistId: string | number) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
       return
     }
@@ -1103,7 +1103,7 @@ function LibraryApp() {
 
   // Bulk delete setlists
   const handleBulkDeleteSetlists = (ids: Array<string | number>) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
       return
     }
@@ -1119,7 +1119,7 @@ function LibraryApp() {
 
   // Rename setlist
   const handleRenameSetlist = (setlistId: string | number, newName: string) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
       return
     }
@@ -1180,7 +1180,7 @@ function LibraryApp() {
     sheet: FetchedChordSheet,
     openInStage = false
   ) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before importing songs.')
       return
     }
@@ -1240,7 +1240,7 @@ function LibraryApp() {
 
   // Persist the validated complete candidate before scheduling any state partition.
   const commitSongLifecycle = (operation: SongLifecycleOperation) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before modifying songs.')
       return null
     }
@@ -1305,7 +1305,7 @@ function LibraryApp() {
 
   // Bulk add songs to destination setlist
   const handleBulkAddSongsToSetlist = (ids: Array<string | number>, setlistId: string | number) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
       return
     }
@@ -1359,7 +1359,7 @@ function LibraryApp() {
 
   // Create new blank song template and switch to Desktop Editor
   const handleNewSong = () => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before adding songs.')
       return
     }
@@ -1382,7 +1382,7 @@ function LibraryApp() {
   }
 
   const handleSongMembership = (songId: string | number, setlistId: string | number, included: boolean) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
       return false
     }
@@ -1414,7 +1414,7 @@ function LibraryApp() {
   }
 
   const handleCreateSetlistForSong = (songId: string | number, name: string) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before creating setlists.')
       return false
     }
@@ -1446,7 +1446,7 @@ function LibraryApp() {
 
   // Create a new setlist
   const handleNewSetlist = () => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before creating setlists.')
       return
     }
@@ -1534,7 +1534,7 @@ function LibraryApp() {
 
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       return false
     }
     const targetId = updated.id ?? currentSong?.id
@@ -1576,7 +1576,7 @@ function LibraryApp() {
 
   // Explicit save also reports persistence failure to the editor.
   const handleSaveSongFromEditor = (incoming: ActiveSongState) => {
-    if (unboundReadOnly) {
+    if (typeof unboundReadOnly !== 'undefined' && unboundReadOnly) {
       setToastMessage('This songbook is not linked to an account yet. Link it before saving changes.')
       return false
     }

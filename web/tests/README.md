@@ -284,5 +284,6 @@ New or renamed tests await a human choice of primary category.
 - [syncUploadHeadroom.test.cjs](syncUploadHeadroom.test.cjs)
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
+- [unboundLibraryReadOnlyGuard.test.cjs](unboundLibraryReadOnlyGuard.test.cjs)
 - [userManagementRootProtection.test.cjs](userManagementRootProtection.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->

@@ -162,10 +162,15 @@ export function readSessionUserId(storage: Pick<Storage, 'getItem'>): string | n
   const id = value?.user?.id
   return typeof id === 'string' && id.trim() ? id.trim() : null
 }
+export function readSessionToken(storage: Pick<Storage, 'getItem'>): string | null {
+  const value = readSession(storage) as { sessionToken?: unknown; token?: unknown } | null
+  const token = typeof value?.sessionToken === 'string' && value.sessionToken ? value.sessionToken : typeof value?.token === 'string' && value.token ? value.token : null
+  return token
+}
 export function currentEnv(): string {
   try { return typeof location !== 'undefined' && location.host ? location.host : 'unknown' } catch { return 'unknown' }
 }
-const sameUser = (a: string | null, b: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
+export const sameUser = (a: string | null, b: string | null): boolean => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
 
 /**
  * Which partition this device opens. The legacy (v1/B1) library belongs to its verified owner; it

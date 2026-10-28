@@ -65,6 +65,10 @@ export function useLibraryImports({
   }, [persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists, setToastMessage])
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
+    if (isUnboundDeviceLibraryReadOnly()) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before importing songs.')
+      return
+    }
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
     if (song.isDeleted) setDeletedSongs(prev => [song, ...prev])
     else setSongs(prev => [song, ...prev])
@@ -73,6 +77,10 @@ export function useLibraryImports({
   }
 
   const handleImportAllSongs = (importedSongs: Array<Partial<ActiveSongState>>) => {
+    if (isUnboundDeviceLibraryReadOnly()) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before importing songs.')
+      return
+    }
     const normalized = importedSongs.map(song => normalizeBackupSong({ ...song, id: generateUUID(), title: song.title || 'Imported Song' }))
     const partition = partitionSongs(normalized)
     setSongs(prev => [...prev, ...partition.active])

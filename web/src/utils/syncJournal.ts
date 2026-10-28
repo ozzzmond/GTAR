@@ -13,7 +13,7 @@ import { B2StaleWriteError, b2Active, b2Decode, b2Enabled, b2HeadKey, b2Identity
   b2Status, disableB2, enableB2, isB2HeadKey, isB2Token, prepareB2, readB2Hold, type B2Preparation, type B2Source, type B2Status,
   LibraryPartitionBlockedError, LibraryPartitionError, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration,
   b2Stale, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed, libraryClosedForSignIn,
-  readStoredOwner, readSessionUserId, readSessionGeneration } from './libraryB2'
+  readStoredOwner, readSessionUserId, readSessionGeneration, readSessionToken, sameUser } from './libraryB2'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -423,9 +423,27 @@ export function recoverySnapshotFailureMessage(error: unknown, retry: 'sync' | '
   return `Recovery snapshot could not be verified after saving. Nothing was changed. Export a backup, then ${steps}`
 }
 
+function assertRecoveryMutationAllowed(key: string, storage: Storage): void {
+  if (isUnboundDeviceLibraryReadOnly(storage)) {
+    if (readRecoveryArchive(key, storage) !== null) {
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Cannot overwrite recovery archives for an unlinked songbook.'
+      )
+    }
+    if (!key.startsWith('gtar_sync_recovery:owner-confirm:')) {
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Cannot create recovery snapshots for an unlinked songbook.'
+      )
+    }
+  }
+}
+
 // Estimates cover the whole origin, not Safari's separate localStorage limit.
 // Always attempt the actual guarded write unless retention or reported quota blocks it.
 export async function writeRecoverySnapshot(key: string, raw: string, storage: Storage, scope: string | null = currentArchiveScope(storage)): Promise<void> {
+  assertRecoveryMutationAllowed(key, storage)
   tagArchive(key, scope, storage) // #258 F6
   let estimate: StorageEstimate | undefined
   try { estimate = await navigator.storage?.estimate?.() } catch { /* advisory only */ }
@@ -476,6 +494,7 @@ function storageArchiveUsage(storage: Storage): { count: number; bytes: number }
  * comparing the IndexedDB total against the 3 MiB localStorage cap refused valid snapshots.
  */
 function writeRecoverySnapshotChecked(key: string, raw: string, storage: Storage, estimate?: StorageEstimate): void {
+  assertRecoveryMutationAllowed(key, storage)
   if (!skipTag) tagArchive(key, currentArchiveScope(storage), storage) // #258 F6
   const total = recoveryRetentionUsage(storage)
   const local = total.indexedDb ? storageArchiveUsage(storage) : { count: total.count, bytes: total.bytes }
@@ -513,6 +532,9 @@ export function planRecoveryCleanup(review: RecoveryReview): { key: string; raw:
 
 // Confirmed UI action only. The lock and exact preview recheck protect editor/cross-tab changes.
 export async function confirmRecoveryCleanup(review: RecoveryReview, confirmed: boolean, blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
+  if (isUnboundDeviceLibraryReadOnly(storage)) {
+    throw new LibraryOwnershipError('unbound', 'Cannot clean up recovery archives for an unlinked songbook.')
+  }
   // #258 F6: decisions and cleanup act on the earlier library's archives; other partitions only export.
   if (!recoveryView(storage).legacy) throw new Error('Recovery choices and cleanup are not available for this account\'s songbook in the new device storage yet. Export recovery data instead; nothing was changed.')
   if (!confirmed) throw new Error('Explicit cleanup confirmation required.')
@@ -635,6 +657,9 @@ export function hasActionableRecovery(storage: Storage = localStorage): boolean 
 // Explicit operator choice only. No library write, source replacement, pruning or cloud action.
 // V1 history stays verbatim; new events reference sources instead of duplicating them.
 export async function recordRecoveryChoice(review: RecoveryReview, choice: RecoveryDecision['choice'], blocked: () => boolean, storage: Storage = localStorage): Promise<void> {
+  if (isUnboundDeviceLibraryReadOnly(storage)) {
+    throw new LibraryOwnershipError('unbound', 'Cannot record recovery choices for an unlinked songbook.')
+  }
   // #258 F6: decisions and cleanup act on the earlier library's archives; other partitions only export.
   if (!recoveryView(storage).legacy) throw new Error('Recovery choices and cleanup are not available for this account\'s songbook in the new device storage yet. Export recovery data instead; nothing was changed.')
   if (!navigator.locks?.request) throw new Error('Safe recovery resolution requires Web Locks support.')
@@ -739,18 +764,56 @@ export function isStaleWriteConflictError(err: unknown): err is StaleWriteConfli
   )
 }
 
+export interface OperationContext {
+  userId: string | null
+  token: string | null
+  generation: string | null
+}
+
 export interface PersistLibraryOptions {
   expectedRaw?: string | null
   force?: boolean
   generation?: SessionGeneration | null
+  context?: OperationContext | null
+}
+
+const ONBOARDING_CREATOR_KEY = 'gtar_unbound_onboarding_v1'
+
+export function readOnboardingCreator(storage: Pick<Storage, 'getItem'> = localStorage): { userId: string } | null {
+  try {
+    const raw = storage.getItem(ONBOARDING_CREATOR_KEY)
+    if (!raw) return null
+    const val = JSON.parse(raw) as { userId?: unknown }
+    return typeof val?.userId === 'string' && val.userId.trim() ? { userId: val.userId.trim() } : null
+  } catch {
+    return null
+  }
+}
+
+export function recordOnboardingCreator(storage: Storage = localStorage, userId: string): void {
+  storage.setItem(ONBOARDING_CREATOR_KEY, JSON.stringify({ userId: userId.trim(), createdAt: Date.now() }))
+}
+
+export function clearOnboardingCreator(storage: Storage = localStorage): void {
+  storage.removeItem(ONBOARDING_CREATOR_KEY)
 }
 
 export function hasPersistedContent(storage: Storage = localStorage): boolean {
+  if (isLibraryB2Active(storage)) {
+    try {
+      const lib = b2Read()
+      return !!lib && (lib.songs.length > 0 || lib.setlists.length > 0)
+    } catch {
+      return true
+    }
+  }
+  const raw = libraryRevision(storage)
+  if (!raw) return false
   try {
     const lib = readPersistedLibrary(storage)
     return !!lib && (lib.songs.length > 0 || lib.setlists.length > 0)
   } catch {
-    return false
+    return true
   }
 }
 
@@ -768,7 +831,62 @@ export function isUnboundDeviceLibraryReadOnly(storage: Storage = localStorage):
   }
   const owner = readStoredOwner(storage)
   if (owner) return false
-  return hasPersistedContent(storage)
+  if (!hasPersistedContent(storage)) return false
+
+  const creator = readOnboardingCreator(storage)
+  if (creator && sameUser(creator.userId, sessionUserId)) {
+    return false
+  }
+
+  return true
+}
+
+export function captureOperationContext(storage: Storage = localStorage): OperationContext {
+  const userId = readSessionUserId(storage)
+  const token = readSessionToken(storage)
+  const generation = readSessionGeneration(storage)
+  return { userId, token, generation }
+}
+
+const activeOperationContexts = new WeakMap<Storage, OperationContext>()
+
+export function beginAsyncMutation(storage: Storage = localStorage): OperationContext {
+  const context = captureOperationContext(storage)
+  activeOperationContexts.set(storage, context)
+  return context
+}
+
+export function endAsyncMutation(storage: Storage = localStorage): void {
+  activeOperationContexts.delete(storage)
+}
+
+export function assertOperationContextValid(
+  context: OperationContext | SessionGeneration | null | undefined,
+  storage: Storage = localStorage
+): void {
+  if (context === undefined || context === null) return
+
+  const currentUserId = readSessionUserId(storage)
+  const currentToken = readSessionToken(storage)
+  const currentGen = readSessionGeneration(storage)
+
+  if (context.userId) {
+    if (!currentUserId) {
+      throw new StaleSyncRoundError('signed-out', 0)
+    }
+    const expectedGen = `${context.userId.trim().toLowerCase()}\u0000${context.token ?? ''}`
+    if (
+      !sameUser(currentUserId, context.userId) ||
+      currentGen !== expectedGen ||
+      (context.token !== undefined && context.token !== null && currentToken !== context.token)
+    ) {
+      throw new StaleSyncRoundError('session-changed', 0)
+    }
+  } else {
+    if (currentUserId) {
+      throw new StaleSyncRoundError('session-changed', 0)
+    }
+  }
 }
 
 /**
@@ -778,22 +896,11 @@ export function isUnboundDeviceLibraryReadOnly(storage: Storage = localStorage):
  */
 export function assertLibraryMutationAllowed(
   storage: Storage = localStorage,
-  generation?: SessionGeneration | null
+  contextOrGeneration?: OperationContext | SessionGeneration | null
 ): void {
-  const sessionUserId = readSessionUserId(storage)
-  if (!sessionUserId) {
-    if (generation && generation.userId) {
-      throw new StaleSyncRoundError('signed-out', 0)
-    }
-    return
-  }
-
-  if (generation !== undefined && generation !== null) {
-    const currentGen = readSessionGeneration(storage)
-    const expectedGen = generation.userId ? `${generation.userId.trim().toLowerCase()}\u0000${generation.token ?? ''}` : null
-    if (!currentGen || currentGen !== expectedGen) {
-      throw new StaleSyncRoundError('session-changed', 0)
-    }
+  const activeContext = contextOrGeneration ?? activeOperationContexts.get(storage)
+  if (activeContext) {
+    assertOperationContextValid(activeContext, storage)
   }
 
   if (isUnboundDeviceLibraryReadOnly(storage)) {
@@ -959,10 +1066,13 @@ export function persistLibrary(
   storage: Storage = localStorage,
   options?: PersistLibraryOptions
 ) {
-  assertLibraryMutationAllowed(storage, options?.generation)
+  const context = options?.context ?? options?.generation ?? activeOperationContexts.get(storage)
+  assertLibraryMutationAllowed(storage, context)
+  activeOperationContexts.delete(storage)
+  const wasEmpty = !hasPersistedContent(storage)
   validateLibrary(library)
   if (!legacyOnly && b2Stale(storage)) throw new LibraryPartitionError()
-  if (isLibraryB2Active(storage)) { persistB2(library, storage, options); return }
+  if (isLibraryB2Active(storage)) { persistB2(library, storage, options, wasEmpty); return }
   // #258 F1: the frozen legacy source is not saved into by a tab that did not open B2 (or opened it).
   if (!legacyOnly && !legacyWritesAllowed(storage)) {
     throw new StaleWriteConflictError('The songbook moved to the new device storage in another tab. Reload this tab; your edits are kept in recovery data.', null, library)
@@ -1029,6 +1139,12 @@ export function persistLibrary(
   if (storage.getItem(key) !== payload) {
     throw new Error('Songbook save could not be verified. Keep this tab open and export your draft.')
   }
+  if (wasEmpty) {
+    const sessionUserId = readSessionUserId(storage)
+    if (sessionUserId && !readStoredOwner(storage)) {
+      recordOnboardingCreator(storage, sessionUserId)
+    }
+  }
   lastKnownLibraryRawByStorage.set(storage, payload)
   if (encoded?.pending.length) {
     void confirmPendingLibraryBodies(encoded.pending, error =>
@@ -1042,13 +1158,19 @@ export function persistLibrary(
   }
 }
 
-function persistB2(library: SyncLibrary, storage: Storage, options?: PersistLibraryOptions): void {
+function persistB2(library: SyncLibrary, storage: Storage, options?: PersistLibraryOptions, wasEmpty = false): void {
   let result: 'saved' | 'unchanged'
   try {
     result = b2Persist(library, { ...(options?.expectedRaw !== undefined ? { expectedRaw: options.expectedRaw } : {}), ...(options?.force ? { force: true } : {}) })
   } catch (error) {
     if (error instanceof B2StaleWriteError) throw new StaleWriteConflictError(error.message, error.currentRaw, library)
     throw error
+  }
+  if (wasEmpty && result === 'saved') {
+    const sessionUserId = readSessionUserId(storage)
+    if (sessionUserId && !readStoredOwner(storage)) {
+      recordOnboardingCreator(storage, sessionUserId)
+    }
   }
   lastKnownLibraryRawByStorage.set(storage, libraryRevision(storage))
   if (result === 'saved' && typeof window !== 'undefined') {

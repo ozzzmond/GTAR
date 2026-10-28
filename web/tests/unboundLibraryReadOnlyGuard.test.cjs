@@ -285,3 +285,197 @@ test('UI Guard and Actionable Warning Banner: App renders warning banner and lin
     await act(async () => root.unmount())
   }
 })
+
+test('FIX_R1: Recovery mutation APIs fail closed on unbound populated library; linking snapshot preserved', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  const archiveKey = 'gtar_sync_recovery:manual:1000:test-archive'
+  const archivePayload = JSON.stringify({ local: { songs: [{ id: 's1', title: 'Archive Song' }], setlists: [] } })
+  storage.setItem(archiveKey, archivePayload)
+
+  // Account B signs in
+  h.signIn(storage, 'user-b')
+  const tab = h.newTab()
+
+  assert.equal(tab.sj.isUnboundDeviceLibraryReadOnly(storage), true)
+
+  // 1. Reading and inspecting recovery data is preserved (safe read/export)
+  assert.equal(tab.sj.readRecoveryArchive(archiveKey, storage), archivePayload)
+  const review = tab.sj.inspectRecovery(storage)
+  assert.ok(review)
+  const exportData = tab.sj.recoveryExportData(storage)
+  assert.ok(exportData)
+
+  // 2. confirmRecoveryCleanup fails closed
+  await assert.rejects(
+    () => tab.sj.confirmRecoveryCleanup(review, true, () => false, storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'confirmRecoveryCleanup must fail closed on unbound library'
+  )
+
+  // 3. recordRecoveryChoice fails closed
+  await assert.rejects(
+    () => tab.sj.recordRecoveryChoice(review, 'keep-current', () => false, storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'recordRecoveryChoice must fail closed on unbound library'
+  )
+
+  // 4. writeRecoverySnapshot overwriting existing archive fails closed (destructive)
+  await assert.rejects(
+    () => tab.sj.writeRecoverySnapshot(archiveKey, JSON.stringify({ local: { songs: [], setlists: [] } }), storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'writeRecoverySnapshot overwriting existing archive fails closed'
+  )
+
+  // 5. writeRecoverySnapshot with arbitrary new key fails closed
+  await assert.rejects(
+    () => tab.sj.writeRecoverySnapshot('gtar_sync_recovery:records:999:unauthorized', JSON.stringify({}), storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'writeRecoverySnapshot with non-linking key fails closed'
+  )
+
+  // Verify archive was NOT deleted or mutated
+  assert.equal(storage.getItem(archiveKey), archivePayload, 'Existing recovery archive preserved byte-for-byte')
+
+  // 6. Verified snapshot required for explicit owner linking continues working
+  await tab.owner.confirmLibraryOwner('user-b', storage)
+  const confirmSnapshots = [...storage.map.keys()].filter(k => k.startsWith('gtar_sync_recovery:owner-confirm:'))
+  assert.ok(confirmSnapshots.length > 0, 'Owner-confirm snapshot succeeded during legitimate linking')
+  assert.equal(tab.sj.isUnboundDeviceLibraryReadOnly(storage), false, 'Now linked and editable')
+})
+
+test('FIX_R2: Asynchronous local mutations enforce mandatory operation context without optional args', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  h.bindOwner(storage, 'user-a')
+  h.signIn(storage, 'user-a')
+  const tab = h.newTab()
+  const lib = tab.sj.readPersistedLibrary(storage)
+
+  // Case 1: Pause write -> logout -> resume without generation argument: FAILS CLOSED
+  tab.sj.beginAsyncMutation(storage)
+  h.signIn(storage, null) // logout during pause
+  assert.throws(
+    () => tab.sj.persistLibrary(lib, storage), // no generation argument passed
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'signed-out',
+    'Stale write after logout must fail closed even without options.generation'
+  )
+
+  // Case 2: Pause write -> account switch -> resume without generation argument: FAILS CLOSED
+  h.signIn(storage, 'user-a')
+  tab.sj.beginAsyncMutation(storage)
+  h.signIn(storage, 'user-b') // account switch during pause
+  assert.throws(
+    () => tab.sj.persistLibrary(lib, storage),
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'session-changed',
+    'Stale write after account switch must fail closed even without options.generation'
+  )
+
+  // Case 3: Pause write -> same-account token rotation -> resume without generation argument: FAILS CLOSED
+  h.signIn(storage, 'user-a')
+  tab.sj.beginAsyncMutation(storage)
+  // Simulate token rotation for user-a
+  storage.setItem('gtar_auth_session', JSON.stringify({
+    user: { id: 'user-a', email: 'user-a@example.test' },
+    sessionToken: 'token-user-a-rotated-new',
+  }))
+  assert.throws(
+    () => tab.sj.persistLibrary(lib, storage),
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'session-changed',
+    'Stale write after token rotation must fail closed even without options.generation'
+  )
+
+  // Case 4: Legitimate signed-out editing initiated while signed out: PRESERVED
+  const { storage: signedOutStorage } = unboundDevice({ n: 3 })
+  h.signIn(signedOutStorage, null)
+  const tabSignedOut = h.newTab()
+  const signedOutLib = tabSignedOut.sj.readPersistedLibrary(signedOutStorage)
+  tabSignedOut.sj.beginAsyncMutation(signedOutStorage)
+  const offlineEdit = { ...signedOutLib, songs: signedOutLib.songs.map((s, i) => i === 0 ? { ...s, title: 'Valid Offline Edit' } : s) }
+  assert.doesNotThrow(
+    () => tabSignedOut.sj.persistLibrary(offlineEdit, signedOutStorage),
+    'Signed-out async mutation completes when initiated while signed out'
+  )
+  assert.equal(tabSignedOut.sj.readPersistedLibrary(signedOutStorage).songs[0].title, 'Valid Offline Edit')
+})
+
+test('FIX_R3: Repeated onboarding edits work without silent ownership binding or bypass of populated library', async () => {
+  const storage = h.freshStorage()
+  h.signIn(storage, 'user-onboard')
+  const tab = h.newTab()
+
+  // Fresh device: empty unbound library
+  tab.sj.persistLibrary({ songs: [], setlists: [] }, storage)
+  storage.removeItem(OWNER_KEY)
+
+  assert.equal(tab.sj.isUnboundDeviceLibraryReadOnly(storage), false, 'Empty library initially not read-only')
+  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record absent before first save')
+
+  // Save 1: First song save succeeds
+  const song1 = { id: 'song-1', title: 'Onboarding Song 1', artist: '', rawContent: '[C]Song 1' }
+  tab.sj.persistLibrary({ songs: [song1], setlists: [] }, storage)
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 1)
+  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record remains absent after first save (no silent binding)')
+
+  // Save 2: Second song save succeeds (crucial REPRO requirement: second save was previously rejected)
+  const song2 = { id: 'song-2', title: 'Onboarding Song 2', artist: '', rawContent: '[D]Song 2' }
+  assert.doesNotThrow(
+    () => tab.sj.persistLibrary({ songs: [song1, song2], setlists: [] }, storage),
+    'Second save succeeds in legitimate onboarding flow'
+  )
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 2)
+  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record still absent after second save')
+
+  // Save 3: Third edit succeeds
+  const updatedSong1 = { ...song1, title: 'Onboarding Song 1 Edited' }
+  assert.doesNotThrow(
+    () => tab.sj.persistLibrary({ songs: [updatedSong1, song2], setlists: [] }, storage),
+    'Third edit succeeds in legitimate onboarding flow'
+  )
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs[0].title, 'Onboarding Song 1 Edited')
+  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record still null (still unbound)')
+
+  // Protection proof: Account B signs in and cannot mutate Account Onboard's unlinked library
+  h.signIn(storage, 'user-intruder')
+  const tabB = h.newTab()
+  assert.equal(tabB.sj.isUnboundDeviceLibraryReadOnly(storage), true, 'User intruder sees library as read-only')
+  assert.throws(
+    () => tabB.sj.persistLibrary({ songs: [], setlists: [] }, storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'Intruder cannot delete or mutate user-onboard\'s unlinked library'
+  )
+
+  // Pre-existing populated unbound library cannot be claimed via onboarding
+  const { storage: prePopulated } = unboundDevice({ n: 3 })
+  h.signIn(prePopulated, 'user-attacker')
+  const tabAttacker = h.newTab()
+  assert.equal(tabAttacker.sj.isUnboundDeviceLibraryReadOnly(prePopulated), true)
+  assert.throws(
+    () => tabAttacker.sj.persistLibrary({ songs: [song1], setlists: [] }, prePopulated),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'Pre-existing populated library remains protected and cannot be bypassed via onboarding'
+  )
+})
+
+test('Codex P1: Damaged unbound library with dangling references fails closed', async () => {
+  const { storage } = unboundDevice({ n: 2 })
+  // Corrupt the library by adding a dangling reference in setlists (causes validation failure in readPersistedLibrary)
+  const damagedRaw = JSON.stringify({
+    songs: [{ id: 's1', title: 'Song 1', artist: '', rawContent: '[C]1' }],
+    setlists: [{ id: 'l1', name: 'List', songs: [{ id: 'dangling-id', title: 'Missing' }] }],
+  })
+  storage.setItem(V1, damagedRaw)
+
+  // Account B signs in
+  h.signIn(storage, 'user-b')
+  const tab = h.newTab()
+
+  // Damaged library must be recognized as having persisted content and be read-only
+  assert.equal(tab.sj.hasPersistedContent(storage), true, 'Damaged library recognized as having content')
+  assert.equal(tab.sj.isUnboundDeviceLibraryReadOnly(storage), true, 'Damaged library is read-only')
+
+  // Unauthorized repair or mutation fails closed
+  assert.throws(
+    () => tab.sj.applyDanglingReferenceRepair({ raw: damagedRaw, references: ['dangling-id'] }, storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'Applying repair to damaged unbound library fails closed without linking'
+  )
+})

@@ -10,12 +10,12 @@
  * - Another owner: blocked. Nothing on the device is relabelled, moved, cleared or deleted.
  * Ownership is never inferred from last-synced metadata.
  */
-import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot } from './syncJournal'
+import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot, clearOnboardingCreator } from './syncJournal'
 import { b2Identity, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
 import { generateUUID } from './uuid'
 
-export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration }
-export { isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed } from './syncJournal'
+export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
+export { type OperationContext, isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed, captureOperationContext, beginAsyncMutation, endAsyncMutation, clearOnboardingCreator } from './syncJournal'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
 
@@ -171,6 +171,7 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
     try { revisionNow = libraryRevision(storage) } catch { return changed() }
     if (revisionNow !== revisionAtStart) changed()
     if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+    clearOnboardingCreator(storage)
     writeOwner(userId, 'confirmed', storage)
   }
   if (locks?.request) await locks.request('gtar-library-owner', run)
