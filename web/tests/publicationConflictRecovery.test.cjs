@@ -28,7 +28,7 @@ let f, calls, dropAfterCommit
 function signIn(user) {
   localStorage.setItem('gtar_auth_session', JSON.stringify({ version: 1, user: { id: user, sub: user, email: `${user}@example.test`, role: 'member', access_status: 'active' },
     authenticatedAt: Date.now(), lastVerifiedAt: Date.now(), localExpiresAt: Date.now() + 3600000, expiresAt: Date.now() + 3600000,
-    sessionToken: f.tokens[user], role: 'member', access_status: 'active' }))
+    sessionToken: `opaque-session-${user}`, role: 'member', access_status: 'active' }))
 }
 beforeEach(async () => {
   localStorage.clear()
@@ -39,7 +39,11 @@ beforeEach(async () => {
     calls.push({ url, method: options.method ?? 'GET' })
     const match = /^\/api\/catalog\/setlists(?:\/([^/?]+))?/.exec(url)
     if (!match) return new Response('{}', { status: 404 })
-    const response = await handleSetlistCatalog({ request: new Request(`https://local.test${url}`, options), env: f.env, params: { id: match[1] && decodeURIComponent(match[1]) } })
+    // The browser stores only an opaque placeholder; the signed fixture token exists only server-side.
+    const headers = new Headers(options.headers)
+    const user = /^Bearer opaque-session-(.+)$/.exec(headers.get('Authorization') ?? '')?.[1]
+    if (user) headers.set('Authorization', `Bearer ${f.tokens[user]}`)
+    const response = await handleSetlistCatalog({ request: new Request(`https://local.test${url}`, { ...options, headers }), env: f.env, params: { id: match[1] && decodeURIComponent(match[1]) } })
     if (dropAfterCommit && options.method && options.method !== 'GET') { dropAfterCommit = false; throw new TypeError('network connection lost') }
     return response
   }
