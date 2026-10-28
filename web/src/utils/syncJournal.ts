@@ -847,7 +847,9 @@ export function recordOnboardingCreator(storage: Storage = localStorage, userId:
 }
 
 export function clearOnboardingCreator(storage: Storage = localStorage): void {
-  storage.removeItem(ONBOARDING_CREATOR_KEY)
+  if (storage.getItem(ONBOARDING_CREATOR_KEY) !== null) {
+    storage.removeItem(ONBOARDING_CREATOR_KEY)
+  }
 }
 
 function updateOnboardingCreatorProvenance(
