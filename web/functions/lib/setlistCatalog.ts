@@ -8,6 +8,14 @@ import {
 import { inspectCatalogSchema } from './catalogSchema.ts'
 
 export interface SetlistCatalogEnv extends AuthEnv { SHARED_SETLISTS_ENABLED?: string }
+/**
+ * Exact server flag values (anything else, including unset, keeps every route at 404).
+ * - `phase-a-v1`: DEV Preview. Works on legacy (pre-0010) or Catalog V2 schemas.
+ * - `catalog-v2`: production activation value (#253). Serves only when the reviewed migration 0010
+ *   protections are present; on a legacy, partial or unknown schema every route fails closed (503).
+ *   Legacy request bodies from older clients are still accepted once 0010 is present.
+ */
+export const SHARED_SETLIST_FLAGS = { preview: 'phase-a-v1', production: 'catalog-v2' } as const
 export interface SetlistContext {
   request: Request
   env: SetlistCatalogEnv
@@ -35,11 +43,11 @@ function identity(value: unknown): string {
   return String(value)
 }
 
-async function protect(db: D1Database, userId: string, write: boolean): Promise<{ allowed: boolean; clientSnapshots: boolean }> {
+async function protect(db: D1Database, userId: string, write: boolean, requireV2: boolean): Promise<{ allowed: boolean; clientSnapshots: boolean }> {
   // #253 B1: every protection trigger must match a reviewed definition (formatting-insensitive).
   // Missing, unknown or weakened protections fail closed: no capability, no read or write path.
   const schema = await inspectCatalogSchema(db)
-  if (!schema.setlists) fail('Protection unavailable')
+  if (!schema.setlists || (requireV2 && schema.setlists !== 'v2')) fail('Protection unavailable')
   const clientSnapshots = schema.setlists === 'v2'
   const minute = Math.floor(Date.now() / 60000)
   const day = Math.floor(minute / 1440)
@@ -108,7 +116,8 @@ async function mutationResponse(db: D1Database, mutation: Mutation, digest: stri
 /** Only the existing environment DB is consulted. No alternate DB, Worker or network path. */
 export async function handleSetlistCatalog(context: SetlistContext): Promise<Response> {
   const { request, env, params } = context
-  if (env.SHARED_SETLISTS_ENABLED !== 'phase-a-v1') return errorResponse('Not found', 404)
+  const flag = env.SHARED_SETLISTS_ENABLED
+  if (flag !== SHARED_SETLIST_FLAGS.preview && flag !== SHARED_SETLIST_FLAGS.production) return errorResponse('Not found', 404)
   const method = request.method
   const write = ['POST', 'PUT', 'DELETE'].includes(method)
   if ((!params.id && !['GET', 'POST'].includes(method)) || (params.id && !['GET', 'PUT', 'DELETE'].includes(method))) {
@@ -118,7 +127,7 @@ export async function handleSetlistCatalog(context: SetlistContext): Promise<Res
     const auth = await authenticateUserRequest(request, env)
     if ('error' in auth) return errorResponse(auth.error, auth.status)
     const db = env.DB!
-    const protection = await protect(db, auth.user.id, write)
+    const protection = await protect(db, auth.user.id, write, flag === SHARED_SETLIST_FLAGS.production)
     if (!protection.allowed) return errorResponse('Rate limit exceeded', 429)
     if (params.id && !token.test(params.id)) return errorResponse('Invalid publication ID', 400)
     const url = new URL(request.url)

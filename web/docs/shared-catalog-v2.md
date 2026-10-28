@@ -64,3 +64,54 @@ If needed, `0011` drops `catalog_setlist_apply` and re-creates it with the exact
 - D1 Time Travel bookmark before applying.
 - Remote DEV, then PROD, migration by the owner.
 - Owner decision on the report reasons (`copyright`, `wrong_content`, `spam_abuse`, `other`) and the rate limits.
+
+## Shared setlists activation (owner-approved policy, PROD still HOLD)
+
+Owner approved on 2026-10-28:
+- report reasons: `copyright`, `wrong_content`, `spam_abuse`, `other`;
+- report rate limit: 10 per hour and 30 per day;
+- publish rights: active members and admins;
+- shared setlists: enable in PROD after the release gates;
+- rollout order: DEV migration and targeted QA first.
+
+Server flag `SHARED_SETLISTS_ENABLED` accepts exact values only:
+- `phase-a-v1`: DEV Preview, unchanged. Works on a legacy or Catalog V2 schema.
+- `catalog-v2`: the production activation value.
+  - Every route serves only when the reviewed 0010 protections are present.
+  - On a legacy, partial or unknown schema, every route returns 503, no capability is advertised and nothing is written.
+  - Once 0010 is present, older clients' legacy bodies are still accepted.
+- Unset or any other value: every route returns 404 before any database access. This is the current production state, and `tests/sharedSetlistCatalog.test.cjs` asserts it.
+
+The approved release is the only change that sets `env.production.vars.SHARED_SETLISTS_ENABLED = "catalog-v2"`, and it updates that assertion in the same change. A permanent test forbids any other production value.
+
+### DEV operator steps (owner; remote DEV D1 is not run by agents)
+
+1. From `web/` on current `dev`, run `DRY_RUN=1 npm run d1:migrate:dev:remote`. The guard must print target `gtar-db-dev (455b9901-…)`, env `preview`. **Abort** if any other target is shown.
+2. Run `npx wrangler d1 migrations list gtar-db-dev --remote --env preview --config wrangler.jsonc`. **Expected:** only `0010_catalog_v2.sql` is pending. **Abort** if anything else is pending or 0010 is already listed as applied.
+3. Run `npx wrangler d1 time-travel info gtar-db-dev --env preview --config wrangler.jsonc` and record the bookmark.
+4. Run `npm run d1:migrate:dev:remote` (applies only to `gtar-db-dev`).
+5. Read-only verification:
+   - `d1_migrations` top is `0010_catalog_v2.sql`.
+   - `SELECT count(*) FROM catalog_setlist_mutations WHERE source_kind <> 'songbook'` returns 0.
+   - Counts of the `catalog_setlist_*` tables, `shared_catalog_songs` and `users` are unchanged.
+   - On the DEV preview, `GET /api/catalog/setlists?limit=1` returns `capabilities.client_snapshots: true`.
+   - **Abort/rollback** on 503, `client_snapshots: false`, or any count change.
+6. Targeted DEV QA (no 10k repeat):
+   - an iPhone with B2 on publishes a device setlist without Cloud Sync;
+   - an admin edits another publisher's setlist, and a stale edit returns 409;
+   - a member reports a song and a setlist; a second open report gets 409;
+   - an admin dismisses one report and removes another target;
+   - the duplicate advisory appears when publishing a duplicate song;
+   - an older client's legacy publish still works.
+
+**Rollback:** forward-only `0011` re-creates the exact 0007 `catalog_setlist_apply`. That puts the schema in legacy mode, where `catalog-v2` fails closed with 503 and `phase-a-v1` uses the legacy path. Use the Time Travel restore to the step 3 bookmark only if no catalog write happened after it. Never drop tables or delete rows.
+
+### PROD (later, separate approval)
+
+The same steps apply against a private export rehearsal first: `wrangler d1 export gtar-db-prod --remote` to a private file, import into a disposable database, apply 0010, then verify. After that:
+- PROD preflight, read-only: `migrations list` shows only 0010 pending, and the existing `catalog_setlist_*` trigger text matches the 0007/0008 fingerprints in `functions/lib/catalogSchema.ts`.
+- Time Travel bookmark.
+- Apply 0010.
+- Deploy the release that sets `catalog-v2` (#234 flow).
+
+**Order:** migrate first, then deploy. If the deploy goes first, the Report and moderation endpoints return 501 until 0010 is applied.
