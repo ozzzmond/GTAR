@@ -11,14 +11,13 @@
  * Ownership is never inferred from last-synced metadata.
  */
 import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot,
-  clearOnboardingCreator, beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization } from './syncJournal'
+  clearOnboardingCreator, beginLinkingTransaction, clearLinkingTransaction, discardLinkingSnapshot } from './syncJournal'
 import { b2Identity, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
-import { generateUUID } from './uuid'
 
 export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
 export { type OperationContext, isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed, captureOperationContext,
   beginAsyncMutation, endAsyncMutation, clearOnboardingCreator, readOnboardingCreator,
-  beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization } from './syncJournal'
+  beginLinkingTransaction, clearLinkingTransaction, beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization } from './syncJournal'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
 
@@ -160,27 +159,30 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
     if (ownership === 'mismatch') throw new LibraryOwnershipError('mismatch')
     const ownerAtStart = storage.getItem(LIBRARY_OWNER_KEY)
     const revisionAtStart = libraryRevision(storage)
-    const library = readPersistedLibrary(storage) ?? { songs: [], setlists: [] }
-    const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
-    const raw = JSON.stringify({ local: library })
-    beginLinkingSnapshotAuthorization(storage, key, raw)
+    const { key, raw } = beginLinkingTransaction(storage, userId)
+    let snapshotWritten = false
     try {
       await writeRecoverySnapshot(key, raw, storage)
-    } finally {
-      clearLinkingSnapshotAuthorization(storage)
+      snapshotWritten = true
+      // Owner record and sign-in first (#258: once another owner is saved, this account may not read the library).
+      const session = storedSession(storage)
+      const changed = () => { throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.') }
+      if (storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
+        (sessionAtStart && (!session || !session.userId || !sameUser(session.userId, userId) || session.token !== sessionAtStart.token)) ||
+        (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))) changed()
+      let revisionNow: string | null
+      try { revisionNow = libraryRevision(storage) } catch { return changed() }
+      if (revisionNow !== revisionAtStart) changed()
+      if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
+      clearOnboardingCreator(storage)
+      writeOwner(userId, 'confirmed', storage)
+    } catch (err) {
+      clearLinkingTransaction(storage)
+      if (snapshotWritten) {
+        await discardLinkingSnapshot(key, raw, storage)
+      }
+      throw err
     }
-    // Owner record and sign-in first (#258: once another owner is saved, this account may not read the library).
-    const session = storedSession(storage)
-    const changed = () => { throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.') }
-    if (storage.getItem(LIBRARY_OWNER_KEY) !== ownerAtStart ||
-      (sessionAtStart && (!session || !session.userId || !sameUser(session.userId, userId) || session.token !== sessionAtStart.token)) ||
-      (!sessionAtStart && session && session.userId && !sameUser(session.userId, userId))) changed()
-    let revisionNow: string | null
-    try { revisionNow = libraryRevision(storage) } catch { return changed() }
-    if (revisionNow !== revisionAtStart) changed()
-    if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
-    clearOnboardingCreator(storage)
-    writeOwner(userId, 'confirmed', storage)
   }
   if (locks?.request) await locks.request('gtar-library-owner', run)
   else await run()

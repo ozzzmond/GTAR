@@ -424,42 +424,113 @@ export function recoverySnapshotFailureMessage(error: unknown, retry: 'sync' | '
   return `Recovery snapshot could not be verified after saving. Nothing was changed. Export a backup, then ${steps}`
 }
 
-export interface LinkingSnapshotAuthorization {
-  key: string
-  expectedRaw: string
+export interface LinkingTransactionAuthority {
+  readonly id: string
+  readonly userId: string
+  readonly token: string | null
+  readonly generation: string | null
+  readonly key: string
+  readonly expectedRaw: string
+  readonly createdAt: number
 }
 
-const activeLinkingAuthorizations = new WeakMap<Storage, LinkingSnapshotAuthorization>()
+const activeLinkingTransactions = new WeakMap<Storage, LinkingTransactionAuthority>()
 
+export function beginLinkingTransaction(
+  storage: Storage,
+  userId: string
+): { key: string; raw: string } {
+  const sessionUser = readSessionUserId(storage)
+  if (!sessionUser || !sameUser(sessionUser, userId)) {
+    throw new LibraryOwnershipError('unbound', 'Authenticated session required for linking')
+  }
+  const token = readSessionToken(storage)
+  const generation = readSessionGeneration(storage)
+
+  const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
+  const library = readPersistedLibrary(storage) ?? { songs: [], setlists: [] }
+  const raw = JSON.stringify({ local: library })
+
+  const authority: LinkingTransactionAuthority = {
+    id: generateUUID(),
+    userId: sessionUser.trim(),
+    token,
+    generation,
+    key,
+    expectedRaw: raw,
+    createdAt: Date.now(),
+  }
+
+  activeLinkingTransactions.set(storage, authority)
+  return { key, raw }
+}
+
+export function clearLinkingTransaction(storage: Storage): void {
+  activeLinkingTransactions.delete(storage)
+}
+
+export async function discardLinkingSnapshot(key: string, raw: string, storage: Storage): Promise<void> {
+  if (storage.getItem(key) !== null) storage.removeItem(key)
+  if (usesIdbArchives(storage)) {
+    try { await removeRecoveryArchive(key, raw) } catch { /* ignore */ }
+  }
+}
+
+// Deprecated escape hatch rejected: arbitrary caller-controlled key/payload is forbidden
 export function beginLinkingSnapshotAuthorization(
   storage: Storage,
   key: string,
   expectedRaw: string
 ): void {
-  activeLinkingAuthorizations.set(storage, { key, expectedRaw })
+  void storage; void key; void expectedRaw
+  throw new LibraryOwnershipError(
+    'unbound',
+    'Arbitrary linking authorization is forbidden; linking requires a verified transaction.'
+  )
 }
 
 export function clearLinkingSnapshotAuthorization(storage: Storage): void {
-  activeLinkingAuthorizations.delete(storage)
+  activeLinkingTransactions.delete(storage)
 }
 
 function assertRecoveryMutationAllowed(key: string, raw: string, storage: Storage): void {
-  if (isUnboundDeviceLibraryReadOnly(storage)) {
+  const isReadOnly = isUnboundDeviceLibraryReadOnly(storage)
+  const isUnboundPopulated = !readStoredOwner(storage) && hasPersistedContent(storage)
+  if (isReadOnly || isUnboundPopulated) {
     if (readRecoveryArchive(key, storage) !== null) {
       throw new LibraryOwnershipError(
         'unbound',
         'Cannot overwrite recovery archives for an unlinked songbook.'
       )
     }
-    const auth = activeLinkingAuthorizations.get(storage)
-    if (auth && auth.key === key && auth.expectedRaw === raw) {
-      activeLinkingAuthorizations.delete(storage)
-      return
+    const auth = activeLinkingTransactions.get(storage)
+    if (!auth) {
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Cannot create recovery snapshots for an unlinked songbook.'
+      )
     }
-    throw new LibraryOwnershipError(
-      'unbound',
-      'Cannot create recovery snapshots for an unlinked songbook.'
-    )
+    const currentUserId = readSessionUserId(storage)
+    const currentToken = readSessionToken(storage)
+    const currentGen = readSessionGeneration(storage)
+    if (!currentUserId || !sameUser(currentUserId, auth.userId)) {
+      activeLinkingTransactions.delete(storage)
+      throw new StaleSyncRoundError('signed-out', 0)
+    }
+    if (currentGen !== auth.generation || currentToken !== auth.token) {
+      activeLinkingTransactions.delete(storage)
+      throw new StaleSyncRoundError('session-changed', 0)
+    }
+    if (auth.key !== key || auth.expectedRaw !== raw) {
+      activeLinkingTransactions.delete(storage)
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Unauthorized recovery snapshot target or payload.'
+      )
+    }
+    // One-use lifetime: consume the transaction authority
+    activeLinkingTransactions.delete(storage)
+    return
   }
 }
 
@@ -828,22 +899,29 @@ export function readOnboardingCreator(storage: Pick<Storage, 'getItem'> = localS
 }
 
 export function recordOnboardingCreator(storage: Storage = localStorage, userId: string): void {
-  const rev = libraryRevision(storage)
-  const wasEmpty = !hasPersistedContent(storage)
-  if (!wasEmpty && !readOnboardingCreator(storage)) {
+  const existing = readOnboardingCreator(storage)
+  if (existing) {
+    if (!sameUser(existing.userId, userId)) {
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Cannot reassign onboarding provenance to another user.'
+      )
+    }
+    const currentRev = libraryRevision(storage)
+    if (existing.headRevision !== currentRev) {
+      throw new LibraryOwnershipError(
+        'unbound',
+        'Cannot refresh stale revision on onboarding provenance.'
+      )
+    }
+    return
+  }
+  if (hasPersistedContent(storage)) {
     throw new LibraryOwnershipError(
       'unbound',
       'Cannot establish onboarding provenance on a pre-existing populated library.'
     )
   }
-  if (!rev) return
-  const record: OnboardingCreatorProvenance = {
-    v: 1,
-    userId: userId.trim(),
-    headRevision: rev,
-    createdAt: Date.now(),
-  }
-  storage.setItem(ONBOARDING_CREATOR_KEY, JSON.stringify(record))
 }
 
 export function clearOnboardingCreator(storage: Storage = localStorage): void {
@@ -859,7 +937,7 @@ function updateOnboardingCreatorProvenance(
 ): void {
   const sessionUserId = readSessionUserId(storage)
   if (!sessionUserId || readStoredOwner(storage)) {
-    if (!sessionUserId) {
+    if (!sessionUserId && hasPersistedContent(storage)) {
       clearOnboardingCreator(storage)
     }
     return
@@ -869,8 +947,10 @@ function updateOnboardingCreatorProvenance(
   const newRevision = libraryRevision(storage)
   if (!newRevision) return
 
+  const existing = readOnboardingCreator(storage)
+
   if (wasEmpty) {
-    if (hasContentNow) {
+    if (hasContentNow && !existing) {
       const record: OnboardingCreatorProvenance = {
         v: 1,
         userId: sessionUserId.trim(),
@@ -880,7 +960,6 @@ function updateOnboardingCreatorProvenance(
       storage.setItem(ONBOARDING_CREATOR_KEY, JSON.stringify(record))
     }
   } else {
-    const existing = readOnboardingCreator(storage)
     if (
       existing &&
       sameUser(existing.userId, sessionUserId) &&
@@ -948,38 +1027,35 @@ export function captureOperationContext(storage: Storage = localStorage): Operat
   return { id: generateUUID(), userId, token, generation }
 }
 
-const activeContextsByStorage = new WeakMap<Storage, OperationContext[]>()
+const activeOperationsByStorage = new WeakMap<Storage, Map<string, OperationContext>>()
 
 export function beginAsyncMutation(storage: Storage = localStorage): OperationContext {
   const context = captureOperationContext(storage)
-  let list = activeContextsByStorage.get(storage)
-  if (!list) {
-    list = []
-    activeContextsByStorage.set(storage, list)
+  let map = activeOperationsByStorage.get(storage)
+  if (!map) {
+    map = new Map()
+    activeOperationsByStorage.set(storage, map)
   }
-  list.push(context)
+  map.set(context.id, context)
   return context
 }
 
 export function endAsyncMutation(
-  contextOrStorage?: OperationContext | Storage,
+  contextOrStorage?: OperationContext | Storage | string | null,
   storage: Storage = localStorage
 ): void {
   const targetStorage = contextOrStorage && typeof (contextOrStorage as Storage).getItem === 'function'
     ? (contextOrStorage as Storage)
     : storage
-  const targetContext = contextOrStorage && typeof (contextOrStorage as OperationContext).id === 'string'
-    ? (contextOrStorage as OperationContext)
-    : undefined
+  const map = activeOperationsByStorage.get(targetStorage)
+  if (!map) return
 
-  const list = activeContextsByStorage.get(targetStorage)
-  if (!list || list.length === 0) return
-
-  if (targetContext) {
-    const idx = list.findIndex(c => c.id === targetContext.id)
-    if (idx !== -1) list.splice(idx, 1)
-  } else {
-    list.pop()
+  if (typeof contextOrStorage === 'string') {
+    map.delete(contextOrStorage)
+  } else if (contextOrStorage && typeof (contextOrStorage as OperationContext).id === 'string') {
+    map.delete((contextOrStorage as OperationContext).id)
+  } else if (!contextOrStorage) {
+    map.clear()
   }
 }
 
@@ -1021,19 +1097,32 @@ export function assertLibraryMutationAllowed(
   storage: Storage = localStorage,
   contextOrGeneration?: OperationContext | SessionGeneration | null
 ): void {
-  const list = activeContextsByStorage.get(storage)
-  let contextToValidate: OperationContext | SessionGeneration | null = null
-  let matchedActiveContext: OperationContext | null = null
+  const map = activeOperationsByStorage.get(storage)
+  let contextToValidate: OperationContext | SessionGeneration | null = contextOrGeneration ?? null
+  let matchedActiveId: string | null = null
 
-  if (contextOrGeneration) {
-    contextToValidate = contextOrGeneration
-    if (typeof (contextOrGeneration as OperationContext).id === 'string' && list) {
-      const found = list.find(c => c.id === (contextOrGeneration as OperationContext).id)
-      if (found) matchedActiveContext = found
+  if (!contextToValidate) {
+    if (map && map.size > 0) {
+      // Validate all active operations against current session
+      for (const [id, activeCtx] of map.entries()) {
+        try {
+          assertOperationContextValid(activeCtx, storage)
+        } catch (err) {
+          map.delete(id)
+          throw err
+        }
+      }
+      if (map.size > 1) {
+        throw new StaleSyncRoundError('session-changed', 0)
+      }
+      matchedActiveId = map.keys().next().value ?? null
+      contextToValidate = matchedActiveId ? map.get(matchedActiveId) ?? null : null
     }
-  } else if (list && list.length > 0) {
-    matchedActiveContext = list[list.length - 1]
-    contextToValidate = matchedActiveContext
+  } else if (typeof (contextOrGeneration as OperationContext).id === 'string') {
+    matchedActiveId = (contextOrGeneration as OperationContext).id
+    if (map && map.has(matchedActiveId)) {
+      contextToValidate = map.get(matchedActiveId)!
+    }
   }
 
   try {
@@ -1047,11 +1136,11 @@ export function assertLibraryMutationAllowed(
         'This device\'s songbook is stored on this browser and is not yet linked to an account. Linking or verified ownership is required before editing.'
       )
     }
-  } finally {
-    if (matchedActiveContext && list) {
-      const idx = list.indexOf(matchedActiveContext)
-      if (idx !== -1) list.splice(idx, 1)
+  } catch (err) {
+    if (matchedActiveId && map) {
+      map.delete(matchedActiveId)
     }
+    throw err
   }
 }
 
@@ -1100,6 +1189,11 @@ export function restoreLibraryRevision(
   context?: OperationContext | SessionGeneration | null
 ): void {
   assertLibraryMutationAllowed(storage, context)
+  if (context && typeof (context as OperationContext).id === 'string') {
+    endAsyncMutation(context as OperationContext, storage)
+  } else {
+    endAsyncMutation(undefined, storage)
+  }
   if (isLibraryB2Active(storage)) { b2Restore(revision); return }
   const key = activeLibraryKey(storage)
   if (revision === null) storage.removeItem(key)
@@ -1264,6 +1358,8 @@ export function persistLibrary(
   // Compare after the revision gate: identical saves need neither a write nor cleanup.
   if (isIdentical) {
     lastKnownLibraryRawByStorage.set(storage, currentRaw)
+    if (options?.context) endAsyncMutation(options.context, storage)
+    else endAsyncMutation(undefined, storage)
     return
   }
 
@@ -1289,6 +1385,8 @@ export function persistLibrary(
   }
   updateOnboardingCreatorProvenance(storage, wasEmpty, revBefore)
   lastKnownLibraryRawByStorage.set(storage, payload)
+  if (options?.context) endAsyncMutation(options.context, storage)
+  else endAsyncMutation(undefined, storage)
   if (encoded?.pending.length) {
     void confirmPendingLibraryBodies(encoded.pending, error =>
       appLogger.warn('LibraryIndex', 'Chart body not yet in IndexedDB; kept inline (library unaffected)', error instanceof Error ? error.message : String(error)))
@@ -1313,6 +1411,8 @@ function persistB2(library: SyncLibrary, storage: Storage, options?: PersistLibr
     updateOnboardingCreatorProvenance(storage, wasEmpty, revBefore)
   }
   lastKnownLibraryRawByStorage.set(storage, libraryRevision(storage))
+  if (options?.context) endAsyncMutation(options.context, storage)
+  else endAsyncMutation(undefined, storage)
   if (result === 'saved' && typeof window !== 'undefined') {
     try { if (storage === window.localStorage) window.dispatchEvent(new window.Event('gtar-library-persisted')) } catch { /* verified save stands */ }
   }
