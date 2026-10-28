@@ -206,6 +206,7 @@ API trust boundaries, abuse protection, sharing authorization, and safe logging.
 - [g3QrSharingRevocation.test.cjs](g3QrSharingRevocation.test.cjs)
 - [g4BrowserSecurityHeadersCsp.test.cjs](g4BrowserSecurityHeadersCsp.test.cjs)
 - [preAuthDebugLogs.test.cjs](preAuthDebugLogs.test.cjs)
+- [publicationConflictRecovery.test.cjs](publicationConflictRecovery.test.cjs)
 - [sharedCatalogApi.test.cjs](sharedCatalogApi.test.cjs)
 - [sharedCatalogSchema.test.cjs](sharedCatalogSchema.test.cjs)
 - [sharedCatalogV2.test.cjs](sharedCatalogV2.test.cjs)

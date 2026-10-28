@@ -54,6 +54,13 @@ export async function listPublishedSetlists(offset = 0, signal?: AbortSignal): P
 }
 
 export function publicationError(error: unknown): string {
+  if (error instanceof CatalogApiError && error.code === 'LIBRARY_OWNER') {
+    // #253: a local ownership refusal (no request was sent) is not a publication conflict.
+    const b2Unlinked = personalSyncPausedByB2() && /not linked to an account/.test(error.message)
+    return b2Unlinked
+      ? 'This device\'s songbook (new device storage, B2) is not linked to your account, so it cannot be shared. Turn B2 off in Review local recovery, link the songbook in Sync Center, then turn B2 on again. Nothing was published.'
+      : error.message
+  }
   if (error instanceof CatalogApiError) {
     const messages: Record<number, string> = {
       0: 'Connection failed. Retry the same confirmed request to recover its result.',
@@ -61,7 +68,7 @@ export function publicationError(error: unknown): string {
       403: 'An active account and original publisher are required for this action.',
       404: 'Shared Setlists is unavailable in this environment.',
       408: 'Result unknown after timeout. Retry the same confirmed request; do not create another publication.',
-      409: 'Publication or source conflict. Refresh and review again. An existing publication key cannot create another copy.',
+      409: 'Publication conflict: this setlist was already published or changed elsewhere. Review again to recover and update your existing publication instead of creating a copy.',
       410: 'This publication was unpublished and cannot be republished with the same key.',
       413: 'This setlist is too large to share (256 KB limit). Split it or shorten long charts, then review again.',
       422: 'The cloud source contains missing, ambiguous or unsupported songs. Fix it and sync before reviewing again.',
@@ -258,11 +265,46 @@ export async function replacePublicationLink(account: string, sourceId: string |
   })
 }
 
-export async function newPublicationLink(account: string, sourceId: string | number): Promise<PublicationLink> {
+export async function newPublicationLink(account: string, sourceId: string | number, generation = 0): Promise<PublicationLink> {
   // Deterministic opaque key prevents duplicate creates even if the journal was lost.
-  const bytes = new TextEncoder().encode(JSON.stringify(['setlist-v1', account, String(sourceId)]))
+  // #253: generation > 0 only after the server proved every earlier key is unpublished (tombstoned).
+  const parts: unknown[] = ['setlist-v1', account, String(sourceId)]
+  if (generation) parts.push(generation)
+  const bytes = new TextEncoder().encode(JSON.stringify(parts))
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
   return { publicationKey: Array.from(digest, b => b.toString(16).padStart(2, '0')).join('') }
+}
+
+export interface OwnPublication { id: string; revision: number; unpublished: boolean }
+export const MAX_PUBLICATION_GENERATIONS = 20
+
+/** #253: the caller's own head for a publication key; `undefined` when the server has no lookup (older server). */
+export async function lookupOwnPublication(publicationKey: string): Promise<OwnPublication | null | undefined> {
+  const { token, accountId } = publisherSession()
+  const response = await catalogFetch<{ publication?: OwnPublication | null }>(
+    `/api/catalog/setlists?publication_key=${encodeURIComponent(publicationKey)}`, { token })
+  assertAccount(accountId, token, true)
+  if (!response || !Object.hasOwn(response, 'publication')) return undefined
+  const found = response.publication
+  if (found === null) return null
+  if (!found || !validId(found.id) || !positive(found.revision) || typeof found.unpublished !== 'boolean') throw new Error('Invalid catalog response')
+  return found
+}
+
+/**
+ * #253 lost-journal recovery. Server-verified identity of this account's publication of `sourceId`:
+ * adopts an existing live publication (so the next action is an update, never a second create), and moves
+ * to the next deterministic key only when the server proves the earlier one was unpublished.
+ */
+export async function resolvePublicationLink(account: string, sourceId: string | number): Promise<{ link: PublicationLink; recovered: boolean; unpublishedBefore: number }> {
+  for (let generation = 0; generation < MAX_PUBLICATION_GENERATIONS; generation++) {
+    const link = await newPublicationLink(account, sourceId, generation)
+    const found = await lookupOwnPublication(link.publicationKey)
+    if (found === undefined) return { link, recovered: false, unpublishedBefore: 0 } // older server: previous behaviour
+    if (!found) return { link, recovered: false, unpublishedBefore: generation }
+    if (!found.unpublished) return { link: { ...link, result: { id: found.id, revision: found.revision, unpublished: false } }, recovered: true, unpublishedBefore: generation }
+  }
+  throw new Error('This setlist was published and unpublished too many times. Contact the operator; nothing was sent.')
 }
 
 export function makePublicationIntent(link: PublicationLink, preview?: SourcePreview, unpublish = false): PublicationIntent {
