@@ -132,7 +132,8 @@ test('active members can prepare; pending or revoked users and expired sessions 
   session('account-a', 'member', 'denied'); await assert.rejects(prepare, /active approved session/)
   const value = session(); value.localExpiresAt = value.expiresAt = Date.now() - 1; localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
   await assert.rejects(prepare, /Authentication/)
-  assert.equal(calls.length, 1)
+  // #253: one capability probe and one exact-source read for the single successful preview; refusals send nothing.
+  assert.deepEqual(calls.map(c => c.url), ['/api/catalog/setlists?limit=1&offset=0', '/api/songbook/sync'])
 })
 test('account switching during source read and before mutation preserves account isolation', async () => {
   const original = responder
@@ -987,4 +988,52 @@ test('#247 F4: a session switch after the publication journal is saved but befor
   } finally { global.localStorage = real }
   assert.ok(switched, 'switch happened after the journal write')
   assert.equal(calls.filter(c => String(c.url).startsWith('/api/catalog/setlists') && c.method && c.method !== 'GET').length, 0, 'no publication request sent')
+})
+
+// #253 client snapshots: a capable server receives the reviewed device snapshot; no cloud source is read.
+function clientServer() {
+  const base = responder
+  responder = (url, options) => url.startsWith('/api/catalog/setlists?') ? response({ setlists: [], capabilities: { client_snapshots: true } }) : base(url, options)
+}
+test('#253 client mode: preview from the saved device library without Cloud Sync; unsaved edits still block', async () => {
+  clientServer()
+  cloud = { songs: [], setlists: [] } // a stale/absent personal cloud copy is irrelevant
+  const preview = await prepare()
+  assert.equal(preview.mode, 'client')
+  assert.deepEqual(preview.snapshot, snapshotFromSongbook(library, 'set-a'))
+  assert.equal(calls.some(c => c.url === '/api/songbook/sync'), false)
+  library.songs[0].rawContent += ' draft'
+  await assert.rejects(prepare, /not safely persisted/)
+  assert.ok(calls.every(c => !c.method || c.method === 'GET'))
+})
+test('#253 client mode: timeout retry resends the exact stored snapshot after local edits; journal stays compact', async () => {
+  clientServer()
+  const { preview, link } = await intent()
+  responder = () => { throw new Error('network timeout') }
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', link))
+  const saved = api.readPublicationLink(preview.account, 'set-a')
+  const journal = localStorage.getItem(`gtar_setlist_publication_v1:${encodeURIComponent(preview.account)}:set-a`)
+  assert.equal(journal.includes('Exact chart'), false, 'no chart content in the journal')
+  library.songs[0].rawContent += ' later edit'; persist()
+  responder = () => response({ id, revision: 1, unpublished: false })
+  await api.sendPublicationIntent(preview.account, 'set-a', saved)
+  const writes = calls.filter(c => c.method === 'POST')
+  assert.equal(writes[0].body, writes[1].body)
+  assert.equal(writes[0].headers['Idempotency-Key'], writes[1].headers['Idempotency-Key'])
+  assert.deepEqual(JSON.parse(writes[1].body).snapshot, preview.snapshot)
+  assert.equal(localStorage.getItem(`gtar_setlist_publication_snapshot_v1:${encodeURIComponent(preview.account)}:set-a`), null)
+  assert.equal(api.readPublicationLink(preview.account, 'set-a').snapshotDigest, api.computeSnapshotDigest(preview.snapshot))
+})
+test('#253 client mode: missing or altered stored request content is refused before any request', async () => {
+  clientServer()
+  const { preview, link } = await intent()
+  const stash = `gtar_setlist_publication_snapshot_v1:${encodeURIComponent(preview.account)}:set-a`
+  const stored = JSON.parse(localStorage.getItem(stash))
+  stored.snapshot.name = 'Tampered'
+  localStorage.setItem(stash, JSON.stringify(stored))
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', link), /saved request content is unavailable/)
+  localStorage.removeItem(stash)
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', link), /saved request content is unavailable/)
+  assert.equal(calls.some(c => c.method === 'POST'), false)
+  assert.equal(api.readPublicationLink(preview.account, 'set-a'), null, 'no pending request recorded')
 })

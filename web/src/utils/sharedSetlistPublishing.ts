@@ -11,7 +11,9 @@ import { recoverySourceDigest } from './recoverySourceDigest'
 export type SetlistSnapshot = ReturnType<typeof snapshotFromSongbook>
 export interface PublishedSetlist { id: string; revision: number; name: string; occurrences: number; updated_at: string }
 export interface PublicationResult { id: string; revision: number; unpublished: boolean }
-export interface SourcePreview { account: string; token: string; sourceId: string | number; version: number; checksum: string; snapshot: SetlistSnapshot }
+/** #253: 'client' sends the reviewed snapshot itself; 'songbook' (legacy) references the personal cloud copy. */
+export type PublicationMode = 'client' | 'songbook'
+export interface SourcePreview { account: string; token: string; sourceId: string | number; version: number; checksum: string; snapshot: SetlistSnapshot; mode?: PublicationMode }
 export interface PublicationIntent { method: 'POST' | 'PUT' | 'DELETE'; id?: string; key: string; body: Record<string, unknown>; snapshotDigest?: string; retried?: boolean }
 export interface PublicationLink { publicationKey: string; result?: PublicationResult; pending?: PublicationIntent; snapshotDigest?: string; snapshotRevision?: number; snapshot?: SetlistSnapshot }
 
@@ -61,8 +63,10 @@ export function publicationError(error: unknown): string {
       408: 'Result unknown after timeout. Retry the same confirmed request; do not create another publication.',
       409: 'Publication or source conflict. Refresh and review again. An existing publication key cannot create another copy.',
       410: 'This publication was unpublished and cannot be republished with the same key.',
+      413: 'This setlist is too large to share (256 KB limit). Split it or shorten long charts, then review again.',
       422: 'The cloud source contains missing, ambiguous or unsupported songs. Fix it and sync before reviewing again.',
       429: 'Publication quota or rate limit reached. Wait before retrying; retained storage quotas may require operator help.',
+      501: 'This server does not accept device setlists yet. Use Cloud Sync, then review again.',
       503: 'Catalog storage is unavailable. Retry the same request later.',
     }
     return messages[error.status] || error.message
@@ -70,9 +74,25 @@ export function publicationError(error: unknown): string {
   return error instanceof Error ? error.message : 'Publication could not be verified.'
 }
 
+/** #253 capability: servers with migration 0010 accept self-contained client snapshots.
+ * Anything else (older server, error, malformed response) keeps the legacy cloud-source flow. */
+export async function clientSnapshotsSupported(token: string): Promise<boolean> {
+  try {
+    const response = await catalogFetch<{ setlists?: unknown; capabilities?: { client_snapshots?: unknown } }>(
+      '/api/catalog/setlists?limit=1&offset=0', { token })
+    return Array.isArray(response?.setlists) && response?.capabilities?.client_snapshots === true
+  } catch { return false }
+}
+
 export async function preparePublication(sourceId: string | number, getLocal: () => SyncLibrary, blocked: () => boolean): Promise<SourcePreview> {
-  // #258 F7: the server snapshots the personal cloud songbook, which is paused while B2 is on.
-  if (personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
+  let client: boolean | undefined
+  if (personalSyncPausedByB2()) {
+    // #258 F7: a legacy server snapshots the personal cloud songbook, which is paused while B2 is on.
+    let probeToken = ''
+    try { probeToken = getAuthenticatedSessionToken().token } catch { /* no session: legacy refusal below */ }
+    client = !!probeToken && await clientSnapshotsSupported(probeToken)
+    if (!client) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
+  }
   assertPublishFromOwnLibrary()
   const { token, accountId } = publisherSession()
   const local = getLocal()
@@ -82,6 +102,20 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
     canonical(snapshotFromSongbook(local, sourceId)) !== canonical(snapshotFromSongbook(persisted, sourceId))) {
     throw new Error('Local edits are not safely persisted. Save and resolve storage/recovery errors first.')
   }
+  if (client ?? await clientSnapshotsSupported(token)) {
+    // #253: the saved local setlist is the source. No personal cloud upload is needed (works with B2 on).
+    assertAccount(accountId, token, true)
+    const current = getLocal()
+    const latest = readPersistedLibrary()
+    const snapshot = snapshotFromSongbook(persisted, sourceId)
+    if (blocked() || !latest || sourceChecksum(current) !== sourceChecksum(latest) || sourceChecksum(current) !== sourceChecksum(local) ||
+      canonical(snapshotFromSongbook(current, sourceId)) !== canonical(snapshot)) {
+      throw new Error('Local edits changed during review. Save, then review again. Nothing was published.')
+    }
+    return { account: accountId, token, sourceId, version: 1, checksum: sourceChecksum(current), snapshot, mode: 'client' }
+  }
+  // #258 F7: legacy cloud-source flow (B2 may have been turned on during the probe).
+  if (personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   const response = await catalogFetch<{ success: boolean; userId: string; cloudRecord: CloudSongbookRecord | null }>('/api/songbook/sync', { token })
   assertAccount(accountId, token, true)
   const cloud = response?.cloudRecord
@@ -108,13 +142,14 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
     canonical(snapshotFromSongbook(current, sourceId)) !== canonical(snapshot)) {
     throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
   }
-  return { account: accountId, token, sourceId, version: cloud.version, checksum: sourceChecksum(current), snapshot }
+  return { account: accountId, token, sourceId, version: cloud.version, checksum: sourceChecksum(current), snapshot, mode: 'songbook' }
 }
 
 export async function verifyPreview(preview: SourcePreview, getLocal: () => SyncLibrary, blocked: () => boolean) {
   assertAccount(preview.account, preview.token, true)
   const fresh = await preparePublication(preview.sourceId, getLocal, blocked)
-  if (fresh.version !== preview.version || fresh.checksum !== preview.checksum || canonical(fresh.snapshot) !== canonical(preview.snapshot)) {
+  if (fresh.version !== preview.version || fresh.checksum !== preview.checksum || (fresh.mode ?? 'songbook') !== (preview.mode ?? 'songbook') ||
+    canonical(fresh.snapshot) !== canonical(preview.snapshot)) {
     throw new Error('Preview is stale. Refresh and explicitly review the new source before publishing.')
   }
 }
@@ -123,6 +158,36 @@ function linkKey(account: string, sourceId: string | number) {
   // localStorage is origin-isolated: DEV/PROD never share this operational journal.
   return `gtar_setlist_publication_v1:${encodeURIComponent(account)}:${encodeURIComponent(String(sourceId))}`
 }
+// #253: a pending client-snapshot request keeps its exact body outside the compact journal
+// (no chart content in the journal). One slot per account and source; removed once settled.
+function stashKey(account: string, sourceId: string | number) {
+  return `gtar_setlist_publication_snapshot_v1:${encodeURIComponent(account)}:${encodeURIComponent(String(sourceId))}`
+}
+function saveStash(account: string, sourceId: string | number, ref: string, snapshot: SetlistSnapshot) {
+  const key = stashKey(account, sourceId)
+  const raw = JSON.stringify({ ref, snapshot })
+  localStorage.setItem(key, raw)
+  if (localStorage.getItem(key) !== raw) throw new Error('Publication request could not be saved. Free browser storage before retrying.')
+}
+function readStash(account: string, sourceId: string | number, ref: unknown): SetlistSnapshot {
+  let stored: { ref?: unknown; snapshot?: SetlistSnapshot } | null
+  try { stored = JSON.parse(localStorage.getItem(stashKey(account, sourceId)) || 'null') } catch { stored = null }
+  if (!stored || typeof ref !== 'string' || stored.ref !== ref || !stored.snapshot || computeSnapshotDigest(stored.snapshot) !== ref) {
+    throw new Error('The saved request content is unavailable on this device. Refresh the publication, then review again. Nothing was sent.')
+  }
+  return stored.snapshot
+}
+function clearStash(account: string, sourceId: string | number) {
+  try { localStorage.removeItem(stashKey(account, sourceId)) } catch { /* retained slot is overwritten by the next request */ }
+}
+/** Body actually sent for a journal intent (expands a client snapshot reference). */
+function wireBody(account: string, sourceId: string | number, intent: PublicationIntent): Record<string, unknown> {
+  if (!Object.hasOwn(intent.body, 'snapshot_ref')) return intent.body
+  const { snapshot_ref: ref, ...rest } = intent.body
+  return { ...rest, snapshot: readStash(account, sourceId, ref) }
+}
+const isClientIntent = (intent?: PublicationIntent) => !!intent && Object.hasOwn(intent.body, 'snapshot_ref')
+
 export function readPublicationLink(account: string, sourceId: string | number): PublicationLink | null {
   const raw = localStorage.getItem(linkKey(account, sourceId))
   if (!raw) return null
@@ -190,6 +255,13 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
   const result = link.result
   if (!preview && !unpublish) throw new Error('Verified preview required')
   if (unpublish && !result) throw new Error('Verified publication required')
+  if (!unpublish && preview!.mode === 'client') {
+    const ref = computeSnapshotDigest(preview!.snapshot)
+    saveStash(preview!.account, preview!.sourceId, ref, preview!.snapshot)
+    return { method: result ? 'PUT' : 'POST', id: result?.id, key: generateUUID(),
+      body: { snapshot_version: 1, snapshot_ref: ref, ...(result ? { expected_revision: result.revision } : { publication_key: link.publicationKey }) },
+      snapshotDigest: ref }
+  }
   return { method: unpublish ? 'DELETE' : result ? 'PUT' : 'POST', id: result?.id, key: generateUUID(),
     body: unpublish ? { expected_revision: result!.revision } : {
       snapshot_version: 1, source_setlist_id: preview!.sourceId, source_version: preview!.version,
@@ -198,8 +270,9 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
 }
 
 export async function sendPublicationIntent(account: string, sourceId: string | number, link: PublicationLink): Promise<{ result: PublicationResult; saved: boolean }> {
-  // #258 F7: create/update need the paused personal cloud copy; unpublishing sends no content.
-  if (link.pending?.method !== 'DELETE' && personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
+  // #258 F7: legacy create/update need the paused personal cloud copy; unpublishing sends no content.
+  // #253: a client-snapshot request carries its own content and is not blocked by B2.
+  if (link.pending?.method !== 'DELETE' && !isClientIntent(link.pending) && personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
   // #247: a create/update sends a snapshot of this device's setlist; unpublishing sends none.
@@ -207,6 +280,8 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   // Detach from caller-owned objects before crossing any asynchronous boundary.
   link = JSON.parse(JSON.stringify(link)) as PublicationLink
   const intent = link.pending!
+  // Resolve the exact wire body before the journal records anything (client snapshot content lives in its stash).
+  const body = wireBody(account, sourceId, intent)
   let firstAttempt = false
   await journalTransition(() => {
     assertAccount(account, token, true)
@@ -230,7 +305,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   let result: PublicationResult
   try {
     result = await catalogFetch<PublicationResult>(`/api/catalog/setlists${intent.id ? `/${encodeURIComponent(intent.id)}` : ''}`, {
-      token, method: intent.method, body: intent.body, idempotencyKey: intent.key,
+      token, method: intent.method, body, idempotencyKey: intent.key,
     })
   } catch (error) {
     // A rejection proves only this attempt failed. A previous/overlapping retry
@@ -244,6 +319,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
           // Unbound legacy digests could describe a rejected proposal.
           if (clean.snapshotRevision !== clean.result?.revision) { delete clean.snapshotDigest; delete clean.snapshot }
           savePublicationLink(account, sourceId, clean)
+          if (isClientIntent(intent)) clearStash(account, sourceId)
         }
       })
     }
@@ -260,7 +336,10 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
       assertAccount(account, token, true)
       const current = readPublicationLink(account, sourceId)
       // A completed identical retry is harmless; it must never reinstall pending.
-      if (current?.publicationKey === link.publicationKey && !current.pending && canonical(current.result) === canonical(result)) return true
+      if (current?.publicationKey === link.publicationKey && !current.pending && canonical(current.result) === canonical(result)) {
+        if (isClientIntent(intent)) clearStash(account, sourceId)
+        return true
+      }
       if (!current?.pending || canonical({ ...current, pending: { ...current.pending, retried: undefined } }) !==
         canonical({ ...link, pending: { ...intent, retried: undefined } })) return false
       savePublicationLink(account, sourceId, {
@@ -269,6 +348,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
         snapshotDigest: intent.method === 'DELETE' ? undefined : intent.snapshotDigest,
         snapshotRevision: intent.method === 'DELETE' || !intent.snapshotDigest ? undefined : result.revision,
       })
+      if (isClientIntent(intent)) clearStash(account, sourceId)
       return true
     })
   } catch { /* Server success remains authoritative even when local saving fails. */ }

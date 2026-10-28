@@ -51,6 +51,20 @@ export function validateSnapshot(value: unknown): asserts value is {
   }
 }
 
+/** #253 client snapshot: validate the submitted value as-is, then store one canonical field order
+ * (null/absent optional fields dropped). Throws before anything is written. */
+export function normalizeSnapshot(value: unknown) {
+  validateSnapshot(value)
+  const snapshot = {
+    version: 1,
+    name: value.name,
+    entries: value.entries.map(entry => Object.fromEntries(songFields
+      .filter(key => entry[key] !== undefined && entry[key] !== null).map(key => [key, entry[key]]))),
+  }
+  validateSnapshot(snapshot)
+  return snapshot
+}
+
 /** Resolve only the authenticated publisher's exact cloud songbook version.
  * ID matches are authoritative; legacy title matches must be unique, including trash.
  * Per-occurrence overrides are unsupported in the verified personal model: reject them.

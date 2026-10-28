@@ -1,3 +1,4 @@
+import { ReportContentButton } from './ReportContentButton'
 import { openRecoveryReview } from '../utils/recoveryReview'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { CatalogImportContext } from '../utils/catalogImportContext'
@@ -206,6 +207,11 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
         )}
 
         {busy && <p role="status" className="mt-2">Verifying publication and saving…</p>}
+
+        {/* #253 reactive moderation: report only; nothing is hidden automatically. */}
+        <div className="mt-3 pt-2 border-t border-app-border/40">
+          <ReportContentButton kind="setlist" id={id} revision={revision} label={preview.snapshot.name} />
+        </div>
 
         {savedId && (
           <div role="status" className="mt-3 p-3 rounded-lg bg-status-success/10 border border-status-success/30">

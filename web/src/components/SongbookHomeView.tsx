@@ -37,6 +37,7 @@ import { sharedCatalogService } from '../utils/sharedCatalogService'
 import { SwipeableActionCard } from './SwipeableActionCard'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { SharedCatalogBrowser } from './SharedCatalogBrowser'
+import { findCatalogDuplicates } from '../utils/catalogDuplicateAdvisory'
 import { publishSharedCatalogSong } from '../utils/sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { useOptionalGoogleAuth } from '../utils/authContext'
@@ -280,6 +281,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       )
     }
   }
+
+  // #253 non-blocking duplicate advisory against the cached Shared Catalog.
+  const [focusCatalogSongId, setFocusCatalogSongId] = useState<string | null>(null)
+  const publishDuplicates = useMemo(
+    () => publishingSong ? findCatalogDuplicates(publishingSong, catalogMetadataMap.values()) : [],
+    [publishingSong, catalogMetadataMap],
+  )
 
   const handleConfirmPublish = async () => {
     if (!publishingSong) return
@@ -1158,6 +1166,36 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 />
               </div>
 
+              {publishDuplicates.length > 0 && !publishRecoveryCatalogId && (
+                <div data-testid="publish-duplicate-advisory" role="status" className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-xs space-y-2">
+                  <p className="font-semibold text-status-warning">Similar songs are already in the Shared Catalog</p>
+                  <ul className="space-y-1.5">
+                    {publishDuplicates.map(dup => (
+                      <li key={dup.id} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 break-words text-app-text">
+                          “{dup.title}”{dup.artist ? ` by ${dup.artist}` : ''}
+                          <span className="text-app-muted"> · {dup.match === 'chart' ? 'same chart' : 'same lyrics'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          data-testid={`open-existing-${dup.id}`}
+                          onClick={() => {
+                            setPublishingSong(null)
+                            setPublishRecoveryCatalogId(null)
+                            setFocusCatalogSongId(dup.id)
+                            setActiveTab('shared_catalog')
+                          }}
+                          className="shrink-0 min-h-9 px-2.5 py-1 rounded-lg border border-app-border bg-app-surface text-app-heading hover:border-app-action font-mono font-bold cursor-pointer"
+                        >
+                          Open existing
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-app-muted">You can still publish your version. Nothing is merged.</p>
+                </div>
+              )}
+
               {publishError && (
                 <p data-testid="publish-error-text" className="text-[11px] text-status-error font-mono font-medium">
                   {publishError}
@@ -1195,7 +1233,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   className="px-4 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
-                  <span>{isSubmittingPublish ? 'Publishing...' : 'Publish Song'}</span>
+                  <span>{isSubmittingPublish ? 'Publishing...' : publishDuplicates.length > 0 ? 'Publish anyway' : 'Publish Song'}</span>
                 </button>
               )}
             </div>
@@ -1517,6 +1555,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       {activeTab === 'shared_catalog' ? (
         <SharedCatalogBrowser
           personalSongs={songs}
+          focusSongId={focusCatalogSongId}
           onImportSong={(song) => {
             if (onImportSharedCatalogSong) {
               return onImportSharedCatalogSong(song)

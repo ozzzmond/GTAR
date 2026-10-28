@@ -115,14 +115,20 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
       <p className="text-[11px] text-app-muted leading-relaxed">
         Team members can view it and save their own copy. Yours stays unchanged.
       </p>
-      <p className="text-[11px] text-app-muted leading-relaxed">
-        If local and cloud versions differ, sync your changes first, then review again here.
-      </p>
+      {preview?.mode === 'client' ? (
+        <p className="text-[11px] text-app-muted leading-relaxed">
+          Shares the saved setlist on this device with its charts. Cloud Sync is not needed.
+        </p>
+      ) : (
+        <p className="text-[11px] text-app-muted leading-relaxed">
+          If local and cloud versions differ, sync your changes first, then review again here.
+        </p>
+      )}
     </div>
     {message && <p role="status" className="my-3 text-xs font-mono font-medium whitespace-pre-wrap break-words">{message}</p>}
     {preview && <section aria-label="Exact publication preview" className="my-3 space-y-3 p-3 rounded-xl bg-app-base border border-app-border">
       <h3 className="font-bold text-sm text-app-heading break-words">{preview.snapshot.name}</h3>
-      <p className="text-xs text-app-muted">{preview.snapshot.entries.length} songs · Cloud source version {preview.version}{link?.result ? ` · Published revision ${link.result.revision}` : ''}</p>
+      <p className="text-xs text-app-muted">{preview.snapshot.entries.length} songs · {preview.mode === 'client' ? 'Saved on this device' : `Cloud source version ${preview.version}`}{link?.result ? ` · Published revision ${link.result.revision}` : ''}</p>
       <ol className="list-decimal pl-6 space-y-3 text-xs">{preview.snapshot.entries.map((song, index) => <li key={index}>
         <h4 className="font-bold text-app-heading break-words">{String(song.title)}</h4>
         <dl className="text-xs grid grid-cols-[auto_1fr] gap-x-2 text-app-muted">{Object.entries(song).filter(([key]) => !['title', 'rawContent'].includes(key)).map(([key, value]) =>

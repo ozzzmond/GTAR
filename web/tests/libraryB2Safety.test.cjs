@@ -256,13 +256,14 @@ test('F7: with B2 on, shared setlist create/update is refused with a B2-specific
   const { tab } = await open(storage, factory)
   const pub = require('../src/utils/sharedSetlistPublishing.ts')
   const realFetch = global.fetch
-  let requests = 0
-  global.fetch = async () => { requests++; return new Response(JSON.stringify({ success: false }), { status: 503 }) }
+  const urls = []
+  global.fetch = async url => { urls.push(url); return new Response(JSON.stringify({ success: false }), { status: 503 }) }
   try {
     const lib = tab.sj.readPersistedLibrary(storage)
+    // Legacy server (no client-snapshot capability): the cloud-source flow stays refused under B2.
     await assert.rejects(pub.preparePublication(lib.setlists[0].id, () => lib, () => false), /new device storage \(B2\)/)
     await assert.rejects(pub.sendPublicationIntent('user-a', lib.setlists[0].id, { publicationKey: 'k', pending: { method: 'POST', key: 'k', body: {} } }), /new device storage \(B2\)/)
-    assert.equal(requests, 0)
+    assert.ok(urls.every(url => url === '/api/catalog/setlists?limit=1&offset=0'), 'at most the read-only capability probe; no source read or mutation')
     // Unpublishing sends no library content: whatever else it needs, B2 is not the reason it stops.
     const unpublish = await pub.sendPublicationIntent('user-a', lib.setlists[0].id, { publicationKey: 'k', result: { id: 'p', revision: 1, unpublished: false }, pending: { method: 'DELETE', id: 'p', key: 'k', body: {} } })
       .then(() => null, error => error)
@@ -431,4 +432,42 @@ test('R2d: ambiguous states stay held and keep every record: no receipt without 
     retry(storage)
     assert.equal((await open(storage, factory)).prepared.active, true)
   }
+})
+
+// #253: client-snapshot publishing is self-contained, so B2 no longer blocks it.
+test('#253: B2 on + client-snapshot server: publishes the saved device setlist with no personal cloud read', async () => {
+  const { storage, factory } = device()
+  const { tab } = await open(storage, factory)
+  const pub = require('../src/utils/sharedSetlistPublishing.ts')
+  storage.setItem('gtar_auth_session', JSON.stringify({ version: 1, user: { id: 'user-a', sub: 'user-a', email: 'user-a@example.test', role: 'member', access_status: 'active', email_verified: true },
+    authenticatedAt: Date.now(), lastVerifiedAt: Date.now(), localExpiresAt: Date.now() + 3600000, expiresAt: Date.now() + 3600000,
+    sessionToken: 'token-user-a', role: 'member', access_status: 'active' }))
+  // The publication journal serializes through Web Locks (single-tab fixture).
+  if (!window.navigator.locks) Object.defineProperty(window.navigator, 'locks', { configurable: true, value: { request: async (_name, action) => action() } })
+  const realFetch = global.fetch
+  const calls = []
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url, method: options.method ?? 'GET', body: options.body ? JSON.parse(options.body) : undefined })
+    if (url.startsWith('/api/catalog/setlists?')) return json({ setlists: [], capabilities: { client_snapshots: true } })
+    if (options.method === 'POST') return json({ id: 'publication_b2_000000001', revision: 1, unpublished: false })
+    return json({ success: false }, 500)
+  }
+  try {
+    const lib = tab.sj.readPersistedLibrary(storage)
+    const setId = lib.setlists[0].id
+    const preview = await pub.preparePublication(setId, () => lib, () => false)
+    assert.equal(preview.mode, 'client')
+    const link = await pub.newPublicationLink(preview.account, setId)
+    const { result } = await pub.sendPublicationIntent(preview.account, setId, { ...link, pending: pub.makePublicationIntent(link, preview) })
+    assert.equal(result.revision, 1)
+    assert.equal(calls.some(c => c.url.includes('/api/songbook')), false, 'no personal cloud read or upload')
+    const post = calls.find(c => c.method === 'POST')
+    assert.deepEqual(post.body.snapshot, preview.snapshot)
+    assert.deepEqual(Object.keys(post.body).sort(), ['publication_key', 'snapshot', 'snapshot_version'])
+    const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i))
+    assert.equal(keys.some(k => k.startsWith('gtar_setlist_publication_snapshot_v1:')), false, 'settled request content removed')
+    const journal = storage.getItem(keys.find(k => k.startsWith('gtar_setlist_publication_v1:')))
+    assert.equal(journal.includes(preview.snapshot.entries[0].rawContent), false, 'no chart content in the journal')
+  } finally { global.fetch = realFetch }
 })

@@ -1,4 +1,5 @@
 import { SharedSetlistCatalogPanel } from './SharedSetlistCatalogPanel'
+import { ReportContentButton } from './ReportContentButton'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -50,6 +51,8 @@ export interface SharedCatalogBrowserProps {
   onSongImported?: (songTitle: string) => void
   currentUserId?: string | null
   userRole?: string | null
+  /** #253: open this catalog song's preview (from the publish duplicate advisory). */
+  focusSongId?: string | null
 }
 
 export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
@@ -61,6 +64,7 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
   onSongImported,
   currentUserId: propUserId,
   userRole: propUserRole,
+  focusSongId,
 }) => {
   const auth = useOptionalGoogleAuth()
   const activeUserId = (
@@ -225,6 +229,19 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
       setIsLoadingDetails(false)
     }
   }
+
+  // #253: "Open existing" from the publish duplicate advisory.
+  const focusedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusSongId || focusedRef.current === focusSongId) return
+    const song = songs.find(s => s.id === focusSongId) || sharedCatalogService.getCatalogSong(focusSongId)
+    if (!song) return
+    focusedRef.current = focusSongId
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- One-shot navigation request from the parent (ref-guarded per focus id).
+    setCatalogKind('songs')
+    void handleOpenPreview(song)
+    // handleOpenPreview is recreated every render; the ref makes this a one-shot per focus id.
+  }, [focusSongId, songs])
 
   const executeImport = useCallback((song: SharedCatalogSongItem) => {
     if (importingSongIds.has(song.id)) return // Prevent double tap
@@ -401,6 +418,7 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
         <SharedSetlistCatalogPanel
           personalSetlists={personalSetlists}
           currentUserId={activeUserId || null}
+          isAdmin={activeUserRole === 'admin'}
           onUnpublished={onSetlistUnpublished}
         />
       ) : <>
@@ -719,6 +737,11 @@ export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
                 </div>
               </div>
             ) : null}
+
+            {/* #253 reactive moderation: report only; nothing is hidden automatically. */}
+            <div className="pt-2 border-t border-app-border/40 flex justify-start">
+              <ReportContentButton key={previewSong.id} kind="song" id={previewSong.id} revision={previewSong.current_revision} label={previewSong.title} />
+            </div>
           </div>
 
           <div className="p-4 border-t border-app-border/60 flex justify-end gap-2 font-mono text-xs font-bold">
