@@ -159,32 +159,48 @@ function linkKey(account: string, sourceId: string | number) {
   return `gtar_setlist_publication_v1:${encodeURIComponent(account)}:${encodeURIComponent(String(sourceId))}`
 }
 // #253: a pending client-snapshot request keeps its exact body outside the compact journal
-// (no chart content in the journal). One slot per account and source; removed once settled.
-function stashKey(account: string, sourceId: string | number) {
-  return `gtar_setlist_publication_snapshot_v1:${encodeURIComponent(account)}:${encodeURIComponent(String(sourceId))}`
+// (no chart content in the journal), keyed by its immutable intent key so concurrent tabs can never
+// overwrite each other's request content. Removed once settled; unreferenced entries are pruned.
+function stashPrefix(account: string, sourceId: string | number) {
+  return `gtar_setlist_publication_snapshot_v1:${encodeURIComponent(account)}:${encodeURIComponent(String(sourceId))}:`
 }
-function saveStash(account: string, sourceId: string | number, ref: string, snapshot: SetlistSnapshot) {
-  const key = stashKey(account, sourceId)
+function stashKey(account: string, sourceId: string | number, intentKey: string) {
+  return stashPrefix(account, sourceId) + encodeURIComponent(intentKey)
+}
+function saveStash(account: string, sourceId: string | number, intentKey: string, ref: string, snapshot: SetlistSnapshot) {
+  const key = stashKey(account, sourceId, intentKey)
   const raw = JSON.stringify({ ref, snapshot })
   localStorage.setItem(key, raw)
   if (localStorage.getItem(key) !== raw) throw new Error('Publication request could not be saved. Free browser storage before retrying.')
 }
-function readStash(account: string, sourceId: string | number, ref: unknown): SetlistSnapshot {
+function readStash(account: string, sourceId: string | number, intentKey: string, ref: unknown): SetlistSnapshot {
   let stored: { ref?: unknown; snapshot?: SetlistSnapshot } | null
-  try { stored = JSON.parse(localStorage.getItem(stashKey(account, sourceId)) || 'null') } catch { stored = null }
+  try { stored = JSON.parse(localStorage.getItem(stashKey(account, sourceId, intentKey)) || 'null') } catch { stored = null }
   if (!stored || typeof ref !== 'string' || stored.ref !== ref || !stored.snapshot || computeSnapshotDigest(stored.snapshot) !== ref) {
     throw new Error('The saved request content is unavailable on this device. Refresh the publication, then review again. Nothing was sent.')
   }
   return stored.snapshot
 }
-function clearStash(account: string, sourceId: string | number) {
-  try { localStorage.removeItem(stashKey(account, sourceId)) } catch { /* retained slot is overwritten by the next request */ }
+function clearStash(account: string, sourceId: string | number, intentKey: string) {
+  try { localStorage.removeItem(stashKey(account, sourceId, intentKey)) } catch { /* pruned by a later request */ }
+}
+/** Under the journal lock only: drop stashed content other than `keep` (the durable pending request). */
+function pruneStash(account: string, sourceId: string | number, keep: string) {
+  const prefix = stashPrefix(account, sourceId)
+  try {
+    const stale: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(prefix) && key !== stashKey(account, sourceId, keep)) stale.push(key)
+    }
+    for (const key of stale) localStorage.removeItem(key)
+  } catch { /* best effort */ }
 }
 /** Body actually sent for a journal intent (expands a client snapshot reference). */
 function wireBody(account: string, sourceId: string | number, intent: PublicationIntent): Record<string, unknown> {
   if (!Object.hasOwn(intent.body, 'snapshot_ref')) return intent.body
   const { snapshot_ref: ref, ...rest } = intent.body
-  return { ...rest, snapshot: readStash(account, sourceId, ref) }
+  return { ...rest, snapshot: readStash(account, sourceId, intent.key, ref) }
 }
 const isClientIntent = (intent?: PublicationIntent) => !!intent && Object.hasOwn(intent.body, 'snapshot_ref')
 
@@ -257,8 +273,9 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
   if (unpublish && !result) throw new Error('Verified publication required')
   if (!unpublish && preview!.mode === 'client') {
     const ref = computeSnapshotDigest(preview!.snapshot)
-    saveStash(preview!.account, preview!.sourceId, ref, preview!.snapshot)
-    return { method: result ? 'PUT' : 'POST', id: result?.id, key: generateUUID(),
+    const key = generateUUID()
+    saveStash(preview!.account, preview!.sourceId, key, ref, preview!.snapshot)
+    return { method: result ? 'PUT' : 'POST', id: result?.id, key,
       body: { snapshot_version: 1, snapshot_ref: ref, ...(result ? { expected_revision: result.revision } : { publication_key: link.publicationKey }) },
       snapshotDigest: ref }
   }
@@ -283,7 +300,8 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   // Resolve the exact wire body before the journal records anything (client snapshot content lives in its stash).
   const body = wireBody(account, sourceId, intent)
   let firstAttempt = false
-  await journalTransition(() => {
+  try {
+    await journalTransition(() => {
     assertAccount(account, token, true)
     const existing = readPublicationLink(account, sourceId)
     const comparable = (entry: PublicationLink) => ({ ...entry, pending: entry.pending ? { ...entry.pending, retried: undefined } : undefined })
@@ -294,9 +312,22 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
     }
     firstAttempt = !existing?.pending
     if (!firstAttempt) intent.retried = true
+    // The referenced content must still exist when the request becomes durable.
+    if (isClientIntent(intent)) wireBody(account, sourceId, intent)
     // Must be durable BEFORE any request. Legacy saved intents are ambiguous.
     savePublicationLink(account, sourceId, link)
-  })
+    // Only one pending request per source: abandoned or losing content is dropped under the same lock.
+    if (isClientIntent(intent)) pruneStash(account, sourceId, intent.key)
+    })
+  } catch (error) {
+    // A request that never became the durable pending entry drops only its own content.
+    if (isClientIntent(intent)) {
+      let durable: boolean
+      try { durable = readPublicationLink(account, sourceId)?.pending?.key === intent.key } catch { durable = true }
+      if (!durable) clearStash(account, sourceId, intent.key)
+    }
+    throw error
+  }
   // #247 F4: the journal write was awaited; the signed-in publisher must still be the one this request
   // was prepared for (client-side prevention; the server authorizes only the token it receives).
   const current = publisherSession()
@@ -319,7 +350,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
           // Unbound legacy digests could describe a rejected proposal.
           if (clean.snapshotRevision !== clean.result?.revision) { delete clean.snapshotDigest; delete clean.snapshot }
           savePublicationLink(account, sourceId, clean)
-          if (isClientIntent(intent)) clearStash(account, sourceId)
+          if (isClientIntent(intent)) clearStash(account, sourceId, intent.key)
         }
       })
     }
@@ -337,7 +368,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
       const current = readPublicationLink(account, sourceId)
       // A completed identical retry is harmless; it must never reinstall pending.
       if (current?.publicationKey === link.publicationKey && !current.pending && canonical(current.result) === canonical(result)) {
-        if (isClientIntent(intent)) clearStash(account, sourceId)
+        if (isClientIntent(intent)) clearStash(account, sourceId, intent.key)
         return true
       }
       if (!current?.pending || canonical({ ...current, pending: { ...current.pending, retried: undefined } }) !==
@@ -348,7 +379,7 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
         snapshotDigest: intent.method === 'DELETE' ? undefined : intent.snapshotDigest,
         snapshotRevision: intent.method === 'DELETE' || !intent.snapshotDigest ? undefined : result.revision,
       })
-      if (isClientIntent(intent)) clearStash(account, sourceId)
+      if (isClientIntent(intent)) clearStash(account, sourceId, intent.key)
       return true
     })
   } catch { /* Server success remains authoritative even when local saving fails. */ }

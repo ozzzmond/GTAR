@@ -4,19 +4,20 @@ import {
   authenticateAdminRequest, authenticateUserRequest, errorResponse, jsonResponse, readBoundedJson,
   type AuthEnv, type D1Database,
 } from './authCore.ts'
+import { inspectCatalogSchema } from './catalogSchema.ts'
 
 export interface ReportContext { request: Request; env: AuthEnv; params: { id?: string } }
 
 export const REPORT_REASONS = ['copyright', 'wrong_content', 'spam_abuse', 'other'] as const
 export const REPORT_NOTE_MAX = 500
 const REPORT_BODY_BYTES = 2048
-const reportTriggers = ['catalog_report_guard', 'catalog_report_resolve', 'catalog_report_no_delete']
 const targetId = /^[A-Za-z0-9_-]{1,128}$/
+const idempotency = /^[A-Za-z0-9_-]{16,128}$/
+export const MODERATION_ACTIONS = ['dismiss', 'remove', 'close_removed'] as const
 
+/** #253 B1: reports and moderation need the reviewed 0010 protections (fail closed otherwise). */
 async function reportsAvailable(db: D1Database) {
-  const rows = await db.prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'
-    AND name IN (${reportTriggers.map(() => '?').join(',')})`).bind(...reportTriggers).all<{ name: string }>()
-  return rows.success && rows.results.length === reportTriggers.length
+  return (await inspectCatalogSchema(db)).reports
 }
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -101,7 +102,14 @@ export async function handleAdminReportList(context: ReportContext): Promise<Res
   }
 }
 
-/** POST /api/admin/catalog-reports/:id — resolve once: { status: 'dismissed' | 'actioned', note? }. */
+interface ModerationRow { report_id: number; action: string; request_digest: string; created_at: string }
+
+/**
+ * POST /api/admin/catalog-reports/:id — atomic moderation (#253 B2).
+ * Body: { action: 'dismiss' | 'remove' | 'close_removed', expected_revision? (remove), note? } + Idempotency-Key.
+ * One INSERT into catalog_moderation_actions validates the open report and the active admin, removes the
+ * target with revision CAS and resolves the report(s); any failure rolls everything back.
+ */
 export async function handleAdminReportResolve(context: ReportContext): Promise<Response> {
   const { request, env, params } = context
   if (request.method !== 'POST') return errorResponse('Method not allowed', 405)
@@ -111,22 +119,51 @@ export async function handleAdminReportResolve(context: ReportContext): Promise<
     const db = env.DB!
     if (!await reportsAvailable(db)) return errorResponse('Reporting unavailable', 501)
     if (!/^\d{1,15}$/.test(String(params.id ?? ''))) return errorResponse('Invalid report ID', 400)
+    const key = request.headers.get('Idempotency-Key') ?? ''
+    if (!idempotency.test(key)) return errorResponse('Valid Idempotency-Key required', 400)
     const parsed = await readBoundedJson(request, REPORT_BODY_BYTES, { requireObject: true })
     if (parsed.error) return errorResponse('Invalid request body', parsed.status)
     const body = parsed.data as Record<string, unknown>
     const note = optionalNote(body.note)
-    if (!isObject(body) || Object.keys(body).some(key => !['status', 'note'].includes(key)) ||
-      !['dismissed', 'actioned'].includes(String(body.status)) || note === undefined) return errorResponse('Invalid resolution', 400)
-    try {
-      const row = await db.prepare(`UPDATE catalog_reports SET status = ?, resolver_user_id = ?, resolution_note = ?, resolved_at = ?
-        WHERE id = ? AND status = 'open' RETURNING id,status`).bind(body.status, auth.user.id, note, new Date().toISOString(), Number(params.id))
-        .first<{ id: number; status: string }>()
-      if (row) return jsonResponse({ success: true, ...row })
-    } catch (error) {
-      if (!/REPORT_IMMUTABLE/.test(error instanceof Error ? error.message : '')) throw error
+    const action = String(body.action)
+    const remove = action === 'remove'
+    if (!isObject(body) || Object.keys(body).some(k => !['action', 'expected_revision', 'note'].includes(k)) ||
+      !(MODERATION_ACTIONS as readonly string[]).includes(action) || note === undefined ||
+      (remove ? !Number.isSafeInteger(body.expected_revision) || Number(body.expected_revision) < 1 : body.expected_revision !== undefined)) {
+      return errorResponse('Invalid moderation request', 400)
     }
-    const exists = await db.prepare('SELECT status FROM catalog_reports WHERE id = ?').bind(Number(params.id)).first()
-    return exists ? errorResponse('Report already resolved', 409) : errorResponse('Not found', 404)
+    const reportId = Number(params.id)
+    const canonical = JSON.stringify({ report_id: reportId, action, expected_revision: remove ? body.expected_revision : null, note })
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical))),
+      b => b.toString(16).padStart(2, '0')).join('')
+    const prior = () => db.prepare(`SELECT report_id, action, request_digest, created_at FROM catalog_moderation_actions
+      WHERE admin_user_id = ? AND idempotency_key = ?`).bind(auth.user.id, key).first<ModerationRow>()
+    const outcome = (row: ModerationRow) => row.request_digest !== digest || row.report_id !== reportId
+      ? errorResponse('Idempotency key content conflict', 409)
+      : jsonResponse({ success: true, id: reportId, action: row.action, status: row.action === 'dismiss' ? 'dismissed' : 'actioned' })
+    const replay = await prior()
+    if (replay) return outcome(replay)
+    const report = await db.prepare('SELECT target_kind, target_id FROM catalog_reports WHERE id = ?').bind(reportId)
+      .first<{ target_kind: string; target_id: string }>()
+    if (!report) return errorResponse('Not found', 404)
+    try {
+      await db.prepare(`INSERT INTO catalog_moderation_actions(report_id,admin_user_id,idempotency_key,request_digest,action,
+        target_kind,target_id,expected_revision,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(admin_user_id,idempotency_key) DO NOTHING`)
+        .bind(reportId, auth.user.id, key, digest, action, report.target_kind, report.target_id,
+          remove ? body.expected_revision : null, note, new Date().toISOString()).run()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (/MODERATION_RESOLVED/.test(message)) return errorResponse('Report already resolved', 409)
+      if (/MODERATION_CONFLICT|SETLIST_REVISION_CONFLICT/.test(message)) return errorResponse('Content changed or already removed. Refresh and review again.', 409)
+      if (/MODERATION_IDEMPOTENCY/.test(message)) return errorResponse('Idempotency key content conflict', 409)
+      if (/MODERATION_FORBIDDEN|SETLIST_FORBIDDEN/.test(message)) return errorResponse('Forbidden', 403)
+      throw error
+    }
+    // Includes the ON CONFLICT zero-change retry path; success is read back from the ledger.
+    const stored = await prior()
+    if (!stored) return errorResponse('Reporting unavailable', 503)
+    return outcome(stored)
   } catch {
     return errorResponse('Reporting unavailable', 503)
   }

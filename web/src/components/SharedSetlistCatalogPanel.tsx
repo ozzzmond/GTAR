@@ -10,6 +10,7 @@ import {
 } from '../utils/sharedSetlistPublishing'
 import type { WebSetlist } from '../types/gtar'
 import { adminUnpublishSetlist } from '../utils/catalogReports'
+import { AdminSetlistEditor } from './AdminSetlistEditor'
 
 export interface SharedSetlistCatalogPanelProps {
   /** Personal setlists, used to detect imported copies and compare revisions. */
@@ -115,6 +116,8 @@ export function SharedSetlistCatalogPanel({
   const [unpublishFeedback, setUnpublishFeedback] = useState<string | null>(null)
   // #253: admin moderation removal of another publisher's setlist (no publisher journal involved).
   const [adminRemoval, setAdminRemoval] = useState(false)
+  // #253 B3: admin edit of another publisher's setlist.
+  const [adminEdit, setAdminEdit] = useState<PublishedSetlist | null>(null)
 
   const unpublishDialogRef = useRef<HTMLDialogElement>(null)
   const unpublishTriggerRef = useRef<HTMLElement | null>(null)
@@ -329,6 +332,18 @@ export function SharedSetlistCatalogPanel({
                         Unpublish
                       </button>
                     )}
+                    {/* #253 B3 admin edit: review and save a new revision (server enforces role and CAS). */}
+                    {isAdmin && !isPublisher && (
+                      <button
+                        type="button"
+                        data-testid={`admin-edit-setlist-btn-${setlist.id}`}
+                        className="min-h-11 px-2 py-1 rounded-lg border border-app-border text-app-muted hover:text-app-heading hover:border-app-action font-mono text-[10px] font-bold transition-all cursor-pointer"
+                        aria-label={`Edit ${setlist.name} (admin)`}
+                        onClick={() => setAdminEdit(setlist)}
+                      >
+                        Edit
+                      </button>
+                    )}
                     {/* #253 admin moderation: remove any setlist (server enforces the admin role). */}
                     {isAdmin && !isPublisher && (
                       <button
@@ -367,6 +382,16 @@ export function SharedSetlistCatalogPanel({
           key={`${selected.id}:${selected.revision}`}
           {...selected}
           onClose={() => setSelected(null)}
+        />
+      )}
+
+      {adminEdit && catalog.enabled && (
+        <AdminSetlistEditor
+          key={`${adminEdit.id}:${adminEdit.revision}`}
+          id={adminEdit.id}
+          revision={adminEdit.revision}
+          onClose={() => setAdminEdit(null)}
+          onSaved={() => catalog.reload()}
         />
       )}
 

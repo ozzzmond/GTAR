@@ -991,6 +991,7 @@ test('#247 F4: a session switch after the publication journal is saved but befor
 })
 
 // #253 client snapshots: a capable server receives the reviewed device snapshot; no cloud source is read.
+const stashKeys = account => Object.keys(localStorage).filter(k => k.startsWith(`gtar_setlist_publication_snapshot_v1:${encodeURIComponent(account)}:set-a:`))
 function clientServer() {
   const base = responder
   responder = (url, options) => url.startsWith('/api/catalog/setlists?') ? response({ setlists: [], capabilities: { client_snapshots: true } }) : base(url, options)
@@ -1021,13 +1022,13 @@ test('#253 client mode: timeout retry resends the exact stored snapshot after lo
   assert.equal(writes[0].body, writes[1].body)
   assert.equal(writes[0].headers['Idempotency-Key'], writes[1].headers['Idempotency-Key'])
   assert.deepEqual(JSON.parse(writes[1].body).snapshot, preview.snapshot)
-  assert.equal(localStorage.getItem(`gtar_setlist_publication_snapshot_v1:${encodeURIComponent(preview.account)}:set-a`), null)
+  assert.deepEqual(stashKeys(preview.account), [])
   assert.equal(api.readPublicationLink(preview.account, 'set-a').snapshotDigest, api.computeSnapshotDigest(preview.snapshot))
 })
 test('#253 client mode: missing or altered stored request content is refused before any request', async () => {
   clientServer()
   const { preview, link } = await intent()
-  const stash = `gtar_setlist_publication_snapshot_v1:${encodeURIComponent(preview.account)}:set-a`
+  const stash = stashKeys(preview.account)[0]
   const stored = JSON.parse(localStorage.getItem(stash))
   stored.snapshot.name = 'Tampered'
   localStorage.setItem(stash, JSON.stringify(stored))
@@ -1036,4 +1037,26 @@ test('#253 client mode: missing or altered stored request content is refused bef
   await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', link), /saved request content is unavailable/)
   assert.equal(calls.some(c => c.method === 'POST'), false)
   assert.equal(api.readPublicationLink(preview.account, 'set-a'), null, 'no pending request recorded')
+})
+
+test('#253 P2: concurrent tabs keep separate request content; the loser cannot break the pending request retry', async () => {
+  clientServer()
+  const preview = await prepare()
+  const base = await api.newPublicationLink(preview.account, 'set-a')
+  const a = { ...base, pending: api.makePublicationIntent(base, preview) }
+  library.setlists[0].name = 'Other tab'; persist()
+  const otherPreview = await prepare()
+  const b = { ...base, pending: api.makePublicationIntent(base, otherPreview) }
+  assert.equal(stashKeys(preview.account).length, 2, 'one entry per intent, nothing overwritten')
+  responder = () => { throw new Error('network timeout') }
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', a))
+  await assert.rejects(api.sendPublicationIntent(preview.account, 'set-a', b), /another tab|content is unavailable/)
+  assert.deepEqual(stashKeys(preview.account), [stashKeys(preview.account).find(k => k.endsWith(encodeURIComponent(a.pending.key)))])
+  responder = () => response({ id, revision: 1, unpublished: false })
+  await api.sendPublicationIntent(preview.account, 'set-a', api.readPublicationLink(preview.account, 'set-a'))
+  const writes = calls.filter(c => c.method === 'POST')
+  assert.equal(writes.length, 2)
+  assert.equal(writes[0].body, writes[1].body)
+  assert.equal(JSON.parse(writes[1].body).snapshot.name, 'Sunday')
+  assert.deepEqual(stashKeys(preview.account), [])
 })

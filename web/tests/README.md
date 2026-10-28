@@ -142,6 +142,7 @@ Performance controls, casting, navigation, continuity, and session persistence.
 Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 
 <!-- test-catalog:SONGBOOK_AND_EDITOR:start -->
+- [adminSetlistEditorUi.test.cjs](adminSetlistEditorUi.test.cjs)
 - [catalogModerationUi.test.cjs](catalogModerationUi.test.cjs)
 - [chordProMetadataRevamp.test.cjs](chordProMetadataRevamp.test.cjs)
 - [dev2aFieldHardening.test.cjs](dev2aFieldHardening.test.cjs)
@@ -207,6 +208,7 @@ API trust boundaries, abuse protection, sharing authorization, and safe logging.
 - [sharedCatalogApi.test.cjs](sharedCatalogApi.test.cjs)
 - [sharedCatalogSchema.test.cjs](sharedCatalogSchema.test.cjs)
 - [sharedCatalogV2.test.cjs](sharedCatalogV2.test.cjs)
+- [sharedCatalogV2Remediation.test.cjs](sharedCatalogV2Remediation.test.cjs)
 - [sharedSetlistCatalog.test.cjs](sharedSetlistCatalog.test.cjs)
 - [ugBodyLimits.test.cjs](ugBodyLimits.test.cjs)
 - [ugScraperContract.test.cjs](ugScraperContract.test.cjs)

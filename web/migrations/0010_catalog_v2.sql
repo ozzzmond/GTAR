@@ -5,6 +5,9 @@
 -- 2. Active admins may update/unpublish any published setlist. publisher_user_id stays
 --    immutable (catalog_setlist_head_guard is unchanged); editor_user_id records the actor.
 -- 3. Reactive catalog_reports with an admin resolution queue. No auto-hide, no approval queue.
+-- 4. catalog_moderation_actions: append-only ledger. One INSERT validates the open report and the
+--    active admin, removes the target with revision CAS and resolves the report(s) atomically.
+--    Reports can only be resolved through this ledger.
 --
 -- Unchanged guarantees: catalog_setlist_guard (0008), mutation/revision append-only triggers,
 -- head tombstone/head guard triggers, idempotency ledger, quotas and revision CAS.
@@ -112,13 +115,93 @@ BEGIN
       AND created_at > strftime('%Y-%m-%dT%H:%M:%fZ', NEW.created_at, '-1 day')) >= 30
     THEN RAISE(ABORT,'REPORT_RATE') END;
 END;
+-- Moderation ledger: also the idempotency record for admin moderation requests.
+CREATE TABLE catalog_moderation_actions (
+  id INTEGER PRIMARY KEY,
+  report_id INTEGER NOT NULL REFERENCES catalog_reports(id) ON DELETE RESTRICT,
+  admin_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  idempotency_key TEXT NOT NULL CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+  request_digest TEXT NOT NULL CHECK (length(request_digest) = 64),
+  action TEXT NOT NULL CHECK (action IN ('dismiss', 'remove', 'close_removed')),
+  target_kind TEXT NOT NULL CHECK (target_kind IN ('song', 'setlist')),
+  target_id TEXT NOT NULL,
+  expected_revision INTEGER,
+  note TEXT CHECK (note IS NULL OR length(note) <= 500),
+  created_at TEXT NOT NULL,
+  UNIQUE (admin_user_id, idempotency_key),
+  CHECK ((action = 'remove' AND expected_revision >= 1) OR (action <> 'remove' AND expected_revision IS NULL))
+);
+CREATE INDEX catalog_moderation_actions_report ON catalog_moderation_actions(report_id);
+
+CREATE TRIGGER catalog_moderation_guard BEFORE INSERT ON catalog_moderation_actions
+BEGIN
+  SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM users WHERE id = NEW.admin_user_id
+    AND role = 'admin' AND access_status = 'active') THEN RAISE(ABORT,'MODERATION_FORBIDDEN') END;
+  SELECT CASE WHEN EXISTS(SELECT 1 FROM catalog_moderation_actions
+    WHERE admin_user_id = NEW.admin_user_id AND idempotency_key = NEW.idempotency_key
+    AND request_digest <> NEW.request_digest) THEN RAISE(ABORT,'MODERATION_IDEMPOTENCY') END;
+  SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM catalog_reports WHERE id = NEW.report_id
+    AND target_kind = NEW.target_kind AND target_id = NEW.target_id) THEN RAISE(ABORT,'MODERATION_TARGET') END;
+  -- An exact retry of a committed request is not re-validated: ON CONFLICT DO NOTHING replays it.
+  SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM catalog_reports WHERE id = NEW.report_id AND status = 'open')
+    AND NOT EXISTS(SELECT 1 FROM catalog_moderation_actions WHERE admin_user_id = NEW.admin_user_id
+      AND idempotency_key = NEW.idempotency_key)
+    THEN RAISE(ABORT,'MODERATION_RESOLVED') END;
+END;
+
+-- Every check precedes every write; RAISE(ABORT) rolls back the ledger row and all effects.
+CREATE TRIGGER catalog_moderation_apply AFTER INSERT ON catalog_moderation_actions
+BEGIN
+  -- remove: revision CAS on live content.
+  SELECT CASE WHEN NEW.action = 'remove' AND NOT EXISTS(
+      SELECT 1 FROM shared_catalog_songs WHERE NEW.target_kind = 'song' AND id = NEW.target_id
+        AND is_deleted = 0 AND current_revision = NEW.expected_revision
+      UNION ALL
+      SELECT 1 FROM catalog_setlist_heads WHERE NEW.target_kind = 'setlist' AND id = NEW.target_id
+        AND is_deleted = 0 AND current_revision = NEW.expected_revision)
+    THEN RAISE(ABORT,'MODERATION_CONFLICT') END;
+  -- close_removed: only once the content is already gone.
+  SELECT CASE WHEN NEW.action = 'close_removed' AND NOT EXISTS(
+      SELECT 1 FROM shared_catalog_songs WHERE NEW.target_kind = 'song' AND id = NEW.target_id AND is_deleted = 1
+      UNION ALL
+      SELECT 1 FROM catalog_setlist_heads WHERE NEW.target_kind = 'setlist' AND id = NEW.target_id AND is_deleted = 1)
+    THEN RAISE(ABORT,'MODERATION_CONFLICT') END;
+
+  UPDATE shared_catalog_songs SET is_deleted = 1, deleted_at = NEW.created_at,
+    deleted_by_user_id = NEW.admin_user_id, updated_at = NEW.created_at
+    WHERE NEW.action = 'remove' AND NEW.target_kind = 'song' AND id = NEW.target_id
+      AND is_deleted = 0 AND current_revision = NEW.expected_revision;
+  -- Setlists unpublish through their own append-only ledger (head tombstone + revision row).
+  INSERT INTO catalog_setlist_mutations(editor_user_id,idempotency_key,request_digest,operation,setlist_id,
+      publication_key,expected_revision,source_version,source_checksum,snapshot_json,snapshot_bytes,created_at)
+    SELECT NEW.admin_user_id, 'moderation-action-' || NEW.id, NEW.request_digest, 'unpublish', h.id,
+      h.publication_key, NEW.expected_revision, NULL, NULL, NULL, 0, NEW.created_at
+    FROM catalog_setlist_heads h
+    WHERE NEW.action = 'remove' AND NEW.target_kind = 'setlist' AND h.id = NEW.target_id;
+
+  -- dismiss resolves this report; remove/close_removed resolve every open report for the target.
+  UPDATE catalog_reports SET status = CASE NEW.action WHEN 'dismiss' THEN 'dismissed' ELSE 'actioned' END,
+    resolver_user_id = NEW.admin_user_id, resolution_note = NEW.note, resolved_at = NEW.created_at
+    WHERE status = 'open' AND (id = NEW.report_id OR
+      (NEW.action <> 'dismiss' AND target_kind = NEW.target_kind AND target_id = NEW.target_id));
+END;
+CREATE TRIGGER catalog_moderation_no_update BEFORE UPDATE ON catalog_moderation_actions
+BEGIN SELECT RAISE(ABORT,'MODERATION_IMMUTABLE'); END;
+CREATE TRIGGER catalog_moderation_no_delete BEFORE DELETE ON catalog_moderation_actions
+BEGIN SELECT RAISE(ABORT,'MODERATION_IMMUTABLE'); END;
+
+-- Reports resolve once, by an active admin, and only through a moderation ledger row in the same statement.
 CREATE TRIGGER catalog_report_resolve BEFORE UPDATE ON catalog_reports
 BEGIN
   SELECT CASE WHEN OLD.status <> 'open' OR NEW.status = 'open' OR NEW.id <> OLD.id OR
     NEW.target_kind <> OLD.target_kind OR NEW.target_id <> OLD.target_id OR
     NEW.target_revision <> OLD.target_revision OR NEW.reporter_user_id <> OLD.reporter_user_id OR
     NEW.reason <> OLD.reason OR NEW.note IS NOT OLD.note OR NEW.created_at <> OLD.created_at OR
-    NOT EXISTS(SELECT 1 FROM users WHERE id = NEW.resolver_user_id AND role = 'admin' AND access_status = 'active')
+    NOT EXISTS(SELECT 1 FROM users WHERE id = NEW.resolver_user_id AND role = 'admin' AND access_status = 'active') OR
+    NOT EXISTS(SELECT 1 FROM catalog_moderation_actions a WHERE a.admin_user_id = NEW.resolver_user_id
+      AND a.created_at = NEW.resolved_at AND (a.report_id = NEW.id OR
+        (a.action <> 'dismiss' AND a.target_kind = NEW.target_kind AND a.target_id = NEW.target_id)) AND
+      NEW.status = CASE a.action WHEN 'dismiss' THEN 'dismissed' ELSE 'actioned' END)
     THEN RAISE(ABORT,'REPORT_IMMUTABLE') END;
 END;
 CREATE TRIGGER catalog_report_no_delete BEFORE DELETE ON catalog_reports

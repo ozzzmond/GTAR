@@ -4,73 +4,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const crypto = require('node:crypto')
-const { DatabaseSync } = require('node:sqlite')
-const { createSessionToken } = require('../functions/lib/authCore.ts')
-const { handleSetlistCatalog, CLIENT_SNAPSHOT_BODY_BYTES } = require('../functions/lib/setlistCatalog.ts')
-const reports = require('../functions/lib/catalogReports.ts')
-const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts')
-
-const secret = 'catalog_v2_tests_secret_at_least_32_bytes_long'
-const allMigrations = fs.readdirSync(path.join(__dirname, '../migrations')).filter(n => n.endsWith('.sql')).sort()
-const library = () => ({
-  songs: ['CHORD_PRO', 'TWO_LINE', 'PLAIN'].map((format, i) => ({
-    id: `song-${i}`, title: `Song ${i}`, artist: 'Artist', rawContent: `[C]Line ${i}\n[G]Two`, format, key: 'D', capo: '2', transposeOffset: -2,
-    tags: 'private tags', lastOpenedAt: 10,
-  })),
-  setlists: [{ id: 'set-1', name: 'Sunday', songs: [0, 1, 0, 2].map(i => ({ id: `song-${i}`, title: `Song ${i}` })) }],
-})
-const snapshot = () => snapshotFromSongbook(library(), 'set-1')
-const sha = text => crypto.createHash('sha256').update(text).digest('hex')
-
-async function fixture({ upTo } = {}) {
-  const sql = new DatabaseSync(':memory:')
-  sql.exec('PRAGMA foreign_keys=ON')
-  for (const name of allMigrations.filter(n => !upTo || n < upTo)) sql.exec(fs.readFileSync(path.join(__dirname, '../migrations', name), 'utf8'))
-  const db = { prepare(query) {
-    let args = []
-    return {
-      bind(...values) { args = values; return this },
-      async first() { return sql.prepare(query).get(...args) ?? null },
-      async all() { return { success: true, results: sql.prepare(query).all(...args) } },
-      async run() { return { success: true, meta: sql.prepare(query).run(...args) } },
-    }
-  } }
-  const tokens = {}
-  for (const [id, role, status] of [['admin', 'admin', 'active'], ['other', 'admin', 'active'], ['member', 'member', 'active'],
-    ['member2', 'member', 'active'], ['pending', 'member', 'pending'], ['denied', 'member', 'denied']]) {
-    const user = { id, google_sub: `sub-${id}`, email: `${id}@example.test`, role, access_status: status }
-    sql.prepare(`INSERT INTO users(id,google_sub,email,role,access_status,created_at,updated_at,last_login_at)
-      VALUES(?,?,?,?,?,'now','now','now')`).run(id, user.google_sub, user.email, role, status)
-    tokens[id] = await createSessionToken(user, secret)
-  }
-  // Only `admin` has a personal cloud songbook. Nobody else ever uploads one.
-  sql.prepare('INSERT INTO user_songbooks VALUES(?,1,?,?,?)').run('admin', JSON.stringify(library()), 'source-checksum', 'now')
-  const env = { DB: db, AUTH_SECRET: secret, SHARED_SETLISTS_ENABLED: 'phase-a-v1' }
-  let keys = 0
-  async function call(method, body, options = {}) {
-    const headers = { Authorization: `Bearer ${tokens[options.user ?? 'member']}`, 'Idempotency-Key': options.key ?? `idempotency-key-${String(++keys).padStart(6, '0')}` }
-    const request = new Request(`https://local.test/api/catalog/setlists${options.id ? '/' + options.id : ''}${options.query ?? ''}`,
-      { method, headers, ...(body !== undefined ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}) })
-    return handleSetlistCatalog({ request, env, params: { id: options.id } })
-  }
-  async function report(body, user = 'member') {
-    const request = new Request('https://local.test/api/catalog/reports', { method: 'POST', headers: { Authorization: `Bearer ${tokens[user]}` }, body: JSON.stringify(body) })
-    return reports.handleCatalogReport({ request, env, params: {} })
-  }
-  async function admin(method, { id, body, query = '', user = 'admin' } = {}) {
-    const request = new Request(`https://local.test/api/admin/catalog-reports${id ? '/' + id : ''}${query}`,
-      { method, headers: { Authorization: `Bearer ${tokens[user]}` }, ...(body ? { body: JSON.stringify(body) } : {}) })
-    return id ? reports.handleAdminReportResolve({ request, env, params: { id } }) : reports.handleAdminReportList({ request, env, params: {} })
-  }
-  const count = table => sql.prepare(`SELECT count(*) AS n FROM ${table}`).get().n
-  return { sql, call, report, admin, count }
-}
-const clientCreate = (key = 'member-publication-0001', snap = snapshot()) => ({ snapshot_version: 1, publication_key: key, snapshot: snap })
-const clientUpdate = (revision, snap = snapshot()) => ({ snapshot_version: 1, expected_revision: revision, snapshot: snap })
-const legacyCreate = () => ({ snapshot_version: 1, publication_key: 'admin-publication-0001', source_setlist_id: 'set-1', source_version: 1 })
-const legacyUpdate = revision => ({ snapshot_version: 1, expected_revision: revision, source_setlist_id: 'set-1', source_version: 1 })
-async function ok(response, status = 200) { assert.equal(response.status, status, await response.clone().text()); return response.json() }
+const { CLIENT_SNAPSHOT_BODY_BYTES } = require('../functions/lib/setlistCatalog.ts')
+const { fixture, snapshot, sha, clientCreate, clientUpdate, legacyCreate, legacyUpdate, ok, seedSongs, songReport } = require('./helpers/catalogV2Fixture.cjs')
 
 test('client snapshot publish needs no personal cloud songbook; stored as source_kind=client with sha256(snapshot_json)', async () => {
   const f = await fixture()
@@ -244,14 +179,6 @@ test('migration 0010 keeps existing rows: legacy history stays songbook-kind and
   await ok(await f.call('PUT', legacyUpdate(2), { id, user: 'admin' }))
 })
 
-// Reports
-function seedSongs(f, n) {
-  const insert = f.sql.prepare(`INSERT INTO shared_catalog_songs(id,title,artist,raw_content,format,checksum,publisher_user_id,last_editor_user_id,
-    current_revision,created_at,updated_at) VALUES(?,?,'A','[C]x','CHORD_PRO','c','admin','admin',2,'now','now')`)
-  for (let i = 0; i < n; i++) insert.run(`catalog-song-${i}`, `Catalog Song ${i}`)
-}
-const songReport = (i = 0, extra = {}) => ({ target_kind: 'song', target_id: `catalog-song-${i}`, target_revision: 2, reason: 'copyright', ...extra })
-
 test('reports: one open report per user and target; validation; unknown or future revisions refused', async () => {
   const f = await fixture(); seedSongs(f, 1)
   const created = await ok(await f.report(songReport(0, { note: 'Published without permission' })), 201)
@@ -297,15 +224,16 @@ test('reports: admin queue lists open reports with targets; resolve once; member
   const bySet = queue.reports.find(r => r.target_kind === 'setlist')
   assert.equal(bySet.target_title, 'Sunday'); assert.equal(bySet.reporter_email, 'member2@example.test'); assert.equal(bySet.target_deleted, 0)
   assert.equal(queue.reports.find(r => r.target_kind === 'song').target_title, 'Catalog Song 0')
-  assert.equal((await f.admin('POST', { id: String(song.id), body: { status: 'dismissed' }, user: 'member' })).status, 403)
-  assert.equal((await f.admin('POST', { id: String(song.id), body: { status: 'open' } })).status, 400)
-  const resolved = await ok(await f.admin('POST', { id: String(song.id), body: { status: 'dismissed', note: 'Licensed' } }))
+  assert.equal((await f.admin('POST', { id: String(song.id), body: { action: 'dismiss' }, user: 'member' })).status, 403)
+  assert.equal((await f.admin('POST', { id: String(song.id), body: { action: 'open' } })).status, 400)
+  assert.equal((await f.admin('POST', { id: String(song.id), body: { action: 'dismiss' }, key: 'short' })).status, 400)
+  const resolved = await ok(await f.admin('POST', { id: String(song.id), body: { action: 'dismiss', note: 'Licensed' } }))
   assert.equal(resolved.status, 'dismissed')
-  assert.equal((await f.admin('POST', { id: String(song.id), body: { status: 'actioned' } })).status, 409)
-  assert.equal((await f.admin('POST', { id: '999', body: { status: 'actioned' } })).status, 404)
-  // Admin removes the setlist through the normal catalog route, then marks the report actioned.
+  assert.equal((await f.admin('POST', { id: String(song.id), body: { action: 'remove', expected_revision: 2 } })).status, 409)
+  assert.equal((await f.admin('POST', { id: '999', body: { action: 'dismiss' } })).status, 404)
+  // Content removed through the normal catalog route first: close_removed records it as actioned.
   await ok(await f.call('DELETE', { expected_revision: 1 }, { id: setlistId, user: 'admin' }))
-  await ok(await f.admin('POST', { id: String(set.id), body: { status: 'actioned' } }))
+  await ok(await f.admin('POST', { id: String(set.id), body: { action: 'close_removed' } }))
   const all = await ok(await f.admin('GET', { query: '?status=all' }))
   assert.equal(all.reports.find(r => r.target_kind === 'setlist').target_deleted, 1)
   assert.equal(all.reports.find(r => r.target_kind === 'setlist').target_title, 'Sunday', 'reported revision title kept')
@@ -318,6 +246,7 @@ test('reports: admin queue lists open reports with targets; resolve once; member
   assert.throws(() => f.sql.prepare("UPDATE catalog_reports SET reason='other' WHERE id=?").run(song.id), /REPORT_IMMUTABLE/)
   const open = f.sql.prepare("SELECT id FROM catalog_reports WHERE status='open'").get().id
   assert.throws(() => f.sql.prepare("UPDATE catalog_reports SET status='dismissed', resolver_user_id='member', resolved_at='now' WHERE id=?").run(open), /REPORT_IMMUTABLE/)
+  assert.throws(() => f.sql.prepare("UPDATE catalog_reports SET status='dismissed', resolver_user_id='admin', resolved_at='now' WHERE id=?").run(open), /REPORT_IMMUTABLE/, 'direct admin update without a moderation ledger row')
   assert.throws(() => f.sql.prepare("INSERT INTO catalog_reports(target_kind,target_id,target_revision,reporter_user_id,reason,status,resolver_user_id,created_at,resolved_at) VALUES('song','catalog-song-0',1,'member2','other','dismissed','admin','2026-01-01T00:00:00.000Z','x')").run(), /REPORT_INVALID/)
 })
 

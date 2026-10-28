@@ -74,11 +74,11 @@ const report = (over = {}) => ({ id: 1, target_kind: 'song', target_id: 'catalog
   status: 'open', created_at: '2026-10-01T00:00:00.000Z', resolved_at: null, resolution_note: null, reporter_email: 'member@test.app', reporter_name: null,
   target_title: 'Grace', target_artist: 'A', target_current_revision: 2, target_deleted: 0, open_reports: 2, ...over })
 
-test('admin queue: lists open reports; dismiss resolves without touching content', async () => {
+test('admin queue: lists open reports; dismiss is one moderation request', async () => {
   let open = [report()]
   responder = (url, options) => {
     if (url.startsWith('/api/admin/catalog-reports?')) return json({ success: true, reports: open })
-    if (options.method === 'POST') { open = []; return json({ success: true, id: 1, status: 'dismissed' }) }
+    if (options.method === 'POST') { open = []; return json({ success: true, id: 1, action: 'dismiss', status: 'dismissed' }) }
     return json({}, 500)
   }
   let count = null
@@ -87,19 +87,17 @@ test('admin queue: lists open reports; dismiss resolves without touching content
   assert.match(document.body.textContent, /2 open reports/)
   assert.equal(count, 1)
   await click(button('Dismiss'))
-  assert.deepEqual(calls.filter(c => c.method !== 'GET').map(c => [c.url, c.method, c.body]), [['/api/admin/catalog-reports/1', 'POST', { status: 'dismissed' }]])
+  const writes = calls.filter(c => c.method !== 'GET')
+  assert.deepEqual(writes.map(c => [c.url, c.method, c.body]), [['/api/admin/catalog-reports/1', 'POST', { action: 'dismiss' }]])
+  assert.ok(writes[0].headers['Idempotency-Key'])
   assert.match(document.body.textContent, /No open reports/)
   assert.equal(count, 0)
 })
 
-test('admin queue: remove needs confirmation, removes the exact revision, then marks actioned', async () => {
+test('admin queue: remove needs confirmation and is a single atomic request with the exact revision', async () => {
   const open = [report(), report({ id: 2, target_kind: 'setlist', target_id: 'publication_123456789', target_current_revision: 4, target_title: 'Sunday' })]
-  responder = (url, options) => {
-    if (url.startsWith('/api/admin/catalog-reports?')) return json({ success: true, reports: open })
-    if (url.startsWith('/api/catalog/songs/')) return json({ success: true, message: 'ok', id: 'catalog-song-1' })
-    if (url.startsWith('/api/catalog/setlists/')) return json({ id: 'publication_123456789', revision: 5, unpublished: true })
-    return json({ success: true, id: 1, status: 'actioned' })
-  }
+  responder = (url, options) => url.startsWith('/api/admin/catalog-reports?') ? json({ success: true, reports: open })
+    : json({ success: true, id: 1, action: 'remove', status: 'actioned' })
   await mount(React.createElement(CatalogReportsQueue))
   const removes = () => [...document.querySelectorAll('button')].filter(b => b.textContent === 'Remove content')
   await click(removes()[0])
@@ -107,22 +105,32 @@ test('admin queue: remove needs confirmation, removes the exact revision, then m
   await click(document.querySelector('[data-testid="confirm-remove-1"]'))
   await click(removes()[1])
   await click(document.querySelector('[data-testid="confirm-remove-2"]'))
-  const writes = calls.filter(c => c.method !== 'GET').map(c => [c.method, c.url, c.body])
-  assert.deepEqual(writes, [
-    ['DELETE', '/api/catalog/songs/catalog-song-1?expected_revision=2', undefined],
-    ['POST', '/api/admin/catalog-reports/1', { status: 'actioned' }],
-    ['DELETE', '/api/catalog/setlists/publication_123456789', { expected_revision: 4 }],
-    ['POST', '/api/admin/catalog-reports/2', { status: 'actioned' }],
+  assert.deepEqual(calls.filter(c => c.method !== 'GET').map(c => [c.method, c.url, c.body]), [
+    ['POST', '/api/admin/catalog-reports/1', { action: 'remove', expected_revision: 2 }],
+    ['POST', '/api/admin/catalog-reports/2', { action: 'remove', expected_revision: 4 }],
   ])
-  assert.ok(calls.find(c => c.method === 'DELETE' && c.url.startsWith('/api/catalog/setlists/')).headers['Idempotency-Key'])
+  assert.equal(calls.some(c => c.url.startsWith('/api/catalog/')), false, 'no separate content delete')
 })
 
-test('admin queue: a failed removal leaves the report open', async () => {
-  responder = (url, options) => url.startsWith('/api/admin/catalog-reports?') ? json({ success: true, reports: [report()] })
-    : options.method === 'DELETE' ? json({ success: false, error: 'Revision conflict' }, 409) : json({ success: true })
+test('admin queue: ambiguous failure retries with the same key; a conflict leaves the report open with a fresh key', async () => {
+  let mode = 'timeout'
+  responder = (url, options) => {
+    if (url.startsWith('/api/admin/catalog-reports?')) return json({ success: true, reports: [report()] })
+    if (options.method === 'POST' && mode === 'timeout') return json({ success: false, error: 'unavailable' }, 503)
+    if (options.method === 'POST' && mode === 'conflict') return json({ success: false, error: 'changed' }, 409)
+    return json({ success: true, id: 1, action: 'remove', status: 'actioned' })
+  }
   await mount(React.createElement(CatalogReportsQueue))
   await click(button('Remove content'))
   await click(document.querySelector('[data-testid="confirm-remove-1"]'))
-  assert.equal(calls.some(c => c.method === 'POST'), false)
+  mode = 'ok'
+  await click(document.querySelector('[data-testid="confirm-remove-1"]'))
+  const posts = () => calls.filter(c => c.method === 'POST')
+  assert.equal(posts()[0].headers['Idempotency-Key'], posts()[1].headers['Idempotency-Key'], 'same key after an ambiguous failure')
+  mode = 'conflict'
+  await click(button('Remove content'))
+  await click(document.querySelector('[data-testid="confirm-remove-1"]'))
   assert.match(document.body.textContent, /changed in the meantime/)
+  assert.notEqual(posts()[2].headers['Idempotency-Key'], posts()[1].headers['Idempotency-Key'])
 })
+

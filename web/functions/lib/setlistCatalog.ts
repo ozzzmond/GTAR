@@ -5,6 +5,7 @@ import {
   jsonResponse,
   type AuthEnv, type D1Database,
 } from './authCore.ts'
+import { inspectCatalogSchema } from './catalogSchema.ts'
 
 export interface SetlistCatalogEnv extends AuthEnv { SHARED_SETLISTS_ENABLED?: string }
 export interface SetlistContext {
@@ -34,19 +35,12 @@ function identity(value: unknown): string {
   return String(value)
 }
 
-const protectionTriggers = [
-  'catalog_setlist_guard', 'catalog_setlist_apply', 'catalog_setlist_mutation_no_update',
-  'catalog_setlist_mutation_no_delete', 'catalog_setlist_revision_no_update',
-  'catalog_setlist_revision_no_delete', 'catalog_setlist_head_no_delete', 'catalog_setlist_head_guard',
-]
-
 async function protect(db: D1Database, userId: string, write: boolean): Promise<{ allowed: boolean; clientSnapshots: boolean }> {
-  // Missing schema/protections must never silently downgrade to an unprotected path.
-  const inventory = await db.prepare(`SELECT name, instr(sql, 'source_kind') > 0 AS v2 FROM sqlite_master WHERE type = 'trigger'
-    AND name IN (${protectionTriggers.map(() => '?').join(',')})`).bind(...protectionTriggers).all<{ name: string; v2: number }>()
-  if (!inventory.success || inventory.results.length !== protectionTriggers.length) fail('Protection unavailable')
-  // 0010 replaces catalog_setlist_apply with the source_kind-aware version (client snapshots, admin edits).
-  const clientSnapshots = inventory.results.some(row => row.name === 'catalog_setlist_apply' && Number(row.v2) === 1)
+  // #253 B1: every protection trigger must match a reviewed definition (formatting-insensitive).
+  // Missing, unknown or weakened protections fail closed: no capability, no read or write path.
+  const schema = await inspectCatalogSchema(db)
+  if (!schema.setlists) fail('Protection unavailable')
+  const clientSnapshots = schema.setlists === 'v2'
   const minute = Math.floor(Date.now() / 60000)
   const day = Math.floor(minute / 1440)
   const result = await db.prepare(`INSERT INTO catalog_setlist_rates(user_id,kind,minute,minute_count,day,day_count)

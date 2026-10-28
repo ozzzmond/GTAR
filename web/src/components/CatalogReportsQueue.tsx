@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Flag, Loader2, RotateCcw } from 'lucide-react'
 import {
-  REPORT_REASON_LABELS, adminUnpublishSetlist, listCatalogReports, resolveCatalogReport,
-  type CatalogReport, type ReportStatus,
+  REPORT_REASON_LABELS, listCatalogReports, moderateCatalogReport,
+  type CatalogReport, type ModerationAction, type ReportStatus,
 } from '../utils/catalogReports'
-import { unpublishSharedCatalogSong } from '../utils/sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
+import { generateUUID } from '../utils/uuid'
+
+/** Only these leave the outcome unknown; the same key is reused to retry them. */
+const ambiguous = (error: unknown) => !(error instanceof CatalogApiError) || error.status === 0 || error.status === 408 || error.status >= 500
 
 const failure = (error: unknown) => {
   if (error instanceof CatalogApiError && error.status === 501) return 'Reporting is not available on this server yet.'
@@ -35,20 +38,22 @@ export function CatalogReportsQueue({ onOpenCount }: { onOpenCount?: (count: num
     void load()
   }, [load])
 
-  const act = async (report: CatalogReport, action: 'dismiss' | 'remove' | 'actioned') => {
+  // Idempotency keys survive ambiguous failures so a retry replays the same request.
+  const keys = useRef(new Map<string, string>())
+  const act = async (report: CatalogReport, action: ModerationAction) => {
     setBusyId(report.id); setError('')
+    const id = `${report.id}:${action}:${action === 'remove' ? report.target_current_revision : ''}`
+    const idempotencyKey = keys.current.get(id) ?? generateUUID()
+    keys.current.set(id, idempotencyKey)
     try {
-      if (action === 'remove' && !report.target_deleted && report.target_current_revision) {
-        if (report.target_kind === 'song') {
-          await unpublishSharedCatalogSong({ id: report.target_id, expected_revision: report.target_current_revision })
-        } else {
-          await adminUnpublishSetlist(report.target_id, report.target_current_revision)
-        }
-      }
-      await resolveCatalogReport(report.id, action === 'dismiss' ? 'dismissed' : 'actioned')
+      await moderateCatalogReport(report.id, action, { idempotencyKey, expectedRevision: report.target_current_revision ?? undefined })
+      keys.current.delete(id)
       setConfirmRemove(null)
       await load()
-    } catch (err) { setError(failure(err)) } finally { setBusyId(null) }
+    } catch (err) {
+      if (!ambiguous(err)) keys.current.delete(id)
+      setError(failure(err))
+    } finally { setBusyId(null) }
   }
 
   const tab = (value: ReportStatus | 'all', label: string) => (
@@ -99,7 +104,7 @@ export function CatalogReportsQueue({ onOpenCount }: { onOpenCount?: (count: num
             <button type="button" disabled={busy} onClick={() => void act(report, 'dismiss')}
               className="min-h-9 px-2.5 py-1 rounded-lg bg-app-surface text-app-muted hover:text-app-heading border border-app-border font-bold cursor-pointer disabled:opacity-50">Dismiss</button>
             {gone ? (
-              <button type="button" disabled={busy} onClick={() => void act(report, 'actioned')}
+              <button type="button" disabled={busy} onClick={() => void act(report, 'close_removed')}
                 className="min-h-9 px-2.5 py-1 rounded-lg bg-app-surface text-app-heading border border-app-border font-bold cursor-pointer disabled:opacity-50">Mark actioned</button>
             ) : confirmRemove === report.id ? (
               <button type="button" disabled={busy} data-testid={`confirm-remove-${report.id}`} onClick={() => void act(report, 'remove')}

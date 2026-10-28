@@ -52,10 +52,19 @@ export async function listCatalogReports(status: ReportStatus | 'all' = 'open'):
   return response.reports
 }
 
-export async function resolveCatalogReport(id: number, status: 'dismissed' | 'actioned', note?: string) {
+export type ModerationAction = 'dismiss' | 'remove' | 'close_removed'
+/**
+ * #253 B2: one atomic server operation (validate open report + admin, remove with revision CAS, resolve).
+ * Reuse the same idempotencyKey to retry an ambiguous attempt safely.
+ */
+export async function moderateCatalogReport(id: number, action: ModerationAction, options: {
+  idempotencyKey: string; expectedRevision?: number; note?: string
+}) {
   const { token } = getAuthenticatedSessionToken()
-  return catalogFetch<{ id: number; status: ReportStatus }>(`/api/admin/catalog-reports/${encodeURIComponent(String(id))}`, {
-    method: 'POST', token, body: { status, ...(note?.trim() ? { note: note.trim().slice(0, REPORT_NOTE_MAX) } : {}) },
+  const note = options.note?.trim()
+  return catalogFetch<{ id: number; action: ModerationAction; status: ReportStatus }>(`/api/admin/catalog-reports/${encodeURIComponent(String(id))}`, {
+    method: 'POST', token, idempotencyKey: options.idempotencyKey,
+    body: { action, ...(action === 'remove' ? { expected_revision: options.expectedRevision } : {}), ...(note ? { note: note.slice(0, REPORT_NOTE_MAX) } : {}) },
   })
 }
 
