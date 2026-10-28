@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
-const { KNOWN_DEFINITIONS, schemaFingerprint, inspectCatalogSchema, normalizeSchemaSql } = require('../functions/lib/catalogSchema.ts')
+const { KNOWN_DEFINITIONS, KNOWN_V2_TABLES, schemaFingerprint, inspectCatalogSchema, normalizeSchemaSql } = require('../functions/lib/catalogSchema.ts')
 const { fixture, snapshot, clientCreate, clientUpdate, legacyCreate, ok, seedSongs, songReport, allMigrations } = require('./helpers/catalogV2Fixture.cjs')
 
 const triggerSql = (f, name) => f.sql.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(name).sql
@@ -31,6 +31,17 @@ test('B1: fingerprints in catalogSchema.ts are exactly the reviewed migration de
   assert.deepEqual(Object.keys(derived).sort(), Object.keys(KNOWN_DEFINITIONS).sort())
   for (const [name, hashes] of Object.entries(derived)) assert.deepEqual([...hashes].sort(), Object.values(KNOWN_DEFINITIONS[name]).sort(), name)
   assert.equal(normalizeSchemaSql("SELECT  'A  b' -- x\n, X /* y */ FROM T"), "select 'A  b',x from t")
+})
+
+test('B2 (PR #261): reviewed table/index fingerprints are exactly the post-0010 migration definitions', async () => {
+  const db = new DatabaseSync(':memory:')
+  for (const n of allMigrations) db.exec(fs.readFileSync(path.join(__dirname, '../migrations', n), 'utf8'))
+  const tables = ['users', 'catalog_setlist_heads', 'catalog_setlist_mutations', 'catalog_setlist_revisions', 'catalog_setlist_rates',
+    'catalog_reports', 'catalog_moderation_actions', 'shared_catalog_songs', 'shared_catalog_revisions', 'user_songbooks', 'user_songbook_records', 'user_songbook_cursors']
+  const derived = {}
+  for (const { name, sql } of db.prepare(`SELECT lower(name) AS name, sql FROM sqlite_master WHERE type IN ('table','index')
+    AND lower(tbl_name) IN (${tables.map(() => '?').join(',')}) AND sql IS NOT NULL`).all(...tables)) derived[name] = await schemaFingerprint(sql)
+  assert.deepEqual(derived, { ...KNOWN_V2_TABLES })
 })
 
 test('B1: equivalently formatted valid schema keeps full capability (case, whitespace, comments)', async () => {

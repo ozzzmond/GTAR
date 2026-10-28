@@ -61,6 +61,47 @@ export const KNOWN_DEFINITIONS: Record<string, Record<string, string>> = {
   catalog_report_no_delete: { '0010': 'ded1e0870105f631ff0475f1e1f5c72bd7b4f603a2c8524dec09839ee9c785bb' },
 }
 
+/**
+ * Reviewed CREATE TABLE / CREATE INDEX text of every table Catalog V2 depends on, as it exists after
+ * 0001..0010 (ALTER TABLE ADD COLUMN rewrites the stored table text). A weakened CHECK, renamed or
+ * missing column, missing prerequisite migration (0008 guard, 0009 tables) or unknown extra index fails.
+ * Verified against the migrations by tests/sharedCatalogV2Remediation.test.cjs.
+ */
+export const KNOWN_V2_TABLES: Record<string, string> = {
+  catalog_moderation_actions: '440a997a58c97670dc313b22661229514c1e23c76b8b6a1c4209af21e81c0c1e',
+  catalog_reports: '093e4f540636499185db0aefdb7b4f931bf8971f0019d40adb7c423a21dcabd5',
+  catalog_setlist_heads: '33243530d99b079ac5ff99f3a1283c067035c3a0e2c28923a218e0fa429a1f06',
+  catalog_setlist_mutations: '5a40f27962f166d5821ec93b9478ccfed0bbcf97fa8538ebf431774138cc9569',
+  catalog_setlist_rates: '9665345a94bd37b133599aa8483d4faa903f2939c4b1c7b5076cf0ab477a7f27',
+  catalog_setlist_revisions: '8364d59ffb7d227a8d9a572ed4ea2fe540ca7e87b36d58fbfdc4694c5218573f',
+  shared_catalog_revisions: '0db0f10d92235d7695e0485420ef342f1e19f5bea9c1f4874c1c1137381ec144',
+  shared_catalog_songs: 'dee1a84315926ad0688005d64cad4a372ffac422752a861d04990f8023338dd6',
+  user_songbook_cursors: '0cb33265d2dc19ab4a0f62f6f726f3713af74523fa26e33d068f87a7a575a4ec',
+  user_songbook_records: '2ed5683139ece44b8920da12affd220277546f21978731b045da1ba5ddf43091',
+  user_songbooks: '33065172dc13bfabc4a6690e77d8695cbf2d02b8e436a99580f7f4551eb2940a',
+  users: '951e3c0cbe02a303d2e7622784f2c10f59538beb13b9f0400f2821cacd344b7e',
+  catalog_moderation_actions_report: '04fabde9b19f2a497d68fdfe0c6c2b6bb17fdf2463f4b8183bf907fef68a4e0d',
+  catalog_reports_one_open: '4fa2d87952a438b0370684fac87f5047e9fdc4b7aec9fbde781fb097fa787222',
+  catalog_reports_queue: 'ce33a2b198784c10af05afe20388eac3e39f64557de7b6fdcac90d2cf3684e47',
+  catalog_reports_reporter: '9ffb9d5403d869ff0db36dbb95a9fec0e4224d99d92215b13624dd5cfa27b1d1',
+  catalog_reports_target: '259db459eb9f7d3d69a4da4a41f4c57d3d368c7591e814c937dba53f06ac5cd8',
+  catalog_setlist_mutations_owner: '6ced7aed32a6bf2f449ad3d9c3051d3e8cab5248ec82bbb4a2b26782fa51227f',
+  idx_shared_catalog_revisions_editor: '474acad94514a593b7260f757a435b1aa67ec8ee6302000eb4387dad47e44835',
+  idx_shared_catalog_revisions_song_id: '2da25cfe1877dd73eac63e91dec21941cb9a45b0c71c65059c8f2a9ffa0d328e',
+  idx_shared_catalog_songs_is_deleted: 'a36736bd881315838d1f6a9cb354734fcf20fab933651d4ed578edcb5bb4fc8f',
+  idx_shared_catalog_songs_last_editor: '19140c76586e185531ab642175357099fc00de4f93d176598d8355036d09a05b',
+  idx_shared_catalog_songs_publisher: '8c32f60ccb5025811d6271c2323179b7d37c46cbd2a4c34ca248778f21767ef1',
+  idx_shared_catalog_songs_updated_at: 'a5332cf1987c10f1ec179ed1311b63d637541e4d6124628395f101a2c78fa5f6',
+  idx_user_songbook_records_seq: 'b2a2ca8df54d80508508fbc5572ecf59fea7aa832c22ba25b754185af66f347a',
+  idx_user_songbooks_user_id: 'b90fca6091f30e3c7e0b62609c18dd2f737f8b77e1f47f30b51ecde68bc342b3',
+  idx_users_access_status: '8bec75e744e8e638160b367eec8370023470bd77deb5e1099c1abe4b8dd25d0a',
+  idx_users_email: 'ce2b616650c288041b2f031f7016bc4281622ea3cc2dd5acfdda75a7854f84b9',
+  idx_users_google_sub: '98dc802ad454bbde28eb01042d1c301c493f6a757bf50459c87ff5c7f88e1d1d',
+}
+const V2_TABLES = ['users', 'catalog_setlist_heads', 'catalog_setlist_mutations', 'catalog_setlist_revisions', 'catalog_setlist_rates',
+  'catalog_reports', 'catalog_moderation_actions', 'shared_catalog_songs', 'shared_catalog_revisions',
+  'user_songbooks', 'user_songbook_records', 'user_songbook_cursors']
+
 const SETLIST_TABLES = ['catalog_setlist_heads', 'catalog_setlist_mutations', 'catalog_setlist_revisions']
 const SETLIST_TRIGGERS = ['catalog_setlist_guard', 'catalog_setlist_apply', 'catalog_setlist_mutation_no_update',
   'catalog_setlist_mutation_no_delete', 'catalog_setlist_revision_no_update', 'catalog_setlist_revision_no_delete',
@@ -87,6 +128,27 @@ async function variants(rows: { name: string; sql: string | null }[], required: 
   return required.every(name => found[name]) ? found : null
 }
 
+/** Tables Catalog V2 only reads from; their own extra indexes cannot weaken catalog protections. */
+// user_songbooks is read by catalog_setlist_apply (legacy source check) and by the legacy publish path.
+const PREREQUISITE_TABLES = new Set(['users', 'user_songbooks', 'user_songbook_records', 'user_songbook_cursors'])
+
+/** Every reviewed table/index present and identical; no unknown index on a catalog table. Auto-indexes
+ * (no SQL) are implied by the table text. */
+async function v2TablesVerified(db: D1Database) {
+  const rows = await db.prepare(`SELECT lower(type) AS type, lower(name) AS name, lower(tbl_name) AS tbl, sql FROM sqlite_master
+    WHERE type IN ('table', 'index') AND lower(tbl_name) IN (${V2_TABLES.map(() => '?').join(',')}) AND sql IS NOT NULL`)
+    .bind(...V2_TABLES).all<{ type: string; name: string; tbl: string; sql: string }>()
+  if (!rows.success) return false
+  const seen = new Set<string>()
+  for (const row of rows.results) {
+    const expected = KNOWN_V2_TABLES[row.name]
+    if (!expected && row.type === 'index' && PREREQUISITE_TABLES.has(row.tbl)) continue
+    if (!expected || seen.has(row.name) || expected !== await schemaFingerprint(row.sql)) return false
+    seen.add(row.name)
+  }
+  return Object.keys(KNOWN_V2_TABLES).every(name => seen.has(name))
+}
+
 export async function inspectCatalogSchema(db: D1Database): Promise<CatalogSchema> {
   // SQLite identifiers are case-insensitive; sqlite_master keeps them as written.
   const list = (tables: string[]) => db.prepare(`SELECT lower(name) AS name, sql FROM sqlite_master WHERE (type = 'trigger' AND lower(tbl_name) IN
@@ -97,8 +159,12 @@ export async function inspectCatalogSchema(db: D1Database): Promise<CatalogSchem
   const setlist = await variants(setlistRows.results.filter(r => r.name !== 'catalog_reports_one_open'), SETLIST_TRIGGERS)
   let setlists: SetlistSchemaMode | null = null
   if (setlist?.catalog_setlist_apply === '0007') setlists = 'legacy'
-  else if (setlist?.catalog_setlist_apply === '0010' &&
-    await probe(db, 'SELECT source_kind FROM catalog_setlist_mutations WHERE 0')) setlists = 'v2'
+  // V2 needs the 0008 member guard (0007's admin-only guard is not a reviewed V2 state), the exact
+  // post-0010 table/index definitions and the columns the server writes.
+  else if (setlist?.catalog_setlist_apply === '0010' && setlist.catalog_setlist_guard === '0008' &&
+    await v2TablesVerified(db) &&
+    await probe(db, `SELECT editor_user_id,idempotency_key,request_digest,operation,setlist_id,publication_key,expected_revision,
+      source_version,source_checksum,snapshot_json,snapshot_bytes,created_at,source_kind FROM catalog_setlist_mutations WHERE 0`)) setlists = 'v2'
   if (setlists !== 'v2') return { setlists, reports: false }
   const reportRows = await list(REPORT_TABLES)
   const reports = reportRows.success && !!await variants(reportRows.results, REPORT_OBJECTS) &&

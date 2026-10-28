@@ -21,10 +21,13 @@ const library = () => ({
 const snapshot = () => snapshotFromSongbook(library(), 'set-1')
 const sha = text => crypto.createHash('sha256').update(text).digest('hex')
 
-async function fixture({ upTo } = {}) {
+/** `migrations`/`transform` build deliberately incomplete or altered disposable schemas for fail-closed tests. */
+async function fixture({ upTo, migrations, transform = (name, text) => text } = {}) {
   const sql = new DatabaseSync(':memory:')
   sql.exec('PRAGMA foreign_keys=ON')
-  for (const name of allMigrations.filter(n => !upTo || n < upTo)) sql.exec(fs.readFileSync(path.join(__dirname, '../../migrations', name), 'utf8'))
+  for (const name of (migrations ?? allMigrations).filter(n => !upTo || n < upTo)) {
+    sql.exec(transform(name, fs.readFileSync(path.join(__dirname, '../../migrations', name), 'utf8')))
+  }
   const db = { prepare(query) {
     let args = []
     return {

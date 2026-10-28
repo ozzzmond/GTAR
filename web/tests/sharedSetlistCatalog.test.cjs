@@ -101,7 +101,7 @@ test('snapshot: reject missing, ambiguous, trash, unsupported content and occurr
 
 test('gate: all routes and methods disabled before DB/auth; wrong and missing flags fail closed', async () => {
   for (const method of ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']) {
-    for (const enabled of [undefined, 'true', 'false', 'phase-a-v0']) {
+    for (const enabled of [undefined, '', 'true', 'false', 'phase-a-v0', 'catalog-v1', 'CATALOG-V2', ' catalog-v2', 'phase-a-v1 ']) {
       const result = await handleSetlistCatalog({ request: new Request('https://test', { method }), env: { SHARED_SETLISTS_ENABLED: enabled }, params: { id: 'test' } })
       assert.equal(result.status, 404)
     }
@@ -116,7 +116,11 @@ test('configuration: shared setlists enabled only in DEV Preview', () => {
   assert.equal(error, undefined, 'wrangler.jsonc must be valid JSONC')
   assert.equal(config.env.preview.vars.SHARED_SETLISTS_ENABLED, 'phase-a-v1')
   assert.equal(Object.hasOwn(config.vars ?? {}, 'SHARED_SETLISTS_ENABLED'), false)
+  // #253: PROD HOLD. Production stays disabled until the separately approved release sets
+  // `catalog-v2` (requires migration 0010) and updates this assertion in that release.
   assert.equal(Object.hasOwn(config.env.production.vars ?? {}, 'SHARED_SETLISTS_ENABLED'), false)
+  // Permanent guard: production may only ever use the 0010-requiring value, never the DEV value.
+  assert.ok([undefined, 'catalog-v2'].includes(config.env.production.vars?.SHARED_SETLISTS_ENABLED))
 })
 
 test('authorization: active admin and active member mutations; active members may read; no ownership spoof', async () => {
