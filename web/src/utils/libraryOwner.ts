@@ -11,8 +11,11 @@
  * Ownership is never inferred from last-synced metadata.
  */
 import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot } from './syncJournal'
-import { b2Identity } from './libraryB2'
+import { b2Identity, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
 import { generateUUID } from './uuid'
+
+export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration }
+export { isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed } from './syncJournal'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
 
@@ -45,22 +48,11 @@ export function libraryOwnership(userId: string | null | undefined, storage: Sto
   if (isLibraryB2Active(storage)) {
     const partition = b2Identity()
     if (partition?.kind === 'account') return userId && partition.userId && sameUser(partition.userId, userId) && partition.env === libraryEnv() ? 'owned' : 'mismatch'
-    return 'unbound'
+    return hasContent(storage) ? 'unbound' : 'unbound-empty'
   }
   const owner = readLibraryOwner(storage)
   if (owner) return userId && sameUser(owner.userId, userId) && owner.env === libraryEnv() ? 'owned' : 'mismatch'
   return hasContent(storage) ? 'unbound' : 'unbound-empty'
-}
-
-export class LibraryOwnershipError extends Error {
-  readonly ownership: 'unbound' | 'mismatch'
-  constructor(ownership: 'unbound' | 'mismatch', message?: string) {
-    super(message ?? (ownership === 'mismatch'
-      ? 'This device\'s songbook belongs to another GTAR account. Sign in with that account to sync it. Nothing was uploaded and your songbook stays on this device.'
-      : 'This device\'s songbook is not linked to an account yet. Link it to this account in Sync Center to sync. Nothing was uploaded.'))
-    this.ownership = ownership
-    this.name = 'LibraryOwnershipError'
-  }
 }
 
 function writeOwner(userId: string, reason: LibraryOwner['reason'], storage: Storage): void {
@@ -84,7 +76,7 @@ export function assertLibraryOwner(userId: string | null | undefined, storage: S
 
 /** #247: the signed-in account stored by AuthGate (same key as googleAuth's SESSION_STORAGE_KEY). */
 const SESSION_KEY = 'gtar_auth_session'
-function storedSession(storage?: Pick<Storage, 'getItem'>): { userId: string | null; token: string | null } | null {
+export function storedSession(storage?: Pick<Storage, 'getItem'>): { userId: string | null; token: string | null } | null {
   try {
     let raw = storage ? storage.getItem(SESSION_KEY) : null
     if (!raw && typeof localStorage !== 'undefined') raw = localStorage.getItem(SESSION_KEY)
@@ -95,26 +87,13 @@ function storedSession(storage?: Pick<Storage, 'getItem'>): { userId: string | n
     return { userId: typeof id === 'string' && id.trim() ? id : null, token }
   } catch { return null }
 }
-function storedSessionUserId(storage?: Pick<Storage, 'getItem'>): string | null { return storedSession(storage)?.userId ?? null }
+export function storedSessionUserId(storage?: Pick<Storage, 'getItem'>): string | null { return storedSession(storage)?.userId ?? null }
 
 /**
  * #247 F3: the sign-in a sync round started under (account + session token). Captured when the round
  * starts; null when no session is stored then (nothing to compare against).
  */
-export interface SessionGeneration { userId: string | null; token: string | null }
 export function captureSessionGeneration(storage?: Pick<Storage, 'getItem'>): SessionGeneration | null { return storedSession(storage) }
-
-/** The sign-in a round started under ended (logout) or was replaced (other account, new token). */
-export class StaleSyncRoundError extends Error {
-  readonly reason: 'signed-out' | 'session-changed'
-  constructor(reason: 'signed-out' | 'session-changed', uploaded: number) {
-    super(`${reason === 'signed-out' ? 'You signed out' : 'The sign-in changed'} while syncing. ${uploaded
-      ? `${uploaded} ${uploaded === 1 ? 'change' : 'changes'} already accepted by the cloud stay in the account that started the sync. `
-      : ''}Nothing from that sync was saved on this device and it was not marked as synced. Your songbook on this device is unchanged; sign in and sync again.`)
-    this.reason = reason
-    this.name = 'StaleSyncRoundError'
-  }
-}
 
 /**
  * #247 F3: right before a sync writes into the library (or reports it in step): the library still

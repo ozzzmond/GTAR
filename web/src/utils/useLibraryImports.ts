@@ -7,7 +7,7 @@ import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStat
 import type { ActiveSongState } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import type { SharedSetlistPayload } from './sharedSetlist'
-import { libraryRevision, persistLibrary, preserveStoredLibrary } from './syncJournal'
+import { isUnboundDeviceLibraryReadOnly, libraryRevision, persistLibrary, preserveStoredLibrary } from './syncJournal'
 import { normalizeBackupSong, parseBackupJson } from './jsonBackup'
 import { mergeBackupLibrary, partitionSongs } from './setlistSongs'
 import { mergeImportedSetlists } from './importIdentity'
@@ -44,6 +44,10 @@ export function useLibraryImports({
   importStateRef.current = { songs: [...songs, ...deletedSongs], setlists }
 
   const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
+    if (isUnboundDeviceLibraryReadOnly()) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before importing.')
+      return
+    }
     const existingSongs = importStateRef.current.songs
     const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }), { mode: 'merge', existingSongs })
     if (!parsed.isValid) throw new Error(parsed.error)
@@ -58,7 +62,7 @@ export function useLibraryImports({
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(nextSetlists)
-  }, [persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists])
+  }, [persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists, setToastMessage])
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
@@ -76,6 +80,10 @@ export function useLibraryImports({
   }
 
   const handleFullRestore = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
+    if (isUnboundDeviceLibraryReadOnly()) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before restoring backups.')
+      return
+    }
     const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }))
     if (!parsed.isValid) throw new Error(parsed.error)
     const partition = partitionSongs(parsed.songs)

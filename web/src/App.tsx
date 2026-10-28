@@ -24,8 +24,10 @@ import {
   recoveryExportData,
   isLibraryB2Active,
   isLibraryClosedForSignIn,
+  isUnboundDeviceLibraryReadOnly,
   enableLibraryB2,
 } from './utils/syncJournal'
+import { confirmLibraryOwner, storedSession } from './utils/libraryOwner'
 import { B2_FLAG_KEY, LibraryPartitionError, clearB2Hold, flushB2, holdMessage, readB2Hold, type B2Hold } from './utils/libraryB2'
 import { LIBRARY_B1_KEY } from './utils/libraryIndex'
 import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
@@ -210,6 +212,10 @@ function LibraryStartupReadyInner() {
   const repairPlan = status.damaged ? planDanglingReferenceRepair() : null
   const applyRepair = () => {
     if (!repairPreview) return
+    if (isUnboundDeviceLibraryReadOnly()) {
+      setRepairError('This songbook is not linked to an account yet. Link it before applying repairs.')
+      return
+    }
     try {
       applyDanglingReferenceRepair(repairPreview)
       setRepairPreview(null)
@@ -373,6 +379,45 @@ function LibraryApp() {
 
   // Custom Setlists (persisted in localStorage)
   const [setlists, setSetlists] = useState<WebSetlist[]>(initialLibrary.setlists)
+
+  // #247 (Option A): Unbound populated device library encountered by a signed-in session is read-only
+  const [unboundReadOnly, setUnboundReadOnly] = useState(() => isUnboundDeviceLibraryReadOnly())
+  const [isLinkingOwner, setIsLinkingOwner] = useState(false)
+
+  useEffect(() => {
+    const update = () => setUnboundReadOnly(isUnboundDeviceLibraryReadOnly())
+    window.addEventListener('storage', update)
+    window.addEventListener('gtar:auth_changed', update)
+    window.addEventListener('gtar:library_linked', update)
+    window.addEventListener('gtar-library-persisted', update)
+    return () => {
+      window.removeEventListener('storage', update)
+      window.removeEventListener('gtar:auth_changed', update)
+      window.removeEventListener('gtar:library_linked', update)
+      window.removeEventListener('gtar-library-persisted', update)
+    }
+  }, [])
+
+  const handleLinkUnboundLibrary = async () => {
+    const session = storedSession(localStorage)
+    if (!session?.userId) {
+      setToastMessage('Sign in first to link this songbook.')
+      return
+    }
+    setIsLinkingOwner(true)
+    try {
+      await confirmLibraryOwner(session.userId)
+      setUnboundReadOnly(false)
+      window.dispatchEvent(new Event('gtar:library_linked'))
+      setToastMessage(`Songbook linked to ${session.userId}!`)
+      setTimeout(() => setToastMessage(null), 4000)
+    } catch (err) {
+      setToastMessage(err instanceof Error ? err.message : 'Could not link songbook.')
+      setTimeout(() => setToastMessage(null), 5000)
+    } finally {
+      setIsLinkingOwner(false)
+    }
+  }
 
   const editorRecoveryDraftRef = useRef<(() => ActiveSongState | null) | null>(null)
 
@@ -1043,6 +1088,10 @@ function LibraryApp() {
 
   // Delete setlist (tombstone for cloud sync propagation)
   const handleDeleteSetlist = (setlistId: string | number) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
+      return
+    }
     setSetlists((prev) =>
       prev.map((sl) => (String(sl.id) === String(setlistId) ? { ...sl, isDeleted: true } : sl))
     )
@@ -1054,6 +1103,10 @@ function LibraryApp() {
 
   // Bulk delete setlists
   const handleBulkDeleteSetlists = (ids: Array<string | number>) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
+      return
+    }
     const idSet = new Set(ids.map(String))
     setSetlists((prev) => prev.map((sl) => (idSet.has(String(sl.id)) ? { ...sl, isDeleted: true } : sl)))
     if (activeSetlistId && idSet.has(String(activeSetlistId))) {
@@ -1066,6 +1119,10 @@ function LibraryApp() {
 
   // Rename setlist
   const handleRenameSetlist = (setlistId: string | number, newName: string) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
+      return
+    }
     const trimmed = newName.trim()
     if (!trimmed) return
     setSetlists((prev) =>
@@ -1123,6 +1180,10 @@ function LibraryApp() {
     sheet: FetchedChordSheet,
     openInStage = false
   ) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before importing songs.')
+      return
+    }
     const existingIdx = songs.findIndex(
       (s) =>
         s.title.trim().toLowerCase() === sheet.title.trim().toLowerCase() &&
@@ -1179,6 +1240,10 @@ function LibraryApp() {
 
   // Persist the validated complete candidate before scheduling any state partition.
   const commitSongLifecycle = (operation: SongLifecycleOperation) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before modifying songs.')
+      return null
+    }
     if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
       setToastMessage('Cannot modify library while a cross-tab conflict is unresolved.')
       return null
@@ -1240,6 +1305,10 @@ function LibraryApp() {
 
   // Bulk add songs to destination setlist
   const handleBulkAddSongsToSetlist = (ids: Array<string | number>, setlistId: string | number) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
+      return
+    }
     const idSet = new Set(ids.map(String))
     const selectedSongs = songs.filter((s) => s.id !== undefined && idSet.has(String(s.id)))
     const targetSetlist = setlists.find((sl) => String(sl.id) === String(setlistId))
@@ -1290,6 +1359,10 @@ function LibraryApp() {
 
   // Create new blank song template and switch to Desktop Editor
   const handleNewSong = () => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before adding songs.')
+      return
+    }
     const blankSong: ActiveSongState = {
       id: generateUUID(),
       title: 'New Song',
@@ -1309,6 +1382,10 @@ function LibraryApp() {
   }
 
   const handleSongMembership = (songId: string | number, setlistId: string | number, included: boolean) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before modifying setlists.')
+      return false
+    }
     if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
       setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
       return false
@@ -1337,6 +1414,10 @@ function LibraryApp() {
   }
 
   const handleCreateSetlistForSong = (songId: string | number, name: string) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before creating setlists.')
+      return false
+    }
     if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
       setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
       return false
@@ -1365,6 +1446,10 @@ function LibraryApp() {
 
   // Create a new setlist
   const handleNewSetlist = () => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before creating setlists.')
+      return
+    }
     const newId = generateUUID()
     const newSetlistName = `Setlist ${setlists.length + 1}`
     const created: WebSetlist = {
@@ -1387,7 +1472,7 @@ function LibraryApp() {
     setActiveView('songbook')
     setSearchQuery('')
     setIsSetlistDrawerOpen(false)
-  }, [setIsSetlistDrawerOpen])
+  }, [setIsSetlistDrawerOpen, setQueueMode, setSearchQuery])
 
   // Desktop Global Navigation Shortcuts (Alt+1..6, Alt+0/H)
   useEffect(() => {
@@ -1449,6 +1534,9 @@ function LibraryApp() {
 
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
+    if (unboundReadOnly) {
+      return false
+    }
     const targetId = updated.id ?? currentSong?.id
     const currentPartition =
       typeof importStateRef !== 'undefined' && typeof partitionSongs !== 'undefined'
@@ -1488,6 +1576,10 @@ function LibraryApp() {
 
   // Explicit save also reports persistence failure to the editor.
   const handleSaveSongFromEditor = (incoming: ActiveSongState) => {
+    if (unboundReadOnly) {
+      setToastMessage('This songbook is not linked to an account yet. Link it before saving changes.')
+      return false
+    }
     // #228: saving the empty-library welcome chart creates a normal new song.
     const updatedSong = String(incoming.id ?? currentSong?.id) === EMPTY_LIBRARY_SONG.id ? { ...incoming, id: generateUUID() } : incoming
     const targetId = updatedSong.id ?? currentSong?.id
@@ -1722,6 +1814,33 @@ function LibraryApp() {
               onClick={handleForceOverwriteStorage}
             >
               Overwrite Storage With Local Edits
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {unboundReadOnly && (
+        <aside
+          role="alert"
+          aria-label="Unbound library ownership warning"
+          data-testid="unbound-library-warning"
+          className="bg-amber-100 text-black px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md z-40 sticky top-0 border-b border-amber-300"
+        >
+          <div className="flex-1 min-w-[280px]">
+            <strong className="block font-semibold">Unlinked Device Songbook (Read-Only):</strong>
+            <span className="text-sm">
+              This songbook is stored on this browser and is not yet linked to an account. Editing is paused to prevent unauthorized modifications. Link it to your account to enable editing.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              type="button"
+              data-testid="link-unbound-library-button"
+              className="bg-amber-800 text-white hover:bg-amber-900 px-3 py-1.5 rounded font-medium cursor-pointer disabled:opacity-50"
+              disabled={isLinkingOwner}
+              onClick={handleLinkUnboundLibrary}
+            >
+              {isLinkingOwner ? 'Linking…' : 'Link to this account'}
             </button>
           </div>
         </aside>

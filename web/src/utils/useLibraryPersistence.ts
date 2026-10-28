@@ -7,7 +7,8 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import type { ActiveSongState } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import {
-  decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
+  decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError,
+  isUnboundDeviceLibraryReadOnly, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
   persistLibrary, saveCrossTabConflictSnapshot, setupCrossTabLibraryConflictGuard,
 } from './syncJournal'
 import { isMissingLibraryBodyError } from './libraryIndex'
@@ -155,7 +156,7 @@ export function useLibraryPersistence({
 
   // Persist canonical library on any songs, trash, or setlists change (with quota relief)
   useEffect(() => {
-    if (crossTabConflict) {
+    if (crossTabConflict || isUnboundDeviceLibraryReadOnly()) {
       return
     }
     if (isAdoptedState({ songs, deletedSongs, setlists })) return

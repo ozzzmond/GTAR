@@ -11,7 +11,9 @@ import { LIBRARY_B1_KEY, LIBRARY_B1_OPTOUT_KEY, LIBRARY_V2_KEY, confirmPendingLi
   loadLibraryIndexBodies, rememberLibraryBodies, waitForLibraryBodyBackend } from './libraryIndex'
 import { B2StaleWriteError, b2Active, b2Decode, b2Enabled, b2HeadKey, b2Identity, b2LoadRevision, b2Matches, b2Persist, b2Read, b2Restore,
   b2Status, disableB2, enableB2, isB2HeadKey, isB2Token, prepareB2, readB2Hold, type B2Preparation, type B2Source, type B2Status,
-  LibraryPartitionBlockedError, LibraryPartitionError, b2Stale, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed, libraryClosedForSignIn } from './libraryB2'
+  LibraryPartitionBlockedError, LibraryPartitionError, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration,
+  b2Stale, anyB2Hold, legacyAccessBlocked, legacyWritesAllowed, libraryClosedForSignIn,
+  readStoredOwner, readSessionUserId, readSessionGeneration } from './libraryB2'
 
 const ownerKey = 'gtar_sync_library_owner'
 
@@ -740,6 +742,66 @@ export function isStaleWriteConflictError(err: unknown): err is StaleWriteConfli
 export interface PersistLibraryOptions {
   expectedRaw?: string | null
   force?: boolean
+  generation?: SessionGeneration | null
+}
+
+export function hasPersistedContent(storage: Storage = localStorage): boolean {
+  try {
+    const lib = readPersistedLibrary(storage)
+    return !!lib && (lib.songs.length > 0 || lib.setlists.length > 0)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * #247 (Option A): An unbound populated device library encountered by a signed-in session
+ * is read-only until explicitly linked to the account.
+ */
+export function isUnboundDeviceLibraryReadOnly(storage: Storage = localStorage): boolean {
+  const sessionUserId = readSessionUserId(storage)
+  if (!sessionUserId) return false
+  if (isLibraryB2Active(storage)) {
+    const identity = b2Identity()
+    if (identity?.kind === 'account') return false
+    return hasPersistedContent(storage)
+  }
+  const owner = readStoredOwner(storage)
+  if (owner) return false
+  return hasPersistedContent(storage)
+}
+
+/**
+ * #247 (Option A): Assert that personal-library mutation is allowed.
+ * Blocks writes when a signed-in account encounters an unbound populated library,
+ * or when an asynchronous account switch occurred.
+ */
+export function assertLibraryMutationAllowed(
+  storage: Storage = localStorage,
+  generation?: SessionGeneration | null
+): void {
+  const sessionUserId = readSessionUserId(storage)
+  if (!sessionUserId) {
+    if (generation && generation.userId) {
+      throw new StaleSyncRoundError('signed-out', 0)
+    }
+    return
+  }
+
+  if (generation !== undefined && generation !== null) {
+    const currentGen = readSessionGeneration(storage)
+    const expectedGen = generation.userId ? `${generation.userId.trim().toLowerCase()}\u0000${generation.token ?? ''}` : null
+    if (!currentGen || currentGen !== expectedGen) {
+      throw new StaleSyncRoundError('session-changed', 0)
+    }
+  }
+
+  if (isUnboundDeviceLibraryReadOnly(storage)) {
+    throw new LibraryOwnershipError(
+      'unbound',
+      'This device\'s songbook is stored on this browser and is not yet linked to an account. Linking or verified ownership is required before editing.'
+    )
+  }
 }
 
 const lastKnownLibraryRawByStorage = new WeakMap<Storage, string | null>()
@@ -782,6 +844,7 @@ export function libraryRevision(storage: Storage = localStorage): string | null 
 }
 /** Restores a revision read earlier with `libraryRevision` (rollback after a failed follow-up write). */
 export function restoreLibraryRevision(revision: string | null, storage: Storage = localStorage): void {
+  assertLibraryMutationAllowed(storage)
   if (isLibraryB2Active(storage)) { b2Restore(revision); return }
   const key = activeLibraryKey(storage)
   if (revision === null) storage.removeItem(key)
@@ -896,6 +959,7 @@ export function persistLibrary(
   storage: Storage = localStorage,
   options?: PersistLibraryOptions
 ) {
+  assertLibraryMutationAllowed(storage, options?.generation)
   validateLibrary(library)
   if (!legacyOnly && b2Stale(storage)) throw new LibraryPartitionError()
   if (isLibraryB2Active(storage)) { persistB2(library, storage, options); return }
@@ -1106,6 +1170,7 @@ export function planDanglingReferenceRepair(storage: Storage = localStorage): Da
 
 /** Explicit caller confirmation only. Refuse stale previews and preserve exact input first. */
 export function applyDanglingReferenceRepair(plan: DanglingReferenceRepair, storage: Storage = localStorage): void {
+  assertLibraryMutationAllowed(storage)
   if (libraryRevision(storage) !== plan.raw) throw new Error('Library changed. Preview repair again.')
   const { repaired, references } = danglingReferenceCandidate(plan.raw)
   if (JSON.stringify(references) !== JSON.stringify(plan.references)) throw new Error('Repair preview does not match current references.')
