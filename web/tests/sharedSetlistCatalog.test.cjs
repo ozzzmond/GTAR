@@ -141,7 +141,9 @@ test('authorization: active admin and active member mutations; active members ma
   assert.equal((await f.call('GET', null, { user: 'member' })).status, 200)
   assert.equal((await f.call('GET', null, { user: 'pending' })).status, 403)
   assert.equal((await f.call('GET', null, { user: 'denied' })).status, 403)
-  assert.equal((await f.call('DELETE', { expected_revision: 1 }, { user: 'other', id })).status, 409)
+  // #253 (0010): another active admin may moderate (unpublish) any setlist; the publisher stays unchanged.
+  assert.equal((await f.call('DELETE', { expected_revision: 1 }, { user: 'other', id })).status, 200)
+  assert.equal(f.sql.prepare('SELECT deleted_by_user_id FROM catalog_setlist_heads WHERE id = ?').get(id).deleted_by_user_id, 'other')
   assert.equal((await f.call('POST', { ...publish(), publisher_user_id: 'other' }, { key: 'another-idempotency' })).status, 400)
   const head = f.sql.prepare('SELECT * FROM catalog_setlist_heads WHERE id = ?').get(id)
   assert.equal(head.publisher_user_id, 'admin')

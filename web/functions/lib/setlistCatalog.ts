@@ -1,10 +1,11 @@
-import { snapshotFromSongbook, validateSnapshot } from '../../src/utils/sharedSetlistSnapshot.ts'
+import { snapshotFromSongbook, validateSnapshot, normalizeSnapshot } from '../../src/utils/sharedSetlistSnapshot.ts'
 export { snapshotFromSongbook, validateSnapshot, SETLIST_LIMITS } from '../../src/utils/sharedSetlistSnapshot.ts'
 import {
   authenticateUserRequest, errorResponse, findUserSongbook,
-  jsonResponse, readBoundedJson,
+  jsonResponse,
   type AuthEnv, type D1Database,
 } from './authCore.ts'
+import { inspectCatalogSchema } from './catalogSchema.ts'
 
 export interface SetlistCatalogEnv extends AuthEnv { SHARED_SETLISTS_ENABLED?: string }
 export interface SetlistContext {
@@ -14,6 +15,10 @@ export interface SetlistContext {
 }
 
 const encoder = new TextEncoder()
+/** Legacy (songbook-reference) bodies keep their original 4 KB cap. */
+export const LEGACY_BODY_BYTES = 4096
+/** #253 client snapshot bodies: 256 KB snapshot plus a small envelope. Only on setlist writes. */
+export const CLIENT_SNAPSHOT_BODY_BYTES = 266240
 const token = /^[A-Za-z0-9_-]{16,128}$/
 
 function fail(message = 'Invalid setlist snapshot'): never { throw new Error(message) }
@@ -30,17 +35,12 @@ function identity(value: unknown): string {
   return String(value)
 }
 
-const protectionTriggers = [
-  'catalog_setlist_guard', 'catalog_setlist_apply', 'catalog_setlist_mutation_no_update',
-  'catalog_setlist_mutation_no_delete', 'catalog_setlist_revision_no_update',
-  'catalog_setlist_revision_no_delete', 'catalog_setlist_head_no_delete', 'catalog_setlist_head_guard',
-]
-
-async function protect(db: D1Database, userId: string, write: boolean) {
-  // Missing schema/protections must never silently downgrade to an unprotected path.
-  const inventory = await db.prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'
-    AND name IN (${protectionTriggers.map(() => '?').join(',')})`).bind(...protectionTriggers).all<{ name: string }>()
-  if (!inventory.success || inventory.results.length !== protectionTriggers.length) fail('Protection unavailable')
+async function protect(db: D1Database, userId: string, write: boolean): Promise<{ allowed: boolean; clientSnapshots: boolean }> {
+  // #253 B1: every protection trigger must match a reviewed definition (formatting-insensitive).
+  // Missing, unknown or weakened protections fail closed: no capability, no read or write path.
+  const schema = await inspectCatalogSchema(db)
+  if (!schema.setlists) fail('Protection unavailable')
+  const clientSnapshots = schema.setlists === 'v2'
   const minute = Math.floor(Date.now() / 60000)
   const day = Math.floor(minute / 1440)
   const result = await db.prepare(`INSERT INTO catalog_setlist_rates(user_id,kind,minute,minute_count,day,day_count)
@@ -49,7 +49,45 @@ async function protect(db: D1Database, userId: string, write: boolean) {
     day = excluded.day, day_count = CASE WHEN day = excluded.day THEN day_count + 1 ELSE 1 END
     WHERE (minute <> excluded.minute OR minute_count < ?) AND (day <> excluded.day OR day_count < ?)
     RETURNING user_id`).bind(userId, write ? 'write' : 'read', minute, day, write ? 30 : 120, write ? 200 : 10000).first()
-  return !!result
+  return { allowed: !!result, clientSnapshots }
+}
+
+const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes)).map(v => v.toString(16).padStart(2, '0')).join('')
+const sha256 = async (text: string) => hex(await crypto.subtle.digest('SHA-256', encoder.encode(text)))
+
+/** Bounded raw read. Never buffers more than `max` bytes of a streamed body. */
+async function readBoundedText(request: Request, max: number): Promise<{ text?: string; bytes: number; tooLarge?: boolean }> {
+  const declared = Number.parseInt(request.headers.get('content-length') ?? '', 10)
+  if (Number.isFinite(declared) && declared > max) return { bytes: declared, tooLarge: true }
+  if (!request.body) return { text: '', bytes: 0 }
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let bytes = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    bytes += value.byteLength
+    if (bytes > max) { await reader.cancel().catch(() => {}); return { bytes, tooLarge: true } }
+    chunks.push(value)
+  }
+  const all = new Uint8Array(bytes)
+  let offset = 0
+  for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.byteLength }
+  return { text: new TextDecoder('utf-8', { fatal: true }).decode(all), bytes }
+}
+
+type Body = Record<string, unknown>
+/** Parse a setlist write body. Only bodies carrying a client `snapshot` may exceed the legacy cap. */
+async function readWriteBody(request: Request): Promise<{ body?: Body; status?: number }> {
+  let raw: Awaited<ReturnType<typeof readBoundedText>>
+  try { raw = await readBoundedText(request, CLIENT_SNAPSHOT_BODY_BYTES) } catch { return { status: 400 } }
+  if (raw.tooLarge) return { status: 413 }
+  let value: unknown
+  try { value = JSON.parse(raw.text ?? '') } catch { return { status: raw.bytes > LEGACY_BODY_BYTES ? 413 : 400 } }
+  const isObject = value !== null && typeof value === 'object' && !Array.isArray(value)
+  if (raw.bytes > LEGACY_BODY_BYTES && !(isObject && Object.hasOwn(value as Body, 'snapshot'))) return { status: 413 }
+  if (!isObject) return { status: 400 }
+  return { body: value as Body }
 }
 
 interface Mutation {
@@ -80,7 +118,8 @@ export async function handleSetlistCatalog(context: SetlistContext): Promise<Res
     const auth = await authenticateUserRequest(request, env)
     if ('error' in auth) return errorResponse(auth.error, auth.status)
     const db = env.DB!
-    if (!await protect(db, auth.user.id, write)) return errorResponse('Rate limit exceeded', 429)
+    const protection = await protect(db, auth.user.id, write)
+    if (!protection.allowed) return errorResponse('Rate limit exceeded', 429)
     if (params.id && !token.test(params.id)) return errorResponse('Invalid publication ID', 400)
     const url = new URL(request.url)
     if (!write) {
@@ -94,7 +133,8 @@ export async function handleSetlistCatalog(context: SetlistContext): Promise<Res
           JOIN catalog_setlist_mutations m ON m.id=r.mutation_id WHERE h.is_deleted=0 ORDER BY h.id LIMIT ? OFFSET ?`)
           .bind(Number(limit), Number(offset)).all()
         if (!rows.success) fail()
-        return jsonResponse({ setlists: rows.results })
+        // `capabilities` is additive; old clients ignore it.
+        return jsonResponse({ setlists: rows.results, capabilities: { client_snapshots: protection.clientSnapshots } })
       }
       const revision = Number(url.searchParams.get('revision'))
       if (!positive(revision)) return errorResponse('Exact revision required', 400)
@@ -109,54 +149,81 @@ export async function handleSetlistCatalog(context: SetlistContext): Promise<Res
 
     const key = request.headers.get('Idempotency-Key') ?? ''
     if (!token.test(key)) return errorResponse('Valid Idempotency-Key required', 400)
-    const parsed = await readBoundedJson(request, 4096, { requireObject: true })
-    if (parsed.error) return errorResponse('Invalid request body', parsed.status)
-    const body = parsed.data as Record<string, unknown>
+    const parsed = await readWriteBody(request)
+    if (!parsed.body) return errorResponse('Invalid request body', parsed.status ?? 400)
+    const body = parsed.body
     const operation = method === 'POST' ? 'create' : method === 'PUT' ? 'update' : 'unpublish'
+    // #253: a client snapshot is self-contained and needs no personal cloud songbook.
+    const client = operation !== 'unpublish' && Object.hasOwn(body, 'snapshot')
     let canonical: Record<string, unknown>
     try {
       exactKeys(body, operation === 'unpublish' ? ['expected_revision'] :
+        client ? (operation === 'create' ? ['snapshot_version', 'publication_key', 'snapshot'] : ['snapshot_version', 'expected_revision', 'snapshot']) :
         operation === 'create' ? ['snapshot_version', 'publication_key', 'source_setlist_id', 'source_version'] :
           ['snapshot_version', 'expected_revision', 'source_setlist_id', 'source_version'])
       if (operation !== 'create' && !positive(body.expected_revision)) fail()
+      if (operation === 'create' && (typeof body.publication_key !== 'string' || !token.test(body.publication_key))) fail()
       if (operation === 'unpublish') canonical = { operation, id: params.id, expected_revision: body.expected_revision }
-      else {
+      else if (client) {
+        if (body.snapshot_version !== 1) fail()
+        canonical = { operation, id: params.id ?? null, expected_revision: body.expected_revision ?? 0,
+          publication_key: body.publication_key ?? null, snapshot_version: 1, source_kind: 'client' }
+      } else {
         if (body.snapshot_version !== 1 || !positive(body.source_version)) fail()
         const sourceId = identity(body.source_setlist_id)
-        if (operation === 'create' && (typeof body.publication_key !== 'string' || !token.test(body.publication_key))) fail()
         canonical = { operation, id: params.id ?? null, expected_revision: body.expected_revision ?? 0,
           publication_key: body.publication_key ?? null, snapshot_version: 1, source_version: body.source_version, source_setlist_id: sourceId }
       }
     } catch { return errorResponse('Invalid mutation contract', 400) }
-    const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(JSON.stringify(canonical)))))
-      .map(v => v.toString(16).padStart(2, '0')).join('')
-    const prior = await previous(db, auth.user.id, key)
-    if (prior) return await mutationResponse(db, prior, digest)
 
     let snapshotJson: string | null = null
     let sourceChecksum: string | null = null
-    if (operation !== 'unpublish') {
+    let sourceVersion: number | null = null
+    if (client) {
+      // Validate shape, content and size before any write; store one canonical field order.
+      try { snapshotJson = JSON.stringify(normalizeSnapshot(body.snapshot)) } catch (error) {
+        const tooLarge = error instanceof Error && error.message.startsWith('Snapshot too large')
+        return errorResponse(tooLarge ? 'Snapshot too large' : 'Invalid setlist snapshot', tooLarge ? 413 : 422)
+      }
+      if (!protection.clientSnapshots) return errorResponse('Client snapshot publishing unavailable', 501)
+      sourceChecksum = await sha256(snapshotJson)
+      sourceVersion = 1
+      canonical.snapshot_sha256 = sourceChecksum
+    }
+    const digest = await sha256(JSON.stringify(canonical))
+    const prior = await previous(db, auth.user.id, key)
+    if (prior) return await mutationResponse(db, prior, digest)
+
+    if (operation !== 'unpublish' && !client) {
       const source = await findUserSongbook(db, auth.user.id)
       if (!source || source.version !== body.source_version) return errorResponse('Source songbook version conflict', 409)
       try { snapshotJson = JSON.stringify(snapshotFromSongbook(JSON.parse(source.data_json), body.source_setlist_id)) }
       catch { return errorResponse('Source setlist cannot be published', 422) }
       sourceChecksum = source.checksum
+      sourceVersion = Number(body.source_version)
     }
     const id = params.id ?? crypto.randomUUID()
     let publicationKey = body.publication_key as string
     if (operation !== 'create') {
-      const head = await db.prepare('SELECT publication_key FROM catalog_setlist_heads WHERE id = ? AND publisher_user_id = ?')
-        .bind(id, auth.user.id).first<{ publication_key: string }>()
+      const head = await db.prepare('SELECT publication_key, publisher_user_id FROM catalog_setlist_heads WHERE id = ?')
+        .bind(id).first<{ publication_key: string; publisher_user_id: string }>()
       if (!head) return errorResponse('Publication unavailable', 409)
+      if (head.publisher_user_id !== auth.user.id) {
+        // #253: only active admins (server role) may edit or unpublish another publisher's setlist,
+        // and only once 0010 is applied. Members keep the original non-disclosing 409.
+        if (auth.user.role !== 'admin' || !protection.clientSnapshots) return errorResponse('Publication unavailable', 409)
+        if (operation === 'update' && !client) return errorResponse('Publishing forbidden', 403)
+      }
       publicationKey = head.publication_key
     }
     try {
+      // Legacy rows omit source_kind (column default 'songbook'), so this path also runs before 0010.
+      const values = [auth.user.id, key, digest, operation, id, publicationKey, body.expected_revision ?? 0,
+        sourceVersion, sourceChecksum, snapshotJson, snapshotJson ? encoder.encode(snapshotJson).length : 0, new Date().toISOString()]
       const result = await db.prepare(`INSERT INTO catalog_setlist_mutations(editor_user_id,idempotency_key,request_digest,
-        operation,setlist_id,publication_key,expected_revision,source_version,source_checksum,snapshot_json,snapshot_bytes,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(editor_user_id,idempotency_key) DO NOTHING`)
-        .bind(auth.user.id, key, digest, operation, id, publicationKey, body.expected_revision ?? 0,
-          operation === 'unpublish' ? null : body.source_version, sourceChecksum, snapshotJson,
-          snapshotJson ? encoder.encode(snapshotJson).length : 0, new Date().toISOString()).run()
+        operation,setlist_id,publication_key,expected_revision,source_version,source_checksum,snapshot_json,snapshot_bytes,created_at${client ? ',source_kind' : ''})
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?${client ? ",'client'" : ''}) ON CONFLICT(editor_user_id,idempotency_key) DO NOTHING`)
+        .bind(...values).run()
       if (!result.success) fail('Persistence unavailable')
     } catch (error) {
       const message = error instanceof Error ? error.message : ''

@@ -9,12 +9,16 @@ import {
   type PublishedSetlist,
 } from '../utils/sharedSetlistPublishing'
 import type { WebSetlist } from '../types/gtar'
+import { adminUnpublishSetlist } from '../utils/catalogReports'
+import { AdminSetlistEditor } from './AdminSetlistEditor'
 
 export interface SharedSetlistCatalogPanelProps {
   /** Personal setlists, used to detect imported copies and compare revisions. */
   personalSetlists?: WebSetlist[]
   /** Authenticated user ID; enables publisher-only management controls. */
   currentUserId?: string | null
+  /** #253: active admin (server re-checks): may unpublish any setlist for moderation. */
+  isAdmin?: boolean
   /** Called after a successful unpublish so the parent can reload. */
   onUnpublished?: (id: string) => void
 }
@@ -98,6 +102,7 @@ function errorMessage(err: unknown): string {
 export function SharedSetlistCatalogPanel({
   personalSetlists = [],
   currentUserId,
+  isAdmin = false,
   onUnpublished,
 }: SharedSetlistCatalogPanelProps) {
   const [selected, setSelected] = useState<{ id: string; revision: number } | null>(null)
@@ -109,6 +114,10 @@ export function SharedSetlistCatalogPanel({
   const [isUnpublishing, setIsUnpublishing] = useState(false)
   const [unpublishError, setUnpublishError] = useState<string | null>(null)
   const [unpublishFeedback, setUnpublishFeedback] = useState<string | null>(null)
+  // #253: admin moderation removal of another publisher's setlist (no publisher journal involved).
+  const [adminRemoval, setAdminRemoval] = useState(false)
+  // #253 B3: admin edit of another publisher's setlist.
+  const [adminEdit, setAdminEdit] = useState<PublishedSetlist | null>(null)
 
   const unpublishDialogRef = useRef<HTMLDialogElement>(null)
   const unpublishTriggerRef = useRef<HTMLElement | null>(null)
@@ -124,6 +133,7 @@ export function SharedSetlistCatalogPanel({
     unpublishDialogRef.current?.close()
     setUnpublishTarget(null)
     setUnpublishError(null)
+    setAdminRemoval(false)
     unpublishTriggerRef.current?.focus()
   }
 
@@ -137,6 +147,19 @@ export function SharedSetlistCatalogPanel({
     setIsUnpublishing(true)
     setUnpublishError(null)
     try {
+      if (adminRemoval) {
+        await adminUnpublishSetlist(unpublishTarget.id, unpublishTarget.revision)
+        onUnpublished?.(unpublishTarget.id)
+        const name = unpublishTarget.name
+        unpublishDialogRef.current?.close()
+        setUnpublishTarget(null)
+        setAdminRemoval(false)
+        unpublishTriggerRef.current?.focus()
+        setUnpublishFeedback(`"${name}" was removed from the Shared Catalog.`)
+        setTimeout(() => setUnpublishFeedback(null), 5000)
+        catalog.reload()
+        return
+      }
       const own = findOwnPublicationLink(currentUserId, unpublishTarget.id)
       if (!own) {
         throw new Error(
@@ -309,6 +332,35 @@ export function SharedSetlistCatalogPanel({
                         Unpublish
                       </button>
                     )}
+                    {/* #253 B3 admin edit: review and save a new revision (server enforces role and CAS). */}
+                    {isAdmin && !isPublisher && (
+                      <button
+                        type="button"
+                        data-testid={`admin-edit-setlist-btn-${setlist.id}`}
+                        className="min-h-11 px-2 py-1 rounded-lg border border-app-border text-app-muted hover:text-app-heading hover:border-app-action font-mono text-[10px] font-bold transition-all cursor-pointer"
+                        aria-label={`Edit ${setlist.name} (admin)`}
+                        onClick={() => setAdminEdit(setlist)}
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {/* #253 admin moderation: remove any setlist (server enforces the admin role). */}
+                    {isAdmin && !isPublisher && (
+                      <button
+                        type="button"
+                        data-testid={`admin-remove-setlist-btn-${setlist.id}`}
+                        className="min-h-11 px-2 py-1 rounded-lg border border-app-border text-app-muted hover:text-status-error hover:border-status-error/40 font-mono text-[10px] font-bold transition-all cursor-pointer"
+                        aria-label={`Remove ${setlist.name} (admin)`}
+                        onClick={(e) => {
+                          unpublishTriggerRef.current = e.currentTarget
+                          setAdminRemoval(true)
+                          setUnpublishTarget(setlist)
+                          setUnpublishError(null)
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
                     <button
                       type="button"
                       data-testid={`preview-setlist-btn-${setlist.id}`}
@@ -330,6 +382,16 @@ export function SharedSetlistCatalogPanel({
           key={`${selected.id}:${selected.revision}`}
           {...selected}
           onClose={() => setSelected(null)}
+        />
+      )}
+
+      {adminEdit && catalog.enabled && (
+        <AdminSetlistEditor
+          key={`${adminEdit.id}:${adminEdit.revision}`}
+          id={adminEdit.id}
+          revision={adminEdit.revision}
+          onClose={() => setAdminEdit(null)}
+          onSaved={() => catalog.reload()}
         />
       )}
 
@@ -369,7 +431,9 @@ export function SharedSetlistCatalogPanel({
             </p>
             <p className="text-app-muted">
               Team members who already imported a personal copy keep their independent copy unchanged.
-              This action uses your active publisher session and cannot be undone by other users.
+              {adminRemoval
+                ? ' Admin moderation: the publisher stays recorded and the removal is logged with your account.'
+                : ' This action uses your active publisher session and cannot be undone by other users.'}
             </p>
 
             {unpublishError && (
