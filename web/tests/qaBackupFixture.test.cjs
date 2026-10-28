@@ -113,3 +113,45 @@ test('generator --out: existing files, symlinks and dangling symlinks are never 
     assert.deepEqual(fs.readFileSync(existing), original)
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
+
+// Codex P2 (PR #259, cleanup ownership): a failed write never removes or changes a file that
+// replaced the output path; cleanup acts only on the descriptor this run created.
+test('generator --out: write failure after the path is replaced leaves the replacement untouched (no pathname cleanup)', t => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-qa-race-'))
+  try {
+    const out = path.join(dir, 'out.json')
+    const sentinel = path.join(dir, 'sentinel.json')
+    const sentinelBytes = Buffer.from('{"pre-existing":"sentinel"}\n')
+    fs.writeFileSync(sentinel, sentinelBytes)
+    const unlinks = []
+    t.mock.method(fs, 'unlinkSync', p => { unlinks.push(p) })
+    t.mock.method(fs, 'rmSync', p => { unlinks.push(p) })
+    const realWrite = fs.writeFileSync
+    // Codex repro: the fresh exclusive output is opened, then the pathname is replaced by a
+    // pre-existing sentinel, then the write fails with ENOSPC.
+    t.mock.method(fs, 'writeFileSync', (target, data, ...rest) => {
+      if (typeof target !== 'number') return realWrite(target, data, ...rest)
+      realWrite(target, 'partial bytes')
+      fs.renameSync(sentinel, out)
+      throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
+    })
+    assert.throws(() => gen.writeExclusive(out, '{"generated":true}'), /failed \(ENOSPC\).*not deleted/)
+    assert.deepEqual(unlinks, [], 'no pathname deletion')
+    assert.deepEqual(fs.readFileSync(out), sentinelBytes, 'sentinel at the output path survives byte-for-byte')
+    t.mock.restoreAll()
+    // Plain injected failure (no replacement): the run's own output is emptied, never deleted elsewhere.
+    const own = path.join(dir, 'own.json')
+    t.mock.method(fs, 'writeFileSync', (target, data, ...rest) => {
+      if (typeof target !== 'number') return realWrite(target, data, ...rest)
+      realWrite(target, 'partial bytes')
+      throw Object.assign(new Error('EIO'), { code: 'EIO' })
+    })
+    assert.throws(() => gen.writeExclusive(own, '{"generated":true}'), /failed \(EIO\).*emptied/)
+    t.mock.restoreAll()
+    assert.equal(fs.readFileSync(own, 'utf8'), '', 'own partial output emptied through its descriptor')
+    assert.throws(() => gen.writeExclusive(own, 'x'), /Refusing to overwrite/, 'left in place, so a retry needs a new path or manual removal')
+  } finally { t.mock.restoreAll(); fs.rmSync(dir, { recursive: true, force: true }) }
+})

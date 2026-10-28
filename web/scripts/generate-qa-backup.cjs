@@ -113,8 +113,10 @@ function validate({ opts, payload, json, jb }) {
 
 /**
  * Create `file` exclusively (O_CREAT|O_EXCL, i.e. 'wx'): an existing file, directory or symlink
- * (even a dangling one) is never opened, truncated or followed. Only a file this call created is
- * removed if writing it fails; pre-existing paths are never deleted.
+ * (even a dangling one) is never opened, truncated or followed.
+ * Cleanup never touches a pathname: if writing fails, only the inode this call created is emptied
+ * through its own descriptor (ftruncate), so a file that replaced the path meanwhile is never
+ * deleted or changed. The emptied output is left for the operator to remove.
  */
 function writeExclusive(file, data) {
   let fd
@@ -126,12 +128,13 @@ function writeExclusive(file, data) {
     fs.writeFileSync(fd, data)
     fs.fsyncSync(fd)
   } catch (error) {
-    try { fs.closeSync(fd) } catch { /* already failing */ }
-    fd = undefined
-    try { fs.unlinkSync(file) } catch { /* best effort: our own partial file */ }
-    throw error
+    let emptied = false
+    try { fs.ftruncateSync(fd, 0); fs.fsyncSync(fd); emptied = true } catch { /* report below */ }
+    const reason = error && error.code ? error.code : error instanceof Error ? error.message : String(error)
+    throw new Error(`Writing ${file} failed (${reason}). The output this run created was ${emptied ? 'emptied' : 'left partially written'} ` +
+      'and not deleted; remove it yourself before retrying. No other file was changed.', { cause: error })
   } finally {
-    if (fd !== undefined) fs.closeSync(fd)
+    fs.closeSync(fd)
   }
 }
 
