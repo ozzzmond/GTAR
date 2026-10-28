@@ -300,11 +300,11 @@ function persistApplied(storage: Storage, before: LocalView, next: SyncLibrary, 
   const integrity = validateSongbookIntegrity(next.songs, next.setlists)
   if (!integrity.isValid) throw new Error(`Synced songbook failed referential integrity check: ${integrity.errors.join('; ')}`)
   const { themeSettings, ...library } = next
-  persistLibrary(library, storage, { expectedRaw: before.raw })
+  persistLibrary(library, storage, { expectedRaw: before.raw, generation: gen })
   const themeChanged = themeSettings !== undefined && JSON.stringify(themeSettings) !== JSON.stringify(before.library.themeSettings)
   if (themeChanged) {
     try { persistCloudThemeSettings(themeSettings, storage) } catch (error) {
-      try { restoreLibraryRevision(before.raw, storage); setLastKnownPersistedLibraryRaw(before.raw, storage) } catch { /* best effort */ }
+      try { restoreLibraryRevision(before.raw, storage, gen); setLastKnownPersistedLibraryRaw(before.raw, storage) } catch { /* best effort */ }
       throw error
     }
   }

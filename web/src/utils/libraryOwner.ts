@@ -10,12 +10,15 @@
  * - Another owner: blocked. Nothing on the device is relabelled, moved, cleared or deleted.
  * Ownership is never inferred from last-synced metadata.
  */
-import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot, clearOnboardingCreator } from './syncJournal'
+import { isLibraryB2Active, libraryRevision, readPersistedLibrary, recoveryData, writeRecoverySnapshot,
+  clearOnboardingCreator, beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization } from './syncJournal'
 import { b2Identity, LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
 import { generateUUID } from './uuid'
 
 export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
-export { type OperationContext, isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed, captureOperationContext, beginAsyncMutation, endAsyncMutation, clearOnboardingCreator } from './syncJournal'
+export { type OperationContext, isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed, captureOperationContext,
+  beginAsyncMutation, endAsyncMutation, clearOnboardingCreator, readOnboardingCreator,
+  beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization } from './syncJournal'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
 
@@ -160,7 +163,12 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
     const library = readPersistedLibrary(storage) ?? { songs: [], setlists: [] }
     const key = `gtar_sync_recovery:owner-confirm:${Date.now()}:${generateUUID()}`
     const raw = JSON.stringify({ local: library })
-    await writeRecoverySnapshot(key, raw, storage)
+    beginLinkingSnapshotAuthorization(storage, key, raw)
+    try {
+      await writeRecoverySnapshot(key, raw, storage)
+    } finally {
+      clearLinkingSnapshotAuthorization(storage)
+    }
     // Owner record and sign-in first (#258: once another owner is saved, this account may not read the library).
     const session = storedSession(storage)
     const changed = () => { throw new Error('The songbook or the signed-in account changed while linking; nothing was linked. Review and try again.') }

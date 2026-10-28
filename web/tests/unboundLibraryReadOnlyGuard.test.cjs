@@ -333,6 +333,34 @@ test('FIX_R1: Recovery mutation APIs fail closed on unbound populated library; l
     'writeRecoverySnapshot with non-linking key fails closed'
   )
 
+  // 5b. Forged owner-confirm key with arbitrary payload fails closed without verified linking context
+  await assert.rejects(
+    () => tab.sj.writeRecoverySnapshot('gtar_sync_recovery:owner-confirm:invented:attacker-999', JSON.stringify({ malicious: true }), storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'writeRecoverySnapshot with forged owner-confirm prefix must fail closed'
+  )
+
+  // 5c. Failed linking never binds owner or deletes archives
+  const brokenStorage = h.freshStorage()
+  tab.sj.persistLibrary(h.library(2, 0), brokenStorage)
+  h.signIn(brokenStorage, 'user-fail-link')
+  const initialArchives = ['gtar_sync_recovery:preexisting:1']
+  brokenStorage.setItem(initialArchives[0], JSON.stringify({ safe: true }))
+  // Simulate account switch during linking
+  const tabFail = h.newTab()
+  // Mock writeRecoverySnapshot on tabFail to simulate account switch before snapshot verifies
+  const origWrite = tabFail.sj.writeRecoverySnapshot
+  tabFail.sj.writeRecoverySnapshot = async (k, r, s) => {
+    h.signIn(brokenStorage, 'user-switch-intruder')
+    return origWrite(k, r, s)
+  }
+  await assert.rejects(
+    () => tabFail.owner.confirmLibraryOwner('user-fail-link', brokenStorage),
+    'Failed linking attempt aborts'
+  )
+  assert.equal(brokenStorage.getItem(OWNER_KEY), null, 'Failed linking never binds owner')
+  assert.equal(brokenStorage.getItem(initialArchives[0]), JSON.stringify({ safe: true }), 'Failed linking never deletes archives')
+
   // Verify archive was NOT deleted or mutated
   assert.equal(storage.getItem(archiveKey), archivePayload, 'Existing recovery archive preserved byte-for-byte')
 
@@ -383,7 +411,55 @@ test('FIX_R2: Asynchronous local mutations enforce mandatory operation context w
     'Stale write after token rotation must fail closed even without options.generation'
   )
 
-  // Case 4: Legitimate signed-out editing initiated while signed out: PRESERVED
+  // Case 4: Concurrent/nested async operations: Op 2 commit does not discard Op 1 isolated context
+  h.signIn(storage, 'user-a')
+  const ctx1 = tab.sj.beginAsyncMutation(storage)
+  const ctx2 = tab.sj.beginAsyncMutation(storage)
+  // Op 2 commits successfully
+  assert.doesNotThrow(() => tab.sj.persistLibrary(lib, storage, { context: ctx2 }))
+  // Token rotates during Op 1's pause
+  storage.setItem('gtar_auth_session', JSON.stringify({
+    user: { id: 'user-a', email: 'user-a@example.test' },
+    sessionToken: 'token-user-a-rotated-v2',
+  }))
+  // Op 1 resumes without arguments -> must fail closed because its isolated context was preserved
+  assert.throws(
+    () => tab.sj.persistLibrary(lib, storage),
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'session-changed',
+    'Op 1 fails closed on token rotation after concurrent Op 2 committed'
+  )
+
+  // Case 5: Rejection cleanup prevents poisoning of later legitimate signed-out offline editing
+  const rejStorage = h.freshStorage()
+  rejStorage.setItem(V1, JSON.stringify({ songs: [{ id: 's1', title: 'S1', artist: '', rawContent: '[C]' }], setlists: [] }))
+  h.signIn(rejStorage, 'user-a')
+  const tabRej = h.newTab()
+  const rejLib = tabRej.sj.readPersistedLibrary(rejStorage)
+  tabRej.sj.beginAsyncMutation(rejStorage)
+  // Op rejects on unbound library
+  assert.throws(() => tabRej.sj.persistLibrary(rejLib, rejStorage))
+  // User signs out and edits offline -> MUST SUCCEED without poison from rejected context
+  h.signIn(rejStorage, null)
+  assert.doesNotThrow(
+    () => tabRej.sj.persistLibrary({ songs: [{ id: 's1', title: 'Clean Offline Edit', artist: '', rawContent: '[C]' }], setlists: [] }, rejStorage),
+    'Signed-out offline editing succeeds after earlier operation rejected'
+  )
+
+  // Case 6: Direct persistence APIs enforce async-session checks
+  const directStorage = h.freshStorage()
+  h.bindOwner(directStorage, 'user-a')
+  h.signIn(directStorage, 'user-a')
+  const tabDirect = h.newTab()
+  const revA = tabDirect.sj.libraryRevision(directStorage)
+  tabDirect.sj.beginAsyncMutation(directStorage)
+  h.signIn(directStorage, 'user-b') // switch account
+  assert.throws(
+    () => tabDirect.sj.restoreLibraryRevision(revA, directStorage),
+    err => err.name === 'StaleSyncRoundError' || err.name === 'LibraryOwnershipError' || err.name === 'LibraryPartitionBlockedError',
+    'restoreLibraryRevision enforces active async operation checks'
+  )
+
+  // Case 7: Legitimate signed-out editing initiated while signed out: PRESERVED
   const { storage: signedOutStorage } = unboundDevice({ n: 3 })
   h.signIn(signedOutStorage, null)
   const tabSignedOut = h.newTab()
@@ -403,50 +479,78 @@ test('FIX_R3: Repeated onboarding edits work without silent ownership binding or
   const tab = h.newTab()
 
   // Fresh device: empty unbound library
+  // Empty save under user-onboard MUST NOT record creator provenance
   tab.sj.persistLibrary({ songs: [], setlists: [] }, storage)
   storage.removeItem(OWNER_KEY)
 
   assert.equal(tab.sj.isUnboundDeviceLibraryReadOnly(storage), false, 'Empty library initially not read-only')
   assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record absent before first save')
+  assert.equal(tab.sj.readOnboardingCreator(storage), null, 'Empty save does not record creator provenance')
 
-  // Save 1: First song save succeeds
+  // Prove protection against offline populating after empty save:
+  // If user logs out, populates offline, and re-authenticates as user-onboard:
+  h.signIn(storage, null)
+  const offlineSongs = [{ id: 'offline-1', title: 'Offline Song', artist: '', rawContent: '[C]Offline' }]
+  tab.sj.persistLibrary({ songs: offlineSongs, setlists: [] }, storage)
+  h.signIn(storage, 'user-onboard')
+  assert.equal(tab.sj.isUnboundDeviceLibraryReadOnly(storage), true, 'User-onboard cannot modify offline populated data')
+
+  // Reset to clean empty storage for legitimate onboarding flow
+  const freshOnboardingStorage = h.freshStorage()
+  h.signIn(freshOnboardingStorage, 'user-onboard')
+  const tabFresh = h.newTab()
+
+  // Save 1: First song save succeeds and establishes provenance bound to revision
   const song1 = { id: 'song-1', title: 'Onboarding Song 1', artist: '', rawContent: '[C]Song 1' }
-  tab.sj.persistLibrary({ songs: [song1], setlists: [] }, storage)
-  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 1)
-  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record remains absent after first save (no silent binding)')
+  tabFresh.sj.persistLibrary({ songs: [song1], setlists: [] }, freshOnboardingStorage)
+  assert.equal(tabFresh.sj.readPersistedLibrary(freshOnboardingStorage).songs.length, 1)
+  assert.equal(freshOnboardingStorage.getItem(OWNER_KEY), null, 'Owner record remains absent after first save (no silent binding)')
+  const prov1 = tabFresh.sj.readOnboardingCreator(freshOnboardingStorage)
+  assert.ok(prov1, 'Provenance established after initial content creation')
+  assert.equal(prov1.userId, 'user-onboard')
+  assert.equal(prov1.headRevision, tabFresh.sj.libraryRevision(freshOnboardingStorage))
 
-  // Save 2: Second song save succeeds (crucial REPRO requirement: second save was previously rejected)
+  // Save 2: Second song save succeeds
   const song2 = { id: 'song-2', title: 'Onboarding Song 2', artist: '', rawContent: '[D]Song 2' }
   assert.doesNotThrow(
-    () => tab.sj.persistLibrary({ songs: [song1, song2], setlists: [] }, storage),
+    () => tabFresh.sj.persistLibrary({ songs: [song1, song2], setlists: [] }, freshOnboardingStorage),
     'Second save succeeds in legitimate onboarding flow'
   )
-  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 2)
-  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record still absent after second save')
+  assert.equal(tabFresh.sj.readPersistedLibrary(freshOnboardingStorage).songs.length, 2)
+  assert.equal(freshOnboardingStorage.getItem(OWNER_KEY), null, 'Owner record still absent after second save')
 
   // Save 3: Third edit succeeds
   const updatedSong1 = { ...song1, title: 'Onboarding Song 1 Edited' }
   assert.doesNotThrow(
-    () => tab.sj.persistLibrary({ songs: [updatedSong1, song2], setlists: [] }, storage),
+    () => tabFresh.sj.persistLibrary({ songs: [updatedSong1, song2], setlists: [] }, freshOnboardingStorage),
     'Third edit succeeds in legitimate onboarding flow'
   )
-  assert.equal(tab.sj.readPersistedLibrary(storage).songs[0].title, 'Onboarding Song 1 Edited')
-  assert.equal(storage.getItem(OWNER_KEY), null, 'Owner record still null (still unbound)')
+  assert.equal(tabFresh.sj.readPersistedLibrary(freshOnboardingStorage).songs[0].title, 'Onboarding Song 1 Edited')
+  assert.equal(freshOnboardingStorage.getItem(OWNER_KEY), null, 'Owner record still null (still unbound)')
 
-  // Protection proof: Account B signs in and cannot mutate Account Onboard's unlinked library
-  h.signIn(storage, 'user-intruder')
-  const tabB = h.newTab()
-  assert.equal(tabB.sj.isUnboundDeviceLibraryReadOnly(storage), true, 'User intruder sees library as read-only')
-  assert.throws(
-    () => tabB.sj.persistLibrary({ songs: [], setlists: [] }, storage),
-    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
-    'Intruder cannot delete or mutate user-onboard\'s unlinked library'
+  // Reload: simulated reload as user-onboard preserves editing
+  const tabReloaded = h.newTab()
+  assert.equal(tabReloaded.sj.isUnboundDeviceLibraryReadOnly(freshOnboardingStorage), false, 'Reloaded session preserves editing')
+
+  // Signed-out edit clears provenance; re-authenticating as user-onboard fails closed
+  h.signIn(freshOnboardingStorage, null)
+  assert.doesNotThrow(
+    () => tabFresh.sj.persistLibrary({ songs: [song1], setlists: [] }, freshOnboardingStorage),
+    'Signed-out offline edit succeeds'
   )
+  assert.equal(tabFresh.sj.readOnboardingCreator(freshOnboardingStorage), null, 'Signed-out edit cleared provenance')
+  h.signIn(freshOnboardingStorage, 'user-onboard')
+  assert.equal(tabFresh.sj.isUnboundDeviceLibraryReadOnly(freshOnboardingStorage), true, 'User-onboard blocked after offline modification')
 
-  // Pre-existing populated unbound library cannot be claimed via onboarding
+  // Direct exported recordOnboardingCreator cannot spoof provenance on pre-populated unbound data
   const { storage: prePopulated } = unboundDevice({ n: 3 })
   h.signIn(prePopulated, 'user-attacker')
   const tabAttacker = h.newTab()
+  assert.throws(
+    () => tabAttacker.sj.recordOnboardingCreator(prePopulated, 'user-attacker'),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'recordOnboardingCreator refuses spoofing on pre-existing populated library'
+  )
   assert.equal(tabAttacker.sj.isUnboundDeviceLibraryReadOnly(prePopulated), true)
   assert.throws(
     () => tabAttacker.sj.persistLibrary({ songs: [song1], setlists: [] }, prePopulated),
