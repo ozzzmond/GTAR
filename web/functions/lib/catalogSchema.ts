@@ -78,6 +78,7 @@ export const KNOWN_V2_TABLES: Record<string, string> = {
   shared_catalog_songs: 'dee1a84315926ad0688005d64cad4a372ffac422752a861d04990f8023338dd6',
   user_songbook_cursors: '0cb33265d2dc19ab4a0f62f6f726f3713af74523fa26e33d068f87a7a575a4ec',
   user_songbook_records: '2ed5683139ece44b8920da12affd220277546f21978731b045da1ba5ddf43091',
+  user_songbooks: '33065172dc13bfabc4a6690e77d8695cbf2d02b8e436a99580f7f4551eb2940a',
   users: '951e3c0cbe02a303d2e7622784f2c10f59538beb13b9f0400f2821cacd344b7e',
   catalog_moderation_actions_report: '04fabde9b19f2a497d68fdfe0c6c2b6bb17fdf2463f4b8183bf907fef68a4e0d',
   catalog_reports_one_open: '4fa2d87952a438b0370684fac87f5047e9fdc4b7aec9fbde781fb097fa787222',
@@ -92,13 +93,14 @@ export const KNOWN_V2_TABLES: Record<string, string> = {
   idx_shared_catalog_songs_publisher: '8c32f60ccb5025811d6271c2323179b7d37c46cbd2a4c34ca248778f21767ef1',
   idx_shared_catalog_songs_updated_at: 'a5332cf1987c10f1ec179ed1311b63d637541e4d6124628395f101a2c78fa5f6',
   idx_user_songbook_records_seq: 'b2a2ca8df54d80508508fbc5572ecf59fea7aa832c22ba25b754185af66f347a',
+  idx_user_songbooks_user_id: 'b90fca6091f30e3c7e0b62609c18dd2f737f8b77e1f47f30b51ecde68bc342b3',
   idx_users_access_status: '8bec75e744e8e638160b367eec8370023470bd77deb5e1099c1abe4b8dd25d0a',
   idx_users_email: 'ce2b616650c288041b2f031f7016bc4281622ea3cc2dd5acfdda75a7854f84b9',
   idx_users_google_sub: '98dc802ad454bbde28eb01042d1c301c493f6a757bf50459c87ff5c7f88e1d1d',
 }
 const V2_TABLES = ['users', 'catalog_setlist_heads', 'catalog_setlist_mutations', 'catalog_setlist_revisions', 'catalog_setlist_rates',
   'catalog_reports', 'catalog_moderation_actions', 'shared_catalog_songs', 'shared_catalog_revisions',
-  'user_songbook_records', 'user_songbook_cursors']
+  'user_songbooks', 'user_songbook_records', 'user_songbook_cursors']
 
 const SETLIST_TABLES = ['catalog_setlist_heads', 'catalog_setlist_mutations', 'catalog_setlist_revisions']
 const SETLIST_TRIGGERS = ['catalog_setlist_guard', 'catalog_setlist_apply', 'catalog_setlist_mutation_no_update',
@@ -127,7 +129,8 @@ async function variants(rows: { name: string; sql: string | null }[], required: 
 }
 
 /** Tables Catalog V2 only reads from; their own extra indexes cannot weaken catalog protections. */
-const PREREQUISITE_TABLES = new Set(['users', 'user_songbook_records', 'user_songbook_cursors'])
+// user_songbooks is read by catalog_setlist_apply (legacy source check) and by the legacy publish path.
+const PREREQUISITE_TABLES = new Set(['users', 'user_songbooks', 'user_songbook_records', 'user_songbook_cursors'])
 
 /** Every reviewed table/index present and identical; no unknown index on a catalog table. Auto-indexes
  * (no SQL) are implied by the table text. */

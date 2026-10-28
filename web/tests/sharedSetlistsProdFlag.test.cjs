@@ -149,3 +149,28 @@ test('Codex B3: runbook states whole-database Time Travel scope, forward-only de
   assert.match(doc, /before the complete 0010 schema is present, every shared-setlist route returns \*\*503\*\*/)
   assert.doesNotMatch(doc, /only if no catalog write happened/, 'old catalog-only restore condition removed')
 })
+
+test('Codex R2: missing or altered user_songbooks prerequisite fails closed before capability, rate accounting or any write', async () => {
+  const { inspectCatalogSchema } = require('../functions/lib/catalogSchema.ts')
+  const cases = [
+    ['user_songbooks dropped', f => f.sql.exec('DROP TABLE user_songbooks')],
+    ['user_songbooks column renamed', f => f.sql.exec('ALTER TABLE user_songbooks RENAME COLUMN checksum TO digest')],
+    ['user_songbooks index dropped', f => f.sql.exec('DROP INDEX idx_user_songbooks_user_id')],
+  ]
+  for (const [label, alter] of cases) {
+    const f = withFlag(await fixture(), 'catalog-v2')
+    alter(f)
+    assert.deepEqual(await inspectCatalogSchema(f.db), { setlists: null, reports: false }, label)
+    await assertClosed(f, label)
+  }
+  // Altered table definition built from a modified migration (column constraint removed).
+  const all = require('./helpers/catalogV2Fixture.cjs').allMigrations
+  const altered = withFlag(await fixture({ migrations: all, transform: (name, sql) => name.startsWith('0002')
+    ? sql.replace(/user_id TEXT PRIMARY KEY NOT NULL/, 'user_id TEXT NOT NULL') : sql }), 'catalog-v2')
+  await assertClosed(altered, 'user_songbooks definition altered')
+  // Complete 0010 keeps full functionality, including the legacy songbook-backed path.
+  const f = withFlag(await fixture(), 'catalog-v2')
+  assert.deepEqual((await ok(await f.call('GET', undefined))).capabilities, { client_snapshots: true })
+  await ok(await f.call('POST', legacyCreate(), { user: 'admin' }))
+  await ok(await f.call('POST', clientCreate()))
+})

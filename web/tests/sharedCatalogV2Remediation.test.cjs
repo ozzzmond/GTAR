@@ -37,7 +37,7 @@ test('B2 (PR #261): reviewed table/index fingerprints are exactly the post-0010 
   const db = new DatabaseSync(':memory:')
   for (const n of allMigrations) db.exec(fs.readFileSync(path.join(__dirname, '../migrations', n), 'utf8'))
   const tables = ['users', 'catalog_setlist_heads', 'catalog_setlist_mutations', 'catalog_setlist_revisions', 'catalog_setlist_rates',
-    'catalog_reports', 'catalog_moderation_actions', 'shared_catalog_songs', 'shared_catalog_revisions', 'user_songbook_records', 'user_songbook_cursors']
+    'catalog_reports', 'catalog_moderation_actions', 'shared_catalog_songs', 'shared_catalog_revisions', 'user_songbooks', 'user_songbook_records', 'user_songbook_cursors']
   const derived = {}
   for (const { name, sql } of db.prepare(`SELECT lower(name) AS name, sql FROM sqlite_master WHERE type IN ('table','index')
     AND lower(tbl_name) IN (${tables.map(() => '?').join(',')}) AND sql IS NOT NULL`).all(...tables)) derived[name] = await schemaFingerprint(sql)
