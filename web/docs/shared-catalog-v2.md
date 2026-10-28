@@ -56,7 +56,7 @@ If needed, `0011` drops `catalog_setlist_apply` and re-creates it with the exact
 - `source_kind` remains, all existing rows stay valid, and every new write returns to legacy validation.
 - `catalog_reports` and `catalog_moderation_actions` remain as retained, unused history.
 - No row is deleted or rewritten.
-- The server detects the capability from the trigger text, so client snapshots and admin cross-edits switch off automatically (501 or 409).
+- The server detects the capability from the verified schema, so client snapshots and admin cross-edits switch off automatically: 501 or 409 under `phase-a-v1`, and 503 on every route under `catalog-v2`.
 
 ## Later approval gates (not part of this PR)
 
@@ -77,7 +77,11 @@ Owner approved on 2026-10-28:
 Server flag `SHARED_SETLISTS_ENABLED` accepts exact values only:
 - `phase-a-v1`: DEV Preview, unchanged. Works on a legacy or Catalog V2 schema.
 - `catalog-v2`: the production activation value.
-  - Every route serves only when the reviewed 0010 protections are present.
+  - Every route serves only when the complete, verified 0010 schema is present. That means:
+    - every protection trigger;
+    - the reporting and moderation triggers;
+    - the exact post-0010 table and index definitions, covering CHECK constraints and columns;
+    - the 0008 guard and the 0009 tables as prerequisites.
   - On a legacy, partial or unknown schema, every route returns 503, no capability is advertised and nothing is written.
   - Once 0010 is present, older clients' legacy bodies are still accepted.
 - Unset or any other value: every route returns 404 before any database access. This is the current production state, and `tests/sharedSetlistCatalog.test.cjs` asserts it.
@@ -104,7 +108,14 @@ The approved release is the only change that sets `env.production.vars.SHARED_SE
    - the duplicate advisory appears when publishing a duplicate song;
    - an older client's legacy publish still works.
 
-**Rollback:** forward-only `0011` re-creates the exact 0007 `catalog_setlist_apply`. That puts the schema in legacy mode, where `catalog-v2` fails closed with 503 and `phase-a-v1` uses the legacy path. Use the Time Travel restore to the step 3 bookmark only if no catalog write happened after it. Never drop tables or delete rows.
+**Rollback (default: forward-only, non-destructive).** `0011` re-creates the exact 0007 `catalog_setlist_apply`. That puts the schema in legacy mode: `catalog-v2` returns 503 on every route, and `phase-a-v1` uses the legacy path. Never drop tables or delete rows.
+
+**Time Travel is not a catalog-only undo.** Restoring a D1 database to a bookmark rewinds the **whole database**. Every write after the bookmark is discarded: accounts and approvals, sessions and revocations, personal songbooks (`user_songbooks`, `user_songbook_records`), shared songs and setlists, reports, and anything else.
+- Use a restore only if one of these is true:
+  - (a) database-wide write quiescence since the bookmark has been verified. This means no writes to any table, for example by comparing the database's current Time Travel bookmark or per-table row counts and max timestamps with the step 3 record, with the app in maintenance or read-only for the whole window.
+  - (b) the owner has explicitly approved a reconciliation and recovery procedure, already tested on a disposable copy, that re-applies every intervening write.
+- Otherwise, roll back forward-only.
+- No destructive remote operation is part of this runbook.
 
 ### PROD (later, separate approval)
 
@@ -114,4 +125,6 @@ The same steps apply against a private export rehearsal first: `wrangler d1 expo
 - Apply 0010.
 - Deploy the release that sets `catalog-v2` (#234 flow).
 
-**Order:** migrate first, then deploy. If the deploy goes first, the Report and moderation endpoints return 501 until 0010 is applied.
+**Order:** migrate first, then deploy.
+- If a release that sets `catalog-v2` is deployed before the complete 0010 schema is present, every shared-setlist route returns **503** (fail closed: no capability, no writes). The Report and moderation endpoints return **501**.
+- If the deploy goes first without the flag (production still unset), shared setlists stay 404. Report and moderation return 501 until 0010 is applied.

@@ -47,7 +47,9 @@ async function protect(db: D1Database, userId: string, write: boolean, requireV2
   // #253 B1: every protection trigger must match a reviewed definition (formatting-insensitive).
   // Missing, unknown or weakened protections fail closed: no capability, no read or write path.
   const schema = await inspectCatalogSchema(db)
-  if (!schema.setlists || (requireV2 && schema.setlists !== 'v2')) fail('Protection unavailable')
+  // `catalog-v2` (production) additionally requires the complete, verified reporting/moderation schema,
+  // so publishing never goes live without its moderation path.
+  if (!schema.setlists || (requireV2 && (schema.setlists !== 'v2' || !schema.reports))) fail('Protection unavailable')
   const clientSnapshots = schema.setlists === 'v2'
   const minute = Math.floor(Date.now() / 60000)
   const day = Math.floor(minute / 1440)
