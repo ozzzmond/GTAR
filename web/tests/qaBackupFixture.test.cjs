@@ -70,3 +70,46 @@ test('B2 off: restoring the 10k file into a ~5 MB localStorage fails safely and 
   assert.throws(() => tab.sj.persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, storage, { expectedRaw: before }), /quota/i)
   assert.equal(storage.getItem('gtar_library_v1'), before, 'nothing partially written')
 })
+
+// Codex P2 (PR #259): --out never overwrites, truncates or follows an existing path.
+test('generator --out: existing files, symlinks and dangling symlinks are never overwritten; new paths are created', () => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const { spawnSync } = require('node:child_process')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-qa-out-'))
+  try {
+    const script = path.join(__dirname, '../scripts/generate-qa-backup.cjs')
+    const run = out => spawnSync(process.execPath, [script, '--active', '5', '--trash', '1', '--setlists', '2', '--out', out], { encoding: 'utf8' })
+    const existing = path.join(dir, 'existing.json')
+    const target = path.join(dir, 'target.json')
+    const link = path.join(dir, 'link.json')
+    const dangling = path.join(dir, 'dangling.json')
+    const original = Buffer.from('{"keep":"these exact bytes"}\n')
+    fs.writeFileSync(existing, original)
+    fs.writeFileSync(target, original)
+    fs.symlinkSync(target, link)
+    fs.symlinkSync(path.join(dir, 'missing-target.json'), dangling)
+    for (const out of [existing, link, dangling]) {
+      const result = run(out)
+      assert.notEqual(result.status, 0, `nonzero exit for ${path.basename(out)}`)
+      assert.match(result.stderr, /Refusing to overwrite existing path/)
+    }
+    assert.deepEqual(fs.readFileSync(existing), original, 'existing file bytes unchanged')
+    assert.deepEqual(fs.readFileSync(target), original, 'symlink target bytes unchanged')
+    assert.equal(fs.lstatSync(link).isSymbolicLink(), true, 'symlink kept')
+    assert.equal(fs.lstatSync(dangling).isSymbolicLink(), true, 'dangling symlink kept')
+    assert.equal(fs.existsSync(path.join(dir, 'missing-target.json')), false, 'dangling target never created')
+    // A new path is created with the deterministic bytes; running again refuses and leaves it intact.
+    const fresh = path.join(dir, 'nested', 'fresh.json')
+    const first = run(fresh)
+    assert.equal(first.status, 0, first.stderr)
+    const expected = gen.generate({ active: 5, trash: 1, setlists: 2 }).json
+    assert.equal(fs.readFileSync(fresh, 'utf8'), expected)
+    assert.equal(JSON.parse(first.stdout).sha256, sha(expected))
+    assert.notEqual(run(fresh).status, 0)
+    assert.equal(fs.readFileSync(fresh, 'utf8'), expected)
+    assert.throws(() => gen.writeExclusive(existing, 'x'), /Refusing to overwrite/)
+    assert.deepEqual(fs.readFileSync(existing), original)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})

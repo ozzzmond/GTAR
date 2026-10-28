@@ -111,6 +111,30 @@ function validate({ opts, payload, json, jb }) {
   }
 }
 
+/**
+ * Create `file` exclusively (O_CREAT|O_EXCL, i.e. 'wx'): an existing file, directory or symlink
+ * (even a dangling one) is never opened, truncated or followed. Only a file this call created is
+ * removed if writing it fails; pre-existing paths are never deleted.
+ */
+function writeExclusive(file, data) {
+  let fd
+  try { fd = fs.openSync(file, 'wx', 0o644) } catch (error) {
+    if (error && error.code === 'EEXIST') throw new Error(`Refusing to overwrite existing path: ${file}. Choose a new --out path.`)
+    throw error
+  }
+  try {
+    fs.writeFileSync(fd, data)
+    fs.fsyncSync(fd)
+  } catch (error) {
+    try { fs.closeSync(fd) } catch { /* already failing */ }
+    fd = undefined
+    try { fs.unlinkSync(file) } catch { /* best effort: our own partial file */ }
+    throw error
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+}
+
 function main(argv) {
   const args = {}
   for (let i = 0; i < argv.length; i += 2) {
@@ -125,7 +149,7 @@ function main(argv) {
   const built = generate(args)
   const report = validate(built)
   fs.mkdirSync(path.dirname(out), { recursive: true })
-  fs.writeFileSync(out, built.json)
+  writeExclusive(out, built.json)
   const bytes = fs.statSync(out).size
   const sha256 = crypto.createHash('sha256').update(fs.readFileSync(out)).digest('hex')
   console.log(JSON.stringify({ file: out, bytes, mib: +(bytes / 1048576).toFixed(2), sha256, ...report, options: built.opts, ms: Date.now() - started }, null, 2))
@@ -134,4 +158,4 @@ function main(argv) {
 if (require.main === module) {
   try { main(process.argv.slice(2)) } catch (error) { console.error(error instanceof Error ? error.message : error); process.exit(1) }
 }
-module.exports = { generate, validate, buildLibrary, EXPORTED_AT }
+module.exports = { generate, validate, buildLibrary, writeExclusive, EXPORTED_AT }
