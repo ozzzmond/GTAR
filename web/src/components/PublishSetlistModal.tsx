@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyncLibrary } from '../utils/syncMerge'
 import {
-  makePublicationIntent, newPublicationLink, preparePublication, publicationError, publisherSession,
-  readPublicationLink, refreshPublication, replacePublicationLink, sendPublicationIntent, verifyPreview,
+  lookupOwnPublication, makePublicationIntent, preparePublication, publicationError, publisherSession,
+  readPublicationLink, refreshPublication, replacePublicationLink, resolvePublicationLink, sendPublicationIntent, verifyPreview,
   type PublicationLink, type SourcePreview,
 } from '../utils/sharedSetlistPublishing'
 import { useOptionalGoogleAuth } from '../utils/authContext'
@@ -47,20 +47,36 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
     const session = publisherSession()
     setIdentity(session)
     const saved = readPublicationLink(session.accountId, sourceId)
-    let next = saved || await newPublicationLink(session.accountId, sourceId)
-    if (next.pending) {
-      setLink(next)
-      setMessage(`A previously confirmed ${next.pending.method} request needs recovery. Retry its exact request before any new action.`)
+    if (saved?.pending) {
+      setLink(saved)
+      setMessage(`A previously confirmed ${saved.pending.method} request needs recovery. Retry its exact request before any new action.`)
       return
     }
-    if (next.result?.unpublished) { setLink(next); setMessage('This publication is permanently unpublished.'); return }
-    if (next.result) next = await refreshPublication(next)
+    let next: PublicationLink
+    let notice = ''
+    // #253: without a usable confirmed result (journal lost, restored or reused source, a rejected
+    // create, or an unpublished publication), the server decides: adopt the live publication, or
+    // use the next key only after the earlier one is proven unpublished. Never a second live copy.
+    const resolve = async () => {
+      const resolved = await resolvePublicationLink(session.accountId, sourceId)
+      if (resolved.recovered) notice = `Recovered your existing publication ${resolved.link.result!.id} (revision ${resolved.link.result!.revision}). Sharing updates it.`
+      else if (resolved.unpublishedBefore) notice = 'Your earlier publication of this setlist was unpublished. Sharing creates a new publication.'
+      return resolved.link
+    }
+    if (saved?.result && !saved.result.unpublished) {
+      try { next = await refreshPublication(saved) } catch (error) {
+        const own = await lookupOwnPublication(saved.publicationKey)
+        if (!own?.unpublished) throw error
+        next = await resolve()
+      }
+    } else next = await resolve()
     if (!alive.current) return
     setLink(next)
     const source = await preparePublication(sourceId, getLocal, blocked)
     if (!alive.current) return
     await replacePublicationLink(session.accountId, sourceId, saved, next)
     setLink(next); setPreview(source)
+    if (notice) setMessage(notice)
   })
   const reviewUnpublish = () => run(async () => {
     setPreview(null); setConfirmed(false)

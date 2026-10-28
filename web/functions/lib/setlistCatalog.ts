@@ -134,6 +134,16 @@ export async function handleSetlistCatalog(context: SetlistContext): Promise<Res
     if (params.id && !token.test(params.id)) return errorResponse('Invalid publication ID', 400)
     const url = new URL(request.url)
     if (!write) {
+      if (!params.id && url.searchParams.has('publication_key')) {
+        // #253 lost-journal recovery: the caller's OWN head for a publication key (never another
+        // publisher's). Lets a client adopt an existing publication instead of re-creating it (409).
+        const publicationKey = url.searchParams.get('publication_key') ?? ''
+        if ([...url.searchParams.keys()].some(k => k !== 'publication_key') || !token.test(publicationKey)) return errorResponse('Invalid lookup', 400)
+        const head = await db.prepare(`SELECT id, current_revision AS revision, is_deleted FROM catalog_setlist_heads
+          WHERE publisher_user_id = ? AND publication_key = ?`).bind(auth.user.id, publicationKey)
+          .first<{ id: string; revision: number; is_deleted: number }>()
+        return jsonResponse({ publication: head ? { id: head.id, revision: head.revision, unpublished: head.is_deleted === 1 } : null })
+      }
       if (!params.id) {
         const limit = url.searchParams.get('limit') ?? '25'
         const offset = url.searchParams.get('offset') ?? '0'

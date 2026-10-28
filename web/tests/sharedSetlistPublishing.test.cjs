@@ -45,6 +45,12 @@ beforeEach(t => {
     publicationKeyTask = newPublicationLink(...args)
     return publicationKeyTask
   })
+  // #253: review resolves the key through resolvePublicationLink (server-verified recovery).
+  const resolvePublicationLink = api.resolvePublicationLink
+  t.mock.method(api, 'resolvePublicationLink', (...args) => {
+    publicationKeyTask = resolvePublicationLink(...args)
+    return publicationKeyTask
+  })
   dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test' })
   Object.defineProperty(dom.window.navigator, 'locks', { configurable: true, value: { request: async (_name, action) => action() } })
   global.window = dom.window; global.document = dom.window.document
@@ -1059,4 +1065,28 @@ test('#253 P2: concurrent tabs keep separate request content; the loser cannot b
   assert.equal(writes[0].body, writes[1].body)
   assert.equal(JSON.parse(writes[1].body).snapshot.name, 'Sunday')
   assert.deepEqual(stashKeys(preview.account), [])
+})
+
+test('#253 review with a lost journal adopts the existing publication and updates it (no second create)', async () => {
+  const base = responder
+  responder = (url, options) => url.includes('publication_key=')
+    ? response({ publication: { id, revision: 2, unpublished: false } }) : base(url, options)
+  await modal(); await click(button('Review Setlist'))
+  assert.match(document.body.textContent, new RegExp(`Recovered your existing publication ${id} \\(revision 2\\)`))
+  await click([...document.querySelectorAll('input[type=checkbox]')].at(-1))
+  await click(button('Share Setlist'))
+  const writes = calls.filter(c => c.method && c.method !== 'GET')
+  assert.deepEqual(writes.map(c => [c.method, c.url]), [['PUT', `/api/catalog/setlists/${id}`]])
+  assert.equal(JSON.parse(writes[0].body).expected_revision, 2)
+  assert.match(document.body.textContent, new RegExp(`Published: ${id} · revision 3`))
+})
+test('#253 review after the publication was unpublished starts the next publication; a 409 create is actionable', async () => {
+  const base = responder
+  let lookups = 0
+  responder = (url, options) => url.includes('publication_key=')
+    ? response({ publication: lookups++ === 0 ? { id, revision: 3, unpublished: true } : null }) : base(url, options)
+  await modal(); await click(button('Review Setlist'))
+  assert.match(document.body.textContent, /earlier publication of this setlist was unpublished/)
+  assert.equal(lookups, 2)
+  assert.equal(api.publicationError(new CatalogApiError('x', 409)).includes('Review again to recover'), true)
 })
