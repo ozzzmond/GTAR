@@ -47,6 +47,30 @@ test('B1: equivalently formatted valid schema keeps full capability (case, white
   await ok(await f.admin('POST', { id: String(r.id), body: { action: 'remove', expected_revision: 2 } }))
 })
 
+test('B1 R1: qualified identifiers with whitespace or comments around the dot are equivalent; semantics still checked', async () => {
+  assert.equal(normalizeSchemaSql('SELECT NEW . source_kind'), 'select new.source_kind')
+  assert.equal(normalizeSchemaSql('SELECT NEW /* note */ . source_kind'), 'select new.source_kind')
+  assert.equal(normalizeSchemaSql('SELECT NEW\n  .\n  source_kind -- c'), 'select new.source_kind')
+  assert.equal(normalizeSchemaSql("SELECT 'NEW . source_kind'"), "select 'NEW . source_kind'", 'literals untouched')
+  assert.equal(normalizeSchemaSql('SELECT 1 .5'), 'select 1 .5', 'numeric tokens never merged')
+  for (const variant of [sql => sql.replace(/NEW\.source_kind/g, 'NEW . source_kind'), sql => sql.replace(/NEW\.source_kind/g, 'NEW /* note */ . source_kind')]) {
+    const f = await fixture()
+    const original = triggerSql(f, 'catalog_setlist_apply')
+    const changed = variant(original)
+    assert.notEqual(changed, original)
+    replaceObject(f, 'catalog_setlist_apply', changed)
+    assert.deepEqual(await inspectCatalogSchema(f.db), { setlists: 'v2', reports: true })
+    assert.deepEqual((await ok(await f.call('GET', undefined))).capabilities, { client_snapshots: true })
+    await ok(await f.call('POST', clientCreate()))
+    // Same spacing, different semantics: still refused.
+    const g = await fixture()
+    replaceObject(g, 'catalog_setlist_apply', variant(triggerSql(g, 'catalog_setlist_apply')).replace("NEW . source_kind = 'client' AND (", "NEW . source_kind = 'songbook' AND (").replace("NEW /* note */ . source_kind = 'client' AND (", "NEW /* note */ . source_kind = 'songbook' AND ("))
+    assert.deepEqual(await inspectCatalogSchema(g.db), { setlists: null, reports: false })
+    assert.equal((await g.call('POST', clientCreate())).status, 503)
+    assert.deepEqual(rows(g), [0, 0, 0])
+  }
+})
+
 test('B1 Codex case 1: a weakened apply trigger that still mentions source_kind advertises nothing and mutates nothing', async () => {
   const f = await fixture()
   // Revision CAS removed, admin rule removed; the text still contains source_kind.

@@ -24,7 +24,10 @@ export function normalizeSchemaSql(sql: string): string {
   }
   // Collapse whitespace and drop it around punctuation (only outside literals, which contain no bare spaces now... except their own).
   const parts = out.split(/('(?:[^']|'')*')/)
-  return parts.map((part, index) => index % 2 ? part : part.replace(/\s+/g, ' ').replace(/\s*([(),;=<>+*/|])\s*/g, '$1'))
+  // Qualified names: `NEW . col` and `NEW /* x */ . col` are the same tokens as `NEW.col`. Only joins an
+  // identifier (or quoted name) to an identifier start, so numeric literals such as `1 .5` are never merged.
+  return parts.map((part, index) => index % 2 ? part : part.replace(/\s+/g, ' ').replace(/\s*([(),;=<>+*/|])\s*/g, '$1')
+    .replace(/([A-Za-z0-9_"`\]]) ?\. ?(?=[A-Za-z_"`[])/g, '$1.'))
     .join('').trim().replace(/;$/, '')
 }
 
