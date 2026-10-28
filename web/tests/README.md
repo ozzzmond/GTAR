@@ -96,6 +96,7 @@ Cloud reconciliation, local persistence, backup, import recovery, and retirement
 - [localStorageHardening.test.cjs](localStorageHardening.test.cjs)
 - [mergeDuplicationFix.test.cjs](mergeDuplicationFix.test.cjs)
 - [persistenceDataIntegrity.test.cjs](persistenceDataIntegrity.test.cjs)
+- [qaBackupFixture.test.cjs](qaBackupFixture.test.cjs)
 - [recoveryBannerEnvGuard.test.cjs](recoveryBannerEnvGuard.test.cjs)
 - [semanticRepairDryRun.test.cjs](semanticRepairDryRun.test.cjs)
 - [storageRecoveryUi.test.cjs](storageRecoveryUi.test.cjs)
