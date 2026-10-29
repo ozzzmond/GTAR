@@ -183,6 +183,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     try {
       await confirmLibraryOwner(userId)
       setOwnership(null)
+      try { window.dispatchEvent(new Event('gtar:library_linked')) } catch { /* ignore */ }
       await refreshSyncState()
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Could not link the songbook.')

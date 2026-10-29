@@ -37,6 +37,7 @@ const {
   LIBRARY_KEY,
   RECOVERY_DECISIONS_KEY,
 } = require('../src/utils/syncJournal.ts')
+const { bindOwner } = require('./helpers/libraryOwner.cjs')
 const { RecoveryReviewDialog } = require('../src/components/RecoveryReviewDialog.tsx')
 const { SharedSetlistCatalogPanel } = require('../src/components/SharedSetlistCatalogPanel.tsx')
 const { CatalogSetlistPreview } = require('../src/components/CatalogSetlistPreview.tsx')
@@ -90,6 +91,7 @@ beforeEach(() => {
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
   localStorage.setItem(LIBRARY_KEY, JSON.stringify(baseLibrary))
+  bindOwner(localStorage, 'user-viewer')
   setTestSession('user-viewer', 'member')
 })
 

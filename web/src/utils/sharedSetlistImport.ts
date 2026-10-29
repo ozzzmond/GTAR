@@ -95,7 +95,7 @@ export async function importCatalogSetlist(preview: CatalogPreview, host: Import
       // Preserve recovery before the single-key library transaction. No awaits in this section.
       saveCrossTabConflictSnapshot(stored)
       assertSession(preview)
-      persistLibrary(next, localStorage, { expectedRaw: baseline })
+      persistLibrary(next, localStorage, { expectedRaw: baseline, generation: { userId: preview.account, token: preview.token } })
       const saved = readPersistedLibrary()
       const expectedSongs = next.songs.map(song => ({ ...song, ...(song.key === undefined ? {} : { key: canonicalSongKey(song.key) }) }))
       if (!saved || !same(saved.songs, JSON.parse(JSON.stringify(expectedSongs))) || !same(saved.setlists.find(list => list.id === destination.id), destination) ||

@@ -1266,13 +1266,13 @@ async function executeCloudSongbookSync(
   ) => {
     // #247 F3: revalidated right before every write (a recovery write or the network may have been awaited).
     assertCommitAllowed(currentUserId, targetStorage, gen)
-    persistLibrary(libraryToApply, targetStorage, { expectedRaw })
+    persistLibrary(libraryToApply, targetStorage, { expectedRaw, generation: gen })
     if (shouldPersistTheme && libraryToApply.themeSettings !== undefined) {
       try {
         persistCloudThemeSettings(libraryToApply.themeSettings, targetStorage)
       } catch (themeErr) {
         try {
-          restoreLibraryRevision(expectedRaw, targetStorage)
+          restoreLibraryRevision(expectedRaw, targetStorage, gen)
           setLastKnownPersistedLibraryRaw(expectedRaw, targetStorage)
         } catch { /* Recovery snapshot already saved */ }
         throw themeErr

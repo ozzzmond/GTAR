@@ -89,6 +89,27 @@ export class LibraryPartitionBlockedError extends Error {
   readonly code = 'LIBRARY_PARTITION_BLOCKED' as const
   constructor() { super('This device\'s earlier songbook belongs to another account, or its owner is unknown. It stays on this device unchanged. Sign in with the account that owns it, or retry the new device storage.'); this.name = 'LibraryPartitionBlockedError' }
 }
+export class LibraryOwnershipError extends Error {
+  readonly ownership: 'unbound' | 'mismatch'
+  constructor(ownership: 'unbound' | 'mismatch', message?: string) {
+    super(message ?? (ownership === 'mismatch'
+      ? 'This device\'s songbook belongs to another GTAR account. Sign in with that account to sync it. Nothing was uploaded and your songbook stays on this device.'
+      : 'This device\'s songbook is not linked to an account yet. Link it to this account in Sync Center to sync. Nothing was uploaded.'))
+    this.ownership = ownership
+    this.name = 'LibraryOwnershipError'
+  }
+}
+export interface SessionGeneration { userId: string | null; token: string | null }
+export class StaleSyncRoundError extends Error {
+  readonly reason: 'signed-out' | 'session-changed'
+  constructor(reason: 'signed-out' | 'session-changed', uploaded: number) {
+    super(`${reason === 'signed-out' ? 'You signed out' : 'The sign-in changed'} while syncing. ${uploaded
+      ? `${uploaded} ${uploaded === 1 ? 'change' : 'changes'} already accepted by the cloud stay in the account that started the sync. `
+      : ''}Nothing from that sync was saved on this device and it was not marked as synced. Your songbook on this device is unchanged; sign in and sync again.`)
+    this.reason = reason
+    this.name = 'StaleSyncRoundError'
+  }
+}
 export class B2MigrationError extends Error {
   readonly phase: B2Phase
   constructor(phase: B2Phase, message: string, options?: { cause?: unknown }) { super(`B2 migration stopped at ${phase}: ${message}`, options); this.name = 'B2MigrationError'; this.phase = phase }
@@ -141,10 +162,15 @@ export function readSessionUserId(storage: Pick<Storage, 'getItem'>): string | n
   const id = value?.user?.id
   return typeof id === 'string' && id.trim() ? id.trim() : null
 }
+export function readSessionToken(storage: Pick<Storage, 'getItem'>): string | null {
+  const value = readSession(storage) as { sessionToken?: unknown; token?: unknown } | null
+  const token = typeof value?.sessionToken === 'string' && value.sessionToken ? value.sessionToken : typeof value?.token === 'string' && value.token ? value.token : null
+  return token
+}
 export function currentEnv(): string {
   try { return typeof location !== 'undefined' && location.host ? location.host : 'unknown' } catch { return 'unknown' }
 }
-const sameUser = (a: string | null, b: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
+export const sameUser = (a: string | null, b: string | null): boolean => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
 
 /**
  * Which partition this device opens. The legacy (v1/B1) library belongs to its verified owner; it
