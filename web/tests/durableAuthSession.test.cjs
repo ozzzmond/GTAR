@@ -279,7 +279,7 @@ test('6. Server-approved member without any client email list unlocks; client ne
   }
 })
 
-test('7. Expired session locks gate without wiping stored user library data', async () => {
+test('7. Expired session does not block Core and preserves stored user library data', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
   const prevWindow = global.window
   const prevDoc = global.document
@@ -310,7 +310,7 @@ test('7. Expired session locks gate without wiping stored user library data', as
     dom.window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(expiredSession))
 
     function SongbookApp() {
-      return React.createElement('div', { id: 'songbook' }, 'Should Not Render')
+      return React.createElement('div', { id: 'songbook' }, 'Songbook Core Rendered')
     }
 
     const root = createRoot(dom.window.document.getElementById('root'))
@@ -318,8 +318,8 @@ test('7. Expired session locks gate without wiping stored user library data', as
       root.render(React.createElement(AuthGate, null, React.createElement(SongbookApp)))
     })
 
-    assert.match(dom.window.document.body.textContent, /Owner Access/)
-    assert.doesNotMatch(dom.window.document.body.textContent, /Should Not Render/)
+    assert.match(dom.window.document.body.textContent, /Songbook Core Rendered/)
+    assert.doesNotMatch(dom.window.document.body.textContent, /Owner Access/)
 
     // CRITICAL: Local library data must be 100% intact!
     assert.ok(dom.window.localStorage.getItem('gtar_library_v1'))

@@ -310,10 +310,9 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
-  // #191 (RFC #188 S3): DEV-only status pill and Sync Center until field QA makes them default.
-  // RFC #188 S6: DEV auto-sync (per-record engine only); one leader tab per browser.
+  // Automatic personal cloud sync disabled: explicit manual sync only.
   useRecordsAutoSync({
-    enabled: isDevEnv && Boolean(currentSession),
+    enabled: false,
     token: currentSession?.sessionToken || currentSession?.idToken || currentSession?.token,
     blocked: autoSyncBlocked || showCloudSyncModal,
     onApplied: onCloudSyncApplied,

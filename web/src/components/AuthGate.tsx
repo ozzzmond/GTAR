@@ -24,9 +24,6 @@ import {
   type AccessStatus,
 } from '../utils/googleAuth'
 import { sharedCatalogService } from '../utils/sharedCatalogService'
-import devLogo from '../assets/dev-logo.png'
-import prodLogo from '../assets/prod-logo.png'
-import { isDevEnv } from '../utils/env'
 import { DebugLogsModal } from './DebugLogsModal'
 import { Terminal, Clock, ShieldX, RefreshCw } from 'lucide-react'
 
@@ -39,18 +36,23 @@ export function useGoogleAuth() {
 }
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<GoogleSession | null>(null)
-  const [checking, setChecking] = useState(true)
+  const [session, setSession] = useState<GoogleSession | null>(() => {
+    try {
+      const status = getStoredSessionStatus()
+      if (status.session && !status.isExpired && !status.isMalformed && isServerBackedSession(status.session)) {
+        return status.session
+      }
+    } catch { /* ignore */ }
+    return null
+  })
+  const [checking, setChecking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [checkingStatus, setCheckingStatus] = useState(false)
   const [ready, setReady] = useState(false)
-  const [scriptLoadFailed, setScriptLoadFailed] = useState(false)
   const [bypass, setBypass] = useState(false)
   const [error, setError] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
-  const [isExpiredOffline, setIsExpiredOffline] = useState(false)
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
-  const [gisRendered, setGisRendered] = useState(false)
   const isMountedRef = useRef(true)
   const epoch = useRef(0)
 
@@ -105,7 +107,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     inFlightCredentialRef.current = null
     cancelGoogleOneTap()
     gisRenderedRef.current = false
-    setGisRendered(false)
     const cur = sessionRef.current
     const token = cur?.sessionToken || cur?.idToken
     const oldAccountId = cur?.user?.id || (cur?.user?.email ? cur.user.email.trim().toLowerCase() : null) || sharedCatalogService.getAccount()
@@ -123,7 +124,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setBusy(false)
     setError('')
     setStatusMessage('')
-    setIsExpiredOffline(false)
 
     if (token) {
       logoutFromServer(token).catch((err) => {
@@ -367,7 +367,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setBusy(true)
     setError('')
     setStatusMessage('')
-    setIsExpiredOffline(false)
     void exchangeCredential(idToken, gen)
   }, [exchangeCredential])
 
@@ -418,7 +417,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       if (generation === epoch.current) {
         if (isOffline) {
-          setIsExpiredOffline(true)
           setError('Your 30-day offline stage session has expired. Reconnect to the internet once to renew.')
         } else {
           setError('Your session has expired. Please sign in again.')
@@ -475,18 +473,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Load Google Identity Services SDK
   const loadSdk = useCallback((forceRetry = false) => {
     if (!clientId) return () => {}
-    setScriptLoadFailed(false)
     let active = true
     loadGoogleIdentity(forceRetry)
       .then(() => {
         if (active) {
           setReady(true)
-          setScriptLoadFailed(false)
         }
       })
       .catch((err) => {
         if (active) {
-          setScriptLoadFailed(true)
           setError('Google sign-in is unavailable. Check your connection and reload.')
           void import('../utils/logger').then(({ appLogger }) => {
             appLogger.warn('AuthGate', 'Google Identity Services script load failed (offline or blocked).', String(err))
@@ -529,7 +524,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
         width: 320,
       })
       gisRenderedRef.current = true
-      setGisRendered(container.children.length > 0)
     } catch (err) {
       void import('../utils/logger').then(({ appLogger }) => {
         appLogger.warn('AuthGate', 'Failed to render Google Identity Services button', String(err))
@@ -599,7 +593,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setBusy(true)
     setError('')
     setStatusMessage('')
-    setIsExpiredOffline(false)
 
     try {
       const container = document.getElementById('google-signin-button')
@@ -627,35 +620,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setBusy(false)
       }
     }
-  }
-
-  // Active / Approved access OR Local Dev Bypass: render application
-  if (permitted || (bypass && canBypass)) {
-    return (
-      <AuthContext.Provider
-        value={{
-          session: permitted ? session : null,
-          signOut,
-          signIn,
-          checkStatus,
-          ready,
-          bypass,
-          role,
-          isSuperAdmin,
-          accessStatus,
-        }}
-      >
-        {bypass && (
-          <div className="bg-amber-500 text-black px-4 py-2 text-sm">
-            Local development bypass · Cloud auth bypassed{' '}
-            <button className="underline ml-3 cursor-pointer" onClick={signOut}>
-              Exit bypass
-            </button>
-          </div>
-        )}
-        {children}
-      </AuthContext.Provider>
-    )
   }
 
   // Pending Access Approval Screen
@@ -757,96 +721,42 @@ export function AuthGate({ children }: { children: ReactNode }) {
     )
   }
 
-  // Standard Login Screen
+  // Render application directly (signed-in approved, local dev bypass, or signed-out GTAR Core)
   return (
-    <main className="min-h-screen flex items-center justify-center bg-app-base text-app-heading p-6">
-      <section className="w-full max-w-md rounded-3xl bg-app-surface border border-app-border p-8 text-center shadow-2xl">
-        <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-app-base border border-app-border p-1 shadow-inner flex items-center justify-center">
-          <img
-            src={isDevEnv ? devLogo : prodLogo}
-            alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
-            className="w-full h-full object-contain rounded-xl"
-          />
-        </div>
-        <h1 className="text-3xl font-bold">GTAR</h1>
-        <p className="text-app-muted mt-2">Songbook &amp; Live Stage Companion</p>
-        <h2 className="text-lg font-semibold mt-8">Owner Access</h2>
-        <p className="text-sm text-app-muted mt-2 mb-6">
-          Access is restricted to authorized owners. Sign in with your approved Google account.
-        </p>
-        {isExpiredOffline && (
-          <div className="p-3 mb-4 rounded-xl bg-app-accent/15 border border-app-accent/40 text-app-text text-xs text-left">
-            <p className="font-bold text-app-accent mb-1">Offline Session Expired</p>
-            <p>Your 30-day offline stage session has expired. Reconnect to the internet once to renew.</p>
-          </div>
-        )}
-        {checking ? (
-          <p role="status">Verifying your session...</p>
-        ) : busy ? (
-          <p role="status" className="text-sm text-app-action font-semibold animate-pulse">
-            Signing in with Google...
-          </p>
-        ) : (
-          <div className="space-y-3">
-            <div
-              id="google-signin-button"
-              className="w-full flex justify-center my-2 min-h-[44px]"
-              aria-label="Google Sign-In"
-            />
-            {!gisRendered && !scriptLoadFailed && (
-              <button
-                disabled={!ready || busy}
-                className="w-full rounded-xl bg-app-action text-app-on-action font-bold py-3 disabled:opacity-50 cursor-pointer"
-                onClick={() => void signIn()}
-              >
-                {busy ? 'Signing in...' : 'Sign In with Google'}
-              </button>
-            )}
-            {scriptLoadFailed && (
-              <button
-                type="button"
-                className="mt-2 text-sm font-semibold underline text-app-action hover:text-app-action-hover cursor-pointer"
-                onClick={() => {
-                  setError('')
-                  loadSdk(true)
-                }}
-              >
-                Retry loading Google Sign-In
-              </button>
-            )}
-          </div>
-        )}
-        <p role="status" className="text-sm text-status-warning mt-4">
-          {error || (!clientId ? 'Google sign-in is not configured. Contact the app owner.' : '')}
-        </p>
-        {canBypass && !checking && (
-          <button
-            className="mt-6 text-sm underline text-app-muted cursor-pointer"
-            onClick={() => {
-              signOut()
-              setBypass(true)
-            }}
-          >
-            Continue offline (local development)
+    <AuthContext.Provider
+      value={{
+        session: permitted ? session : null,
+        signOut,
+        signIn,
+        checkStatus,
+        ready,
+        bypass: bypass && canBypass,
+        role,
+        isSuperAdmin,
+        accessStatus,
+      }}
+    >
+      {bypass && canBypass && (
+        <div className="bg-amber-500 text-black px-4 py-2 text-sm">
+          Local development bypass · Cloud auth bypassed{' '}
+          <button className="underline ml-3 cursor-pointer" onClick={signOut}>
+            Exit bypass
           </button>
-        )}
-        {isDevLogsEnabled && (
-          <div className="mt-6 pt-4 border-t border-app-border/60 flex justify-center">
-            <button
-              type="button"
-              aria-label="View Debug Logs"
-              className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-action hover:text-app-action border border-app-border hover:border-app-action/60 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
-              onClick={() => setIsDebugLogsOpen(true)}
-            >
-              <Terminal className="w-3.5 h-3.5 text-app-action" />
-              <span>View Debug Logs</span>
-            </button>
-          </div>
-        )}
-        {isDevLogsEnabled && isDebugLogsOpen && (
-          <DebugLogsModal isOpen={isDebugLogsOpen} onClose={() => setIsDebugLogsOpen(false)} />
-        )}
-      </section>
-    </main>
+        </div>
+      )}
+      {error && !permitted && (
+        <div role="alert" className="bg-[#DC6E67]/15 border-b border-[#DC6E67]/40 text-status-error px-4 py-2 text-xs font-semibold text-center">
+          {error}
+        </div>
+      )}
+      <div
+        id="google-signin-button"
+        aria-label="Google Sign-In"
+        className="min-h-[44px]"
+        style={{ position: 'fixed', left: -9999, top: 0, opacity: 0, pointerEvents: 'none' }}
+        aria-hidden="true"
+      />
+      {children}
+    </AuthContext.Provider>
   )
 }

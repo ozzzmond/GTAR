@@ -61,6 +61,9 @@ export function useRecordsAutoSync(input: RecordsAutoSyncInput): void {
       if (!leader || disposed) return
       if (running) { again = true; return }
       const current = latest.current
+      // Automatic personal cloud sync is disabled in DEV: explicit manual sync only.
+      // Unit test mocks providing current.sync continue to run for test verification.
+      if (!current.sync) return
       // #252: personal cloud sync is paused while B2 storage is on (or held).
       if (awaitingFirstSyncChoice || current.blocked || !current.token || !isRecordsSyncEnabled() || personalSyncPausedByB2() || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
       running = true
