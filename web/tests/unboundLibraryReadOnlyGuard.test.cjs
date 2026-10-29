@@ -857,3 +857,263 @@ test('CODEX_R3_R3_9: Unauthorized deletion via onboarding provenance bypass fail
   h.signIn(storage, 'user-a')
   assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 3, 'All 3 songs intact')
 })
+
+test('CODEX_R4_R1_1: Pause confirmLibraryOwner inside navigator.storage.estimate -> logout -> resume -> archive write rejects immediately before persistence with zero archives written', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  h.signIn(storage, 'user-race-test')
+  const tab = h.newTab()
+
+  // Intercept navigator.storage.estimate to simulate logout during pause
+  let estimatePaused = false
+  const priorNav = Object.getOwnPropertyDescriptor(global, 'navigator')
+  const baseNav = typeof navigator !== 'undefined' ? navigator : {}
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: {
+      ...baseNav,
+      storage: {
+        estimate: async () => {
+          estimatePaused = true
+          // Simulate user logging out while estimate was running
+          h.signIn(storage, null)
+          return { usage: 100, quota: 1000000 }
+        },
+      },
+    },
+  })
+
+  try {
+    await assert.rejects(
+      () => tab.owner.confirmLibraryOwner('user-race-test', storage),
+      err => /changed/i.test(err.message) || (err.name === 'LibraryOwnershipError' && err.ownership === 'unbound'),
+      'Linking fails closed when logout occurs during estimate await'
+    )
+    assert.ok(estimatePaused, 'navigator.storage.estimate was reached')
+
+    // Crucial invariant: zero archives written to storage on rejection
+    const archives = [...storage.map.keys()].filter(k => k.startsWith('gtar_sync_recovery:owner-confirm:'))
+    assert.equal(archives.length, 0, 'Zero recovery archives written on rejected linking')
+    assert.equal(storage.getItem(OWNER_KEY), null, 'Owner key was not written')
+  } finally {
+    if (priorNav) Object.defineProperty(global, 'navigator', priorNav)
+    else delete global.navigator
+  }
+})
+
+test('CODEX_R4_R1_2: 24-hour-old authority and library revision changes reject recovery mutation immediately before write', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  h.signIn(storage, 'user-stale-link')
+  const tab = h.newTab()
+
+  // Case A: 24-hour-old authority
+  const txStale = tab.sj.beginLinkingTransaction(storage, 'user-stale-link')
+  // Fast-forward time past 24 hours (86,400,000 ms)
+  const origNow = Date.now
+  try {
+    Date.now = () => origNow() + 86400000
+    await assert.rejects(
+      () => tab.sj.writeRecoverySnapshot(txStale.key, txStale.raw, storage),
+      err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound' && /expired/i.test(err.message),
+      '24-hour-old linking authority is expired and rejects snapshot write'
+    )
+    assert.equal(storage.getItem(txStale.key), null, 'Zero archives written with expired authority')
+  } finally {
+    Date.now = origNow
+  }
+
+  // Case B: Change library revision after authorization
+  const txRev = tab.sj.beginLinkingTransaction(storage, 'user-stale-link')
+  // Mutate library revision in storage after authorization was granted
+  const currentLib = tab.sj.readPersistedLibrary(storage)
+  storage.setItem(V1, JSON.stringify({ ...currentLib, songs: currentLib.songs.slice(1) }))
+  await assert.rejects(
+    () => tab.sj.writeRecoverySnapshot(txRev.key, txRev.raw, storage),
+    err => /changed/i.test(err.message),
+    'Snapshot write rejects if library revision changed after authorization'
+  )
+  assert.equal(storage.getItem(txRev.key), null, 'Zero archives written after library revision change')
+})
+
+test('CODEX_R4_R2_1: beginAsyncMutation -> unrelated omitted-context save -> token rotation -> stale omitted-context save fails closed', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  h.bindOwner(storage, 'user-a')
+  h.signIn(storage, 'user-a')
+  const tab = h.newTab()
+  const lib = tab.sj.readPersistedLibrary(storage)
+
+  // 1. Begin async mutation
+  tab.sj.beginAsyncMutation(storage)
+
+  // 2. Unrelated omitted-context save succeeds under current valid session
+  const unrelatedEdit = { ...lib, songs: lib.songs.map((s, i) => i === 0 ? { ...s, title: 'Unrelated Sync Edit' } : s) }
+  assert.doesNotThrow(
+    () => tab.sj.persistLibrary(unrelatedEdit, storage),
+    'Unrelated sync save succeeds without consuming async authority'
+  )
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs[0].title, 'Unrelated Sync Edit')
+
+  // 3. Token rotation occurs
+  storage.setItem('gtar_auth_session', JSON.stringify({
+    user: { id: 'user-a', email: 'user-a@example.test' },
+    sessionToken: 'token-rotated-r4-test',
+  }))
+
+  // 4. Stale omitted-context save MUST FAIL CLOSED
+  const staleEdit = { ...lib, songs: lib.songs.map((s, i) => i === 1 ? { ...s, title: 'Stale Async Edit' } : s) }
+  assert.throws(
+    () => tab.sj.persistLibrary(staleEdit, storage),
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'session-changed',
+    'Stale omitted-context save fails closed after token rotation'
+  )
+  assert.notEqual(tab.sj.readPersistedLibrary(storage).songs[1].title, 'Stale Async Edit', 'Stale edit was NOT written')
+})
+
+test('CODEX_R4_R2_2: First stale attempt rejects and retains context -> retry without context fails closed', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  h.bindOwner(storage, 'user-a')
+  h.signIn(storage, 'user-a')
+  const tab = h.newTab()
+  const lib = tab.sj.readPersistedLibrary(storage)
+
+  tab.sj.beginAsyncMutation(storage)
+
+  // Token rotates
+  storage.setItem('gtar_auth_session', JSON.stringify({
+    user: { id: 'user-a', email: 'user-a@example.test' },
+    sessionToken: 'token-rotated-retry-test',
+  }))
+
+  const staleEdit = { ...lib, songs: lib.songs.map((s, i) => i === 2 ? { ...s, title: 'Attempt 1' } : s) }
+
+  // Attempt 1 rejects
+  assert.throws(
+    () => tab.sj.persistLibrary(staleEdit, storage),
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'session-changed',
+    'First stale attempt rejects'
+  )
+
+  // Attempt 2 (retry without context): MUST STILL FAIL CLOSED
+  const retryEdit = { ...lib, songs: lib.songs.map((s, i) => i === 2 ? { ...s, title: 'Attempt 2 Bypass' } : s) }
+  assert.throws(
+    () => tab.sj.persistLibrary(retryEdit, storage),
+    err => err.name === 'StaleSyncRoundError' && err.reason === 'session-changed',
+    'Retry without context fails closed; rejection did not purge context'
+  )
+  assert.notEqual(tab.sj.readPersistedLibrary(storage).songs[2].title, 'Attempt 2 Bypass')
+})
+
+test('CODEX_R4_R2_3: Caller-supplied fresh context fails closed and cannot bypass active stale operation', async () => {
+  const { storage } = unboundDevice({ n: 3 })
+  h.bindOwner(storage, 'user-a')
+  h.signIn(storage, 'user-a')
+  const tab = h.newTab()
+  const lib = tab.sj.readPersistedLibrary(storage)
+
+  // Op 1 begins
+  const ctx1 = tab.sj.beginAsyncMutation(storage)
+
+  // Token rotates
+  storage.setItem('gtar_auth_session', JSON.stringify({
+    user: { id: 'user-a', email: 'user-a@example.test' },
+    sessionToken: 'token-rotated-fresh-bypass',
+  }))
+
+  // Caller manufactures fresh context matching current rotated token
+  const forgedContext = {
+    id: 'forged-fresh-id',
+    userId: 'user-a',
+    token: 'token-rotated-fresh-bypass',
+    generation: 'user-a\u0000token-rotated-fresh-bypass',
+  }
+
+  // Caller attempts to supply fresh context to bypass stale Op 1
+  const bypassEdit = { ...lib, songs: lib.songs.map((s, i) => i === 0 ? { ...s, title: 'Forged Bypass' } : s) }
+  assert.throws(
+    () => tab.sj.persistLibrary(bypassEdit, storage, { context: forgedContext }),
+    err => err.name === 'StaleSyncRoundError',
+    'Caller-supplied fresh context cannot bypass active stale operation'
+  )
+  assert.notEqual(tab.sj.readPersistedLibrary(storage).songs[0].title, 'Forged Bypass')
+
+  // Clean up Op 1 explicitly via operation-specific cleanup
+  tab.sj.endAsyncMutation(ctx1, storage)
+})
+
+test('CODEX_R4_R3_1: Account A creates library -> saves empty -> repopulates -> next legitimate save succeeds without LibraryOwnershipError', async () => {
+  const storage = h.freshStorage()
+  h.signIn(storage, 'user-a')
+  const tab = h.newTab()
+
+  // 1. Account A creates library with 1 song
+  const s1 = { id: 's1', title: 'Song 1', artist: 'Artist A', rawContent: '[C]Song 1' }
+  tab.sj.persistLibrary({ songs: [s1], setlists: [] }, storage)
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 1)
+  const prov1 = tab.sj.readOnboardingCreator(storage)
+  assert.ok(prov1, 'Provenance recorded on initial population')
+  assert.equal(prov1.userId, 'user-a')
+
+  // 2. Account A saves empty (deletes songs)
+  tab.sj.persistLibrary({ songs: [], setlists: [] }, storage)
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 0)
+  const prov2 = tab.sj.readOnboardingCreator(storage)
+  assert.ok(prov2, 'Provenance maintained on empty save')
+  assert.equal(prov2.userId, 'user-a')
+
+  // 3. Account A repopulates library
+  const s2 = { id: 's2', title: 'Song 2', artist: 'Artist A', rawContent: '[D]Song 2' }
+  assert.doesNotThrow(
+    () => tab.sj.persistLibrary({ songs: [s2], setlists: [] }, storage),
+    'Repopulation after empty save succeeds'
+  )
+  const prov3 = tab.sj.readOnboardingCreator(storage)
+  assert.ok(prov3, 'Provenance advanced on repopulation')
+  assert.equal(prov3.userId, 'user-a')
+
+  // 4. Next legitimate save: MUST SUCCEED without LibraryOwnershipError
+  const s3 = { id: 's3', title: 'Song 3', artist: 'Artist A', rawContent: '[E]Song 3' }
+  assert.doesNotThrow(
+    () => tab.sj.persistLibrary({ songs: [s2, s3], setlists: [] }, storage),
+    'Next legitimate save after repopulation succeeds without LibraryOwnershipError'
+  )
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 2)
+  assert.equal(storage.getItem(OWNER_KEY), null, 'Zero implicit ownership binding')
+})
+
+test('CODEX_R4_R3_2: Onboarding creator provenance protects against Account B takeover across empty/populated transitions', async () => {
+  const storage = h.freshStorage()
+  h.signIn(storage, 'user-a')
+  const tab = h.newTab()
+
+  // User A creates empty library and populates it
+  const s1 = { id: 's1', title: 'User A Song', artist: '', rawContent: '[C]' }
+  tab.sj.persistLibrary({ songs: [s1], setlists: [] }, storage)
+  // User A saves empty
+  tab.sj.persistLibrary({ songs: [], setlists: [] }, storage)
+  // User A repopulates
+  const s2 = { id: 's2', title: 'User A Repopulated', artist: '', rawContent: '[G]' }
+  tab.sj.persistLibrary({ songs: [s2], setlists: [] }, storage)
+
+  // Account B signs in
+  h.signIn(storage, 'user-b')
+
+  // Account B attempts to edit or delete User A repopulated library
+  assert.throws(
+    () => tab.sj.persistLibrary({ songs: [{ id: 'b1', title: 'User B Takeover', artist: '', rawContent: '[A]' }], setlists: [] }, storage),
+    err => err.name === 'LibraryOwnershipError' && err.ownership === 'unbound',
+    'Account B cannot edit User A repopulated library'
+  )
+
+  // Account B cannot reassign onboarding creator
+  assert.throws(
+    () => tab.sj.recordOnboardingCreator(storage, 'user-b'),
+    err => err.name === 'LibraryOwnershipError',
+    'Account B cannot reassign onboarding creator'
+  )
+
+  // Switch back to Account A: legitimate edits preserved
+  h.signIn(storage, 'user-a')
+  assert.doesNotThrow(
+    () => tab.sj.persistLibrary({ songs: [s2, { id: 's3', title: 'User A 3', artist: '', rawContent: '[F]' }], setlists: [] }, storage),
+    'Account A can continue editing legitimate library'
+  )
+})

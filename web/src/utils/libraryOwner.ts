@@ -16,8 +16,9 @@ import { b2Identity, LibraryOwnershipError, StaleSyncRoundError, type SessionGen
 
 export { LibraryOwnershipError, StaleSyncRoundError, type SessionGeneration } from './libraryB2'
 export { type OperationContext, isUnboundDeviceLibraryReadOnly, assertLibraryMutationAllowed, captureOperationContext,
-  beginAsyncMutation, endAsyncMutation, clearOnboardingCreator, readOnboardingCreator,
-  beginLinkingTransaction, clearLinkingTransaction, beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization } from './syncJournal'
+  beginAsyncMutation, endAsyncMutation, clearOnboardingCreator, readOnboardingCreator, recordOnboardingCreator,
+  beginLinkingTransaction, clearLinkingTransaction, beginLinkingSnapshotAuthorization, clearLinkingSnapshotAuthorization,
+  LINKING_TRANSACTION_MAX_AGE_MS } from './syncJournal'
 
 export const LIBRARY_OWNER_KEY = 'gtar_library_owner_v1'
 
@@ -174,9 +175,8 @@ export async function confirmLibraryOwner(userId: string, storage: Storage = loc
       if (recoveryData(storage)[key] !== raw) throw new Error('Could not verify the recovery copy; the songbook was not linked')
       clearOnboardingCreator(storage)
       writeOwner(userId, 'confirmed', storage)
-    } catch (err) {
+    } finally {
       clearLinkingTransaction(storage)
-      throw err
     }
   }
   if (locks?.request) await locks.request('gtar-library-owner', run)
