@@ -26,19 +26,25 @@ test('bypass is allowed only for development builds on exact loopback hosts', ()
   }
   for (const host of ['gtar-web.pages.dev', 'dev.gtar-web.pages.dev', 'localhost.attacker.com', '192.168.1.1']) assert.equal(allowLocalBypass(true, host), false)
 })
-test('locked gate never renders app children or reads library storage', () => {
+test('signed-out visitor reaches GTAR Core directly without mandatory login gate', () => {
   const prevWindow = global.window
   const prevStorage = global.localStorage
   try {
     global.window = { location: { hostname: 'gtar-web.pages.dev' } }
-    global.localStorage = { getItem() { assert.fail('Library storage accessed while locked') } }
-    function Library() { assert.fail('Library rendered while locked') }
+    global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+    let libraryRendered = false
+    function Library() {
+      libraryRendered = true
+      return React.createElement('div', { id: 'core-library' }, 'GTAR Core Songbook')
+    }
     for (const route of ['/', '/tv', '/tv?session=GTAR-ABCD', '/stage/present?view=present&session=GTAR-ABCD']) {
+      libraryRendered = false
       global.window.location = new URL(route, 'https://dev.gtar-web.pages.dev')
       const html = renderToString(React.createElement(AuthGate, null, React.createElement(Library)))
-      assert.match(html, /GTAR/)
-      assert.match(html, /restricted to authorized owners/)
-      assert.doesNotMatch(html, /Continue offline/)
+      assert.equal(libraryRendered, true, `Core library must render directly on route ${route}`)
+      assert.match(html, /GTAR Core Songbook/)
+      assert.doesNotMatch(html, /restricted to authorized owners/)
+      assert.doesNotMatch(html, /Owner Access/)
     }
   } finally {
     global.window = prevWindow

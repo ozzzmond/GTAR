@@ -120,6 +120,9 @@ function setupTestEnvironment() {
 
 function ChildApp() {
   const auth = useGoogleAuth()
+  if (!auth.session) {
+    return React.createElement('div', { id: 'signed-out-core' }, 'GTAR Core (Signed Out)')
+  }
   return React.createElement(
     'div',
     { id: 'protected-app' },
@@ -355,7 +358,7 @@ test('TEST_ONETAP_DISMISSED: Handles dismissal without treating it as fatal back
   }
 })
 
-test('TEST_GIS_SCRIPT_FAILURE: Script load failure shows recoverable feedback and retry button', async () => {
+test('TEST_GIS_SCRIPT_FAILURE: Script load failure does not block Core app mount', async () => {
   const env = setupTestEnvironment()
   delete env.dom.window.google
 
@@ -379,17 +382,7 @@ test('TEST_GIS_SCRIPT_FAILURE: Script load failure shows recoverable feedback an
       await new Promise((r) => setTimeout(r, 20))
     })
 
-    const bodyText = env.dom.window.document.body.textContent || ''
-    assert.match(
-      bodyText,
-      /Google sign-in is unavailable\. Check your connection and reload\./,
-      'Must display connection error notice'
-    )
-
-    const retryBtn = Array.from(env.dom.window.document.querySelectorAll('button')).find((b) =>
-      /Retry loading Google Sign-In/i.test(b.textContent || '')
-    )
-    assert.ok(retryBtn, 'Must render Retry loading Google Sign-In button')
+    assert.ok(env.dom.window.document.getElementById('signed-out-core'), 'Signed-out Core mounts even if GIS script fails')
 
     await act(async () => root.unmount())
   } finally {
@@ -677,7 +670,8 @@ test('TEST_ACCOUNT_SWITCHING: Sign out followed by sign-in switches account iden
     await act(async () => {
       auth.signOut()
     })
-    assert.equal(env.dom.window.document.getElementById('probe'), null, 'Child probe unmounted upon signOut')
+    assert.equal(auth.session, null, 'Session is null upon signOut')
+    assert.equal(env.dom.window.document.getElementById('probe').textContent, '', 'Child probe remains mounted in signed-out state')
     assert.equal(env.dom.window.localStorage.getItem(SESSION_STORAGE_KEY), null)
 
     // Sign in Bob
@@ -701,7 +695,7 @@ test('TEST_ACCOUNT_SWITCHING: Sign out followed by sign-in switches account iden
   }
 })
 
-test('TEST_LOGOUT_AND_SESSION_EXPIRY: Sign out revokes session and expired stored session locks gate', async () => {
+test('TEST_LOGOUT_AND_SESSION_EXPIRY: Sign out revokes session and expired session allows Core startup without auth', async () => {
   const env = setupTestEnvironment()
 
   global.fetch = async (url, init) => {
@@ -736,11 +730,9 @@ test('TEST_LOGOUT_AND_SESSION_EXPIRY: Sign out revokes session and expired store
       root.render(React.createElement(AuthGate, null, React.createElement(ChildApp)))
     })
 
+    // Expired offline session does NOT block Core
     assert.equal(env.dom.window.document.getElementById('protected-app'), null)
-    assert.match(
-      env.dom.window.document.body.textContent || '',
-      /Your session has expired\. Please sign in again\./
-    )
+    assert.ok(env.dom.window.document.getElementById('signed-out-core'), 'Signed-out Core mounts on expired session')
 
     await act(async () => root.unmount())
   } finally {
