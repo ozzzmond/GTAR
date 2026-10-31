@@ -58,6 +58,7 @@ import { TrashView } from './components/TrashView'
 import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
+import type { ExplorerTarget } from './components/MusicExplorerNav'
 import { getStoredSessionStatus } from './utils/googleAuth'
 import { useOptionalGoogleAuth } from './utils/authContext'
 import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
@@ -567,6 +568,13 @@ function LibraryApp() {
 
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = modals.setlistDrawer
   const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
+  // Music Explorer: the canonical hamburger opens the drawer in 'explorer' mode; the
+  // Stage quick-pick and in-app setlist entries keep the original browsable 'library' mode.
+  const [drawerMode, setDrawerMode] = useState<'library' | 'explorer'>('library')
+  const [explorerSelection, setExplorerSelection] = useState<ExplorerTarget>({ type: 'ALL_SONGS' })
+  // Canonical Songbook workspace navigation (shared with the in-page tabs and filters).
+  const [songbookTab, setSongbookTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>('my_songs')
+  const [songbookTag, setSongbookTag] = useState<string | null>(null)
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
   const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
@@ -1079,6 +1087,36 @@ function LibraryApp() {
   const handleManageSetlist = (setlist: WebSetlist) => {
     setActiveSetlistId(setlist.id)
     setIsSetlistDrawerOpen(true)
+  }
+
+  // Music Explorer navigation: route into existing GTAR handlers and close the drawer.
+  const handleExplorerSelect = (target: ExplorerTarget) => {
+    setExplorerSelection(target)
+    setDrawerMode('library')
+    setIsSetlistDrawerOpen(false)
+    if (target.type === 'ALL_SONGS') {
+      navigateSafely(() => {
+        setSongbookTag(null)
+        setSongbookTab('my_songs')
+        setActiveView('songbook')
+      })
+      return
+    }
+    if (target.type === 'TAG') {
+      navigateSafely(() => {
+        setSongbookTag(target.tag)
+        setSongbookTab('my_songs')
+        setActiveView('songbook')
+      })
+      return
+    }
+    // ALL_SETLISTS | UNFILED_SETLISTS: original GTAR has no folder model, so every
+    // existing setlist is unfiled and both targets open the canonical setlist workspace.
+    navigateSafely(() => {
+      setSongbookTag(null)
+      setSongbookTab('setlists')
+      setActiveView('songbook')
+    })
   }
 
   // Band Leader Action: Push Setlist to Members
@@ -1653,7 +1691,7 @@ function LibraryApp() {
           onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           onOpenBackupRestoreModal={() => navigateSafely(() => setIsBackupRestoreModalOpen(true))}
-          onOpenSetlistDrawer={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
+          onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode(isDevEnv ? 'explorer' : 'library'); setIsSetlistDrawerOpen(true) })}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
           activeSetlistName={activeSetlist?.name}
@@ -1745,6 +1783,7 @@ function LibraryApp() {
             onNewSetlist={handleNewSetlist}
             onOpenSetlists={() => {
               navigateSafely(() => {
+                setDrawerMode('library')
                 setDrawerInitialTab('setlists')
                 setIsSetlistDrawerOpen(true)
               })
@@ -1752,6 +1791,7 @@ function LibraryApp() {
             onOpenSongbook={() => {
               navigateSafely(() => {
                 setActiveSetlistId(null)
+                setDrawerMode('library')
                 setDrawerInitialTab('songbook')
                 setIsSetlistDrawerOpen(true)
               })
@@ -1778,6 +1818,10 @@ function LibraryApp() {
             onUpdateSong={handleUpdateSong}
             confirmedCatalogIds={confirmedCatalogIds}
             freshCatalogIds={freshCatalogIds}
+            activeTab={songbookTab}
+            onActiveTabChange={setSongbookTab}
+            tagFilter={songbookTag}
+            onTagFilterChange={setSongbookTag}
           />
         ) : activeView === 'editor' ? (
           <DesktopEditor
@@ -1818,7 +1862,7 @@ function LibraryApp() {
               activeSetlistName={activeSetlist?.name}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
-              onOpenSetlistDrawer={() => navigateSafely(() => setIsSetlistDrawerOpen(true))}
+              onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode('library'); setIsSetlistDrawerOpen(true) })}
               isSetlistDrawerOpen={isSetlistDrawerOpen}
               isStageSettingsModalOpen={isStageSettingsModalOpen}
               isAnyModalOpen={
@@ -1852,7 +1896,7 @@ function LibraryApp() {
         enabled={isEdgeSwipePanelEnabled}
         isOpen={isSetlistDrawerOpen}
         onOpen={() => setIsSetlistDrawerOpen(true)}
-        onClose={() => setIsSetlistDrawerOpen(false)}
+        onClose={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false) }}
       >
         {({ drawerStyle, backdropStyle, drawerTouchHandlers }) => (
           <SetlistDrawer
@@ -1860,10 +1904,14 @@ function LibraryApp() {
             confirmedCatalogIds={confirmedCatalogIds}
             freshCatalogIds={freshCatalogIds}
             initialTab={drawerInitialTab}
+            mode={drawerMode}
+            explorerSelection={explorerSelection}
+            onExplorerSelect={handleExplorerSelect}
+            onOpenSources={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false); setIsWebsiteUrlModalOpen(true) }}
             drawerStyle={drawerStyle}
             backdropStyle={backdropStyle}
             drawerTouchHandlers={drawerTouchHandlers}
-            onClose={() => setIsSetlistDrawerOpen(false)}
+            onClose={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false) }}
             songs={songs}
             activeSongIndex={activeSongIndex}
             onSelectSongIndex={(idx) => {

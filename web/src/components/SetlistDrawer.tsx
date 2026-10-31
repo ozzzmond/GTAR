@@ -33,6 +33,7 @@ import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
 import { getConfirmedActiveCatalogIds, sharedCatalogService } from '../utils/sharedCatalogService'
 import { SongSetlistDialog } from './SongSetlistDialog'
+import { MusicExplorerNav, type ExplorerTarget } from './MusicExplorerNav'
 
 interface SetlistDrawerProps {
   confirmedCatalogIds?: Set<string>
@@ -61,6 +62,15 @@ interface SetlistDrawerProps {
   onSongMembershipChange?: (songId: string | number, setlistId: string | number, included: boolean) => boolean
   onCreateSetlistForSong?: (songId: string | number, name: string) => boolean
   initialTab?: 'songbook' | 'setlists'
+  /**
+   * 'library' keeps the original song/setlist browsable drawer (used by the Stage
+   * quick-pick and the in-app entry points). 'explorer' replaces the drawer content
+   * with the Music Explorer navigation opened from the canonical hamburger.
+   */
+  mode?: 'library' | 'explorer'
+  explorerSelection?: ExplorerTarget
+  onExplorerSelect?: (target: ExplorerTarget) => void
+  onOpenSources?: () => void
   drawerStyle?: React.CSSProperties
   backdropStyle?: React.CSSProperties
   drawerTouchHandlers?: {
@@ -98,6 +108,10 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   onSongMembershipChange,
   onCreateSetlistForSong,
   initialTab,
+  mode = 'library',
+  explorerSelection = { type: 'ALL_SONGS' },
+  onExplorerSelect,
+  onOpenSources,
   drawerStyle,
   backdropStyle,
   drawerTouchHandlers,
@@ -342,15 +356,19 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-app-heading">
-                  {drawerTab === 'songbook' ? 'Songbook Library' : 'Song Setlists'}
+                  {mode === 'explorer' ? 'Music Explorer' : drawerTab === 'songbook' ? 'Songbook Library' : 'Song Setlists'}
                 </h2>
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-action/20 text-app-action border border-app-action/30">
-                  {drawerTab === 'songbook'
+                  {mode === 'explorer'
+                    ? `${songs.length} ${songs.length === 1 ? 'Song' : 'Songs'}`
+                    : drawerTab === 'songbook'
                     ? `${songs.length} ${songs.length === 1 ? 'Song' : 'Songs'}`
                     : `${activeSetlists.length} ${activeSetlists.length === 1 ? 'Setlist' : 'Setlists'}`}
                 </span>
               </div>
-              <p className="text-[10px] font-mono text-app-muted">Live Stage & Editor Switcher</p>
+              <p className="text-[10px] font-mono text-app-muted">
+                {mode === 'explorer' ? 'Songbook, Tags & Setlists' : 'Live Stage & Editor Switcher'}
+              </p>
             </div>
           </div>
 
@@ -364,6 +382,21 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
           </button>
         </div>
 
+        {mode === 'explorer' ? (
+          /* Music Explorer: the canonical hamburger navigation replaces the tab-based content */
+          <div className="flex-1 overflow-y-auto" data-testid="music-explorer-drawer">
+            <MusicExplorerNav
+              songs={songs}
+              setlists={activeSetlists}
+              currentSelection={explorerSelection}
+              onSelect={(target) => { onExplorerSelect?.(target) }}
+              onNewSong={() => { onNewSong(); onClose() }}
+              onNewSetlist={() => { onNewSetlist?.(); onClose() }}
+              onOpenSources={onOpenSources}
+            />
+          </div>
+        ) : (
+        <>
         {/* Tab Switcher: Songbook vs Setlists */}
         <div className="flex border-b border-app-border bg-app-base/80 px-2 py-1 gap-1">
           <button
@@ -954,6 +987,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             </button>
           )}
         </div>
+        </>
+        )}
       </div>
 
       {/* Add to Setlist Dialog */}
