@@ -61,7 +61,9 @@ export interface WebSetlist {
   name: string
   createdAt?: number
   isDeleted?: boolean
-  songs: Array<{ title: string; artist?: string; id?: string | number }>
+  folderId?: string | null
+  updatedAt?: number
+  songs: Array<{ title: string; artist?: string; id?: string | number; transposeOffset?: number }>
 }
 
 export interface GtarSetlistSong {

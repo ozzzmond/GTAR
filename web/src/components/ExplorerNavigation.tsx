@@ -7,6 +7,7 @@ export type ExplorerTarget =
   | { type: 'all' }
   | { type: 'tag'; tag: string }
   | { type: 'setlists' }
+  | { type: 'unfiled' }
   | { type: 'setlist'; id: string | number }
 
 interface Props {
@@ -49,6 +50,7 @@ function Navigation({ songs, setlists, selection, onSelect }: Props) {
     </button>
     <div id={`${id}-setlists`} hidden={!setlistsExpanded}>
       <button type="button" className={`${itemClass} pl-7`} aria-current={selection?.type === 'setlists' ? 'page' : undefined} onClick={() => onSelect({ type: 'setlists' })}>All Setlists<span className="ml-auto text-app-muted">{setlists.length}</span></button>
+      <button type="button" className={`${itemClass} pl-7`} aria-current={selection?.type === 'unfiled' ? 'page' : undefined} onClick={() => onSelect({ type: 'unfiled' })}>Unfiled Setlists<span className="ml-auto text-app-muted">{setlists.filter(sl => !sl.folderId).length}</span></button>
       {setlists.map(setlist => <button type="button" key={setlist.id} className={`${itemClass} pl-7`} aria-current={selection?.type === 'setlist' && String(selection.id) === String(setlist.id) ? 'page' : undefined} onClick={() => onSelect({ type: 'setlist', id: setlist.id })}>
         <span className="truncate">{setlist.name}</span><span className="ml-auto text-app-muted">{setlist.songs.length}</span>
       </button>)}
