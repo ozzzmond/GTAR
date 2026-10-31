@@ -548,22 +548,3 @@ body.theme-custom :is(input[type="checkbox"], input[type="range"]) { accent-colo
 body.theme-custom :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--custom-control-accent); outline-offset: 2px; }
 body.theme-custom :is(button, input, select, textarea):disabled { opacity: .45; }
 body.theme-custom ::selection { background-color: var(--custom-selectionColor); color: var(--custom-selection-foreground); }
-
-/* Music Explorer stays inside the Songbook workspace; Editor and Stage retain full width. */
-.explorer-workspace { flex-direction: column; }
-.explorer-sidebar { display: none; }
-.explorer-item { display: flex; align-items: center; gap: .5rem; width: 100%; min-height: 44px; padding: .5rem .75rem; cursor: pointer; }
-.explorer-item[aria-current="page"] { background: var(--custom-card-selected-bg); color: var(--custom-actionColor); outline: 1px solid var(--custom-card-selected-border); }
-.explorer-control { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border-radius: .5rem; cursor: pointer; }
-.explorer-workspace button:focus-visible { outline: 2px solid var(--custom-actionColor); outline-offset: -2px; }
-.explorer-mobile-trigger { flex-shrink: 0; align-self: flex-start; margin: .5rem .5rem 0; }
-.explorer-reopen { display: none; }
-.explorer-drawer { position: fixed; inset: 0 auto 0 0; margin: 0; padding: 0; width: min(20rem, 88vw); max-width: 88vw; height: 100dvh; max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom); }
-.explorer-drawer::backdrop { background: rgb(0 0 0 / .6); }
-@media (min-width: 768px) {
-  .explorer-workspace { flex-direction: row; }
-  .explorer-sidebar { display: block; flex: 0 0 15rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-  .explorer-sidebar-hidden { display: none; }
-  .explorer-mobile-trigger { display: none; }
-  .explorer-reopen { display: inline-flex; flex-shrink: 0; align-self: flex-start; margin-top: 1.5rem; }
-}
