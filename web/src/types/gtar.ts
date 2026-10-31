@@ -48,7 +48,8 @@ export interface SongEntity {
   format: SongFormat | string
   isFavorite?: boolean
   transposeOffset?: number
-  tags?: string
+  /** Legacy strings remain accepted at persistence boundaries. New edits use arrays. */
+  tags?: string[] | string
   isDeleted?: boolean
   createdAt?: number
   lastOpenedAt?: number
@@ -116,7 +117,8 @@ export interface ActiveSongState {
   rawContent: string
   format: SongFormat
   transposeOffset: number
-  tags?: string
+  /** Legacy strings remain accepted at persistence boundaries. New edits use arrays. */
+  tags?: string[] | string
   isDeleted?: boolean
   isFavorite?: boolean
   createdAt?: number
@@ -195,7 +197,7 @@ export interface ParsedGtarSong {
   bpm: string
   time?: string
   year?: string
-  tags?: string
+  tags?: string[]
   format: SongFormat
   lines: SongLine[]
 }

@@ -1,3 +1,4 @@
+import { matchesSongTags } from '../utils/songTags'
 import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
@@ -603,7 +604,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         const q = searchQuery.toLowerCase().trim()
         const matchTitle = song.title?.toLowerCase().includes(q)
         const matchArtist = song.artist?.toLowerCase().includes(q)
-        if (!matchTitle && !matchArtist) return false
+        if (!matchTitle && !matchArtist && !matchesSongTags(song.tags, q)) return false
       }
 
       if (filterSetlistId !== 'ALL') {

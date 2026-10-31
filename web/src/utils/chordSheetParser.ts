@@ -1,3 +1,4 @@
+import { normalizeTags } from './songTags'
 import ChordSheetJS from 'chordsheetjs'
 import { isChordLine, normalizeAngleBrackets, normalizeSectionMarkers, parseGtarSong } from './songParser'
 import { CHORD_TOKEN_REGEX, transposeChordProText } from './chordTransposer'
@@ -102,7 +103,7 @@ E|---3---------------3---|`,
  * Extracts metadata directives from raw ChordPro text
  */
 export function extractDirectives(rawText: string) {
-  const meta: { title?: string; artist?: string; key?: string; originalKey?: string; capo?: string; bpm?: string; year?: string; tags?: string } = {}
+  const meta: { title?: string; artist?: string; key?: string; originalKey?: string; capo?: string; bpm?: string; year?: string; tags?: string[] } = {}
   const lines = rawText.split('\n')
 
   for (const line of lines) {
@@ -117,7 +118,7 @@ export function extractDirectives(rawText: string) {
       else if (tag === 'capo') meta.capo = val
       else if (tag === 'tempo' || tag === 'bpm') meta.bpm = val
       else if (tag === 'year') meta.year = val
-      else if (tag === 'tags' || tag === 'tag' || tag === 'genre') meta.tags = val
+      else if (tag === 'tags' || tag === 'tag' || tag === 'genre') meta.tags = normalizeTags(val)
     }
   }
 
