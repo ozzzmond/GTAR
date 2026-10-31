@@ -174,6 +174,7 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [librarySetlistBulkQol108Dev8f.test.cjs](librarySetlistBulkQol108Dev8f.test.cjs)
 - [librarySetlistDensityQol.test.cjs](librarySetlistDensityQol.test.cjs)
 - [mainSetlistCardActions.test.cjs](mainSetlistCardActions.test.cjs)
+- [musicExplorer.test.cjs](musicExplorer.test.cjs)
 - [numbersNotation.test.cjs](numbersNotation.test.cjs)
 - [onlineSearchProvider.test.cjs](onlineSearchProvider.test.cjs)
 - [setlistCountConsistency.test.cjs](setlistCountConsistency.test.cjs)

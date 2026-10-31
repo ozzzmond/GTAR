@@ -51,8 +51,9 @@ export const WINDOW_THRESHOLD = 200
 /**
  * Window for `count` cards in the grid at `gridRef`. Re-renders only when the visible row range
  * changes (scroll, resize, list length), measuring the real row height once cards are rendered.
+ * `layoutKey` reattaches measurement/listeners when a tab remounts the grid with the same count.
  */
-export function useListWindow(count: number, gridRef: RefObject<HTMLElement | null>, threshold = WINDOW_THRESHOLD, overscanRows = 6): ListWindow {
+export function useListWindow(count: number, gridRef: RefObject<HTMLElement | null>, threshold = WINDOW_THRESHOLD, overscanRows = 6, layoutKey = ''): ListWindow {
   const active = count > threshold
   const rowHeightRef = useRef(ESTIMATED_ROW_HEIGHT)
   const [range, setRange] = useState<Omit<ListWindow, 'active'>>(() => ({ start: 0, end: Math.min(count, threshold), padTop: 0, padBottom: 0 }))
@@ -97,7 +98,7 @@ export function useListWindow(count: number, gridRef: RefObject<HTMLElement | nu
     target.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
     return () => { if (frame) caf(frame); target.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule) }
-  }, [active, update, gridRef])
+  }, [active, update, gridRef, layoutKey])
 
   if (!active) return { active: false, start: 0, end: count, padTop: 0, padBottom: 0 }
   const end = Math.min(count, Math.max(range.end, Math.min(count, range.start + 1)))
