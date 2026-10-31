@@ -1,3 +1,4 @@
+import { normalizeTags } from './songTags'
 import { validateCatalogLineage } from './catalogSetlistLineage'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
@@ -70,7 +71,7 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
     ...(s.year !== undefined && s.year !== null ? { year: String(s.year).trim() } : {}),
     format: s.format ?? 'CHORD_PRO', transposeOffset: s.transposeOffset ?? 0,
     rawContent,
-    ...(s.tags !== undefined ? { tags: s.tags } : {}),
+    ...(s.tags !== undefined ? { tags: Array.isArray(s.tags) ? normalizeTags(s.tags) : s.tags } : {}),
     ...(s.isFavorite !== undefined ? { isFavorite: s.isFavorite } : {}),
     ...(s.isDeleted !== undefined ? { isDeleted: s.isDeleted } : {}),
     ...(s.createdAt !== undefined ? { createdAt: s.createdAt } : {}),
@@ -190,9 +191,10 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
     if (!object(value)) { errors.push(`${path}: must be an object`); return }
     const required = song ? 'title' : 'name'
     if (typeof value[required] !== 'string' || !value[required].trim()) errors.push(`${path}.${required}: must be a non-empty string`)
-    for (const field of ['artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format', 'tags', 'rawContent', 'content']) {
+    for (const field of ['artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format', 'rawContent', 'content']) {
       if (field in value && typeof value[field] !== 'string') errors.push(`${path}.${field}: must be a string`)
     }
+    if (value.tags != null && typeof value.tags !== 'string' && !(Array.isArray(value.tags) && value.tags.every(tag => typeof tag === 'string'))) errors.push(`${path}.tags: must be a string or string array`)
     if ('confirmedChartKey' in value && (typeof value.confirmedChartKey !== 'string' || normalizeMusicalKey(value.confirmedChartKey) === null)) errors.push(`${path}.confirmedChartKey: must be a valid musical key`)
     if (song && !('rawContent' in value) && !('content' in value)) errors.push(`${path}.rawContent: provide rawContent or content as a string`)
     if ('id' in value && !(typeof value.id === 'string' && value.id.trim()) && !(typeof value.id === 'number' && Number.isSafeInteger(value.id))) errors.push(`${path}.id: must be a non-empty string or integer`)

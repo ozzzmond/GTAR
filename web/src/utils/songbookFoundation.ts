@@ -1,3 +1,4 @@
+import { normalizeTags } from './songTags'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, SongEntity, WebSetlist } from '../types/gtar'
@@ -622,7 +623,7 @@ export interface SemanticDuplicateGroup {
   survivorId: string | number
   survivorSelectionReason: string
   removedIds: (string | number)[]
-  reconciledTags?: string
+  reconciledTags?: string[]
   reconciledIsFavorite?: boolean
 }
 
@@ -708,7 +709,7 @@ export function analyzeRepairDryRun(
       song: s,
       refCount: setlistRefCount.get(String(s.id)) ?? 0,
       isFavorite: Boolean(s.isFavorite),
-      hasTags: Boolean(s.tags && s.tags.trim()),
+      hasTags: normalizeTags(s.tags).length > 0,
     }))
     scored.sort((a, b) => {
       if (b.refCount !== a.refCount) return b.refCount - a.refCount
@@ -723,13 +724,7 @@ export function analyzeRepairDryRun(
     const removedIds = scored.slice(1).map((x) => x.song.id!)
 
     const reconciledIsFavorite = group.some((s) => Boolean(s.isFavorite))
-    const allTags = Array.from(
-      new Set(
-        group
-          .map((s) => (s.tags || '').trim())
-          .filter(Boolean)
-      )
-    ).join(', ')
+    const allTags = normalizeTags(group.flatMap(s => normalizeTags(s.tags)))
 
     const selectionReason =
       survivorRefCount > 0
@@ -751,7 +746,7 @@ export function analyzeRepairDryRun(
       survivorId,
       survivorSelectionReason: selectionReason,
       removedIds,
-      reconciledTags: allTags || undefined,
+      reconciledTags: allTags.length ? allTags : undefined,
       reconciledIsFavorite,
     })
   }

@@ -302,3 +302,22 @@ test('turning B2 off writes the B2 library back to the legacy source (archived f
   assert.equal(held.tab.sj.readPersistedLibrary(storage).songs[7].title, 'Legacy only')
   assert.ok(factory.dump(db, 'songs').some(r => r.data.title === 'B2 only'), 'B2 edit kept')
 })
+
+test('multi-tag edits survive journal → B2 → reopened page without changing song references or charts', async () => {
+  const { storage, factory, tab, source } = await device(3, 1)
+  const legacy = { ...source, songs: source.songs.map((song, i) => ({ ...song, tags: i === 0 ? 'Legacy, Acoustic' : [] })) }
+  tab.sj.persistLibrary(legacy, storage)
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs[0].tags, 'Legacy, Acoustic')
+  tab.sj.enableLibraryB2(storage)
+  const { tab: page, prepared } = await reopen(storage, factory)
+  assert.equal(prepared.active, true)
+  const next = { ...legacy, songs: legacy.songs.map((song, i) => i === 0 ? { ...song, tags: ['Acoustic', 'Live'] } : song) }
+  page.sj.persistLibrary(next, storage, { expectedRaw: page.sj.libraryRevision(storage) })
+  await page.b2.flushB2()
+  const { tab: reloaded } = await reopen(storage, factory)
+  const back = reloaded.sj.readPersistedLibrary(storage)
+  assert.deepEqual(back.songs[0].tags, ['Acoustic', 'Live'])
+  assert.deepEqual(h.ids(back.songs), h.ids(source.songs))
+  assert.deepEqual(back.songs.map(song => song.rawContent), source.songs.map(song => song.rawContent))
+  assert.deepEqual(back.setlists, source.setlists)
+})

@@ -280,7 +280,7 @@ test('M: tags and isFavorite are reconciled on the survivor rather than discarde
   assert.equal(report.exactDuplicateGroupCount, 1)
   const group = report.exactDuplicateGroups[0]
   assert.equal(group.reconciledIsFavorite, true, 'Favorite flag must be reconciled on survivor')
-  assert.equal(group.reconciledTags, 'Worship', 'Tags must be preserved/reconciled on survivor')
+  assert.deepEqual(group.reconciledTags, ['Worship'], 'Tags must be preserved/reconciled on survivor')
   assert.equal(group.survivorId, songB.id, 'Candidate with favorite/tags preferred as survivor')
 })
 

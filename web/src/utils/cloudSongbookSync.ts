@@ -1,3 +1,4 @@
+import { normalizeTags } from './songTags'
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
 import { B2_SYNC_PAUSED_MESSAGE, personalSyncPausedByB2, libraryRevision, readRecoveryArchive, restoreLibraryRevision, isQuotaError, writeRecoverySnapshot, recoverySnapshotFailureMessage, RecoveryRetentionError, readPersistedLibrary, persistLibrary, setLastKnownPersistedLibraryRaw, isLibraryIndexActive, same } from './syncJournal'
 import { confirmPendingLibraryBodies, decodeLibraryIndex, encodeLibraryIndex, isLibraryIndex, loadLibraryIndexBodies } from './libraryIndex'
@@ -599,9 +600,9 @@ export function evaluateSyncDecision({
   }
 }
 
-// Preserve both the persisted string format and legacy array tags without collisions.
-function songTags(song: ActiveSongState): string | string[] {
-  return Array.isArray(song.tags) ? [...song.tags].sort() : (song.tags || '')
+// Compare legacy and canonical tags semantically to avoid representation-only sync changes.
+function songTags(song: ActiveSongState): string[] {
+  return normalizeTags(song.tags).map(tag => tag.toLowerCase()).sort()
 }
 
 export function songEquals(a: ActiveSongState, b: ActiveSongState): boolean {

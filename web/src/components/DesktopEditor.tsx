@@ -1,3 +1,4 @@
+import { normalizeTags } from '../utils/songTags'
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import {
   Music,
@@ -100,7 +101,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
   const [localYear, setLocalYear] = useState(song.year || '')
-  const [localTags, setLocalTags] = useState(song.tags || '')
+  const [localTags, setLocalTags] = useState(normalizeTags(song.tags))
   const [localRawContent, setLocalRawContent] = useState(() =>
     standardizeChordProBrackets(song.rawContent || '')
   )
@@ -118,7 +119,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     bpm: value.bpm || '',
     time: value.time || '',
     year: value.year || '',
-    tags: value.tags || '',
+    tags: JSON.stringify(normalizeTags(value.tags)),
     rawContent: value.rawContent || '',
   })
   const [persisted, setPersisted] = useState(() => fields(song))
@@ -188,14 +189,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     bpm: localBpm,
     time: localTime,
     year: localYear,
-    tags: localTags,
+    tags: JSON.stringify(normalizeTags(localTags)),
     rawContent: localRawContent,
   }
   const isSaved = Object.entries(draft).every(([key, value]) => persisted[key as keyof typeof persisted] === value)
   const saveStatus: 'SAVING' | 'SAVED' | 'FAILED' | 'UNSAVED' =
     isSaving ? 'SAVING' : saveFailed && !isSaved ? 'FAILED' : isSaved ? 'SAVED' : 'UNSAVED'
   useEffect(() => {
-    if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft, transposeOffset }
+    if (recoveryDraftRef) recoveryDraftRef.current = () => isSaved ? null : { ...editingSong, ...draft, tags: normalizeTags(localTags), transposeOffset }
     return () => { if (recoveryDraftRef) recoveryDraftRef.current = null }
   })
   const keyContext = transposeContext({ key: localKey, confirmedChartKey, originalKey: localOriginalKey, rawContent: localRawContent }, transposeOffset)
@@ -233,7 +234,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     try {
       const res = onUpdateSong(next)
       if (res === true) {
-        setPersisted(previous => ({ ...previous, ...next }))
+        setPersisted(previous => ({ ...previous, ...next, tags: next.tags === undefined ? previous.tags : JSON.stringify(normalizeTags(next.tags)) }))
         autosavedEditsRef.current = true
         setSaveFailed(false)
       } else {
@@ -412,7 +413,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setLocalBpm(song.bpm || (parsedMeta.tempo ? String(parsedMeta.tempo) : ''))
     setLocalTime(song.time || parsedMeta.time || '')
     setLocalYear(song.year || (parsedMeta.year ? String(parsedMeta.year) : ''))
-    setLocalTags(song.tags || '')
+    setLocalTags(normalizeTags(song.tags))
     setLocalRawContent(standardizeChordProBrackets(song.rawContent || ''))
     setPersisted(fields(song))
     autosavedEditsRef.current = false
@@ -447,7 +448,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalBpm(blank.bpm || '')
       setLocalTime('')
       setLocalYear('')
-      setLocalTags('')
+      setLocalTags([])
       setLocalRawContent(blank.rawContent || '')
       setPersisted(fields(blank))
       setSaveFailed(false)
@@ -496,7 +497,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       bpm: resolvedBpm,
       time: resolvedTime || undefined,
       ...(resolvedYear ? { year: resolvedYear } : { year: undefined }),
-      tags: localTags.trim(),
+      tags: normalizeTags(localTags),
       rawContent: standardized,
       format: 'CHORD_PRO',
       transposeOffset,
@@ -520,7 +521,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setLocalBpm(updatedSong.bpm || '')
       setLocalTime(updatedSong.time || '')
       setLocalYear(updatedSong.year || '')
-      setLocalTags(updatedSong.tags || '')
+      setLocalTags(normalizeTags(updatedSong.tags))
       setLocalRawContent(standardized)
       setPersisted(fields(updatedSong))
       showToast('Songbook saved!')
@@ -552,10 +553,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   // Toggle quick genre tag chip
   const handleToggleTag = (tag: string) => {
-    const currentTags = localTags
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
+    const currentTags = normalizeTags(localTags)
 
     const isSelected = currentTags.some((t) => t.toLowerCase() === tag.toLowerCase())
     let nextTags: string[]
@@ -566,8 +564,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       nextTags = [...currentTags, tag]
     }
 
-    const updatedTags = nextTags.join(', ')
-    setLocalTags(updatedTags)
+    setLocalTags(nextTags)
   }
 
   // Raw text change handler (eliminates erratic angle brackets on the fly)
@@ -818,7 +815,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 setLocalYear(persisted.year)
                 setLocalTime(persisted.time)
                 setLocalBpm(persisted.bpm)
-                setLocalTags(persisted.tags)
+                setLocalTags(normalizeTags(JSON.parse(persisted.tags)))
                 setLocalRawContent(persisted.rawContent)
                 history.current = new TextHistory()
                 setPendingNavigation(null)
@@ -1280,7 +1277,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       {/* Song Metadata & Details Modal */}
       {isMetadataModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-app-surface border border-app-border rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
+          <div className="bg-app-surface border border-app-border rounded-2xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-app-border pb-3">
               <div className="flex items-center gap-2">
@@ -1446,16 +1443,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <span>Tags</span>
               </label>
               <div className="flex items-center gap-2 bg-app-base px-2.5 py-1.5 rounded-lg border border-app-border focus-within:border-app-accent/60 transition-colors">
-                <input
-                  type="text"
-                  value={localTags}
-                  onChange={(e) => {
-                    setLocalTags(e.target.value)
-                    autosave({ tags: e.target.value })
-                  }}
-                  placeholder="Tags (e.g. Worship, OPM, Acoustic)"
-                  className="w-full bg-transparent text-app-text font-mono text-xs focus:outline-none placeholder-app-muted/60"
-                />
+                <div className="flex flex-wrap gap-2 w-full">
+                  {localTags.map(tag => <button key={tag} type="button" aria-label={`Remove tag ${tag}`}
+                    className="px-2 py-2 rounded border border-app-border text-app-text text-xs"
+                    onClick={() => handleToggleTag(tag)}>{tag} ×</button>)}
+                  <input type="text" aria-label="Add tags" placeholder="Add tags, separated by commas"
+                    className="w-full bg-transparent text-app-text font-mono text-xs focus:outline-none"
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') { event.preventDefault(); const input = event.currentTarget;
+                        setLocalTags(normalizeTags([...localTags, ...normalizeTags(input.value)])); input.value = '' }
+                    }}
+                    onBlur={event => { setLocalTags(normalizeTags([...localTags, ...normalizeTags(event.currentTarget.value)])); event.currentTarget.value = '' }} />
+                </div>
               </div>
             </div>
 
@@ -1467,7 +1466,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_GENRE_TAGS.map((tag) => {
                   const isSelected = localTags
-                    .split(',')
                     .map((t) => t.trim().toLowerCase())
                     .includes(tag.toLowerCase())
 

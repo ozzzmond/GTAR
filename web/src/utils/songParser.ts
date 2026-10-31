@@ -1,3 +1,4 @@
+import { normalizeTags } from './songTags'
 import type {
   ChordSegment,
   SongFormat,
@@ -708,7 +709,7 @@ export function parseGtarSong(rawText: string, transposeOffset: number = 0): Par
     bpm,
     time: time || undefined,
     year,
-    tags,
+    tags: normalizeTags(tags),
     format,
     lines: deduplicatedLines,
   }
