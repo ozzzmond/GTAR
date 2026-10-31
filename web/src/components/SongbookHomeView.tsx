@@ -1,4 +1,4 @@
-import { matchesSongTags } from '../utils/songTags'
+import { matchesSongTags, normalizeTags } from '../utils/songTags'
 import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
@@ -16,6 +16,7 @@ import {
   Trash2,
   AlertTriangle,
   Layers,
+  Tag,
   ArrowRight,
   X,
   Upload,
@@ -79,6 +80,12 @@ interface SongbookHomeViewProps {
   freshCatalogIds?: Set<string>
   catalogMetadata?: Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>
   initialTab?: 'my_songs' | 'setlists' | 'shared_catalog'
+  /** Music Explorer coordination: when provided, the workspace tab is controlled by App. */
+  activeTab?: 'my_songs' | 'setlists' | 'shared_catalog'
+  onActiveTabChange?: (tab: 'my_songs' | 'setlists' | 'shared_catalog') => void
+  /** Canonical multi-tag filter applied by the Music Explorer tag selection. */
+  tagFilter?: string | null
+  onTagFilterChange?: (tag: string | null) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -113,6 +120,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   freshCatalogIds: propFreshCatalogIds,
   catalogMetadata: propCatalogMetadata,
   initialTab,
+  activeTab: propActiveTab,
+  onActiveTabChange,
+  tagFilter: propTagFilter,
+  onTagFilterChange,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -169,7 +180,20 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [isBulkDeleteSetlistsConfirmOpen, setIsBulkDeleteSetlistsConfirmOpen] = useState(false)
 
   // Navigation tab state: 'my_songs' (default) vs 'shared_catalog'
-  const [activeTab, setActiveTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>(initialTab || 'my_songs')
+  const [internalTab, setInternalTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>(initialTab || 'my_songs')
+  const activeTab = propActiveTab ?? internalTab
+  const changeTab = useCallback((tab: 'my_songs' | 'setlists' | 'shared_catalog') => {
+    setInternalTab(tab)
+    onActiveTabChange?.(tab)
+  }, [onActiveTabChange])
+
+  // Music Explorer tag selection: controlled by App when provided, otherwise local.
+  const [internalTagFilter, setInternalTagFilter] = useState<string | null>(null)
+  const activeTagFilter = propTagFilter !== undefined ? propTagFilter : internalTagFilter
+  const changeTagFilter = useCallback((tag: string | null) => {
+    setInternalTagFilter(tag)
+    onTagFilterChange?.(tag)
+  }, [onTagFilterChange])
 
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
@@ -600,6 +624,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   // Filter songs
   const filteredIndexedSongs = useMemo(() => {
     return indexedSongs.filter(({ song }) => {
+      if (activeTagFilter && !normalizeTags(song.tags).some(tag => tag.toLowerCase() === activeTagFilter.toLowerCase())) return false
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchTitle = song.title?.toLowerCase().includes(q)
@@ -621,7 +647,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       return true
     })
-  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds])
+  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds, activeTagFilter])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {
@@ -1184,7 +1210,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             setPublishingSong(null)
                             setPublishRecoveryCatalogId(null)
                             setFocusCatalogSongId(dup.id)
-                            setActiveTab('shared_catalog')
+                            changeTab('shared_catalog')
                           }}
                           className="shrink-0 min-h-9 px-2.5 py-1 rounded-lg border border-app-border bg-app-surface text-app-heading hover:border-app-action font-mono font-bold cursor-pointer"
                         >
@@ -1508,7 +1534,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           data-testid="tab-my-songs"
           aria-selected={activeTab === 'my_songs'}
           role="tab"
-          onClick={() => setActiveTab('my_songs')}
+          onClick={() => { changeTab('my_songs'); changeTagFilter(null) }}
           className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'my_songs'
               ? 'bg-app-action text-app-on-action shadow-sm'
@@ -1524,7 +1550,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           data-testid="tab-setlists"
           aria-selected={activeTab === 'setlists'}
           role="tab"
-          onClick={() => setActiveTab('setlists')}
+          onClick={() => changeTab('setlists')}
           className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'setlists'
               ? 'bg-app-action text-app-on-action shadow-sm'
@@ -1540,7 +1566,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           data-testid="tab-shared-catalog"
           aria-selected={activeTab === 'shared_catalog'}
           role="tab"
-          onClick={() => setActiveTab('shared_catalog')}
+          onClick={() => changeTab('shared_catalog')}
           className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'shared_catalog'
               ? 'bg-app-action text-app-on-action shadow-sm'
@@ -1551,6 +1577,23 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <span>Shared Catalog</span>
         </button>
       </div>
+
+      {activeTab === 'my_songs' && activeTagFilter && (
+        <div className="flex items-center gap-2 mb-4 text-app-heading" data-testid="songbook-tag-filter">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-app-action/40 bg-app-action/15 px-2.5 py-1 text-xs font-semibold text-app-action">
+            <Tag className="w-3.5 h-3.5" />
+            <span>#{activeTagFilter}</span>
+            <button
+              type="button"
+              aria-label="Clear tag filter"
+              onClick={() => changeTagFilter(null)}
+              className="cursor-pointer hover:opacity-80"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Tab Content: Shared Catalog Browser vs My Songs Personal Library */}
       {activeTab === 'shared_catalog' ? (

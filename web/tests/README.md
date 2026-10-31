@@ -257,6 +257,7 @@ New or renamed tests await a human choice of primary category.
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryV1Retirement.test.cjs](libraryV1Retirement.test.cjs)
 - [multiTagFoundation.test.cjs](multiTagFoundation.test.cjs)
+- [musicExplorerDrawer.test.cjs](musicExplorerDrawer.test.cjs)
 - [onsongImport.test.cjs](onsongImport.test.cjs)
 - [recordsAutoSync.test.cjs](recordsAutoSync.test.cjs)
 - [recordsSyncClient.test.cjs](recordsSyncClient.test.cjs)
