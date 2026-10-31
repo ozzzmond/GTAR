@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "chordsheetjs": "^16.2.2",
+    "chordsheetjs": "^18.0.0",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.41.0",
     "qrcode": "^1.5.4",
