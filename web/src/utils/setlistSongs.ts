@@ -13,6 +13,12 @@ export function resolveSetlistSong(ref: SongReference, songs: ActiveSongState[])
   return matches.length === 1 ? matches[0] : undefined
 }
 
+/** Performance overrides belong to the entry, never the canonical song record. */
+export function resolveSetlistPerformanceSong(ref: SongReference, songs: ActiveSongState[]): ActiveSongState | undefined {
+  const song = resolveSetlistSong(ref, songs)
+  return song && ref.transposeOffset !== undefined ? { ...song, transposeOffset: ref.transposeOffset } : song
+}
+
 /** First song per String(id), matching resolveSetlistSong's `find` order for ID references. */
 export function songIdIndex(songs: ActiveSongState[]): Map<string, ActiveSongState> {
   const index = new Map<string, ActiveSongState>()

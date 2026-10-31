@@ -1,3 +1,4 @@
+import { SetlistExplorer } from './SetlistExplorer'
 import { ExplorerNavigation, type ExplorerTarget } from './ExplorerNavigation'
 import { normalizeTags, matchesSongTags } from '../utils/songTags'
 import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
@@ -66,7 +67,7 @@ interface SongbookHomeViewProps {
   searchQuery?: string
   onSearchQueryChange?: (query: string) => void
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
-  onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
+  onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => boolean
   onBulkDeleteSetlists?: (setlistIds: Array<string | number>) => void
   onPublishSetlist?: (setlist: WebSetlist) => void
   onShareSetlist?: (setlist: WebSetlist) => void
@@ -175,12 +176,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [activeTab, setActiveTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>(initialTab || 'my_songs')
 
   const [explorerTag, setExplorerTag] = useState<string | null>(null)
+  const [unfiledSetlists, setUnfiledSetlists] = useState(false)
   const [explorerSetlistId, setExplorerSetlistId] = useState<string | number | null>(null)
   const explorerSetlist = explorerEnabled && activeTab === 'setlists'
     ? activeSetlists.find(sl => explorerSetlistId !== null && String(sl.id) === String(explorerSetlistId))
     : undefined
   const explorerSelection: ExplorerTarget | null = activeTab === 'shared_catalog' ? null
-    : activeTab === 'setlists' ? explorerSetlist ? { type: 'setlist', id: explorerSetlist.id } : { type: 'setlists' }
+    : activeTab === 'setlists' ? explorerSetlist ? { type: 'setlist', id: explorerSetlist.id } : { type: unfiledSetlists ? 'unfiled' : 'setlists' }
     : explorerTag ? { type: 'tag', tag: explorerTag } : { type: 'all' }
 
   // Auth context for publishing permissions
@@ -602,6 +604,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       setSongsCollapsedPersisted(false)
     } else {
       setActiveTab('setlists')
+      if (target.type !== 'setlist') setUnfiledSetlists(target.type === 'unfiled')
+      else if (activeSetlists.find(sl => String(sl.id) === String(target.id))?.folderId) setUnfiledSetlists(false)
       setExplorerSetlistId(target.type === 'setlist' ? target.id : null)
       setSetlistsCollapsed(false)
     }
@@ -1553,7 +1557,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           data-testid="tab-setlists"
           aria-selected={activeTab === 'setlists'}
           role="tab"
-          onClick={() => { setActiveTab('setlists'); setExplorerSetlistId(null) }}
+          onClick={() => { setActiveTab('setlists'); setExplorerSetlistId(null); setUnfiledSetlists(false) }}
           className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'setlists'
               ? 'bg-app-action text-app-on-action shadow-sm'
@@ -1587,26 +1591,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <button type="button" className="explorer-control text-app-action" onClick={() => selectExplorerTarget({ type: 'all' })}>All Songs</button>
         </div>
       )}
-      {explorerSetlist && (
-        <section aria-label="Selected setlist songs" className="rounded-2xl border border-app-border bg-app-surface p-4 mb-5 text-app-text">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <h2 className="font-semibold text-app-heading">{explorerSetlist.name}</h2>
-            <button type="button" className="explorer-control text-app-action" onClick={() => onManageSetlist ? onManageSetlist(explorerSetlist) : onOpenSetlists()}>Manage setlist</button>
-          </div>
-          {explorerSetlist.songs.length === 0 && <p className="text-sm text-app-muted">This setlist is empty.</p>}
-          <ol className="space-y-1">
-            {explorerSetlist.songs.map((ref, index) => {
-              const song = resolveSetlistSongIndexed(ref, songs, songIndex)
-              return <li key={index}>
-                <button type="button" className="explorer-item rounded-lg hover:bg-app-hover disabled:opacity-60" disabled={!song || song.isDeleted || !onSelectSetlistSong} onClick={() => onSelectSetlistSong?.(explorerSetlist.id, index)}>
-                  <span className="text-app-muted">{index + 1}.</span>
-                  <span className="min-w-0 text-left break-words">{song?.title || ref.title || 'Untitled Song'}{!song || song.isDeleted ? ' — Unavailable song' : ''}</span>
-                </button>
-              </li>
-            })}
-          </ol>
-        </section>
-      )}
+      {explorerEnabled && activeTab === 'setlists' && <SetlistExplorer
+        setlists={sortedSetlists.filter(sl => !unfiledSetlists || !sl.folderId)}
+        selected={explorerSetlist} songs={songs} unfiled={unfiledSetlists}
+        onSelect={id => selectExplorerTarget({ type: 'setlist', id })}
+        onCollection={() => selectExplorerTarget({ type: unfiledSetlists ? 'unfiled' : 'setlists' })}
+        onPlay={onSelectSetlistSong}
+        onEdit={sl => onManageSetlist ? onManageSetlist(sl) : onOpenSetlists()}
+        onNew={onNewSetlist} onAdd={onBulkAddSongsToSetlist}
+      />}
 
       {/* Tab Content: Shared Catalog Browser vs My Songs Personal Library */}
       {activeTab === 'shared_catalog' ? (
@@ -1639,7 +1632,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       ) : (
         <>
           {/* 2. SONG SETLISTS PANEL */}
-      {(activeTab === 'setlists' || (activeTab === 'my_songs' && activeSetlists.length > 0)) && (
+      {(!(explorerEnabled && activeTab === 'setlists') && (activeTab === 'setlists' || (activeTab === 'my_songs' && activeSetlists.length > 0))) && (
         activeSetlists.length === 0 ? (
           <section aria-label="Song Setlists" className="rounded-2xl border border-app-border bg-app-surface p-6 sm:p-8 mb-6 shadow-xs text-center space-y-3">
             <Layers className="ui-section-icon w-8 h-8 mx-auto text-app-accent" />

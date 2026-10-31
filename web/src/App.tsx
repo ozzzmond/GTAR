@@ -39,7 +39,7 @@ import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
 import { createSingleSetlistPayload } from './utils/jsonBackup'
-import { setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
+import { songIdIndex, setSongMembership, resolveSetlistPerformanceSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
   readStageSession,
   saveStageSession,
@@ -528,7 +528,7 @@ function LibraryApp() {
   // Keep queue positions, including an explicit unavailable-song entry.
   const activeSetlistSongs: ActiveSongState[] = useMemo(() => {
     if (!activeSetlist) return []
-    return activeSetlist.songs.map(ref => resolveSetlistSong(ref, songs) ?? {
+    return activeSetlist.songs.map(ref => resolveSetlistPerformanceSong(ref, songs) ?? {
       id: ref.id, title: ref.title, artist: ref.artist ?? '', isMissing: true,
       key: '', capo: '', bpm: '', format: 'PLAIN', transposeOffset: 0, rawContent: '',
     })
@@ -1240,24 +1240,31 @@ function LibraryApp() {
 
   // Bulk add songs to destination setlist
   const handleBulkAddSongsToSetlist = (ids: Array<string | number>, setlistId: string | number) => {
-    const idSet = new Set(ids.map(String))
-    const selectedSongs = songs.filter((s) => s.id !== undefined && idSet.has(String(s.id)))
-    const targetSetlist = setlists.find((sl) => String(sl.id) === String(setlistId))
-    if (!targetSetlist || selectedSongs.length === 0) return
-
-    setSetlists((prev) =>
-      prev.map((sl) => {
-        if (String(sl.id) !== String(setlistId)) return sl
-        let updated = sl
-        for (const song of selectedSongs) {
-          updated = setSongMembership(updated, song, true)
-        }
-        return updated
-      })
-    )
-
-    setToastMessage(`Added ${selectedSongs.length} ${selectedSongs.length === 1 ? 'song' : 'songs'} to ${targetSetlist.name}`)
+    if (typeof crossTabConflict !== 'undefined' && crossTabConflict) {
+      setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
+      return false
+    }
+    const index = songIdIndex(songs)
+    const selectedSongs = ids.map(id => index.get(String(id))).filter((song): song is ActiveSongState => !!song && !song.isDeleted)
+    const targetSetlist = setlists.find(sl => String(sl.id) === String(setlistId) && !sl.isDeleted)
+    if (!targetSetlist || !selectedSongs.length) return false
+    const nextSetlists = setlists.map(sl => {
+      if (String(sl.id) !== String(setlistId)) return sl
+      return selectedSongs.reduce((updated, song) => setSongMembership(updated, song, true), sl)
+    })
+    try {
+      const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
+      persistLibrary(
+        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      if (typeof persistedBaselineRef !== 'undefined') persistedBaselineRef.current = libraryRevision()
+    } catch (err) { handleStorageWriteFailure(err); return false }
+    setSetlists(nextSetlists)
+    setToastMessage(`Saved selections to ${targetSetlist.name}`)
     setTimeout(() => setToastMessage(null), 3000)
+    return true
   }
 
   // Restore song from Trash back to library
