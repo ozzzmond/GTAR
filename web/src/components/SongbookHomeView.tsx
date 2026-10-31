@@ -1,4 +1,5 @@
-import { matchesSongTags } from '../utils/songTags'
+import { ExplorerNavigation, type ExplorerTarget } from './ExplorerNavigation'
+import { normalizeTags, matchesSongTags } from '../utils/songTags'
 import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
@@ -45,6 +46,7 @@ import { useOptionalGoogleAuth } from '../utils/authContext'
 import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
 
 interface SongbookHomeViewProps {
+  explorerEnabled?: boolean
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
   onCreateSetlistForSong: (songId: string | number, name: string) => boolean
   songs: ActiveSongState[]
@@ -113,6 +115,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   freshCatalogIds: propFreshCatalogIds,
   catalogMetadata: propCatalogMetadata,
   initialTab,
+  explorerEnabled = false,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -170,6 +173,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // Navigation tab state: 'my_songs' (default) vs 'shared_catalog'
   const [activeTab, setActiveTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>(initialTab || 'my_songs')
+
+  const [explorerTag, setExplorerTag] = useState<string | null>(null)
+  const [explorerSetlistId, setExplorerSetlistId] = useState<string | number | null>(null)
+  const explorerSetlist = explorerEnabled && activeTab === 'setlists'
+    ? activeSetlists.find(sl => explorerSetlistId !== null && String(sl.id) === String(explorerSetlistId))
+    : undefined
+  const explorerSelection: ExplorerTarget | null = activeTab === 'shared_catalog' ? null
+    : activeTab === 'setlists' ? explorerSetlist ? { type: 'setlist', id: explorerSetlist.id } : { type: 'setlists' }
+    : explorerTag ? { type: 'tag', tag: explorerTag } : { type: 'all' }
 
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
@@ -577,7 +589,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const handleFilterSetlistChange = (slId: string) => {
     setFilterSetlistId(slId)
     if (typeof window !== 'undefined') {
-      localStorage.setItem('gtar_songbook_filter_setlist', slId)
+      try { localStorage.setItem('gtar_songbook_filter_setlist', slId) } catch { /* Keep the session filter. */ }
+    }
+  }
+
+  const selectExplorerTarget = (target: ExplorerTarget) => {
+    closeAllMenus()
+    if (target.type === 'all' || target.type === 'tag') {
+      setActiveTab('my_songs')
+      setExplorerTag(target.type === 'tag' ? target.tag : null)
+      handleFilterSetlistChange('ALL')
+      setSongsCollapsedPersisted(false)
+    } else {
+      setActiveTab('setlists')
+      setExplorerSetlistId(target.type === 'setlist' ? target.id : null)
+      setSetlistsCollapsed(false)
     }
   }
 
@@ -600,6 +626,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   // Filter songs
   const filteredIndexedSongs = useMemo(() => {
     return indexedSongs.filter(({ song }) => {
+      if (explorerEnabled && explorerTag && !normalizeTags(song.tags).some(tag => tag.toLowerCase() === explorerTag.toLowerCase())) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchTitle = song.title?.toLowerCase().includes(q)
@@ -621,7 +648,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       return true
     })
-  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds])
+  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds, explorerEnabled, explorerTag])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {
@@ -641,7 +668,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   // #252: long lists render only the rows near the viewport (no change below the threshold).
   const songGridRef = useRef<HTMLDivElement>(null)
-  const songWindow = useListWindow(sortedIndexedSongs.length, songGridRef)
+  const songWindow = useListWindow(sortedIndexedSongs.length, songGridRef, undefined, undefined, activeTab)
   const visibleIndexedSongs = useMemo(() => songWindow.active ? sortedIndexedSongs.slice(songWindow.start, songWindow.end) : sortedIndexedSongs,
     [sortedIndexedSongs, songWindow.active, songWindow.start, songWindow.end])
 
@@ -936,7 +963,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   return (
-    <div className="songbook-ui flex-1 overflow-y-auto px-2 sm:px-8 py-3 sm:py-6 max-w-7xl mx-auto w-full select-none">
+    <div className="explorer-workspace flex flex-1 min-w-0 min-h-0 relative">
+      {explorerEnabled && <ExplorerNavigation songs={songs} setlists={activeSetlists} selection={explorerSelection} onSelect={selectExplorerTarget} />}
+    <div className="songbook-ui min-w-0 flex-1 overflow-y-auto px-2 sm:px-8 py-3 sm:py-6 max-w-7xl mx-auto w-full select-none">
       {membershipSong && <SongSetlistDialog
         song={membershipSong}
         setlists={activeSetlists}
@@ -1508,7 +1537,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           data-testid="tab-my-songs"
           aria-selected={activeTab === 'my_songs'}
           role="tab"
-          onClick={() => setActiveTab('my_songs')}
+          onClick={() => { setActiveTab('my_songs'); setExplorerTag(null) }}
           className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'my_songs'
               ? 'bg-app-action text-app-on-action shadow-sm'
@@ -1524,7 +1553,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           data-testid="tab-setlists"
           aria-selected={activeTab === 'setlists'}
           role="tab"
-          onClick={() => setActiveTab('setlists')}
+          onClick={() => { setActiveTab('setlists'); setExplorerSetlistId(null) }}
           className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'setlists'
               ? 'bg-app-action text-app-on-action shadow-sm'
@@ -1551,6 +1580,33 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <span>Shared Catalog</span>
         </button>
       </div>
+
+      {explorerEnabled && activeTab === 'my_songs' && explorerTag && (
+        <div className="flex items-center gap-3 mb-4 text-app-heading">
+          <h2 className="font-semibold">Tag: {explorerTag}</h2>
+          <button type="button" className="explorer-control text-app-action" onClick={() => selectExplorerTarget({ type: 'all' })}>All Songs</button>
+        </div>
+      )}
+      {explorerSetlist && (
+        <section aria-label="Selected setlist songs" className="rounded-2xl border border-app-border bg-app-surface p-4 mb-5 text-app-text">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="font-semibold text-app-heading">{explorerSetlist.name}</h2>
+            <button type="button" className="explorer-control text-app-action" onClick={() => onManageSetlist ? onManageSetlist(explorerSetlist) : onOpenSetlists()}>Manage setlist</button>
+          </div>
+          {explorerSetlist.songs.length === 0 && <p className="text-sm text-app-muted">This setlist is empty.</p>}
+          <ol className="space-y-1">
+            {explorerSetlist.songs.map((ref, index) => {
+              const song = resolveSetlistSongIndexed(ref, songs, songIndex)
+              return <li key={index}>
+                <button type="button" className="explorer-item rounded-lg hover:bg-app-hover disabled:opacity-60" disabled={!song || song.isDeleted || !onSelectSetlistSong} onClick={() => onSelectSetlistSong?.(explorerSetlist.id, index)}>
+                  <span className="text-app-muted">{index + 1}.</span>
+                  <span className="min-w-0 text-left break-words">{song?.title || ref.title || 'Untitled Song'}{!song || song.isDeleted ? ' — Unavailable song' : ''}</span>
+                </button>
+              </li>
+            })}
+          </ol>
+        </section>
+      )}
 
       {/* Tab Content: Shared Catalog Browser vs My Songs Personal Library */}
       {activeTab === 'shared_catalog' ? (
@@ -2711,6 +2767,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       )}
         </>
       )}
+    </div>
     </div>
   )
 }

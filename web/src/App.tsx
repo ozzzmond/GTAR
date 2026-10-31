@@ -1731,6 +1731,7 @@ function LibraryApp() {
       <main className="flex-1 flex overflow-hidden">
         {activeView === 'songbook' ? (
           <SongbookHomeView
+            explorerEnabled={isDevEnv}
             songs={songs}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
