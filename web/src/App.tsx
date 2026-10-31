@@ -1086,13 +1086,13 @@ function LibraryApp() {
   // Manage setlist in slide-over drawer
   const handleManageSetlist = (setlist: WebSetlist) => {
     setActiveSetlistId(setlist.id)
-    setDrawerMode('library')
     setIsSetlistDrawerOpen(true)
   }
 
   // Music Explorer navigation: route into existing GTAR handlers and close the drawer.
   const handleExplorerSelect = (target: ExplorerTarget) => {
     setExplorerSelection(target)
+    setDrawerMode('library')
     setIsSetlistDrawerOpen(false)
     if (target.type === 'ALL_SONGS') {
       navigateSafely(() => {
@@ -1896,7 +1896,7 @@ function LibraryApp() {
         enabled={isEdgeSwipePanelEnabled}
         isOpen={isSetlistDrawerOpen}
         onOpen={() => setIsSetlistDrawerOpen(true)}
-        onClose={() => setIsSetlistDrawerOpen(false)}
+        onClose={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false) }}
       >
         {({ drawerStyle, backdropStyle, drawerTouchHandlers }) => (
           <SetlistDrawer
@@ -1907,11 +1907,11 @@ function LibraryApp() {
             mode={drawerMode}
             explorerSelection={explorerSelection}
             onExplorerSelect={handleExplorerSelect}
-            onOpenSources={() => { setIsSetlistDrawerOpen(false); setIsWebsiteUrlModalOpen(true) }}
+            onOpenSources={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false); setIsWebsiteUrlModalOpen(true) }}
             drawerStyle={drawerStyle}
             backdropStyle={backdropStyle}
             drawerTouchHandlers={drawerTouchHandlers}
-            onClose={() => setIsSetlistDrawerOpen(false)}
+            onClose={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false) }}
             songs={songs}
             activeSongIndex={activeSongIndex}
             onSelectSongIndex={(idx) => {
