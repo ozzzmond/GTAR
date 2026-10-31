@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Plus, Tag } from 'lucide-react'
+import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Plus } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { normalizeTags } from '../utils/songTags'
 
@@ -30,11 +30,11 @@ interface TagCount {
 }
 
 const itemBase =
-  'group flex w-full min-h-9 items-center gap-2 rounded-lg px-2.5 text-xs transition-colors cursor-pointer text-left'
+  'group flex w-full min-h-9 items-center gap-2 rounded-md px-2.5 text-xs transition-colors cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-action/60'
 const itemIdle = 'text-app-text hover:bg-app-base/70'
-const itemActive = 'bg-app-action/15 text-app-action border border-app-action/40 font-semibold'
-const pill = 'ml-auto shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] leading-none'
-const pillIdle = 'bg-app-base border-app-border text-app-muted'
+const itemActive = 'bg-app-action/15 text-app-action font-semibold'
+const pill = 'ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none'
+const pillIdle = 'bg-app-base border border-app-border text-app-muted'
 
 export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
   songs,
@@ -82,7 +82,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
     `${itemBase} ${isSelected(target) ? itemActive : itemIdle}`
 
   const pillClass = (target: ExplorerTarget) =>
-    `${pill} ${isSelected(target) ? 'bg-app-action/20 border-app-action/40 text-app-action' : pillIdle}`
+    `${pill} ${isSelected(target) ? 'bg-app-action/20 text-app-action' : pillIdle}`
 
   const sectionHeading = (
     label: string,
@@ -95,7 +95,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
+        className="flex items-center gap-1 text-[11px] font-semibold text-app-heading hover:text-app-action cursor-pointer"
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <span>{label}</span>
@@ -108,7 +108,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
     <nav
       aria-label="Music Explorer"
       data-testid="music-explorer-nav"
-      className="flex select-none flex-col gap-3 px-3 py-3 text-xs text-app-text"
+      className="flex select-none flex-col gap-2.5 px-3 py-3 text-xs text-app-text"
     >
       {/* Quick actions */}
       <div className="flex items-center gap-2">
@@ -143,7 +143,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           </span>
         )}
         {songbookExpanded && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-0.5">
             <div
               role="button"
               tabIndex={0}
@@ -182,13 +182,13 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
       {/* Tags / Songbooks */}
       <section>
         {sectionHeading(
-          `Tags / Songbooks`,
+          'Tags',
           tagsExpanded,
           () => setTagsExpanded((value) => !value),
           <span className="text-[10px] text-app-muted">{tagCounts.length}</span>
         )}
         {tagsExpanded && (
-          <div className="flex flex-col gap-2 pl-4">
+          <div className="flex flex-col gap-0.5 pl-4">
             {tagCounts.length === 0 ? (
               <p className="px-1 py-1 text-[11px] italic text-app-muted">No tags assigned yet</p>
             ) : (
@@ -203,7 +203,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
                     onClick={() => select(target)}
                     className={selectClass(target)}
                   >
-                    <Tag className="h-3.5 w-3.5 shrink-0 text-app-section" />
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-app-section" aria-hidden="true" />
                     <span className="truncate">#{tag}</span>
                     <span className={pillClass(target)}>{count}</span>
                   </button>
@@ -225,7 +225,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           </span>
         )}
         {setlistsExpanded && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-0.5">
             <button
               type="button"
               data-testid="explorer-nav-all-setlists"
