@@ -6,40 +6,33 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
   fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }
 ).outputText, filename)
+require.extensions['.png'] = (module, filename) => { module.exports = filename }
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
 const { JSDOM } = require('jsdom')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 
-// Execute the actual App callback so the interaction proves the drawer's ID wiring.
-const appSource = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
-const appAst = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-let manageCallback
-function visit(node) {
-  if (ts.isVariableDeclaration(node) && node.name.getText(appAst) === 'handleManageSetlist') {
-    manageCallback = ts.transpileModule(`const callback = ${node.initializer.getText(appAst)}`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText
-  }
-  ts.forEachChild(node, visit)
-}
-visit(appAst)
-assert.ok(manageCallback)
-assert.match(appSource, /onManageSetlist=\{handleManageSetlist\}/)
-
 for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${width}px`, async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' })
-  const keys = ['window', 'document', 'Node', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT']
+  const keys = ['window', 'document', 'Node', 'localStorage', 'sessionStorage', 'IS_REACT_ACT_ENVIRONMENT']
   const previous = Object.fromEntries(keys.map(key => [key, global[key]]))
   Object.assign(global, { window: dom.window, document: dom.window.document, Node: dom.window.Node,
-    localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true })
+    localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
   Object.defineProperty(window, 'innerWidth', { value: width })
   Object.defineProperty(window, 'innerHeight', { value: 600 })
   window.HTMLElement.prototype.getBoundingClientRect = function () {
     return this.hasAttribute('data-dropdown-portal')
       ? { width: 192, height: 160 }
       : { left: width - 40, right: width - 8, top: 540, bottom: 568, width: 32, height: 28 }
+  }
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  const nativeSetTimeout = global.setTimeout
+  const timers = new Set()
+  global.setTimeout = (fn, delay, ...args) => {
+    const timer = nativeSetTimeout(fn, delay, ...args)
+    timers.add(timer)
+    return timer
   }
   const songs = ['one', 'many', 'zero'].map(id => ({ id, title: id, artist: '', rawContent: '' }))
   let setlists = [
@@ -48,17 +41,38 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     { id: 'stable-c', name: 'Current third', songs: [{ id: 'many' }] },
     { id: 'deleted', name: 'Deleted', isDeleted: true, songs: [{ id: 'many' }, { id: 'zero' }] },
   ]
-  let selected = 0, openedOverview = 0, activeId = null, drawerOpen = false
+  setlists = setlists.map(sl => ({ ...sl, songs: sl.songs.map(ref => ({ ...ref, title: ref.id })) }))
+  let selected = 0, openedOverview = 0, home, drawer
   const managed = []
-  const appManage = new Function('setActiveSetlistId', 'setIsSetlistDrawerOpen', `${manageCallback}; return callback`)(
-    id => { activeId = id }, open => { drawerOpen = open })
-  const props = {
-    songs, activeSongIndex: -1, onSelectSong: () => selected++, onNewSong() {}, onDeleteSong() {},
-    onOpenSetlists: () => openedOverview++, onSongMembershipChange() {}, onCreateSetlistForSong() {},
-    onManageSetlist: sl => { managed.push(sl); appManage(sl) },
+  // Render App and observe its public child props; keep the real badge UI.
+  const homeModule = require('../src/components/SongbookHomeView.tsx')
+  const drawerModule = require('../src/components/SetlistDrawer.tsx')
+  const originalDrawer = drawerModule.SetlistDrawer
+  homeModule.SongbookHomeView = props => {
+    home = props
+    return React.createElement(SongbookHomeView, {
+      ...props,
+      onSelectSong: () => selected++,
+      onOpenSetlists: () => openedOverview++,
+      onManageSetlist: sl => { managed.push(sl); props.onManageSetlist(sl) },
+    })
   }
+  drawerModule.SetlistDrawer = props => { drawer = props; return null }
+  localStorage.setItem('gtar_library_v1', JSON.stringify({ songs, setlists }))
   const root = createRoot(document.getElementById('root'))
-  const render = async () => act(async () => root.render(React.createElement(SongbookHomeView, { ...props, setlists })))
+  const App = require('../src/App.tsx').default
+  let mounted = false
+  const render = async () => act(async () => {
+    if (!mounted) {
+      root.render(React.createElement(App))
+      mounted = true
+    } else {
+      // Adopt changed membership through App's real cross-tab storage boundary.
+      const raw = JSON.stringify({ songs, setlists })
+      localStorage.setItem('gtar_library_v1', raw)
+      window.dispatchEvent(new window.StorageEvent('storage', { key: 'gtar_library_v1', newValue: raw }))
+    }
+  })
   const find = id => document.querySelector(`[data-testid="${id}"]`)
   const click = async element => { assert.ok(element); await act(async () => element.click()) }
   const portal = () => document.querySelector('[data-dropdown-portal]')
@@ -88,9 +102,9 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     assert.equal(single.getAttribute('aria-controls'), find('membership-popover-0').id)
     assert.equal(find('membership-popover-0').getAttribute('role'), 'dialog')
     await click(find('jump-setlist-stable-a'))
-    assert.equal(managed.at(-1), setlists[0], 'passes canonical object')
-    assert.equal(activeId, 'stable-a')
-    assert.equal(drawerOpen, true)
+    assert.equal(managed.at(-1), home.setlists[0], 'passes canonical object')
+    assert.equal(drawer.activeSetlistId, 'stable-a')
+    assert.equal(drawer.isOpen, true)
     assert.equal(portal(), null)
 
     const multiple = find('song-setlist-indicator-1')
@@ -99,8 +113,8 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     await click(multiple)
     expectItems(1, setlists.slice(0, 3))
     await click(find('jump-setlist-42'))
-    assert.equal(activeId, 42, 'duplicate names navigate by selected stable ID')
-    assert.equal(managed.at(-1), setlists[1])
+    assert.equal(drawer.activeSetlistId, home.setlists[1].id, 'duplicate names navigate by selected stable ID')
+    assert.equal(managed.at(-1), home.setlists[1])
     assert.equal(managed.length, 2, 'each item activation navigates once')
     await click(multiple)
     await click(document.body)
@@ -124,14 +138,23 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     assert.equal(find('song-setlist-count-1').textContent, '2')
     assert.deepEqual([...find('membership-popover-1').querySelectorAll('button')].map(button => button.textContent), ['Renamed current', 'Current third'])
     await click(find('jump-setlist-stable-c'))
-    assert.equal(activeId, 'stable-c')
-    assert.equal(managed.at(-1), setlists[2])
+    assert.equal(drawer.activeSetlistId, 'stable-c')
+    assert.equal(managed.at(-1), home.setlists[2])
     assert.equal(selected, 0, 'badge and item never launch normal song action')
     assert.equal(openedOverview, 0, 'item only opens selected manage drawer')
+    // App normalizes persisted numeric IDs to strings. Its callback must also
+    // preserve a numeric ID supplied by a child without source-level assumptions.
+    await act(async () => home.onManageSetlist(setlists[1]))
+    assert.equal(drawer.activeSetlistId, 42)
+    assert.equal(drawer.isOpen, true)
     await click(find('song-card-0'))
     assert.equal(selected, 1, 'normal card action still works')
   } finally {
     await act(async () => root.unmount())
+    homeModule.SongbookHomeView = SongbookHomeView
+    drawerModule.SetlistDrawer = originalDrawer
+    for (const timer of timers) clearTimeout(timer)
+    global.setTimeout = nativeSetTimeout
     dom.window.close()
     Object.assign(global, previous)
   }

@@ -72,7 +72,7 @@ test('B2 off: restoring the 10k file into a ~5 MB localStorage fails safely and 
 })
 
 // Codex P2 (PR #259): --out never overwrites, truncates or follows an existing path.
-test('generator --out: existing files, symlinks and dangling symlinks are never overwritten; new paths are created', () => {
+test('generator --out: existing files, symlinks and dangling symlinks are never overwritten; new paths are created', async t => {
   const fs = require('node:fs')
   const os = require('node:os')
   const path = require('node:path')
@@ -88,18 +88,28 @@ test('generator --out: existing files, symlinks and dangling symlinks are never 
     const original = Buffer.from('{"keep":"these exact bytes"}\n')
     fs.writeFileSync(existing, original)
     fs.writeFileSync(target, original)
-    fs.symlinkSync(target, link)
-    fs.symlinkSync(path.join(dir, 'missing-target.json'), dangling)
-    for (const out of [existing, link, dangling]) {
+    const checkRefused = out => {
       const result = run(out)
       assert.notEqual(result.status, 0, `nonzero exit for ${path.basename(out)}`)
       assert.match(result.stderr, /Refusing to overwrite existing path/)
     }
+    checkRefused(existing)
     assert.deepEqual(fs.readFileSync(existing), original, 'existing file bytes unchanged')
-    assert.deepEqual(fs.readFileSync(target), original, 'symlink target bytes unchanged')
-    assert.equal(fs.lstatSync(link).isSymbolicLink(), true, 'symlink kept')
-    assert.equal(fs.lstatSync(dangling).isSymbolicLink(), true, 'dangling symlink kept')
-    assert.equal(fs.existsSync(path.join(dir, 'missing-target.json')), false, 'dangling target never created')
+    await t.test('symlinks and dangling symlinks are preserved', t => {
+      try {
+        fs.symlinkSync(target, link)
+        fs.symlinkSync(path.join(dir, 'missing-target.json'), dangling)
+      } catch (error) {
+        if (!['EPERM', 'EACCES', 'ENOSYS', 'ENOTSUP'].includes(error.code)) throw error
+        t.skip(`File symlinks unavailable: ${error.code}`)
+        return
+      }
+      for (const out of [link, dangling]) checkRefused(out)
+      assert.deepEqual(fs.readFileSync(target), original, 'symlink target bytes unchanged')
+      assert.equal(fs.lstatSync(link).isSymbolicLink(), true, 'symlink kept')
+      assert.equal(fs.lstatSync(dangling).isSymbolicLink(), true, 'dangling symlink kept')
+      assert.equal(fs.existsSync(path.join(dir, 'missing-target.json')), false, 'dangling target never created')
+    })
     // A new path is created with the deterministic bytes; running again refuses and leaves it intact.
     const fresh = path.join(dir, 'nested', 'fresh.json')
     const first = run(fresh)
@@ -130,16 +140,21 @@ test('generator --out: write failure after the path is replaced leaves the repla
     t.mock.method(fs, 'unlinkSync', p => { unlinks.push(p) })
     t.mock.method(fs, 'rmSync', p => { unlinks.push(p) })
     const realWrite = fs.writeFileSync
-    // Codex repro: the fresh exclusive output is opened, then the pathname is replaced by a
-    // pre-existing sentinel, then the write fails with ENOSPC.
+    const realOpen = fs.openSync
+    // Model namespace replacement at the descriptor seam. Windows cannot rename over
+    // an open destination; the descriptor still belongs to this run's separate file.
+    const detached = path.join(dir, 'detached-output.json')
+    t.mock.method(fs, 'openSync', (file, ...args) => realOpen(file === out && args[0] === 'wx' ? detached : file, ...args))
+    // Inject ENOSPC after publishing the sentinel at the output pathname.
     t.mock.method(fs, 'writeFileSync', (target, data, ...rest) => {
       if (typeof target !== 'number') return realWrite(target, data, ...rest)
       realWrite(target, 'partial bytes')
-      fs.renameSync(sentinel, out)
+      realWrite(out, fs.readFileSync(sentinel))
       throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
     })
     assert.throws(() => gen.writeExclusive(out, '{"generated":true}'), /failed \(ENOSPC\).*not deleted/)
     assert.deepEqual(unlinks, [], 'no pathname deletion')
+    assert.equal(fs.readFileSync(detached, 'utf8'), '', 'cleanup empties only the owned descriptor')
     assert.deepEqual(fs.readFileSync(out), sentinelBytes, 'sentinel at the output path survives byte-for-byte')
     t.mock.restoreAll()
     // Plain injected failure (no replacement): the run's own output is emptied, never deleted elsewhere.

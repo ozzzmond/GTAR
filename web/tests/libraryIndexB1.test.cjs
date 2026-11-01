@@ -17,7 +17,6 @@ const index = require('../src/utils/libraryIndex.ts')
 const bodies = require('../src/utils/libraryBodyStore.ts')
 
 const V1 = api.LIBRARY_KEY, V2 = index.LIBRARY_V2_KEY, B1 = index.LIBRARY_B1_KEY
-const flush = () => new Promise(resolve => setTimeout(resolve, 10))
 const bodiesOf = lib => lib.songs.map(song => song.rawContent)
 let factory
 /** Fresh tab: empty in-memory body cache, same localStorage and IndexedDB. */
@@ -68,7 +67,7 @@ test('save keeps new bodies inline until IndexedDB confirms; the next save drops
   const edited = { ...lib, songs: lib.songs.map((s, i) => i === 0 ? { ...s, rawContent: s.rawContent + '\nnew line' } : s) }
   api.persistLibrary(edited, localStorage, { expectedRaw: api.libraryRevision() })
   assert.match(localStorage.getItem(V2), /pendingRawContent/)
-  await flush()
+  await index.confirmPendingLibraryBodies([])
   api.persistLibrary(edited, localStorage, { expectedRaw: api.libraryRevision() })
   assert.doesNotMatch(localStorage.getItem(V2), /pendingRawContent/)
   newTab(); await api.prepareLibraryStorage(localStorage)
@@ -78,12 +77,15 @@ test('save keeps new bodies inline until IndexedDB confirms; the next save drops
 test('crash between body and index write: inline copy restores the edit on reload', async () => {
   const lib = seed()
   await api.enableLibraryIndex(localStorage)
-  index.setLibraryBodyBackend({ load: async () => new Map(), store: () => new Promise(() => {}) }) // never confirms
+  let releaseWrite
+  index.setLibraryBodyBackend({ load: async () => new Map(), store: () => new Promise(resolve => { releaseWrite = () => resolve(new Map()) }) }) // pending through reload
   const edited = { ...lib, songs: lib.songs.map((s, i) => i === 1 ? { ...s, rawContent: 'crash-safe edit' } : s) }
   api.persistLibrary(edited, localStorage, { expectedRaw: api.libraryRevision() })
   newTab() // "reload"
   assert.deepEqual(await api.prepareLibraryStorage(localStorage), { indexed: true, fellBack: false })
   assert.equal(api.readPersistedLibrary().songs[1].rawContent, 'crash-safe edit')
+  releaseWrite() // release the serialized queue after the simulated crash/reload
+  await index.confirmPendingLibraryBodies([])
 })
 
 test('IndexedDB write failure: save still succeeds with the body inline and logs a warning', async () => {
@@ -92,7 +94,7 @@ test('IndexedDB write failure: save still succeeds with the body inline and logs
   index.setLibraryBodyBackend({ load: async () => new Map(), store: async () => { throw new DOMException('full', 'QuotaExceededError') } })
   const edited = { ...lib, songs: lib.songs.map((s, i) => i === 2 ? { ...s, rawContent: 'kept inline' } : s) }
   api.persistLibrary(edited, localStorage, { expectedRaw: api.libraryRevision() })
-  await flush()
+  await index.confirmPendingLibraryBodies([])
   assert.match(localStorage.getItem(V2), /kept inline/)
   assert.equal(api.readPersistedLibrary().songs[2].rawContent, 'kept inline')
 })
@@ -135,7 +137,7 @@ test('cross-tab: a tab missing new bodies loads them from IndexedDB before adopt
   // tab A writes an edit whose body tab B has never seen; simulate with tab B's cache cleared afterwards
   const edited = { ...lib, songs: lib.songs.map((s, i) => i === 0 ? { ...s, rawContent: 'from tab A' } : s) }
   api.persistLibrary(edited, localStorage, { expectedRaw: api.libraryRevision() })
-  await flush()
+  await index.confirmPendingLibraryBodies([])
   api.persistLibrary(edited, localStorage, { expectedRaw: api.libraryRevision() }) // now hash-only
   const externalRaw = api.libraryRevision()
   newTab()
