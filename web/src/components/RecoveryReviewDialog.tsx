@@ -98,7 +98,12 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
   async function exportSources() {
     try {
       const data = recoveryExportData()
-      for (const scope of b2RecoveryScopes()) data[`gtar_library_b2::${scope}`] = JSON.stringify(await exportB2Partition(scope))
+      for (const scope of b2RecoveryScopes()) {
+        try { data[`gtar_library_b2::${scope}`] = JSON.stringify(await exportB2Partition(scope)) }
+        catch (error) {
+          data[`gtar_library_b2_error::${scope}`] = JSON.stringify({ scope, message: error instanceof Error ? error.message : String(error) })
+        }
+      }
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
       const link = document.createElement('a'); link.href = url; link.download = 'GTAR-storage-recovery.json'; link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)

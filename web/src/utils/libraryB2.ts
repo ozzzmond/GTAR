@@ -1215,7 +1215,8 @@ function activate(deps: B2Deps, db: IDBDatabase, identity: PartitionIdentity, lo
     if (storage.getItem(b2HeadKey(identity.scope)) !== token) throw new B2LoadError('load-failed', 'Head token could not be verified')
   }
   state = install(storage, deps.factory!, db, identity, loaded, token)
-  storage.setItem('gtar_library_b2_last_used::' + identity.scope, String(Date.now()))
+  try { storage.setItem('gtar_library_b2_last_used::' + identity.scope, String(Date.now())) }
+  catch (error) { appLogger.warn('LibraryB2', 'Could not record last-used partition; device storage remains open', error instanceof Error ? error.message : String(error)) }
   currentHold = null
   legacyFallback = false
   setupChannel()

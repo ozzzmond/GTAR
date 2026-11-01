@@ -83,3 +83,20 @@ test('PR-A 4 recovery: most recently used of two B2 partitions opens; both remai
   assert.equal((await tab.b2.exportB2Partition('device', storage, factory)).songs.length, 2)
   assert.equal((await tab.b2.exportB2Partition(secondScope, storage, factory)).songs.length, 4)
 })
+
+test('last-used quota failure does not close the active B2 database or prevent saving', async () => {
+  const storage = h.freshStorage(), factory = new h.Factory(), tab = h.newTab()
+  tab.sj.persistLibrary(h.library(2, 0), storage)
+  tab.sj.enableLibraryB2(storage)
+  const setItem = storage.setItem.bind(storage)
+  storage.setItem = (key, value) => {
+    if (key.startsWith('gtar_library_b2_last_used::')) throw new DOMException('Storage full', 'QuotaExceededError')
+    setItem(key, value)
+  }
+  assert.equal((await tab.sj.prepareLibraryB2(storage, { factory })).active, true)
+  const lib = tab.sj.readPersistedLibrary(storage)
+  tab.sj.persistLibrary({ ...lib, songs: lib.songs.map((s, i) => i ? s : { ...s, title: 'Saved after quota' }) }, storage,
+    { expectedRaw: tab.sj.libraryRevision(storage) })
+  await tab.b2.flushB2()
+  assert.equal((await tab.b2.exportB2Partition('device', storage, factory)).songs[0].title, 'Saved after quota')
+})
