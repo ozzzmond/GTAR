@@ -10,7 +10,7 @@ const React = require('react'), { act } = React
 const { createRoot } = require('react-dom/client')
 const { JSDOM } = require('jsdom')
 
-async function fallback(moment, run) {
+async function fallback(mode, run) {
   for (const key of Object.keys(require.cache)) if (key.includes('/web/src/')) delete require.cache[key]
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar.example/' })
   const prior = Object.fromEntries(['window', 'document', 'localStorage', 'sessionStorage', 'fetch', 'IS_REACT_ACT_ENVIRONMENT'].map(k => [k, global[k]]))
@@ -20,17 +20,28 @@ async function fallback(moment, run) {
   const library = '{"songs":[{"id":"local","title":"Device song"}],"setlists":[]}'
   localStorage.setItem('gtar_library_v1', library)
   localStorage.setItem('gtar_library_owner_v1', 'owner bytes')
-  let callback, renders = 0, requests = 0
-  window.google = { accounts: { id: {
+  let callback, renders = 0, requests = 0, sdkRequests = 0
+  const google = { accounts: { id: {
     initialize(config) { callback = config.callback },
-    prompt(notify) { notify({ isNotDisplayed: () => moment === 'cooldown', getNotDisplayedReason: () => 'suppressed_by_user',
-      isSkippedMoment: () => moment === 'skipped', getSkippedReason: () => 'auto_cancel', isDismissedMoment: () => false }) },
+    prompt() { assert.fail('Explicit sign-in must not call One Tap prompt') },
     renderButton(container) {
       renders++
       const button = document.createElement('button'); button.textContent = 'Official Google button'
       button.onclick = () => callback({ credential: 'test-credential' }); container.append(button)
     }, cancel() {},
   } } }
+  if (mode === 'loaded') window.google = google
+  const append = document.head.appendChild.bind(document.head)
+  document.head.appendChild = element => {
+    const result = append(element)
+    if (element.tagName === 'SCRIPT') {
+      assert.equal(element.src, 'https://accounts.google.com/gsi/client')
+      sdkRequests++
+      window.google = google
+      element.onload()
+    }
+    return result
+  }
   global.fetch = async (url, options) => {
     requests++; assert.equal(url, '/api/auth/session'); assert.equal(options.method, 'POST')
     return new Response(JSON.stringify({ success: true, sessionToken: 'test-session', user: {
@@ -46,10 +57,11 @@ async function fallback(moment, run) {
   const root = createRoot(document.getElementById('root'))
   try {
     await act(async () => root.render(React.createElement(AuthGate, { deviceOwned: true }, React.createElement(Songbook))))
-    assert.equal(requests, 0); assert.equal(renders, 0)
+    assert.equal(requests, 0); assert.equal(renders, 0); assert.equal(sdkRequests, 0)
     await act(async () => auth.signIn())
-    assert.ok(document.querySelector('dialog[open]'), 'fallback dialog opens')
+    assert.ok(document.querySelector('dialog[open]'), 'sign-in dialog opens')
     assert.equal(renders, 1, 'GIS renderButton renders the official button')
+    assert.equal(sdkRequests, mode === 'loaded' ? 0 : 1)
     assert.match(document.querySelector('main').textContent, /Device song/)
     await run({ auth: () => auth, requests: () => requests, credential: () => callback({ credential: 'late-credential' }) })
     assert.equal(localStorage.getItem('gtar_library_v1'), library)
@@ -57,8 +69,8 @@ async function fallback(moment, run) {
   } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
 }
 
-for (const moment of ['cooldown', 'skipped']) test(`deviceOwned One Tap ${moment}: official button signs in without replacing library`, async () => {
-  await fallback(moment, async r => {
+for (const mode of ['loaded', 'first-load']) test(`deviceOwned explicit sign-in ${mode}: official button signs in without replacing library`, async () => {
+  await fallback(mode, async r => {
     await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Official Google button').click())
     assert.equal(r.auth().session?.user.id, 'test-user')
     assert.equal(document.querySelector('dialog'), null, 'dialog closes after sign-in')
@@ -66,8 +78,8 @@ for (const moment of ['cooldown', 'skipped']) test(`deviceOwned One Tap ${moment
   })
 })
 
-test('deviceOwned fallback cancel stays signed out and ignores late credentials', async () => {
-  await fallback('cooldown', async r => {
+test('deviceOwned sign-in cancel stays signed out and ignores late credentials', async () => {
+  await fallback('first-load', async r => {
     await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click())
     assert.equal(document.querySelector('dialog'), null)
     await act(async () => r.credential())

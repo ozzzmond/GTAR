@@ -5,7 +5,7 @@ const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
 
-test('PR-A 5: signed-out startup renders songbook with auth context and no network requests', async () => {
+test('signed-out startup leaves SDK unloaded and makes zero Google/auth requests', async () => {
   h.freshStorage()
   global.sessionStorage = h.dom.window.sessionStorage
   global.IS_REACT_ACT_ENVIRONMENT = true
@@ -25,6 +25,7 @@ test('PR-A 5: signed-out startup renders songbook with auth context and no netwo
     assert.equal(el.textContent, "Songbook")
     assert.equal(document.querySelector('script[src*="accounts.google"]'), null)
     assert.equal(requests, 0)
+    assert.equal(el.querySelector('dialog'), null, 'sign-in dialog requires an explicit action')
   } finally { await act(async () => root.unmount()); el.remove(); global.fetch = saved }
 })
 
