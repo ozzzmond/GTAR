@@ -44,10 +44,20 @@
 - If a task doesn't clearly say which one it is, ask before proceeding —
   do not default to release/deployment permissions.
 
+## Task setup
+- Always `git fetch origin dev` and branch from `origin/dev`.
+- PRs target `dev` only.
+- Report base SHA and head SHA.
+- Create a GitHub issue first only when the task authorizes it.
+
 ## Agent Skills (mattpocock/skills)
-- Source: github.com/mattpocock/skills, installed as an editable copy pinned
-  to upstream commit `4ae2317ddb22`. Do not auto-update; updates go through
-  a normal PR to dev.
+- Source: github.com/mattpocock/skills, vendored byte-for-byte at upstream
+  commit `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d`. Do not edit or
+  auto-update; updates go through a normal PR to dev.
+- Location: skills live in the repo at `.agents/skills/<name>/SKILL.md`
+  (see `.agents/skills/README.md`).
+- If a named skill is missing in your environment, do not block: follow its
+  one-line description below and say so in your report.
 - Precedence: this file, gtar_standing_protocol_v1.md, and
   RELEASE_WORKFLOW_README.md override any skill. If a skill step says to
   commit, merge, tag, push, open a tracker issue, or spawn subagents, skip
