@@ -1,8 +1,11 @@
+import { useOptionalGoogleAuth } from './authContext'
 import { useEffect, useState } from 'react'
 import { getStoredSessionStatus } from './googleAuth'
 import { listPublishedSetlists, publicationError, type PublishedSetlist } from './sharedSetlistPublishing'
 
 export function useSharedSetlists(active = true, offset = 0) {
+  const auth = useOptionalGoogleAuth()
+  active = active && (!auth || (!!auth.session && auth.accessStatus === 'active'))
   const { session, isExpired } = getStoredSessionStatus()
   const identity = !isExpired && session ? `${session.user.id}:${session.sessionToken || session.idToken || session.token}` : ''
   const [generation, setGeneration] = useState(0)

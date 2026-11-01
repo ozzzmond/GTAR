@@ -30,7 +30,7 @@ beforeEach(() => {
   global.fetch = async (url, options = {}) => { calls.push({ url, method: options.method ?? 'GET', body: options.body ? JSON.parse(options.body) : undefined, headers: options.headers }); return responder(url, options) }
 })
 afterEach(async () => { if (root) { await act(async () => root.unmount()); root = null } dom.window.close() })
-async function mount(element) { root = createRoot(document.getElementById('root')); await act(async () => root.render(element)) }
+async function mount(element) { root = createRoot(document.getElementById('root')); await act(async () => root.render(React.createElement(require('../src/utils/authContext.ts').AuthContext.Provider,{value:{session:{user:{id:'admin-1'}},accessStatus:'active'}},element))) }
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text)
 async function click(el) { assert.ok(el, 'control exists'); await act(async () => { el.click() }); await act(async () => {}) }
 

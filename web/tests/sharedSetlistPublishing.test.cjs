@@ -19,9 +19,10 @@ const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
 const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
 const { CatalogApiError } = require('../src/types/sharedCatalog.ts')
 const { PublishSetlistModal } = require('../src/components/PublishSetlistModal.tsx')
-const { SharedCatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
+const { SharedCatalogBrowser: CatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
 const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { AuthContext } = require('../src/utils/authContext.ts')
+const SharedCatalogBrowser = props => React.createElement(AuthContext.Provider,{value:{session:JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)),accessStatus:'active'}},React.createElement(CatalogBrowser,props))
 const { sharedCatalogService } = require('../src/utils/sharedCatalogService.ts')
 
 let dom, root, library, cloud, calls, version, responder, publicationKeyTask

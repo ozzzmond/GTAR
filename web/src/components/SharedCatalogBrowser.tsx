@@ -55,7 +55,30 @@ export interface SharedCatalogBrowserProps {
   focusSongId?: string | null
 }
 
-export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
+/** Mount catalog state only for an active account; unmount clears previews and cached rows immediately. */
+export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = (props) => {
+  const auth = useOptionalGoogleAuth()
+  // AuthGate masks unapproved sessions; NONE is its genuinely signed-out role.
+  if (auth?.accessStatus === 'denied' || (auth?.accessStatus === 'pending' && auth.role !== 'NONE')) return (
+    <div data-testid="catalog-auth-required-state" className="p-10 text-center rounded-2xl border border-app-border bg-app-surface space-y-3">
+      <Lock className="w-8 h-8 mx-auto text-app-accent" />
+      <div className="text-base font-bold text-app-heading">{auth.accessStatus === 'denied' ? 'Access Denied' : 'Access Approval Pending'}</div>
+      <p className="text-xs text-app-muted">{auth.accessStatus === 'denied' ? 'Access for this Google account has been denied by an administrator. Contact the application owner if you believe this is in error.' : 'An administrator must approve your account before you can use the Shared Catalog.'}</p>
+    </div>
+  )
+  if (!auth?.session) return (
+    <div data-testid="catalog-sign-in-card" className="p-10 text-center rounded-2xl border border-app-border bg-app-surface space-y-3">
+      <Lock className="w-8 h-8 mx-auto text-app-accent" />
+      <h2 className="text-base font-bold text-app-heading">Sign in to use the Shared Catalog</h2>
+      <p className="text-xs text-app-muted">Browse, import and publish shared songs and setlists.</p>
+      <button type="button" onClick={() => void auth?.signIn()} className="min-h-11 px-4 py-2 rounded-xl bg-app-action text-app-on-action text-xs font-bold font-mono cursor-pointer">Sign in with Google</button>
+    </div>
+  )
+  if (auth.accessStatus !== 'active') return null
+  return <ActiveSharedCatalogBrowser key={auth.session.user.id} {...props} />
+}
+
+const ActiveSharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
   personalSongs = [],
   personalSetlists = [],
   onSongUnpublished,

@@ -204,7 +204,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
   const userRole = auth?.session?.role || auth?.session?.user.role
-  const isUserApproved = auth?.accessStatus === 'active' || hasServerApproval(auth?.session)
+  const isUserApproved = auth?.accessStatus === 'active' && !!auth.session
   const canPublishSetlist = (userRole === 'admin' || userRole === 'member') && isUserApproved
   const setlistCapability = useSharedSetlists(canPublishSetlist)
   const setlistStatusMap = useSetlistPublicationStatuses({
@@ -215,7 +215,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   })
   const storedAuthStatus = getStoredSessionStatus()
   const isAuthActive = auth
-    ? !!auth.session && auth.accessStatus === 'active'
+    ? auth.accessStatus === 'active' && !!auth.session
     : !storedAuthStatus.isExpired && hasServerApproval(storedAuthStatus.session)
 
   const onUpdateSongRef = useRef(onUpdateSong)
@@ -267,6 +267,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     const accountId = auth?.session?.user?.id || auth?.session?.user?.email || null
     sharedCatalogService.setAccount(accountId)
     let active = true
+    if (!isAuthActive) return
     sharedCatalogService.getConfirmedActiveCatalogIds().then((ids) => {
       if (active) setLocalConfirmedCatalogIds(ids)
     }).catch((err) => {
@@ -275,7 +276,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return () => {
       active = false
     }
-  }, [auth?.session?.user?.id, auth?.session?.user?.email])
+  }, [auth?.session?.user?.id, auth?.session?.user?.email, isAuthActive])
 
   // Publishing state for eligible personal songs
   const [publishingSong, setPublishingSong] = useState<ActiveSongState | null>(null)
@@ -904,7 +905,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleMainShareSetlist = () => {
-    if (activeSetlists.length === 0) return
+    if (!isAuthActive || activeSetlists.length === 0) return
     if (activeSetlists.length === 1) {
       onShareSetlist?.(activeSetlists[0])
     } else {
@@ -913,6 +914,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleResolvePastedShareLink = async () => {
+    if (!isAuthActive) return
     setImportLinkError(null)
     const extracted = extractShareToken(pastedShareLink)
     if (!extracted.isValid) {
@@ -1063,6 +1065,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </button>
             </div>
 
+            {!isAuthActive && <p className="text-xs text-app-muted">{auth?.accessStatus === 'denied' ? 'Access denied' : auth?.accessStatus === 'pending' && auth.role !== 'NONE' ? 'Your account is pending approval.' : 'Sign in to use the Shared Catalog'}</p>}
             {/* Primary Action: Paste GTAR Share Link */}
             <div className="space-y-2 mb-5">
               <label htmlFor="paste-share-link-input" className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
@@ -1076,6 +1079,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <input
                   id="paste-share-link-input"
                   data-testid="paste-share-link-input"
+                  disabled={!isAuthActive}
                   type="text"
                   placeholder="e.g. https://.../?share=0123456789abcdef"
                   value={pastedShareLink}
@@ -1088,7 +1092,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <button
                   type="button"
                   data-testid="load-share-link-btn"
-                  disabled={!pastedShareLink.trim() || isResolvingLink}
+                  disabled={!isAuthActive || !pastedShareLink.trim() || isResolvingLink}
                   onClick={handleResolvePastedShareLink}
                   className="px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
                 >
@@ -1661,8 +1665,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : []),
               ],
               onSortChange: (value) => setSetlistSortBy(value as SetlistSortOption),
-              onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
-              onShareSetlist,
+              onShareAll: isAuthActive && activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
+              onShareSetlist: isAuthActive ? onShareSetlist : undefined,
               onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
               onPublishSetlist: onPublishSetlist && canPublishSetlist && setlistCapability.enabled ? onPublishSetlist : undefined,
               publishLabel: (sl) => {
@@ -1771,7 +1775,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               ) : (
                 <div data-testid="setlist-toolbar" className="flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-full">
                   {/* #149 layout: QR → Manage → ⋯ (New Setlist, Import) → Hide */}
-                  <button
+                  {isAuthActive && (<button
                     type="button"
                     data-testid="main-share-setlist-btn"
                     disabled={activeSetlists.length === 0}
@@ -1780,7 +1784,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
                   >
                     <QrCode className="w-3.5 h-3.5" />
-                  </button>
+                  </button>)}
                   <button
                     type="button"
                     data-testid="toggle-setlist-selection-mode"
@@ -2017,7 +2021,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <span>Publish to Shared</span>
                           </button>
                         )}
-                        {onShareSetlist && (
+                        {onShareSetlist && isAuthActive && (
                           <button
                             type="button"
                             data-testid={`menu-share-${sl.id}`}
@@ -2158,17 +2162,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 >
                   Select None
                 </button>
-                <button
+                {isAuthActive && (<button
                   type="button"
                   data-testid="bulk-publish-to-shared"
                   disabled={selectedSongIds.size === 0 || isSubmittingPublish}
-                  aria-disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
+                  aria-disabled={selectedSongIds.size === 0 || isSubmittingPublish}
                   onClick={handleBulkPublishSongs}
                   className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
                   <span>Publish to Shared</span>
-                </button>
+                </button>)}
                 <button
                   type="button"
                   data-testid="bulk-add-to-setlist"
@@ -2723,7 +2727,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <ListPlus className="ui-action-text ui-action-text w-3.5 h-3.5 text-app-action" />
                             <span>Add to Setlist</span>
                           </button>
-                          <button
+                          {isAuthActive && (<button
                             type="button"
                             data-testid={`menu-publish-song-${originalIdx}`}
                             aria-label={`Publish ${song.title} to Shared Catalog`}
@@ -2736,7 +2740,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           >
                             <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
                             <span>Publish to Shared</span>
-                          </button>
+                          </button>)}
                           <button
                             type="button"
                             data-testid={`menu-delete-song-${originalIdx}`}

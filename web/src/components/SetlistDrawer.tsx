@@ -1,6 +1,6 @@
 import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
-import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
+import { getStoredSessionStatus } from '../utils/googleAuth'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { resolveSetlistSong } from '../utils/setlistSongs'
 import React, { useState, useEffect, useMemo } from 'react'
@@ -146,7 +146,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
   const auth = useOptionalGoogleAuth()
   const userRole = auth?.session?.role || auth?.session?.user.role
-  const isUserApproved = auth?.accessStatus === 'active' || hasServerApproval(auth?.session)
+  const isUserApproved = auth?.accessStatus === 'active' && !!auth.session
   const canPublishSetlist = (userRole === 'admin' || userRole === 'member') && isUserApproved
   const setlistCapability = useSharedSetlists(isOpen && canPublishSetlist)
   const setlistStatusMap = useSetlistPublicationStatuses({
@@ -585,7 +585,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               <UploadCloud className="w-4 h-4 text-app-action" />
                             </button>
                           )}
-                          {onShareSetlist && (
+                          {onShareSetlist && isUserApproved && (
                             <button
                               type="button"
                               onClick={(e) => {

@@ -630,7 +630,7 @@ function LibraryApp() {
         : (auth.session ? (auth.session.sessionToken || auth.session.idToken || auth.session.token) : null)
 
       // If unauthenticated or session expired, retain pending token in sessionStorage for restoration
-      if (!authToken || auth.isExpired) {
+      if (!authToken || auth.isExpired || !authContext?.session || authContext.accessStatus !== 'active') {
         try {
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.setItem('gtar_pending_share_token', tokenToFetch)
@@ -2059,14 +2059,14 @@ function LibraryApp() {
         onClose={() => setIsTvPresentationModalOpen(false)}
       />
 
-      {publishingSetlistId !== null && (
+      {publishingSetlistId !== null && authContext?.session && authContext.accessStatus === 'active' && (
         <PublishSetlistModal sourceId={publishingSetlistId}
           getLocal={() => publicationStateRef.current.getLocal()}
           blocked={() => publicationStateRef.current.blocked()}
           onClose={() => setPublishingSetlistId(null)} />
       )}
       {/* Share Setlist QR Code Modal */}
-      {sharingSetlist && (
+      {sharingSetlist && authContext?.session && authContext.accessStatus === 'active' && (
         <ShareSetlistModal
           setlist={sharingSetlist}
           allSongs={[...songs, ...deletedSongs]}
@@ -2075,7 +2075,7 @@ function LibraryApp() {
       )}
 
       {/* Import Shared Setlist Preview Modal */}
-      {incomingSharedSetlist && (
+      {incomingSharedSetlist && authContext?.session && authContext.accessStatus === 'active' && (
         <ImportSharedSetlistModal
           sharedSetlist={incomingSharedSetlist}
           onImport={handleImportSharedSetlist}
