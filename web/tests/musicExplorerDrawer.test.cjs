@@ -143,3 +143,27 @@ test('EXPLORER_DRAWER_WIRING: hamburger opens explorer mode; nav lives only in t
   assert.doesNotMatch(songbookSource, /explorer-sidebar/)
   assert.doesNotMatch(appSource, /explorer-sidebar/)
 })
+
+
+test('EXPLORER_DRAWER_6: Tags are nested under Songbook and master song counts pluralize', async () => {
+  await mount(async ({ click, rerender, calls }) => {
+    const allSongs = document.querySelector('[data-testid="explorer-nav-all-songs"]')
+    const songbook = allSongs.closest('section')
+    const tags = songbook.querySelector('[role="group"][aria-label="Tags"]')
+    assert.ok(tags, 'Tags subgroup belongs to the Songbook section')
+    assert.match(songbook.textContent, /3 master songs/)
+    assert.match(tags.textContent, /Tags \(4\)/)
+    assert.ok(tags.contains(document.querySelector('[data-testid="explorer-nav-tag-Worship"]')))
+    assert.equal(allSongs.tagName, 'BUTTON')
+    assert.equal(document.querySelector('h2'), null, 'Explorer header removed')
+    await click(document.querySelector('[aria-label="Close Music Explorer"]'))
+    assert.equal(calls.close, 1)
+    await click(allSongs)
+    assert.equal(calls.close, 2, 'target selection closes the drawer')
+    await click([...songbook.querySelectorAll('button')].find(button => button.textContent === 'Songbook'))
+    assert.equal(document.querySelector('[role="group"][aria-label="Tags"]'), null, 'collapsing Songbook hides Tags')
+    await rerender({ songs: [songs[0]] })
+    assert.ok([...document.querySelectorAll('span')].some(span => span.textContent.trim() === '1 master song'))
+    assert.doesNotMatch(document.querySelector('nav').textContent, /1 master songs/)
+  })
+})

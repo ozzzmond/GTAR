@@ -339,7 +339,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
 
       {/* Drawer Container (Sliding smoothly from Left) */}
       <div
-        className="relative w-80 sm:w-96 max-w-[88vw] h-full bg-app-surface border-r border-app-border shadow-2xl flex flex-col z-50 animate-in slide-in-from-left duration-200"
+        className={`relative h-full border-r border-app-border shadow-2xl flex flex-col z-50 animate-in slide-in-from-left duration-200 ${mode === 'explorer' ? 'w-72 max-w-[80vw] bg-app-toolbar' : 'w-80 sm:w-96 max-w-[88vw] bg-app-surface'}`}
         style={drawerStyle}
         onTouchStart={drawerTouchHandlers?.onTouchStart}
         onTouchMove={drawerTouchHandlers?.onTouchMove}
@@ -347,7 +347,17 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
         onTouchCancel={drawerTouchHandlers?.onTouchCancel}
         onClick={() => setConfirmDeleteId(null)}
       >
-        {/* Drawer Header */}
+        {mode === 'explorer' ? (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close Music Explorer"
+            className="m-1 flex min-h-9 min-w-9 self-end items-center justify-center rounded-lg text-app-muted hover:bg-app-surface/60 hover:text-app-heading cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : (
+        /* Drawer Header */
         <div className="p-4 border-b border-app-border bg-app-base flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="ui-section-icon w-8 h-8 rounded-lg bg-app-surface border border-app-action/40 flex items-center justify-center text-app-action">
@@ -356,18 +366,16 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-app-heading">
-                  {mode === 'explorer' ? 'Music Explorer' : drawerTab === 'songbook' ? 'Songbook Library' : 'Song Setlists'}
+                  {drawerTab === 'songbook' ? 'Songbook Library' : 'Song Setlists'}
                 </h2>
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-action/20 text-app-action border border-app-action/30">
-                  {mode === 'explorer'
-                    ? `${songs.length} ${songs.length === 1 ? 'Song' : 'Songs'}`
-                    : drawerTab === 'songbook'
+                  {drawerTab === 'songbook'
                     ? `${songs.length} ${songs.length === 1 ? 'Song' : 'Songs'}`
                     : `${activeSetlists.length} ${activeSetlists.length === 1 ? 'Setlist' : 'Setlists'}`}
                 </span>
               </div>
               <p className="text-[10px] font-mono text-app-muted">
-                {mode === 'explorer' ? 'Songbook, Tags & Setlists' : 'Live Stage & Editor Switcher'}
+                Live Stage &amp; Editor Switcher
               </p>
             </div>
           </div>
@@ -382,6 +390,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
           </button>
         </div>
 
+        )}
+
         {mode === 'explorer' ? (
           /* Music Explorer: the canonical hamburger navigation replaces the tab-based content */
           <div className="flex-1 overflow-y-auto" data-testid="music-explorer-drawer">
@@ -389,7 +399,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
               songs={songs}
               setlists={activeSetlists}
               currentSelection={explorerSelection}
-              onSelect={(target) => { onExplorerSelect?.(target) }}
+              onSelect={(target) => { onExplorerSelect?.(target); onClose() }}
               onNewSong={() => { onNewSong(); onClose() }}
               onNewSetlist={() => { onNewSetlist?.(); onClose() }}
               onOpenSources={onOpenSources}
