@@ -144,28 +144,14 @@ export function readSessionUserId(storage: Pick<Storage, 'getItem'>): string | n
 export function currentEnv(): string {
   try { return typeof location !== 'undefined' && location.host ? location.host : 'unknown' } catch { return 'unknown' }
 }
-const sameUser = (a: string | null, b: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
 
-/**
- * Which partition this device opens. The legacy (v1/B1) library belongs to its verified owner; it
- * is migrated only into that owner's partition, or into `device` when it was never linked.
- * Another account gets its own (initially empty) partition. Ownership is never inferred.
- */
+/** Ownership metadata identifies the legacy partition; authentication never gates device access. */
 export interface PartitionChoice { kind: 'device' | 'account'; userId: string | null; legacy: boolean; blocked: boolean }
 export function resolvePartition(storage: Pick<Storage, 'getItem'>, env = currentEnv()): PartitionChoice {
-  // An unreadable storage throws here: callers fail closed with the storage error itself.
-  const ownerRaw = storage.getItem(OWNER_KEY)
   const owner = readStoredOwner(storage)
-  const session = readSessionUserId(storage)
-  // #258 F5: an owner record that cannot be read, or that names another environment, is an unknown
-  // owner: the earlier library is opened for nobody (it stays on the device unchanged).
-  if (ownerRaw !== null && (!owner || owner.env !== env)) {
-    return session ? { kind: 'account', userId: session, legacy: false, blocked: false } : { kind: 'device', userId: null, legacy: false, blocked: true }
-  }
-  if (!owner) return { kind: 'device', userId: null, legacy: true, blocked: false } // never linked: the device library
-  if (!session) return { kind: 'account', userId: owner.userId, legacy: false, blocked: true } // signed out: owner unknown
-  if (sameUser(owner.userId, session)) return { kind: 'account', userId: owner.userId, legacy: true, blocked: false }
-  return { kind: 'account', userId: session, legacy: false, blocked: false }
+  return owner && owner.env === env
+    ? { kind: 'account', userId: owner.userId, legacy: true, blocked: false }
+    : { kind: 'device', userId: null, legacy: true, blocked: false }
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -401,26 +387,15 @@ function setHold(storage: Storage, hold: B2Hold): void {
   notify('gtar-library-b2-hold')
 }
 
-/**
- * #258 F5 + legacy isolation: the earlier (v1/B1) library is origin-wide, so with B2 on, off or
- * unavailable it opens only for its verified owner (or, never linked, for this device). Another
- * account, a signed-out session or an unreadable / other-environment owner record: closed.
- * Nothing is relabelled, moved, copied or cleared; the owner reopens it by signing in.
- */
+/** Local library access belongs to this device, including after sign-out. */
 export function legacyAccessBlocked(storage: Pick<Storage, 'getItem'>): boolean {
-  if (b2Active(storage)) return false
-  const where = resolvePartition(storage)
-  // Signed out, another account, or an owner record that cannot be verified: closed (B2 on or off).
-  return where.blocked || !where.legacy
+  void storage
+  return false
 }
-/**
- * App startup: the earlier library is shown only to its verified owner (or, never linked, on this
- * device). Stricter than legacyAccessBlocked: a signed-out page with an owned library shows nothing.
- */
+/** Startup always opens the device library. Owner keys remain untouched. */
 export function libraryClosedForSignIn(storage: Pick<Storage, 'getItem'>): boolean {
-  if (b2Active(storage)) return false
-  const where = resolvePartition(storage)
-  return where.blocked || !where.legacy
+  void storage
+  return false
 }
 /**
  * #258 F1: with B2 enabled the legacy library is frozen. Only a tab that prepared B2 and fell back to
@@ -534,12 +509,9 @@ function rememberInputs(s: State, d: Diff): void {
   for (const [kind, key, input] of d.verified) (kind === 'song' ? s.inputSongs : s.inputSetlists).set(key, input)
 }
 
-/** Throws unless the signed-in account still maps to the open partition (stale work fails closed). */
-/** The signed-in account still maps to the open partition (#258 R1: signed out / unknown owner does not). */
+/** A replaced in-memory partition cannot accept stale work; sign-in does not replace it. */
 function partitionIsCurrent(s: State): boolean {
-  const now = resolvePartition(s.storage, s.identity.env)
-  return !now.blocked && now.kind === s.identity.kind && now.legacy === s.identity.legacy &&
-    (now.kind === 'device' ? now.userId === null : sameUser(now.userId, s.identity.userId))
+  return state === s
 }
 function assertPartition(s: State): void {
   if (!partitionIsCurrent(s)) throw new LibraryPartitionError()
@@ -1038,6 +1010,31 @@ async function readSourceSync(db: IDBDatabase): Promise<SourceSyncRecord | null>
   return record && await sealedOk(record, true) ? record : null
 }
 
+/** Existing partitions remain independent recovery copies. Never creates or merges records. */
+export function b2RecoveryScopes(storage: Storage = localStorage): string[] {
+  const scopes: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i)
+    if (key?.startsWith(B2_HEAD_PREFIX)) scopes.push(key.slice(B2_HEAD_PREFIX.length))
+  }
+  return scopes.sort((a, b) => Number(storage.getItem('gtar_library_b2_last_used::' + b) ?? 0) - Number(storage.getItem('gtar_library_b2_last_used::' + a) ?? 0) || a.localeCompare(b))
+}
+async function storedPartitionIdentity(factory: IDBFactory, scope: string): Promise<PartitionIdentity> {
+  const db = await openB2Database(factory, scope)
+  try {
+    const owner = await request(db.transaction(['meta'], 'readonly').objectStore('meta').get('owner')) as OwnerRecord & Record<string, unknown>
+    if (!owner || !await sealedOk(owner, true) || owner.scope !== scope) throw new Error('Unreadable recovery partition owner')
+    return { kind: owner.kind, userId: owner.userId, env: owner.env, scope, legacy: owner.legacy }
+  } finally { db.close() }
+}
+export async function exportB2Partition(scope: string, storage: Storage = localStorage, factory: IDBFactory = indexedDB): Promise<SyncLibrary> {
+  if (!b2RecoveryScopes(storage).includes(scope)) throw new Error('Unknown recovery partition')
+  const identity = await storedPartitionIdentity(factory, scope)
+  const db = await openB2Database(factory, scope)
+  try { return libraryOf(await loadPartition(db, { identity, receipt: true, verifyBodies: true })) }
+  finally { db.close() }
+}
+
 /**
  * Startup. With B2 enabled (and no hold for this partition): open this account's partition, migrate
  * the legacy library into it when it has none (non-destructive, verified, receipt, then switch),
@@ -1052,7 +1049,24 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
   const env = deps.env ?? currentEnv()
   const where = resolvePartition(storage, env)
   if (where.blocked) { legacyFallback = false; currentHold = null; return result({ blocked: true }) }
-  const identity: PartitionIdentity = { kind: where.kind, userId: where.userId, env, scope: await partitionScope(where.kind, where.userId, env), legacy: where.legacy }
+  const scopes = b2RecoveryScopes(storage)
+  if (scopes.length > 1 && deps.factory) {
+    const times = new Map<string, number>()
+    for (const scope of scopes) {
+      const explicit = storage.getItem('gtar_library_b2_last_used::' + scope)
+      const db = await openB2Database(deps.factory, scope)
+      try {
+        const head = await request(db.transaction(['meta'], 'readonly').objectStore('meta').get('head')) as HeadRecord | undefined
+        times.set(scope, explicit === null ? head?.updatedAt ?? 0 : Number(explicit))
+      } finally { db.close() }
+    }
+    scopes.sort((a, b) => times.get(b)! - times.get(a)! || a.localeCompare(b))
+  }
+  let identity: PartitionIdentity = { kind: where.kind, userId: where.userId, env, scope: await partitionScope(where.kind, where.userId, env), legacy: where.legacy }
+  if (scopes.length && deps.factory) {
+    try { identity = await storedPartitionIdentity(deps.factory, scopes[0]) }
+    catch { /* Normal preparation below diagnoses an incomplete or corrupt partition as a hold. */ }
+  }
   if (state) {
     if (state.identity.scope === identity.scope && state.storage === storage) return result({ active: b2Active(storage), identity, songs: state.songOrder.length, setlists: state.setlistOrder.length })
     // Another account in the same page: callers reload instead of reusing in-memory state.
@@ -1129,7 +1143,7 @@ export async function prepareB2(deps: B2Deps): Promise<B2Preparation> {
       loaded = await loadPartition(db, { identity, receipt: true, verifyBodies: deps.verifyBodies ?? true })
       validate(loaded)
     }
-    if (identity.legacy && !migrated) {
+    if (identity.legacy && !migrated && scopes.length <= 1 && identity.scope === await partitionScope(where.kind, where.userId, env)) {
       // #258 F1/F4: the legacy source must still be what this partition last equalled.
       const raw = deps.sourceRevision()
       if (!loaded.sourceSync) throw new B2LoadError('integrity-failed', 'source marker missing')
@@ -1201,6 +1215,8 @@ function activate(deps: B2Deps, db: IDBDatabase, identity: PartitionIdentity, lo
     if (storage.getItem(b2HeadKey(identity.scope)) !== token) throw new B2LoadError('load-failed', 'Head token could not be verified')
   }
   state = install(storage, deps.factory!, db, identity, loaded, token)
+  try { storage.setItem('gtar_library_b2_last_used::' + identity.scope, String(Date.now())) }
+  catch (error) { appLogger.warn('LibraryB2', 'Could not record last-used partition; device storage remains open', error instanceof Error ? error.message : String(error)) }
   currentHold = null
   legacyFallback = false
   setupChannel()

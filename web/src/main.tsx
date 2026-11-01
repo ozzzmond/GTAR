@@ -168,6 +168,6 @@ if (!_win.__GTAR_REACT_ROOT__) {
 }
 _win.__GTAR_REACT_ROOT__.render(
   <StrictMode>
-    {cast2ReceiverRoute ? <StageCast2Panel receiver /> : <AuthGate><Suspense fallback={<p role="status">Loading GTAR...</p>}><App /></Suspense></AuthGate>}
+    {cast2ReceiverRoute ? <StageCast2Panel receiver /> : <AuthGate deviceOwned><Suspense fallback={<p role="status">Loading GTAR...</p>}><App /></Suspense></AuthGate>}
   </StrictMode>,
 )

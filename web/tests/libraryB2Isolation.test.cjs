@@ -71,48 +71,30 @@ test('two tabs: even a forced stale save cannot overwrite a newer record; it hol
   assert.equal(wal.at(-1).songs[0].song.title, 'Forced by B', 'B\'s edit is not lost')
 })
 
-test('account partitions A → B → A: no leak, mix, move or deletion; data stays after sign-out', async () => {
+test('account changes and sign-out keep the same B2 partition and device edits', async () => {
   const { storage, factory } = device({ n: 12, setlists: 2 })
   const legacy = storage.getItem(V1)
   const a = await open(storage, factory)
-  assert.equal(a.prepared.identity.kind, 'account')
-  edit(a.tab, storage, 0, { title: 'A private edit' })
+  edit(a.tab, storage, 0, { title: 'Device edit' })
   await a.tab.b2.flushB2()
-  // Account B on the same device: its own, empty partition.
   h.signIn(storage, 'user-b')
   const b = await open(storage, factory)
-  assert.equal(b.prepared.active, true)
-  assert.notEqual(b.prepared.identity.scope, a.prepared.identity.scope)
-  const libB = b.tab.sj.readPersistedLibrary(storage)
-  assert.deepEqual([libB.songs.length, libB.setlists.length], [0, 0], 'B sees nothing of A')
-  b.tab.sj.persistLibrary({ songs: [{ id: 'b-1', title: 'B song', artist: '', rawContent: '[D]b' }], setlists: [] }, storage, { expectedRaw: b.tab.sj.libraryRevision(storage) })
-  await b.tab.b2.flushB2()
-  assert.equal(b.tab.owner.libraryOwnership('user-b', storage), 'owned')
-  assert.equal(b.tab.owner.libraryOwnership('user-a', storage), 'mismatch')
-  // Sign out: B's data stays; a late B save is refused once B is no longer signed in.
+  assert.equal(b.prepared.identity.scope, a.prepared.identity.scope)
+  assert.equal(b.tab.sj.readPersistedLibrary(storage).songs[0].title, 'Device edit')
   h.signIn(storage, null)
-  assert.throws(() => b.tab.sj.persistLibrary({ songs: [], setlists: [] }, storage, { expectedRaw: b.tab.sj.libraryRevision(storage) }), /account changed/)
-  // Back to A.
-  h.signIn(storage, 'user-a')
-  const a2 = await open(storage, factory)
-  const libA = a2.tab.sj.readPersistedLibrary(storage)
-  assert.equal(libA.songs.length, 12)
-  assert.equal(libA.songs[0].title, 'A private edit')
-  assert.equal(libA.songs.some(s => s.id === 'b-1'), false)
-  const dbB = `gtar_library_b2::${b.prepared.identity.scope}`
-  assert.deepEqual(factory.dump(dbB, 'songs').map(r => r.key), ['b-1'], 'B partition intact')
-  assert.equal(storage.getItem(V1), legacy, 'legacy library untouched')
-  assert.equal(JSON.parse(storage.getItem('gtar_library_owner_v1')).userId, 'user-a', 'owner never relabelled')
+  assert.equal(b.tab.sj.readPersistedLibrary(storage).songs.length, 12)
+  assert.equal(storage.getItem(V1), legacy)
+  assert.equal(JSON.parse(storage.getItem('gtar_library_owner_v1')).userId, 'user-a')
 })
 
-test('switching account inside one page: B2 refuses to reuse the open partition and stale work cannot write', async () => {
+test('switching account inside one page keeps the open partition writable', async () => {
   const { storage, factory } = device({ n: 8, setlists: 1 })
   const a = await open(storage, factory)
-  const head = a.tab.sj.libraryRevision(storage)
   h.signIn(storage, 'user-b')
-  await assert.rejects(a.tab.sj.prepareLibraryB2(storage, { factory }), error => error.name === 'LibraryPartitionError')
-  assert.throws(() => edit(a.tab, storage, 0, { title: 'stale async work' }), /account changed/)
-  assert.equal(storage.getItem(`gtar_library_b2_head::${a.prepared.identity.scope}`), head, 'nothing saved')
+  assert.equal((await a.tab.sj.prepareLibraryB2(storage, { factory })).active, true)
+  edit(a.tab, storage, 0, { title: 'Device edit after switch' })
+  await a.tab.b2.flushB2()
+  assert.equal(a.tab.sj.readPersistedLibrary(storage).songs[0].title, 'Device edit after switch')
 })
 
 test('library without a verified owner opens the device partition; it is never claimed or linked automatically', async () => {

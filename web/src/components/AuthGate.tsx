@@ -20,6 +20,7 @@ import {
   renderGoogleButton,
   cancelGoogleOneTap,
   isPromptSuppressedOrDismissed,
+  isPromptSuppressed,
   type GoogleSession,
   type AccessStatus,
 } from '../utils/googleAuth'
@@ -38,7 +39,7 @@ export function useGoogleAuth() {
   return auth
 }
 
-export function AuthGate({ children }: { children: ReactNode }) {
+export function AuthGate({ children, deviceOwned = false }: { children: ReactNode; deviceOwned?: boolean }) {
   const [session, setSession] = useState<GoogleSession | null>(null)
   const [checking, setChecking] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -51,6 +52,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [isExpiredOffline, setIsExpiredOffline] = useState(false)
   const [isDebugLogsOpen, setIsDebugLogsOpen] = useState(false)
   const [gisRendered, setGisRendered] = useState(false)
+  const [showSignInDialog, setShowSignInDialog] = useState(false)
+  const signInDialog = useRef<HTMLDialogElement>(null)
   const isMountedRef = useRef(true)
   const epoch = useRef(0)
 
@@ -344,6 +347,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       saveGoogleSession(serverSession)
       setBypass(false)
       setSession(serverSession)
+      setShowSignInDialog(false)
     } catch (failure) {
       if (isMountedRef.current && gen === epoch.current) {
         const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
@@ -411,6 +415,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
 
     if (status.isExpired) {
+      if (deviceOwned) {
+        saveGoogleSession(null)
+        setSession(null)
+        setChecking(false)
+        return
+      }
       const isOffline =
         typeof window !== 'undefined' && window.navigator && typeof window.navigator.onLine === 'boolean'
           ? window.navigator.onLine === false
@@ -470,7 +480,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // This is a generation counter, not a DOM ref: invalidate the current epoch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Capturing the mount value would revive stale async work.
     return () => { isMountedRef.current = false; epoch.current++ }
-  }, [backgroundRecheck])
+  }, [backgroundRecheck, deviceOwned])
 
   // Load Google Identity Services SDK
   const loadSdk = useCallback((forceRetry = false) => {
@@ -497,8 +507,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [clientId])
 
   useEffect(() => {
-    return loadSdk()
-  }, [loadSdk])
+    if (!deviceOwned) return loadSdk()
+  }, [loadSdk, deviceOwned])
+
+  useEffect(() => {
+    if (!showSignInDialog) return
+    const previous = document.activeElement as HTMLElement | null
+    signInDialog.current?.showModal()
+    return () => previous?.focus()
+  }, [showSignInDialog])
+
+  const cancelSignInDialog = () => {
+    epoch.current++
+    cancelGoogleOneTap()
+    setShowSignInDialog(false)
+    setBusy(false)
+  }
 
   // Initialize GIS and render persistent sign-in button container
   useEffect(() => {
@@ -538,7 +562,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => {
       removeListener?.()
     }
-  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse])
+  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse, showSignInDialog])
 
   // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
@@ -609,12 +633,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
         return
       }
 
+      if (deviceOwned) {
+        await loadGoogleIdentity()
+        if (gen !== epoch.current) return
+        setReady(true)
+      }
       const idToken = await requestGoogleCredential(clientId)
       if (gen !== epoch.current) return
       await exchangeCredential(idToken, gen)
     } catch (failure) {
       if (gen === epoch.current) {
         if (isPromptSuppressedOrDismissed(failure)) {
+          if (deviceOwned && isPromptSuppressed(failure)) setShowSignInDialog(true)
           // Google prompt was suppressed (cooldown) or dismissed; keep manual sign-in / GIS button ready
           setBusy(false)
           return
@@ -630,7 +660,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   // Active / Approved access OR Local Dev Bypass: render application
-  if (permitted || (bypass && canBypass)) {
+  if (deviceOwned || permitted || (bypass && canBypass)) {
     return (
       <AuthContext.Provider
         value={{
@@ -654,6 +684,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </div>
         )}
         {children}
+        {deviceOwned && showSignInDialog && (
+          <dialog ref={signInDialog} aria-labelledby="cloud-signin-title"
+            className="rounded-2xl border border-app-border bg-app-surface p-6 text-app-heading backdrop:bg-black/50"
+            onCancel={event => { event.preventDefault(); cancelSignInDialog() }}>
+            <h2 id="cloud-signin-title" className="text-lg font-bold mb-3">Sign in with Google</h2>
+            <div id="google-signin-button" />
+            {error && <p role="alert" className="mt-3 text-sm">{error}</p>}
+            <button type="button" className="mt-4 min-h-11 px-4 rounded-lg border border-app-border cursor-pointer" onClick={cancelSignInDialog}>Cancel</button>
+          </dialog>
+        )}
       </AuthContext.Provider>
     )
   }

@@ -167,87 +167,61 @@ test('F4b: a B2 save in another tab during turn-off: B2 stays on, nothing stale 
 })
 
 // F5: partition fallback
-test('F5a: account B with B2 failing never reads or changes account A\'s earlier library', async () => {
+test('F5a: B2 open failure keeps the device library readable for account B', async () => {
   const { storage, factory } = device({ owner: 'user-a', session: 'user-b' })
   const before = storage.getItem(V1)
   factory.faults.open = () => new Error('IndexedDB unavailable')
   const { tab, prepared } = await open(storage, factory)
   assert.equal(prepared.active, false)
-  let songs = null
-  try { songs = tab.sj.readPersistedLibrary(storage)?.songs ?? null } catch { songs = null }
-  assert.ok(!songs || songs.length === 0, 'A\'s songs not visible to B')
-  assert.throws(() => tab.sj.persistLibrary({ songs: [], setlists: [] }, storage))
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 12)
   assert.equal(storage.getItem(V1), before)
 })
 
-test('F5b: account B cannot turn B2 off into account A\'s earlier library', async () => {
+test('F5b: account B can turn off device B2 without changing its library', async () => {
   const { storage, factory } = device({ owner: 'user-a', session: 'user-b' })
   const { tab } = await open(storage, factory)
-  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 0)
-  await assert.rejects(tab.sj.disableLibraryB2(storage))
-  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 0)
-  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 12)
+  await tab.sj.disableLibraryB2(storage)
+  assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 12)
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), null)
 })
 
 for (const [label, owner] of [['owner record for another environment', { v: 1, userId: 'user-a', env: 'other.host', boundAt: 1, reason: 'confirmed' }], ['unreadable owner record', '{broken']]) {
-  test(`F5c: ${label}: the earlier library is not opened for a signed-in account`, async () => {
+  test(`F5c: ${label}: the device library opens independently of owner metadata`, async () => {
     const storage = h.freshStorage()
     const { factory } = device({ owner: null, session: 'user-c', storage })
     storage.setItem('gtar_library_owner_v1', typeof owner === 'string' ? owner : JSON.stringify(owner))
     const { tab } = await open(storage, factory)
     let songs = null
     try { songs = tab.sj.readPersistedLibrary(storage)?.songs ?? null } catch { songs = null }
-    assert.ok(!songs || songs.length === 0, 'unknown ownership fails closed')
-    for (const db of b2Db(factory)) assert.equal(records(factory, db, 'songs').size, 0, 'not copied into a partition')
+    assert.equal(songs.length, 12)
+    for (const db of b2Db(factory)) assert.equal(records(factory, db, 'songs').size, 12, 'device copy verified')
   })
 }
 
 // F6: recovery isolation
-test('F6: recovery archives, decisions and exports are scoped by account partition', async () => {
-  const { storage, factory } = device({ owner: 'user-a', session: 'user-a' })
-  const aLibrary = storage.getItem(V1)
-  storage.setItem('gtar_sync_recovery:replacement:1:a', JSON.stringify({ raw: aLibrary }))
-  const decisions = JSON.stringify({ version: 3, legacyRaw: null, decisions: [] })
-  storage.setItem('gtar_recovery_decisions_v1', decisions)
-  // B opens its own partition.
+test('F6: recovery archives and exports remain device-readable across accounts', async () => {
+  const { storage, factory } = device()
+  const key = 'gtar_sync_recovery:replacement:1:a'
+  storage.setItem(key, JSON.stringify({ raw: storage.getItem(V1) }))
+  const before = storage.getItem(key)
   h.signIn(storage, 'user-b')
   const b = await open(storage, factory)
-  assert.equal(b.prepared.active, true)
-  const leaks = data => Object.values(data).some(value => value.includes('Synthetic Song 000001'))
-  assert.equal(leaks(b.tab.sj.recoveryData(storage)), false, 'A archive hidden from B')
-  assert.equal(leaks(b.tab.sj.recoveryExportData(storage)), false, 'A data not in B export')
-  assert.equal(b.tab.sj.inspectRecovery(storage).sources.length, 0)
-  const review = b.tab.sj.inspectRecovery(storage)
-  await assert.rejects(b.tab.sj.recordRecoveryChoice(review, 'keep-current', () => false, storage))
-  assert.equal(storage.getItem('gtar_recovery_decisions_v1'), decisions, 'A decisions untouched')
-  // B's own archive is invisible to A (B2 on) and with B2 off.
-  b.tab.sj.persistLibrary({ songs: [{ id: 'b-1', title: 'B private song', artist: '', rawContent: '[D]b' }], setlists: [] }, storage, { expectedRaw: b.tab.sj.libraryRevision(storage) })
-  b.tab.sj.saveCrossTabConflictSnapshot(b.tab.sj.readPersistedLibrary(storage), storage)
-  await b.tab.b2.flushB2()
-  assert.ok(Object.values(b.tab.sj.recoveryData(storage)).some(v => v.includes('B private song')), 'B sees its own archive')
-  h.signIn(storage, 'user-a')
-  const a = await open(storage, factory)
-  assert.equal(Object.values(a.tab.sj.recoveryData(storage)).some(v => v.includes('B private song')), false, 'B archive hidden from A')
-  assert.ok(Object.values(a.tab.sj.recoveryData(storage)).some(v => v.includes('Synthetic Song 000001')), 'A still sees its archives')
-  const off = h.newTab()
-  storage.removeItem('gtar_library_b2_enabled')
-  assert.equal(Object.values(off.sj.recoveryData(storage)).some(v => v.includes('B private song')), false, 'hidden with B2 off')
-  assert.ok(allValues(storage).some(([, v]) => v.includes('B private song')), 'B archive preserved, not deleted')
+  assert.match(b.tab.sj.readRecoveryArchive(key, storage), /Synthetic Song/)
+  assert.ok(Object.values(b.tab.sj.recoveryExportData(storage)).some(v => v.includes('Synthetic Song')))
+  h.signIn(storage, null)
+  assert.equal(b.tab.sj.readRecoveryArchive(key, storage), before)
+  assert.equal(storage.getItem(key), before)
 })
 
-test('F6: a restore safety snapshot in B\'s partition never lands in the shared single-key snapshot', async () => {
+test('F6: restore safety snapshot belongs to the device library across account changes', async () => {
   const { storage, factory } = device({ owner: 'user-a', session: 'user-b' })
-  const b = await open(storage, factory)
+  await open(storage, factory)
   const ex = require('../src/utils/backupExport.ts')
-  const jb = require('../src/utils/jsonBackup.ts')
-  const result = await ex.ensureRestoreSafetySnapshot({ songs: [{ id: 'b-1', title: 'B private song', artist: '', rawContent: '[D]b' }], setlists: [] }, storage)
-  assert.equal(storage.getItem(jb.RESTORE_SNAPSHOT_KEY), null)
-  assert.equal(result.location, 'recovery-archive')
-  h.signIn(storage, 'user-a')
-  const off = h.newTab()
-  storage.removeItem('gtar_library_b2_enabled')
-  assert.equal(Object.values(off.sj.recoveryData(storage)).some(v => v.includes('B private song')), false)
-  void b
+  const result = await ex.ensureRestoreSafetySnapshot({ songs: [{ id: 'b-1', title: 'Device song', artist: '', rawContent: '[D]b' }], setlists: [] }, storage)
+  assert.match(require('../src/utils/syncJournal.ts').readRecoveryArchive(result.key, storage), /Device song/)
+  h.signIn(storage, null)
+  assert.match(require('../src/utils/syncJournal.ts').readRecoveryArchive(result.key, storage), /Device song/)
 })
 
 // F7: shared setlist publishing
@@ -284,19 +258,14 @@ async function freshViewOf(storage, factory) {
   return songs
 }
 
-test('R1a: account A tab, session switched to B: turning B2 off is refused; legacy, flag and head unchanged; B sees nothing of A', async () => {
+test('R1a: switching account before B2 turn-off keeps device edits', async () => {
   const { storage, factory } = device()
   const a = await open(storage, factory)
-  edit(a.tab, storage, 0, { title: 'A private B2 edit' })
-  await a.tab.b2.flushB2()
-  const v1 = storage.getItem(V1), head = storage.getItem(`gtar_library_b2_head::${a.prepared.identity.scope}`)
+  edit(a.tab, storage, 1, { title: 'Device edit' })
   h.signIn(storage, 'user-b')
-  await assert.rejects(a.tab.sj.disableLibraryB2(storage), /not the one this tab opened|sign-in changed/)
-  assert.equal(storage.getItem(V1), v1)
-  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
-  assert.equal(storage.getItem(`gtar_library_b2_head::${a.prepared.identity.scope}`), head)
-  const bSongs = await freshViewOf(storage, factory)
-  assert.equal(bSongs.some(s => /Synthetic|A private/.test(s.title)), false, 'zero A content for B')
+  await a.tab.sj.disableLibraryB2(storage)
+  assert.equal(v1Titles(storage)[1], 'Device edit')
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), null)
 })
 
 test('R1b: ordinary A turn-off still works and keeps every A edit', async () => {
@@ -308,15 +277,13 @@ test('R1b: ordinary A turn-off still works and keeps every A edit', async () => 
   assert.equal(v1Titles(storage)[1], 'Kept on turn-off')
 })
 
-test('R1c: sign-out before turn-off: refused, nothing changed; a stale save after sign-out is refused too', async () => {
+test('R1c: sign-out before B2 turn-off keeps the device library writable', async () => {
   const { storage, factory } = device()
   const a = await open(storage, factory)
-  const v1 = storage.getItem(V1)
   h.signIn(storage, null)
-  await assert.rejects(a.tab.sj.disableLibraryB2(storage))
-  assert.throws(() => edit(a.tab, storage, 2, { title: 'stale after sign-out' }), /account changed/)
-  assert.equal(storage.getItem(V1), v1)
-  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+  edit(a.tab, storage, 2, { title: 'Device edit signed out' })
+  await a.tab.sj.disableLibraryB2(storage)
+  assert.equal(v1Titles(storage)[2], 'Device edit signed out')
 })
 
 for (const [label, change] of [['token rotation', s => rotateToken(s, 'user-a')], ['switch to account B', s => h.signIn(s, 'user-b')], ['sign-out', s => h.signIn(s, null)]]) {
@@ -333,19 +300,18 @@ for (const [label, change] of [['token rotation', s => rotateToken(s, 'user-a')]
     assert.ok(fired)
     assert.equal(storage.getItem(V1), v1, 'legacy untouched')
     assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
-    if (label === 'switch to account B') assert.equal((await freshViewOf(storage, factory)).some(s => /Synthetic|A edit/.test(s.title)), false)
+    if (label === 'switch to account B') assert.equal((await freshViewOf(storage, factory)).some(s => /Synthetic|A edit/.test(s.title)), true)
   })
 }
 
-test('R1e: a stale A tab on hold cannot turn B2 off once B is signed in', async () => {
+test('R1e: a held device library can turn B2 off after an account switch', async () => {
   const { storage, factory } = device()
   factory.faults.open = () => new Error('IndexedDB unavailable')
   const a = await open(storage, factory)
-  factory.faults.open = undefined
-  assert.equal(a.prepared.hold.reason, 'open-failed')
   h.signIn(storage, 'user-b')
-  await assert.rejects(a.tab.sj.disableLibraryB2(storage))
-  assert.equal(storage.getItem('gtar_library_b2_enabled'), '1')
+  await a.tab.sj.disableLibraryB2(storage)
+  assert.equal(storage.getItem('gtar_library_b2_enabled'), null)
+  assert.equal(a.tab.sj.readPersistedLibrary(storage).songs.length, 12)
 })
 
 // R2 (#258 re-audit): interrupted re-move after a legitimate legacy change must be retryable
