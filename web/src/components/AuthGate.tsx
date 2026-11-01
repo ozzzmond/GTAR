@@ -398,7 +398,6 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
       }
     } catch { /* ignore */ }
 
-    if (deviceOwned) { setChecking(false); return }
     const generation = ++epoch.current
     const status = getStoredSessionStatus()
 
@@ -412,6 +411,12 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
     }
 
     if (status.isExpired) {
+      if (deviceOwned) {
+        saveGoogleSession(null)
+        setSession(null)
+        setChecking(false)
+        return
+      }
       const isOffline =
         typeof window !== 'undefined' && window.navigator && typeof window.navigator.onLine === 'boolean'
           ? window.navigator.onLine === false
