@@ -769,3 +769,17 @@ test('#303 restore preview names the backup app version, format and date only wh
   await selectBackup(dom, { songs: [mockSong1], setlists: [], version: '1.0.90' })
   assert.equal(line(), 'Backup made with GTAR 1.0.90')
 }))
+
+for (const mode of ['merge','replace']) test(`verified file ${mode} records RestoreApplied once with counts only`, withJsdom(async ({dom,root})=>{
+ const {appLogger}=require('../src/utils/logger.ts');appLogger.resume();appLogger.clearLogs()
+ const incoming={songs:[mockSong1],setlists:[]}
+ const apply=(songs,setlists)=>localStorage.setItem(LIBRARY_KEY,JSON.stringify({songs,setlists}))
+ localStorage.setItem(LIBRARY_KEY,JSON.stringify({songs:[],setlists:[]}))
+ await act(async()=>root.render(React.createElement(DeviceBackupCard,{isOpen:true,onClose:()=>{},allSongs:[],setlists:[],onImportAllSongs:()=>{},onFullRestore:apply,onSmartMerge:apply})))
+ const input=document.querySelector('input[type="file"]')
+ Object.defineProperty(input,'files',{value:[new dom.window.File([JSON.stringify(createBackupPayload(incoming.songs,incoming.setlists))],'private@example.com-token.json',{type:'application/json'})],configurable:true})
+ await act(async()=>input.dispatchEvent(new dom.window.Event('change',{bubbles:true})))
+ if(mode==='replace') openReplaceConfirm()
+ await act(async()=>{const button=buttonByText(mode==='replace'?'Confirm replace':'Merge into device');assert.ok(button);button.click()})
+ assert.deepEqual(appLogger.getLogs().filter(e=>e.tag==='RestoreApplied').map(e=>e.message),[`Restore applied (${mode}, file): 1 songs, 0 setlists`])
+}))

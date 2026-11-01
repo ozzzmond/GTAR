@@ -36,3 +36,30 @@ test('sign-out during POST prevents the verification GET',async()=>{
  await assert.rejects(()=>writeCloudBackup({token:'t',userId:'B',isCurrent:()=>current},{songs:[],setlists:[]},null),/Sign in/)
  assert.equal(calls,1)
 })
+
+test('each successful file handoff records BackupSaved once without account data', async () => {
+ const {appLogger}=require('../src/utils/logger.ts');appLogger.resume()
+ const {downloadBackup,shareOrDownloadBackup,copyBackup}=require('../src/utils/backupExport.ts')
+ const backup={json:'{}',fileName:'private@example.com-token.json',bytes:2,counts:{songs:2,trash:0,setlists:1},fingerprint:'secret',schemaVersion:2}
+ for (const handoff of [()=>downloadBackup(backup,{download(){}}),()=>shareOrDownloadBackup(backup,{makeFile:()=>({}),navigator:{canShare:()=>true,share:async()=>{}}}),()=>copyBackup(backup,{navigator:{clipboard:{writeText:async()=>{}}}})]) {
+  appLogger.clearLogs();await handoff()
+  assert.deepEqual(appLogger.getLogs().filter(e=>e.tag==='BackupSaved').map(e=>e.message),['Backup saved (file): 2 songs, 1 setlists'])
+ }
+})
+
+test('verified cloud backup and restore each record one count-only event', async () => {
+ const {appLogger}=require('../src/utils/logger.ts');appLogger.resume();appLogger.clearLogs()
+ const {restoreCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const {computeSongbookChecksum}=require('../src/utils/cloudSongbookSync.ts')
+ const library={songs:[],setlists:[]};const checksum=computeSongbookChecksum(library)
+ global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:{version:1,checksum,data:library}}))
+ await writeCloudBackup({token:'secret-token',userId:'private@example.com'},library,null)
+ const values=new Map([['gtar_library_v1',JSON.stringify(library)]])
+ const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)}
+ for (const mode of ['merge','replace']) await restoreCloudBackup(library,library,mode,()=>{},storage)
+ assert.deepEqual(appLogger.getLogs().filter(e=>['BackupSaved','RestoreApplied'].includes(e.tag)).map(e=>[e.tag,e.message]),[
+  ['BackupSaved','Backup saved (cloud): 0 songs, 0 setlists'],
+  ['RestoreApplied','Restore applied (merge, cloud): 0 songs, 0 setlists'],
+  ['RestoreApplied','Restore applied (replace, cloud): 0 songs, 0 setlists'],
+ ])
+})

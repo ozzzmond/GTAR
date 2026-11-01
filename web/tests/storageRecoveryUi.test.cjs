@@ -139,3 +139,20 @@ test('App lifecycle commits valid complete libraries and rejected persistence ke
   Object.assign(global,prior);dom.window.close()
  }
 })
+
+test('handled storage failure records one StorageSaveFailure with error name only',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'})
+ const prior={window:global.window,document:global.document,localStorage:global.localStorage,IS_REACT_ACT_ENVIRONMENT:global.IS_REACT_ACT_ENVIRONMENT}
+ Object.assign(global,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})
+ const {appLogger}=require('../src/utils/logger.ts');appLogger.resume()
+ const {useLibraryPersistence}=require('../src/utils/useLibraryPersistence.ts')
+ let persistence;const songs=[],setlists=[],deletedSongs=[];const noop=()=>{}
+ function Probe(){persistence=useLibraryPersistence({songs,deletedSongs,setlists,setSongs:noop,setDeletedSongs:noop,setSetlists:noop,setToastMessage:noop,editorRecoveryDraftRef:{current:null}});return null}
+ const root=createRoot(document.getElementById('root'))
+ try {
+  await act(async()=>root.render(React.createElement(Probe)))
+  appLogger.clearLogs()
+  await act(async()=>persistence.handleStorageWriteFailure(new DOMException('private@example.com token=secret','QuotaExceededError')))
+  assert.deepEqual(appLogger.getLogs().filter(e=>e.tag==='StorageSaveFailure').map(e=>e.message),['QuotaExceededError'])
+ }finally{await act(async()=>root.unmount());Object.assign(global,prior);dom.window.close()}
+})

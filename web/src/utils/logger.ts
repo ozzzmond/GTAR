@@ -344,7 +344,8 @@ class WebLoggerEngine {
     this.addEntry({ level: 'DEBUG', tag, message, details })
   }
 
-  public info(tag: string, message: string, details?: string) {
+  public info(tag: string, message: string, details?: string, record = true) {
+    if (!record) return
     this.addEntry({ level: 'INFO', tag, message, details })
   }
 

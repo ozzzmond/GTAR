@@ -126,3 +126,21 @@ for (const status of ['pending', 'denied']) {
     }, status)
   })
 }
+
+test('active sign-in and completed sign-out record once without account or credential text', async () => {
+ await fallback('loaded', async r => {
+  const {appLogger}=require('../src/utils/logger.ts');appLogger.resume();appLogger.clearLogs()
+  await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Official Google button').click())
+  await act(async()=>r.auth().signOut())
+  assert.deepEqual(appLogger.getLogs().filter(e=>['SignIn','SignOut'].includes(e.tag)).map(e=>[e.tag,e.message]),[['SignIn','Signed in'],['SignOut','Signed out']])
+ })
+})
+
+test('pending sign-in is not recorded as an active SignIn', async()=>{
+ await fallback('loaded',async()=>{
+  const {appLogger}=require('../src/utils/logger.ts');appLogger.resume();appLogger.clearLogs()
+  global.fetch=async()=>new Response(JSON.stringify({success:true,sessionToken:'private-token',user:{id:'private-id',google_sub:'private-sub',email:'private@example.com',role:'member',access_status:'pending'}}))
+  await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Official Google button').click())
+  assert.deepEqual(appLogger.getLogs().filter(e=>e.tag==='SignIn'),[])
+ })
+})

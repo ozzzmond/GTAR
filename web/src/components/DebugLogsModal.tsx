@@ -107,7 +107,6 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-app-border text-app-action font-bold">
                   {logs.length} entries
                 </span>
-
               </div>
             </div>
           </div>
