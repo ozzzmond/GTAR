@@ -1,6 +1,6 @@
 import { SetlistCloudStatusBadge } from './SetlistCloudStatusBadge'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
-import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
+import { getStoredSessionStatus } from '../utils/googleAuth'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { resolveSetlistSong } from '../utils/setlistSongs'
 import React, { useState, useEffect, useMemo } from 'react'
@@ -146,7 +146,7 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
   }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
   const auth = useOptionalGoogleAuth()
   const userRole = auth?.session?.role || auth?.session?.user.role
-  const isUserApproved = auth?.accessStatus === 'active' || hasServerApproval(auth?.session)
+  const isUserApproved = auth?.accessStatus === 'active' && !!auth.session
   const canPublishSetlist = (userRole === 'admin' || userRole === 'member') && isUserApproved
   const setlistCapability = useSharedSetlists(isOpen && canPublishSetlist)
   const setlistStatusMap = useSetlistPublicationStatuses({
@@ -585,17 +585,15 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               <UploadCloud className="w-4 h-4 text-app-action" />
                             </button>
                           )}
-                          {onShareSetlist && (
+                          {onShareSetlist && isUserApproved && (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 onShareSetlist(sl)
                               }}
-                              className="min-h-11 min-w-11 p-1.5 rounded-lg text-app-muted hover:text-app-accent hover:bg-app-surface transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg text-app-muted hover:text-app-accent hover:bg-app-surface transition-colors cursor-pointer"
                               aria-label="Share Setlist (QR Code)"
-                              disabled={!auth?.session || !isUserApproved}
-                              aria-description={!auth?.session ? "Sign in to use the Shared Catalog" : undefined}
                             >
                               <QrCode className="w-3.5 h-3.5" />
                             </button>
@@ -631,8 +629,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           )}
                         </div>
                       </div>
-
-                    {!auth?.session && onShareSetlist && <p className="px-3 pb-2 text-xs text-app-muted">Sign in to use the Shared Catalog</p>}
 
                     {/* Smoothly Expanded Cascading Songs List (1:1 Android SetlistCard) */}
                     {isExpanded && (

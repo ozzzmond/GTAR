@@ -24,47 +24,63 @@ test('catalog sign-in boundary prevents requests, loads after sign-in, clears on
  sharedCatalogService.getCatalogSongs=async()=>{calls++;return {songs:[{id:'song',title:'Visible shared song',artist:'Artist',publisher_user_id:'A',revision:1}],state:'ONLINE',total:1}}
  const requests=[];global.fetch=async url=>{requests.push(url);throw new Error('Unexpected catalog request')}
  const root=createRoot(document.getElementById('root'))
- const render=async(session,status='active')=>act(async()=>{root.render(React.createElement(AuthContext.Provider,{value:{session,accessStatus:status,signIn:async()=>{signIns++}}},React.createElement(SharedCatalogBrowser,{onImportSong(){}})))})
+ const render=async(session,status='pending',role='NONE')=>act(async()=>{root.render(React.createElement(AuthContext.Provider,{value:{session,accessStatus:status,role,signIn:async()=>{signIns++}}},React.createElement(SharedCatalogBrowser,{onImportSong(){}})))})
  await render(null)
  assert.match(document.body.textContent,/Sign in to use the Shared Catalog/)
  assert.equal(calls,0)
  await act(async()=>document.querySelector('button').click());assert.equal(signIns,1)
  const session={user:{id:'A'},token:'test'}
- await render(session);assert.equal(calls,1);assert.match(document.body.textContent,/Visible shared song/)
+ await render(session,'active','USER');assert.equal(calls,1);assert.match(document.body.textContent,/Visible shared song/)
  await render(null);assert.doesNotMatch(document.body.textContent,/Visible shared song/);assert.equal(calls,1)
- await render(session,'pending');assert.equal(calls,1);assert.match(document.body.textContent,/Authentication Required/)
- await render(session,'denied');assert.equal(calls,1);assert.match(document.body.textContent,/Access denied/);assert.deepEqual(requests,[])
+ await render(null,'pending','USER');assert.equal(calls,1);assert.match(document.body.textContent,/Access Approval Pending/);assert.equal(document.querySelector('[data-testid="catalog-sign-in-card"]'),null)
+ await render(null,'denied','USER');assert.equal(calls,1);assert.match(document.body.textContent,/Access Denied/);assert.equal(document.querySelector('[data-testid="catalog-sign-in-card"]'),null);assert.deepEqual(requests,[])
  await act(async()=>root.unmount())
 })
 const { ReportContentButton } = require('../src/components/ReportContentButton.tsx')
-test('signed-out report is unavailable with the catalog hint',async()=>{
+test('signed-out report is hidden without a hint',async()=>{
  const root=createRoot(document.getElementById('root'))
  await act(async()=>root.render(React.createElement(ReportContentButton,{kind:'song',id:'song',revision:1,label:'Song'})))
- assert.match(document.body.textContent,/Sign in to use the Shared Catalog/)
+ assert.equal(document.body.textContent,'')
  assert.equal(document.querySelector('[data-testid="report-song-btn"]'),null)
  await act(async()=>root.unmount())
 })
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
-test('local setlists remain available but signed-out QR and link import are disabled',async()=>{
+test('local setlists remain available but signed-out QR is hidden and link import is disabled',async()=>{
  const root=createRoot(document.getElementById('root'))
  await act(async()=>root.render(React.createElement(SongbookHomeView,{songs:[],setlists:[{id:'s',name:'Local setlist',songs:[]}],initialTab:'setlists',onShareSetlist(){},onOpenSetlists(){}})))
  const qr=document.querySelector('[data-testid="main-share-setlist-btn"]')
- assert.ok(qr.disabled);assert.equal(qr.getAttribute('aria-description'),'Sign in to use the Shared Catalog')
+ assert.equal(qr,null)
  assert.match(document.body.textContent,/Local setlist/)
  await act(async()=>document.querySelector('[data-testid="setlists-menu-btn"]').click())
  await act(async()=>document.querySelector('[data-testid="main-import-setlist-btn"]').click())
  assert.ok(document.querySelector('[data-testid="load-share-link-btn"]').disabled)
+ assert.ok(document.querySelector('[data-testid="paste-share-link-input"]').disabled)
  assert.match(document.body.textContent,/Sign in to use the Shared Catalog/)
  assert.equal(document.querySelector('[data-testid="choose-setlist-json-file"]').disabled,false,'local JSON import available')
  await act(async()=>root.unmount())
 })
-test('local song actions stay available while publishing is disabled signed out',async()=>{
+test('local song actions stay available while publishing is hidden signed out',async()=>{
  const root=createRoot(document.getElementById('root'))
  await act(async()=>root.render(React.createElement(SongbookHomeView,{songs:[{id:'local',title:'Local song',artist:'Artist',rawContent:'[C]Local chart',transpose:0}],setlists:[],onOpenSetlists(){}})))
  await act(async()=>document.querySelector('[data-testid="song-menu-0"]').click())
  const publish=document.querySelector('[data-testid="menu-publish-song-0"]')
- assert.equal(publish.disabled,true);assert.equal(publish.getAttribute('aria-description'),'Sign in to use the Shared Catalog')
+ assert.equal(publish,null)
  assert.equal(document.querySelector('[data-testid="menu-add-to-setlist-0"]').disabled,false)
  assert.match(document.body.textContent,/Local song/)
+ assert.doesNotMatch(document.body.textContent,/Sign in to use the Shared Catalog/)
+ await act(async()=>document.querySelector('[data-testid="toggle-song-selection-mode"]').click())
+ assert.equal(document.querySelector('[data-testid="bulk-publish-to-shared"]'),null)
  await act(async()=>root.unmount())
+})
+
+const { renderToString } = require('react-dom/server')
+const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
+for (const status of ['pending','denied']) test(`${status} masked session hides local catalog actions without extra hints`,()=>{
+ const value={session:null,accessStatus:status,role:'USER'}
+ const setlists=[{id:'s',name:'Local setlist',songs:[]}]
+ for (const [Component,props] of [[SongbookHomeView,{initialTab:'setlists'}],[SetlistDrawer,{isOpen:true,initialTab:'setlists'}]]) {
+  const html=renderToString(React.createElement(AuthContext.Provider,{value},React.createElement(Component,{...props,songs:[],setlists,onShareSetlist(){},onPublishSetlist(){},onClose(){}})))
+  assert.doesNotMatch(html,/main-share-setlist-btn|Share Setlist \(QR Code\)|Publish .* to Shared|Sign in to use the Shared Catalog/)
+  assert.match(html,/Local setlist/)
+ }
 })

@@ -41,7 +41,9 @@ window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventL
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
-const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
+const { SongbookHomeView: SongbookView } = require('../src/components/SongbookHomeView.tsx')
+const { AuthContext } = require('../src/utils/authContext.ts')
+const SongbookHomeView = props => React.createElement(AuthContext.Provider, {value:{session:{user:{id:'layout-user'}},accessStatus:'active',role:'USER'}}, React.createElement(SongbookView,props))
 
 const sampleSongs = [
   { id: 'song-1', title: 'Alpha Tune', artist: 'Band One', key: 'C', rawContent: '[C] Lyrics' },

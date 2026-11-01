@@ -275,15 +275,12 @@ test('G7.2: Songbook Publish to Shared — authorization guard, success, partial
     await act(async () => document.querySelector('[data-testid="song-card-0"]').click())
 
     const publishBtn = document.querySelector('[data-testid="bulk-publish-to-shared"]')
-    assert.ok(publishBtn)
-    assert.equal(publishBtn.getAttribute('aria-disabled'), 'true')
-    await act(async () => publishBtn.click())
+    assert.equal(publishBtn, null)
 
     assert.equal(fetchCount, 0)
     const errBanner = document.querySelector('[data-testid="songbook-publish-error"]')
     assert.equal(errBanner, null)
-    assert.equal(publishBtn.disabled, true)
-    assert.match(publishBtn.textContent, /Sign in to use the Shared Catalog/)
+
     assert.equal(document.querySelector('[data-testid="songbook-publish-toast"]'), null)
     // Selection preserved after unauthorized attempt
     assert.equal(

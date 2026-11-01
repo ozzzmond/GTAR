@@ -30,7 +30,6 @@ export interface SetlistWorkspaceProps {
 }
 
 export interface SetlistWorkspaceMenu {
-  catalogSignInRequired?: boolean
   sortValue: string
   sortOptions: Array<{ value: string; label: string }>
   onSortChange: (value: string) => void
@@ -379,7 +378,6 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
           })}
         </div>
       )}
-      {menu.catalogSignInRequired && <p className="px-3 py-2 text-xs text-app-muted">Sign in to use the Shared Catalog</p>}
       {share && (
         <button type="button" role="menuitem" data-testid="workspace-menu-share" onClick={run(share)} className={menuItem}>
           <QrCode className="w-3.5 h-3.5 text-app-accent shrink-0" />

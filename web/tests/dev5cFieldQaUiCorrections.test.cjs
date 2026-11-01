@@ -25,8 +25,12 @@ for (const ext of ['.ts', '.tsx']) {
 
 const React = require('react')
 const { renderToString } = require('react-dom/server')
+const { JSDOM } = require('jsdom')
+global.localStorage = new JSDOM('', {url:'https://gtar.test'}).window.localStorage
 const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
-const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
+const { SongbookHomeView: SongbookView } = require('../src/components/SongbookHomeView.tsx')
+const { AuthContext } = require('../src/utils/authContext.ts')
+const SongbookHomeView = props => React.createElement(AuthContext.Provider, {value:{session:{user:{id:'layout-user'}},accessStatus:'active',role:'USER'}}, React.createElement(SongbookView,props))
 const { getSongMetadataStatus } = require('../src/utils/chordProMetadata.ts')
 
 const webDir = path.resolve(__dirname, '..')

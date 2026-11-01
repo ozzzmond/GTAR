@@ -28,8 +28,7 @@ export function ReportContentButton({ kind, id, revision, label }: {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [sent, setSent] = useState(false)
-  if (!auth?.session) return <span className="text-xs text-app-muted">Sign in to use the Shared Catalog</span>
-  if (auth.accessStatus !== 'active') return null
+  if (auth?.accessStatus !== 'active' || !auth.session) return null
   if (!open) {
     return <button type="button" data-testid={`report-${kind}-btn`} onClick={() => { setOpen(true); setMessage('') }}
       className="min-h-9 px-3 py-1.5 rounded-lg text-app-muted hover:text-status-warning hover:bg-status-warning/10 flex items-center gap-1.5 text-xs font-mono transition-colors cursor-pointer"
