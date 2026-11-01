@@ -67,7 +67,7 @@ import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
 import type { SharedSetlistPayload } from './utils/sharedSetlist'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
-import { BackupRestoreDialogModal } from './components/BackupRestoreDialogModal'
+import { openBackupCenter } from './utils/backupCenter'
 import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
 import { StageErrorBoundary } from './components/StageErrorBoundary'
 import {
@@ -219,7 +219,8 @@ function LibraryStartupReadyInner() {
     } catch (err) { setRepairError(err instanceof Error ? err.message : 'Repair failed. Original data remains available for export.') }
   }
   // #181: only a damaged library gets the full-width alert (the app cannot load). Actionable recovery
-  // is shown as a red dot on the Cloud Sync button and on "Review local recovery" (DEV only).
+  // is flagged in DEV Advanced Tools (Local Recovery Review); old archives put a dot on the header
+  // Backup & Restore button until "Export old recovery data" was saved on this device (#299).
   return <>
     {b2Hold && <aside role="alert" data-testid="library-b2-hold" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
       <span className="flex-1 min-w-0">{holdMessage(b2Hold)}</span>
@@ -252,6 +253,8 @@ function LibraryStartupReadyInner() {
 
 function LibraryApp() {
   const [reviewRecovery, setReviewRecovery] = useState(false)
+  // #303: Backup & Restore center / debug logs are owned by the header; Stage shortcuts pause while they are open.
+  const [isHeaderOverlayOpen, setIsHeaderOverlayOpen] = useState(false)
   useEffect(() => {
     const open = () => setReviewRecovery(true)
     window.addEventListener('gtar-review-recovery', open)
@@ -553,7 +556,6 @@ function LibraryApp() {
   // Stays mounted after first open so the dialog keeps its state across opens, as before.
   const [importDialogMounted, setImportDialogMounted] = useState(false)
   if (isImportModalOpen && !importDialogMounted) setImportDialogMounted(true)
-  const [isBackupRestoreModalOpen, setIsBackupRestoreModalOpen] = modals.backupRestore
   const [isStageSettingsModalOpen, setIsStageSettingsModalOpen] = modals.stageSettings
   const [isStageToolsModalOpen, setIsStageToolsModalOpen] = modals.stageTools
   const [isThemeModalOpen, setIsThemeModalOpen] = modals.theme
@@ -1690,7 +1692,10 @@ function LibraryApp() {
           onToggleTheme={() => setIsThemeModalOpen(true)}
           onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
-          onOpenBackupRestoreModal={() => navigateSafely(() => setIsBackupRestoreModalOpen(true))}
+          backupSongs={backupDialogSongs}
+          onImportAllSongs={handleImportAllSongs}
+          onOpenAdvancedBridge={isDevEnv ? () => setIsJsonModalOpen(true) : undefined}
+          onOverlayChange={setIsHeaderOverlayOpen}
           onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode(isDevEnv ? 'explorer' : 'library'); setIsSetlistDrawerOpen(true) })}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
@@ -1880,10 +1885,11 @@ function LibraryApp() {
                 isThemeModalOpen ||
                 isWebsiteUrlModalOpen ||
                 isImportModalOpen ||
-                isBackupRestoreModalOpen ||
                 isJsonModalOpen ||
                 isHeaderKeyPickerOpen ||
-                isTvPresentationModalOpen
+                isTvPresentationModalOpen ||
+                isHeaderOverlayOpen ||
+                reviewRecovery
               }
               onBack={() => setActiveView('songbook')}
               transposeOffset={currentSong.transposeOffset || 0}
@@ -1989,19 +1995,6 @@ function LibraryApp() {
         existingSetlists={setlists}
       /></Suspense>}
 
-      {/* Backup & Restore Modal Dialog (Export Backup & Restore Backup Smart Merge) */}
-      <BackupRestoreDialogModal
-        isOpen={isBackupRestoreModalOpen}
-        onClose={() => setIsBackupRestoreModalOpen(false)}
-        currentSong={currentSong}
-        allSongs={backupDialogSongs}
-        setlists={setlists}
-        onImportAllSongs={handleImportAllSongs}
-        onFullRestore={handleFullRestore}
-        onSmartMerge={handleSmartMerge}
-        onOpenAdvancedBridge={() => setIsJsonModalOpen(true)}
-      />
-
       {/* Stage Settings Modal */}
       <StageSettingsModal
         isOpen={isStageSettingsModalOpen}
@@ -2023,7 +2016,7 @@ function LibraryApp() {
         onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
         onOpenBackupRestoreModal={() => {
           setIsStageSettingsModalOpen(false)
-          setIsBackupRestoreModalOpen(true)
+          openBackupCenter()
         }}
       />
 

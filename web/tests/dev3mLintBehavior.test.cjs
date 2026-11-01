@@ -81,7 +81,7 @@ test('Cloud sync optional context: absent/present/absent rerenders preserve hook
   const modal = () => React.createElement(CloudSyncModal, { isOpen: true, onClose() {}, onSyncStateChange() { notifications++ } })
   for (const value of [null, { session: null, accessStatus: 'active' }, null]) {
     await h.render(React.createElement(React.StrictMode, null, React.createElement(AuthContext.Provider, { value }, modal())))
-    assert.match(document.body.textContent, /Sync Center/)
+    assert.match(document.body.textContent, /Backup & Restore/)
     assert.match(document.body.textContent, /[Ss]ign/)
   }
   assert.equal(notifications, 0)

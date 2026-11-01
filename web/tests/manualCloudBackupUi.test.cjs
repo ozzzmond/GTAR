@@ -1,4 +1,4 @@
-// #227: the Sync Center shows the one-time first-sync choice and sends the user's answer.
+// #292/#299: manual cloud backup and restore in the Backup & Restore center (shared restore preview).
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -51,15 +51,17 @@ for(const mode of ['replace','merge'])test(`restore ${mode}: cancel unchanged; s
  const {calls,root}=await setup();const bytes=JSON.stringify(readPersistedLibrary())
  await click('Restore from cloud');assert.match(document.body.textContent,/Only on device: 1 songs/)
  await click('Cancel');assert.equal(JSON.stringify(readPersistedLibrary()),bytes);assert.equal(getRestoreSafetySnapshot(localStorage),null)
- await click('Restore from cloud');await click(mode==='replace'?'Replace device':'Merge into device')
- assert.match(document.body.textContent,/restored and verified/)
+ await click('Restore from cloud')
+ if(mode==='replace'){await click('Replace device');assert.match(document.body.textContent,/Replace device\?/);assert.equal(getRestoreSafetySnapshot(localStorage),null,'Replace device alone changes nothing');await click('Confirm replace')}
+ else await click('Merge into device')
+ assert.match(document.body.textContent,/Backup restored: 1 songs, 0 setlists \(verified after saving\)/)
  assert.equal(readPersistedLibrary().songs.length,mode==='replace'?1:2)
  assert.ok(calls.every(c=>c==='GET'))
  await act(async()=>root.unmount())
 })
 test('signed out displays explicit sign-in with no cloud request',async()=>{
  const {calls,root,signIns}=await setup(false);assert.deepEqual(calls,[])
- await click('Sign in to back up to cloud');assert.equal(signIns(),1);assert.deepEqual(calls,[])
+ await click('Sign in to use cloud backup');assert.equal(signIns(),1);assert.deepEqual(calls,[])
  await act(async()=>root.unmount())
 })
 test('409 refreshes summary and requires a second confirmation; never merges',async()=>{
@@ -79,7 +81,7 @@ test('quota failure aborts restore with a clear message and unchanged device',as
  const before=JSON.stringify(readPersistedLibrary());const original=window.Storage.prototype.setItem
  window.Storage.prototype.setItem=function(){throw new DOMException('Storage full','QuotaExceededError')}
  try{
-  await click('Replace device')
+  await click('Replace device');await click('Confirm replace')
   assert.match(document.body.textContent,/Restore aborted: safety snapshot failed/)
   assert.equal(JSON.stringify(readPersistedLibrary()),before)
   assert.ok(calls.every(method=>method==='GET'))
@@ -97,7 +99,7 @@ test('Header preserves an unsaved editor draft and blocks Restore until editor a
   const [draft,changeDraft]=React.useState('Unsaved [G]editor draft')
   return React.createElement(React.Fragment,null,
    React.createElement('textarea',{'aria-label':'Editor draft',value:draft,onChange:e=>changeDraft(e.target.value)}),
-   React.createElement(Header,{activeView:view,song:local.songs[0],searchQuery:'',onViewChange:changeView,onSearchQueryChange:noop,onOpenWebsiteUrlSource:noop,onOpenStageTools:noop,onToggleTheme:noop,onOpenStageSettings:noop,onOpenImportModal:noop,onOpenBackupRestoreModal:noop,
+   React.createElement(Header,{activeView:view,song:local.songs[0],searchQuery:'',onViewChange:changeView,onSearchQueryChange:noop,onOpenWebsiteUrlSource:noop,onOpenStageTools:noop,onToggleTheme:noop,onOpenStageSettings:noop,onOpenImportModal:noop,
     autoSyncBlocked:view==='editor'||conflict,onCloudRestore:()=>{restores++;changeDraft('')},onCloudMerge:()=>{restores++;changeDraft('')}}))
  }
  try{
@@ -105,6 +107,7 @@ test('Header preserves an unsaved editor draft and blocks Restore until editor a
   await act(async()=>{document.querySelector('[data-testid="header-cloud-sync-button"]').click();await new Promise(r=>setTimeout(r,5))})
   const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent===text)
   assert.equal(button('Restore from cloud').disabled,true)
+  assert.equal(button('Restore from file').disabled,true,'file restore is blocked in the editor too')
   assert.match(document.body.textContent,/Close the editor \(save or discard your changes\) before restoring\./)
   await click('Restore from cloud')
   assert.equal(restores,0);assert.equal(document.querySelector('textarea').value,'Unsaved [G]editor draft')
@@ -114,6 +117,46 @@ test('Header preserves an unsaved editor draft and blocks Restore until editor a
   assert.equal(button('Restore from cloud').disabled,true)
   await act(async()=>setConflict(false))
   assert.equal(button('Restore from cloud').disabled,false)
+  assert.equal(button('Restore from file').disabled,false)
   assert.equal(document.querySelector('textarea').value,'Unsaved [G]editor draft');assert.equal(restores,0)
  }finally{await act(async()=>root.unmount())}
+})
+
+test('#299 cloud and file restores use the same preview, words and default (Merge)',async()=>{
+ const {root}=await setup()
+ const previewWords=()=>{
+  const preview=document.querySelector('[data-testid="restore-preview"]');assert.ok(preview)
+  const labels=[...preview.querySelectorAll('button')].map(b=>b.textContent)
+  const text=preview.textContent.replace(/(Cloud backup|Backup file): [^O]*/,'SOURCE ')
+  return {labels,text,primary:[...preview.querySelectorAll('button')].find(b=>b.className.includes('bg-app-action')).textContent}
+ }
+ await click('Restore from cloud');const cloud=previewWords();await click('Cancel')
+ const input=document.querySelector('[data-testid="restore-file-input"]')
+ Object.defineProperty(input,'files',{configurable:true,value:[{text:async()=>JSON.stringify(remote)}]})
+ await click('Restore from file');await act(async()=>{input.dispatchEvent(new window.Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,5))})
+ const file=previewWords()
+ assert.deepEqual(file.labels.filter(l=>!/^Also/.test(l)),cloud.labels);assert.deepEqual(cloud.labels,['Merge into device','Replace device','Cancel'])
+ assert.equal(cloud.primary,'Merge into device');assert.equal(file.primary,'Merge into device')
+ for(const words of [/This device: 1 songs/,/Only on device: 1 songs, 0 setlists/,/Only in backup: 1 songs, 0 setlists/,/A verified local safety snapshot is saved first\. Merge into device: Adds and updates songs; deletes nothing\./]){assert.match(cloud.text,words);assert.match(file.text,words)}
+ assert.match(file.text,/Also restore appearance/);assert.match(file.text,/Also restore preferences/)
+ // #303: the cloud backup states only its save time; no app version or format is invented.
+ assert.match(cloud.text,/Backup made · \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);assert.doesNotMatch(cloud.text,/with GTAR|format v/)
+ await act(async()=>root.unmount())
+})
+test('#299 signed out: file backup and restore work end to end through the center',async()=>{
+ const {root,calls}=await setup(false)
+ const downloads=[];const create=URL.createObjectURL,revoke=URL.revokeObjectURL,anchor=window.HTMLAnchorElement.prototype.click
+ URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:backup'};URL.revokeObjectURL=()=>{};window.HTMLAnchorElement.prototype.click=function(){}
+ try{
+  await click('Download .json');assert.equal(downloads.length,1);assert.match(document.body.textContent,/Backup file verified \(1 songs, 0 setlists, 0 in trash/)
+  const json=await downloads[0].text();assert.equal(JSON.parse(json).songs[0].id,local.songs[0].id)
+  // Restore a backup file made on another device: merge keeps both songs.
+  const input=document.querySelector('[data-testid="restore-file-input"]')
+  Object.defineProperty(input,'files',{configurable:true,value:[{text:async()=>JSON.stringify(remote)}]})
+  await click('Restore from file');await act(async()=>{input.dispatchEvent(new window.Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,5))})
+  await click('Merge into device')
+  assert.match(document.body.textContent,/Backup restored: 1 songs, 0 setlists \(verified after saving\)/)
+  assert.equal(readPersistedLibrary().songs.length,2);assert.ok(getRestoreSafetySnapshot(localStorage),'snapshot first')
+  assert.deepEqual(calls,[],'no cloud request signed out')
+ }finally{URL.createObjectURL=create;URL.revokeObjectURL=revoke;window.HTMLAnchorElement.prototype.click=anchor;await act(async()=>root.unmount())}
 })

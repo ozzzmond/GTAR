@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { inspectRecovery, recordRecoveryChoice, recoveryExportData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage, isLibraryIndexActive, enableLibraryIndex, disableLibraryIndex,
+import { inspectRecovery, recordRecoveryChoice, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage, isLibraryIndexActive, enableLibraryIndex, disableLibraryIndex,
   isLibraryB2Active, enableLibraryB2, disableLibraryB2, libraryB2Status } from '../utils/syncJournal'
-import { B2_FLAG_KEY, clearB2Hold, holdMessage, b2RecoveryScopes, exportB2Partition } from '../utils/libraryB2'
+import { B2_FLAG_KEY, clearB2Hold, holdMessage } from '../utils/libraryB2'
+import { downloadRecoveryExport } from '../utils/recoveryExport'
 
 import { isDevEnv } from '../utils/env'
 import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
@@ -96,18 +97,8 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
   }
 
   async function exportSources() {
-    try {
-      const data = recoveryExportData()
-      for (const scope of b2RecoveryScopes()) {
-        try { data[`gtar_library_b2::${scope}`] = JSON.stringify(await exportB2Partition(scope)) }
-        catch (error) {
-          data[`gtar_library_b2_error::${scope}`] = JSON.stringify({ scope, message: error instanceof Error ? error.message : String(error) })
-        }
-      }
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
-      const link = document.createElement('a'); link.href = url; link.download = 'GTAR-storage-recovery.json'; link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch { setError('Recovery export failed. Keep browser storage intact and retry.') }
+    try { await downloadRecoveryExport() }
+    catch { setError('Recovery export failed. Keep browser storage intact and retry.') }
   }
 
   /** Human-readable source type label from the storage key. */

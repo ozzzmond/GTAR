@@ -42,7 +42,7 @@ function appMerge(storage = localStorage) {
     persistLibrary({ songs: merged.songs, setlists: mergeImportedSetlists(before.setlists, merged.setlists) }, storage, { force: true })
   }
 }
-const { BackupRestoreDialogModal } = require('../src/components/BackupRestoreDialogModal.tsx')
+const { DeviceBackupCard } = require('../src/components/DeviceBackupCard.tsx')
 
 const palette = (bg = '#123456') => ({ bgHex: bg, textHex: '#ffffff', chordHex: '#abcdef', sectionHex: '#654321', headerBg: '#112233' })
 /** Every backed-up key with a non-default valid value, in the exact runtime encoding. */
@@ -395,12 +395,16 @@ async function waitFor(check, ms = 3000) {
   }
   return true
 }
-const checkbox = text => [...document.querySelectorAll('label')].find(l => l.textContent.includes(text)).querySelector('input')
-async function pick(dom, label, payload) {
-  await act(async () => button(label).click())
+const checkbox = text => [...document.querySelectorAll('label')].find(l => l.textContent.toLowerCase().includes(text.toLowerCase())).querySelector('input')
+// #299: Restore from file → shared preview → Merge into device, or Replace device (then "Confirm replace").
+async function pick(dom, mode, payload, beforeChoice) {
+  await act(async () => button('Restore from file').click())
   const input = document.querySelector('input[type="file"]')
   Object.defineProperty(input, 'files', { configurable: true, value: [{ text: async () => JSON.stringify(payload) }] })
   await act(async () => input.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
+  if (!document.querySelector('[data-testid="restore-preview"]')) return
+  if (beforeChoice) await beforeChoice()
+  await act(async () => button(mode === 'replace' ? 'Replace device' : 'Merge into device').click())
 }
 
 const current = { id: 'cur', title: 'Current', artist: '', rawContent: '[G]current' }
@@ -423,19 +427,19 @@ for (const mode of ['replace', 'merge']) {
           const base = mode === 'merge' ? [current] : []
           persistLibrary({ songs: [...base, ...songs], setlists }, localStorage, { force: true })
         }
-        await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+        await act(async () => root.render(React.createElement(DeviceBackupCard, {
           isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => assert.fail('fallback'),
           onFullRestore: save, onSmartMerge: save,
         })))
-        assert.equal(checkbox('Appearance').checked, true, 'appearance restores by default')
-        assert.equal(checkbox('Preferences').checked, false, 'preferences stay on the device by default')
-        if (checkbox('Appearance').checked !== appearance) await act(async () => checkbox('Appearance').click())
-        if (checkbox('Preferences').checked !== preferences) await act(async () => checkbox('Preferences').click())
-        await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
-        if (mode === 'replace') {
-          assert.match(document.body.textContent, /This file has 10 appearance and 6 preference settings/)
-          await act(async () => button('Confirm Wipe & Replace').click())
-        }
+        assert.equal(document.querySelector('[data-testid="restore-settings-choice"]'), null, 'settings choice lives in the restore preview')
+        await pick(dom, mode, payload, async () => {
+          assert.match(document.body.textContent, /This backup has 10 appearance and 6 preference settings/)
+          assert.equal(checkbox('Appearance').checked, true, 'appearance restores by default')
+          assert.equal(checkbox('Preferences').checked, false, 'preferences stay on the device by default')
+          if (checkbox('Appearance').checked !== appearance) await act(async () => checkbox('Appearance').click())
+          if (checkbox('Preferences').checked !== preferences) await act(async () => checkbox('Preferences').click())
+        })
+        if (mode === 'replace') await act(async () => button('Confirm replace').click())
         assert.match(document.body.textContent, /Backup restored: 1 songs, 0 setlists \(verified after saving\)/)
         assert.equal(snapshotBeforeWrite, true, 'verified safety snapshot exists before the library changes')
         assert.equal(JSON.parse(localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.songs[0].id, 'cur')
@@ -454,12 +458,12 @@ test('restore that does not read back correctly is not reported as success and l
   persistLibrary({ songs: [current], setlists: [] })
   localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
   const payload = { songs: [incoming], setlists: [], themeMode: 'paper-light' }
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => assert.fail('closed'), allSongs: [current], setlists: [], onImportAllSongs: () => {},
     onFullRestore: () => { /* claims success but saves nothing */ },
   })))
-  await pick(dom, 'Full Restore (Wipe & Replace)', payload)
-  await act(async () => button('Confirm Wipe & Replace').click())
+  await pick(dom, 'replace', payload)
+  await act(async () => button('Confirm replace').click())
   assert.match(document.body.textContent, /Restore could not be verified: song order or membership differs/)
   assert.doesNotMatch(document.body.textContent, /Backup restored:/)
   assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black')
@@ -470,11 +474,11 @@ test('restore that does not read back correctly is not reported as success and l
 test('merge aborts with zero library change when the safety snapshot cannot be saved', withJsdom(async ({ dom, root }) => {
   const storage = new QuotaStorage(10)
   let merged = false
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], storage, onImportAllSongs: () => {},
     onSmartMerge: () => { merged = true },
   })))
-  await pick(dom, 'Restore Backup (Smart Merge)', { songs: [incoming], setlists: [] })
+  await pick(dom, 'merge', { songs: [incoming], setlists: [] })
   assert.match(document.body.textContent, /Restore aborted: pre-restore safety snapshot failed to save/)
   assert.equal(merged, false)
   assert.equal(storage.length, 0)
@@ -483,10 +487,11 @@ test('merge aborts with zero library change when the safety snapshot cannot be s
 test('dialog export: share sheet path with wording that never claims an upload; status shown', withJsdom(async ({ root }) => {
   persistLibrary({ songs: [current], setlists: [] })
   const { env, calls } = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => assert.fail('export must not auto-close'), allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env,
   })))
-  await act(async () => button('Export Backup').click())
+  // Let the opening's session reset run (the old "Export Backup" step used to give it this tick).
+  await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.match(document.querySelector('[data-testid="backup-status"]').textContent, /No backup made from this device yet/)
   await act(async () => button('Save backup file').click())
   assert.match(document.body.textContent, /Tap "Open share sheet"/)
@@ -508,15 +513,14 @@ test('dialog shows when the library changed after the last backup', withJsdom(as
   global.localStorage = localStorage
   const backup = jb.buildVerifiedBackup([current], [])
   status.recordBackupStatus(backup, 'download')
-  const render = songs => act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  const render = songs => act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {},
   })))
   await render([current])
-  await act(async () => button('Export Backup').click())
   await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.doesNotMatch(document.body.textContent, /newer edits are not in it/)
   // Computed when the dialog opens (App re-renders constantly; the library is read once per opening).
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { isOpen: false, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { isOpen: false, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
   await render([{ ...current, rawContent: '[G]edited' }])
   await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.match(document.body.textContent, /Your library changed after this backup; the newer edits are not in it\./)
@@ -637,12 +641,12 @@ for (const mode of ['replace', 'merge']) {
       return realSet.call(this, k, v)
     }
     try {
-      await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+      await act(async () => root.render(React.createElement(DeviceBackupCard, {
         isOpen: true, onClose: () => assert.fail('closed'), allSongs: [current], setlists: [], onImportAllSongs: () => {},
         onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }, localStorage, { force: true }), onSmartMerge: appMerge(),
       })))
-      await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
-      if (mode === 'replace') await act(async () => button('Confirm Wipe & Replace').click())
+      await pick(dom, mode, payload)
+      if (mode === 'replace') await act(async () => button('Confirm replace').click())
     } finally { dom.window.Storage.prototype.setItem = realSet }
     const text = document.body.textContent
     assert.match(text, /Library restored: 1 songs, 0 setlists \(verified after saving\), but settings were not restored: saving .* failed .*every setting was put back and verified\. This device's previous settings are unchanged\./)
@@ -666,12 +670,12 @@ test('F2 dialog: unresolved partial settings state offers "Put back previous set
   }
   proto.removeItem = function (k) { if (broken && bs.backupSettingsStorageKeys().includes(k)) throw new Error('disk error'); return realRemove.call(this, k) }
   try {
-    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    await act(async () => root.render(React.createElement(DeviceBackupCard, {
       isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {},
       onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }, localStorage, { force: true }),
     })))
-    await pick(dom, 'Full Restore (Wipe & Replace)', payload)
-    await act(async () => button('Confirm Wipe & Replace').click())
+    await pick(dom, 'replace', payload)
+    await act(async () => button('Confirm replace').click())
     assert.match(document.body.textContent, /Partial restore: library saved, but settings restoration failed .*could not be put back.*kept in a verified snapshot/)
     broken = false
   } finally { proto.setItem = realSet; proto.removeItem = realRemove }
@@ -697,11 +701,11 @@ for (const [label, mutate] of [
         mutate({ songs: lib.songs.filter(s => s.id === song.id), setlists: lib.setlists })
         persistLibrary(lib, localStorage, { force: true })
       }
-      await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+      await act(async () => root.render(React.createElement(DeviceBackupCard, {
         isOpen: true, onClose: () => assert.fail('closed'), allSongs: [current], setlists: [], onImportAllSongs: () => {}, onFullRestore: faulty, onSmartMerge: faulty,
       })))
-      await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
-      if (mode === 'replace') await act(async () => button('Confirm Wipe & Replace').click())
+      await pick(dom, mode, payload)
+      if (mode === 'replace') await act(async () => button('Confirm replace').click())
       assert.match(document.body.textContent, /Restore could not be verified: (song|setlist) /)
       assert.doesNotMatch(document.body.textContent, /verified after saving|Backup restored:/)
       assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode), 'oled-black', 'settings untouched')
@@ -716,13 +720,13 @@ test('F3: a prepared file is not reused after the library or settings change; re
   const { env, calls } = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
   env.makeFile = (json, name) => { files.push(json); return { name, size: json.length } }
   const props = songs => ({ isOpen: true, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {}, exportEnv: env })
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props([current]))))
-  await act(async () => button('Export Backup').click())
+  await act(async () => root.render(React.createElement(DeviceBackupCard, props([current]))))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
   await act(async () => button('Save backup file').click())
   assert.ok(button('Open share sheet'))
   // Library edited while the old file waits for a tap.
   const edited = { ...current, rawContent: '[G]edited after prepare' }
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props([edited]))))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, props([edited]))))
   await act(async () => button('Open share sheet').click())
   assert.equal(calls.share, 2)
   const shared = files[files.length - 1]
@@ -734,22 +738,22 @@ test('F3: a prepared file is not reused after the library or settings change; re
   calls.share = 0
   const env2 = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
   const files2 = []; env2.env.makeFile = (json, name) => { files2.push(json); return { name, size: json.length } }
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), exportEnv: env2.env })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { ...props([edited]), exportEnv: env2.env })))
   await act(async () => button('Save backup file').click())
   localStorage.setItem('gtar_songbook_sort', 'artist')
   await act(async () => button('Open share sheet').click())
   assert.ok(files2[files2.length - 1].includes('"songbookSort": "artist"'))
   // Closing and reopening drops a waiting file.
   const env3 = fakeEnv({ shareError: named('NotAllowedError') })
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), exportEnv: env3.env })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { ...props([edited]), exportEnv: env3.env })))
   await act(async () => button('Save backup file').click())
   assert.ok(button('Open share sheet'))
   const edited2 = { ...edited, rawContent: '[G]second edit' }
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited2]), exportEnv: env3.env })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { ...props([edited2]), exportEnv: env3.env })))
   await act(async () => button('Open share sheet').click())
   assert.match(document.body.textContent, /changed after the earlier file was prepared, so a new backup was created and verified/)
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), isOpen: false })))
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props([edited]), exportEnv: env3.env })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { ...props([edited]), isOpen: false })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { ...props([edited]), exportEnv: env3.env })))
   await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.ok(button('Save backup file'), 'a new opening does not offer the old prepared file')
 }))
@@ -792,8 +796,8 @@ test('F4 dialog: a backup with an inconsistent manifest changes nothing', withJs
   persistLibrary({ songs: [current], setlists: [] })
   localStorage.setItem(bs.SETTINGS_KEYS.themeMode, 'oled-black')
   const before = JSON.stringify({ ...localStorage })
-  for (const label of ['Full Restore (Wipe & Replace)', 'Restore Backup (Smart Merge)']) {
-    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  for (const label of ['replace', 'merge']) {
+    await act(async () => root.render(React.createElement(DeviceBackupCard, {
       isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => assert.fail('import'),
       onFullRestore: () => assert.fail('replaced'), onSmartMerge: () => assert.fail('merged'),
     })))
@@ -884,7 +888,7 @@ test('R2 dialog: unfinished settings restore is shown on mount and put back with
   for (const [k, v] of source.map) localStorage.setItem(k, v)
   const changedTheme = localStorage.getItem(bs.SETTINGS_KEYS.themeMode)
   assert.notEqual(changedTheme, 'oled-black')
-  const render = open => act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  const render = open => act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: open, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {},
   })))
   await render(true)
@@ -905,7 +909,7 @@ test('R2 dialog: damaged recovery data stays unresolved until explicitly discard
   deviceSettings(localStorage)
   localStorage.setItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY, '{"v":2,"at":"2026-10-27T00:00:00Z","keys":["gtar_theme_store"],"values":{}')
   const before = JSON.stringify({ ...localStorage })
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { isOpen: true, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { isOpen: true, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
   await act(async () => new Promise(r => setTimeout(r, 5)))
   const banner = () => document.querySelector('[data-testid="settings-recovery"]')
   assert.match(banner().textContent, /cannot be used: not valid JSON/)
@@ -927,18 +931,17 @@ test('R2 dialog: a restore with settings ticked is refused while recovery is unf
   const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
   let calls = 0
   const save = (songs, setlists) => { calls++; persistLibrary({ songs, setlists }, localStorage, { force: true }) }
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, onFullRestore: save, onSmartMerge: appMerge(),
   })))
-  await pick(dom, 'Full Restore (Wipe & Replace)', payload)
-  await act(async () => button('Confirm Wipe & Replace').click())
+  await pick(dom, 'replace', payload)
+  await act(async () => button('Confirm replace').click())
   assert.match(document.body.textContent, /Restore not started: an earlier settings restore did not finish/)
   assert.equal(calls, 0)
   assert.equal(readPersistedLibrary().songs[0].id, 'cur')
   assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot)
-  await act(async () => checkbox('Appearance').click())
-  await pick(dom, 'Full Restore (Wipe & Replace)', payload)
-  await act(async () => button('Confirm Wipe & Replace').click())
+  await pick(dom, 'replace', payload, () => act(async () => checkbox('Appearance').click()))
+  await act(async () => button('Confirm replace').click())
   assert.match(document.body.textContent, /Backup restored: 1 songs/)
   assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot, 'unfinished recovery evidence untouched')
 }))
@@ -951,12 +954,12 @@ test('R3: changed-since-backup follows later library edits, edits during share, 
     navigator: { canShare: () => true, share: () => new Promise(resolve => { releaseShare = resolve }) },
   }
   const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
-  const show = (songs, open = true) => act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  const show = (songs, open = true) => act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: open, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {}, exportEnv: env,
   })))
   const settle = () => act(async () => new Promise(r => setTimeout(r, 5)))
   const lib1 = [current]
-  await show(lib1); await act(async () => button('Export Backup').click())
+  await show(lib1)
   // Edit during share: the share sheet is open while the library changes.
   let sharing
   await act(async () => { sharing = button('Save backup file').click() })
@@ -1137,13 +1140,13 @@ test('P2 dialog: committed copy after remount offers Keep current settings / Und
   proto.removeItem = function (k) { if (sticky && k === bs.SETTINGS_RESTORE_SNAPSHOT_KEY) throw new Error('cannot remove'); return realRemove.call(this, k) }
   const props = { isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, onFullRestore: (songs, setlists) => persistLibrary({ songs, setlists }, localStorage, { force: true }) }
   try {
-    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props)))
-    await pick(dom, 'Full Restore (Wipe & Replace)', payload)
-    await act(async () => button('Confirm Wipe & Replace').click())
+    await act(async () => root.render(React.createElement(DeviceBackupCard, props)))
+    await pick(dom, 'replace', payload)
+    await act(async () => button('Confirm replace').click())
     assert.match(document.body.textContent, /Backup restored: 1 songs.*could not be removed; it is kept and marked as finished/)
   } finally { sticky = false; proto.removeItem = realRemove }
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { ...props, isOpen: false })))
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, props)))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { ...props, isOpen: false })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, props)))
   await act(async () => new Promise(r => setTimeout(r, 5)))
   const banner = document.querySelector('[data-testid="settings-recovery"]').textContent
   assert.match(banner, /The last settings restore finished .*Putting it back undoes that restore/)
@@ -1159,10 +1162,9 @@ test('P2 dialog: same-tab settings writes with no event update the warning while
   persistLibrary({ songs: [current], setlists: [] })
   const { env } = fakeEnv()
   const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env, settingsPollMs: 20,
   })))
-  await act(async () => button('Export Backup').click())
   await act(async () => button('Save backup file').click())
   await act(async () => new Promise(r => setTimeout(r, 10)))
   assert.match(statusText(), /Nothing changed since this file was made/)
@@ -1221,7 +1223,7 @@ test('C1: a committed copy replaced after display is not undone, and a pending c
 test('C1 dialog: clicking Put back after the copy was replaced refuses, refreshes to the current copy, changes nothing', withJsdom(async ({ root }) => {
   const source = await pendingSnapshotStorage()
   for (const [k, v] of source.map) localStorage.setItem(k, v)
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, { isOpen: true, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
+  await act(async () => root.render(React.createElement(DeviceBackupCard, { isOpen: true, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
   await act(async () => new Promise(r => setTimeout(r, 5)))
   assert.ok(button('Put back previous settings'))
   // Another tab replaces the copy with a different one (no storage event reaches this tab here).
@@ -1257,10 +1259,9 @@ test('C2 dialog: writing U+0001 to an absent key is noticed as a settings change
   persistLibrary({ songs: [current], setlists: [] })
   const { env } = fakeEnv()
   const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env, settingsPollMs: 20,
   })))
-  await act(async () => button('Export Backup').click())
   await act(async () => button('Save backup file').click())
   await act(async () => new Promise(r => setTimeout(r, 10)))
   assert.match(statusText(), /Nothing changed since this file was made/)
