@@ -43,3 +43,42 @@
   only with explicit human authorization before any push, tag, or deploy.
 - If a task doesn't clearly say which one it is, ask before proceeding —
   do not default to release/deployment permissions.
+
+## Agent Skills (mattpocock/skills)
+- Source: github.com/mattpocock/skills, installed as an editable copy pinned
+  to upstream commit `4ae2317ddb22`. Do not auto-update; updates go through
+  a normal PR to dev.
+- Precedence: this file, gtar_standing_protocol_v1.md, and
+  RELEASE_WORKFLOW_README.md override any skill. If a skill step says to
+  commit, merge, tag, push, open a tracker issue, or spawn subagents, skip
+  that step and report it instead.
+- Installed and allowed:
+  - grill-with-docs / grilling — before any non-trivial change. Grilling is
+    the one exception to the no-questions style: ask one question at a time,
+    each with a recommended answer, only when the user invokes it.
+  - domain-modeling — keeps GLOSSARY.md (repo root) and docs/adr/ current.
+  - tdd — features and bug fixes, red-green-refactor, one vertical slice at a
+    time. Use the standing-protocol verification commands (web/ prefix).
+  - diagnosing-bugs — regressions, especially chord/key and transpose.
+  - handoff — end of session, compact; no receipt files.
+  - pr — PR body shape for PRs targeting dev.
+- Not allowed (not installed; do not fetch or emulate): implement,
+  implement-spec, wayfinder, triage, to-tickets, code-review,
+  improve-codebase-architecture, or any parallel subagent fan-out.
+
+## Domain Terms
+Use these exact terms in code, tests, PRs, and reports:
+- ORIGINAL_KEY — verified source/original song key.
+- CHART_KEY — key the stored chart is written in; may differ from ORIGINAL_KEY.
+- PERFORMANCE_KEY — CHART_KEY plus applied transpose state.
+- TRANSPOSE_OFFSET — semitone offset; TRANSPOSE_ZERO means ORIGINAL_KEY.
+- Never guess ORIGINAL_KEY; never silently change a saved PERFORMANCE_KEY.
+- ChordPro `{key}` equals ORIGINAL_KEY at rest. Only transposition changes the
+  key in use (PERFORMANCE_KEY); transposing never rewrites `{original_key}`.
+
+## Repo Guards
+- Target is Web/PWA (web/). Android is frozen legacy: do not touch unless
+  explicitly instructed.
+- Online services use Google credentials; never move, log, or commit secrets.
+- No PROD, D1 migration, Cloudflare, or tag operations without explicit
+  owner approval.
