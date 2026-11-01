@@ -76,6 +76,48 @@
   implement-spec, wayfinder, triage, to-tickets, code-review,
   improve-codebase-architecture, or any parallel subagent fan-out.
 
+## UI Review Skill (pbakaus/impeccable)
+- Role: UI reviewer and slop detector only, not a redesigner. Web/PWA (web/)
+  only. DEV trial, adopted alongside GTAR1; issues found in either repo are
+  fixed in both.
+- Source: github.com/pbakaus/impeccable (Apache-2.0), vendored by manual copy
+  into `.agents/skills/impeccable/`, pinned to upstream commit `77ac20b968ee` (skill 4.8.0, engine 0.1.18).
+  Do not edit or auto-update; updates go through a normal PR to dev.
+- Install: manual copy only. No `npx impeccable install`, no design hook, no
+  submodule, no editor plugin. Do not add impeccable to web/package.json.
+- Telemetry off: `.impeccable/config.json` contains `"telemetry": false`.
+  Commit only that file; the rest of `.impeccable/` is gitignored. Findings go
+  in the chat report, not in committed critique/review files.
+- PRODUCT.md / DESIGN.md (repo root) are written once by `init` / `document`
+  with owner approval. Reference only: this file, gtar_standing_protocol_v1.md,
+  and RELEASE_WORKFLOW_README.md override them and the skill. Same skip rule as
+  above for commit/merge/tag/push/issue/subagent steps.
+- Allowed, read-only:
+  - `npx impeccable@4.8.0 detect --json web/src` — deterministic,
+    no LLM. Exit 0 clean, 2 findings, 1 scan failed: report the code, do not
+    retry-loop.
+  - `npx impeccable@4.8.0 detect --json http://localhost:5173` —
+    local dev server only.
+  - `critique <one component>`, `audit <one surface>` — findings P0–P3, no
+    code changes.
+- Allowed only after the owner picks findings: harden, adapt, clarify,
+  typeset, layout, polish, optimize. One target, one fix round, then report and
+  stop. Never chain critique → fix → critique without owner approval.
+- Not allowed unless the owner names the command: live, generate, bolder,
+  quieter, distill, overdrive, delight, colorize, animate, onboard, shape,
+  extract, craft, pin.
+- Never: scan or open the PROD URL; touch Android; touch Cloudflare, D1,
+  auth/session, Google-credential or online-service code, sync/storage/
+  IndexedDB, backup/restore, chord/key/transpose, or the ChordPro parser;
+  change data shape or saved user content as part of a design fix; add web
+  fonts, CDN, or any new network request; hardcode colors outside existing
+  theme tokens; run whole-app passes.
+- Verification: standing-protocol checks, plus a detector re-run on the target
+  (targeted findings resolved, no new P0/P1). Pre-existing lint errors outside
+  the target are out of scope.
+- Audit-script use: pass only rule counts, exit code, and top P0/P1 items to
+  any model, never the full JSON.
+
 ## Domain Terms
 Use these exact terms in code, tests, PRs, and reports:
 - ORIGINAL_KEY — verified source/original song key.

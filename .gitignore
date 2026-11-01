@@ -37,3 +37,7 @@ lint-results.json
 
 # Root Cloudflare local runtime state
 /.wrangler/
+
+# impeccable: commit only .impeccable/config.json
+.impeccable/*
+!.impeccable/config.json
