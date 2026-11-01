@@ -11,7 +11,6 @@
  * The local library stays the source of truth on the device: every change goes through
  * persistLibrary() with the revision gate, so another tab or the editor is never overwritten.
  */
-import { isDevEnv } from './env'
 import { appLogger } from './logger'
 import { LibraryPartitionBlockedError } from './libraryB2'
 import {
@@ -62,7 +61,7 @@ export const RECORDS_SYNC_STATE_KEY = 'gtar_records_sync_v1'
 /** '1' = per-record sync on, '0' = off. Unset = the DEV default (see isRecordsSyncEnabled). */
 export const RECORDS_SYNC_TOGGLE_KEY = 'gtar_records_sync_enabled'
 /** RFC #188 S7: per-record sync is the default on DEV; '0' turns it off per device. PROD never runs it. */
-export const RECORDS_SYNC_DEFAULT_ON = true
+export const RECORDS_SYNC_DEFAULT_ON = false
 const REMOVED = recordChecksum(true, null)
 export const RECORDS_SYNC_RUN_LOCK = 'gtar-records-sync-run'
 /** Last answer from the server about per-record sync on this device: 'off' = classic fallback in use. */
@@ -98,11 +97,8 @@ interface RecordsSyncState { v: 1; userId: string | null; cursor: number; known:
 const emptyState = (userId: string | null = null): RecordsSyncState => ({ v: 1, userId, cursor: 0, known: {}, conflicts: [] })
 
 export function isRecordsSyncEnabled(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
-  if (!isDevEnv) return false
-  try {
-    const value = storage.getItem(RECORDS_SYNC_TOGGLE_KEY)
-    return value === null ? RECORDS_SYNC_DEFAULT_ON : value === '1'
-  } catch { return false }
+  void storage
+  return false
 }
 export function setRecordsSyncEnabled(enabled: boolean, storage: Pick<Storage, 'setItem'> = localStorage): void {
   storage.setItem(RECORDS_SYNC_TOGGLE_KEY, enabled ? '1' : '0')

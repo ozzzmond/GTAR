@@ -1,731 +1,141 @@
-import { confirmLibraryOwner } from '../utils/libraryOwner'
-import { openRecoveryReview } from '../utils/recoveryReview'
-import { isRecordsServerUnavailable, isRecordsSyncEnabled, performSongbookSync, setRecordsSyncEnabled, type FirstSyncChoice } from '../utils/recordsSync'
 import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import {
-  Cloud,
-  CloudUpload,
-  CloudDownload,
-  CloudOff,
-  RefreshCw,
-  Check,
-  AlertTriangle,
-  AlertCircle,
-  X,
-  User,
-  Shield,
-  Layers,
-  FileText,
-  Palette,
-} from 'lucide-react'
-import { useOptionalGoogleAuth } from '../utils/authContext'
-import {
-  readCloudSyncMeta,
-  computeSongbookChecksum,
-  estimateSongbookUploadBytes,
-  songbookUploadHeadroom,
-  type CloudSyncStatus,
-  type CloudSyncResult,
-  type ConflictingItem,
-} from '../utils/cloudSongbookSync'
-import { readPersistedLibrary } from '../utils/syncJournal'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
-import { tryReadCloudThemeSettings } from '../utils/backupSettings'
+import React, { useEffect, useRef, useState } from 'react'
+import { useOptionalGoogleAuth } from '../utils/authContext'
+import type { CloudSongbookRecord } from '../utils/cloudSongbookSync'
+import { readPersistedLibrary } from '../utils/syncJournal'
 import type { SyncLibrary } from '../utils/syncMerge'
-import type { SyncPill } from '../utils/syncStatus'
-import type { SyncDeviceFacts } from '../utils/useSyncStatus'
+import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import { CloudBackupChanged, readCloudBackup, restoreCloudBackup, writeCloudBackup } from '../utils/manualCloudBackup'
+import { openRecoveryReview } from '../utils/recoveryReview'
 
 interface CloudSyncModalProps {
   isOpen: boolean
   onClose: () => void
-  onSyncApplied?: (updatedLibrary: SyncLibrary) => void
-  onSyncStateChange?: (status: CloudSyncStatus, isProcessing: boolean) => void
-  /** #191: DEV Sync Center. When set, the dialog is titled Sync Center and shows device facts. */
-  syncCenter?: { pill: SyncPill; facts: SyncDeviceFacts; onOpenDebugLogs?: () => void }
+  onOpenDebugLogs?: () => void
+  onSyncApplied?: (library: SyncLibrary) => void
+  onBackupSummary?: (date: string | null) => void
+  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
 }
-
-export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
-  isOpen,
-  onClose,
-  onSyncApplied,
-  onSyncStateChange,
-  syncCenter,
-}) => {
-  const recoveryAttention = useRecoveryAttention() // #181
-  const authContext = useOptionalGoogleAuth()
-
-  const session = authContext?.session
-  const token = session?.sessionToken || session?.idToken || session?.token
-  const isAuthenticated = Boolean(session && token && authContext?.accessStatus === 'active')
-
-  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>('IDLE')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [statusMessage, setStatusMessage] = useState<string>('')
-  const [errorMessage, setErrorMessage] = useState<string>('')
-  // #227: first sync on this device, with its own songs and an existing cloud library.
-  const [firstSyncChoice, setFirstSyncChoice] = useState<{ songs: number; setlists: number } | null>(null)
-  // #247: sync refused because this device's songbook has no verified owner, or another one.
-  const [ownership, setOwnership] = useState<'unbound' | 'mismatch' | null>(null)
-  const [linking, setLinking] = useState(false)
-  // #227 item 4: replacing the device copy asks first.
-  const [confirmReplace, setConfirmReplace] = useState(false)
-  const [warningMessage, setWarningMessage] = useState<string>('')
-  const [conflicts, setConflicts] = useState<ConflictingItem[]>([])
-  const [lastMeta, setLastMeta] = useState(() => readCloudSyncMeta())
-  const [recordsSync, setRecordsSync] = useState(() => { try { return isRecordsSyncEnabled() } catch { return false } })
+const counts = (library: SyncLibrary) => `${library.songs.filter(s => !s.isDeleted).length} songs, ${library.setlists.length} setlists, ${library.songs.filter(s => s.isDeleted).length} in trash`
+const only = (a: {id?: string | number}[], b: {id?: string | number}[]) => a.filter(x => !b.some(y => String(y.id) === String(x.id))).length
+export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose, onBackupSummary, onFullRestore, onSmartMerge, onOpenDebugLogs }) => {
+  const recoveryAttention = useRecoveryAttention()
   const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
-  // Read on each render: the last sync updates it, and the device view is opened after a sync.
-  let recordsServerOff = false
-  try { recordsServerOff = isRecordsServerUnavailable() } catch { /* storage unavailable */ }
-  // Sync Center: "This device" view (library and sync engine) instead of the main view.
-  const [deviceView, setDeviceView] = useState(false)
-  const [wasOpen, setWasOpen] = useState(isOpen)
-  if (wasOpen !== isOpen) { setWasOpen(isOpen); if (!isOpen) setDeviceView(false) }
-
-  // Focus restoration to triggering element upon modal close
-  const previousActiveElementRef = useRef<HTMLElement | null>(null)
+  const auth = useOptionalGoogleAuth()
+  const session = auth?.session
+  const token = session?.sessionToken || session?.idToken || session?.token || ''
+  const userId = String(session?.user?.id || '')
+  const signedIn = Boolean(token && userId && auth?.accessStatus === 'active')
+  const [cloud, setCloud] = useState<CloudSongbookRecord | null>(null)
+  const [ready, setReady] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [preview, setPreview] = useState<{ kind: 'backup' | 'restore'; device: SyncLibrary; cloud: CloudSongbookRecord | null } | null>(null)
+  const identity = useRef('')
+  useEffect(() => { identity.current = `${userId}:${token}`; return () => { identity.current = '' } }, [userId, token])
+  const summaryCallback = useRef(onBackupSummary)
+  useEffect(() => { summaryCallback.current = onBackupSummary }, [onBackupSummary])
   useEffect(() => {
-    if (isOpen) {
-      previousActiveElementRef.current = document.activeElement as HTMLElement | null
-    } else if (previousActiveElementRef.current) {
-      previousActiveElementRef.current.focus?.()
-      previousActiveElementRef.current = null
+    let active = true
+    if (!isOpen) return
+    const trigger = document.activeElement as HTMLElement | null
+    void Promise.resolve().then(() => { if (active) { setPreview(null); setReady(false); setMessage('') } })
+    if (signedIn) {
+      readCloudBackup({ token, userId }).then(record => {
+        if (!active) return
+        setCloud(record); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null)
+      }).catch(error => { if (active) setMessage(String(error.message)) })
     }
-  }, [isOpen])
-  useEffect(() => {
-    return () => {
-      previousActiveElementRef.current?.focus?.()
-    }
-  }, [])
-
-  // Safe Escape key dismissal (guarded during in-flight operations)
+    return () => { active = false; trigger?.focus?.() }
+  }, [isOpen, signedIn, token, userId])
   useEffect(() => {
     if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isProcessing) {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, isProcessing, onClose])
-
-  // Parent callbacks can change when applying React state; that must not start another sync.
-  const onSyncAppliedRef = useRef(onSyncApplied)
-  useEffect(() => { onSyncAppliedRef.current = onSyncApplied }, [onSyncApplied])
-
-  const refreshSyncState = useCallback(async (firstSync?: FirstSyncChoice) => {
-    if (!token || !isAuthenticated) return
-    setIsProcessing(true)
-    setErrorMessage('')
-    setWarningMessage('')
-    try {
-      const result = await performSongbookSync(token, firstSync ? { firstSync } : {})
-      setSyncStatus(result.status)
-      setLastMeta(readCloudSyncMeta())
-      setFirstSyncChoice(result.firstSyncChoice ?? null)
-      setOwnership(result.ownership ?? null)
-      if (result.firstSyncChoice) return
-
-      if (result.success) {
-        setWarningMessage(result.warning || '')
-        if (result.updatedLibrary) onSyncAppliedRef.current?.(result.updatedLibrary)
-        const hasTheme = Boolean(result.updatedLibrary?.themeSettings)
-        if (result.actionTaken === 'NONE') {
-          setStatusMessage('')
-        } else if (result.actionTaken === 'UPLOADED') {
-          setStatusMessage(
-            hasTheme
-              ? 'Local songbook and theme settings uploaded to cloud successfully.'
-              : 'Local songbook uploaded to cloud successfully.'
-          )
-        } else if (result.actionTaken === 'DOWNLOADED') {
-          setStatusMessage(
-            hasTheme
-              ? 'Newer cloud songbook and theme settings downloaded to this device.'
-              : 'Newer cloud songbook downloaded to this device.'
-          )
-        } else if (result.actionTaken === 'MERGED') {
-          setStatusMessage(
-            hasTheme
-              ? 'Songbooks and theme settings merged safely. All changes preserved.'
-              : 'Songbooks merged safely. All changes preserved.'
-          )
-        }
-      } else if (result.status === 'CONFLICT') {
-        if (result.updatedLibrary) onSyncAppliedRef.current?.(result.updatedLibrary)
-        const hasThemeConflict = (result.conflicts || []).some((c) => c.type === 'theme')
-        setStatusMessage(
-          hasThemeConflict
-            ? 'Conflicting songbook or theme edits detected between this device and the cloud.'
-            : 'Conflicting edits detected between this device and the cloud.'
-        )
-        setErrorMessage(result.error || '')
-        setConflicts(result.conflicts || [])
-      } else {
-        setErrorMessage(result.error || 'Failed to sync with cloud.')
-      }
-    } catch (err) {
-      setSyncStatus('ERROR')
-      setErrorMessage(err instanceof Error ? err.message : 'Sync failed.')
-    } finally {
-      setIsProcessing(false)
-    }
-  }, [token, isAuthenticated])
-
-  const linkSongbook = async () => {
-    const userId = session?.user?.id
-    if (!userId) return
-    setLinking(true)
-    setErrorMessage('')
-    try {
-      await confirmLibraryOwner(userId)
-      setOwnership(null)
-      await refreshSyncState()
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Could not link the songbook.')
-    } finally {
-      setLinking(false)
-    }
-  }
-  useEffect(() => {
-    if (isOpen && isAuthenticated) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Start the external sync request with its existing synchronous busy guard.
-      void refreshSyncState()
-    }
-  }, [isOpen, isAuthenticated, refreshSyncState])
-
-  useEffect(() => {
-    onSyncStateChange?.(syncStatus, isProcessing)
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      try {
-        const Evt = window.CustomEvent || CustomEvent
-        window.dispatchEvent(
-          new Evt('gtar:cloud_sync_state', {
-            detail: { status: syncStatus, isProcessing },
-          })
-        )
-      } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
-    }
-  }, [syncStatus, isProcessing, onSyncStateChange])
-
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose() }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [isOpen, busy, onClose])
   if (!isOpen) return null
-
-  const handleResolveConflict = async (forceAction: 'upload' | 'download' | 'merge_preserve') => {
-    if (!token) return
-    setIsProcessing(true)
-    setErrorMessage('')
-    setWarningMessage('')
-    try {
-      const result: CloudSyncResult = await performSongbookSync(token, { forceAction })
-      setSyncStatus(result.status)
-      setLastMeta(readCloudSyncMeta())
-      if (result.success) {
-        setConflicts([])
-        setWarningMessage(result.warning || '')
-        if (forceAction === 'merge_preserve') {
-          setStatusMessage('Merged local and cloud songbooks safely with conflict copies.')
-        } else if (forceAction === 'upload') {
-          setStatusMessage('Uploaded local songbook to cloud.')
-        } else if (result.replaced && !result.replaced.changed) {
-          setStatusMessage('This device already matches the cloud copy. Nothing changed.')
-        } else if (result.replaced) {
-          setStatusMessage(`This device now has the cloud copy (${result.replaced.songs} songs, ${result.replaced.setlists} setlists). The previous device copy is in Review local recovery.`)
-        } else {
-          setStatusMessage('Replaced this device with the cloud copy (the previous device copy is in Review local recovery).')
-        }
-        if (result.updatedLibrary && onSyncApplied) {
-          onSyncApplied(result.updatedLibrary)
-        }
-      } else {
-        setErrorMessage(result.error || 'Resolution failed.')
-      }
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Resolution failed.')
-    } finally {
-      setIsProcessing(false)
+  const account = { token, userId, isCurrent: () => identity.current === `${userId}:${token}` }
+  const run = async (action: () => Promise<void>) => {
+    if (busy || !signedIn) return
+    setBusy(true); setMessage('')
+    try { await action() } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
+    finally { setBusy(false) }
+  }
+  const prepare = (kind: 'backup' | 'restore') => run(async () => {
+    const captured = identity.current
+    const record = await readCloudBackup(account)
+    if (identity.current !== captured) throw new Error('Account changed; open the dialog again.')
+    setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null)
+    if (kind === 'restore' && !record) throw new Error('No cloud backup yet')
+    const device = readPersistedLibrary()
+    if (!device) throw new Error('Device library could not be read')
+    setPreview({kind, device, cloud: record})
+  })
+  const confirm = (mode?: 'replace' | 'merge') => run(async () => {
+    if (!preview) return
+    const captured = identity.current
+    const device = readPersistedLibrary()
+    if (!device || JSON.stringify(device) !== JSON.stringify(preview.device)) {
+      setPreview(null); throw new Error('Device library changed. Review and confirm again.')
     }
-  }
-
-  const handleForceUpload = async () => {
-    await handleResolveConflict('upload')
-  }
-  void handleForceUpload
-
-  const handleForceDownload = async () => {
-    setConfirmReplace(false)
-    await handleResolveConflict('download')
-  }
-
-  const currentLocal = typeof localStorage !== 'undefined' ? readPersistedLibrary() : null
-  const currentTheme = typeof localStorage !== 'undefined' ? tryReadCloudThemeSettings(localStorage) : undefined
-  const localChecksum = currentLocal
-    ? computeSongbookChecksum({
-        ...currentLocal,
-        ...(currentTheme ? { themeSettings: currentTheme } : {}),
-      })
-    : null
-  // #190: how close an upload of this library is to the 2 MB cloud limit.
-  const headroom = currentLocal
-    ? songbookUploadHeadroom(estimateSongbookUploadBytes({
-        ...currentLocal,
-        ...(currentTheme ? { themeSettings: currentTheme } : {}),
-      }))
-    : null
-  const sizeMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2)
-
-  return (
-    <div
-      data-testid="cloud-sync-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !isProcessing) {
-          onClose()
+    if (preview.kind === 'backup') {
+      try {
+        const record = await writeCloudBackup(account, device, preview.cloud)
+        if (identity.current !== captured) return
+        setCloud(record); summaryCallback.current?.(record.updatedAt); setPreview(null); setMessage('Cloud backup saved and checksum verified.')
+      } catch (error) {
+        setPreview(null)
+        if (error instanceof CloudBackupChanged) {
+          const record = await readCloudBackup(account)
+          if (identity.current === captured) { setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null) }
         }
-      }}
-    >
-      <div
-        data-testid="cloud-sync-modal-card"
-        className="w-full max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header: Cloud icon | Cloud Songbook Sync | Close X */}
-        <div className="px-5 py-4 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
-              <Cloud className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="font-extrabold text-sm sm:text-base tracking-wide">
-                {syncCenter ? 'Sync Center' : 'Cloud Songbook Sync'}
-              </h2>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isProcessing}
-            aria-label="Close"
-            className="w-8 h-8 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-5 space-y-4 overflow-y-auto flex-1">
-          {syncCenter && deviceView ? (
-            <div data-testid="sync-center-device-view" className="space-y-3">
-              <button
-                type="button"
-                onClick={() => setDeviceView(false)}
-                className="min-h-11 px-3 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-xs font-semibold text-app-heading cursor-pointer"
-              >
-                Back
-              </button>
-              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs">
-                <h3 className="px-3.5 pt-3 pb-1 font-bold text-app-heading">This device</h3>
-                <div className="px-3.5 py-2 pb-3 flex justify-between gap-3">
-                  <span className="text-app-muted">Library</span>
-                  <span>{syncCenter.facts.songs === null ? 'Unavailable' : `${syncCenter.facts.songs} songs · ${syncCenter.facts.setlists} setlists`}</span>
-                </div>
-              </div>
-              <div className="rounded-xl bg-app-base/70 border border-app-border text-xs px-3.5 py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-bold text-app-heading">Sync engine</div>
-                  <div className="text-[11px] text-app-muted">
-                    {!recordsSync ? 'Classic: syncs the whole songbook at once.'
-                      : recordsServerOff ? 'Per-record is not available on the server yet, so Classic is used.'
-                      : 'Per-record: syncs only the songs and setlists that changed.'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-testid="sync-center-engine-toggle"
-                  aria-pressed={recordsSync}
-                  disabled={isProcessing}
-                  onClick={() => {
-                    const next = !recordsSync
-                    try { setRecordsSyncEnabled(next) } catch { return }
-                    setRecordsSync(next)
-                  }}
-                  className="shrink-0 min-h-11 px-3 rounded-lg border border-app-border bg-app-surface hover:border-app-action font-semibold text-app-heading cursor-pointer disabled:opacity-50"
-                >
-                  {recordsSync ? (recordsServerOff ? 'Per-record (unavailable)' : 'Per-record') : 'Classic'}
-                </button>
-              </div>
-            </div>
-          ) : (<>
-          {/* Account Card: Avatar | Display name | Email | Role badge */}
-          <div className="p-3.5 rounded-xl bg-app-base/70 border border-app-border flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              {session?.user?.picture ? (
-                <img
-                  src={session.user.picture}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="w-8 h-8 rounded-full border border-app-action/40 shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-app-border flex items-center justify-center text-app-muted shrink-0">
-                  <User className="w-4 h-4" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <div className="text-xs font-bold truncate">
-                  {session?.user?.name || session?.user?.email || 'Guest / Offline'}
-                </div>
-                <div className="text-[10px] text-app-muted truncate">
-                  {isAuthenticated ? session?.user?.email : 'Not signed in with approved account'}
-                </div>
-              </div>
-            </div>
-
-            <div className="shrink-0 text-right">
-              {isAuthenticated ? (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-app-action/20 text-app-action border border-app-action/40">
-                  Active {session?.user?.role === 'admin' ? 'Admin' : 'Member'}
-                </span>
-              ) : (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/40">
-                  Auth Required
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Status Card: Sync status | Last synced | Fingerprint */}
-          <div className="p-4 rounded-xl bg-app-base/90 border border-app-border space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-app-muted uppercase tracking-wider font-mono">
-                Sync Status
-              </span>
-              <div>
-                {syncStatus === 'IN_SYNC' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-status-success border border-emerald-500/40 inline-flex items-center gap-1.5">
-                    <Check className="w-3.5 h-3.5" />
-                    <span>In Sync</span>
-                  </span>
-                )}
-                {syncStatus === 'LOCAL_NEWER' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-400/20 text-status-warning border border-amber-400/40 inline-flex items-center gap-1.5">
-                    <CloudUpload className="w-3.5 h-3.5" />
-                    <span>Local Newer</span>
-                  </span>
-                )}
-                {syncStatus === 'CLOUD_NEWER' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-sky-500/20 text-status-info border border-sky-500/40 inline-flex items-center gap-1.5">
-                    <CloudDownload className="w-3.5 h-3.5" />
-                    <span>Cloud Newer</span>
-                  </span>
-                )}
-                {syncStatus === 'CONFLICT' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/40 inline-flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Conflict</span>
-                  </span>
-                )}
-                {syncStatus === 'OFFLINE' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-app-muted/20 text-app-muted border border-app-muted/40 inline-flex items-center gap-1.5">
-                    <CloudOff className="w-3.5 h-3.5" />
-                    <span>Offline</span>
-                  </span>
-                )}
-                {(syncStatus === 'IDLE' || syncStatus === 'SYNCING') && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-app-border/40 text-app-muted border border-app-border inline-flex items-center gap-1.5">
-                    <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
-                    <span>{isProcessing ? 'Syncing...' : 'Idle'}</span>
-                  </span>
-                )}
-                {syncStatus === 'ERROR' && (
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/40 inline-flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>Error</span>
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Status Message / Description */}
-            {statusMessage && (
-              <p className="text-xs text-app-action bg-app-action/10 p-2.5 rounded-lg border border-app-action/20">
-                {statusMessage}
-              </p>
-            )}
-
-            {ownership === 'unbound' && (
-              <div data-testid="library-owner-link" role="group" aria-label="Link this songbook to your account" className="text-xs p-3 rounded-lg border border-app-action/40 bg-app-action/10 space-y-2">
-                <p className="text-app-heading">This device's songbook ({(readPersistedLibrary()?.songs.length ?? 0)} songs, {(readPersistedLibrary()?.setlists.length ?? 0)} setlists) is not linked to an account yet, so nothing was uploaded.</p>
-                <p className="text-app-muted">Link it to <strong>{session?.user?.email || 'this account'}</strong> only if it is yours. A full copy is saved in Review local recovery first.</p>
-                <button type="button" data-testid="library-owner-link-button" disabled={linking || isProcessing} onClick={() => { void linkSongbook() }}
-                  className="w-full py-2 px-3 rounded-lg bg-app-action text-app-on-action font-bold cursor-pointer disabled:opacity-50">Link this songbook to {session?.user?.email || 'this account'}</button>
-              </div>
-            )}
-
-            {firstSyncChoice && (
-              <div data-testid="first-sync-choice" role="group" aria-label="Set up sync on this device" className="text-xs p-3 rounded-lg border border-app-action/40 bg-app-action/10 space-y-2">
-                <p className="font-bold text-app-heading">This device is new to your cloud library</p>
-                <p className="text-app-muted">
-                  It has {firstSyncChoice.songs} {firstSyncChoice.songs === 1 ? 'song' : 'songs'}
-                  {firstSyncChoice.setlists ? ` and ${firstSyncChoice.setlists} ${firstSyncChoice.setlists === 1 ? 'setlist' : 'setlists'}` : ''} that your cloud library does not have.
-                  Choose once how to start; after that, Sync Now keeps everything in step.
-                </p>
-                <div className="flex flex-col gap-2">
-                  <button type="button" data-testid="first-sync-use-cloud" disabled={isProcessing} onClick={() => { void refreshSyncState('cloud') }}
-                    className="px-3 py-2 rounded-lg bg-app-action text-app-on-action font-bold text-left disabled:opacity-50">
-                    Use my cloud library on this device (recommended)
-                    <span className="block font-normal opacity-90">This device's own songs are kept in Review local recovery.</span>
-                  </button>
-                  <button type="button" data-testid="first-sync-combine" disabled={isProcessing} onClick={() => { void refreshSyncState('combine') }}
-                    className="px-3 py-2 rounded-lg border border-app-border text-left disabled:opacity-50">
-                    Combine this device's songs with my cloud library
-                    <span className="block text-app-muted">They will be added to all your devices.</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {warningMessage && (
-              <p className="text-xs text-status-warning bg-status-warning/10 p-2.5 rounded-lg border border-status-warning/20" role="status">
-                {warningMessage}
-              </p>
-            )}
-
-            {errorMessage && (
-              <p className="text-xs text-status-error bg-[#DC6E67]/10 p-2.5 rounded-lg border border-[#DC6E67]/20">
-                {errorMessage}
-              </p>
-            )}
-
-            {headroom && headroom.level !== 'ok' && (
-              <p
-                data-testid="cloud-sync-headroom-warning"
-                role="status"
-                className={headroom.level === 'over'
-                  ? 'text-xs text-status-error bg-[#DC6E67]/10 p-2.5 rounded-lg border border-[#DC6E67]/20'
-                  : 'text-xs text-status-warning bg-status-warning/10 p-2.5 rounded-lg border border-status-warning/20'}
-              >
-                {headroom.level === 'over'
-                  ? `Songbook is ${sizeMb(headroom.bytes)} MB, over the ${sizeMb(headroom.limitBytes)} MB cloud sync limit. Sync will not upload until it is smaller. This device keeps every song; export a backup first.`
-                  : `Songbook uses ${Math.round(headroom.ratio * 100)}% of the ${sizeMb(headroom.limitBytes)} MB cloud sync limit. Export a backup and consider removing unused songs before it fills.`}
-              </p>
-            )}
-
-            {/* Metadata Details */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-app-border/60 text-[11px] font-mono">
-              <div>
-                <span className="text-app-muted block">Last Synced</span>
-                <span className="text-app-heading font-semibold">
-                  {lastMeta.lastSyncedAt
-                    ? new Date(lastMeta.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                    : 'Never'}
-                </span>
-              </div>
-              <div>
-                <span className="text-app-muted block">Fingerprint</span>
-                <span className="text-app-action truncate block text-[10px]" title={localChecksum || undefined}>
-                  {localChecksum || 'None'}
-                </span>
-              </div>
-              {headroom && (
-                <div className="col-span-2">
-                  <span className="text-app-muted block">Cloud size</span>
-                  <span data-testid="cloud-sync-headroom" className={headroom.level === 'ok' ? 'text-app-heading font-semibold' : headroom.level === 'over' ? 'text-status-error font-semibold' : 'text-status-warning font-semibold'}>
-                    {sizeMb(headroom.bytes)} / {sizeMb(headroom.limitBytes)} MB ({Math.round(headroom.ratio * 100)}%)
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {syncCenter && (
-            <div data-testid="sync-center-details" className="space-y-3">
-              {syncCenter.pill.attention.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-status-error/10 border border-status-error/40 space-y-2">
-                  <h3 className="text-xs font-bold text-status-error">
-                    {syncCenter.pill.attention.length === 1 ? '1 item needs a decision' : `${syncCenter.pill.attention.length} items need a decision`}
-                  </h3>
-                  <ul className="space-y-1 text-xs text-app-heading">
-                    {syncCenter.pill.attention.map(item => <li key={item.id}>{item.label}</li>)}
-                  </ul>
-                  <p className="text-[11px] text-app-muted">Your edits are safe on this device. Export a backup before choosing.</p>
-                </div>
-              )}
-              {syncCenter.onOpenDebugLogs && (
-                <div className="rounded-xl bg-app-base/70 border border-app-border flex items-center justify-between gap-3 pr-2">
-                  <button
-                    type="button"
-                    onClick={syncCenter.onOpenDebugLogs}
-                    className="flex-1 min-h-11 px-3.5 text-left text-xs font-semibold text-app-heading hover:text-app-action transition-colors cursor-pointer"
-                  >
-                    Diagnostics and debug logs
-                  </button>
-                  <button
-                    type="button"
-                    role="switch"
-                    data-testid="sync-center-debug-switch"
-                    aria-checked={debugLogs}
-                    aria-label="Record debug logs"
-                    onClick={() => { const next = !debugLogs; setDebugLoggingEnabled(next); setDebugLogs(next) }}
-                    className={`relative shrink-0 w-11 h-6 rounded-full border transition-colors cursor-pointer ${debugLogs ? 'bg-app-action border-app-action' : 'bg-app-border/60 border-app-border'}`}
-                  >
-                    <span aria-hidden="true" className={`absolute top-0.5 left-0.5 w-[18px] h-[18px] rounded-full bg-white shadow transition-transform ${debugLogs ? 'translate-x-5' : ''}`} />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Conflict Resolution Section */}
-          {syncStatus === 'CONFLICT' && conflicts.length > 0 && (
-            <div className="p-4 rounded-xl bg-[#DC6E67]/10 border border-[#DC6E67]/40 space-y-3">
-              <div className="flex items-center gap-2 text-status-error">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <h3 className="font-bold text-xs">Conflict Resolution</h3>
-              </div>
-              <p className="text-[11px] text-app-text">
-                Independent edits were made on this device and on the cloud. Choose how you want to resolve this:
-              </p>
-
-              <ul aria-label="Conflicting items" className="max-h-48 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-app-base/80 text-[11px]">
-                {conflicts.map((item, idx) => (
-                  <li key={`${item.id}-${idx}`} data-testid="conflict-item" className="text-xs py-0.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-app-heading font-semibold truncate flex items-center gap-1.5">
-                      {item.type === 'song' ? (
-                        <FileText className="w-3 h-3 text-app-action" />
-                      ) : item.type === 'theme' ? (
-                        <Palette className="w-3 h-3 text-app-accent" />
-                      ) : (
-                        <Layers className="w-3 h-3 text-app-accent" />
-                      )}
-                      {item.title}
-                    </span>
-                    <span className="text-[10px] text-status-error font-mono shrink-0">Diverged</span>
-                  </div>
-                  {/* #240 F8: why this item conflicts and what the choices do, shown before any choice. */}
-                  {item.reason && <p data-testid="conflict-reason" className="mt-0.5 text-[11px] leading-snug text-app-text">{item.reason}</p>}
-                  </li>
-                ))}
-              </ul>
-
-              <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleResolveConflict('merge_preserve')}
-                  disabled={isProcessing}
-                  className="w-full py-2 px-3 rounded-xl bg-app-action hover:bg-app-action text-app-on-action font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  <span>Merge &amp; Preserve Both (Keep Conflict Copies)</span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleResolveConflict('upload')}
-                    disabled={isProcessing}
-                    className="py-1.5 px-3 rounded-lg bg-app-base hover:bg-app-border text-app-heading border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    <CloudUpload className="w-3.5 h-3.5 text-app-accent" />
-                    <span>Keep Local Only</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleResolveConflict('download')}
-                    disabled={isProcessing}
-                    className="py-1.5 px-3 rounded-lg bg-app-base hover:bg-app-border text-app-heading border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    <CloudDownload className="w-3.5 h-3.5 text-app-link" />
-                    <span>Download Cloud</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Sync Actions */}
-          <div className="space-y-2 pt-1">
-            <button
-              type="button"
-              data-testid="sync-now-button"
-              onClick={() => { void refreshSyncState() }}
-              disabled={isProcessing || !isAuthenticated}
-              className="w-full py-2.5 px-4 rounded-xl bg-app-action hover:bg-app-action text-app-on-action font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${isProcessing ? 'animate-spin' : ''}`} />
-              <span>{isProcessing ? 'Synchronizing...' : 'Sync Now'}</span>
-            </button>
-
-            {confirmReplace ? (
-              <div data-testid="replace-with-cloud-confirm" role="group" aria-label="Confirm replacing this device with the cloud copy"
-                className="p-3 rounded-xl bg-app-base border border-app-border space-y-2">
-                <p className="text-xs text-app-heading">Replace everything on this device with the cloud copy? Songs and setlists that are only on this device are removed here; a copy is kept in Review local recovery.</p>
-                <div className="flex gap-2">
-                  <button type="button" data-testid="replace-with-cloud-confirm-button" onClick={handleForceDownload} disabled={isProcessing || !isAuthenticated}
-                    className="flex-1 py-2 px-3 rounded-lg bg-app-action text-app-on-action text-xs font-bold cursor-pointer disabled:opacity-50">Replace this device</button>
-                  <button type="button" data-testid="replace-with-cloud-cancel-button" onClick={() => setConfirmReplace(false)}
-                    className="flex-1 py-2 px-3 rounded-lg border border-app-border text-app-heading text-xs font-semibold cursor-pointer">Cancel</button>
-                </div>
-              </div>
-            ) : (
-            <button
-              type="button"
-              data-testid="download-from-cloud-button"
-              onClick={() => setConfirmReplace(true)}
-              disabled={isProcessing || !isAuthenticated}
-              className="w-full py-2 px-3 rounded-xl bg-app-base hover:bg-app-border text-app-muted hover:text-app-action border border-app-border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <CloudDownload className="w-3.5 h-3.5 text-app-link" />
-              <span>Replace this device with the cloud copy</span>
-            </button>
-            )}
-          </div>
-          </>)}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-between gap-3 text-[11px] text-app-muted">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid="cloud-sync-recovery-button"
-              disabled={isProcessing}
-              onClick={openRecoveryReview}
-              aria-label={recoveryAttention ? 'Review local recovery, needs a decision' : undefined}
-              className="relative min-h-11 px-3 py-1.5 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
-            >
-              Review local recovery
-              {recoveryAttention && <span data-testid="cloud-sync-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
-            </button>
-            {syncCenter ? (
-              <button
-                type="button"
-                data-testid="sync-center-device-button"
-                aria-pressed={deviceView}
-                onClick={() => setDeviceView(view => !view)}
-                className="min-h-11 px-3 py-1.5 rounded-lg border border-app-border bg-app-base hover:bg-app-surface text-app-heading font-semibold transition-colors cursor-pointer"
-              >
-                This device
-              </button>
-            ) : (
-              <span className="hidden sm:inline text-[10px] text-app-muted">Offline edits preserved safely</span>
-            )}
-          </div>
-          <button
-            type="button"
-            data-testid="cloud-sync-close-button"
-            disabled={isProcessing}
-            onClick={onClose}
-            className="min-h-11 px-4 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
-          >
-            Close
-          </button>
-        </div>
-      </div>
+        throw error
+      }
+    } else {
+      const apply = mode === 'replace' ? onFullRestore : onSmartMerge
+      if (!apply || !preview.cloud || !mode) throw new Error('Restore unavailable')
+      await restoreCloudBackup(device, preview.cloud.data, mode, library => {
+        if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
+        return apply(library.songs, library.setlists)
+      }, localStorage)
+      setPreview(null); setMessage('Device library restored and verified.')
+    }
+  })
+  return <div onClick={event => { if (event.target === event.currentTarget && !busy) onClose() }} className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" aria-label="Sync Center" className="bg-app-surface text-app-heading p-5 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto space-y-4 [&_button]:min-h-11 [&_button]:px-3 [&_button]:py-2 [&_button]:rounded-lg [&_button]:border [&_button]:border-app-border [&_button]:bg-app-base [&_button]:cursor-pointer [&_button:disabled]:opacity-50">
+      <h2>Sync Center</h2>
+      {!signedIn ? <button onClick={() => { void auth?.signIn().catch(error => setMessage(String(error.message))) }}>Sign in to back up to cloud</button> : <>
+        <p>{session?.user?.email}</p>
+        <p>{ready ? cloud ? `Cloud backup: ${new Date(cloud.updatedAt).toLocaleString()} — ${counts(cloud.data)}` : 'No cloud backup yet' : 'Reading cloud backup…'}</p>
+        {!preview ? <div className="flex gap-3">
+          <button disabled={busy || !ready} onClick={() => { void prepare('backup') }}>Back up to cloud</button>
+          <button disabled={busy || !ready || !cloud} onClick={() => { void prepare('restore') }}>Restore from cloud</button>
+        </div> : <div role="group" aria-label={preview.kind === 'backup' ? 'Confirm cloud backup' : 'Preview cloud restore'} className="space-y-3">
+          <p>Device: {counts(preview.device)}</p>
+          <p>Cloud: {preview.cloud ? `${preview.cloud.updatedAt} — ${counts(preview.cloud.data)}` : 'No cloud backup yet'}</p>
+          {preview.kind === 'backup' ? <>
+            <p>Back up to {session?.user?.email}? This overwrites the cloud backup. The device library stays unchanged.</p>
+            <button disabled={busy} onClick={() => { void confirm() }}>Confirm backup</button>
+          </> : preview.cloud && <>
+            <p>Only on device: {only(preview.device.songs, preview.cloud.data.songs)} songs, {only(preview.device.setlists, preview.cloud.data.setlists)} setlists.</p>
+            <p>Only in cloud: {only(preview.cloud.data.songs, preview.device.songs)} songs, {only(preview.cloud.data.setlists, preview.device.setlists)} setlists.</p>
+            <p>A verified local safety snapshot is saved first. Replace removes device-only items; Merge keeps both libraries.</p>
+            <button disabled={busy} onClick={() => { void confirm('replace') }}>Replace device</button>
+            <button disabled={busy} onClick={() => { void confirm('merge') }}>Merge into device</button>
+          </>}
+          <button disabled={busy} onClick={() => setPreview(null)}>Cancel</button>
+        </div>}
+      </>}
+      {onOpenDebugLogs && <div className="flex gap-2">
+        <button disabled={busy} onClick={onOpenDebugLogs}>Diagnostics and debug logs</button>
+        <button role="switch" aria-label="Record debug logs" aria-checked={debugLogs} onClick={() => { setDebugLoggingEnabled(!debugLogs); setDebugLogs(!debugLogs) }}>Record debug logs</button>
+      </div>}
+      {message && <p role="status">{message}</p>}
+      <button disabled={busy} onClick={openRecoveryReview}>Review local recovery{recoveryAttention && <span data-testid="cloud-sync-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}</button>
+      <button disabled={busy} onClick={onClose}>Close</button>
     </div>
-  )
+  </div>
 }

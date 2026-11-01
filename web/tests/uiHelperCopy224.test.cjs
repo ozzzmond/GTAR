@@ -56,5 +56,5 @@ test('redundant helper copy is gone; shortened wording in place; safety text kep
     'immutable QR code and link snapshot', 'Historical song content and original imported snapshots']) assert.ok(!all.includes(gone), gone)
   for (const kept of ['Tap a string to hear its pitch.', 'Follow an Android Stage Leader on the same Wi-Fi or hotspot.', 'Replaces all songs, setlists and trash.',
     'Adds and updates songs; deletes nothing.', 'Team members can view it and save their own copy. Yours stays unchanged.', 'Choose a setlist to share:',
-    'Applies to the TV only.', 'Create a song or import charts.', 'a copy is kept in Review local recovery', 'Scan with mobile camera']) assert.ok(all.includes(kept), kept)
+    'Applies to the TV only.', 'Create a song or import charts.', 'A verified local safety snapshot is saved first.', 'Scan with mobile camera']) assert.ok(all.includes(kept), kept)
 })

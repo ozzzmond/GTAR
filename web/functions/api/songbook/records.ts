@@ -4,7 +4,7 @@
  * GET  /api/songbook/records?since=<seq>&limit=<n>  -> records changed after `since`, oldest first
  * POST /api/songbook/records { changes: RecordChange[] } -> accepted / conflicts (per-record CAS)
  *
- * Enabled only when SONGBOOK_RECORDS_SYNC = "records-v1" (DEV preview). Otherwise 404, so the
+ * Disabled on every host; historical records tables remain inert. Previously the
  * client keeps using /api/songbook/sync. Strictly scoped to the authenticated caller.
  */
 import { enforceAbuseLimit } from '../../lib/abuseProtection.ts'
@@ -22,7 +22,6 @@ import {
   MAX_PULL_RECORDS,
   MAX_RECORD_BYTES,
   MAX_RECORD_ID_LENGTH,
-  RECORDS_FLAG_VALUE,
   RECORD_KINDS,
   recordDataError,
   recordKey,
@@ -36,15 +35,11 @@ export const MAX_RECORDS_PUSH_BYTES = 2 * 1024 * 1024
 export interface RecordsEnv extends AuthEnv { SONGBOOK_RECORDS_SYNC?: string }
 interface PagesContext { request: Request; env: RecordsEnv }
 
-/**
- * DEV alias host. On it the API is on even when the Pages variable is not set (the DEV
- * project's variables may live in the dashboard rather than wrangler.jsonc). PROD and other
- * preview hosts still need SONGBOOK_RECORDS_SYNC=records-v1.
- */
+/** Historical DEV alias retained for compatibility; every host is disabled. */
 export const RECORDS_DEV_HOSTNAME = 'dev.gtar-web.pages.dev'
 export function recordsEnabled(request: Request, env: RecordsEnv): boolean {
-  if (env.SONGBOOK_RECORDS_SYNC === RECORDS_FLAG_VALUE) return true
-  try { return new URL(request.url).hostname === RECORDS_DEV_HOSTNAME } catch { return false }
+  void request; void env
+  return false
 }
 
 /**

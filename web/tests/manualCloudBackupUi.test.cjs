@@ -1,0 +1,87 @@
+// #227: the Sync Center shows the one-time first-sync choice and sends the user's answer.
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const ts = require('typescript')
+for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(
+  fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:true})'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+  }).outputText, filename)
+require.extensions['.png'] = module => { module.exports = '/logo.png' }
+const { JSDOM } = require('jsdom')
+const dom = new JSDOM('<div id="root"></div>', { url: 'https://dev.gtar-web.pages.dev' })
+Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true })
+Object.defineProperty(global, 'navigator', { configurable: true, value: dom.window.navigator })
+const React = require('react')
+const { act } = React
+const { createRoot } = require('react-dom/client')
+const auth = require('../src/utils/authContext.ts')
+const { CloudSyncModal } = require('../src/components/CloudSyncModal.tsx')
+const {computeSongbookChecksum}=require('../src/utils/cloudSongbookSync.ts')
+const {persistLibrary,readPersistedLibrary}=require('../src/utils/syncJournal.ts')
+const {expectedRestoredLibrary}=require('../src/utils/backupExport.ts')
+const {getRestoreSafetySnapshot}=require('../src/utils/jsonBackup.ts')
+const song=(id)=>({id,title:id,rawContent:'[C]Hello',artist:'A'})
+const local={songs:[song('11111111-1111-4111-8111-111111111111')],setlists:[]}
+const remote={songs:[song('22222222-2222-4222-8222-222222222222')],setlists:[]}
+const click=async text=>act(async()=>{ const button=[...document.querySelectorAll('button')].find(b=>b.textContent===text);assert.ok(button,text);button.click();await new Promise(r=>setTimeout(r,5)) })
+async function setup(signedIn=true){
+ localStorage.clear();persistLibrary(local,localStorage)
+ localStorage.setItem('gtar_library_owner_v1','owner-A-preserved');localStorage.setItem('gtar_sync_library_owner','owner-A-preserved')
+ let record={version:1,checksum:computeSongbookChecksum(remote),updatedAt:'2026-11-01T00:00:00Z',data:remote};const calls=[]
+ global.fetch=async(_,opts)=>{calls.push(opts.method);if(opts.method==='POST'){const body=JSON.parse(opts.body);record={...record,version:2,data:body.data,checksum:body.clientChecksum}};return new Response(JSON.stringify({success:true,cloudRecord:record}))}
+ let signIns=0
+ auth.useOptionalGoogleAuth=()=>({session:signedIn?{token:'t',user:{id:'B',email:'b@example.com'}}:null,accessStatus:'active',signIn:async()=>{signIns++}})
+ const apply=mode=>async(songs,setlists)=>{assert.ok(getRestoreSafetySnapshot(localStorage),'snapshot before apply');persistLibrary(expectedRestoredLibrary(readPersistedLibrary(),{songs,setlists},mode),localStorage)}
+ const root=createRoot(document.getElementById('root'))
+ await act(async()=>{root.render(React.createElement(CloudSyncModal,{isOpen:true,onClose(){},onFullRestore:apply('replace'),onSmartMerge:apply('merge')}));await new Promise(r=>setTimeout(r,5))})
+ return {calls,root,signIns:()=>signIns}
+}
+test('opening and device edits make no POST; backup confirms account and verifies unchanged device',async()=>{
+ const {calls,root}=await setup();assert.deepEqual(calls,['GET'])
+ persistLibrary({...local,songs:[...local.songs,song('33333333-3333-4333-8333-333333333333')]},localStorage)
+ window.dispatchEvent(new window.Event('storage'));window.dispatchEvent(new window.Event('focus'))
+ assert.deepEqual(calls,['GET'])
+ await click('Back up to cloud');assert.match(document.body.textContent,/b@example.com/);assert.match(document.body.textContent,/overwrites/)
+ const bytes=JSON.stringify(readPersistedLibrary());const storageBytes=JSON.stringify({...localStorage});await click('Confirm backup')
+ assert.deepEqual(calls,['GET','GET','POST','GET']);assert.equal(JSON.stringify(readPersistedLibrary()),bytes);assert.equal(JSON.stringify({...localStorage}),storageBytes)
+ await act(async()=>root.unmount())
+})
+for(const mode of ['replace','merge'])test(`restore ${mode}: cancel unchanged; snapshot before apply; no POST`,async()=>{
+ const {calls,root}=await setup();const bytes=JSON.stringify(readPersistedLibrary())
+ await click('Restore from cloud');assert.match(document.body.textContent,/Only on device: 1 songs/)
+ await click('Cancel');assert.equal(JSON.stringify(readPersistedLibrary()),bytes);assert.equal(getRestoreSafetySnapshot(localStorage),null)
+ await click('Restore from cloud');await click(mode==='replace'?'Replace device':'Merge into device')
+ assert.match(document.body.textContent,/restored and verified/)
+ assert.equal(readPersistedLibrary().songs.length,mode==='replace'?1:2)
+ assert.ok(calls.every(c=>c==='GET'))
+ await act(async()=>root.unmount())
+})
+test('signed out displays explicit sign-in with no cloud request',async()=>{
+ const {calls,root,signIns}=await setup(false);assert.deepEqual(calls,[])
+ await click('Sign in to back up to cloud');assert.equal(signIns(),1);assert.deepEqual(calls,[])
+ await act(async()=>root.unmount())
+})
+test('409 refreshes summary and requires a second confirmation; never merges',async()=>{
+ const {calls,root}=await setup();await click('Back up to cloud')
+ const bytes=localStorage.getItem('gtar_library_v2');let posts=0
+ const changed={version:7,checksum:computeSongbookChecksum(remote),updatedAt:'2026-11-02T12:00:00Z',data:remote}
+ global.fetch=async(_,opts)=>{calls.push(opts.method);if(opts.method==='POST'){posts++;return new Response('{}',{status:409})}return new Response(JSON.stringify({success:true,cloudRecord:changed}))}
+ await click('Confirm backup');assert.equal(posts,1);assert.match(document.body.textContent,/confirm again/)
+ assert.ok(![...document.querySelectorAll('button')].some(b=>b.textContent==='Confirm backup'))
+ assert.equal(localStorage.getItem('gtar_library_v2'),bytes)
+ await click('Back up to cloud');assert.match(document.body.textContent,/2026-11-02/);assert.equal(posts,1)
+ await click('Cancel');assert.equal(posts,1)
+ await act(async()=>root.unmount())
+})
+test('quota failure aborts restore with a clear message and unchanged device',async()=>{
+ const {root,calls}=await setup();await click('Restore from cloud')
+ const before=JSON.stringify(readPersistedLibrary());const original=window.Storage.prototype.setItem
+ window.Storage.prototype.setItem=function(){throw new DOMException('Storage full','QuotaExceededError')}
+ try{
+  await click('Replace device')
+  assert.match(document.body.textContent,/Restore aborted: safety snapshot failed/)
+  assert.equal(JSON.stringify(readPersistedLibrary()),before)
+  assert.ok(calls.every(method=>method==='GET'))
+ }finally{window.Storage.prototype.setItem=original;await act(async()=>root.unmount())}
+})
