@@ -36,7 +36,14 @@ const {
   GTAR_BACKUP_SCHEMA_VERSION,
 } = require('../src/utils/jsonBackup.ts')
 const { LIBRARY_KEY, isCanonicalKey } = require('../src/utils/syncJournal.ts')
-const { BackupRestoreDialogModal } = require('../src/components/BackupRestoreDialogModal.tsx')
+const { DeviceBackupCard } = require('../src/components/DeviceBackupCard.tsx')
+// #299: file restore is Restore from file → shared preview → Merge into device, or Replace device → Confirm replace.
+const buttonByText = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text))
+function openReplaceConfirm() {
+  const replace = buttonByText('Replace device')
+  if (replace) act(() => replace.click())
+  return buttonByText('Confirm replace')
+}
 
 global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
 
@@ -301,14 +308,14 @@ function withJsdom(fn) {
   }
 }
 
-// ACTION 1, 4 & 5 UI Verification in BackupRestoreDialogModal
+// ACTION 1, 4 & 5 UI Verification in DeviceBackupCard
 test('wipe & replace flow requires explicit preview confirmation; cancel causes zero mutation', withJsdom(async ({ dom, root }) => {
   let fullRestoreCalled = false
   const backupData = JSON.stringify(createBackupPayload([mockSong1, mockSong2, mockTrash], [mockSetlist], '1.1.105'))
   const file = new dom.window.File([backupData], 'backup.json', { type: 'application/json' })
 
   await act(async () => {
-    root.render(React.createElement(BackupRestoreDialogModal, {
+    root.render(React.createElement(DeviceBackupCard, {
       isOpen: true,
       onClose: () => {},
       allSongs: [mockSong1],
@@ -318,8 +325,7 @@ test('wipe & replace flow requires explicit preview confirmation; cancel causes 
     }))
   })
 
-  // Click "Full Restore (Wipe & Replace)"
-  const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Full Restore (Wipe & Replace)'))
+  const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Restore from file'))
   assert.ok(wipeButton)
   await act(async () => wipeButton.click())
 
@@ -335,15 +341,18 @@ test('wipe & replace flow requires explicit preview confirmation; cancel causes 
   // REQUIREMENT: FILE_SELECTION_MUST_NOT_IMMEDIATELY_MUTATE_LIBRARY
   assert.equal(fullRestoreCalled, false, 'Library must NOT mutate immediately on file selection')
 
-  // Preview must display decision-useful summary:
-  // APP_VERSION_IF_PRESENT, SCHEMA_VERSION_IF_PRESENT, EXPORTED_AT_IF_PRESENT, SONG_COUNT, SETLIST_COUNT, TRASH_COUNT
-  const modalText = document.body.textContent
-  assert.match(modalText, /Confirm Full Restore|Destructive Wipe & Replace/)
-  assert.match(modalText, /1\.1\.105/) // App version
-  assert.match(modalText, /v2/) // Schema version (#251)
-  assert.match(modalText, /Active Songs/)
-  assert.match(modalText, /Setlists/)
-  assert.match(modalText, /Trash Bin/)
+  // #299 shared preview: device vs backup counts, only-on-device / only-in-backup, export date.
+  const modalText = document.querySelector('[data-testid="restore-preview"]').textContent
+  assert.match(modalText, /Restore preview/)
+  assert.match(modalText, /This device: 1 songs · 0 setlists · 0 in trash/)
+  assert.match(modalText, /Backup file: .*2 songs · 1 setlists · 1 in trash/)
+  assert.match(modalText, /Only on device: 0 songs, 0 setlists/)
+  assert.match(modalText, /Only in backup: 1 songs, 1 in trash, 1 setlists/)
+  // Replace needs an explicit second step; cancelling it changes nothing.
+  await act(async () => buttonByText('Replace device').click())
+  assert.match(document.body.textContent, /Replace device\?/)
+  assert.equal(fullRestoreCalled, false, 'Replace device alone does not restore')
+  await act(async () => buttonByText('Back').click())
 
   // Click "Cancel" in preview
   const cancelButton = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Cancel')
@@ -352,7 +361,7 @@ test('wipe & replace flow requires explicit preview confirmation; cancel causes 
 
   // REQUIREMENT: CANCEL_LEAVES_CURRENT_LIBRARY_UNCHANGED
   assert.equal(fullRestoreCalled, false, 'Cancel must not mutate library')
-  assert.match(document.body.textContent, /Backup & Restore/) // Back to main modal menu
+  assert.ok(buttonByText('Restore from file'), 'back to the device card')
 }))
 
 test('confirmed wipe & replace creates safety snapshot before restore, and retains it on success', withJsdom(async ({ dom, root }) => {
@@ -362,7 +371,7 @@ test('confirmed wipe & replace creates safety snapshot before restore, and retai
   const file = new dom.window.File([backupData], 'backup.json', { type: 'application/json' })
 
   await act(async () => {
-    root.render(React.createElement(BackupRestoreDialogModal, {
+    root.render(React.createElement(DeviceBackupCard, {
       isOpen: true,
       onClose: () => {},
       allSongs: [mockSong2],
@@ -380,7 +389,7 @@ test('confirmed wipe & replace creates safety snapshot before restore, and retai
     }))
   })
 
-  const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Full Restore (Wipe & Replace)'))
+  const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Restore from file'))
   await act(async () => wipeButton.click())
 
   const fileInput = document.querySelector('input[type="file"]')
@@ -390,7 +399,7 @@ test('confirmed wipe & replace creates safety snapshot before restore, and retai
   })
 
   // Click "Confirm Wipe & Replace"
-  const confirmButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Confirm Wipe & Replace'))
+  const confirmButton = openReplaceConfirm()
   assert.ok(confirmButton)
   await act(async () => confirmButton.click())
 
@@ -407,7 +416,7 @@ test('persistence failure reports user-visible error and preserves recoverable p
   const file = new dom.window.File([backupData], 'backup.json', { type: 'application/json' })
 
   await act(async () => {
-    root.render(React.createElement(BackupRestoreDialogModal, {
+    root.render(React.createElement(DeviceBackupCard, {
       isOpen: true,
       onClose: () => { closed = true },
       allSongs: [mockSong2],
@@ -421,7 +430,7 @@ test('persistence failure reports user-visible error and preserves recoverable p
     }))
   })
 
-  const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Full Restore (Wipe & Replace)'))
+  const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Restore from file'))
   await act(async () => wipeButton.click())
 
   const fileInput = document.querySelector('input[type="file"]')
@@ -430,7 +439,7 @@ test('persistence failure reports user-visible error and preserves recoverable p
     fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   })
 
-  const confirmButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Confirm Wipe & Replace'))
+  const confirmButton = openReplaceConfirm()
   await act(async () => confirmButton.click())
 
   // REQUIREMENT: PERSIST_FAILURE_SHOWS_USER_VISIBLE_ERROR
@@ -454,7 +463,7 @@ test('smart merge flow does not prompt for destructive confirmation and coordina
   const file = new dom.window.File([backupData], 'backup.json', { type: 'application/json' })
 
   await act(async () => {
-    root.render(React.createElement(BackupRestoreDialogModal, {
+    root.render(React.createElement(DeviceBackupCard, {
       isOpen: true,
       onClose: () => {},
       allSongs: [mockSong1],
@@ -464,20 +473,21 @@ test('smart merge flow does not prompt for destructive confirmation and coordina
     }))
   })
 
-  // Click "Restore Backup (Smart Merge)"
-  const mergeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Restore Backup (Smart Merge)'))
-  assert.ok(mergeButton)
-  await act(async () => mergeButton.click())
+  await act(async () => buttonByText('Restore from file').click())
 
   const fileInput = document.querySelector('input[type="file"]')
   Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
   await act(async () => {
     fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   })
+  // #299: the shared preview comes first; Merge into device is the default (primary) action.
+  assert.equal(smartMergeCalled, false, 'file selection only opens the restore preview')
+  assert.match(buttonByText('Merge into device').className, /bg-app-action/)
+  await act(async () => buttonByText('Merge into device').click())
 
   // REQUIREMENT: SMART_MERGE_FLOW_MUST_NOT_GAIN_UNNECESSARY_DESTRUCTIVE_CONFIRMATION
-  assert.equal(smartMergeCalled, true, 'Smart merge executes without prompting destructive confirmation')
-  assert.doesNotMatch(document.body.textContent, /Confirm Wipe & Replace/)
+  assert.equal(smartMergeCalled, true, 'Merge executes without the destructive confirmation step')
+  assert.doesNotMatch(document.body.textContent, /Confirm replace/)
   assert.match(document.body.textContent, /Backup restored/)
 }))
 
@@ -491,7 +501,7 @@ test('snapshot quota failure is visible and aborts restore without changing reco
   let closed = false
   let restoreCalls = 0
   await act(async () => {
-    root.render(React.createElement(BackupRestoreDialogModal, {
+    root.render(React.createElement(DeviceBackupCard, {
       isOpen: true,
       onClose: () => { closed = true },
       allSongs: library.songs,
@@ -502,12 +512,12 @@ test('snapshot quota failure is visible and aborts restore without changing reco
     }))
   })
   for (let attempt = 0; attempt < 3; attempt++) {
-    const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Full Restore (Wipe & Replace)'))
+    const wipeButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Restore from file'))
     await act(async () => wipeButton.click())
     const fileInput = document.querySelector('input[type="file"]')
     Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
     await act(async () => fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
-    const confirmButton = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Confirm Wipe & Replace'))
+    const confirmButton = openReplaceConfirm()
     assert.ok(confirmButton)
     await act(async () => confirmButton.click())
     assert.match(document.body.textContent, /Restore aborted: pre-restore safety snapshot failed to save/)
@@ -537,20 +547,21 @@ function appMerge(storage) {
 }
 
 async function mountRestore(root, props = {}) {
-  await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
     isOpen: true, onClose: () => {}, allSongs: [mockSong2], setlists: [],
     onImportAllSongs: () => assert.fail('Unexpected fallback import'), ...props,
   })))
 }
 async function selectBackup(dom, payload, destructive = true) {
-  const label = destructive ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)'
-  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes(label)).click())
+  await act(async () => buttonByText('Restore from file').click())
   const input = document.querySelector('input[type="file"]')
   Object.defineProperty(input, 'files', { configurable: true, value: [{ text: async () => JSON.stringify(payload) }] })
   await act(async () => input.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
+  if (!destructive && buttonByText('Merge into device')) await act(async () => buttonByText('Merge into device').click())
 }
 async function confirmRestore() {
-  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes('Confirm Wipe & Replace')).click())
+  const confirm = openReplaceConfirm()
+  await act(async () => confirm.click())
 }
 function lifecycleSetlists(active) {
   return Array.from({ length: 21 }, (_, i) => ({
@@ -577,11 +588,9 @@ for (const active of [3, 4, 21, 0]) {
     assert.equal(createBackupPayload(parsed.songs, parsed.setlists).setlists.filter(sl => sl.isDeleted).length, 21 - active)
     await mountRestore(root, { onFullRestore: () => assert.fail('Preview wrote library') })
     await selectBackup(dom, payload)
-    for (const [label, count] of [['Total Setlists', 21], ['Active Setlists', active], ['Deleted Setlists', 21 - active], ['Active Songs', 1], ['Trash Bin (Archived Songs)', 1]]) {
-      const element = [...document.querySelectorAll('div, span')].find(el => el.textContent === label)
-      assert.ok(element, label)
-      assert.equal(element.parentElement.textContent.replace(label, '').trim(), String(count))
-    }
+    // #299 shared preview: active songs, all setlists with the deleted ones named, trash.
+    const preview = document.querySelector('[data-testid="restore-preview"]').textContent
+    assert.match(preview, new RegExp(`Backup file: .*1 songs · 21 setlists${21 - active ? ` \\(${21 - active} deleted\\)` : ''} · 1 in trash`))
   }))
 }
 
@@ -597,9 +606,7 @@ test('search-filtered visible setlists do not change full backup preview totals'
   const payload = createBackupPayload([mockSong1], setlists)
   await mountRestore(root)
   await selectBackup(dom, payload)
-  assert.match(document.body.textContent, /Total Setlists21/)
-  assert.match(document.body.textContent, /Active Setlists3/)
-  assert.match(document.body.textContent, /Deleted Setlists18/)
+  assert.match(document.querySelector('[data-testid="restore-preview"]').textContent, /Backup file: .*1 songs · 21 setlists \(18 deleted\) · 0 in trash/)
 }))
 
 for (const destructive of [true, false]) {
@@ -610,7 +617,7 @@ for (const destructive of [true, false]) {
     // Even a recovery archive with otherwise valid top-level backup arrays is unsupported.
     await selectBackup(dom, { exportType: 'RECOVERY_ARCHIVE', data: { songs: [mockSong1] }, songs: [mockSong1], setlists: [] }, destructive)
     assert.match(document.body.textContent, /Recovery archive.*not a supported restore-ready backup/)
-    assert.doesNotMatch(document.body.textContent, /Ready to restore|Confirm Wipe & Replace|Backup restored:/)
+    assert.doesNotMatch(document.body.textContent, /Restore preview|Confirm replace|Backup restored:/)
     assert.equal(writes, 0)
   }))
 }
@@ -720,4 +727,24 @@ test('stale library write rejects restore before settings change and retains sna
   assert.equal(localStorage.getItem(LIBRARY_KEY), external)
   assert.deepEqual(settingsApi.readBackupSettings(), {})
   assert.equal(getRestoreSafetySnapshot().library.songs[0].id, mockSong2.id)
+}))
+
+test('#299 file restore is blocked while the editor is open, also when it opens after the preview', withJsdom(async ({ dom, root }) => {
+  persistLibrary({ songs: [mockSong2], setlists: [] })
+  let applied = 0
+  const render = restoreBlocked => act(async () => root.render(React.createElement(DeviceBackupCard, {
+    isOpen: true, allSongs: [mockSong2], setlists: [], restoreBlocked, onImportAllSongs: () => assert.fail('fallback'),
+    onSmartMerge: () => { applied++ }, onFullRestore: () => { applied++ },
+  })))
+  await render(true)
+  assert.equal(buttonByText('Restore from file').disabled, true)
+  assert.match(document.body.textContent, /Close the editor \(save or discard your changes\) before restoring\./)
+  await render(false)
+  await selectBackup(dom, createBackupPayload([mockSong1], []), true)
+  assert.ok(document.querySelector('[data-testid="restore-preview"]'))
+  await render(true)
+  assert.equal(buttonByText('Merge into device').disabled, true)
+  assert.equal(buttonByText('Replace device').disabled, true)
+  assert.equal(applied, 0)
+  assert.equal(getRestoreSafetySnapshot(), null, 'nothing written while blocked')
 }))

@@ -1,4 +1,8 @@
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
+import { useOldRecoveryData } from '../utils/recoveryExport'
+import { openRecoveryReview } from '../utils/recoveryReview'
+import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
+import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
 import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -9,8 +13,10 @@ import {
   MoreVertical,
   Settings,
   FolderOpen,
-  CloudUpload,
   Cloud,
+  Wrench,
+  Database,
+  History,
   Eye,
   FileEdit,
   PlaySquare,
@@ -88,7 +94,11 @@ interface HeaderProps {
   onToggleTheme: () => void
   onOpenStageSettings: () => void
   onOpenImportModal: () => void
-  onOpenBackupRestoreModal: () => void
+  /** Library (songs including trash) for the Backup & Restore center's file card. */
+  backupSongs?: ActiveSongState[]
+  onImportAllSongs?: (songs: Array<Partial<ActiveSongState>>) => void
+  /** DEV Advanced Tools: the Advanced JSON Bridge. */
+  onOpenAdvancedBridge?: () => void
   onOpenSetlistDrawer?: () => void
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
@@ -223,7 +233,9 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   onOpenStageSettings,
   onOpenImportModal,
-  onOpenBackupRestoreModal,
+  backupSongs,
+  onImportAllSongs,
+  onOpenAdvancedBridge,
   onOpenSetlistDrawer,
   setlists = [],
   onSelectSetlistSong,
@@ -255,7 +267,17 @@ export const Header: React.FC<HeaderProps> = ({
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   )
 
+  // DEV Advanced Tools: Local Recovery Review still flags undecided recovery (#181).
   const recoveryAttention = useRecoveryAttention()
+  // #299: the header dot asks for one thing only: export old recovery data (until done on this device).
+  const oldRecovery = useOldRecoveryData()
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
+  const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
+  useEffect(() => {
+    const open = () => setShowCloudSyncModal(true)
+    window.addEventListener(OPEN_BACKUP_CENTER_EVENT, open)
+    return () => window.removeEventListener(OPEN_BACKUP_CENTER_EVENT, open)
+  }, [])
   const [backupDates, setBackupDates] = useState<Record<string, string | null>>(() => {
     try {
       const value = JSON.parse(localStorage.getItem('gtar_manual_cloud_backup_dates') || '{}')
@@ -309,6 +331,41 @@ export const Header: React.FC<HeaderProps> = ({
     setBackupDates(next)
     try { localStorage.setItem('gtar_manual_cloud_backup_dates', JSON.stringify(next)) } catch { /* Summary caching is optional. */ }
   }
+
+  // #299 / #264: developer tools, DEV builds only (never rendered in PROD).
+  const advancedItem = 'relative w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-accent/50 ui-primary-text text-app-heading hover:text-app-action text-xs font-bold flex items-center gap-2 border border-app-border transition-all cursor-pointer mb-2'
+  const advancedTools = isDevEnv ? (
+    <div data-testid="advanced-tools">
+      <button type="button" data-testid="advanced-tools-button" aria-expanded={showAdvancedTools}
+        onClick={() => setShowAdvancedTools(open => !open)} className={`${advancedItem} justify-between`}>
+        <span className="flex items-center gap-2"><Wrench className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Advanced Tools</span>
+        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-status-error/15 text-status-error border border-status-error/30">DEV</span>
+      </button>
+      {showAdvancedTools && <div className="pl-2 border-l-2 border-app-border/60 mb-2">
+        <button type="button" data-testid="advanced-recovery-review" onClick={() => { setShowAvatarPopover(false); openRecoveryReview() }} className={advancedItem}
+          aria-label={recoveryAttention ? 'Local Recovery Review, needs a decision' : undefined}>
+          <History className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Local Recovery Review
+          {recoveryAttention && <span data-testid="advanced-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
+        </button>
+        {onOpenAdvancedBridge && <button type="button" data-testid="advanced-json-bridge" onClick={() => { setShowAvatarPopover(false); onOpenAdvancedBridge() }} className={advancedItem}>
+          <Database className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Advanced JSON Bridge
+        </button>}
+        <button type="button" data-testid="advanced-debug-logs" onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }} className={advancedItem}>
+          <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Debug logs
+        </button>
+        <div className="w-full min-h-11 pl-3 rounded-xl bg-app-base border border-app-border flex items-center justify-between gap-2">
+          <span className="text-xs font-bold ui-primary-text text-app-heading">Record debug logs</span>
+          <button type="button" role="switch" data-testid="advanced-debug-switch" aria-label="Record debug logs" aria-checked={debugLogs}
+            onClick={() => { setDebugLoggingEnabled(!debugLogs); setDebugLogs(!debugLogs) }}
+            className="relative shrink-0 w-11 h-11 flex items-center justify-center cursor-pointer">
+            <span aria-hidden="true" className={`relative block w-9 h-5 rounded-full border transition-colors ${debugLogs ? 'bg-app-action border-app-action' : 'bg-app-border/60 border-app-border'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-app-surface shadow transition-transform ${debugLogs ? 'translate-x-4' : ''}`} />
+            </span>
+          </button>
+        </div>
+      </div>}
+    </div>
+  ) : null
 
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
@@ -649,9 +706,9 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Cloud Sync Button & Health Indicator */}
           <button type="button" data-testid="header-cloud-sync-button" onClick={() => setShowCloudSyncModal(true)}
             className="relative before:absolute before:content-[''] before:-inset-1.5 p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
-            aria-label="Sync Center">
+            aria-label={oldRecovery.exists && !oldRecovery.exported ? 'Backup & Restore, old recovery data not exported yet' : 'Backup & Restore'}>
             <Cloud className="w-4 h-4 text-app-action" />
-            {recoveryAttention && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
+            {oldRecovery.exists && !oldRecovery.exported && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
             <span className="hidden md:inline font-mono text-[11px]">{lastCloudBackup ? `Last cloud backup: ${Math.max(0, Math.floor((backupClock - Date.parse(lastCloudBackup)) / 60000))}m ago` : 'No cloud backup yet'}</span>
           </button>
 
@@ -740,22 +797,11 @@ export const Header: React.FC<HeaderProps> = ({
                         className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2"
                       >
                         <Shield className="w-3.5 h-3.5" />
-                        <span>Manage Users &amp; Whitelist</span>
+                        <span>Manage Users</span>
                       </button>
                     )}
 
-                    {/* Backup & Restore (JSON) */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAvatarPopover(false)
-                        onOpenBackupRestoreModal()
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-accent/50 ui-primary-text text-app-heading hover:text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-border transition-all cursor-pointer mb-2"
-                    >
-                      <CloudUpload className="w-3.5 h-3.5 text-app-accent" />
-                      <span>Backup &amp; Restore (JSON)</span>
-                    </button>
+                    {advancedTools}
 
                     <div className="h-[1px] bg-app-border/60 mb-2" />
 
@@ -775,7 +821,7 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : (
                   <div className="text-center py-2 space-y-3">
                     <p className="text-xs ui-muted-text text-app-muted">
-                      Sign in with your approved Google account.
+                      Sign in to use cloud backup and the Shared Catalog.
                     </p>
                     <button
                       type="button"
@@ -788,6 +834,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
                     </button>
+                    {advancedTools && <div className="text-left">{advancedTools}</div>}
                   </div>
                 )}
               </div>
@@ -1325,8 +1372,8 @@ export const Header: React.FC<HeaderProps> = ({
 
 
 
-          {/* 5. Debug Logs: PROD super-admins / debug builds only. On DEV the Sync Center's
-              "Diagnostics and debug logs" replaces this menu item (#191). */}
+          {/* 5. Debug Logs: PROD super-admins / debug builds only. On DEV the profile menu's
+              Advanced Tools replace this menu item (#191, #299). */}
           {isDevApp && !isDevEnv && (
             <>
               <div className="h-[1px] bg-app-border/60 my-1" />
@@ -1452,8 +1499,10 @@ export const Header: React.FC<HeaderProps> = ({
         onClose={() => setShowCloudSyncModal(false)}
         onSyncApplied={onCloudSyncApplied}
         onBackupSummary={setLastCloudBackup}
-        onOpenDebugLogs={isDevEnv ? () => { setShowCloudSyncModal(false); setShowDebugLogsModal(true) } : undefined}
         restoreBlocked={autoSyncBlocked}
+        deviceSongs={backupSongs}
+        deviceSetlists={backupSongs ? setlists : undefined}
+        onImportAllSongs={onImportAllSongs}
         onFullRestore={onCloudRestore}
         onSmartMerge={onCloudMerge}
       />

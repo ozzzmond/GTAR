@@ -163,11 +163,14 @@ function withDom(fn) {
   }
 }
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text))
-async function pick(dom, label, payload) {
-  await act(async () => button(label).click())
+// #299: Restore from file → shared preview (settings choice inside) → Merge into device / Replace device → Confirm replace.
+async function pick(dom, mode, payload, beforeChoice) {
+  await act(async () => button('Restore from file').click())
   const input = document.querySelector('input[type="file"]')
   Object.defineProperty(input, 'files', { configurable: true, value: [{ text: async () => JSON.stringify(payload) }] })
   await act(async () => input.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
+  if (beforeChoice) await beforeChoice()
+  await act(async () => button(mode === 'replace' ? 'Replace device' : 'Merge into device').click())
 }
 function backupSource() {
   const { songs } = h.makeLibrary(154, 0)
@@ -197,7 +200,7 @@ for (const mode of ['replace', 'merge']) {
     const { tab } = await open(storage, factory)
     assert.equal(tab.sj.isLibraryB2Active(storage), true)
     // The dialog is loaded from this tab's module instances.
-    const { BackupRestoreDialogModal } = require('../src/components/BackupRestoreDialogModal.tsx')
+    const { DeviceBackupCard } = require('../src/components/DeviceBackupCard.tsx')
     const { mergeBackupLibrary } = require('../src/utils/setlistSongs.ts')
     const { mergeImportedSetlists } = require('../src/utils/importIdentity.ts')
     let baseline = tab.sj.libraryRevision(storage)
@@ -219,14 +222,13 @@ for (const mode of ['replace', 'merge']) {
       },
     }
     const current = tab.sj.readPersistedLibrary(storage)
-    await act(async () => root.render(React.createElement(BackupRestoreDialogModal, {
+    await act(async () => root.render(React.createElement(DeviceBackupCard, {
       isOpen: true, onClose: () => {}, allSongs: current.songs, setlists: current.setlists, onImportAllSongs: () => assert.fail('fallback'),
       onFullRestore: app.fullRestore, onSmartMerge: app.smartMerge,
     })))
-    const checkbox = label => [...document.querySelectorAll('label')].find(l => l.textContent.includes(label))?.querySelector('input')
-    if (!checkbox('Preferences').checked) await act(async () => checkbox('Preferences').click())
-    await pick(dom, mode === 'replace' ? 'Full Restore (Wipe & Replace)' : 'Restore Backup (Smart Merge)', payload)
-    if (mode === 'replace') await act(async () => button('Confirm Wipe & Replace').click())
+    const checkbox = label => [...document.querySelectorAll('label')].find(l => l.textContent.toLowerCase().includes(label.toLowerCase()))?.querySelector('input')
+    await pick(dom, mode, payload, async () => { if (!checkbox('Preferences').checked) await act(async () => checkbox('Preferences').click()) })
+    if (mode === 'replace') await act(async () => button('Confirm replace').click())
     assert.match(document.body.textContent, /Backup restored: .*\(verified after saving\)/)
     // #258 F6: with B2 the safety snapshot is a recovery archive of this partition, not the shared single key.
     assert.equal(storage.getItem(jb.RESTORE_SNAPSHOT_KEY), null)

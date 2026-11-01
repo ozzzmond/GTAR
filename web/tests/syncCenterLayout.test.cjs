@@ -1,4 +1,4 @@
-// Sync Center keeps the restored 309a82b layout: header bar, account card, CLOUD BACKUP card, footer.
+// #299: the Backup & Restore center keeps the restored #296 layout: header bar, cards, primary/secondary buttons, footer.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -21,26 +21,38 @@ const { persistLibrary } = require('../src/utils/syncJournal.ts')
 const library = { songs: [{ id: '11111111-1111-4111-8111-111111111111', title: 'A', rawContent: '[C]Hi', artist: 'A' }], setlists: [] }
 const q = id => document.querySelector(`[data-testid="${id}"]`)
 
-async function mount(signedIn) {
-  localStorage.clear(); persistLibrary(library, localStorage)
+async function mount(signedIn, before = () => {}) {
+  localStorage.clear(); persistLibrary(library, localStorage); before()
   const record = { version: 1, checksum: computeSongbookChecksum(library), updatedAt: '2026-11-01T09:37:35Z', data: library }
   const calls = []
   global.fetch = async (_, opts) => { calls.push(opts.method); return new Response(JSON.stringify({ success: true, cloudRecord: record })) }
   auth.useOptionalGoogleAuth = () => ({ session: signedIn ? { token: 't', user: { id: 'B', email: 'b@example.com', name: 'Bee' } } : null, accessStatus: 'active', signIn: async () => {} })
   const root = createRoot(document.getElementById('root'))
-  await act(async () => { root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose() {}, onOpenDebugLogs() {} })); await new Promise(r => setTimeout(r, 5)) })
+  await act(async () => { root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose() {} })); await new Promise(r => setTimeout(r, 5)) })
   return { root, calls, record }
 }
 
-test('signed in: header bar, account card, CLOUD BACKUP card, actions and footer', async () => {
+const buttons = el => [...el.querySelectorAll('button')].map(b => b.textContent)
+
+test('signed in: header bar, device card, Cloud (Google) card with account and last backup, footer', async () => {
   const { root, record } = await mount(true)
   try {
     const header = q('cloud-sync-modal-header')
-    assert.ok(header); assert.match(header.textContent, /Sync Center/); assert.ok(header.querySelector('button[aria-label="Close"]'))
-    const account = q('cloud-sync-account-card')
-    assert.match(account.textContent, /Bee/); assert.match(account.textContent, /b@example.com/); assert.match(account.textContent, /Signed in/)
+    assert.ok(header); assert.match(header.textContent, /^Backup & Restore$/); assert.ok(header.querySelector('button[aria-label="Close"]'))
+    assert.equal(document.querySelector('[role="dialog"]').getAttribute('aria-label'), 'Backup & Restore')
+    assert.doesNotMatch(document.body.textContent, /Sync Center/)
+    const device = q('device-backup-card')
+    assert.match(device.textContent, /^This device \(file\)/)
+    assert.deepEqual(buttons(device), ['Save backup file', 'Download .json', 'Copy JSON', 'Restore from file'])
+    assert.ok(q('save-backup-file-button').className.includes('bg-app-action') && q('save-backup-file-button').className.includes('w-full'))
+    assert.ok(q('restore-file-button').className.includes('border-app-border'))
+    assert.match(device.textContent, /On this device1 songs · 0 setlists · 0 in trash/)
+    assert.match(q('backup-reminder').textContent, /Remind me to back up every/)
     const card = q('cloud-backup-card')
-    assert.match(card.textContent, /Cloud Backup/i)
+    assert.match(card.textContent, /^Cloud \(Google\)/i)
+    const account = q('cloud-sync-account-card')
+    assert.ok(card.contains(account))
+    assert.match(account.textContent, /Bee/); assert.match(account.textContent, /b@example.com/); assert.match(account.textContent, /Signed in/)
     for (const label of ['Last cloud backup', 'Contents', 'Checksum', 'Cloud size']) assert.match(card.textContent, new RegExp(label))
     assert.match(card.textContent, /1 songs · 0 setlists · 0 in trash/)
     assert.ok(card.textContent.includes(record.checksum))
@@ -49,23 +61,60 @@ test('signed in: header bar, account card, CLOUD BACKUP card, actions and footer
     assert.doesNotMatch(document.body.textContent, /Idle|In Sync|Conflict/)
     assert.ok(q('cloud-backup-button').className.includes('bg-app-action'))
     assert.ok(q('cloud-restore-button').className.includes('border-app-border'))
-    assert.ok(q('sync-center-debug-switch')); assert.match(q('sync-center-diagnostics').textContent, /Diagnostics and debug logs/)
-    const footer = q('cloud-sync-modal-footer')
-    assert.deepEqual([...footer.querySelectorAll('button')].map(b => b.textContent), ['Review local recovery', 'This device', 'Close'])
-    await act(async () => q('sync-center-device-button').click())
-    assert.match(q('sync-center-device-view').textContent, /1 songs · 0 setlists · 0 in trash/)
-    assert.match(q('sync-center-device-view').textContent, /Chart storage/)
+    // Removed from the everyday UI (#299): This device view, Review local recovery, debug-log switch.
+    for (const id of ['sync-center-debug-switch', 'sync-center-diagnostics', 'sync-center-device-button', 'sync-center-device-view', 'cloud-sync-recovery-button']) assert.equal(q(id), null, id)
+    assert.doesNotMatch(document.body.textContent, /Review local recovery|Diagnostics and debug logs|Chart storage/)
+    assert.deepEqual(buttons(q('cloud-sync-modal-footer')), ['Close'], 'no recovery archives: no export button')
   } finally { await act(async () => root.unmount()) }
 })
 
-test('signed out: account card shows Auth Required plus a full-width sign-in button and no cloud card', async () => {
+test('signed out: device card works, cloud card asks to sign in, no cloud request', async () => {
   const { root, calls } = await mount(false)
   try {
+    assert.ok(q('device-backup-card'))
+    assert.ok(q('save-backup-file-button') && q('restore-file-button'))
     assert.match(q('cloud-sync-account-card').textContent, /Guest \/ Offline.*Auth Required/)
-    const signIn = [...document.querySelectorAll('button')].find(b => b.textContent === 'Sign in to back up to cloud')
-    assert.ok(signIn.className.includes('w-full'))
-    assert.equal(q('cloud-backup-card'), null)
+    const signIn = [...document.querySelectorAll('button')].find(b => b.textContent === 'Sign in to use cloud backup')
+    assert.ok(signIn.className.includes('w-full') && signIn.className.includes('bg-app-action'))
+    assert.ok(q('cloud-backup-card').contains(signIn))
+    assert.equal(q('cloud-backup-card').querySelector('[role="meter"]'), null)
+    assert.equal(q('cloud-backup-button'), null)
     assert.ok(q('cloud-sync-modal-header') && q('cloud-sync-modal-footer'))
     assert.deepEqual(calls, [])
   } finally { await act(async () => root.unmount()) }
+})
+
+test('Export old recovery data: shown only while archives exist; dot until the export is saved on this device', async () => {
+  const archive = JSON.stringify({ local: { songs: [{ id: 'old', title: 'Old', rawContent: 'C' }], setlists: [] } })
+  const create = URL.createObjectURL, revoke = URL.revokeObjectURL, click = window.HTMLAnchorElement.prototype.click
+  let download
+  URL.createObjectURL = () => 'blob:recovery'; URL.revokeObjectURL = () => {}
+  window.HTMLAnchorElement.prototype.click = function () { download = this.download }
+  const { root } = await mount(false, () => localStorage.setItem('gtar_sync_recovery:review:1', archive))
+  try {
+    const exportButton = q('export-old-recovery-button')
+    assert.ok(exportButton); assert.equal(exportButton.textContent, 'Export old recovery data')
+    assert.ok(q('old-recovery-dot'), 'not exported yet')
+    await act(async () => { exportButton.click(); await new Promise(r => setTimeout(r, 5)) })
+    assert.equal(download, 'GTAR-storage-recovery.json')
+    assert.equal(q('old-recovery-dot'), null, 'export saved on this device')
+    assert.ok(q('export-old-recovery-button'), 'still available while archives exist')
+    assert.equal(localStorage.getItem('gtar_sync_recovery:review:1'), archive, 'export never deletes recovery data')
+    // A new archive asks again.
+    await act(async () => { localStorage.setItem('gtar_sync_recovery:review:2', archive); window.dispatchEvent(new window.Event('gtar-recovery-changed')) })
+    assert.ok(q('old-recovery-dot'))
+  } finally {
+    await act(async () => root.unmount())
+    URL.createObjectURL = create; URL.revokeObjectURL = revoke; window.HTMLAnchorElement.prototype.click = click
+  }
+})
+
+test('design guard: center cards reuse the #296 tokens; no blanket selectors or new hex colours', () => {
+  for (const file of ['CloudSyncModal.tsx', 'DeviceBackupCard.tsx', 'RestorePreview.tsx', 'backupCenterUi.ts']) {
+    const source = fs.readFileSync(require.resolve(`../src/components/${file}`), 'utf8')
+    assert.doesNotMatch(source, /\[&_/, `${file}: no blanket descendant selectors`)
+    assert.doesNotMatch(source, /\[#[0-9a-fA-F]{3,8}\]|['"`]#[0-9a-fA-F]{3,8}['"`]|rgba?\(/, `${file}: theme tokens only`)
+  }
+  const ui = fs.readFileSync(require.resolve('../src/components/backupCenterUi.ts'), 'utf8')
+  for (const name of ['primaryButton', 'secondaryButton', 'outlinedButton']) assert.match(ui, new RegExp(`export const ${name} = '[^']*min-h-11`), `${name}: 44px touch target`)
 })

@@ -263,7 +263,7 @@ test('Header simplifies Cloud Sync to canonical header button and removes duplic
   const headerSource = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
 
   // Canonical primary Cloud Sync button beside avatar exists
-  assert.match(headerSource, /aria-label="Sync Center"/)
+  assert.match(headerSource, /'Backup & Restore'/)
   assert.match(headerSource, /Last cloud backup:/)
 
   // Verify Cloud Songbook Sync is NOT in overflow menu
@@ -278,8 +278,8 @@ test('Header simplifies Cloud Sync to canonical header button and removes duplic
   const avatarPopoverChunk = headerSource.slice(avatarPopoverIdx, avatarPopoverIdx + 2500)
   assert.doesNotMatch(avatarPopoverChunk, /Cloud Songbook Sync/)
 
-  // Backup & Restore (JSON) is preserved in avatar popover
-  assert.match(headerSource, /Backup &amp; Restore \(JSON\)/)
+  // #299: one entry point; the avatar popover no longer has Backup & Restore (JSON)
+  assert.doesNotMatch(headerSource, /Backup &amp; Restore \(JSON\)/)
 })
 
 test('Header Debug Logs access is enabled in dev environment or when dev logs enabled', () => {

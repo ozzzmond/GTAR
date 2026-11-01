@@ -1,6 +1,6 @@
 /**
  * #181: whether local recovery needs a decision (any actionable source). DEV only, like the
- * former banner. Shown as a red dot on the header Cloud Sync button and on "Review local recovery".
+ * former banner. Shown as a red dot on Local Recovery Review in the DEV profile menu Advanced Tools (#299).
  * Recomputed only on the events that can change it, never per render.
  */
 import { useSyncExternalStore } from 'react'

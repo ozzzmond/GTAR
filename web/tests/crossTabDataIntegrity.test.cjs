@@ -263,16 +263,15 @@ test('9. React App: cross-tab conflict detection, alert UI rendering, and recove
     return timer
   }
 
-  const modules = ['SongbookHomeView', 'TrashView', 'Header', 'BackupRestoreDialogModal', 'DesktopEditor'].map(name => require(`../src/components/${name}.tsx`))
-  const originals = modules.map((module, i) => module[['SongbookHomeView', 'TrashView', 'Header', 'BackupRestoreDialogModal', 'DesktopEditor'][i]])
+  const modules = ['SongbookHomeView', 'TrashView', 'Header', 'DesktopEditor'].map(name => require(`../src/components/${name}.tsx`))
+  const originals = modules.map((module, i) => module[['SongbookHomeView', 'TrashView', 'Header', 'DesktopEditor'][i]])
   let home, trash, header, backup, editor
   modules[0].SongbookHomeView = props => { home = props; return React.createElement('div', null, 'Songbook mounted') }
   modules[1].TrashView = props => { trash = props; return React.createElement('div', null, 'Trash mounted') }
-  modules[2].Header = props => { header = props; return null }
+  // #299: the Backup & Restore center (in Header) restores through the same App handlers.
+  modules[2].Header = props => { header = props; backup = { onSmartMerge: props.onCloudMerge, onFullRestore: props.onCloudRestore }; return null }
 
-  modules[3].BackupRestoreDialogModal = props => { backup = props; return null }
-
-  modules[4].DesktopEditor = props => { editor = props; return null }
+  modules[3].DesktopEditor = props => { editor = props; return null }
 
   const React = require('react')
   const { act } = React
@@ -452,7 +451,7 @@ test('9. React App: cross-tab conflict detection, alert UI rendering, and recove
 
       // Mount the real Desktop Editor: failed autosaves leave its private draft
       // newer than App's song state, including edits made after conflict detection.
-      modules[4].DesktopEditor = originals[4]
+      modules[3].DesktopEditor = originals[3]
       await act(async () => backup.onFullRestore([songA, songB], [setlist1]))
       const expectedSetlists = readPersistedLibrary().setlists
       const change = async (element, value) => {
@@ -495,7 +494,7 @@ test('9. React App: cross-tab conflict detection, alert UI rendering, and recove
     await act(async () => root.unmount())
     for (const timer of timers) clearTimeout(timer)
     global.setTimeout = originalTimeout
-    modules.forEach((module, i) => { module[['SongbookHomeView', 'TrashView', 'Header', 'BackupRestoreDialogModal', 'DesktopEditor'][i]] = originals[i] })
+    modules.forEach((module, i) => { module[['SongbookHomeView', 'TrashView', 'Header', 'DesktopEditor'][i]] = originals[i] })
     URL.createObjectURL = create
     URL.revokeObjectURL = revoke
     Object.assign(global, prior)

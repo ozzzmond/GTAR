@@ -138,7 +138,7 @@ async function upload(dom, raw) {
   await act(async () => input.dispatchEvent(new dom.window.Event('change', { bubbles: true })))
 }
 
-for (const component of ['BackupRestoreDialogModal', 'ImportDialogModal']) test(`${component}: cancel, confirm, repeated import and persistence failure preserve durable library and recovery`, async () => withUi(async ({ dom, root }) => {
+for (const component of ['DeviceBackupCard', 'ImportDialogModal']) test(`${component}: cancel, confirm, repeated import and persistence failure preserve durable library and recovery`, async () => withUi(async ({ dom, root }) => {
   const Modal = require(`../src/components/${component}.tsx`)[component]
   let library = existing
   let allow = false
@@ -161,8 +161,8 @@ for (const component of ['BackupRestoreDialogModal', 'ImportDialogModal']) test(
     existingSongs: existing.songs, existingSetlists: existing.setlists, onSmartMerge,
     onFullRestore() { assert.fail('legacy import must never wipe') }, onImportAllSongs() { assert.fail('must use durable merge') },
   })))
-  // Even selecting Wipe & Replace cannot convert this legacy operation into a wipe.
-  if (component === 'BackupRestoreDialogModal') await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes('Full Restore (Wipe & Replace)')).click())
+  // #299: a legacy file goes to Import as New from Restore from file; it never becomes a wipe.
+  if (component === 'DeviceBackupCard') await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes('Restore from file')).click())
   const raw = JSON.stringify({ ...backup, themeMode: 'paper-light' })
   const originalRaw = localStorage.getItem(LIBRARY_KEY)
   await upload(dom, raw)

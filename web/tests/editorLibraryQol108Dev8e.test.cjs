@@ -101,7 +101,7 @@ test('8e setlists: collapse is presentation-only, preference survives remount, e
   await act(async()=>document.querySelector('[data-testid="setlist-card-list"]').click());assert.equal(opened,1);assert.equal(JSON.stringify(lists),snapshot)
  } finally {await act(async()=>root.unmount())}
 })
-test('8e/#181 recovery dot refreshes when recovery becomes represented; no banner; raw archive export remains available',async()=>{
+test('8e/#181/#299 recovery dot until old recovery data is exported; no banner; export keeps the archive',async()=>{
  localStorage.clear();const lost={...song,id:'lost'};persistLibrary({songs:[song],setlists:[]});const archive=JSON.stringify({songs:[lost],setlists:[]});localStorage.setItem('gtar_sync_recovery:plain',archive)
  const App=require('../src/App.tsx').default,root=createRoot(document.getElementById('root'))
  let blob;const create=URL.createObjectURL,revoke=URL.revokeObjectURL;URL.createObjectURL=value=>{blob=value;return 'blob:recovery'};URL.revokeObjectURL=()=>{};window.HTMLAnchorElement.prototype.click=function(){}
@@ -109,6 +109,11 @@ test('8e/#181 recovery dot refreshes when recovery becomes represented; no banne
   await act(async()=>root.render(React.createElement(App)));assert.equal(document.querySelector('aside[role="alert"]'),null,'#181: no recovery banner')
   assert.ok(document.querySelector('[data-testid="header-recovery-dot"]'),'#181: red dot on the Cloud Sync button')
   assert.equal(require('../src/utils/syncJournal.ts').recoveryData()['gtar_sync_recovery:plain'],archive,'raw archive stays exportable')
-  await act(async()=>persistLibrary({songs:[song,lost],setlists:[]}));assert.equal(document.querySelector('[data-testid="header-recovery-dot"]'),null,'dot clears once represented');assert.equal(localStorage.getItem('gtar_sync_recovery:plain'),archive)
+  // #299: the dot asks for the old-recovery export; it stays until that export was saved on this device.
+  await act(async()=>persistLibrary({songs:[song,lost],setlists:[]}));assert.ok(document.querySelector('[data-testid="header-recovery-dot"]'),'archive still not exported')
+  await act(async()=>document.querySelector('[data-testid="header-cloud-sync-button"]').click())
+  await act(async()=>{document.querySelector('[data-testid="export-old-recovery-button"]').click();await new Promise(r=>setTimeout(r,5))})
+  assert.ok(blob,'old recovery data exported');assert.equal(JSON.parse(await blob.text())['gtar_sync_recovery:plain'],archive)
+  assert.equal(document.querySelector('[data-testid="header-recovery-dot"]'),null,'dot clears once the export is saved');assert.equal(localStorage.getItem('gtar_sync_recovery:plain'),archive)
  } finally {await act(async()=>root.unmount());URL.createObjectURL=create;URL.revokeObjectURL=revoke}
 })
