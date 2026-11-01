@@ -38,7 +38,7 @@ export function useGoogleAuth() {
   return auth
 }
 
-export function AuthGate({ children }: { children: ReactNode }) {
+export function AuthGate({ children, deviceOwned = false }: { children: ReactNode; deviceOwned?: boolean }) {
   const [session, setSession] = useState<GoogleSession | null>(null)
   const [checking, setChecking] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -398,6 +398,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       }
     } catch { /* ignore */ }
 
+    if (deviceOwned) { setChecking(false); return }
     const generation = ++epoch.current
     const status = getStoredSessionStatus()
 
@@ -470,7 +471,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // This is a generation counter, not a DOM ref: invalidate the current epoch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Capturing the mount value would revive stale async work.
     return () => { isMountedRef.current = false; epoch.current++ }
-  }, [backgroundRecheck])
+  }, [backgroundRecheck, deviceOwned])
 
   // Load Google Identity Services SDK
   const loadSdk = useCallback((forceRetry = false) => {
@@ -497,8 +498,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [clientId])
 
   useEffect(() => {
-    return loadSdk()
-  }, [loadSdk])
+    if (!deviceOwned) return loadSdk()
+  }, [loadSdk, deviceOwned])
 
   // Initialize GIS and render persistent sign-in button container
   useEffect(() => {
@@ -609,6 +610,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         return
       }
 
+      if (deviceOwned) await loadGoogleIdentity()
       const idToken = await requestGoogleCredential(clientId)
       if (gen !== epoch.current) return
       await exchangeCredential(idToken, gen)
@@ -630,7 +632,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   // Active / Approved access OR Local Dev Bypass: render application
-  if (permitted || (bypass && canBypass)) {
+  if (deviceOwned || permitted || (bypass && canBypass)) {
     return (
       <AuthContext.Provider
         value={{

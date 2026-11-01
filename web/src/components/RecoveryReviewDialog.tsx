@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { inspectRecovery, recordRecoveryChoice, recoveryExportData, planRecoveryCleanup, confirmRecoveryCleanup, localStorageBytes, recoveryRetentionUsage, isLibraryIndexActive, enableLibraryIndex, disableLibraryIndex,
   isLibraryB2Active, enableLibraryB2, disableLibraryB2, libraryB2Status } from '../utils/syncJournal'
-import { B2_FLAG_KEY, clearB2Hold, holdMessage } from '../utils/libraryB2'
+import { B2_FLAG_KEY, clearB2Hold, holdMessage, b2RecoveryScopes, exportB2Partition } from '../utils/libraryB2'
 
 import { isDevEnv } from '../utils/env'
 import type { ShadowCleanupPlan } from '../utils/libraryBodyStore'
@@ -95,9 +95,11 @@ export function RecoveryReviewDialog({ blocked, onClose }: { blocked: () => bool
     finally { busyRef.current = false; setBusy(false) }
   }
 
-  function exportSources() {
+  async function exportSources() {
     try {
-      const url = URL.createObjectURL(new Blob([JSON.stringify(recoveryExportData(), null, 2)], { type: 'application/json' }))
+      const data = recoveryExportData()
+      for (const scope of b2RecoveryScopes()) data[`gtar_library_b2::${scope}`] = JSON.stringify(await exportB2Partition(scope))
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
       const link = document.createElement('a'); link.href = url; link.download = 'GTAR-storage-recovery.json'; link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch { setError('Recovery export failed. Keep browser storage intact and retry.') }
