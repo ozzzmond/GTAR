@@ -7,6 +7,7 @@ import { DuplicateReviewDialog } from './DuplicateReviewDialog'
 import { ExportSongsDialog } from './ExportSongsDialog'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
+import { SetlistWorkspace, type SetlistWorkspaceScope } from './SetlistWorkspace'
 import React, { useState, useMemo, useRef, useCallback } from 'react'
 import { useListWindow } from '../utils/listWindow'
 import {
@@ -86,6 +87,9 @@ interface SongbookHomeViewProps {
   /** Canonical multi-tag filter applied by the Music Explorer tag selection. */
   tagFilter?: string | null
   onTagFilterChange?: (tag: string | null) => void
+  /** #290 S1 (DEV-only): Music Explorer setlist target; renders the GTAR1 setlist workspace. */
+  setlistScope?: SetlistWorkspaceScope | null
+  onSelectSetlistScope?: (scope: SetlistWorkspaceScope) => void
 }
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
@@ -124,6 +128,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onActiveTabChange,
   tagFilter: propTagFilter,
   onTagFilterChange,
+  setlistScope,
+  onSelectSetlistScope,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -1625,8 +1631,51 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         />
       ) : (
         <>
-          {/* 2. SONG SETLISTS PANEL */}
-      {(activeTab === 'setlists' || (activeTab === 'my_songs' && activeSetlists.length > 0)) && (
+          {/* 2. SONG SETLISTS PANEL (#290: DEV Explorer setlist targets use the GTAR1 workspace) */}
+      {activeTab === 'setlists' && setlistScope ? (
+        <>
+          <input
+            ref={setlistFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleSetlistImportFile}
+            className="hidden"
+          />
+          <SetlistWorkspace
+            key={setlistScope}
+            scope={setlistScope}
+            setlists={sortedSetlists}
+            songs={songs}
+            onSelectScope={onSelectSetlistScope}
+            onManageSetlist={onManageSetlist}
+            onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
+            onOpenSong={onSelectSong}
+            menu={{
+              sortValue: effectiveSetlistSortBy,
+              sortOptions: [
+                { value: 'manual', label: 'Manual Order' },
+                { value: 'title_asc', label: 'Title A-Z' },
+                { value: 'title_desc', label: 'Title Z-A' },
+                ...(hasReliableSetlistTimestamps
+                  ? [{ value: 'newest', label: 'Newest First' }, { value: 'oldest', label: 'Oldest First' }]
+                  : []),
+              ],
+              onSortChange: (value) => setSetlistSortBy(value as SetlistSortOption),
+              onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
+              onShareSetlist,
+              onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
+              onPublishSetlist: onPublishSetlist && canPublishSetlist && setlistCapability.enabled ? onPublishSetlist : undefined,
+              publishLabel: (sl) => {
+                const status = setlistStatusMap.get(sl.id)
+                return status === 'CONFIRMED_PUBLISHED' || status === 'LOCAL_CHANGES_NOT_PUBLISHED'
+                  ? 'Update or Unpublish in Shared Catalog'
+                  : 'Publish to Shared Catalog'
+              },
+              onManageSetlists: onOpenSetlists,
+            }}
+          />
+        </>
+      ) : (activeTab === 'setlists' || (activeTab === 'my_songs' && activeSetlists.length > 0)) && (
         activeSetlists.length === 0 ? (
           <section aria-label="Song Setlists" className="rounded-2xl border border-app-border bg-app-surface p-6 sm:p-8 mb-6 shadow-xs text-center space-y-3">
             <Layers className="ui-section-icon w-8 h-8 mx-auto text-app-accent" />

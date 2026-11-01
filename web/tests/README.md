@@ -270,6 +270,7 @@ New or renamed tests await a human choice of primary category.
 - [recoveryRetentionGuidance.test.cjs](recoveryRetentionGuidance.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
+- [setlistWorkspaceGtar1.test.cjs](setlistWorkspaceGtar1.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
 - [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
 - [songExport.test.cjs](songExport.test.cjs)
