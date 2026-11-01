@@ -5,7 +5,6 @@ import { allowLocalBypass, type UserRole } from '../utils/authPolicy'
 import {
   loadGoogleIdentity,
   getStoredSessionStatus,
-  requestGoogleCredential,
   authenticateWithServer,
   recheckServerSession,
   logoutFromServer,
@@ -19,8 +18,6 @@ import {
   addCredentialListener,
   renderGoogleButton,
   cancelGoogleOneTap,
-  isPromptSuppressedOrDismissed,
-  isPromptSuppressed,
   type GoogleSession,
   type AccessStatus,
 } from '../utils/googleAuth'
@@ -526,7 +523,8 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
 
   // Initialize GIS and render persistent sign-in button container
   useEffect(() => {
-    if (!ready || !clientId || session || bypass || checking) return
+    const replacingInactiveAccount = deviceOwned && showSignInDialog && accessStatus !== 'active'
+    if (!ready || !clientId || (session && !replacingInactiveAccount) || bypass || checking) return
     const container = document.getElementById('google-signin-button')
     if (!container) return
 
@@ -562,7 +560,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
     return () => {
       removeListener?.()
     }
-  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse, showSignInDialog])
+  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse, showSignInDialog, deviceOwned, accessStatus])
 
   // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
@@ -626,29 +624,13 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
     setIsExpiredOffline(false)
 
     try {
-      const container = document.getElementById('google-signin-button')
-      const renderedBtn = container?.querySelector('button, [role="button"]') as HTMLElement | null
-      if (renderedBtn && typeof renderedBtn.click === 'function') {
-        renderedBtn.click()
-        return
-      }
-
-      if (deviceOwned) {
-        await loadGoogleIdentity()
-        if (gen !== epoch.current) return
-        setReady(true)
-      }
-      const idToken = await requestGoogleCredential(clientId)
+      setShowSignInDialog(true)
+      await loadGoogleIdentity()
       if (gen !== epoch.current) return
-      await exchangeCredential(idToken, gen)
+      setReady(true)
+      setBusy(false)
     } catch (failure) {
       if (gen === epoch.current) {
-        if (isPromptSuppressedOrDismissed(failure)) {
-          if (deviceOwned && isPromptSuppressed(failure)) setShowSignInDialog(true)
-          // Google prompt was suppressed (cooldown) or dismissed; keep manual sign-in / GIS button ready
-          setBusy(false)
-          return
-        }
         const errorMsg = failure instanceof Error ? failure.message : 'Sign-in failed.'
         setError(errorMsg)
         void import('../utils/logger').then(({ appLogger }) => {

@@ -47,17 +47,6 @@ interface TokenClient {
   requestAccessToken(options?: TokenClientOptions): void
 }
 
-export interface PromptMomentNotification {
-  isDisplayed: () => boolean
-  isNotDisplayed: () => boolean
-  getNotDisplayedReason?: () => string
-  isSkippedMoment: () => boolean
-  getSkippedReason?: () => string
-  isDismissedMoment: () => boolean
-  getDismissedReason?: () => string
-  getMomentType?: () => string
-}
-
 export interface GsiButtonConfiguration {
   type?: 'standard' | 'icon'
   theme?: 'outline' | 'filled_blue' | 'filled_black'
@@ -83,7 +72,6 @@ interface GIS {
   accounts: {
     id?: {
       initialize(config: GISIdInitConfig): void
-      prompt(momentListener?: (notification: PromptMomentNotification) => void): void
       renderButton(parent: HTMLElement, options: Record<string, unknown>): void
       cancel(): void
     }
@@ -857,21 +845,6 @@ export function renderGoogleButton(
   }
 }
 
-export function promptGoogleOneTap(
-  momentListener?: (notification: PromptMomentNotification) => void
-): boolean {
-  if (typeof window === 'undefined' || !window.google?.accounts?.id?.prompt) {
-    return false
-  }
-  try {
-    window.google.accounts.id.prompt(momentListener)
-    return true
-  } catch (err) {
-    console.warn('[googleAuth] Failed to prompt One Tap:', err)
-    return false
-  }
-}
-
 export function cancelGoogleOneTap(): void {
   if (typeof window === 'undefined' || !window.google?.accounts?.id?.cancel) {
     return
@@ -881,101 +854,6 @@ export function cancelGoogleOneTap(): void {
   } catch {
     /* ignore */
   }
-}
-
-export interface RequestCredentialOptions {
-  timeoutMs?: number
-  onPromptMoment?: (notification: PromptMomentNotification) => void
-}
-
-/**
- * Requests server-verifiable Google ID token (JWT) via Google Identity Services
- */
-export function requestGoogleCredential(
-  clientId: string,
-  options?: RequestCredentialOptions
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.google?.accounts?.id) {
-      reject(new Error('Google sign-in is still loading. Try again.'))
-      return
-    }
-
-    let settled = false
-    const timeoutMs = options?.timeoutMs ?? 60000
-    const timeout = setTimeout(() => {
-      finish(() => {
-        reject(new Error('Sign-in timeout. Please click sign-in again.'))
-      })
-    }, timeoutMs)
-
-    const finish = (action: () => void) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      removeListener()
-      action()
-    }
-
-    const onCredential = (response: CredentialResponse) => {
-      finish(() => {
-        if (response.credential) {
-          resolve(response.credential)
-        } else {
-          reject(new Error('No credential returned from Google.'))
-        }
-      })
-    }
-
-    const removeListener = addCredentialListener(onCredential)
-
-    try {
-      initializeGoogleIdentity({
-        client_id: clientId,
-        auto_select: false,
-        cancel_on_tap_outside: true,
-      })
-
-      window.google.accounts.id.prompt((notification) => {
-        if (settled) return
-        options?.onPromptMoment?.(notification)
-
-        if (notification.isNotDisplayed()) {
-          const reason = typeof notification.getNotDisplayedReason === 'function'
-            ? notification.getNotDisplayedReason()
-            : 'suppressed'
-          finish(() => {
-            reject(new GooglePromptSuppressedError('Google One Tap prompt was not displayed: ' + reason, reason))
-          })
-          return
-        }
-
-        if (notification.isSkippedMoment()) {
-          const reason = typeof notification.getSkippedReason === 'function'
-            ? notification.getSkippedReason()
-            : 'skipped'
-          finish(() => {
-            reject(new GooglePromptSuppressedError('Google One Tap prompt was skipped: ' + reason, reason))
-          })
-          return
-        }
-
-        if (notification.isDismissedMoment()) {
-          const reason = typeof notification.getDismissedReason === 'function'
-            ? notification.getDismissedReason()
-            : 'dismissed'
-          finish(() => {
-            reject(new GooglePromptDismissedError('Google One Tap prompt was dismissed: ' + reason, reason))
-          })
-          return
-        }
-      })
-    } catch (err) {
-      finish(() => {
-        reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    }
-  })
 }
 
 export interface RequestSessionOptions {

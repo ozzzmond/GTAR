@@ -1079,7 +1079,7 @@ test('29. REGRESSION_HOTFIX_FAILED_LOGIN_NO_OAUTH_FALLBACK: Failed server login 
   const React = require('react')
   const { act } = React
   const { createRoot } = require('react-dom/client')
-  const { AuthGate } = require(path.join(webDir, 'src/components/AuthGate.tsx'))
+  const { AuthGate, useGoogleAuth } = require(path.join(webDir, 'src/components/AuthGate.tsx'))
 
   // Static verification: AuthGate.tsx does not reference requestGoogleSession
   const authGateSource = fs.readFileSync(path.join(webDir, 'src/components/AuthGate.tsx'), 'utf8')
@@ -1107,16 +1107,21 @@ test('29. REGRESSION_HOTFIX_FAILED_LOGIN_NO_OAUTH_FALLBACK: Failed server login 
       IS_REACT_ACT_ENVIRONMENT: true,
     })
 
+    dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+    dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
     dom.window.google = {
       accounts: {
         id: {
           initialize(cfg) {
             this._cb = cfg.callback
           },
-          prompt() {
-            if (this._cb) this._cb({ credential: 'mock-id-token-jwt' })
+          prompt() { assert.fail('Explicit sign-in must not prompt One Tap') },
+          renderButton(container) {
+            const button = document.createElement('button')
+            button.textContent = 'Sign in with Google'
+            button.onclick = () => this._cb({ credential: 'mock-id-token-jwt' })
+            container.replaceChildren(button)
           },
-          renderButton() {},
           cancel() {},
         },
         oauth2: {
@@ -1174,13 +1179,18 @@ test('29. REGRESSION_HOTFIX_FAILED_LOGIN_NO_OAUTH_FALLBACK: Failed server login 
     }
 
     function ProtectedApp() {
-      return React.createElement('div', { id: 'protected-app' }, 'Protected Songbook Unlocked')
+      const auth = useGoogleAuth()
+      return auth.session
+        ? React.createElement('div', { id: 'protected-app' }, 'Protected Songbook Unlocked')
+        : React.createElement('button', { onClick: auth.signIn }, 'Connect account')
     }
 
     const root = createRoot(dom.window.document.getElementById('root'))
     await act(async () => {
-      root.render(React.createElement(AuthGate, null, React.createElement(ProtectedApp)))
+      root.render(React.createElement(AuthGate, { deviceOwned: true }, React.createElement(ProtectedApp)))
     })
+
+    await act(async () => dom.window.document.querySelector('button').click())
 
     // 1. Trigger sign-in when server fails -> must NOT invoke OAuth fallback, must remain locked
     const signInBtn = Array.from(dom.window.document.querySelectorAll('button')).find((b) =>
