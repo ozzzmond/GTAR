@@ -281,8 +281,9 @@ test('G7.2: Songbook Publish to Shared — authorization guard, success, partial
 
     assert.equal(fetchCount, 0)
     const errBanner = document.querySelector('[data-testid="songbook-publish-error"]')
-    assert.ok(errBanner)
-    assert.match(errBanner.textContent, /Authentication required/)
+    assert.equal(errBanner, null)
+    assert.equal(publishBtn.disabled, true)
+    assert.match(publishBtn.textContent, /Sign in to use the Shared Catalog/)
     assert.equal(document.querySelector('[data-testid="songbook-publish-toast"]'), null)
     // Selection preserved after unauthorized attempt
     assert.equal(
@@ -436,6 +437,7 @@ test('G7.3: Songbook Options toggle uses Hide and Show labels and preserves coll
 
 test('G7.4: Setlist heading rename, toolbar action order (New Setlist | Manage | QR | Import | Hide), Setlist Manage mode, and display-only sorting', async () => {
   localStorage.clear()
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(makeApprovedSession()))
   const ref1 = { id: 'song-1', title: 'Alpha Tune', artist: 'Band One' }
   const ref2 = { id: 'song-2', title: 'Beta Groove', artist: 'Band Two' }
   const setlistsNoTimestamps = [
