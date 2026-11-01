@@ -1822,6 +1822,12 @@ function LibraryApp() {
             onActiveTabChange={setSongbookTab}
             tagFilter={songbookTag}
             onTagFilterChange={setSongbookTag}
+            setlistScope={
+              isDevEnv && (explorerSelection.type === 'ALL_SETLISTS' || explorerSelection.type === 'UNFILED_SETLISTS')
+                ? explorerSelection.type
+                : null
+            }
+            onSelectSetlistScope={(scope) => handleExplorerSelect({ type: scope })}
           />
         ) : activeView === 'editor' ? (
           <DesktopEditor
