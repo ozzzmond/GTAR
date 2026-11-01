@@ -85,3 +85,35 @@ test('quota failure aborts restore with a clear message and unchanged device',as
   assert.ok(calls.every(method=>method==='GET'))
  }finally{window.Storage.prototype.setItem=original;await act(async()=>root.unmount())}
 })
+test('Header preserves an unsaved editor draft and blocks Restore until editor and cross-tab conflict are closed',async()=>{
+ const initial=await setup();await act(async()=>initial.root.unmount())
+ window.matchMedia=()=>({matches:false})
+ const {Header}=require('../src/components/Header.tsx')
+ const root=createRoot(document.getElementById('root'));let setView,setConflict;let restores=0
+ const noop=()=>{}
+ function Harness(){
+  const [view,changeView]=React.useState('editor');setView=changeView
+  const [conflict,changeConflict]=React.useState(false);setConflict=changeConflict
+  const [draft,changeDraft]=React.useState('Unsaved [G]editor draft')
+  return React.createElement(React.Fragment,null,
+   React.createElement('textarea',{'aria-label':'Editor draft',value:draft,onChange:e=>changeDraft(e.target.value)}),
+   React.createElement(Header,{activeView:view,song:local.songs[0],searchQuery:'',onViewChange:changeView,onSearchQueryChange:noop,onOpenWebsiteUrlSource:noop,onOpenStageTools:noop,onToggleTheme:noop,onOpenStageSettings:noop,onOpenImportModal:noop,onOpenBackupRestoreModal:noop,
+    autoSyncBlocked:view==='editor'||conflict,onCloudRestore:()=>{restores++;changeDraft('')},onCloudMerge:()=>{restores++;changeDraft('')}}))
+ }
+ try{
+  await act(async()=>root.render(React.createElement(Harness)))
+  await act(async()=>{document.querySelector('[data-testid="header-cloud-sync-button"]').click();await new Promise(r=>setTimeout(r,5))})
+  const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent===text)
+  assert.equal(button('Restore from cloud').disabled,true)
+  assert.match(document.body.textContent,/Close the editor \(save or discard your changes\) before restoring\./)
+  await click('Restore from cloud')
+  assert.equal(restores,0);assert.equal(document.querySelector('textarea').value,'Unsaved [G]editor draft')
+  assert.equal(button('Back up to cloud').disabled,false)
+  await click('Back up to cloud');assert.ok(button('Confirm backup'));await click('Cancel')
+  await act(async()=>{setView('songbook');setConflict(true)})
+  assert.equal(button('Restore from cloud').disabled,true)
+  await act(async()=>setConflict(false))
+  assert.equal(button('Restore from cloud').disabled,false)
+  assert.equal(document.querySelector('textarea').value,'Unsaved [G]editor draft');assert.equal(restores,0)
+ }finally{await act(async()=>root.unmount())}
+})

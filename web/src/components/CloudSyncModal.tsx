@@ -12,15 +12,17 @@ import { openRecoveryReview } from '../utils/recoveryReview'
 interface CloudSyncModalProps {
   isOpen: boolean
   onClose: () => void
+  restoreBlocked?: boolean
   onOpenDebugLogs?: () => void
   onSyncApplied?: (library: SyncLibrary) => void
   onBackupSummary?: (date: string | null) => void
   onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
 }
+const RESTORE_BLOCKED_MESSAGE = "Close the editor (save or discard your changes) before restoring."
 const counts = (library: SyncLibrary) => `${library.songs.filter(s => !s.isDeleted).length} songs, ${library.setlists.length} setlists, ${library.songs.filter(s => s.isDeleted).length} in trash`
 const only = (a: {id?: string | number}[], b: {id?: string | number}[]) => a.filter(x => !b.some(y => String(y.id) === String(x.id))).length
-export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose, onBackupSummary, onFullRestore, onSmartMerge, onOpenDebugLogs }) => {
+export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose, onBackupSummary, onFullRestore, onSmartMerge, onOpenDebugLogs, restoreBlocked = false }) => {
   const recoveryAttention = useRecoveryAttention()
   const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
   const auth = useOptionalGoogleAuth()
@@ -33,6 +35,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose,
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [preview, setPreview] = useState<{ kind: 'backup' | 'restore'; device: SyncLibrary; cloud: CloudSongbookRecord | null } | null>(null)
+  const restoreBlockedRef = useRef(restoreBlocked)
+  useEffect(() => { restoreBlockedRef.current = restoreBlocked }, [restoreBlocked])
   const identity = useRef('')
   useEffect(() => { identity.current = `${userId}:${token}`; return () => { identity.current = '' } }, [userId, token])
   const summaryCallback = useRef(onBackupSummary)
@@ -65,6 +69,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose,
     finally { setBusy(false) }
   }
   const prepare = (kind: 'backup' | 'restore') => run(async () => {
+    if (kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     const captured = identity.current
     const record = await readCloudBackup(account)
     if (identity.current !== captured) throw new Error('Account changed; open the dialog again.')
@@ -72,10 +77,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose,
     if (kind === 'restore' && !record) throw new Error('No cloud backup yet')
     const device = readPersistedLibrary()
     if (!device) throw new Error('Device library could not be read')
+    if (kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     setPreview({kind, device, cloud: record})
   })
   const confirm = (mode?: 'replace' | 'merge') => run(async () => {
     if (!preview) return
+    if (preview.kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     const captured = identity.current
     const device = readPersistedLibrary()
     if (!device || JSON.stringify(device) !== JSON.stringify(preview.device)) {
@@ -98,6 +105,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose,
       const apply = mode === 'replace' ? onFullRestore : onSmartMerge
       if (!apply || !preview.cloud || !mode) throw new Error('Restore unavailable')
       await restoreCloudBackup(device, preview.cloud.data, mode, library => {
+        if (restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
         if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
         return apply(library.songs, library.setlists)
       }, localStorage)
@@ -110,9 +118,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose,
       {!signedIn ? <button onClick={() => { void auth?.signIn().catch(error => setMessage(String(error.message))) }}>Sign in to back up to cloud</button> : <>
         <p>{session?.user?.email}</p>
         <p>{ready ? cloud ? `Cloud backup: ${new Date(cloud.updatedAt).toLocaleString()} — ${counts(cloud.data)}` : 'No cloud backup yet' : 'Reading cloud backup…'}</p>
+        {restoreBlocked && <p role="status">{RESTORE_BLOCKED_MESSAGE}</p>}
         {!preview ? <div className="flex gap-3">
           <button disabled={busy || !ready} onClick={() => { void prepare('backup') }}>Back up to cloud</button>
-          <button disabled={busy || !ready || !cloud} onClick={() => { void prepare('restore') }}>Restore from cloud</button>
+          <button disabled={busy || !ready || !cloud || restoreBlocked} onClick={() => { void prepare('restore') }}>Restore from cloud</button>
         </div> : <div role="group" aria-label={preview.kind === 'backup' ? 'Confirm cloud backup' : 'Preview cloud restore'} className="space-y-3">
           <p>Device: {counts(preview.device)}</p>
           <p>Cloud: {preview.cloud ? `${preview.cloud.updatedAt} — ${counts(preview.cloud.data)}` : 'No cloud backup yet'}</p>
@@ -123,8 +132,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose,
             <p>Only on device: {only(preview.device.songs, preview.cloud.data.songs)} songs, {only(preview.device.setlists, preview.cloud.data.setlists)} setlists.</p>
             <p>Only in cloud: {only(preview.cloud.data.songs, preview.device.songs)} songs, {only(preview.cloud.data.setlists, preview.device.setlists)} setlists.</p>
             <p>A verified local safety snapshot is saved first. Replace removes device-only items; Merge keeps both libraries.</p>
-            <button disabled={busy} onClick={() => { void confirm('replace') }}>Replace device</button>
-            <button disabled={busy} onClick={() => { void confirm('merge') }}>Merge into device</button>
+            <button disabled={busy || restoreBlocked} onClick={() => { void confirm('replace') }}>Replace device</button>
+            <button disabled={busy || restoreBlocked} onClick={() => { void confirm('merge') }}>Merge into device</button>
           </>}
           <button disabled={busy} onClick={() => setPreview(null)}>Cancel</button>
         </div>}

@@ -233,6 +233,7 @@ export const Header: React.FC<HeaderProps> = ({
   onCloudSyncApplied,
   onCloudRestore,
   onCloudMerge,
+  autoSyncBlocked = false,
   onOpenCast,
   isCastActive = false,
 }) => {
@@ -1451,6 +1452,7 @@ export const Header: React.FC<HeaderProps> = ({
         onSyncApplied={onCloudSyncApplied}
         onBackupSummary={setLastCloudBackup}
         onOpenDebugLogs={isDevEnv ? () => { setShowCloudSyncModal(false); setShowDebugLogsModal(true) } : undefined}
+        restoreBlocked={autoSyncBlocked}
         onFullRestore={onCloudRestore}
         onSmartMerge={onCloudMerge}
       />
