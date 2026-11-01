@@ -35,9 +35,8 @@ const { openBackupCenter } = require('../src/utils/backupCenter.ts')
 
 const noop = () => {}
 const songs = [{ id: 's1', title: 'A', rawContent: 'C' }]
-let bridge = 0
 const props = { activeView: 'songbook', song: songs[0], searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop,
-  onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, backupSongs: songs, onOpenAdvancedBridge: () => { bridge++ } }
+  onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, backupSongs: songs }
 const signedIn = { session: { token: 't', user: { id: 'u1', email: 'admin@example.com', name: 'Admin' } }, isSuperAdmin: true }
 const buttonTexts = el => [...el.querySelectorAll('button')].map(b => b.textContent.trim())
 
@@ -83,7 +82,7 @@ for (const auth of [signedIn, { session: null, isSuperAdmin: false }]) {
       assert.doesNotMatch(popover.textContent, /Advanced Tools|Local Recovery Review|JSON Bridge|Debug logs|Record debug logs/)
     } finally { await act(async () => root.unmount()) }
   })
-  test(`DEV (${auth.session ? 'signed in' : 'signed out'}): Advanced Tools opens Local Recovery Review, Advanced JSON Bridge and debug logs`, async () => {
+  test(`DEV (${auth.session ? 'signed in' : 'signed out'}): Advanced Tools opens Local Recovery Review and debug logs (no JSON Bridge)`, async () => {
     const { root, popover } = await mountHeader({ dev: true, auth })
     try {
       const toggle = document.querySelector('[data-testid="advanced-tools-button"]')
@@ -91,7 +90,7 @@ for (const auth of [signedIn, { session: null, isSuperAdmin: false }]) {
       assert.equal(toggle.getAttribute('aria-expanded'), 'false')
       await act(async () => toggle.click())
       const tools = document.querySelector('[data-testid="advanced-tools"]')
-      assert.deepEqual(buttonTexts(tools), ['Advanced ToolsDEV', 'Local Recovery Review', 'Advanced JSON Bridge', 'Debug logs', ''])
+      assert.deepEqual(buttonTexts(tools), ['Advanced ToolsDEV', 'Local Recovery Review', 'Debug logs', ''])
       assert.ok(tools.querySelector('[role="switch"][aria-label="Record debug logs"]'))
       let reviews = 0
       const onReview = () => { reviews++ }
@@ -100,19 +99,15 @@ for (const auth of [signedIn, { session: null, isSuperAdmin: false }]) {
       window.removeEventListener('gtar-review-recovery', onReview)
       assert.equal(reviews, 1, 'opens the existing Local Recovery Review')
       assert.ok(popover.isConnected === false || !document.querySelector('.avatar-popover'), 'menu closes')
-      await act(async () => document.querySelector('.avatar-wrapper').click())
-      const again = document.querySelector('[data-testid="advanced-tools-button"]')
-      if (again.getAttribute('aria-expanded') !== 'true') await act(async () => again.click())
-      const before = bridge
-      await act(async () => document.querySelector('[data-testid="advanced-json-bridge"]').click())
-      assert.equal(bridge, before + 1)
+      assert.equal(document.querySelector('[data-testid="advanced-json-bridge"]'), null, '#304: JSON Bridge removed')
     } finally { await act(async () => root.unmount()) }
   })
 }
 
-test('App wires the JSON Bridge into Advanced Tools only on DEV and no longer renders the JSON backup dialog', () => {
+test('#304: App no longer renders the JSON Bridge or the JSON backup dialog', () => {
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
-  assert.match(app, /onOpenAdvancedBridge=\{isDevEnv \? \(\) => setIsJsonModalOpen\(true\) : undefined\}/)
+  assert.doesNotMatch(app, /JsonBridgeModal|onOpenAdvancedBridge|isJsonModalOpen/)
+  assert.ok(!fs.existsSync(require.resolve('../src/components/Header.tsx').replace('Header.tsx', 'JsonBridgeModal.tsx')))
   assert.doesNotMatch(app, /BackupRestoreDialogModal|isBackupRestoreModalOpen/)
   assert.ok(!fs.existsSync(require.resolve('../src/components/Header.tsx').replace('Header.tsx', 'BackupRestoreDialogModal.tsx')))
 })

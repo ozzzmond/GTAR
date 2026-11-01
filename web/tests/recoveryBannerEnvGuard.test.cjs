@@ -84,7 +84,7 @@ test('RECOVERY_BANNER_DEV (#181): localhost shows the recovery dot, not a banner
     const App = require('../src/App.tsx').default
     await act(async () => root.render(React.createElement(App)))
     assert.equal(document.querySelector('aside[role="alert"]'), null, '#181: no recovery banner in DEV')
-    assert.ok(document.querySelector('[data-testid="header-recovery-dot"]'), '#181: DEV shows the red recovery dot instead')
+    assert.equal(document.querySelector('[data-testid="header-recovery-dot"]'), null, '#304: no header dot either')
   } finally {
     await act(async () => root.unmount())
     Object.assign(global, prior)
@@ -171,7 +171,7 @@ test('8j startup recovery is refreshed after child migration and stays resolved 
   } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
 })
 
-test('8j/#181 dot follows recovery state across remounts; new archives re-alert; damage still alerts', async () => {
+test('8j/#181/#304 recovery archive survives remounts without a header dot; damage still alerts', async () => {
   clearAppRequireCache()
   const { dom, prior } = setupDom('http://localhost/')
   const library = JSON.stringify({songs:[{id:'550e8400-e29b-41d4-a716-446655440000',title:'Song',rawContent:'C'}],setlists:[]})
@@ -183,11 +183,11 @@ test('8j/#181 dot follows recovery state across remounts; new archives re-alert;
   try {
     await act(async () => root.render(React.createElement(App)))
     assert.equal(document.querySelector('aside[role="alert"]'), null)
-    assert.ok(dot(), 'actionable archive shows the dot')
+    assert.equal(dot(), null, '#304: no header dot')
     await act(async () => root.unmount())
     root = createRoot(document.getElementById('root'))
     await act(async () => root.render(React.createElement(App)))
-    assert.ok(dot(), 'dot survives an auth remount while the archive is undecided')
+    assert.equal(dot(), null, 'still no header dot after an auth remount')
     assert.equal(localStorage.getItem('gtar_library_v1'), library)
     assert.equal(localStorage.getItem('gtar_sync_recovery:unknown'), 'original archive')
     localStorage.setItem('gtar_library_v1', '{broken')

@@ -55,7 +55,6 @@ import { StageView } from './components/StageView'
 import { StagePresentationView } from './components/StagePresentationView'
 import { SongbookHomeView } from './components/SongbookHomeView'
 import { TrashView } from './components/TrashView'
-import { JsonBridgeModal } from './components/JsonBridgeModal'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { SetlistDrawer } from './components/SetlistDrawer'
 import type { ExplorerTarget } from './components/MusicExplorerNav'
@@ -85,8 +84,7 @@ import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
-import { exportAllDataJson, libraryFingerprint } from './utils/jsonBackup'
-import { backupReminderDue, backupReminderMessage, readBackupStatus } from './utils/backupStatus'
+import { exportAllDataJson } from './utils/jsonBackup'
 import { isDevEnv } from './utils/env'
 import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
 
@@ -219,8 +217,7 @@ function LibraryStartupReadyInner() {
     } catch (err) { setRepairError(err instanceof Error ? err.message : 'Repair failed. Original data remains available for export.') }
   }
   // #181: only a damaged library gets the full-width alert (the app cannot load). Actionable recovery
-  // is flagged in DEV Advanced Tools (Local Recovery Review); old archives put a dot on the header
-  // Backup & Restore button until "Export old recovery data" was saved on this device (#299).
+  // is flagged in DEV Advanced Tools (Local Recovery Review).
   return <>
     {b2Hold && <aside role="alert" data-testid="library-b2-hold" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
       <span className="flex-1 min-w-0">{holdMessage(b2Hold)}</span>
@@ -459,22 +456,6 @@ function LibraryApp() {
   // #257 F3: a stable array, so the backup dialog re-checks "changed since backup" only when the library really changes.
   const backupDialogSongs = useMemo(() => [...songs, ...deletedSongs], [songs, deletedSongs])
 
-  // #251: one non-blocking backup reminder per app start (no upload; the user saves the file).
-  const backupReminderLibraryRef = useRef({ songs, deletedSongs, setlists })
-  useEffect(() => { backupReminderLibraryRef.current = { songs, deletedSongs, setlists } }, [songs, deletedSongs, setlists])
-  useEffect(() => {
-    let hide: ReturnType<typeof setTimeout> | undefined
-    const show = setTimeout(() => {
-      const library = backupReminderLibraryRef.current
-      const message = backupReminderMessage(backupReminderDue(readBackupStatus(),
-        { songs: library.songs.length, trash: library.deletedSongs.length, setlists: library.setlists.length },
-        () => libraryFingerprint([...library.songs, ...library.deletedSongs], library.setlists)))
-      if (!message) return
-      setToastMessage(message)
-      hide = setTimeout(() => setToastMessage(current => current === message ? null : current), 8000)
-    }, 6000)
-    return () => { clearTimeout(show); if (hide) clearTimeout(hide) }
-  }, [])
   // Best-effort non-blocking durable storage request (Gap 2)
   useEffect(() => {
     requestDurableStorage().catch(() => {})
@@ -559,7 +540,6 @@ function LibraryApp() {
   const [isStageSettingsModalOpen, setIsStageSettingsModalOpen] = modals.stageSettings
   const [isStageToolsModalOpen, setIsStageToolsModalOpen] = modals.stageTools
   const [isThemeModalOpen, setIsThemeModalOpen] = modals.theme
-  const [isJsonModalOpen, setIsJsonModalOpen] = modals.json
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = modals.headerKeyPicker
   // #85 slice 3: Shared Setlists publication state, catalog badges and the catalog import context.
   const {
@@ -1694,7 +1674,6 @@ function LibraryApp() {
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}
-          onOpenAdvancedBridge={isDevEnv ? () => setIsJsonModalOpen(true) : undefined}
           onOverlayChange={setIsHeaderOverlayOpen}
           onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode(isDevEnv ? 'explorer' : 'library'); setIsSetlistDrawerOpen(true) })}
           setlists={setlists}
@@ -1885,7 +1864,6 @@ function LibraryApp() {
                 isThemeModalOpen ||
                 isWebsiteUrlModalOpen ||
                 isImportModalOpen ||
-                isJsonModalOpen ||
                 isHeaderKeyPickerOpen ||
                 isTvPresentationModalOpen ||
                 isHeaderOverlayOpen ||
@@ -2028,19 +2006,6 @@ function LibraryApp() {
         onPushSetlist={handlePushSetlistToMembers}
         activeSetlistName={activeSetlist?.name}
         activeSetlistSongCount={activeSetlistSongs.length}
-      />
-
-      {/* Advanced JSON Bridge Modal */}
-      <JsonBridgeModal
-        isOpen={isJsonModalOpen}
-        initialTab="export"
-        setlists={setlists}
-        onSmartMerge={handleSmartMerge}
-        onClose={() => setIsJsonModalOpen(false)}
-        song={currentSong}
-        allSongs={[...songs, ...deletedSongs]}
-        onImportSong={handleImportSong}
-        onImportAllSongs={handleImportAllSongs}
       />
 
       {/* Header Key Picker Modal */}

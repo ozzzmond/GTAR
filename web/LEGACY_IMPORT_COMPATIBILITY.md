@@ -15,8 +15,8 @@ identity inference and repeated background imports.
 | `GTAR_SHARED_SETLIST` | SUPPORTED_WITH_EXPLICIT_IMPORT_AS_NEW | Existing shared-setlist preview already requires an Import/Stage action before creating fresh local records. Unchanged by G2. |
 | Recovery archives, future schemas, malformed entries, canonical collisions, ambiguous or dangling references | UNSUPPORTED_WITH_CLEAR_ERROR | Retain rejection and original recovery bytes; no best-effort migration. |
 
-Import as New is available through Backup & Restore, Import Songs & Setlists,
-and JSON Bridge. A missing ID means the **whole incoming payload** becomes new
+Import as New is available through Backup & Restore and Import Songs (the
+JSON Bridge dialog was removed in #304; its files still import). A missing ID means the **whole incoming payload** becomes new
 records after explicit confirmation, even if other records have stable IDs.
 It never replaces current records, tombstones, or settings, including when the
 file was selected through Wipe & Replace. Every retry/repeated import requires

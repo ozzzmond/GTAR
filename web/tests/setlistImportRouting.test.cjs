@@ -31,13 +31,8 @@ test('108-dev.1c: ImportDialogModal setlist import routing vs backup restore', (
     'parseFileContent must never turn SINGLE_SETLIST json into a raw text chord song'
   )
 
-  // Verify UI clarifies difference with Profile/Backup
-  assert.ok(
-    content.includes('Import Songs &amp; Setlists'),
-    'UI header must clarify it supports Songs & Setlists'
-  )
-  assert.ok(
-    content.includes('Full backup and restore: profile menu'),
-    'UI must clarify distinction between Import dialog and Full Profile/Library Backup Restore'
-  )
+  // #304: the dialog title is "Import Songs"; the Backup & Restore footer hint is gone.
+  assert.ok(content.includes('>Import Songs</h2>'), 'dialog title must be "Import Songs"')
+  assert.ok(!content.includes('Import Songs &amp; Setlists'), 'old dialog title must be removed')
+  assert.ok(!content.includes('Full backup and restore: profile menu'), 'Backup & Restore footer hint must be removed')
 })

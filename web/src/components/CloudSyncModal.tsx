@@ -8,13 +8,11 @@ import { readPersistedLibrary } from '../utils/syncJournal'
 import type { SyncLibrary } from '../utils/syncMerge'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { CloudBackupChanged, readCloudBackup, restoreCloudBackup, writeCloudBackup } from '../utils/manualCloudBackup'
-import { exportOldRecoveryData, useOldRecoveryData } from '../utils/recoveryExport'
-import { recoveryDotClass } from '../utils/recoveryAttention'
 import type { ExportEnvironment } from '../utils/backupExport'
 import { DeviceBackupCard } from './DeviceBackupCard'
 import { RestorePreview } from './RestorePreview'
 import {
-  RESTORE_BLOCKED_MESSAGE, footerButton, formatDate, listCounts, outlinedButton, primaryButton, sectionCard, sectionLabel, tone,
+  RESTORE_BLOCKED_MESSAGE, formatDate, listCounts, outlinedButton, primaryButton, sectionCard, sectionLabel, tone,
 } from './backupCenterUi'
 
 interface CloudSyncModalProps {
@@ -33,6 +31,8 @@ interface CloudSyncModalProps {
   exportEnv?: ExportEnvironment
 }
 const sizeMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2)
+/** The cloud limit as a plain number of MB ("2", not "2.00"). */
+const limitMb = (bytes: number) => String(Number(sizeMb(bytes)))
 const safe = <T,>(read: () => T, fallback: T): T => { try { return read() } catch { return fallback } }
 const restoredMessage = (library: SyncLibrary) => `Backup restored: ${library.songs.length} songs, ${library.setlists.length} setlists (verified after saving).`
 const NO_SONGS: ActiveSongState[] = []
@@ -61,7 +61,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const token = session?.sessionToken || session?.idToken || session?.token || ''
   const userId = String(session?.user?.id || '')
   const signedIn = Boolean(token && userId && auth?.accessStatus === 'active')
-  const oldRecovery = useOldRecoveryData()
   const [cloud, setCloud] = useState<CloudSongbookRecord | null>(null)
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -69,7 +68,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [message, setMessageText] = useState('')
   const [messageTone, setMessageTone] = useState<'success' | 'error'>('error')
   const setMessage = (text: string, kind: 'success' | 'error' = 'error') => { setMessageText(text); setMessageTone(kind) }
-  const [recoveryMessage, setRecoveryMessage] = useState('')
   const [preview, setPreview] = useState<{ kind: 'backup' | 'restore'; device: SyncLibrary; cloud: CloudSongbookRecord | null } | null>(null)
   const persisted = usePersistedLibrary(isOpen && (!deviceSongs || signedIn))
   const restoreBlockedRef = useRef(restoreBlocked)
@@ -82,7 +80,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     let active = true
     if (!isOpen) return
     const trigger = document.activeElement as HTMLElement | null
-    void Promise.resolve().then(() => { if (active) { setPreview(null); setReady(false); setMessageText(''); setRecoveryMessage('') } })
+    void Promise.resolve().then(() => { if (active) { setPreview(null); setReady(false); setMessageText('') } })
     if (signedIn) {
       readCloudBackup({ token, userId }).then(record => {
         if (!active) return
@@ -150,11 +148,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setPreview(null); setMessage(restoredMessage(preview.cloud.data), 'success')
     }
   })
-  const exportRecovery = async () => {
-    setRecoveryMessage('')
-    try { await exportOldRecoveryData(); setRecoveryMessage('Old recovery data handed to browser downloads as GTAR-storage-recovery.json. Check that it was saved.') }
-    catch { setRecoveryMessage('Recovery export failed. Nothing was changed; retry.') }
-  }
   const device = signedIn ? persisted : null
   const headroom = device ? safe(() => songbookUploadHeadroom(estimateSongbookUploadBytes(device)), null) : null
   const fileSongs = deviceSongs ?? (persisted?.songs as ActiveSongState[] | undefined) ?? NO_SONGS
@@ -226,11 +219,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               {statusRow('Checksum', ready && cloud ? <span className="block truncate" title={cloud.checksum}>{cloud.checksum}</span> : '—', false, 'text-app-action text-[10px]')}
               {statusRow('Contents', ready && cloud ? listCounts(cloud.data) : '—', true)}
               {headroom && <div className="col-span-2 space-y-1">
-                <span className="text-app-muted block">Cloud size</span>
+                <span className="text-app-muted block">Backup size</span>
                 <span data-testid="cloud-sync-headroom" className={headroom.level === 'ok' ? 'text-app-heading font-semibold' : headroom.level === 'over' ? 'text-status-error font-semibold' : 'text-status-warning font-semibold'}>
-                  {sizeMb(headroom.bytes)} / {sizeMb(headroom.limitBytes)} MB ({Math.round(headroom.ratio * 100)}%)
+                  {sizeMb(headroom.bytes)} MB of {limitMb(headroom.limitBytes)} MB cloud limit
                 </span>
-                <div role="meter" aria-label="Cloud size" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(headroom.ratio * 100))}
+                <div role="meter" aria-label="Backup size" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(headroom.ratio * 100))}
                   className="h-1.5 rounded-full bg-app-border/60 overflow-hidden">
                   <div className={`h-full rounded-full ${headroom.level === 'ok' ? 'bg-app-action' : headroom.level === 'over' ? 'bg-status-error' : 'bg-status-warning'}`}
                     style={{ width: `${Math.min(100, Math.max(1, headroom.ratio * 100))}%` }} />
@@ -275,17 +268,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
           {message && <p role="status" className={messageTone === 'success' ? tone.success : tone.error}>{message}</p>}
         </div>
-
-        {recoveryMessage && <p role="status" data-testid="old-recovery-message" className={tone.info}>{recoveryMessage}</p>}
       </div>
 
-      <div data-testid="cloud-sync-modal-footer" className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-between gap-2 text-[11px] text-app-muted">
-        <div className="flex items-center gap-2">
-          {oldRecovery.exists && <button type="button" data-testid="export-old-recovery-button" disabled={locked} onClick={() => { void exportRecovery() }} className={footerButton}
-            aria-label={oldRecovery.exported ? undefined : 'Export old recovery data, not saved on this device yet'}>
-            Export old recovery data{!oldRecovery.exported && <span data-testid="old-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
-          </button>}
-        </div>
+      <div data-testid="cloud-sync-modal-footer" className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-end gap-2 text-[11px] text-app-muted">
         <button type="button" data-testid="cloud-sync-close-button" disabled={locked} onClick={onClose}
           className="min-h-11 px-4 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50">Close</button>
       </div>

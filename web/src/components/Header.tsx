@@ -1,5 +1,4 @@
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
-import { useOldRecoveryData } from '../utils/recoveryExport'
 import { openRecoveryReview } from '../utils/recoveryReview'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
@@ -15,7 +14,6 @@ import {
   FolderOpen,
   Cloud,
   Wrench,
-  Database,
   History,
   Eye,
   FileEdit,
@@ -97,8 +95,6 @@ interface HeaderProps {
   /** Library (songs including trash) for the Backup & Restore center's file card. */
   backupSongs?: ActiveSongState[]
   onImportAllSongs?: (songs: Array<Partial<ActiveSongState>>) => void
-  /** DEV Advanced Tools: the Advanced JSON Bridge. */
-  onOpenAdvancedBridge?: () => void
   /** #303: reports whether a header-owned dialog (Backup & Restore center, debug logs) is open, so Stage shortcuts pause. */
   onOverlayChange?: (open: boolean) => void
   onOpenSetlistDrawer?: () => void
@@ -237,7 +233,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenImportModal,
   backupSongs,
   onImportAllSongs,
-  onOpenAdvancedBridge,
   onOverlayChange,
   onOpenSetlistDrawer,
   setlists = [],
@@ -272,8 +267,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   // DEV Advanced Tools: Local Recovery Review still flags undecided recovery (#181).
   const recoveryAttention = useRecoveryAttention()
-  // #299: the header dot asks for one thing only: export old recovery data (until done on this device).
-  const oldRecovery = useOldRecoveryData()
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
   const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
   // #303: the center (with its restore preview) and the debug-log dialog block Stage keyboard/pedal shortcuts.
@@ -356,9 +349,6 @@ export const Header: React.FC<HeaderProps> = ({
           <History className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Local Recovery Review
           {recoveryAttention && <span data-testid="advanced-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
         </button>
-        {onOpenAdvancedBridge && <button type="button" data-testid="advanced-json-bridge" onClick={() => { setShowAvatarPopover(false); onOpenAdvancedBridge() }} className={advancedItem}>
-          <Database className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Advanced JSON Bridge
-        </button>}
         <button type="button" data-testid="advanced-debug-logs" onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }} className={advancedItem}>
           <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Debug logs
         </button>
@@ -715,9 +705,8 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Cloud Sync Button & Health Indicator */}
           <button type="button" data-testid="header-cloud-sync-button" onClick={() => setShowCloudSyncModal(true)}
             className="relative before:absolute before:content-[''] before:-inset-1.5 p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
-            aria-label={oldRecovery.exists && !oldRecovery.exported ? 'Backup & Restore, old recovery data not exported yet' : 'Backup & Restore'}>
+            aria-label="Backup & Restore">
             <Cloud className="w-4 h-4 text-app-action" />
-            {oldRecovery.exists && !oldRecovery.exported && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
             <span className="hidden md:inline font-mono text-[11px]">{lastCloudBackup ? `Last cloud backup: ${Math.max(0, Math.floor((backupClock - Date.parse(lastCloudBackup)) / 60000))}m ago` : 'No cloud backup yet'}</span>
           </button>
 
