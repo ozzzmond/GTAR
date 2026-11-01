@@ -1,5 +1,5 @@
 // #251 Cloud V2 P0: backup schema v2, verified export (share / download / copy), restore choices,
-// restore verification, safety snapshot fallback, backup status and reminders.
+// restore verification, safety snapshot fallback and backup status.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -344,29 +344,6 @@ test('verifyRestoredLibrary compares the complete canonical library (replace and
   assert.match(ex.verifyRestoredLibrary({ songs: [], setlists: [] }, { songs: [a], setlists: [] }, 'replace', store)[0], /song a differs in key/)
 })
 
-test('reminders: never, stale with changes, large change, disabled, and not due', async () => {
-  const day = 86400000, now = Date.parse('2026-10-27T00:00:00Z')
-  const lib = { songs: 100, trash: 2, setlists: 5 }
-  const on = { enabled: true, intervalDays: 14 }
-  assert.deepEqual(status.backupReminderDue(null, lib, () => 'f', on, now), { due: true, reason: 'never' })
-  assert.deepEqual(status.backupReminderDue(null, { songs: 0, trash: 0, setlists: 0 }, () => 'f', on, now), { due: false })
-  const s = { v: 1, at: new Date(now - 15 * day).toISOString(), delivery: 'share', schemaVersion: 2, bytes: 1, songs: 100, trash: 2, setlists: 5, fingerprint: 'f' }
-  assert.deepEqual(status.backupReminderDue(s, lib, () => 'g', on, now), { due: true, reason: 'stale', daysSince: 15 })
-  assert.equal(status.backupReminderDue(s, lib, () => 'f', on, now).due, false, 'unchanged library is not stale')
-  let hashed = 0
-  const recent = { ...s, at: new Date(now - 2 * day).toISOString() }
-  assert.equal(status.backupReminderDue(recent, lib, () => { hashed++; return 'g' }, on, now).due, false)
-  assert.equal(hashed, 0, 'no library read before the interval passes')
-  assert.deepEqual(status.backupReminderDue(recent, { ...lib, songs: 130 }, () => 'f', on, now), { due: true, reason: 'changed', daysSince: 2 })
-  assert.deepEqual(status.backupReminderDue(null, lib, () => 'f', { enabled: false, intervalDays: 14 }, now), { due: false })
-  assert.match(status.backupReminderMessage({ due: true, reason: 'stale', daysSince: 15 }), /15 days ago/)
-  const store = new MemoryStorage()
-  status.saveBackupReminder({ enabled: false, intervalDays: 30 }, store)
-  assert.deepEqual(status.readBackupReminder(store), { enabled: false, intervalDays: 30 })
-  store.setItem(status.BACKUP_REMINDER_KEY, '{"enabled":true,"intervalDays":3}')
-  assert.deepEqual(status.readBackupReminder(store), status.DEFAULT_BACKUP_REMINDER)
-})
-
 // Dialog flows
 function withJsdom(fn) {
   return async () => {
@@ -386,15 +363,6 @@ function withJsdom(fn) {
   }
 }
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text))
-/** Waits (act-wrapped) until `check()` is truthy; tolerant of slow CI scheduling, fails after `ms`. */
-async function waitFor(check, ms = 3000) {
-  const end = Date.now() + ms
-  while (!check()) {
-    if (Date.now() > end) return false
-    await act(async () => new Promise(r => setTimeout(r, 15)))
-  }
-  return true
-}
 const checkbox = text => [...document.querySelectorAll('label')].find(l => l.textContent.toLowerCase().includes(text.toLowerCase())).querySelector('input')
 // #299: Restore from file → shared preview → Merge into device, or Replace device (then "Confirm replace").
 async function pick(dom, mode, payload, beforeChoice) {
@@ -484,7 +452,7 @@ test('merge aborts with zero library change when the safety snapshot cannot be s
   assert.equal(storage.length, 0)
 }))
 
-test('dialog export: share sheet path with wording that never claims an upload; status shown', withJsdom(async ({ root }) => {
+test('dialog export: share sheet path with wording that never claims an upload', withJsdom(async ({ root }) => {
   persistLibrary({ songs: [current], setlists: [] })
   const { env, calls } = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
   await act(async () => root.render(React.createElement(DeviceBackupCard, {
@@ -492,7 +460,6 @@ test('dialog export: share sheet path with wording that never claims an upload; 
   })))
   // Let the opening's session reset run (the old "Export Backup" step used to give it this tick).
   await act(async () => new Promise(r => setTimeout(r, 5)))
-  assert.match(document.querySelector('[data-testid="backup-status"]').textContent, /No backup made from this device yet/)
   await act(async () => button('Save backup file').click())
   assert.match(document.body.textContent, /Tap "Open share sheet"/)
   assert.equal(status.readBackupStatus(), null)
@@ -502,28 +469,12 @@ test('dialog export: share sheet path with wording that never claims an upload; 
   assert.match(text, /Backup file verified \(1 songs, 0 setlists, 0 in trash/)
   assert.match(text, /GTAR cannot see where it was saved/)
   assert.doesNotMatch(text, /uploaded|synced|cloud backup complete/i)
-  assert.match(document.querySelector('[data-testid="backup-status"]').textContent, /Last backup: .*sent to the share sheet\. GTAR cannot confirm where the file was saved\./)
+  // #304: the device-only "last backup" line is gone (it never counted cloud backups).
+  assert.equal(document.querySelector('[data-testid="backup-status"]'), null)
   // Download path from the same dialog.
   await act(async () => button('Download .json').click())
   assert.equal(calls.downloads.length, 1)
   assert.match(document.body.textContent, /handed to browser downloads/)
-}))
-
-test('dialog shows when the library changed after the last backup', withJsdom(async ({ root }) => {
-  global.localStorage = localStorage
-  const backup = jb.buildVerifiedBackup([current], [])
-  status.recordBackupStatus(backup, 'download')
-  const render = songs => act(async () => root.render(React.createElement(DeviceBackupCard, {
-    isOpen: true, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {},
-  })))
-  await render([current])
-  await act(async () => new Promise(r => setTimeout(r, 5)))
-  assert.doesNotMatch(document.body.textContent, /newer edits are not in it/)
-  // Computed when the dialog opens (App re-renders constantly; the library is read once per opening).
-  await act(async () => root.render(React.createElement(DeviceBackupCard, { isOpen: false, onClose: () => {}, allSongs: [], setlists: [], onImportAllSongs: () => {} })))
-  await render([{ ...current, rawContent: '[G]edited' }])
-  await act(async () => new Promise(r => setTimeout(r, 5)))
-  assert.match(document.body.textContent, /Your library changed after this backup; the newer edits are not in it\./)
 }))
 
 test('menu export (download) is verified and recorded; Cloud V1 library keys are not touched', async () => {
@@ -946,55 +897,6 @@ test('R2 dialog: a restore with settings ticked is refused while recovery is unf
   assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot, 'unfinished recovery evidence untouched')
 }))
 
-test('R3: changed-since-backup follows later library edits, edits during share, settings-only changes and remounts', withJsdom(async ({ root }) => {
-  persistLibrary({ songs: [current], setlists: [] })
-  let releaseShare
-  const env = {
-    makeFile: (json, name) => ({ name, size: json.length }), download: () => {},
-    navigator: { canShare: () => true, share: () => new Promise(resolve => { releaseShare = resolve }) },
-  }
-  const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
-  const show = (songs, open = true) => act(async () => root.render(React.createElement(DeviceBackupCard, {
-    isOpen: open, onClose: () => {}, allSongs: songs, setlists: [], onImportAllSongs: () => {}, exportEnv: env,
-  })))
-  const settle = () => act(async () => new Promise(r => setTimeout(r, 5)))
-  const lib1 = [current]
-  await show(lib1)
-  // Edit during share: the share sheet is open while the library changes.
-  let sharing
-  await act(async () => { sharing = button('Save backup file').click() })
-  const lib2 = [{ ...current, rawContent: '[G]edited while sharing' }]
-  await show(lib2); await settle()
-  await act(async () => { releaseShare(); await sharing; await new Promise(r => setTimeout(r, 0)) })
-  await settle()
-  assert.match(statusText(), /Last backup: .*sent to the share sheet/)
-  assert.match(statusText(), /Your library changed after this backup/)
-  // Back to the exported content: no warning, and nothing claims the file was saved off-device.
-  await show(lib1); await settle()
-  assert.doesNotMatch(statusText(), /changed after this backup/)
-  assert.match(statusText(), /Nothing changed since this file was made \(GTAR still cannot confirm it was saved\)/)
-  // Edit after export, without reopening.
-  const lib3 = [{ ...current, title: 'Renamed later' }]
-  await show(lib3); await settle()
-  assert.match(statusText(), /Your library changed after this backup/)
-  // Settings-only change (another tab or a restore in this one signals it).
-  await show(lib1); await settle()
-  localStorage.setItem('gtar_songbook_sort', 'artist')
-  await act(async () => { window.dispatchEvent(new window.Event(bs.SETTINGS_CHANGED)) })
-  await settle()
-  assert.match(statusText(), /Your settings changed after this backup/)
-  assert.doesNotMatch(statusText(), /Your library changed/)
-  // Remount: computed again from storage.
-  await show(lib1, false); await show(lib1); await settle()
-  assert.match(statusText(), /Your settings changed after this backup/)
-  // A status without settings identity (older format) never claims "nothing changed".
-  const saved = status.readBackupStatus(); delete saved.settingsFingerprint
-  localStorage.setItem(status.BACKUP_STATUS_KEY, JSON.stringify(saved))
-  localStorage.removeItem('gtar_songbook_sort')
-  await show(lib1, false); await show(lib1); await settle()
-  assert.doesNotMatch(statusText(), /Nothing changed since/)
-}))
-
 // #257 round 3: cross-tab exclusivity, same-tab settings freshness, finished-restore copy.
 /** A "tab" over a shared localStorage map: optional hook before each write, optional failures. */
 class TabStorage {
@@ -1158,28 +1060,6 @@ test('P2 dialog: committed copy after remount offers Keep current settings / Und
   assert.equal(document.querySelector('[data-testid="settings-recovery"]'), null)
 }))
 
-test('P2 dialog: same-tab settings writes with no event update the warning while open; library signal stays independent', withJsdom(async ({ root }) => {
-  persistLibrary({ songs: [current], setlists: [] })
-  const { env } = fakeEnv()
-  const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
-  await act(async () => root.render(React.createElement(DeviceBackupCard, {
-    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env, settingsPollMs: 20,
-  })))
-  await act(async () => button('Save backup file').click())
-  await act(async () => new Promise(r => setTimeout(r, 10)))
-  assert.match(statusText(), /Nothing changed since this file was made/)
-  // A component in this tab writes a backed-up key directly (no event).
-  localStorage.setItem('gtar_stage_font_weight', 'bold')
-  await waitFor(() => /Your settings changed after this backup/.test(statusText()))
-  assert.match(statusText(), /Your settings changed after this backup/)
-  assert.doesNotMatch(statusText(), /Your library changed/)
-  // A key that is not a backup setting does not count.
-  localStorage.setItem('gtar_stage_font_weight', 'regular'); localStorage.removeItem('gtar_stage_font_weight')
-  localStorage.setItem('gtar_auth_session', 'x')
-  await waitFor(() => /Nothing changed since this file was made/.test(statusText()))
-  assert.match(statusText(), /Nothing changed since this file was made/)
-}))
-
 // #257 round 4: consent bound to the displayed copy; collision-free settings signature.
 test('C1: put-back/undo of a copy that was replaced after it was shown changes nothing (pending and committed)', async () => {
   for (const kind of ['pending', 'committed']) {
@@ -1254,18 +1134,3 @@ test('C2: settings signature distinguishes absent, empty, U+0001 and delimiter-l
   assert.equal(new Set(sigs).size, cases.length, 'every distinct storage state has a distinct signature')
   assert.equal(sig({ [k[0]]: 'x' }), sig({ [k[0]]: 'x' }))
 })
-
-test('C2 dialog: writing U+0001 to an absent key is noticed as a settings change while open', withJsdom(async ({ root }) => {
-  persistLibrary({ songs: [current], setlists: [] })
-  const { env } = fakeEnv()
-  const statusText = () => document.querySelector('[data-testid="backup-status"]').textContent
-  await act(async () => root.render(React.createElement(DeviceBackupCard, {
-    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env, settingsPollMs: 20,
-  })))
-  await act(async () => button('Save backup file').click())
-  await act(async () => new Promise(r => setTimeout(r, 10)))
-  assert.match(statusText(), /Nothing changed since this file was made/)
-  localStorage.setItem('gtar_songbook_filter_setlist', '\u0001')
-  await waitFor(() => /Your settings changed after this backup/.test(statusText()))
-  assert.match(statusText(), /Your settings changed after this backup/)
-}))

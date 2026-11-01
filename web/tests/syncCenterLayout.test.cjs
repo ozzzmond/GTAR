@@ -47,13 +47,18 @@ test('signed in: header bar, device card, Cloud (Google) card with account and l
     assert.ok(q('save-backup-file-button').className.includes('bg-app-action') && q('save-backup-file-button').className.includes('w-full'))
     assert.ok(q('restore-file-button').className.includes('border-app-border'))
     assert.match(device.textContent, /On this device1 songs · 0 setlists · 0 in trash/)
-    assert.match(q('backup-reminder').textContent, /Remind me to back up every/)
+    // #304: no backup reminder control and no device-only "last backup" line.
+    for (const id of ['backup-reminder', 'backup-status']) assert.equal(q(id), null, id)
+    assert.doesNotMatch(document.body.textContent, /Remind me to back up|No backup made from this device yet/)
     const card = q('cloud-backup-card')
     assert.match(card.textContent, /^Cloud \(Google\)/i)
     const account = q('cloud-sync-account-card')
     assert.ok(card.contains(account))
     assert.match(account.textContent, /Bee/); assert.match(account.textContent, /b@example.com/); assert.match(account.textContent, /Signed in/)
-    for (const label of ['Last cloud backup', 'Contents', 'Checksum', 'Cloud size']) assert.match(card.textContent, new RegExp(label))
+    for (const label of ['Last cloud backup', 'Contents', 'Checksum', 'Backup size']) assert.match(card.textContent, new RegExp(label))
+    assert.doesNotMatch(card.textContent, /Cloud size/)
+    assert.match(q('cloud-sync-headroom').textContent, /^\d+\.\d\d MB of 2 MB cloud limit$/)
+    assert.equal(card.querySelector('[role="meter"]').getAttribute('aria-label'), 'Backup size')
     assert.match(card.textContent, /1 songs · 0 setlists · 0 in trash/)
     assert.ok(card.textContent.includes(record.checksum))
     assert.ok(!card.textContent.includes(record.updatedAt), 'no raw ISO date')
@@ -64,7 +69,7 @@ test('signed in: header bar, device card, Cloud (Google) card with account and l
     // Removed from the everyday UI (#299): This device view, Review local recovery, debug-log switch.
     for (const id of ['sync-center-debug-switch', 'sync-center-diagnostics', 'sync-center-device-button', 'sync-center-device-view', 'cloud-sync-recovery-button']) assert.equal(q(id), null, id)
     assert.doesNotMatch(document.body.textContent, /Review local recovery|Diagnostics and debug logs|Chart storage/)
-    assert.deepEqual(buttons(q('cloud-sync-modal-footer')), ['Close'], 'no recovery archives: no export button')
+    assert.deepEqual(buttons(q('cloud-sync-modal-footer')), ['Close'])
   } finally { await act(async () => root.unmount()) }
 })
 
@@ -84,29 +89,15 @@ test('signed out: device card works, cloud card asks to sign in, no cloud reques
   } finally { await act(async () => root.unmount()) }
 })
 
-test('Export old recovery data: shown only while archives exist; dot until the export is saved on this device', async () => {
+test('#304: old recovery archives no longer add an export button or dot to the center footer', async () => {
   const archive = JSON.stringify({ local: { songs: [{ id: 'old', title: 'Old', rawContent: 'C' }], setlists: [] } })
-  const create = URL.createObjectURL, revoke = URL.revokeObjectURL, click = window.HTMLAnchorElement.prototype.click
-  let download
-  URL.createObjectURL = () => 'blob:recovery'; URL.revokeObjectURL = () => {}
-  window.HTMLAnchorElement.prototype.click = function () { download = this.download }
   const { root } = await mount(false, () => localStorage.setItem('gtar_sync_recovery:review:1', archive))
   try {
-    const exportButton = q('export-old-recovery-button')
-    assert.ok(exportButton); assert.equal(exportButton.textContent, 'Export old recovery data')
-    assert.ok(q('old-recovery-dot'), 'not exported yet')
-    await act(async () => { exportButton.click(); await new Promise(r => setTimeout(r, 5)) })
-    assert.equal(download, 'GTAR-storage-recovery.json')
-    assert.equal(q('old-recovery-dot'), null, 'export saved on this device')
-    assert.ok(q('export-old-recovery-button'), 'still available while archives exist')
-    assert.equal(localStorage.getItem('gtar_sync_recovery:review:1'), archive, 'export never deletes recovery data')
-    // A new archive asks again.
-    await act(async () => { localStorage.setItem('gtar_sync_recovery:review:2', archive); window.dispatchEvent(new window.Event('gtar-recovery-changed')) })
-    assert.ok(q('old-recovery-dot'))
-  } finally {
-    await act(async () => root.unmount())
-    URL.createObjectURL = create; URL.revokeObjectURL = revoke; window.HTMLAnchorElement.prototype.click = click
-  }
+    assert.deepEqual(buttons(q('cloud-sync-modal-footer')), ['Close'])
+    for (const id of ['export-old-recovery-button', 'old-recovery-dot', 'old-recovery-message']) assert.equal(q(id), null, id)
+    assert.doesNotMatch(document.body.textContent, /Export old recovery data/)
+    assert.equal(localStorage.getItem('gtar_sync_recovery:review:1'), archive, 'recovery data untouched')
+  } finally { await act(async () => root.unmount()) }
 })
 
 test('design guard: center cards reuse the #296 tokens; no blanket selectors or new hex colours', () => {

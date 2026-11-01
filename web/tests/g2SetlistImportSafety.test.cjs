@@ -167,48 +167,6 @@ test('stale cross-tab merge rejects while retaining recovery snapshots and archi
   assert.equal(store.getItem('gtar_sync_recovery:original'), 'unique raw recovery bytes')
 })
 
-test('JSON Bridge backup export has stable list identity and round-trips repeatedly', async () => {
-  const { JSDOM } = require('jsdom')
-  const React = require('react')
-  const { act } = React
-  const { createRoot } = require('react-dom/client')
-  const { JsonBridgeModal } = require('../src/components/JsonBridgeModal.tsx')
-  const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar.test/' })
-  const saved = { window: global.window, document: global.document, localStorage: global.localStorage,
-    IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT }
-  global.window = dom.window
-  global.document = dom.window.document
-  global.localStorage = dom.window.localStorage
-  global.IS_REACT_ACT_ENVIRONMENT = true
-  const root = createRoot(document.getElementById('root'))
-  try {
-    const props = { isOpen: true, onClose() {}, song, allSongs: [song], onImportSong() {} }
-    await act(async () => root.render(React.createElement(JsonBridgeModal, props)))
-    const button = [...document.querySelectorAll('button')].find(item => item.textContent.includes('Full GTAR'))
-    assert.ok(button)
-    await act(async () => button.click())
-    const raw = document.querySelector('textarea').value
-    const parsed = parseBackupJson(raw)
-    assert.equal(parsed.isValid, true, parsed.error)
-    assert.ok(parsed.setlists[0].id)
-    assert.equal(parsed.setlists[0].songs[0].id, song.id)
-    const first = merge({ songs: [], setlists: [] }, parsed)
-    assert.deepEqual(merge(first, parseBackupJson(raw)), first)
-    await act(async () => root.render(React.createElement(JsonBridgeModal, { ...props })))
-    assert.equal(JSON.parse(document.querySelector('textarea').value).setlists[0].id, parsed.setlists[0].id)
-    const zero = { ...song, id: 0 }
-    await act(async () => root.render(React.createElement(JsonBridgeModal, { ...props, song: zero, allSongs: [zero] })))
-    const zeroParsed = parseBackupJson(document.querySelector('textarea').value)
-    assert.equal(zeroParsed.isValid, true, zeroParsed.error)
-    assert.equal(zeroParsed.songs[0].id, 0)
-    assert.equal(zeroParsed.setlists[0].songs[0].id, 0)
-  } finally {
-    await act(async () => root.unmount())
-    Object.assign(global, saved)
-    dom.window.close()
-  }
-})
-
 test('App receives consecutive messages before render without losing lists and rejects stale tab writes', async () => {
   require.extensions['.png'] = module => { module.exports = '/logo.png' }
   const { JSDOM } = require('jsdom')

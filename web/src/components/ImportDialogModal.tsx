@@ -244,7 +244,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               <FolderOpen className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-app-heading">Import Songs &amp; Setlists</h2>
+              <h2 className="text-base font-bold text-app-heading">Import Songs</h2>
             </div>
           </div>
           <button
@@ -324,12 +324,6 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               </div>
             </div>
           </button>
-
-
-
-          <div className="p-3 rounded-xl bg-app-base/50 border border-app-border/60 text-[11px] text-app-muted leading-relaxed">
-            Full backup and restore: profile menu → <span className="text-app-heading font-medium">Backup &amp; Restore</span>.
-          </div>
         </div>
 
         {/* Footer */}

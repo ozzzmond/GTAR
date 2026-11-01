@@ -85,7 +85,7 @@ test('App folds the header dialogs and Local Recovery Review into the Stage over
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
   assert.match(app, /onOverlayChange=\{setIsHeaderOverlayOpen\}/)
   const guard = app.slice(app.indexOf('isAnyModalOpen={'), app.indexOf('onBack={() => setActiveView(\'songbook\')}'))
-  for (const flag of ['isHeaderOverlayOpen', 'reviewRecovery', 'isJsonModalOpen']) assert.ok(guard.includes(flag), flag)
+  for (const flag of ['isHeaderOverlayOpen', 'reviewRecovery']) assert.ok(guard.includes(flag), flag)
   const header = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
   assert.match(header, /const headerOverlayOpen = showCloudSyncModal \|\| showDebugLogsModal/)
 })

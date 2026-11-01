@@ -23,10 +23,6 @@ import {
   canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, shareOrDownloadBackup, verifyRestoredLibrary,
   type ExportEnvironment, type ExportOutcome,
 } from '../utils/backupExport'
-import {
-  BACKUP_REMINDER_INTERVALS, DELIVERY_LABEL, readBackupReminder, readBackupStatus, saveBackupReminder,
-  type BackupReminderSettings, type BackupStatus,
-} from '../utils/backupStatus'
 
 import { RestorePreview } from './RestorePreview'
 import {
@@ -90,10 +86,6 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   // A verified file waiting for one more tap (the browser refused to open the share sheet).
   const [preparedBackup, setPreparedBackup] = useState<VerifiedBackup | null>(null)
   const [isExporting, setIsExporting] = useState(false)
-  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
-  // #257 F3: what changed after the last backup, per part (null = unknown).
-  const [changedSinceBackup, setChangedSinceBackup] = useState<{ library: boolean | null; settings: boolean | null }>({ library: null, settings: null })
-  const [reminder, setReminder] = useState<BackupReminderSettings>(() => readBackupReminder())
   // #257 F2: unfinished settings restore found on this device (survives remounts and reloads).
   const [settingsRecovery, setSettingsRecovery] = useState<SettingsRecoveryState>({ state: 'none' })
   const [confirmDiscard, setConfirmDiscard] = useState(false)
@@ -105,24 +97,13 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   const currentFingerprint = () => {
     try { return libraryFingerprint(libraryRef.current.songs, libraryRef.current.setlists) } catch { return null }
   }
-  const currentSettingsFingerprint = () => {
-    try { return settingsFingerprint(readBackupSettingsV2(targetStorage)) } catch { return null }
-  }
-  const compareWithBackup = (status: BackupStatus | null) => {
-    if (!status) return { library: null, settings: null }
-    const library = currentFingerprint(), settings = currentSettingsFingerprint()
-    return {
-      library: library === null ? null : library !== status.fingerprint,
-      settings: settings === null || !status.settingsFingerprint ? null : settings !== status.settingsFingerprint,
-    }
-  }
   const refreshSettingsRecovery = () => {
     setSettingsRecovery(inspectSettingsRecovery(targetStorage))
     setConfirmDiscard(false)
   }
   // Effects below read the latest helpers through this ref (they close over current props).
-  const helpersRef = useRef({ compareWithBackup, refreshSettingsRecovery })
-  useEffect(() => { helpersRef.current = { compareWithBackup, refreshSettingsRecovery } })
+  const helpersRef = useRef({ refreshSettingsRecovery })
+  useEffect(() => { helpersRef.current = { refreshSettingsRecovery } })
 
   useEffect(() => {
     if (!isOpen) return
@@ -147,14 +128,11 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
-  // #257 F3: re-compared on opening, whenever the library changes (App passes a memoized array, so this
-  // does not run on unrelated renders) and whenever settings change; once per change, after render.
+  // Settings recovery is re-checked on opening, whenever the library changes (App passes a memoized array,
+  // so this does not run on unrelated renders) and whenever settings change; once per change, after render.
   useEffect(() => {
     if (!isOpen) return
     const timer = setTimeout(() => {
-      const status = readBackupStatus()
-      setBackupStatus(status)
-      setChangedSinceBackup(helpersRef.current.compareWithBackup(status))
       helpersRef.current.refreshSettingsRecovery()
     }, 0)
     return () => clearTimeout(timer)
@@ -196,10 +174,6 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
     setPreparedBackup(null)
     if (outcome.kind === 'share-cancelled') { showFeedback('info', 'Share cancelled. No backup was saved.'); return }
     if (outcome.kind === 'failed') { showFeedback('error', `Backup not exported: ${outcome.message}`); return }
-    // The status describes the file just handed out; compare it with the library and settings as they are now.
-    const status = readBackupStatus()
-    setBackupStatus(status)
-    setChangedSinceBackup(compareWithBackup(status))
     const verified = `Backup file verified (${countsText(backup.counts)}, ${mb(backup.bytes)})`
     if (outcome.kind === 'shared') showFeedback('info', `${verified} and sent to the share sheet. GTAR cannot see where it was saved; check that it is in Files, iCloud Drive or your cloud drive.`)
     else if (outcome.kind === 'copied') showFeedback('info', `${verified} and copied to the clipboard. Paste it somewhere safe; GTAR cannot see where it went.`)
@@ -282,11 +256,6 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       refreshSettingsRecovery()
       showFeedback('error', error instanceof Error ? error.message : String(error))
     }
-  }
-
-  const updateReminder = (next: BackupReminderSettings) => {
-    setReminder(next)
-    saveBackupReminder(next)
   }
 
   const executeRestore = async (parsed: ParsedBackupResult, isDestructive: boolean) => {
@@ -556,29 +525,6 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
         <p role={feedback.type === 'error' ? 'alert' : 'status'} className={`${tone[feedback.type]} whitespace-pre-wrap`}>{feedback.message}</p>
       )}
 
-      <div className="pt-2 border-t border-app-border/60 space-y-1 text-[11px] text-app-muted">
-        <p data-testid="backup-status">
-          {backupStatus
-            ? `Last backup: ${new Date(backupStatus.at).toLocaleString()} (${countsText(backupStatus)}), ${DELIVERY_LABEL[backupStatus.delivery]}. GTAR cannot confirm where the file was saved.`
-            : 'No backup made from this device yet.'}
-          {backupStatus && changedSinceBackup.library ? ' Your library changed after this backup; the newer edits are not in it.' : ''}
-          {backupStatus && changedSinceBackup.settings ? ' Your settings changed after this backup; the newer settings are not in it.' : ''}
-          {backupStatus && changedSinceBackup.library === false && changedSinceBackup.settings === false ? ' Nothing changed since this file was made (GTAR still cannot confirm it was saved).' : ''}
-        </p>
-        <label data-testid="backup-reminder" className="min-h-11 flex items-center gap-2 text-app-heading">
-          <input type="checkbox" className="w-4 h-4 shrink-0 accent-app-action" checked={reminder.enabled} onChange={e => updateReminder({ ...reminder, enabled: e.target.checked })} />
-          <span className="min-w-0">Remind me to back up every</span>
-          <select
-            aria-label="Backup reminder interval"
-            value={reminder.intervalDays}
-            disabled={!reminder.enabled}
-            onChange={e => updateReminder({ ...reminder, intervalDays: Number(e.target.value) })}
-            className="min-h-11 shrink-0 bg-app-surface border border-app-border rounded-lg px-2 text-app-heading disabled:opacity-50"
-          >
-            {BACKUP_REMINDER_INTERVALS.map(days => <option key={days} value={days}>{days} days</option>)}
-          </select>
-        </label>
-      </div>
     </div>
   )
 }
