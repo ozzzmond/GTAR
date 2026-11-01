@@ -161,7 +161,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
       await act(async () => window.dispatchEvent(new window.CustomEvent('gtar:cloud_sync_state', { detail: { status: state, isProcessing: false } })))
       const sync = document.querySelector('[data-testid="header-cloud-sync-button"]')
       assert.equal(sync.querySelectorAll('.header-neutral-icon').length, 0)
-      assert.ok(sync.querySelector('svg').getAttribute('class').includes(state === 'ERROR' || state === 'CONFLICT' ? 'text-status-error' : 'text-app-action'))
+      assert.ok(sync.querySelector('svg').getAttribute('class').includes('text-app-action'))
     }
     assert.ok(!document.querySelector('.auth-dot').classList.contains('header-neutral-icon'))
     document.body.className = 'theme-paper-light'

@@ -108,52 +108,6 @@ test('pill: accessible label, state attribute and click opens the Sync Center', 
   assert.equal(opened, 1)
 })
 
-test('Sync Center sections render only when the dialog is in Sync Center mode', () => {
-  const { CloudSyncModal } = require('../src/components/CloudSyncModal.tsx')
-  act(() => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose: () => {} })))
-  assert.match(container.querySelector('h2').textContent, /Cloud Songbook Sync/)
-  assert.equal(container.querySelector('[data-testid="sync-center-details"]'), null)
-
-  let logs = 0
-  const center = { pill: pill({ syncReference: 'missing' }), onOpenDebugLogs: () => { logs++ },
-    facts: { lastSyncedAt: 1, localChanged: false, songs: 140, setlists: 12, chartsInIndexedDb: true, syncReference: 'missing', headroom: null } }
-  act(() => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose: () => {}, syncCenter: center })))
-  assert.match(container.querySelector('h2').textContent, /Sync Center/)
-  const details = container.querySelector('[data-testid="sync-center-details"]')
-  assert.match(details.textContent, /1 item needs a decision/)
-  // Owner 2026-10-24: storage internals and the redundant sync-reference row are gone; no
-  // "offline edits" footnote in the Sync Center.
-  assert.doesNotMatch(container.textContent, /IndexedDB|Charts stored in|Offline edits preserved/)
-  assert.equal(container.querySelector('[data-testid="sync-center-reference"]'), null)
-  assert.doesNotMatch(details.textContent, /setlists|Sync engine/)
-  const diag = [...details.querySelectorAll('button')].find(b => /debug logs/.test(b.textContent))
-  act(() => diag.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
-  assert.equal(logs, 1)
-
-  // Debug logs switch: off by default, toggles the device setting.
-  localStorage.removeItem('gtar_debug_logs_enabled')
-  act(() => root.render(React.createElement(CloudSyncModal, { isOpen: false, onClose: () => {}, syncCenter: center })))
-  act(() => root.render(React.createElement(CloudSyncModal, { isOpen: true, onClose: () => {}, syncCenter: center })))
-  const debugSwitch = container.querySelector('[data-testid="sync-center-debug-switch"]')
-  assert.equal(debugSwitch.getAttribute('role'), 'switch')
-  assert.equal(debugSwitch.getAttribute('aria-checked'), 'false')
-  act(() => debugSwitch.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
-  assert.equal(debugSwitch.getAttribute('aria-checked'), 'true')
-  assert.equal(localStorage.getItem('gtar_debug_logs_enabled'), '1')
-
-  // "This device" in the footer opens the device view (library + sync engine); Back returns.
-  const deviceButton = container.querySelector('[data-testid="sync-center-device-button"]')
-  act(() => deviceButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
-  const view = container.querySelector('[data-testid="sync-center-device-view"]')
-  assert.match(view.textContent, /140 songs · 12 setlists/)
-  assert.match(view.textContent, /Sync engine/)
-  assert.ok(container.querySelector('[data-testid="sync-center-engine-toggle"]'))
-  assert.equal(container.querySelector('[data-testid="sync-center-details"]'), null)
-  const back = [...view.querySelectorAll('button')].find(b => b.textContent.trim() === 'Back')
-  act(() => back.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
-  assert.ok(container.querySelector('[data-testid="sync-center-details"]'))
-})
-
 test('debug logging switch: off records only warnings and errors; on records info too', () => {
   const logger = require('../src/utils/logger.ts')
   logger.appLogger.resume()

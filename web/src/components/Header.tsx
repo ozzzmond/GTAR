@@ -1,3 +1,4 @@
+import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -25,8 +26,6 @@ import {
   LogOut,
   User,
   Shield,
-  RotateCw,
-  AlertTriangle,
   ArrowLeft,
   Menu,
 } from 'lucide-react'
@@ -42,7 +41,6 @@ import {
   formatDevDiagLine2,
   formatHeaderVersion,
 } from '../utils/headerFormatters'
-import type { CloudSyncStatus } from '../utils/cloudSongbookSync'
 import { sharedCatalogService } from '../utils/sharedCatalogService'
 import { cloneSharedCatalogSongToPersonal } from '../utils/sharedCatalogImport'
 import type { SharedCatalogSongItem } from '../types/sharedCatalog'
@@ -63,10 +61,6 @@ import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
 import { navigateBack } from '../utils/viewHistory'
-import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
-import { useSyncStatus } from '../utils/useSyncStatus'
-import { useRecordsAutoSync } from '../utils/useRecordsAutoSync'
-import { SyncStatusPill } from './SyncStatusPill'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -105,6 +99,8 @@ interface HeaderProps {
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
   onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | Promise<boolean>
+  onCloudRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
+  onCloudMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
   onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
   /** RFC #188 S6: pause automatic sync (editor open, cross-tab conflict). */
   autoSyncBlocked?: boolean
@@ -235,11 +231,12 @@ export const Header: React.FC<HeaderProps> = ({
   onDirectImportOnlineSong,
   onImportSharedCatalogSong,
   onCloudSyncApplied,
+  onCloudRestore,
+  onCloudMerge,
   autoSyncBlocked = false,
   onOpenCast,
   isCastActive = false,
 }) => {
-  const recoveryAttention = useRecoveryAttention() // #181
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
@@ -258,9 +255,18 @@ export const Header: React.FC<HeaderProps> = ({
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   )
 
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('IDLE')
-  const [isCloudSyncProcessing, setIsCloudSyncProcessing] = useState(false)
-
+  const recoveryAttention = useRecoveryAttention()
+  const [backupDates, setBackupDates] = useState<Record<string, string | null>>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem('gtar_manual_cloud_backup_dates') || '{}')
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+    } catch { return {} }
+  })
+  const [backupClock, setBackupClock] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setBackupClock(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
   // Shared Catalog search state
   const [catalogResults, setCatalogResults] = useState<SharedCatalogSongItem[]>([])
   const [isSearchingCatalog, setIsSearchingCatalog] = useState(false)
@@ -274,23 +280,9 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
 
-    const handleSyncState = (e: Event) => {
-      const customEvent = e as CustomEvent<{ status?: CloudSyncStatus; isProcessing?: boolean }>
-      if (customEvent.detail) {
-        if (customEvent.detail.status !== undefined) {
-          setCloudSyncStatus(customEvent.detail.status)
-        }
-        if (customEvent.detail.isProcessing !== undefined) {
-          setIsCloudSyncProcessing(customEvent.detail.isProcessing)
-        }
-      }
-    }
-    window.addEventListener('gtar:cloud_sync_state', handleSyncState)
-
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
-      window.removeEventListener('gtar:cloud_sync_state', handleSyncState)
     }
   }, [])
 
@@ -309,20 +301,16 @@ export const Header: React.FC<HeaderProps> = ({
     // Header rendered outside AuthGate (e.g. isolated test or preview)
   }
 
+  const backupUserId = String(currentSession?.user?.id || '')
+  const cachedBackupDate = backupDates[backupUserId]
+  const lastCloudBackup = typeof cachedBackupDate === 'string' && Number.isFinite(Date.parse(cachedBackupDate)) ? cachedBackupDate : null
+  const setLastCloudBackup = (date: string | null) => {
+    const next = { ...backupDates, [backupUserId]: date }
+    setBackupDates(next)
+    try { localStorage.setItem('gtar_manual_cloud_backup_dates', JSON.stringify(next)) } catch { /* Summary caching is optional. */ }
+  }
+
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
-  // #191 (RFC #188 S3): DEV-only status pill and Sync Center until field QA makes them default.
-  // RFC #188 S6: DEV auto-sync (per-record engine only); one leader tab per browser.
-  useRecordsAutoSync({
-    enabled: isDevEnv && Boolean(currentSession),
-    token: currentSession?.sessionToken || currentSession?.idToken || currentSession?.token,
-    blocked: autoSyncBlocked || showCloudSyncModal,
-    onApplied: onCloudSyncApplied,
-    // #227: the Sync Center asks once how this device should start (cloud library or combine).
-    onFirstSyncChoice: () => setShowCloudSyncModal(true),
-    onState: (status, processing) => { setCloudSyncStatus(status); setIsCloudSyncProcessing(processing) },
-  })
-  const syncStatus = useSyncStatus({ enabled: isDevEnv, signedIn: Boolean(currentSession), status: cloudSyncStatus,
-    isProcessing: isCloudSyncProcessing, recoveryNeedsDecision: recoveryAttention })
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -659,49 +647,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right Action Icons & User Avatar */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Cloud Sync Button & Health Indicator */}
-          {isDevEnv ? (
-            <SyncStatusPill pill={syncStatus.pill} recoveryDot={recoveryAttention} onOpen={() => setShowCloudSyncModal(true)} />
-          ) : (() => {
-            const isSyncing = isCloudSyncProcessing || cloudSyncStatus === 'SYNCING'
-            const isInSync = !isSyncing && cloudSyncStatus === 'IN_SYNC'
-            const isIssue = !isSyncing && (cloudSyncStatus === 'CONFLICT' || cloudSyncStatus === 'ERROR')
-
-            let syncLabel = 'Cloud Sync'
-            let SyncIcon = Cloud
-            let iconClass = 'w-4 h-4 text-app-action'
-            let btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
-
-            {/* Canonical header entry: title="Cloud Songbook Sync" <span className="hidden md:inline font-mono text-[11px]">Cloud Sync</span> */}
-            if (isSyncing) {
-              syncLabel = 'Syncing\u2026'
-              SyncIcon = RotateCw
-              iconClass = 'w-4 h-4 text-app-action header-sync-spin motion-safe:animate-spin'
-            } else if (isInSync) {
-              syncLabel = 'In Sync'
-              SyncIcon = Check
-              iconClass = 'w-4 h-4 text-app-action'
-            } else if (isIssue) {
-              syncLabel = 'Sync Issue'
-              SyncIcon = AlertTriangle
-              iconClass = 'w-4 h-4 text-status-error'
-              btnClass = 'p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-status-error border border-[#DC6E67]/50 hover:border-[#DC6E67] transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95'
-            }
-
-            return (
-              <button
-                type="button"
-                data-testid="header-cloud-sync-button"
-                data-sync-state={isSyncing ? 'syncing' : isInSync ? 'in_sync' : isIssue ? 'issue' : 'idle'}
-                onClick={() => setShowCloudSyncModal(true)}
-                className={`${btnClass} relative`}
-                aria-label={recoveryAttention ? `${syncLabel}, local recovery needs review` : syncLabel}
-              >
-                <SyncIcon className={iconClass} />
-                <span className="hidden md:inline font-mono text-[11px]">{syncLabel}</span>
-                {recoveryAttention && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
-              </button>
-            )
-          })()}
+          <button type="button" data-testid="header-cloud-sync-button" onClick={() => setShowCloudSyncModal(true)}
+            className="p-2 rounded-xl border border-app-border flex items-center gap-2" aria-label="Sync Center">
+            <Cloud className="w-4 h-4 text-app-action" />
+            {recoveryAttention && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
+            <span className="hidden md:inline text-xs">{lastCloudBackup ? `Last cloud backup: ${Math.max(0, Math.floor((backupClock - Date.parse(lastCloudBackup)) / 60000))}m ago` : 'No cloud backup yet'}</span>
+          </button>
 
           {/* PWA Install Button */}
           {deferredInstallPrompt && !isAppInstalled && (
@@ -1499,11 +1450,11 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={showCloudSyncModal}
         onClose={() => setShowCloudSyncModal(false)}
         onSyncApplied={onCloudSyncApplied}
-        syncCenter={isDevEnv ? { ...syncStatus, onOpenDebugLogs: () => { setShowCloudSyncModal(false); setShowDebugLogsModal(true) } } : undefined}
-        onSyncStateChange={(status, isProcessing) => {
-          setCloudSyncStatus(status)
-          setIsCloudSyncProcessing(isProcessing)
-        }}
+        onBackupSummary={setLastCloudBackup}
+        onOpenDebugLogs={isDevEnv ? () => { setShowCloudSyncModal(false); setShowDebugLogsModal(true) } : undefined}
+        restoreBlocked={autoSyncBlocked}
+        onFullRestore={onCloudRestore}
+        onSmartMerge={onCloudMerge}
       />
     </>
   )

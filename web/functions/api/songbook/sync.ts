@@ -15,10 +15,7 @@ import {
   normalizeCloudThemeSettings,
 } from '../../../src/utils/backupSettings.ts'
 import type { SyncLibrary } from '../../../src/utils/syncMerge.ts'
-import { recordsActiveForUser } from '../../lib/songbookRecordsCore.ts'
 
-/** #208 F2: returned to classic writers once the user's songbook lives in per-record records. */
-export const RECORDS_ACTIVE_CODE = 'SONGBOOK_RECORDS_ACTIVE'
 
 export const MAX_SONGBOOK_PAYLOAD_BYTES = 2 * 1024 * 1024 // 2 MB
 
@@ -232,24 +229,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     if (body.clientChecksum !== undefined && body.clientChecksum !== checksum) {
       return errorResponse('Client checksum does not match canonical payload checksum', 400)
     }
-    // #208 F2: a classic write would silently diverge from (and later be overwritten by) the records.
-    // The "no records cursor" condition is part of the write itself, so a seed that lands between a
-    // separate check and the write cannot be missed (seeding is in turn conditional on this document's
-    // version, see ensureRecordsSeeded). Databases without 0009 (PROD today) use the plain write.
-    const recordsActive = () => jsonResponse({ success: false, code: RECORDS_ACTIVE_CODE,
-      error: 'This account now syncs song by song. Turn on per-record sync in Sync Center or reload the app to update, then sync again. Your edits are kept on this device.' }, 409)
-    let hasRecordsTables = true
-    let result: Awaited<ReturnType<typeof upsertUserSongbook>>
-    try {
-      result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso,
-        { version, checksum: expectedChecksum as string | null }, { unlessRecordsActive: true })
-    } catch (err) {
-      if (!(err instanceof Error && /no such table: user_songbook_cursors/.test(err.message))) throw err
-      hasRecordsTables = false
-      result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso,
-        { version, checksum: expectedChecksum as string | null })
-    }
-    if (!result && hasRecordsTables && await recordsActiveForUser(env.DB!, auth.user.id)) return recordsActive()
+    const result = await upsertUserSongbook(env.DB!, auth.user.id, serialized, checksum, nowIso,
+      { version, checksum: expectedChecksum as string | null })
     if (!result) {
       return jsonResponse({ success: false, code: 'SONGBOOK_REVISION_CONFLICT',
         error: 'Cloud songbook changed. Fetch cloud state and reconcile before retrying.' }, 409)

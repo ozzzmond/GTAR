@@ -1707,6 +1707,8 @@ function LibraryApp() {
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
           autoSyncBlocked={activeView === 'editor' || Boolean(crossTabConflict)}
+          onCloudRestore={handleFullRestore}
+          onCloudMerge={handleSmartMerge}
           onCloudSyncApplied={(updated) => {
             // #208 F6: adopt what is stored now, not the sync's copy: a save from another surface may have
             // landed after the sync wrote, and the stored library already contains both.

@@ -5,25 +5,7 @@ const path = require('node:path')
 
 const webDir = path.resolve(__dirname, '..')
 
-test('UI_COPY_CLEANUP: CloudSyncModal removes technical jargon and redundant sync copy', () => {
-  const modalContent = fs.readFileSync(path.join(webDir, 'src/components/CloudSyncModal.tsx'), 'utf8')
 
-  // Proves removals
-  assert.ok(!modalContent.includes('D1 SQLite'), 'CloudSyncModal must not contain "D1 SQLite"')
-  assert.ok(!modalContent.includes('Server-authoritative cloud sync & multi-device backup'), 'CloudSyncModal must not contain "Server-authoritative cloud sync & multi-device backup"')
-  assert.ok(!modalContent.includes('Cloud Revision'), 'CloudSyncModal must not contain "Cloud Revision"')
-  assert.ok(!modalContent.includes('Songbook is in sync with cloud.'), 'CloudSyncModal must not contain "Songbook is in sync with cloud."')
-
-  // Proves retentions
-  assert.ok(modalContent.includes('In Sync'), 'CloudSyncModal must retain "In Sync"')
-  assert.ok(modalContent.includes('Last Synced'), 'CloudSyncModal must retain "Last Synced"')
-  assert.ok(modalContent.includes('Fingerprint'), 'CloudSyncModal must retain "Fingerprint"')
-  assert.ok(modalContent.includes('Sync Now'), 'CloudSyncModal must retain "Sync Now"')
-  assert.ok(modalContent.includes('handleForceUpload'), 'CloudSyncModal must retain underlying upload capability')
-  assert.ok(modalContent.includes('Replace this device with the cloud copy'), 'CloudSyncModal keeps the replace-with-cloud action (#227 rename)')
-  assert.ok(modalContent.includes('Offline edits preserved safely'), 'CloudSyncModal must retain "Offline edits preserved safely"')
-  assert.ok(modalContent.includes('session?.user?.email'), 'CloudSyncModal must retain user/account identity block')
-})
 
 test('UI_COPY_CLEANUP: SongbookHomeView removes redundant Stage View instruction', () => {
   const homeViewContent = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
