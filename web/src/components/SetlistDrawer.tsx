@@ -598,7 +598,6 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               aria-description={!auth?.session ? "Sign in to use the Shared Catalog" : undefined}
                             >
                               <QrCode className="w-3.5 h-3.5" />
-                              {!auth?.session && <span className="text-xs text-app-muted">Sign in to use the Shared Catalog</span>}
                             </button>
                           )}
                           <button
@@ -632,6 +631,8 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                           )}
                         </div>
                       </div>
+
+                    {!auth?.session && onShareSetlist && <p className="px-3 pb-2 text-xs text-app-muted">Sign in to use the Shared Catalog</p>}
 
                     {/* Smoothly Expanded Cascading Songs List (1:1 Android SetlistCard) */}
                     {isExpanded && (
