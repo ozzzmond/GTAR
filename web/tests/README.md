@@ -277,6 +277,7 @@ New or renamed tests await a human choice of primary category.
 - [songExport.test.cjs](songExport.test.cjs)
 - [songbookRecordsApi.test.cjs](songbookRecordsApi.test.cjs)
 - [songsLibraryMenu.test.cjs](songsLibraryMenu.test.cjs)
+- [stageBackupCenterGuard.test.cjs](stageBackupCenterGuard.test.cjs)
 - [stageCast2.test.cjs](stageCast2.test.cjs)
 - [stageCast2AuthLeaseAdmission.test.cjs](stageCast2AuthLeaseAdmission.test.cjs)
 - [stageCast2Backend.test.cjs](stageCast2Backend.test.cjs)

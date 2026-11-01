@@ -251,7 +251,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               sourceLabel="Cloud backup"
               device={preview.device}
               backup={preview.cloud.data}
-              backupDate={formatDate(preview.cloud.updatedAt)}
+              provenance={{ createdAt: preview.cloud.updatedAt }}
               busy={busy}
               blocked={restoreBlocked}
               onMerge={() => { void confirm('merge') }}

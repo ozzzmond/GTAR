@@ -31,3 +31,14 @@ export const only = (a: { id?: string | number }[], b: { id?: string | number }[
   const ids = new Set(b.map(y => String(y.id)))
   return a.filter(x => !ids.has(String(x.id))).length
 }
+
+export interface BackupProvenance { appVersion?: string; schemaVersion?: number; createdAt?: string }
+/** "Backup made with GTAR <version> · format v<schema> · <date>", leaving out whatever the backup does not state. */
+export function provenanceLine(provenance?: BackupProvenance): string | null {
+  if (!provenance) return null
+  const version = typeof provenance.appVersion === 'string' && provenance.appVersion.trim() ? provenance.appVersion.trim() : null
+  const schema = typeof provenance.schemaVersion === 'number' && Number.isSafeInteger(provenance.schemaVersion) ? provenance.schemaVersion : null
+  const created = typeof provenance.createdAt === 'string' && Number.isFinite(Date.parse(provenance.createdAt)) ? formatDate(provenance.createdAt) : null
+  if (version === null && schema === null && created === null) return null
+  return [`Backup made${version !== null ? ` with GTAR ${version}` : ''}`, schema !== null ? `format v${schema}` : null, created].filter(Boolean).join(' · ')
+}

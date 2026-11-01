@@ -139,6 +139,8 @@ test('#299 cloud and file restores use the same preview, words and default (Merg
  assert.equal(cloud.primary,'Merge into device');assert.equal(file.primary,'Merge into device')
  for(const words of [/This device: 1 songs/,/Only on device: 1 songs, 0 setlists/,/Only in backup: 1 songs, 0 setlists/,/A verified local safety snapshot is saved first\. Merge into device: Adds and updates songs; deletes nothing\./]){assert.match(cloud.text,words);assert.match(file.text,words)}
  assert.match(file.text,/Also restore appearance/);assert.match(file.text,/Also restore preferences/)
+ // #303: the cloud backup states only its save time; no app version or format is invented.
+ assert.match(cloud.text,/Backup made · \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);assert.doesNotMatch(cloud.text,/with GTAR|format v/)
  await act(async()=>root.unmount())
 })
 test('#299 signed out: file backup and restore work end to end through the center',async()=>{

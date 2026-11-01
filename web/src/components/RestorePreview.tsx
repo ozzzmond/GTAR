@@ -3,15 +3,15 @@
 import React, { useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import type { SettingsRestoreChoice } from '../utils/backupSettings'
-import { only, outlinedButton, primaryButton, secondaryButton, type Library } from './backupCenterUi'
+import { only, outlinedButton, primaryButton, provenanceLine, secondaryButton, type BackupProvenance, type Library } from './backupCenterUi'
 
 export interface RestorePreviewProps {
   /** What the backup is, e.g. "Backup file" or "Cloud backup". */
   sourceLabel: string
   device: Library
   backup: Library
-  /** Already formatted for display. */
-  backupDate?: string | null
+  /** What the backup itself says about where it came from; absent fields are left out, never guessed. */
+  provenance?: BackupProvenance
   /** False for a single-setlist file, which can only be merged. */
   canReplace?: boolean
   /** Appearance / preferences choice; shown only when the backup carries settings. */
@@ -42,19 +42,21 @@ const row = (label: string, value: React.ReactNode) => (
 )
 
 export const RestorePreview: React.FC<RestorePreviewProps> = ({
-  sourceLabel, device, backup, backupDate, canReplace = true, settings, note, busy = false, blocked = false, onMerge, onReplace, onCancel,
+  sourceLabel, device, backup, provenance, canReplace = true, settings, note, busy = false, blocked = false, onMerge, onReplace, onCancel,
 }) => {
   const [confirmReplace, setConfirmReplace] = useState(false)
   const onlyOnDevice = onlyCounts(device, backup)
+  const provenanceText = provenanceLine(provenance)
   return <div role="group" aria-label="Restore preview" data-testid="restore-preview"
     className={`p-4 rounded-xl border space-y-3 ${confirmReplace ? 'bg-status-warning/10 border-status-warning/40' : 'bg-status-info/10 border-status-info/40'}`}>
     <div className={`flex items-center gap-2 ${confirmReplace ? 'text-status-warning' : 'text-status-info'}`}>
       {confirmReplace ? <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> : <Info className="w-4 h-4 shrink-0" aria-hidden="true" />}
       <h3 className="font-bold text-xs">{confirmReplace ? 'Replace device?' : 'Restore preview'}</h3>
     </div>
+    {provenanceText && <p data-testid="restore-provenance" className="text-[11px] text-app-muted">{provenanceText}</p>}
     <div className="space-y-1.5 p-2.5 rounded-lg bg-app-base/80 text-[11px]">
       {row('This device', previewCounts(device))}
-      {row(sourceLabel, `${backupDate ? `${backupDate} — ` : ''}${previewCounts(backup)}`)}
+      {row(sourceLabel, previewCounts(backup))}
       {row('Only on device', onlyOnDevice)}
       {row('Only in backup', onlyCounts(backup, device))}
     </div>

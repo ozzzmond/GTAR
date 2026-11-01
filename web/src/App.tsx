@@ -253,6 +253,8 @@ function LibraryStartupReadyInner() {
 
 function LibraryApp() {
   const [reviewRecovery, setReviewRecovery] = useState(false)
+  // #303: Backup & Restore center / debug logs are owned by the header; Stage shortcuts pause while they are open.
+  const [isHeaderOverlayOpen, setIsHeaderOverlayOpen] = useState(false)
   useEffect(() => {
     const open = () => setReviewRecovery(true)
     window.addEventListener('gtar-review-recovery', open)
@@ -1693,6 +1695,7 @@ function LibraryApp() {
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}
           onOpenAdvancedBridge={isDevEnv ? () => setIsJsonModalOpen(true) : undefined}
+          onOverlayChange={setIsHeaderOverlayOpen}
           onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode(isDevEnv ? 'explorer' : 'library'); setIsSetlistDrawerOpen(true) })}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
@@ -1884,7 +1887,9 @@ function LibraryApp() {
                 isImportModalOpen ||
                 isJsonModalOpen ||
                 isHeaderKeyPickerOpen ||
-                isTvPresentationModalOpen
+                isTvPresentationModalOpen ||
+                isHeaderOverlayOpen ||
+                reviewRecovery
               }
               onBack={() => setActiveView('songbook')}
               transposeOffset={currentSong.transposeOffset || 0}

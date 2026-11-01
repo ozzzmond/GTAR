@@ -748,3 +748,24 @@ test('#299 file restore is blocked while the editor is open, also when it opens 
   assert.equal(applied, 0)
   assert.equal(getRestoreSafetySnapshot(), null, 'nothing written while blocked')
 }))
+
+test('#303 restore preview names the backup app version, format and date only when the file states them', withJsdom(async ({ dom, root }) => {
+  const line = () => document.querySelector('[data-testid="restore-provenance"]')?.textContent ?? null
+  const payload = { ...createBackupPayload([mockSong1], [], '1.1.105'), exportedAt: '2026-10-30T18:42:00.000Z' }
+  const d = new Date(payload.exportedAt), pad = n => String(n).padStart(2, '0')
+  const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  await mountRestore(root, { onFullRestore: () => assert.fail('preview only'), onSmartMerge: () => assert.fail('preview only') })
+  await selectBackup(dom, payload)
+  assert.equal(line(), `Backup made with GTAR 1.1.105 · format v${payload.schemaVersion} · ${local}`)
+  assert.equal(payload.schemaVersion, 2)
+  await act(async () => buttonByText('Cancel').click())
+  // Legacy file: no version, schema or date in it, so none is shown (never guessed).
+  await selectBackup(dom, { songs: [mockSong1], setlists: [] })
+  assert.ok(document.querySelector('[data-testid="restore-preview"]'), 'legacy file still previews')
+  assert.equal(line(), null)
+  assert.doesNotMatch(document.querySelector('[data-testid="restore-preview"]').textContent, /Backup made|format v|GTAR \d/)
+  await act(async () => buttonByText('Cancel').click())
+  // Partial metadata: only what is present.
+  await selectBackup(dom, { songs: [mockSong1], setlists: [], version: '1.0.90' })
+  assert.equal(line(), 'Backup made with GTAR 1.0.90')
+}))

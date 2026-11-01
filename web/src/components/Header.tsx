@@ -99,6 +99,8 @@ interface HeaderProps {
   onImportAllSongs?: (songs: Array<Partial<ActiveSongState>>) => void
   /** DEV Advanced Tools: the Advanced JSON Bridge. */
   onOpenAdvancedBridge?: () => void
+  /** #303: reports whether a header-owned dialog (Backup & Restore center, debug logs) is open, so Stage shortcuts pause. */
+  onOverlayChange?: (open: boolean) => void
   onOpenSetlistDrawer?: () => void
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
@@ -236,6 +238,7 @@ export const Header: React.FC<HeaderProps> = ({
   backupSongs,
   onImportAllSongs,
   onOpenAdvancedBridge,
+  onOverlayChange,
   onOpenSetlistDrawer,
   setlists = [],
   onSelectSetlistSong,
@@ -273,6 +276,12 @@ export const Header: React.FC<HeaderProps> = ({
   const oldRecovery = useOldRecoveryData()
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
   const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
+  // #303: the center (with its restore preview) and the debug-log dialog block Stage keyboard/pedal shortcuts.
+  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal
+  const overlayCallback = useRef(onOverlayChange)
+  useEffect(() => { overlayCallback.current = onOverlayChange }, [onOverlayChange])
+  useEffect(() => { overlayCallback.current?.(headerOverlayOpen) }, [headerOverlayOpen])
+  useEffect(() => () => overlayCallback.current?.(false), [])
   useEffect(() => {
     const open = () => setShowCloudSyncModal(true)
     window.addEventListener(OPEN_BACKUP_CENTER_EVENT, open)
