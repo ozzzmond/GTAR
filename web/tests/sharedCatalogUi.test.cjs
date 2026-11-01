@@ -83,7 +83,9 @@ const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { normalizeBackupSong } = require('../src/utils/jsonBackup.ts')
 const { songEquals } = require('../src/utils/cloudSongbookSync.ts')
-const { SharedCatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
+const { SharedCatalogBrowser: CatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
+const { AuthContext } = require('../src/utils/authContext.ts')
+const SharedCatalogBrowser = props => React.createElement(AuthContext.Provider, {value:{session:{user:{id:'user-1'}},accessStatus:'active'}}, React.createElement(CatalogBrowser,props))
 
 function setTestSession(user, token = 'valid-jwt-token') {
   const session = {

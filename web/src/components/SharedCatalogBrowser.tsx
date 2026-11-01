@@ -55,7 +55,28 @@ export interface SharedCatalogBrowserProps {
   focusSongId?: string | null
 }
 
-export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
+/** Mount catalog state only for an active account; unmount clears previews and cached rows immediately. */
+export const SharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = (props) => {
+  const auth = useOptionalGoogleAuth()
+  if (!auth?.session) return (
+    <div data-testid="catalog-sign-in-card" className="p-10 text-center rounded-2xl border border-app-border bg-app-surface space-y-3">
+      <Lock className="w-8 h-8 mx-auto text-app-accent" />
+      <h2 className="text-base font-bold text-app-heading">Sign in to use the Shared Catalog</h2>
+      <p className="text-xs text-app-muted">Browse, import and publish shared songs and setlists.</p>
+      <button type="button" onClick={() => void auth?.signIn()} className="min-h-11 px-4 py-2 rounded-xl bg-app-action text-app-on-action text-xs font-bold font-mono cursor-pointer">Sign in with Google</button>
+    </div>
+  )
+  if (auth.accessStatus !== 'active') return (
+    <div data-testid="catalog-auth-required-state" className="p-10 text-center rounded-2xl border border-app-border bg-app-surface space-y-3">
+      <Lock className="w-8 h-8 mx-auto text-app-accent" />
+      <div className="text-base font-bold text-app-heading">Authentication Required</div>
+      <p className="text-xs text-app-muted">{auth.accessStatus === 'denied' ? 'Access denied' : 'You must be signed in with an active GTAR account to browse and import songs from the Shared Catalog.'}</p>
+    </div>
+  )
+  return <ActiveSharedCatalogBrowser key={auth.session.user.id} {...props} />
+}
+
+const ActiveSharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
   personalSongs = [],
   personalSetlists = [],
   onSongUnpublished,

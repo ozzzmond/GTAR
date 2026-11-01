@@ -272,6 +272,7 @@ New or renamed tests await a human choice of primary category.
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [setlistWorkspaceGtar1.test.cjs](setlistWorkspaceGtar1.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
+- [sharedCatalogSignIn.test.cjs](sharedCatalogSignIn.test.cjs)
 - [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
 - [songExport.test.cjs](songExport.test.cjs)
 - [songbookRecordsApi.test.cjs](songbookRecordsApi.test.cjs)

@@ -267,6 +267,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     const accountId = auth?.session?.user?.id || auth?.session?.user?.email || null
     sharedCatalogService.setAccount(accountId)
     let active = true
+    if (!isAuthActive) return
     sharedCatalogService.getConfirmedActiveCatalogIds().then((ids) => {
       if (active) setLocalConfirmedCatalogIds(ids)
     }).catch((err) => {
@@ -275,7 +276,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return () => {
       active = false
     }
-  }, [auth?.session?.user?.id, auth?.session?.user?.email])
+  }, [auth?.session?.user?.id, auth?.session?.user?.email, isAuthActive])
 
   // Publishing state for eligible personal songs
   const [publishingSong, setPublishingSong] = useState<ActiveSongState | null>(null)
@@ -904,7 +905,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleMainShareSetlist = () => {
-    if (activeSetlists.length === 0) return
+    if (!isAuthActive || activeSetlists.length === 0) return
     if (activeSetlists.length === 1) {
       onShareSetlist?.(activeSetlists[0])
     } else {
@@ -913,6 +914,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleResolvePastedShareLink = async () => {
+    if (!isAuthActive) return
     setImportLinkError(null)
     const extracted = extractShareToken(pastedShareLink)
     if (!extracted.isValid) {
@@ -1063,6 +1065,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </button>
             </div>
 
+            {!isAuthActive && <p className="text-xs text-app-muted">Sign in to use the Shared Catalog</p>}
             {/* Primary Action: Paste GTAR Share Link */}
             <div className="space-y-2 mb-5">
               <label htmlFor="paste-share-link-input" className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
@@ -1088,9 +1091,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <button
                   type="button"
                   data-testid="load-share-link-btn"
-                  disabled={!pastedShareLink.trim() || isResolvingLink}
+                  disabled={!isAuthActive || !pastedShareLink.trim() || isResolvingLink}
+                  title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                   onClick={handleResolvePastedShareLink}
-                  className="px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
+                  className="min-h-11 px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isResolvingLink ? 'Loading...' : 'Load'}
                 </button>
@@ -1661,8 +1665,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : []),
               ],
               onSortChange: (value) => setSetlistSortBy(value as SetlistSortOption),
-              onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
-              onShareSetlist,
+              catalogSignInRequired: !auth?.session,
+              onShareAll: isAuthActive && activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
+              onShareSetlist: isAuthActive ? onShareSetlist : undefined,
               onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
               onPublishSetlist: onPublishSetlist && canPublishSetlist && setlistCapability.enabled ? onPublishSetlist : undefined,
               publishLabel: (sl) => {
@@ -1774,10 +1779,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <button
                     type="button"
                     data-testid="main-share-setlist-btn"
-                    disabled={activeSetlists.length === 0}
+                    title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
+                    disabled={!isAuthActive || activeSetlists.length === 0}
                     onClick={handleMainShareSetlist}
                     aria-label="Share Setlist"
-                    className="p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
+                    className="min-h-11 min-w-11 p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
                   >
                     <QrCode className="w-3.5 h-3.5" />
                   </button>
@@ -2021,12 +2027,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           <button
                             type="button"
                             data-testid={`menu-share-${sl.id}`}
+                            disabled={!isAuthActive}
+                            title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                             onClick={(e) => {
                               e.stopPropagation()
                               setActiveMenuSetlistId(null)
                               onShareSetlist(sl)
                             }}
-                            className={`w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-accent flex items-center gap-2 cursor-pointer transition-colors ${
+                            className={`min-h-11 w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-accent flex items-center gap-2 cursor-pointer transition-colors ${
                               onRenameSetlist ? 'border-t border-app-border/50' : ''
                             }`}
                           >
@@ -2161,10 +2169,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <button
                   type="button"
                   data-testid="bulk-publish-to-shared"
-                  disabled={selectedSongIds.size === 0 || isSubmittingPublish}
+                  disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
+                  title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                   aria-disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
                   onClick={handleBulkPublishSongs}
-                  className="ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  className="min-h-11 ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
                   <span>Publish to Shared</span>
@@ -2726,13 +2735,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           <button
                             type="button"
                             data-testid={`menu-publish-song-${originalIdx}`}
+                            disabled={!isAuthActive}
+                            title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                             aria-label={`Publish ${song.title} to Shared Catalog`}
                             onClick={(e) => {
                               e.stopPropagation()
                               setActiveMenuSongIdx(null)
                               handleOpenPublishModal(song)
                             }}
-                            className="w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
+                            className="min-h-11 w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
                           >
                             <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
                             <span>Publish to Shared</span>

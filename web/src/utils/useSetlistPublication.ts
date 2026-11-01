@@ -48,7 +48,7 @@ export function useSetlistPublication({
       try {
         if (typeof navigator !== 'undefined' && !navigator.onLine) return
         const auth = getStoredSessionStatus()
-        if (!auth.session || auth.isExpired) return
+        if (!auth.session || auth.isExpired || (auth.session.access_status || auth.session.user.access_status) !== 'active') return
         const result = await sharedCatalogService.reconcilePublicationsBatch()
         if (mounted) {
           setConfirmedCatalogIds(result.confirmedIds)
