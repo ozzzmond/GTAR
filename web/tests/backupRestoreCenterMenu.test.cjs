@@ -90,8 +90,8 @@ for (const auth of [signedIn, { session: null, isSuperAdmin: false }]) {
       assert.equal(toggle.getAttribute('aria-expanded'), 'false')
       await act(async () => toggle.click())
       const tools = document.querySelector('[data-testid="advanced-tools"]')
-      assert.deepEqual(buttonTexts(tools), ['Advanced ToolsDEV', 'Local Recovery Review', 'Debug logs', ''])
-      assert.ok(tools.querySelector('[role="switch"][aria-label="Record debug logs"]'))
+      assert.deepEqual(buttonTexts(tools), ['Advanced ToolsDEV', 'Local Recovery Review', 'Debug logs options'])
+      assert.equal(tools.querySelector('[role="switch"]'), null)
       let reviews = 0
       const onReview = () => { reviews++ }
       window.addEventListener('gtar-review-recovery', onReview)
