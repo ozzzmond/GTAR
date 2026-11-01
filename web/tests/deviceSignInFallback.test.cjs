@@ -10,7 +10,7 @@ const React = require('react'), { act } = React
 const { createRoot } = require('react-dom/client')
 const { JSDOM } = require('jsdom')
 
-async function fallback(mode, run) {
+async function fallback(mode, run, storedStatus) {
   for (const key of Object.keys(require.cache)) if (key.includes('/web/src/')) delete require.cache[key]
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar.example/' })
   const prior = Object.fromEntries(['window', 'document', 'localStorage', 'sessionStorage', 'fetch', 'IS_REACT_ACT_ENVIRONMENT'].map(k => [k, global[k]]))
@@ -20,6 +20,15 @@ async function fallback(mode, run) {
   const library = '{"songs":[{"id":"local","title":"Device song"}],"setlists":[]}'
   localStorage.setItem('gtar_library_v1', library)
   localStorage.setItem('gtar_library_owner_v1', 'owner bytes')
+  let storedSession
+  if (storedStatus) {
+    const { createDurableSession } = require('../src/utils/googleAuth.ts')
+    storedSession = JSON.stringify(createDurableSession({
+      id: 'previous-user', sub: 'previous-sub', email: 'previous@example.com',
+      role: 'member', access_status: storedStatus,
+    }, undefined, Date.now(), { sessionToken: 'previous-token', role: 'member', access_status: storedStatus }))
+    localStorage.setItem('gtar_auth_session', storedSession)
+  }
   let callback, renders = 0, requests = 0, sdkRequests = 0
   const google = { accounts: { id: {
     initialize(config) { callback = config.callback },
@@ -63,7 +72,7 @@ async function fallback(mode, run) {
     assert.equal(renders, 1, 'GIS renderButton renders the official button')
     assert.equal(sdkRequests, mode === 'loaded' ? 0 : 1)
     assert.match(document.querySelector('main').textContent, /Device song/)
-    await run({ auth: () => auth, requests: () => requests, credential: () => callback({ credential: 'late-credential' }) })
+    await run({ auth: () => auth, requests: () => requests, storedSession, credential: () => callback({ credential: 'late-credential' }) })
     assert.equal(localStorage.getItem('gtar_library_v1'), library)
     assert.equal(localStorage.getItem('gtar_library_owner_v1'), 'owner bytes')
   } finally { await act(async () => root.unmount()); Object.assign(global, prior); dom.window.close() }
@@ -87,3 +96,33 @@ test('deviceOwned sign-in cancel stays signed out and ignores late credentials',
     assert.equal(r.requests(), 0)
   })
 })
+
+for (const status of ['pending', 'denied']) {
+  test(`stored ${status} account can sign in to an active account through the official button`, async () => {
+    await fallback('first-load', async r => {
+      assert.equal(r.auth().session, null)
+      await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Official Google button').click())
+      assert.equal(r.auth().session?.user.id, 'test-user')
+      assert.equal(r.auth().session?.access_status, 'active')
+      assert.equal(JSON.parse(localStorage.getItem('gtar_auth_session')).user.id, 'test-user')
+      assert.equal(r.requests(), 1)
+      assert.equal(document.querySelector('dialog'), null)
+    }, status)
+  })
+}
+
+for (const status of ['pending', 'denied']) {
+  test(`cancel preserves the stored ${status} account and ignores late credentials`, async () => {
+    await fallback('first-load', async r => {
+      assert.equal(r.auth().session, null)
+      assert.equal(r.auth().accessStatus, status)
+      await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click())
+      assert.equal(document.querySelector('dialog'), null)
+      await act(async () => r.credential())
+      assert.equal(r.auth().session, null)
+      assert.equal(r.auth().accessStatus, status)
+      assert.equal(localStorage.getItem('gtar_auth_session'), r.storedSession)
+      assert.equal(r.requests(), 0)
+    }, status)
+  })
+}

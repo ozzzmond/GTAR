@@ -523,7 +523,8 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
 
   // Initialize GIS and render persistent sign-in button container
   useEffect(() => {
-    if (!ready || !clientId || session || bypass || checking) return
+    const replacingInactiveAccount = deviceOwned && showSignInDialog && accessStatus !== 'active'
+    if (!ready || !clientId || (session && !replacingInactiveAccount) || bypass || checking) return
     const container = document.getElementById('google-signin-button')
     if (!container) return
 
@@ -559,7 +560,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
     return () => {
       removeListener?.()
     }
-  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse, showSignInDialog])
+  }, [ready, clientId, session, bypass, checking, onGisCredentialResponse, showSignInDialog, deviceOwned, accessStatus])
 
   // Periodic offline-resilient event listeners & re-checks
   useEffect(() => {
