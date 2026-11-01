@@ -648,10 +648,11 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Cloud Sync Button & Health Indicator */}
           <button type="button" data-testid="header-cloud-sync-button" onClick={() => setShowCloudSyncModal(true)}
-            className="p-2 rounded-xl border border-app-border flex items-center gap-2" aria-label="Sync Center">
+            className="relative before:absolute before:content-[''] before:-inset-1.5 p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
+            aria-label="Sync Center">
             <Cloud className="w-4 h-4 text-app-action" />
             {recoveryAttention && <span data-testid="header-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
-            <span className="hidden md:inline text-xs">{lastCloudBackup ? `Last cloud backup: ${Math.max(0, Math.floor((backupClock - Date.parse(lastCloudBackup)) / 60000))}m ago` : 'No cloud backup yet'}</span>
+            <span className="hidden md:inline font-mono text-[11px]">{lastCloudBackup ? `Last cloud backup: ${Math.max(0, Math.floor((backupClock - Date.parse(lastCloudBackup)) / 60000))}m ago` : 'No cloud backup yet'}</span>
           </button>
 
           {/* PWA Install Button */}
