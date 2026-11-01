@@ -595,9 +595,10 @@ export const SetlistDrawer: React.FC<SetlistDrawerProps> = ({
                               className="min-h-11 min-w-11 p-1.5 rounded-lg text-app-muted hover:text-app-accent hover:bg-app-surface transition-colors cursor-pointer"
                               aria-label="Share Setlist (QR Code)"
                               disabled={!auth?.session || !isUserApproved}
-                              title={!auth?.session ? "Sign in to use the Shared Catalog" : undefined}
+                              aria-description={!auth?.session ? "Sign in to use the Shared Catalog" : undefined}
                             >
                               <QrCode className="w-3.5 h-3.5" />
+                              {!auth?.session && <span className="text-xs text-app-muted">Sign in to use the Shared Catalog</span>}
                             </button>
                           )}
                           <button

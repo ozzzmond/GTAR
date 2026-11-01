@@ -1092,7 +1092,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   type="button"
                   data-testid="load-share-link-btn"
                   disabled={!isAuthActive || !pastedShareLink.trim() || isResolvingLink}
-                  title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
+                  aria-description={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                   onClick={handleResolvePastedShareLink}
                   className="min-h-11 px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
                 >
@@ -1779,13 +1779,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <button
                     type="button"
                     data-testid="main-share-setlist-btn"
-                    title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
+                    aria-description={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                     disabled={!isAuthActive || activeSetlists.length === 0}
                     onClick={handleMainShareSetlist}
                     aria-label="Share Setlist"
                     className="min-h-11 min-w-11 p-1.5 rounded-lg border border-app-accent/40 bg-app-surface text-app-accent hover:bg-app-accent/15 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-app-accent shrink-0"
                   >
                     <QrCode className="w-3.5 h-3.5" />
+                    {!isAuthActive && <span className="text-xs text-app-muted">Sign in to use the Shared Catalog</span>}
                   </button>
                   <button
                     type="button"
@@ -2020,7 +2021,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             className="w-full text-left px-3 py-2 min-h-11 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
                           >
                             <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
-                            <span>Publish to Shared</span>
+                            <span>{!isAuthActive ? "Sign in to use the Shared Catalog" : "Publish to Shared"}</span>
                           </button>
                         )}
                         {onShareSetlist && (
@@ -2028,7 +2029,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             type="button"
                             data-testid={`menu-share-${sl.id}`}
                             disabled={!isAuthActive}
-                            title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
+                            aria-description={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                             onClick={(e) => {
                               e.stopPropagation()
                               setActiveMenuSetlistId(null)
@@ -2039,7 +2040,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             }`}
                           >
                             <QrCode className="ui-action-text w-3.5 h-3.5 text-app-accent" />
-                            <span>Share Setlist</span>
+                            <span>{!isAuthActive ? "Sign in to use the Shared Catalog" : "Share Setlist"}</span>
                           </button>
                         )}
                         <button
@@ -2170,13 +2171,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   type="button"
                   data-testid="bulk-publish-to-shared"
                   disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
-                  title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
+                  aria-description={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                   aria-disabled={!isAuthActive || selectedSongIds.size === 0 || isSubmittingPublish}
                   onClick={handleBulkPublishSongs}
                   className="min-h-11 ui-action-text text-xs font-bold text-app-action hover:bg-app-action/15 px-2.5 py-1 rounded-lg border border-app-action/40 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Publish to Shared</span>
+                  <span>{!isAuthActive ? "Sign in to use the Shared Catalog" : "Publish to Shared"}</span>
                 </button>
                 <button
                   type="button"
@@ -2736,7 +2737,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             type="button"
                             data-testid={`menu-publish-song-${originalIdx}`}
                             disabled={!isAuthActive}
-                            title={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
+                            aria-description={!isAuthActive ? "Sign in to use the Shared Catalog" : undefined}
                             aria-label={`Publish ${song.title} to Shared Catalog`}
                             onClick={(e) => {
                               e.stopPropagation()
@@ -2746,7 +2747,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             className="min-h-11 w-full text-left px-3 py-2 ui-primary-text text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors"
                           >
                             <UploadCloud className="ui-action-text w-3.5 h-3.5 text-app-action" />
-                            <span>Publish to Shared</span>
+                            <span>{!isAuthActive ? "Sign in to use the Shared Catalog" : "Publish to Shared"}</span>
                           </button>
                           <button
                             type="button"

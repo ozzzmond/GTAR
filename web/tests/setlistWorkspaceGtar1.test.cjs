@@ -60,7 +60,7 @@ function baseProps(overrides = {}) {
 }
 async function mount(props) {
   root = createRoot(document.getElementById('root'))
-  await act(async () => root.render(React.createElement(SongbookHomeView, props)))
+  await act(async () => root.render(React.createElement(require('../src/utils/authContext.ts').AuthContext.Provider,{value:{session:{user:{id:'user'}},accessStatus:'active'}},React.createElement(SongbookHomeView, props))))
 }
 const $ = sel => document.querySelector(sel)
 const $$ = sel => [...document.querySelectorAll(sel)]
