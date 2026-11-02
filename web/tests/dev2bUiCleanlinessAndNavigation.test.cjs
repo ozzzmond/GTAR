@@ -71,18 +71,12 @@ test('STEP_2 & STEP_5: Header canonical sidepanel hamburger and global search so
 
   // STEP_2: Header code structure verifies global search has Local Songs, Shared Catalog, and Online sections
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-  assert.ok(
-    headerSource.includes('Shared Catalog ({catalogResults.length})'),
-    'Header global search dropdown must render explicit heading and count for Shared Catalog'
-  )
-  assert.ok(
-    headerSource.includes('Local Songs ({matchingSearchSongs.length})'),
-    'Header global search dropdown must render explicit heading and count for Local Songs'
-  )
-  assert.ok(
-    headerSource.includes('Online Results ({onlineResults.length})'),
-    'Header global search dropdown must render explicit heading and count for Online Results'
-  )
+  // #319: GTAR1 search dropdown — one count line and grouped simple rows (Songs, Setlists, Shared Catalog, Online).
+  const resultsSource = fs.readFileSync(path.join(webDir, 'src/components/SearchResults.tsx'), 'utf8')
+  for (const group of ['>Songs<', '>Setlists<', 'Shared Catalog{', 'Online{']) {
+    assert.ok(resultsSource.includes(group), `search dropdown renders the ${group} group`)
+  }
+  assert.ok(resultsSource.includes('local {localTotal === 1'), 'search dropdown renders a count line')
   assert.ok(
     headerSource.includes('data-testid="header-catalog-preview-modal"'),
     'Header must provide catalog preview modal'
@@ -207,23 +201,4 @@ test('STEP_7: SongbookHomeView Sort & Filter controls and Manage button placemen
     'Manage button (toggle-song-selection-mode) must be present'
   )
 
-  // STEP_7: Hide Options / Show Options toggle control
-  assert.ok(
-    songbookHtml.includes('data-testid="toggle-songs-collapse"'),
-    'Songs Library Show/Hide toggle button must be present'
-  )
-  assert.ok(
-    songbookHtml.includes('aria-controls="songbook-song-cards"'),
-    'Songs Library Show/Hide button must target the song cards (#149: like Song Setlists)'
-  )
-
-  // #149 layout (owner 2026-10-24): New Setlist and Import live in the setlists ⋯ menu, after Manage
-  assert.ok(
-    songbookHtml.includes('data-testid="setlists-menu-btn"'),
-    'Setlists ⋯ menu button must be in action row'
-  )
-  assert.ok(
-    songbookHtml.indexOf('data-testid="toggle-setlist-selection-mode"') < songbookHtml.indexOf('data-testid="setlists-menu-btn"'),
-    'Setlists ⋯ menu must follow Manage'
-  )
 })

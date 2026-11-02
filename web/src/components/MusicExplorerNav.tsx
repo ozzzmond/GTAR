@@ -13,6 +13,7 @@ export type ExplorerTarget =
   | { type: 'TAG'; tag: string }
   | { type: 'ALL_SETLISTS' }
   | { type: 'UNFILED_SETLISTS' }
+  | { type: 'SHARED_CATALOG' }
 
 export interface MusicExplorerNavProps {
   songs: ActiveSongState[]
@@ -21,7 +22,8 @@ export interface MusicExplorerNavProps {
   onSelect: (target: ExplorerTarget) => void
   onNewSong: () => void
   onNewSetlist: () => void
-  onOpenSources?: () => void
+  /** #319: Explorer header slot (sidebar collapse control); Browse Sources was removed from the Explorer. */
+  headerAction?: React.ReactNode
 }
 
 interface TagCount {
@@ -43,7 +45,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
   onSelect,
   onNewSong,
   onNewSetlist,
-  onOpenSources,
+  headerAction,
 }) => {
   const [songbookExpanded, setSongbookExpanded] = useState(true)
   const [tagsExpanded, setTagsExpanded] = useState(true)
@@ -95,7 +97,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="flex min-h-9 items-center gap-1 text-[11px] font-semibold text-app-heading hover:text-app-action cursor-pointer"
+        className="ui-section-text flex min-h-9 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <span>{label}</span>
@@ -130,6 +132,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           <ListMusic className="h-3.5 w-3.5 text-app-section" />
           <span>New Set</span>
         </button>
+        {headerAction}
       </div>
 
       {/* Songbook */}
@@ -138,7 +141,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           'Songbook',
           songbookExpanded,
           () => setSongbookExpanded((value) => !value),
-          <span className="text-[10px] text-app-muted">
+          <span className="text-[10px] uppercase tracking-wider text-app-muted">
             {songs.length} {songs.length === 1 ? 'master song' : 'master songs'}
           </span>
         )}
@@ -156,18 +159,16 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
               <span className={pillClass({ type: 'ALL_SONGS' })}>{songs.length}</span>
             </button>
 
-            {onOpenSources && (
-              <button
-                type="button"
-                data-testid="explorer-nav-browse-sources"
-                onClick={onOpenSources}
-                className={`${itemBase} ${itemIdle}`}
-              >
-                <Globe className="h-4 w-4 shrink-0 text-app-action" />
-                <span>Browse Sources</span>
-                <span className="ml-auto shrink-0 text-[10px] text-app-muted">External</span>
-              </button>
-            )}
+            <button
+              type="button"
+              data-testid="explorer-nav-shared-catalog"
+              aria-current={isSelected({ type: 'SHARED_CATALOG' }) ? 'page' : undefined}
+              onClick={() => select({ type: 'SHARED_CATALOG' })}
+              className={selectClass({ type: 'SHARED_CATALOG' })}
+            >
+              <Globe className="h-4 w-4 shrink-0 text-current" />
+              <span>Shared Catalog</span>
+            </button>
             <div role="group" aria-label="Tags">
               <button
                 type="button"

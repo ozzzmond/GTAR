@@ -4,8 +4,8 @@ import { SyncStatusPill } from './SyncStatusPill'
 import { computeSongbookChecksum } from '../utils/cloudBackupFormat'
 import { readPersistedLibrary } from '../utils/syncJournal'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
-import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
-import { createPortal } from 'react-dom'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { SearchResults } from './SearchResults'
 import {
   Search,
   X,
@@ -16,15 +16,14 @@ import {
   FolderOpen,
   Wrench,
   History,
-  Eye,
   FileEdit,
   PlaySquare,
   Cast,
-  Check,
-  Layers,
   Radio,
   Plus,
-  Loader2,
+  Command,
+  Music,
+  ListMusic,
   Trash2,
   Download,
   Terminal,
@@ -51,7 +50,6 @@ import { cloneSharedCatalogSongToPersonal } from '../utils/sharedCatalogImport'
 import type { SharedCatalogSongItem } from '../types/sharedCatalog'
 import {
   searchOnlineChords,
-  fetchOnlineChordSheet,
   type OnlineChordResult,
   type FetchedChordSheet,
 } from '../utils/onlineSearch'
@@ -117,107 +115,10 @@ interface HeaderProps {
   autoSyncBlocked?: boolean
   onOpenCast?: () => void
   isCastActive?: boolean
-}
-
-/**
- * ToolbarIconButton — icon-only button with tooltip and cyan active dot
- */
-function ToolbarIconButton({
-  icon: Icon,
-  label,
-  isActive = false,
-  onClick,
-  className = '',
-  buttonRef,
-  testId,
-}: {
-  icon: React.FC<{ className?: string }>
-  label: string
-  isActive?: boolean
-  onClick: () => void
-  className?: string
-  buttonRef?: React.Ref<HTMLButtonElement>
-  testId?: string
-}) {
-  const tooltipId = useId()
-  const [anchor, setAnchor] = useState<DOMRect | null>(null)
-  const interaction = useRef({ hovered: false, focused: false })
-
-  useEffect(() => {
-    if (!anchor) return
-    const dismiss = () => setAnchor(null)
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss()
-    }
-    // Any viewport/ancestor movement invalidates the fixed anchor, including
-    // horizontal toolbar scrolling and the mobile visual viewport.
-    window.addEventListener('scroll', dismiss, true)
-    window.addEventListener('resize', dismiss)
-    window.addEventListener('keydown', onKeyDown)
-    window.visualViewport?.addEventListener('resize', dismiss)
-    window.visualViewport?.addEventListener('scroll', dismiss)
-    return () => {
-      window.removeEventListener('scroll', dismiss, true)
-      window.removeEventListener('resize', dismiss)
-      window.removeEventListener('keydown', onKeyDown)
-      window.visualViewport?.removeEventListener('resize', dismiss)
-      window.visualViewport?.removeEventListener('scroll', dismiss)
-    }
-  }, [anchor])
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => { setAnchor(null); onClick() }}
-        onMouseEnter={(event) => {
-          interaction.current.hovered = true
-          setAnchor(event.currentTarget.getBoundingClientRect())
-        }}
-        onMouseLeave={() => {
-          interaction.current.hovered = false
-          if (!interaction.current.focused) setAnchor(null)
-        }}
-        onFocus={(event) => {
-          interaction.current.focused = true
-          setAnchor(event.currentTarget.getBoundingClientRect())
-        }}
-        onBlur={() => {
-          interaction.current.focused = false
-          if (!interaction.current.hovered) setAnchor(null)
-        }}
-        aria-label={label}
-        aria-describedby={anchor ? tooltipId : undefined}
-        data-testid={testId}
-        className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
-      >
-        <Icon className="w-4 h-4" />
-        <span className="hidden lg:inline text-xs">{label.replace(/ \(Alt\+\d\)/, '')}</span>
-        <span className="active-dot" />
-      </button>
-      {anchor && createPortal(
-        <span
-          id={tooltipId}
-          role="tooltip"
-          className="toolbar-tooltip"
-          ref={(node) => {
-            if (!node) return
-            const viewport = window.visualViewport
-            const left = viewport?.offsetLeft ?? 0
-            const top = viewport?.offsetTop ?? 0
-            const width = viewport?.width ?? window.innerWidth
-            const height = viewport?.height ?? window.innerHeight
-            node.style.maxWidth = `${Math.max(0, width - 16)}px`
-            const bounds = node.getBoundingClientRect()
-            node.style.left = `${Math.max(left + 8, Math.min(anchor.left + anchor.width / 2 - bounds.width / 2, left + width - bounds.width - 8))}px`
-            node.style.top = `${Math.max(top + 8, Math.min(anchor.bottom + 6, top + height - bounds.height - 8))}px`
-          }}
-        >{label}</span>,
-        document.body,
-      )}
-    </>
-  )
+  /** #319 (GTAR1 header): New Song action and the Songbook ↔ Setlists switcher. */
+  onNewSong?: () => void
+  activeSection?: 'songs' | 'setlists' | null
+  onOpenSection?: (section: 'songs' | 'setlists') => void
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -252,17 +153,20 @@ export const Header: React.FC<HeaderProps> = ({
   autoSyncBlocked = false,
   onOpenCast,
   isCastActive = false,
+  onNewSong,
+  activeSection = null,
+  onOpenSection,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
-  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024)
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchTriggerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    const resize = () => setCompact(window.innerWidth < 1024)
+    const resize = () => setCompact(window.innerWidth < 640)
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
   }, [])
@@ -291,7 +195,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
   const [previewResult, setPreviewResult] = useState<OnlineChordResult | null>(null)
-  const [importingId, setImportingId] = useState<string | number | null>(null)
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isAppInstalled, setIsAppInstalled] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
@@ -411,6 +314,13 @@ export const Header: React.FC<HeaderProps> = ({
     </button>
   ) : null
 
+  // #319: GTAR1 keeps "Stage & Color Theme" in the profile menu.
+  const themeRow = (
+    <button type="button" data-testid="header-theme-settings-btn" onClick={() => { setShowAvatarPopover(false); onToggleTheme() }} className={advancedItem}>
+      <Palette className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Stage &amp; Color Theme (Alt+5)
+    </button>
+  )
+
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
   useEffect(() => {
@@ -498,7 +408,7 @@ export const Header: React.FC<HeaderProps> = ({
   const overflowMenuRef = useRef<HTMLDivElement>(null)
   const moreButtonRef = useRef<HTMLButtonElement>(null)
   const [moreMenuCoords, setMoreMenuCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
-  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const searchContainerRef = useRef<HTMLElement>(null)
   const avatarPopoverRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -647,25 +557,6 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }
 
-  // Direct 1-Click Import from Online Results
-  const handleDirectImportOnline = async (
-    e: React.MouseEvent,
-    item: OnlineChordResult
-  ) => {
-    e.stopPropagation()
-    setImportingId(item.id)
-    try {
-      const sheet = await fetchOnlineChordSheet(item)
-      if (onDirectImportOnlineSong) {
-        onDirectImportOnlineSong(sheet, false)
-      }
-    } catch (err) {
-      console.error('Failed to import online chord sheet:', err)
-    } finally {
-      setTimeout(() => setImportingId(null), 1200)
-    }
-  }
-
   // Derive auth status indicator color
   const userDotClass = currentSession ? 'synced' : 'error'
 
@@ -691,509 +582,244 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [])
 
+  const dismissResults = () => {
+    setIsSearchFocused(false)
+    setMobileSearchOpen(false)
+  }
+  const closeMobileSearch = () => {
+    onSearchQueryChange('')
+    dismissResults()
+    requestAnimationFrame(() => searchTriggerRef.current?.focus())
+  }
+  const openSources = () => { dismissResults(); onOpenWebsiteUrlSource() }
+  const resultsPanel = (
+    <SearchResults
+      songs={matchingSearchSongs}
+      setlists={matchingSearchSetlists}
+      catalog={catalogResults}
+      online={onlineResults}
+      isSearchingCatalog={isSearchingCatalog}
+      isSearchingOnline={isSearchingOnline}
+      isOffline={isOffline}
+      onlineError={onlineError}
+      onSelectSong={(originalIdx) => {
+        dismissResults()
+        onSelectSearchSong?.(originalIdx)
+        onViewChange('stage')
+      }}
+      onSelectSetlist={(sl) => {
+        dismissResults()
+        if (onSelectSetlistSong && (sl.songs || []).length > 0) {
+          onSelectSetlistSong(sl.id, 0)
+          onViewChange('stage')
+        } else {
+          onSelectSetlist?.(sl.id)
+        }
+      }}
+      onPreviewCatalog={(song) => { dismissResults(); setPreviewCatalogSong(song) }}
+      onPreviewOnline={(result) => { dismissResults(); setPreviewResult(result) }}
+      onOpenImport={() => { dismissResults(); onOpenImportModal() }}
+      onOpenSources={() => {
+        dismissResults()
+        if (onSearchWebExternal && searchQuery.trim()) onSearchWebExternal(searchQuery)
+        else onOpenWebsiteUrlSource()
+      }}
+    />
+  )
+  const showResults = isSearchFocused && searchQuery.trim().length > 0
+  const searchEnabled = activeView !== 'stage'
+  const iconButton = 'ui-button min-h-11 min-w-11 px-2 sm:px-2.5 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer'
+  const menuItem = 'w-full min-h-11 text-left px-4 py-2 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer'
+  const menuAction = (testId: string, Icon: React.FC<{ className?: string }>, label: string, onClick: () => void, active = false) => (
+    <button type="button" role="menuitem" data-testid={testId} aria-current={active ? 'page' : undefined}
+      onClick={() => { setShowOverflowMenu(false); onClick() }} className={`${menuItem} ${active ? 'text-app-action' : ''}`}>
+      <Icon className="w-4 h-4 text-app-action" />
+      <span className="font-semibold flex-1">{label}</span>
+    </button>
+  )
+  const devDiagnostics = (inline: boolean) => isDevEnv && (
+    <div
+      data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
+      className={inline
+        ? 'hidden sm:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0'
+        : 'sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none truncate'}
+    >
+      <span data-testid={inline ? 'dev-header-diag-line1' : undefined} className={inline ? 'truncate whitespace-nowrap' : ''}>
+        {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
+      </span>
+      {!inline && ' · '}
+      <span data-testid={inline ? 'dev-header-diag-line2' : undefined} className={inline ? 'truncate whitespace-nowrap' : ''}>
+        {formatDevDiagLine2(GTAR_DEV_PROVENANCE)}
+      </span>
+    </div>
+  )
+
   return (
     <>
-      <header className="border-b border-app-border bg-app-surface flex flex-col select-none z-30 sticky top-0 shadow-md max-w-full">
-      {/* =================================================================== */}
-      {/* TIER 1 (Top Bar): Branding & User Profile Avatar                   */}
-      {/* =================================================================== */}
-      <div className="relative min-h-14 px-2 lg:px-4 flex items-center justify-between gap-1 w-full">
-        <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
-          onClick={onOpenSetlistDrawer} className="lg:hidden min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-text hover:bg-app-base">
-          <Menu className="h-5 w-5" />
-        </button>
-        {/* Left: Logo + App Title ("GTAR-Dev") + DEV Badge + PROD Version Badge + DEV Diagnostics */}
-        <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
-          <div
-            onClick={onNavigateHome}
-            className="flex items-center gap-2 cursor-pointer group select-none transition-transform active:scale-95 shrink-0"
-          >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-app-base border border-app-border flex items-center justify-center p-0.5 overflow-hidden shadow-inner group-hover:border-app-action group-hover:scale-105 transition-all">
-              <img
-                src={isDevEnv ? devLogo : prodLogo}
-                alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
-                className="w-full h-full object-contain rounded-lg"
-              />
+      <header className="bg-app-header border-b border-app-border sticky top-0 z-40 px-3 py-2.5 relative select-none max-w-full">
+      <div className="flex items-center justify-between gap-1 sm:gap-4">
+        {/* Left: Explorer drawer toggle & GTAR branding (DEV deployment details / PROD version stay visible) */}
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3 min-w-0">
+          <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
+            onClick={onOpenSetlistDrawer}
+            className="md:hidden min-h-11 min-w-11 flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors">
+            {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <button type="button" onClick={onNavigateHome} aria-label={isDevEnv ? 'GTAR-Dev home' : 'GTAR home'}
+            className="flex items-center gap-2 text-left group min-h-11 cursor-pointer">
+            <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-opacity">
+              <img src={isDevEnv ? devLogo : prodLogo} alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
+                className="w-full h-full object-cover select-none" />
             </div>
-            <div className="hidden lg:flex flex-col">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-mono font-bold text-sm sm:text-base tracking-wider header-primary-text text-app-heading">
-                  {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
+            <div className={isDevEnv ? 'hidden sm:block' : 'block'}>
+              <span className="hidden sm:inline text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
+                {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
+              </span>
+              {isDevEnv ? (
+                <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
+              ) : (
+                <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono sm:ml-2">
+                  {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
                 </span>
-                {isDevEnv ? (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">
-                    DEV
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono header-secondary-text text-app-muted font-semibold tracking-tight">
-                    {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
-                  </span>
-                )}
-              </div>
+              )}
             </div>
-          </div>
-
-          {/* Right Block: TAG_AND_DEPLOYMENT_DIAGNOSTICS (DEV-only, visible on mobile and desktop) */}
-          {isDevEnv && (
-            <div
-              data-testid="dev-header-diagnostics"
-              className="hidden xl:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0"
-            >
-              <div data-testid="dev-header-diag-line1" className="truncate whitespace-nowrap">
-                {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
-              </div>
-              <div data-testid="dev-header-diag-line2" className="truncate whitespace-nowrap">
-                {formatDevDiagLine2(GTAR_DEV_PROVENANCE)}
-              </div>
-            </div>
-          )}
+          </button>
+          {devDiagnostics(true)}
         </div>
 
-      {activeView !== 'stage' && (!compact || mobileSearchOpen) && (
-        <div
-          ref={searchContainerRef}
-          className={`header-search min-w-0 ${compact ? 'absolute inset-x-0 top-0 z-40 bg-app-surface p-2' : 'relative flex-1 mx-3'}`}
-        >
-          <div className="w-full flex items-center relative">
-            <div className="pill-search w-full flex items-center">
-              <Search className="w-4 h-4 text-app-muted shrink-0" />
-              <input
-                id="search-input"
-                ref={searchInputRef}
-                aria-label="Search songs, artists and setlists"
-                type="text"
+        {/* Center: desktop search (GTAR1 design) */}
+        {searchEnabled && !compact && (
+          <form ref={(node) => { searchContainerRef.current = node }} role="search" aria-label="Global song search"
+            onSubmit={(event) => event.preventDefault()} className="relative flex flex-1 min-w-0 max-w-[36rem] mx-1 sm:mx-2">
+            <div className={`header-search-box relative flex min-w-0 w-full items-center transition-all duration-200 rounded-xl border bg-app-surface ${
+              isSearchFocused ? 'border-app-accent ring-2 ring-app-accent/20' : 'border-app-border hover:border-app-border/80'}`}>
+              <div className="pl-3.5 pr-2 pointer-events-none shrink-0">
+                <Search className={`w-4 h-4 transition-colors ${isSearchFocused ? 'text-app-accent' : 'header-neutral-icon text-app-muted'}`} />
+              </div>
+              <input id="search-input" ref={searchInputRef} type="text" maxLength={200}
+                aria-label="Search songs, artists and setlists" aria-controls="global-search-results"
                 value={searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
-                onChange={(e) => {
-                  onSearchQueryChange(e.target.value)
-                  setIsSearchFocused(true)
-                }}
-                placeholder="Search songs, artists, setlists & online chords..."
-                className="min-h-11 min-w-0 flex-1 w-full"
-              />
-              <span className="kbd-hint hidden sm:inline shrink-0">Ctrl K</span>
-              {(searchQuery || compact) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSearchQueryChange('')
-                    setIsSearchFocused(false)
-                    setMobileSearchOpen(false)
-                    searchTriggerRef.current?.focus()
-                  }}
-                  className="min-h-11 min-w-11 flex items-center justify-center ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
-                  aria-label={compact ? 'Close search' : 'Clear search'}
-                >
+                onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
+                placeholder="Search songs & setlists... (Esc to clear)"
+                className="header-search-input min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none" />
+              {searchQuery && (
+                <button type="button" aria-label="Clear search"
+                  onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus() }}
+                  className="min-h-9 min-w-9 mr-0.5 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
-            </div>
-
-            {/* Real-time search results dropdown overlay: Local + Setlists + Online Results */}
-            {isSearchFocused && searchQuery.trim().length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in max-h-96 overflow-y-auto">
-                {/* A. LOCAL SONGBOOK SECTION */}
-                <div className="px-3 py-1 text-[10px] font-mono font-bold ui-secondary-text text-app-muted uppercase tracking-wider flex items-center justify-between border-b border-app-border/60 mb-1">
-                  <span>Local Songs ({matchingSearchSongs.length})</span>
-                  <span className="text-app-action">Click to View on Stage</span>
-                </div>
-
-                {matchingSearchSongs.length > 0 ? (
-                  matchingSearchSongs.map((song) => (
-                    <button
-                      key={`local-${song.title}-${song.originalIdx}`}
-                      type="button"
-                      onClick={() => {
-                        if (onSelectSearchSong) {
-                          onSelectSearchSong(song.originalIdx)
-                        }
-                        onViewChange('stage')
-                        setIsSearchFocused(false)
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-app-base ui-primary-text text-app-text"
-                    >
-                      <div className="min-w-0 flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-lg bg-app-base text-app-action flex items-center justify-center text-xs font-mono font-bold group-hover:bg-app-action group-hover:text-app-on-action transition-colors shrink-0">
-                          {song.originalIdx + 1}
-                        </div>
-                        <div className="truncate">
-                          <div className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-action transition-colors truncate">
-                            {song.title}
-                          </div>
-                          {song.artist && (
-                            <div className="text-[10px] ui-secondary-text text-app-muted truncate">
-                              {song.artist}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
-                        {song.key && (
-                          <span className="px-1.5 py-0.5 rounded bg-app-base text-app-accent font-bold">
-                            {song.key}
-                          </span>
-                        )}
-                        {song.bpm && (
-                          <span className="px-1.5 py-0.5 rounded bg-app-base ui-secondary-text text-app-muted">
-                            {song.bpm} BPM
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="px-3 py-2 text-center text-xs ui-secondary-text text-app-muted">
-                    No local songs matching &quot;{searchQuery}&quot;
-                  </div>
-                )}
-
-                {/* B. SHARED CATALOG SECTION */}
-                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-action uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
-                  <div className="flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-app-action" />
-                    <span>Shared Catalog ({catalogResults.length})</span>
-                  </div>
-                  {isSearchingCatalog && (
-                    <div className="flex items-center gap-1 text-app-action">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span className="text-[9px]">Searching Catalog...</span>
-                    </div>
-                  )}
-                </div>
-
-                {catalogResults.length > 0 ? (
-                  catalogResults.map((catSong) => {
-                    const isImporting = importingCatalogId === catSong.id
-                    const isImported = importedCatalogIds.has(catSong.id)
-                    return (
-                      <div
-                        key={`catalog-${catSong.id}`}
-                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-app-base ui-primary-text text-app-text group"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-action truncate">
-                              {catSong.title}
-                            </span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent font-bold border border-app-accent/30 shrink-0">
-                              r{catSong.current_revision}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2 text-[10px] ui-secondary-text text-app-muted mt-0.5 font-medium">
-                            <span className="truncate">{catSong.artist || 'Unknown Artist'}</span>
-                            {catSong.key && (
-                              <>
-                                <span>•</span>
-                                <span className="px-1 py-0.2 rounded bg-app-base text-app-action font-mono font-bold">
-                                  Key: {catSong.key}
-                                </span>
-                              </>
-                            )}
-                            {catSong.format && (
-                              <span className="text-[9px] font-mono opacity-70">
-                                {catSong.format}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Inline Actions: [Preview] and [+ Import] */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setIsSearchFocused(false)
-                              setPreviewCatalogSong(catSong)
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-border ui-primary-text text-app-text text-[11px] font-bold flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3 h-3 text-app-action" />
-                            <span>Preview</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isImporting || isImported}
-                            onClick={(e) => handleImportCatalogSong(e, catSong)}
-                            className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
-                            aria-label="Import song to personal library"
-                          >
-                            {isImporting ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : isImported ? (
-                              <Check className="w-3 h-3" />
-                            ) : (
-                              <Plus className="w-3 h-3 stroke-[3]" />
-                            )}
-                            <span>{isImporting ? 'Importing...' : isImported ? 'Imported' : 'Import'}</span>
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : !isSearchingCatalog ? (
-                  <div className="px-3 py-1.5 text-center text-xs ui-secondary-text text-app-muted">
-                    No catalog songs matching &quot;{searchQuery}&quot;
-                  </div>
-                ) : null}
-
-                {/* C. SONG SETLISTS SECTION */}
-                {matchingSearchSetlists.length > 0 && (
-                  <>
-                    <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-accent uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
-                      <div className="flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-app-accent" />
-                        <span>Song Setlists ({matchingSearchSetlists.length})</span>
-                      </div>
-                      <span className="text-app-accent">Click to Open Setlist</span>
-                    </div>
-
-                    {matchingSearchSetlists.map((sl) => (
-                      <button
-                        key={`setlist-${sl.id}`}
-                        type="button"
-                        onClick={() => {
-                          if (onSelectSetlistSong && (sl.songs || []).length > 0) {
-                            onSelectSetlistSong(sl.id, 0)
-                            onViewChange('stage')
-                          } else if (onSelectSetlist) {
-                            onSelectSetlist(sl.id)
-                          }
-                          setIsSearchFocused(false)
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-3 group cursor-pointer hover:bg-app-base ui-primary-text text-app-text"
-                      >
-                        <div className="min-w-0 flex items-center gap-2.5">
-                          <div className="w-6 h-6 rounded-lg bg-app-base text-app-accent flex items-center justify-center text-xs font-mono font-bold group-hover:bg-app-button group-hover:text-app-button-text transition-colors shrink-0">
-                            <Layers className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="truncate">
-                            <div className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-accent transition-colors truncate">
-                              {sl.name}
-                            </div>
-                            <div className="text-[10px] ui-secondary-text text-app-muted truncate">
-                              {(sl.songs || []).length} {sl.songs?.length === 1 ? 'song' : 'songs'}
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-app-accent/15 text-app-accent border border-app-accent/30 shrink-0">
-                          START GIG
-                        </span>
-                      </button>
-                    ))}
-                  </>
-                )}
-
-                {/* C. ONLINE RESULTS SECTION (Parity with Android) */}
-                <div className="px-3 py-1.5 text-[10px] font-mono font-bold text-app-action uppercase tracking-wider flex items-center justify-between border-t border-b border-app-border/60 mt-2 mb-1 bg-app-base/60">
-                  <div className="flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-app-action" />
-                    <span>Online Results ({onlineResults.length})</span>
-                    {isOffline && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#DC6E67]/20 text-status-error border border-[#DC6E67]/30">
-                        Offline
-                      </span>
-                    )}
-                  </div>
-                  {isSearchingOnline && (
-                    <div className="flex items-center gap-1 text-app-action">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span className="text-[9px]">Searching...</span>
-                    </div>
-                  )}
-                </div>
-
-                {onlineResults.length > 0 ? (
-                  onlineResults.map((onlineItem) => {
-                    const isImporting = importingId === onlineItem.id
-                    return (
-                      <div
-                        key={`online-${onlineItem.id}`}
-                        className="px-3 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 hover:bg-app-base ui-primary-text text-app-text group"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold ui-primary-text text-app-heading group-hover:text-app-action truncate">
-                              {onlineItem.songName}
-                            </span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-app-accent/20 text-app-accent font-bold border border-app-accent/30 shrink-0">
-                              {onlineItem.type} v{onlineItem.version}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2 text-[10px] ui-secondary-text text-app-muted mt-0.5 font-medium">
-                            <span className="truncate">{onlineItem.artistName}</span>
-                            <span>•</span>
-                            <span className="text-app-accent font-bold">
-                              ★ {onlineItem.rating.toFixed(1)}
-                            </span>
-                            <span>({onlineItem.votes.toLocaleString()} votes)</span>
-                            {onlineItem.tonality && (
-                              <span className="px-1 py-0.2 rounded bg-app-base text-app-action font-mono font-bold">
-                                Key: {onlineItem.tonality}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Inline Action Controls: [Preview] and [+ Import] */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setIsSearchFocused(false)
-                              setPreviewResult(onlineItem)
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-app-surface hover:bg-app-border ui-primary-text text-app-text text-[11px] font-bold flex items-center gap-1 border border-app-border transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3 h-3 text-app-action" />
-                            <span>Preview</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isImporting}
-                            onClick={(e) => handleDirectImportOnline(e, onlineItem)}
-                            className="px-2.5 py-1 rounded-lg bg-app-action hover:bg-app-action text-app-on-action text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
-                            aria-label="Fetch and import chord sheet directly to library"
-                          >
-                            {isImporting ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Plus className="w-3 h-3 stroke-[3]" />
-                            )}
-                            <span>{isImporting ? 'Importing...' : 'Import'}</span>
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })
-                ) : !isSearchingOnline ? (
-                  isOffline ? (
-                    <div className="p-3 text-center space-y-1">
-                      <p className="text-xs font-semibold text-status-error">
-                        Device is currently offline
-                      </p>
-                      <p className="text-[11px] ui-muted-text text-app-muted">
-                        Connect to the internet to search online chord sheets.
-                      </p>
-                    </div>
-                  ) : onlineError ? (
-                    <div className="p-3 text-center space-y-1.5">
-                      <p className="text-xs font-semibold text-status-error">
-                        {onlineError}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSearchFocused(false)
-                          if (onSearchWebExternal) {
-                            onSearchWebExternal(searchQuery)
-                          } else {
-                            onOpenWebsiteUrlSource()
-                          }
-                        }}
-                        className="mt-1 py-1 px-2.5 rounded-lg bg-app-surface hover:bg-app-border text-app-action text-[11px] font-bold border border-app-border inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Globe className="w-3 h-3" />
-                        <span>Search Web Sources</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-3 text-center space-y-2">
-                      <p className="text-xs ui-muted-text text-app-muted">
-                        No online results found for &quot;{searchQuery}&quot;
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSearchFocused(false)
-                          if (onSearchWebExternal) {
-                            onSearchWebExternal(searchQuery)
-                          } else {
-                            onOpenWebsiteUrlSource()
-                          }
-                        }}
-                        className="w-full py-1.5 px-3 rounded-xl bg-app-action/20 hover:bg-app-action text-app-action hover:text-app-on-action font-bold text-xs flex items-center justify-center gap-2 border border-app-action/40 transition-all cursor-pointer shadow-sm"
-                      >
-                        <Globe className="w-3.5 h-3.5" />
-                        <span>Search on Web Sources / Ultimate-Guitar</span>
-                      </button>
-                    </div>
-                  )
-                ) : null}
+              <div className="pr-2 shrink-0 hidden md:flex items-center">
+                <kbd className="header-search-kbd inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-app-muted bg-app-base border border-app-border rounded select-none pointer-events-none"
+                 >
+                  <Command className="w-2.5 h-2.5" /> K
+                </kbd>
               </div>
-            )}
             </div>
-          </div>
+            {showResults && <div className="absolute top-full left-0 right-0 pt-2 z-50">{resultsPanel}</div>}
+          </form>
         )}
-        {/* Right Action Icons & User Avatar */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {compact && activeView !== 'stage' && <button ref={searchTriggerRef} type="button" aria-label="Open search"
-            onClick={() => setMobileSearchOpen(true)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-text hover:bg-app-base">
-            <Search className="h-5 w-5" />
-          </button>}
-          {/* Backup & Restore button */}
+
+        {/* Right actions */}
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          {activeView !== 'songbook' && (
+            <button type="button" data-testid="toolbar-back" aria-label="Back" onClick={() => { navigateBack() }}
+              className="min-h-11 min-w-11 rounded-xl flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading hover:bg-app-base transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          {compact && searchEnabled && (
+            <button ref={searchTriggerRef} type="button" aria-label="Open search"
+              onClick={() => setMobileSearchOpen(true)}
+              className={`ui-button mobile-search-trigger min-h-11 min-w-11 rounded-xl bg-app-surface border transition-colors flex items-center justify-center active:scale-95 ${
+                searchQuery ? 'text-app-accent border-app-accent' : 'border-app-border header-neutral-icon text-app-muted hover:text-app-heading hover:border-app-accent'}`}>
+              <Search className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Main views switcher (GTAR1): Songbook ↔ Setlists */}
+          {onOpenSection && (
+            <nav aria-label="Main navigation" className="hidden sm:flex items-center bg-app-surface/80 p-0.5 rounded-xl border border-app-border text-xs font-semibold min-h-11">
+              {([['songs', 'Songbook', Music], ['setlists', 'Setlists', ListMusic]] as const).map(([section, label, Icon]) => {
+                const active = activeView === 'songbook' && activeSection === section
+                return (
+                  <button key={section} type="button" aria-label={label} aria-current={active ? 'page' : undefined}
+                    onClick={() => onOpenSection(section)}
+                    className={`min-h-10 px-2 min-[1440px]:px-3 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      active ? 'bg-app-action text-app-on-action shadow-sm' : 'text-app-muted hover:text-app-heading'}`}>
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="hidden min-[1440px]:inline">{label}</span>
+                  </button>
+                )
+              })}
+            </nav>
+          )}
+
+          {onNewSong && (
+            <button type="button" aria-label="New Song" data-testid="header-new-song" onClick={onNewSong}
+              className={`min-h-11 min-w-11 px-2.5 sm:px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer`}>
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden min-[1440px]:inline">New Song</span>
+            </button>
+          )}
+
+          {/* Browse Song Sources (GTAR1 globe); compact keeps it inside the search overlay */}
+          {!compact && (
+            <button type="button" data-testid="header-sources" onClick={onOpenWebsiteUrlSource}
+              aria-label="Browse Song Sources" className={iconButton}>
+              <Globe className="w-3.5 h-3.5 text-app-accent" />
+              <span className="hidden min-[1440px]:inline">Sources</span>
+            </button>
+          )}
+
+          {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
           <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
             backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
             recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
 
-          {/* PWA Install Button */}
-          {deferredInstallPrompt && !isAppInstalled && (
-            <button
-              type="button"
-              onClick={handleTriggerInstall}
-              className="px-2.5 py-1 rounded-xl bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-              aria-label="Install GTAR App to Home Screen"
-            >
-              <Download className="w-4 h-4 header-neutral-icon" />
+          {deferredInstallPrompt && !isAppInstalled && !compact && (
+            <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen" className={iconButton}>
+              <Download className="w-4 h-4 header-neutral-icon text-app-action" />
             </button>
           )}
 
+          {/* More: view actions GTAR1 has no slot for (Stage Preview, Editor, Band Sync, Cast, Trash, settings) */}
+          <button ref={moreButtonRef} type="button" data-testid="header-more" aria-label="More actions"
+            aria-haspopup="menu" aria-expanded={showOverflowMenu}
+            onClick={() => setShowOverflowMenu((prev) => !prev)}
+            className={`relative ${iconButton} ${showOverflowMenu || isCastActive ? 'border-app-action text-app-action' : ''}`}>
+            <MoreVertical className="w-4 h-4" />
+            {isCastActive && <span aria-hidden="true" className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-app-action" />}
+          </button>
+
           {/* Avatar with Auth Status Dot */}
-          <div
-            ref={avatarPopoverRef}
-            className="avatar-wrapper"
-            onClick={() => setShowAvatarPopover(!showAvatarPopover)}
-          >
-            {currentSession?.user.picture ? (
-              <img
-                src={currentSession.user.picture}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="w-8 h-8 rounded-full border-2 border-app-border hover:border-app-action transition-colors"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-app-base border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
-                <User className="w-4 h-4 header-neutral-icon" />
-              </div>
-            )}
+          <div ref={avatarPopoverRef} className="avatar-wrapper">
+            <button type="button" aria-label={currentSession ? 'Account menu' : 'Sign in and account menu'} aria-haspopup="menu"
+              aria-expanded={showAvatarPopover} data-testid="header-avatar"
+              onClick={() => setShowAvatarPopover(!showAvatarPopover)}
+              className="relative w-9 h-9 min-h-9 rounded-full flex items-center justify-center cursor-pointer before:absolute before:-inset-1 before:content-['']">
+              {currentSession?.user.picture ? (
+                <img src={currentSession.user.picture} alt="" referrerPolicy="no-referrer"
+                  className="w-9 h-9 rounded-full border-2 border-app-border hover:border-app-action transition-colors" />
+              ) : (
+                <span className="w-9 h-9 rounded-full bg-app-surface border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
+                  <User className="w-4 h-4 header-neutral-icon" />
+                </span>
+              )}
+            </button>
             <span className={`auth-dot ${userDotClass}`} />
             {isSuperAdmin && pendingCount > 0 && (
-              <span
-                className="pending-badge"
-              >
-                {pendingCount > 99 ? '99+' : pendingCount}
-              </span>
+              <span className="pending-badge">{pendingCount > 99 ? '99+' : pendingCount}</span>
             )}
 
-            {/* Avatar Popover */}
             {showAvatarPopover && (
               <div className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
                 {currentSession ? (
                   <>
                     <div className="flex items-center gap-3 mb-3">
                       {currentSession.user.picture && (
-                        <img
-                          src={currentSession.user.picture}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-10 rounded-full"
-                        />
+                        <img src={currentSession.user.picture} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded-full" />
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -1201,50 +827,33 @@ export const Header: React.FC<HeaderProps> = ({
                             {(currentSession.user as { name?: string }).name || 'User'}
                           </span>
                           {isSuperAdmin ? (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">
-                              ADMIN
-                            </span>
+                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">ADMIN</span>
                           ) : (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">
-                              USER
-                            </span>
+                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">USER</span>
                           )}
                         </div>
-                        <div className="text-[10px] ui-secondary-text text-app-muted truncate">
-                          {currentSession.user.email}
-                        </div>
+                        <div className="text-[10px] ui-secondary-text text-app-muted truncate">{currentSession.user.email}</div>
                       </div>
                     </div>
 
-                    {/* Super Admin Access Control */}
                     {isSuperAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAvatarPopover(false)
-                          setShowUserManagementModal(true)
-                        }}
-                        className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2"
-                      >
+                      <button type="button"
+                        onClick={() => { setShowAvatarPopover(false); setShowUserManagementModal(true) }}
+                        className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2">
                         <Shield className="w-3.5 h-3.5" />
                         <span>Manage Users</span>
                       </button>
                     )}
 
+                    {themeRow}
                     {recoveryDataRow}
                     {advancedTools}
 
                     <div className="h-[1px] bg-app-border/60 mb-2" />
 
-                    {/* Sign Out */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAvatarPopover(false)
-                        handleSignOut?.()
-                      }}
-                      className="w-full px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
-                    >
+                    <button type="button"
+                      onClick={() => { setShowAvatarPopover(false); handleSignOut?.() }}
+                      className="w-full min-h-11 px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer">
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Sign Out</span>
                     </button>
@@ -1254,18 +863,13 @@ export const Header: React.FC<HeaderProps> = ({
                     <p className="text-xs ui-muted-text text-app-muted">
                       Sign in to use cloud backup and the Shared Catalog.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAvatarPopover(false)
-                        void handleSignIn?.()
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
+                    <button type="button"
+                      onClick={() => { setShowAvatarPopover(false); void handleSignIn?.() }}
+                      className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer">
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
                     </button>
-                    {(recoveryDataRow || advancedTools) && <div className="text-left">{recoveryDataRow}{advancedTools}</div>}
+                    <div className="text-left">{themeRow}{recoveryDataRow}{advancedTools}</div>
                   </div>
                 )}
               </div>
@@ -1273,172 +877,75 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
+      {devDiagnostics(false)}
 
-      {/* =================================================================== */}
-      {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
-      {/* =================================================================== */}
-      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
-        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
-          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
-            <ToolbarIconButton
-              icon={ArrowLeft}
-              label="Back"
-              onClick={() => { navigateBack() }}
-              className="shrink-0"
-              testId="toolbar-back"
-            />
-            <ToolbarIconButton
-              icon={PlaySquare}
-              label="Stage Preview (Alt+1)"
-              isActive={activeView === 'stage'}
-              onClick={() => onViewChange('stage')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={FileEdit}
-              label="Editor (Alt+2)"
-              isActive={activeView === 'editor'}
-              onClick={() => onViewChange('editor')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Radio}
-              label="Band Sync (Alt+3)"
-              onClick={onOpenStageTools}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Cast}
-              label="Cast (Alt+4)"
-              isActive={isCastActive}
-              onClick={onOpenCast || (() => {})}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Palette}
-              label="Theme (Alt+5)"
-              onClick={onToggleTheme}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Trash2}
-              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
-              isActive={activeView === 'trash'}
-              onClick={() => onViewChange('trash')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              buttonRef={moreButtonRef}
-              icon={MoreVertical}
-              label="More"
-              isActive={showOverflowMenu}
-              onClick={() => setShowOverflowMenu((prev) => !prev)}
-              className="shrink-0"
-            />
-
+      {/* Compact full-width search overlay (GTAR1): the field takes over the header with Cancel */}
+      {compact && searchEnabled && mobileSearchOpen && (
+        <div ref={(node) => { searchContainerRef.current = node }} role="search" aria-label="Mobile expanded song search"
+          className="mobile-search-overlay absolute inset-0 z-50 flex items-center gap-2 px-3 bg-app-header border-b border-app-border animate-scale-in">
+          <div className="header-search-box flex-1 relative flex items-center min-w-0 rounded-xl bg-app-surface border border-app-accent ring-2 ring-app-accent/20 px-3">
+            <Search className="w-4 h-4 text-app-accent mr-2 shrink-0 pointer-events-none" />
+            <input id="search-input" ref={searchInputRef} type="text" maxLength={200}
+              aria-label="Search songs, artists and setlists" aria-controls="global-search-results"
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
+              placeholder="Search songs & setlists..."
+              className="header-search-input min-h-11 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none" />
+            {searchQuery && (
+              <button type="button" aria-label="Clear search"
+                onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus() }}
+                className="min-h-9 min-w-9 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
+          <button type="button" onClick={openSources} aria-label="Browse Song Sources" className={iconButton}>
+            <Globe className="w-3.5 h-3.5 text-app-accent" />
+          </button>
+          <button type="button" onClick={closeMobileSearch} aria-label="Cancel search"
+            className="min-h-11 px-2.5 text-xs font-semibold text-app-muted hover:text-app-heading transition-colors shrink-0 flex items-center justify-center">
+            Cancel
+          </button>
+          {showResults && <div className="absolute top-full left-0 right-0 px-3 pt-2">{resultsPanel}</div>}
         </div>
-      </div>
-
-      {/* =================================================================== */}
-      {/* TIER 3 (Bottom Search Bar): Full Width Search Input Container       */}
-      {/* =================================================================== */}
+      )}
       </header>
 
-      {/* 3-Dots Overflow Menu */}
+      {/* More menu */}
       {showOverflowMenu && (
         <div
           ref={overflowMenuRef}
-          style={{
-            position: 'fixed',
-            top: `${moreMenuCoords.top}px`,
-            left: `${moreMenuCoords.left}px`,
-          }}
-          className="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in"
+          role="menu"
+          aria-label="More actions"
+          data-testid="header-more-menu"
+          style={{ position: 'fixed', top: `${moreMenuCoords.top}px`, left: `${moreMenuCoords.left}px` }}
+          className="w-56 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in"
         >
-          {/* 0. Install App (PWA) */}
-          {!isAppInstalled && (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOverflowMenu(false)
-                  handleTriggerInstall()
-                }}
-                className="w-full text-left px-4 py-2.5 text-xs text-app-action hover:bg-app-base transition-colors flex items-center gap-3 cursor-pointer"
-              >
-                <Download className="w-4 h-4 text-app-action" />
-                <span className="font-semibold">Install App (PWA)</span>
-              </button>
-              <div className="h-[1px] bg-app-border/60 my-1" />
-            </>
-          )}
-
-          {/* 1. Stage Settings */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenStageSettings()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <Settings className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Stage Settings</span>
-          </button>
-
+          {menuAction('menu-stage-preview', PlaySquare, 'Stage Preview (Alt+1)', () => onViewChange('stage'), activeView === 'stage')}
+          {menuAction('menu-editor', FileEdit, 'Editor (Alt+2)', () => onViewChange('editor'), activeView === 'editor')}
+          {menuAction('menu-band-sync', Radio, 'Band Sync (Alt+3)', onOpenStageTools)}
+          {menuAction('menu-cast', Cast, isCastActive ? 'Cast (on) (Alt+4)' : 'Cast (Alt+4)', () => { onOpenCast?.() }, isCastActive)}
+          {menuAction('menu-trash', Trash2, `Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`, () => onViewChange('trash'), activeView === 'trash')}
           <div className="h-[1px] bg-app-border/60 my-1" />
+          {menuAction('menu-stage-settings', Settings, 'Stage Settings', onOpenStageSettings)}
+          {menuAction('menu-import-songs', FolderOpen, 'Import Songs...', onOpenImportModal)}
+          {compact && menuAction('menu-web-sources', Globe, 'Web Sources', onOpenWebsiteUrlSource)}
+          {!isAppInstalled && menuAction('menu-install-app', Download, 'Install App (PWA)', () => { void handleTriggerInstall() })}
 
-          {/* 2. Web Sources */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenWebsiteUrlSource()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <Globe className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Web Sources</span>
-          </button>
-
-          <div className="h-[1px] bg-app-border/60 my-1" />
-
-          {/* 2. Import... */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenImportModal()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <FolderOpen className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Import Songs...</span>
-          </button>
-
-
-
-          {/* 5. Debug Logs: PROD super-admins / debug builds only. On DEV the profile menu's
+          {/* Debug Logs: PROD super-admins / debug builds only. On DEV the profile menu's
               Advanced Tools replace this menu item (#191, #299). */}
           {isDevApp && !isDevEnv && (
             <>
               <div className="h-[1px] bg-app-border/60 my-1" />
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOverflowMenu(false)
-                  setShowDebugLogsModal(true)
-                }}
-                className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center justify-between gap-3 cursor-pointer"
-              >
+              <button type="button" role="menuitem"
+                onClick={() => { setShowOverflowMenu(false); setShowDebugLogsModal(true) }}
+                className={`${menuItem} justify-between`}>
                 <div className="flex items-center gap-3">
                   <Terminal className="w-4 h-4 text-app-action" />
                   <span className="font-semibold">Debug Logs</span>
                 </div>
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600/25 text-status-error border border-red-500/30">
-                  {isDevEnv ? 'DEV' : 'DIAG'}
-                </span>
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-status-error/15 text-status-error border border-status-error/30">DIAG</span>
               </button>
             </>
           )}

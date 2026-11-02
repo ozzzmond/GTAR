@@ -65,14 +65,9 @@ test('ASSERT_BELOW_THRESHOLD_NO_ACTION: Swipes below arm threshold do not arm or
   assert.ok(resultArmed.offset <= 110, 'Offset must not exceed maxSwipe')
 })
 
-test('ASSERT_ARMED_LEFT_DELETE_CALLS_EXISTING_HANDLER: Song and setlist card left swipe invokes existing delete confirmation', () => {
+test('ASSERT_ARMED_LEFT_DELETE_CALLS_EXISTING_HANDLER: Song card left swipe invokes existing delete confirmation', () => {
   const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
 
-  // Setlist card swipe left: rightAction is delete, calls setConfirmDeleteSetlistId(sl.id)
-  assert.ok(
-    viewCode.includes('setConfirmDeleteSetlistId(sl.id)'),
-    'Setlist card swipe left must invoke setConfirmDeleteSetlistId'
-  )
   assert.ok(
     viewCode.includes("label: 'Delete'"),
     'Swipe action must provide Delete label'
@@ -92,10 +87,6 @@ test('ASSERT_ARMED_LEFT_DELETE_CALLS_EXISTING_HANDLER: Song and setlist card lef
     viewCode.includes('Delete this song?'),
     'Song card retains inline confirmation dialog'
   )
-  assert.ok(
-    viewCode.includes('Delete setlist?'),
-    'Setlist card retains inline confirmation dialog'
-  )
 })
 
 test('ASSERT_ARMED_RIGHT_SONG_CALLS_ADD_HANDLER_WITH_CORRECT_SONG: Song card swipe right invokes add to setlist for exact song', () => {
@@ -109,35 +100,6 @@ test('ASSERT_ARMED_RIGHT_SONG_CALLS_ADD_HANDLER_WITH_CORRECT_SONG: Song card swi
   assert.ok(
     viewCode.includes("label: 'Add to Setlist'"),
     'Song card swipe right must provide Add to Setlist label'
-  )
-})
-
-test('ASSERT_ARMED_RIGHT_SETLIST_CALLS_MANAGE_HANDLER_WITH_CORRECT_SETLIST: Setlist card swipe right invokes manage handler for exact setlist', () => {
-  const viewCode = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
-  const appCode = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8')
-
-  // SongbookHomeView invokes onManageSetlist(sl) or onOpenSetlists(sl.id)
-  assert.ok(
-    viewCode.includes('onManageSetlist(sl)'),
-    'Setlist swipe right must invoke onManageSetlist with exact setlist'
-  )
-  assert.ok(
-    viewCode.includes("label: 'Manage'"),
-    'Setlist swipe right must provide Manage label'
-  )
-
-  // App wires handleManageSetlist
-  assert.ok(
-    appCode.includes('const handleManageSetlist = (setlist: WebSetlist) => openSetlistManager(setlist)'),
-    'App must implement handleManageSetlist'
-  )
-  assert.ok(
-    appCode.includes('setSetlistManagerId(setlist?.id ??'),
-    'Setlist Manager receives the exact selected setlist id'
-  )
-  assert.ok(
-    appCode.includes('onManageSetlist={handleManageSetlist}'),
-    'App must pass handleManageSetlist to SongbookHomeView'
   )
 })
 
@@ -196,16 +158,12 @@ test('ASSERT_EXISTING_CARD_BUTTONS_AND_MENUS_REMAIN_AVAILABLE: Quick play, ellip
     })
   )
 
-  // Setlist card quick play button preserved
-  assert.ok(html.includes('data-testid="play-setlist-sl-1"'), 'Play button preserved on setlist card')
-
-  // Setlist card three-dot menu trigger preserved
-  assert.ok(html.includes('data-testid="setlist-menu-sl-1"'), 'Menu button preserved on setlist card')
+  // #319: song cards keep the GTAR1 Stage quick action
+  assert.ok(html.includes('data-testid="song-stage-0"'), 'Stage button on song card')
 
   // Song card three-dot menu trigger preserved
   assert.ok(html.includes('data-testid="song-menu-0"'), 'Menu button preserved on song card')
 
   // Song card click launch stage view preserved
   assert.ok(html.includes('data-testid="song-card-0"'), 'Song card test identifier preserved')
-  assert.ok(html.includes('data-testid="setlist-card-sl-1"'), 'Setlist card test identifier preserved')
 })

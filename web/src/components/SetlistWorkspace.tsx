@@ -40,6 +40,8 @@ export interface SetlistWorkspaceMenu {
   onImport?: () => void
   /** Present only when the existing publishing gate allows it. */
   onPublishSetlist?: (setlist: WebSetlist) => void
+  /** #319: per-setlist JSON export (previously on the removed Song Setlists cards). */
+  onExportSetlist?: (setlist: WebSetlist) => void
   publishLabel?: (setlist: WebSetlist) => string
   /** Receives the open setlist (null in the collection view). */
   onManageSetlists?: (openSetlist: WebSetlist | null) => void
@@ -401,6 +403,13 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
         >
           <UploadCloud className={menuIcon} />
           <span>{menu.publishLabel?.(openSetlist) || 'Publish to Shared Catalog'}</span>
+        </button>
+      )}
+      {openSetlist && menu.onExportSetlist && (
+        <button type="button" role="menuitem" data-testid="workspace-menu-export-json"
+          onClick={run(() => menu.onExportSetlist!(openSetlist))} className={menuItem}>
+          <Upload className={`${menuIcon} rotate-180`} />
+          <span>Export JSON</span>
         </button>
       )}
       {menu.onManageSetlists && (

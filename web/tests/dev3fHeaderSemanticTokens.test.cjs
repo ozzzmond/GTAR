@@ -154,9 +154,11 @@ test('Real header roles resolve independently from body, with neutral icons scop
     assert.equal(color('.header-secondary-text'), rgb(target.headerSecondaryText))
     assert.equal(color('.header-neutral-icon'), rgb(target.headerIconColor))
     // Neutral install icon appears only when the PWA install action is available.
+    // #319: GTAR1 header also marks the drawer, search and Back icons neutral; count the install delta.
+    const neutralBefore = document.querySelectorAll('.header-neutral-icon').length
     const installEvent = new window.Event('beforeinstallprompt'); installEvent.prompt = noop
     await act(async () => window.dispatchEvent(installEvent))
-    assert.equal(document.querySelectorAll('.header-neutral-icon').length, 2)
+    assert.equal(document.querySelectorAll('.header-neutral-icon').length, neutralBefore + 1)
     for (const state of ['IN_SYNC', 'ERROR', 'CONFLICT', 'SYNCING']) {
       await act(async () => window.dispatchEvent(new window.CustomEvent('gtar:cloud_sync_state', { detail: { status: state, isProcessing: false } })))
       const sync = document.querySelector('[data-testid="header-cloud-sync-button"]')

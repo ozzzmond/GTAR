@@ -118,7 +118,7 @@ test('DEV3C_BACKWARD_COMPATIBILITY: Old DEV.3b 4-field palette loads safely and 
 test('DEV3C_SEARCH_BAR_STYLING: index.css wires custom search background, border, and text to CSS variables', () => {
   const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
 
-  assert.ok(css.includes('body.theme-custom .pill-search {'))
+  assert.match(css, /body\.theme-custom \.pill-search[,{]/)
   assert.ok(css.includes('var(--custom-chrome-search-bg'))
   assert.ok(css.includes('var(--custom-chrome-search-border'))
   assert.ok(css.includes('body.theme-custom .pill-search input {'))

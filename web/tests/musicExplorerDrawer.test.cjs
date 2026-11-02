@@ -42,7 +42,7 @@ async function mount(run, extra = {}) {
     isOpen: true, songs, setlists, currentSelection: { type: 'ALL_SONGS' },
     onClose: () => { calls.close++ }, onNewSong: () => { calls.newSong++ },
     onNewSetlist: () => { calls.newSetlist++ }, onSelectSongIndex() {}, onDeleteSong() {},
-    onSelect: target => calls.select.push(target), onOpenSources: () => { calls.sources++ },
+    onSelect: target => calls.select.push(target),
     ...extra,
   }
   const root = createRoot(document.getElementById('root'))
@@ -67,7 +67,9 @@ test('EXPLORER_DRAWER_1: hamburger drawer content is the Music Explorer hierarch
     assert.ok(allSongs)
     assert.match(allSongs.textContent, /All Songs/)
     assert.match(allSongs.textContent, /3/, 'All Songs count comes from the live library')
-    assert.ok(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-browse-sources"]'))
+    // #319: Browse Sources left the Explorer; Shared Catalog is an Explorer entry.
+    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-browse-sources"]'), null)
+    assert.ok(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-shared-catalog"]'))
     // Setlists entries
     assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]').textContent, /All Setlists/)
     assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]').textContent, /2/, 'deleted setlist excluded')
@@ -97,14 +99,14 @@ test('EXPLORER_DRAWER_3: selection routes through the supplied handler and quick
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Worship"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-unfiled-setlists"]'))
+    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-shared-catalog"]'))
     assert.deepEqual(calls.select, [
       { type: 'ALL_SONGS' },
       { type: 'TAG', tag: 'Worship' },
       { type: 'ALL_SETLISTS' },
       { type: 'UNFILED_SETLISTS' },
+      { type: 'SHARED_CATALOG' },
     ])
-    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-browse-sources"]'))
-    assert.equal(calls.sources, 1)
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-song"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-set"]'))
     assert.equal(calls.newSong, 1)

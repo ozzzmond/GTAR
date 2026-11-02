@@ -88,19 +88,6 @@ test('8e editor: autosave truth, text shortcuts, metadata dirty reversion, navig
   const title=document.querySelector('input[placeholder="Song Title *"]');fail=false;await change(title,'Renamed');await act(async()=>root.render(React.createElement(DesktopEditor,{...props,song:{...persisted,title:'Renamed'}})));assert.equal(textarea.value,persisted.rawContent)
  } finally {await act(async()=>root.unmount())}
 })
-test('8e setlists: collapse is presentation-only, preference survives remount, expansion and open remain usable',async()=>{
- localStorage.clear();const lists=[{id:'list',name:'Gig',songs:[song]}],snapshot=JSON.stringify(lists);let opened=0
- const props={songs:[song],setlists:lists,searchQuery:'',activeSongIndex:0,onSelectSong(){},onNewSong(){},onOpenSetlists(){},onSelectSetlistSong(){opened++},onDeleteSong(){}}
- const root=createRoot(document.getElementById('root'))
- try {
-  await act(async()=>root.render(React.createElement(SongbookHomeView,props)))
-  await click('Hide');assert.equal(document.getElementById('gig-setlist-cards').hidden,true);assert.match(document.body.textContent,/Song Setlists \(1\)/)
-  assert.equal(localStorage.getItem('gtar_songbook_setlists_collapsed'),'true');assert.equal(JSON.stringify(lists),snapshot);assert.match(document.body.textContent,/Songs Library/)
-  await act(async()=>root.render(null));await act(async()=>root.render(React.createElement(SongbookHomeView,props)))
-  assert.equal(document.getElementById('gig-setlist-cards').hidden,true);await click('Show');assert.equal(document.getElementById('gig-setlist-cards').hidden,false)
-  await act(async()=>document.querySelector('[data-testid="setlist-card-list"]').click());assert.equal(opened,1);assert.equal(JSON.stringify(lists),snapshot)
- } finally {await act(async()=>root.unmount())}
-})
 test('8e/#181/#304 old recovery archive: no banner, no header dot, no export button in Backup & Restore; archive kept',async()=>{
  localStorage.clear();const lost={...song,id:'lost'};persistLibrary({songs:[song],setlists:[]});const archive=JSON.stringify({songs:[lost],setlists:[]});localStorage.setItem('gtar_sync_recovery:plain',archive)
  const App=require('../src/App.tsx').default,root=createRoot(document.getElementById('root'))

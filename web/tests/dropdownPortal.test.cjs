@@ -34,10 +34,11 @@ for (const width of [320, 1280]) test(`portal actions, viewport bounds and dismi
       songs: [{ id: 'song-1', title: 'Fixture', artist: '', rawContent: '' }],
       setlists: [{ id: 'set-1', name: 'Fixture set', songs: [{ id: 'song-1', title: 'Fixture' }] }],
       activeSongIndex: 0, onSelectSong: () => selected++, onNewSong() {}, onOpenSetlists() {},
-      onDeleteSong: () => deleted++, onDeleteSetlist: () => deleted++, onRenameSetlist() {},
+      onDeleteSong: () => deleted++, onOpenImportSongs() {},
       onSongMembershipChange() {}, onCreateSetlistForSong() {},
     }))))
-    for (const id of ['song-menu-0', 'setlist-menu-set-1']) {
+    // #319: the GTAR1 Songbook view has the song card ⋯ and the Songs Library ⋯ portal menus.
+    for (const id of ['song-menu-0', 'songs-library-menu-btn']) {
       const trigger = find(id)
       await click(trigger)
       assert.equal(portal().parentElement, document.body, 'portal escapes card overflow')
@@ -64,12 +65,9 @@ for (const width of [320, 1280]) test(`portal actions, viewport bounds and dismi
       assert.equal(portal(), null, 'trigger toggles closed')
     }
     await click(find('song-menu-0'))
-    await click(find('setlist-menu-set-1'))
+    await click(find('songs-library-menu-btn'))
     assert.equal(document.querySelectorAll('[data-dropdown-portal]').length, 1)
-    await click(find('menu-delete-set-1'))
-    assert.equal(portal(), null)
-    assert.match(document.body.textContent, /Delete setlist\?/)
-    assert.equal(deleted, 0, 'action retains confirmation guard')
+    await click(find('songs-library-menu-btn'))
     assert.equal(selected, 0, 'menu clicks do not select card')
     await click(find('song-menu-0'))
     const deleteSong = [...portal().querySelectorAll('button')].find(button => button.textContent.includes('Delete Song'))

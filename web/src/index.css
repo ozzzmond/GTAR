@@ -168,16 +168,69 @@ body.theme-custom {
 /* Explicit chrome roles avoid recoloring menus nested under the header. */
 body.theme-custom header { background-color: var(--custom-chrome-header-bg) !important; }
 /* 2. APP CHROME: Search Bar & Search Border */
-body.theme-custom .pill-search {
+body.theme-custom .pill-search,
+body.theme-custom header input[type="text"],
+body.theme-custom .header-search-input {
   background-color: var(--custom-chrome-search-bg, var(--custom-stage-bg, #121820)) !important;
   border-color: var(--custom-chrome-search-border, var(--custom-stage-border, #2A3644)) !important;
+  color: var(--custom-control-input-text, #F1F5F9) !important;
 }
 body.theme-custom .pill-search input {
   color: var(--custom-control-input-text, #F1F5F9) !important;
 }
-body.theme-custom .pill-search input::placeholder {
+body.theme-custom .pill-search input::placeholder,
+body.theme-custom header input[type="text"]::placeholder,
+body.theme-custom .header-search-input::placeholder {
   color: var(--custom-chrome-icon, #94A3B8) !important;
   opacity: 0.7;
+}
+
+body.theme-custom .header-search-box {
+  background-color: var(--custom-chrome-search-bg, var(--custom-stage-surface, #1A222D)) !important;
+  border-color: var(--custom-chrome-search-border, var(--custom-card-border, #2A3644)) !important;
+}
+
+body.theme-custom .header-search-box:hover:not(:focus-within) {
+  border-color: color-mix(in srgb, var(--custom-control-accent, #F59E0B) 40%, var(--custom-chrome-search-border, var(--custom-card-border, #2A3644))) !important;
+}
+
+body.theme-custom .header-search-box:focus-within {
+  border-color: var(--custom-control-accent, #F59E0B) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--custom-control-accent, #F59E0B) 20%, transparent) !important;
+}
+
+body.theme-custom .header-search-box input {
+  color: var(--custom-control-input-text, var(--custom-uiPrimaryText, #F1F5F9)) !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+body.theme-custom .header-search-box input::placeholder {
+  color: var(--custom-chrome-icon, var(--custom-uiMutedText, #94A3B8)) !important;
+  opacity: 0.7;
+}
+
+body.theme-custom .header-search-kbd {
+  background-color: color-mix(in srgb, var(--custom-control-button-bg, #24303E) 80%, transparent) !important;
+  border-color: var(--custom-chrome-search-border, var(--custom-card-border, #2A3644)) !important;
+  color: var(--custom-uiMutedText, #94A3B8) !important;
+}
+
+body.theme-custom .mobile-search-trigger {
+  background-color: var(--custom-chrome-search-bg, var(--custom-stage-surface, #1A222D)) !important;
+  border-color: var(--custom-card-border, #2A3644) !important;
+  color: var(--custom-headerIconColor, var(--custom-chrome-icon, #94A3B8)) !important;
+}
+
+body.theme-custom .mobile-search-trigger:hover,
+body.theme-custom .mobile-search-trigger:focus-visible {
+  border-color: var(--custom-control-accent, #F59E0B) !important;
+  color: var(--custom-control-accent, #F59E0B) !important;
+}
+
+body.theme-custom .mobile-search-overlay {
+  background-color: var(--custom-chrome-header-bg, #1A222D) !important;
+  border-bottom-color: var(--custom-card-border, #2A3644) !important;
 }
 
 /* 4. APP CHROME: Action Icons & Toolbar Icons */

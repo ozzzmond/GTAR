@@ -16,7 +16,7 @@ const { createRoot } = require('react-dom/client')
 
 test('Explorer quick actions guard unsaved editor changes in the sidebar and drawer', async t => {
   for (const width of [1280, 360]) {
-    for (const action of ['new-song', 'new-set', 'browse-sources']) {
+    for (const action of ['new-song', 'new-set']) {
       await t.test(`${width}px: ${action}`, async () => ui(async ({ render, click }) => {
         window.innerWidth = width
         window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
@@ -29,10 +29,12 @@ test('Explorer quick actions guard unsaved editor changes in the sidebar and dra
         localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song], setlists: [] }))
         try {
           await render(require('../src/App.tsx').default, {})
-          await click(document.querySelector('[aria-label="Editor (Alt+2)"]'))
+          // #319: Editor moved from the removed toolbar row into the header More menu.
+          await click(document.querySelector('[data-testid="header-more"]'))
+          await click(document.querySelector('[data-testid="menu-editor"]'))
           const editor = document.querySelector('textarea')
           assert.ok(editor, 'existing song opens in the real editor')
-          if (width < 1024) await click(document.querySelector('[aria-label="Open Music Explorer"]'))
+          if (width < 768) await click(document.querySelector('[aria-label="Open Music Explorer"]'))
           const draft = `${song.rawContent}\nUnsaved verse`
           // Refuse the autosave at the browser boundary to leave a real unsaved lyric edit.
           const setItem = window.Storage.prototype.setItem
@@ -47,7 +49,7 @@ test('Explorer quick actions guard unsaved editor changes in the sidebar and dra
             })
           } finally { window.Storage.prototype.setItem = setItem }
           assert.equal(document.querySelector('[data-testid="editor-save-status"]').dataset.saveStatus, 'FAILED', 'draft is unsaved before navigation')
-          const surface = document.querySelector(width < 1024 ? '[data-testid="music-explorer-drawer"]' : '[data-testid="explorer-sidebar"]')
+          const surface = document.querySelector(width < 768 ? '[data-testid="music-explorer-drawer"]' : '[data-testid="explorer-sidebar"]')
           await click(surface.querySelector(`[data-testid="explorer-nav-${action}"]`))
           const guard = document.querySelector('[role="dialog"][aria-label="Unsaved changes"]')
           assert.ok(guard, 'unsaved-changes guard appears before the action runs')
@@ -155,7 +157,9 @@ test('Explorer sidebar remembers collapse per device; drawer traps focus, closes
     onNewSong: noop, onNewSetlist: noop, isOpen: false, onClose: () => closed++ }
   await render(ExplorerNavigation, props)
   await click(document.querySelector('[aria-label="Collapse Music Explorer"]'))
-  assert.equal(document.querySelector('[data-testid="explorer-sidebar"]').dataset.collapsed, 'true')
+  // #319: collapsed = no aside, only the left-edge grip that reopens it.
+  assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null)
+  assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'))
   await act(async () => root.render(null))
   await render(ExplorerNavigation, props)
   assert.ok(document.querySelector('[aria-label="Expand Music Explorer"]'))

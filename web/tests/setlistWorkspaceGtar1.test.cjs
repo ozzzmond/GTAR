@@ -54,7 +54,7 @@ function baseProps(overrides = {}) {
     songs, setlists, activeSongIndex: 0,
     onSelectSong() {}, onNewSong() {}, onOpenSetlists() {}, onDeleteSong() {},
     onSongMembershipChange() { return true }, onCreateSetlistForSong() { return true },
-    activeTab: 'setlists', onActiveTabChange() {},
+    view: { type: 'ALL_SETLISTS' },
     ...overrides,
   }
 }
@@ -67,7 +67,7 @@ const $$ = sel => [...document.querySelectorAll(sel)]
 async function click(el) { assert.ok(el, 'control exists'); await act(async () => el.click()) }
 
 test('S1_COLLECTION: All Setlists target renders the GTAR1 collection view with count and cards', async () => {
-  await mount(baseProps({ setlistScope: 'ALL_SETLISTS' }))
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' } }))
   const heading = $('[data-testid="setlist-workspace-heading"]')
   assert.ok(heading, 'collection heading exists')
   assert.match(heading.textContent, /All Setlists/)
@@ -84,7 +84,7 @@ test('S1_COLLECTION: All Setlists target renders the GTAR1 collection view with 
 })
 
 test('S1_COLLECTION: Unfiled Setlists target uses its own heading; no folders means every setlist is unfiled', async () => {
-  await mount(baseProps({ setlistScope: 'UNFILED_SETLISTS' }))
+  await mount(baseProps({ view: { type: 'UNFILED_SETLISTS' } }))
   const heading = $('[data-testid="setlist-workspace-heading"]')
   assert.match(heading.textContent, /Unfiled Setlists/)
   assert.match(heading.textContent, /\(3\)/)
@@ -92,7 +92,7 @@ test('S1_COLLECTION: Unfiled Setlists target uses its own heading; no folders me
 })
 
 test('S1_COLLECTION: date shows only when the setlist has one; no folder label is rendered', async () => {
-  await mount(baseProps({ setlistScope: 'ALL_SETLISTS' }))
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' } }))
   assert.ok($('[data-testid="workspace-setlist-date-sl-1"]'), 'setlist with createdAt shows its date')
   assert.equal($('[data-testid="workspace-setlist-date-sl-2"]'), null, 'no date field means no invented date')
   assert.doesNotMatch(document.body.textContent, /Updated/, 'createdAt is not presented as an update date')
@@ -100,7 +100,7 @@ test('S1_COLLECTION: date shows only when the setlist has one; no folder label i
 })
 
 test('S1_COLLECTION: empty scope shows the dashed GTAR1 empty state', async () => {
-  await mount(baseProps({ setlists: [], setlistScope: 'ALL_SETLISTS' }))
+  await mount(baseProps({ setlists: [], view: { type: 'ALL_SETLISTS' } }))
   const empty = $('[data-testid="workspace-empty-collection"]')
   assert.ok(empty)
   assert.match(empty.className, /border-dashed/)
@@ -108,7 +108,7 @@ test('S1_COLLECTION: empty scope shows the dashed GTAR1 empty state', async () =
 })
 
 async function openSetlist(id, props) {
-  await mount(baseProps({ setlistScope: 'ALL_SETLISTS', ...props }))
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, ...props }))
   await click($(`[data-testid="workspace-setlist-card-${id}"]`))
 }
 
@@ -176,7 +176,7 @@ test('S1_SETLIST: Play in Stage opens the right setlist position; Open opens the
 test('S1_SETLIST: header Play in Stage starts at the first available entry', async () => {
   const played = []
   const lists = [{ id: 'sl-x', name: 'Gap First', songs: [{ id: 'gone', title: 'Gone' }, { id: 'song-2', title: 'Beta Groove' }] }]
-  await mount(baseProps({ setlists: lists, setlistScope: 'ALL_SETLISTS', onSelectSetlistSong: (id, idx) => played.push([id, idx]) }))
+  await mount(baseProps({ setlists: lists, view: { type: 'ALL_SETLISTS' }, onSelectSetlistSong: (id, idx) => played.push([id, idx]) }))
   await click($('[data-testid="workspace-setlist-card-sl-x"]'))
   await click($('[data-testid="workspace-play-setlist"]'))
   assert.deepEqual(played, [['sl-x', 1]])
@@ -184,7 +184,7 @@ test('S1_SETLIST: header Play in Stage starts at the first available entry', asy
 
 test('S1_SETLIST: Edit in Setlist Manager and card Manage → call the existing GTAR manage flow', async () => {
   const managed = []
-  await mount(baseProps({ setlistScope: 'ALL_SETLISTS', onManageSetlist: sl => managed.push(sl.id) }))
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onManageSetlist: sl => managed.push(sl.id) }))
   await click($('[data-testid="workspace-manage-sl-2"]'))
   assert.equal($('[data-testid="workspace-setlist-header"]'), null, 'Manage → does not also open the card')
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
@@ -204,7 +204,7 @@ test('S1_SETLIST: empty setlist shows the dashed empty state and no Play in Stag
 
 test('S1_BREADCRUMBS: Setlists › All Setlists › name, and crumbs navigate back', async () => {
   const scopes = []
-  await openSetlist('sl-1', { onSelectSetlistScope: s => scopes.push(s) })
+  await openSetlist('sl-1', { onSelectView: target => scopes.push(target.type) })
   const crumbs = () => $$('[data-testid="workspace-breadcrumbs"] [data-crumb]').map(el => el.textContent)
   assert.deepEqual(crumbs(), ['Setlists', 'All Setlists', 'Gig Set A'])
   assert.equal($('[data-testid="workspace-breadcrumbs"] [aria-current="page"]').textContent, 'Gig Set A')
@@ -218,7 +218,7 @@ test('S1_BREADCRUMBS: Setlists › All Setlists › name, and crumbs navigate ba
 })
 
 test('S1_BREADCRUMBS: Unfiled scope labels its crumb Unfiled Setlists', async () => {
-  await mount(baseProps({ setlistScope: 'UNFILED_SETLISTS' }))
+  await mount(baseProps({ view: { type: 'UNFILED_SETLISTS' } }))
   await click($('[data-testid="workspace-setlist-card-sl-2"]'))
   assert.deepEqual($$('[data-testid="workspace-breadcrumbs"] [data-crumb]').map(el => el.textContent), ['Setlists', 'Unfiled Setlists', 'Gig Set B'])
 })
@@ -250,7 +250,7 @@ const menuItems = () => $$('[data-testid="workspace-scope-menu"] [role^="menuite
 
 test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setlists wired to existing handlers', async () => {
   const opened = []
-  await mount(baseProps({ setlistScope: 'ALL_SETLISTS', onOpenSetlists: () => opened.push('manage') }))
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onOpenSetlists: () => opened.push('manage') }))
   const btn = $('[data-testid="workspace-scope-menu-btn"]')
   assert.equal(btn.getAttribute('aria-label'), 'Setlist actions')
   assert.match(btn.className, /min-h-9/)
@@ -285,14 +285,15 @@ test('S1_MENU: single-setlist ⋯ menu shares, imports, publishes and manages th
   const calls = []
   const auth = signIn('member', 'active')
   await mountAuthed(baseProps({
-    setlistScope: 'ALL_SETLISTS',
+    view: { type: 'ALL_SETLISTS' },
     onShareSetlist: sl => calls.push(['share', sl.id]),
     onPublishSetlist: sl => calls.push(['publish', sl.id]),
     onOpenSetlists: () => calls.push(['manage']),
   }), auth)
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await openMenu()
-  assert.deepEqual(menuItems(), ['workspace-menu-share', 'workspace-menu-import', 'workspace-menu-publish', 'workspace-menu-manage'])
+  assert.deepEqual(menuItems(), ['workspace-menu-share', 'workspace-menu-import', 'workspace-menu-publish',
+    'workspace-menu-export-json', 'workspace-menu-manage'])
   assert.match($('[data-testid="workspace-menu-publish"]').textContent, /Publish to Shared Catalog/)
   await click($('[data-testid="workspace-menu-share"]'))
   await openMenu(); await click($('[data-testid="workspace-menu-publish"]'))
@@ -304,23 +305,16 @@ test('S1_MENU: single-setlist ⋯ menu shares, imports, publishes and manages th
 })
 
 test('S1_MENU: Publish/Unpublish stays hidden without publishing permission (existing gate)', async () => {
-  await mount(baseProps({ setlistScope: 'ALL_SETLISTS', onPublishSetlist() {}, onShareSetlist() {} }))
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onPublishSetlist() {}, onShareSetlist() {} }))
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await openMenu()
   assert.equal($('[data-testid="workspace-menu-publish"]'), null)
 })
 
-test('S1_PROD: without a DEV setlist scope the existing setlist panel renders unchanged', async () => {
-  await mount(baseProps())
-  assert.equal($('[data-testid="setlist-workspace"]'), null)
-  assert.ok($('[data-testid="setlist-controls-toolbar"]'), 'existing #130 setlist toolbar stays')
-  assert.ok($('[data-testid="setlist-sort-select"]'))
-  assert.ok($('[data-testid="setlist-card-sl-1"]'))
-})
-
-test('S1_WIRING: App passes the workspace scope only in DEV, from the Explorer setlist targets', () => {
-  assert.match(appSource, /setlistScope=\{\s*isDevEnv && \(explorerSelection\.type === 'ALL_SETLISTS' \|\| explorerSelection\.type === 'UNFILED_SETLISTS'\)\s*\? explorerSelection\.type\s*: null\s*\}/)
-  assert.match(appSource, /onSelectSetlistScope=\{\(scope\) => handleExplorerSelect\(\{ type: scope \}\)\}/)
+test('S1_WIRING: the Explorer selection drives the Songbook view; setlist targets render the workspace in every env (#319)', () => {
+  assert.match(appSource, /view=\{explorerSelection\}/)
+  assert.match(appSource, /onSelectView=\{handleExplorerSelect\}/)
+  assert.doesNotMatch(appSource, /setlistScope=/)
 })
 
 test('S1_TOKENS: workspace uses theme tokens only and 36px minimum touch targets', () => {

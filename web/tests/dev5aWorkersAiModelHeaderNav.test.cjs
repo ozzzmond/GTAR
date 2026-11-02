@@ -188,19 +188,21 @@ function renderHeader(props = {}) {
   return { dom, root, viewChanges }
 }
 
-test('DEV5A_BACK_CONTROL: Back renders first, beside Stage Preview, accessible, and invokes browser history only', () => {
-  const { dom, root, viewChanges } = renderHeader()
+test('DEV5A_BACK_CONTROL: Back is a header icon outside the Songbook home (#319), accessible, and invokes browser history only', () => {
+  const home = renderHeader()
   try {
-    const group = document.querySelector('[data-testid="main-toolbar-group"]')
-    const buttons = [...group.querySelectorAll('button.toolbar-icon-btn')]
+    assert.equal(document.querySelector('[data-testid="toolbar-back"]'), null, 'Songbook home has no Back control')
+  } finally {
+    act(() => home.root.unmount()); home.dom.window.close(); delete global.window; delete global.document
+  }
+  const { dom, root, viewChanges } = renderHeader({ activeView: 'editor' })
+  try {
     const back = document.querySelector('[data-testid="toolbar-back"]')
     assert.ok(back)
-    assert.equal(buttons[0], back)
-    assert.equal(buttons[1].getAttribute('aria-label'), 'Stage Preview (Alt+1)')
     assert.equal(back.getAttribute('aria-label'), 'Back')
     assert.equal(back.getAttribute('type'), 'button')
     assert.equal(back.tagName, 'BUTTON')
-    assert.ok(back.classList.contains('toolbar-icon-btn'), 'shares toolbar touch target / theme tokens')
+    assert.match(back.className, /min-h-11/, '44px touch target')
     assert.doesNotMatch(back.className, /(bg|text|border)-(red|blue|green|yellow|slate|gray|cyan|amber|sky)-\d/)
     assert.doesNotMatch(back.className, /#[0-9a-f]{3,6}/i)
 
@@ -225,7 +227,7 @@ test('DEV5A_BACK_CONTROL: Back renders first, beside Stage Preview, accessible, 
 
 test('DEV5A_BACK_NOT_HARDCODED: Back handler source references no GTAR view route', () => {
   const header = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-  const backBlock = header.match(/icon=\{ArrowLeft\}[\s\S]*?\/>/)[0]
+  const backBlock = header.match(/data-testid="toolbar-back"[\s\S]*?<\/button>/)[0]
   assert.match(backBlock, /navigateBack\(\)/)
   assert.doesNotMatch(backBlock, /onViewChange|'songbook'|'stage'|'editor'|'trash'|onNavigateHome/)
   const vh = fs.readFileSync(path.join(webDir, 'src/utils/viewHistory.ts'), 'utf8')
@@ -233,60 +235,3 @@ test('DEV5A_BACK_NOT_HARDCODED: Back handler source references no GTAR view rout
   assert.doesNotMatch(vh, /pushState|location\.(href|assign|replace)/)
 })
 
-test('DEV5A_TOOLBAR_LAYOUT: action group centered as a whole and existing actions preserved in order', () => {
-  const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
-  const rule = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0]
-  assert.match(rule, /width:\s*max-content;/)
-  assert.match(rule, /margin-inline:\s*auto;/)
-  assert.doesNotMatch(rule, /min-width:\s*100%/)
-  const { dom, root } = renderHeader()
-  try {
-    const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
-    const group = scroll.firstElementChild
-    assert.equal(group.getAttribute('data-testid'), 'main-toolbar-group')
-    assert.ok(scroll.classList.contains('overflow-x-auto'))
-    assert.ok(group.classList.contains('justify-center'))
-    const labels = [...group.querySelectorAll('.toolbar-icon-btn')].map(b => b.getAttribute('aria-label'))
-    assert.deepEqual(labels, ['Back', 'Stage Preview (Alt+1)', 'Editor (Alt+2)', 'Band Sync (Alt+3)', 'Cast (Alt+4)', 'Theme (Alt+5)', 'Trash (Alt+6)', 'More'])
-  } finally {
-    act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
-  }
-})
-
-test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement dismissal preserve actions', () => {
-  const { dom, root, viewChanges } = renderHeader()
-  const viewport = new window.EventTarget()
-  Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true })
-  const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
-  const button = scroll.querySelectorAll('button')[1]
-  const tooltip = () => document.querySelector('[role="tooltip"]')
-  const focus = () => act(() => button.focus())
-  const blur = () => act(() => button.blur())
-  try {
-    assert.equal(tooltip(), null, 'hidden tooltips are absent, not transparent overflow descendants')
-    focus()
-    assert.equal(tooltip().parentElement, document.body)
-    assert.equal(tooltip().textContent, button.getAttribute('aria-label'))
-    assert.equal(button.getAttribute('aria-describedby'), tooltip().id)
-    assert.equal(scroll.querySelector('.toolbar-tooltip'), null)
-    act(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' })))
-    assert.equal(tooltip(), null)
-    assert.equal(document.activeElement, button, 'Escape preserves keyboard focus')
-    for (const [target, event] of [[scroll, 'scroll'], [window, 'resize'], [viewport, 'resize'], [viewport, 'scroll']]) {
-      blur(); focus(); assert.ok(tooltip())
-      act(() => target.dispatchEvent(new window.Event(event)))
-      assert.equal(tooltip(), null, `${event} dismisses stale anchor`)
-    }
-    blur()
-    act(() => button.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })))
-    assert.ok(tooltip())
-    act(() => button.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true })))
-    assert.equal(tooltip(), null)
-    focus()
-    act(() => button.click())
-    assert.deepEqual(viewChanges, ['stage'])
-    assert.equal(tooltip(), null)
-  } finally {
-    act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
-  }
-})
