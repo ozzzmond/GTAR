@@ -243,6 +243,7 @@ New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [appModalsReducer.test.cjs](appModalsReducer.test.cjs)
+- [appStartVersionLog.test.cjs](appStartVersionLog.test.cjs)
 - [backupRestoreCenterMenu.test.cjs](backupRestoreCenterMenu.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
