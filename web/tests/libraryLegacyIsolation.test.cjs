@@ -2,6 +2,7 @@
 // sign-in. Synthetic fixtures only.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
+const path = require('node:path')
 const h = require('./helpers/tabHarness.cjs')
 const { installNavigatorLocks } = require('./helpers/fakeLocks.cjs')
 const React = require('react')
@@ -11,6 +12,7 @@ const { createRoot } = require('react-dom/client')
 installNavigatorLocks()
 const V1 = 'gtar_library_v1'
 const A_TITLE = /Synthetic Song|A private/
+const SRC = path.join(__dirname, '../src') + path.sep
 
 /** Earlier library owned by `owner`, built while `owner` is signed in. */
 function device({ owner = 'user-a', n = 10 } = {}) {
@@ -53,7 +55,7 @@ test('B2 never enabled: A → B → A on one device; both accounts keep full acc
 
 /** App startup in this storage: closed state shown, no A titles, no export offered, nothing changed. */
 async function appStartupIsOpen(storage) {
-  for (const key of Object.keys(require.cache)) if (key.includes('/src/')) delete require.cache[key]
+  for (const key of Object.keys(require.cache)) if (key.startsWith(SRC)) delete require.cache[key]
   global.IS_REACT_ACT_ENVIRONMENT = true
   global.window.matchMedia = global.window.matchMedia || (() => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }))
   global.matchMedia = global.window.matchMedia
