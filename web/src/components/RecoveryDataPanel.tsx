@@ -1,14 +1,14 @@
 // #304 item 8: "Recovery data" — older copies of the songbook kept on this device, in plain language.
 // Same modal shell and card styles as the Backup & Restore center. Save hands out the full recovery
-// export unchanged; Delete removes only recovery copies (through the existing recovery choice and
-// cleanup), never the current library, backups or settings, and only after Save in this session.
+// export unchanged; Delete (only after Save in this session, for exactly the saved copies) removes the
+// saved recovery copies by compare-and-delete (recoveryDataDelete), never the current library, backups or settings.
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Download, History, Trash2, X } from 'lucide-react'
-import { confirmRecoveryCleanup, inspectRecovery, recordRecoveryChoice } from '../utils/syncJournal'
+import { inspectRecovery } from '../utils/syncJournal'
 import { downloadRecoveryExport } from '../utils/recoveryExport'
-import { ARCHIVE_PREFIX } from '../utils/recoveryArchiveStore'
+import { RecoveryDataChangedError, deleteSavedRecoveryData } from '../utils/recoveryDataDelete'
 import { notifyRecoveryChanged } from '../utils/recoveryAttention'
-import { formatRecoverySize, markRecoveryDataSaved, recoveryDataSavedFor, summarizeRecoveryData } from '../utils/recoveryDataSummary'
+import { formatRecoverySize, markRecoveryDataSaved, recoveryDataSavedFor, savedRecoveryData, summarizeRecoveryData } from '../utils/recoveryDataSummary'
 import { dangerButton, outlinedButton, primaryButton, sectionCard, sectionLabel, tone } from './backupCenterUi'
 
 export function RecoveryDataPanel({ blocked, onClose }: { blocked: () => boolean; onClose: () => void }) {
@@ -20,7 +20,8 @@ export function RecoveryDataPanel({ blocked, onClose }: { blocked: () => boolean
   const card = useRef<HTMLDivElement>(null)
   const summary = summarizeRecoveryData(review)
   const saved = summary.count > 0 && recoveryDataSavedFor(review)
-  const canDelete = saved && !summary.unreadable
+  // Unreadable copies are inside the saved file, so they may be deleted too.
+  const canDelete = saved
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -49,30 +50,20 @@ export function RecoveryDataPanel({ blocked, onClose }: { blocked: () => boolean
     } catch { setMessage({ tone: 'error', text: 'Recovery data could not be saved. Nothing was changed. Try again.' }) }
   })
 
+  const changed = 'Recovery data changed since you saved it. Save it again first.'
   const remove = () => run(async () => {
     setConfirming(false)
     try {
-      let current = inspectRecovery()
-      if (!recoveryDataSavedFor(current)) {
-        setReview(current)
-        setMessage({ tone: 'error', text: 'Recovery data changed since you saved it. Nothing was deleted. Save it again first.' })
-        return
-      }
-      // Mark the copies as no longer needed (current songbook kept), then remove them with the existing cleanup.
-      if (current.sources.some(source => source.status === 'actionable' || (source.status === 'represented' && source.key.startsWith(ARCHIVE_PREFIX)))) {
-        await recordRecoveryChoice(current, 'keep-current', blocked)
-        current = inspectRecovery()
-      }
-      await confirmRecoveryCleanup(current, true, blocked)
+      const saved = savedRecoveryData()
+      if (!saved || !recoveryDataSavedFor(inspectRecovery())) throw new RecoveryDataChangedError()
+      const { kept } = await deleteSavedRecoveryData(saved, blocked)
       notifyRecoveryChanged()
-      const after = inspectRecovery()
-      setReview(after)
-      const left = after.sources.length
+      const left = kept.length
       setMessage({ tone: 'success', text: left ? `Recovery data deleted. ${left} ${left === 1 ? 'copy' : 'copies'} could not be deleted here and stay${left === 1 ? 's' : ''} on this device.` : 'Recovery data deleted.' })
-    } catch {
-      setReview(inspectRecovery())
-      setMessage({ tone: 'error', text: 'Nothing was deleted. Close the editor and any other GTAR tabs, then try again.' })
-    }
+    } catch (error) {
+      notifyRecoveryChanged()
+      setMessage({ tone: 'error', text: error instanceof RecoveryDataChangedError ? changed : 'Nothing was deleted. Close the editor and any other GTAR tabs, then try again.' })
+    } finally { setReview(inspectRecovery()) }
   })
 
   const row = (label: string, value: string, testId: string) => (
@@ -119,9 +110,7 @@ export function RecoveryDataPanel({ blocked, onClose }: { blocked: () => boolean
                 aria-describedby={canDelete ? undefined : 'recovery-data-delete-hint'} onClick={() => { setMessage(null); setConfirming(true) }}>
                 <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Delete recovery data
               </button>
-              {!canDelete && <p id="recovery-data-delete-hint" className="text-[11px] text-app-muted">
-                {summary.unreadable ? 'Copies that can\'t be opened can\'t be deleted here.' : 'Save recovery data first to delete it.'}
-              </p>}
+              {!canDelete && <p id="recovery-data-delete-hint" className="text-[11px] text-app-muted">Save recovery data first to delete it.</p>}
             </div> : <div role="group" aria-label="Confirm delete" data-testid="recovery-data-confirm"
               className="p-4 rounded-xl border space-y-3 bg-status-warning/10 border-status-warning/40">
               <div className="flex items-center gap-2 text-status-warning">

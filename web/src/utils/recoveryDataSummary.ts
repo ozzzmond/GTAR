@@ -4,11 +4,14 @@
  */
 import { inspectRecovery, type RecoveryReview } from './syncJournal'
 
-/** Exact copies covered by the last successful "Save recovery data" in this app session (memory only). */
-let savedThisSession: string | null = null
-export const recoveryDataSignature = (review: RecoveryReview) => JSON.stringify(review.sources.map(source => [source.key, source.raw]))
-export function markRecoveryDataSaved(review: RecoveryReview): void { savedThisSession = recoveryDataSignature(review) }
-export function recoveryDataSavedFor(review: RecoveryReview): boolean { return savedThisSession !== null && savedThisSession === recoveryDataSignature(review) }
+/** What the last successful "Save recovery data" in this app session covered (memory only). */
+export interface SavedRecoveryData { sources: Array<[key: string, raw: string]>; decisionRaw: string | null }
+let savedThisSession: SavedRecoveryData | null = null
+const snapshot = (review: RecoveryReview): SavedRecoveryData => ({ sources: review.sources.map(source => [source.key, source.raw]), decisionRaw: review.decisionRaw })
+export const recoveryDataSignature = (review: RecoveryReview) => JSON.stringify(snapshot(review))
+export function markRecoveryDataSaved(review: RecoveryReview): void { savedThisSession = snapshot(review) }
+export function recoveryDataSavedFor(review: RecoveryReview): boolean { return savedThisSession !== null && JSON.stringify(savedThisSession) === recoveryDataSignature(review) }
+export function savedRecoveryData(): SavedRecoveryData | null { return savedThisSession }
 /** Test hook: forget the in-session Save. */
 export function resetRecoverySaveForTests(): void { savedThisSession = null }
 
