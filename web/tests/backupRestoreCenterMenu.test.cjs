@@ -146,7 +146,7 @@ test('#304: the Recovery data dot shows only while some copies cannot be opened'
 
 test('#304: header overflow menu says "Import Songs..."', () => {
   const header = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
-  assert.ok(header.includes("'Import Songs...'"))
+  assert.ok(header.includes('>Import Songs...</span>'))
   assert.ok(!header.includes('Import Songs &amp; Setlists'))
 })
 

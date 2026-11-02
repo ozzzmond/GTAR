@@ -29,9 +29,7 @@ test('Explorer quick actions guard unsaved editor changes in the sidebar and dra
         localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song], setlists: [] }))
         try {
           await render(require('../src/App.tsx').default, {})
-          // #319: Editor moved from the removed toolbar row into the header More menu.
-          await click(document.querySelector('[data-testid="header-more"]'))
-          await click(document.querySelector('[data-testid="menu-editor"]'))
+          await click(document.querySelector('[aria-label="Editor (Alt+2)"]'))
           const editor = document.querySelector('textarea')
           assert.ok(editor, 'existing song opens in the real editor')
           if (width < 768) await click(document.querySelector('[aria-label="Open Music Explorer"]'))

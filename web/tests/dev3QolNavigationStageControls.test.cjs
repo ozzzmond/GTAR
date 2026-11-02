@@ -21,6 +21,79 @@ const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
 // =============================================================================
 // 2. HEADER PRIMARY TOOLBAR ORDER & REPLACEMENTS
 // =============================================================================
+test('DEV3_HEADER_TOOLBAR_ORDER: Primary toolbar follows Stage Preview -> Editor -> Band Sync -> Cast -> Theme -> Trash -> More', () => {
+  const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
+  const tier2Section = headerSource.substring(
+    headerSource.indexOf('TIER 2 (Middle Action Bar)'),
+    headerSource.indexOf('TIER 3 (Bottom Search Bar)')
+  )
+
+  // Stage Preview is first; uses PlaySquare, not Eye
+  const stagePreviewIdx = tier2Section.indexOf('label="Stage Preview (Alt+1)"')
+  const editorIdx = tier2Section.indexOf('label="Editor (Alt+2)"')
+  const bandSyncIdx = tier2Section.indexOf('label="Band Sync (Alt+3)"')
+  const castIdx = tier2Section.indexOf('label="Cast (Alt+4)"')
+  const themeIdx = tier2Section.indexOf('label="Theme (Alt+5)"')
+  const trashIdx = tier2Section.indexOf('Trash')
+  const moreIdx = tier2Section.indexOf('label="More"')
+
+  assert.ok(stagePreviewIdx !== -1, 'Stage Preview action must exist')
+  assert.ok(editorIdx !== -1, 'Editor action must exist')
+  assert.ok(bandSyncIdx !== -1, 'Band Sync action must exist')
+  assert.ok(castIdx !== -1, 'Cast action must exist')
+  assert.ok(themeIdx !== -1, 'Theme action must exist')
+  assert.ok(trashIdx !== -1, 'Trash action must exist')
+  assert.ok(moreIdx !== -1, 'More action must exist')
+
+  // Verify strict ordering
+  assert.ok(stagePreviewIdx < editorIdx, 'Stage Preview must precede Editor')
+  assert.ok(editorIdx < bandSyncIdx, 'Editor must precede Band Sync')
+  assert.ok(bandSyncIdx < castIdx, 'Band Sync must precede Cast')
+  assert.ok(castIdx < themeIdx, 'Cast must precede Theme')
+  assert.ok(themeIdx < trashIdx, 'Theme must precede Trash')
+  assert.ok(trashIdx < moreIdx, 'Trash must precede More')
+
+  // Verify Stage Preview uses PlaySquare icon
+  assert.ok(tier2Section.includes('icon={PlaySquare}'), 'Stage Preview must use PlaySquare icon')
+
+  // Dedicated Songbook and Setlist buttons removed from primary Tier 2 toolbar
+  assert.ok(!tier2Section.includes('label={`Songbook'), 'Dedicated Songbook button removed from primary toolbar')
+  assert.ok(!tier2Section.includes('label={`Setlists'), 'Dedicated Setlists button removed from primary toolbar')
+
+  // Home navigation preserved via the logo entry (#224: hover tooltip removed; Alt+0 still works)
+  assert.ok(headerSource.includes('onClick={onNavigateHome}'), 'Logo home entry preserved')
+  assert.ok(!headerSource.includes('title="Return to Songbook Library Home (Alt+0)"'), '#224: no hover tooltip')
+})
+
+// =============================================================================
+// 3. WEB SOURCES RELOCATION & MORE MENU ANCHORING
+// =============================================================================
+test('DEV3_WEB_SOURCES_RELOCATION_AND_MORE_MENU: Web Sources relocated to More menu; More menu uses dynamic viewport-anchored positioning', () => {
+  const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
+
+  // Web Sources removed from primary toolbar Tier 2
+  const tier2Section = headerSource.substring(
+    headerSource.indexOf('TIER 2 (Middle Action Bar)'),
+    headerSource.indexOf('TIER 3 (Bottom Search Bar)')
+  )
+  assert.ok(!tier2Section.includes('label="Web Sources"'), 'Web Sources removed from Tier 2 toolbar')
+
+  // Web Sources added inside More menu
+  const moreMenuSection = headerSource.substring(headerSource.indexOf('3-Dots Overflow Menu'))
+  assert.ok(moreMenuSection.includes('Web Sources'), 'Web Sources present inside 3-dots overflow menu')
+  assert.ok(moreMenuSection.includes('onOpenWebsiteUrlSource()'), 'Web Sources triggers onOpenWebsiteUrlSource in More menu')
+
+  // More menu positioning is dynamic and anchored via moreButtonRef
+  assert.ok(headerSource.includes('moreButtonRef = useRef<HTMLButtonElement>(null)'), 'Header defines moreButtonRef')
+  assert.ok(headerSource.includes('moreMenuCoords'), 'Header computes dynamic moreMenuCoords')
+  assert.ok(headerSource.includes('buttonRef={moreButtonRef}'), 'More button receives buttonRef')
+  assert.ok(headerSource.includes('top: `${moreMenuCoords.top}px`'), 'More menu anchored with dynamic top coordinate')
+  assert.ok(headerSource.includes('left: `${moreMenuCoords.left}px`'), 'More menu anchored with dynamic left coordinate')
+})
+
+// =============================================================================
+// 4. STAGE SETTINGS MODAL REDUNDANCY CLEANUP
+// =============================================================================
 test('DEV3_SETTINGS_CLEANUP: Slogan, Quick Shortcuts, and redundant Local Backup & Restore removed from StageSettingsModal', () => {
   const settingsSource = fs.readFileSync(path.join(webDir, 'src/components/StageSettingsModal.tsx'), 'utf8')
 

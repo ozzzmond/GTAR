@@ -4,7 +4,8 @@ import { SyncStatusPill } from './SyncStatusPill'
 import { computeSongbookChecksum } from '../utils/cloudBackupFormat'
 import { readPersistedLibrary } from '../utils/syncJournal'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
+import { createPortal } from 'react-dom'
 import { SearchResults } from './SearchResults'
 import {
   Search,
@@ -119,6 +120,107 @@ interface HeaderProps {
   onNewSong?: () => void
   activeSection?: 'songs' | 'setlists' | null
   onOpenSection?: (section: 'songs' | 'setlists') => void
+}
+
+/**
+ * ToolbarIconButton — icon-only button with tooltip and cyan active dot
+ */
+function ToolbarIconButton({
+  icon: Icon,
+  label,
+  isActive = false,
+  onClick,
+  className = '',
+  buttonRef,
+  testId,
+}: {
+  icon: React.FC<{ className?: string }>
+  label: string
+  isActive?: boolean
+  onClick: () => void
+  className?: string
+  buttonRef?: React.Ref<HTMLButtonElement>
+  testId?: string
+}) {
+  const tooltipId = useId()
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const interaction = useRef({ hovered: false, focused: false })
+
+  useEffect(() => {
+    if (!anchor) return
+    const dismiss = () => setAnchor(null)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismiss()
+    }
+    // Any viewport/ancestor movement invalidates the fixed anchor, including
+    // horizontal toolbar scrolling and the mobile visual viewport.
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('keydown', onKeyDown)
+    window.visualViewport?.addEventListener('resize', dismiss)
+    window.visualViewport?.addEventListener('scroll', dismiss)
+    return () => {
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('keydown', onKeyDown)
+      window.visualViewport?.removeEventListener('resize', dismiss)
+      window.visualViewport?.removeEventListener('scroll', dismiss)
+    }
+  }, [anchor])
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => { setAnchor(null); onClick() }}
+        onMouseEnter={(event) => {
+          interaction.current.hovered = true
+          setAnchor(event.currentTarget.getBoundingClientRect())
+        }}
+        onMouseLeave={() => {
+          interaction.current.hovered = false
+          if (!interaction.current.focused) setAnchor(null)
+        }}
+        onFocus={(event) => {
+          interaction.current.focused = true
+          setAnchor(event.currentTarget.getBoundingClientRect())
+        }}
+        onBlur={() => {
+          interaction.current.focused = false
+          if (!interaction.current.hovered) setAnchor(null)
+        }}
+        aria-label={label}
+        aria-describedby={anchor ? tooltipId : undefined}
+        data-testid={testId}
+        className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
+      >
+        <Icon className="w-4 h-4" />
+        <span className="hidden lg:inline text-xs">{label.replace(/ \(Alt\+\d\)/, '')}</span>
+        <span className="active-dot" />
+      </button>
+      {anchor && createPortal(
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="toolbar-tooltip"
+          ref={(node) => {
+            if (!node) return
+            const viewport = window.visualViewport
+            const left = viewport?.offsetLeft ?? 0
+            const top = viewport?.offsetTop ?? 0
+            const width = viewport?.width ?? window.innerWidth
+            const height = viewport?.height ?? window.innerHeight
+            node.style.maxWidth = `${Math.max(0, width - 16)}px`
+            const bounds = node.getBoundingClientRect()
+            node.style.left = `${Math.max(left + 8, Math.min(anchor.left + anchor.width / 2 - bounds.width / 2, left + width - bounds.width - 8))}px`
+            node.style.top = `${Math.max(top + 8, Math.min(anchor.bottom + 6, top + height - bounds.height - 8))}px`
+          }}
+        >{label}</span>,
+        document.body,
+      )}
+    </>
+  )
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -313,13 +415,6 @@ export const Header: React.FC<HeaderProps> = ({
       {recoveryAttention && <span data-testid="profile-recovery-data-dot" aria-hidden="true" className={recoveryDotClass} />}
     </button>
   ) : null
-
-  // #319: GTAR1 keeps "Stage & Color Theme" in the profile menu.
-  const themeRow = (
-    <button type="button" data-testid="header-theme-settings-btn" onClick={() => { setShowAvatarPopover(false); onToggleTheme() }} className={advancedItem}>
-      <Palette className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Stage &amp; Color Theme (Alt+5)
-    </button>
-  )
 
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
 
@@ -629,14 +724,6 @@ export const Header: React.FC<HeaderProps> = ({
   const showResults = isSearchFocused && searchQuery.trim().length > 0
   const searchEnabled = activeView !== 'stage'
   const iconButton = 'ui-button min-h-11 min-w-11 px-2 sm:px-2.5 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer'
-  const menuItem = 'w-full min-h-11 text-left px-4 py-2 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer'
-  const menuAction = (testId: string, Icon: React.FC<{ className?: string }>, label: string, onClick: () => void, active = false) => (
-    <button type="button" role="menuitem" data-testid={testId} aria-current={active ? 'page' : undefined}
-      onClick={() => { setShowOverflowMenu(false); onClick() }} className={`${menuItem} ${active ? 'text-app-action' : ''}`}>
-      <Icon className="w-4 h-4 text-app-action" />
-      <span className="font-semibold flex-1">{label}</span>
-    </button>
-  )
   const devDiagnostics = (inline: boolean) => isDevEnv && (
     <div
       data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
@@ -656,7 +743,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="bg-app-header border-b border-app-border sticky top-0 z-40 px-3 py-2.5 relative select-none max-w-full">
+      <header className="bg-app-header border-b border-app-border sticky top-0 z-40 flex flex-col select-none max-w-full">
+      {/* Row 1 (GTAR1 header) — the compact search overlay covers this row only */}
+      <div className="relative px-3 py-2.5">
       <div className="flex items-center justify-between gap-1 sm:gap-4">
         {/* Left: Explorer drawer toggle & GTAR branding (DEV deployment details / PROD version stay visible) */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-3 min-w-0">
@@ -723,12 +812,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right actions */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          {activeView !== 'songbook' && (
-            <button type="button" data-testid="toolbar-back" aria-label="Back" onClick={() => { navigateBack() }}
-              className="min-h-11 min-w-11 rounded-xl flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading hover:bg-app-base transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
           {compact && searchEnabled && (
             <button ref={searchTriggerRef} type="button" aria-label="Open search"
               onClick={() => setMobileSearchOpen(true)}
@@ -784,15 +867,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* More: view actions GTAR1 has no slot for (Stage Preview, Editor, Band Sync, Cast, Trash, settings) */}
-          <button ref={moreButtonRef} type="button" data-testid="header-more" aria-label="More actions"
-            aria-haspopup="menu" aria-expanded={showOverflowMenu}
-            onClick={() => setShowOverflowMenu((prev) => !prev)}
-            className={`relative ${iconButton} ${showOverflowMenu || isCastActive ? 'border-app-action text-app-action' : ''}`}>
-            <MoreVertical className="w-4 h-4" />
-            {isCastActive && <span aria-hidden="true" className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-app-action" />}
-          </button>
-
           {/* Avatar with Auth Status Dot */}
           <div ref={avatarPopoverRef} className="avatar-wrapper">
             <button type="button" aria-label={currentSession ? 'Account menu' : 'Sign in and account menu'} aria-haspopup="menu"
@@ -845,7 +919,6 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
-                    {themeRow}
                     {recoveryDataRow}
                     {advancedTools}
 
@@ -869,7 +942,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
                     </button>
-                    <div className="text-left">{themeRow}{recoveryDataRow}{advancedTools}</div>
+                    <div className="text-left">{recoveryDataRow}{advancedTools}</div>
                   </div>
                 )}
               </div>
@@ -910,42 +983,173 @@ export const Header: React.FC<HeaderProps> = ({
           {showResults && <div className="absolute top-full left-0 right-0 px-3 pt-2">{resultsPanel}</div>}
         </div>
       )}
+      </div>
+
+      {/* =================================================================== */}
+      {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
+      {/* =================================================================== */}
+      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
+        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
+          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
+            <ToolbarIconButton
+              icon={ArrowLeft}
+              label="Back"
+              onClick={() => { navigateBack() }}
+              className="shrink-0"
+              testId="toolbar-back"
+            />
+            <ToolbarIconButton
+              icon={PlaySquare}
+              label="Stage Preview (Alt+1)"
+              isActive={activeView === 'stage'}
+              onClick={() => onViewChange('stage')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={FileEdit}
+              label="Editor (Alt+2)"
+              isActive={activeView === 'editor'}
+              onClick={() => onViewChange('editor')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Radio}
+              label="Band Sync (Alt+3)"
+              onClick={onOpenStageTools}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Cast}
+              label="Cast (Alt+4)"
+              isActive={isCastActive}
+              onClick={onOpenCast || (() => {})}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Palette}
+              label="Theme (Alt+5)"
+              onClick={onToggleTheme}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Trash2}
+              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+              isActive={activeView === 'trash'}
+              onClick={() => onViewChange('trash')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              buttonRef={moreButtonRef}
+              icon={MoreVertical}
+              label="More"
+              isActive={showOverflowMenu}
+              onClick={() => setShowOverflowMenu((prev) => !prev)}
+              className="shrink-0"
+            />
+
+          </div>
+        </div>
+      </div>
+
+      {/* =================================================================== */}
+      {/* TIER 3 (Bottom Search Bar): Full Width Search Input Container       */}
+      {/* =================================================================== */}
       </header>
 
-      {/* More menu */}
+      {/* 3-Dots Overflow Menu */}
       {showOverflowMenu && (
         <div
           ref={overflowMenuRef}
-          role="menu"
-          aria-label="More actions"
-          data-testid="header-more-menu"
-          style={{ position: 'fixed', top: `${moreMenuCoords.top}px`, left: `${moreMenuCoords.left}px` }}
-          className="w-56 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in"
+          style={{
+            position: 'fixed',
+            top: `${moreMenuCoords.top}px`,
+            left: `${moreMenuCoords.left}px`,
+          }}
+          className="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in"
         >
-          {menuAction('menu-stage-preview', PlaySquare, 'Stage Preview (Alt+1)', () => onViewChange('stage'), activeView === 'stage')}
-          {menuAction('menu-editor', FileEdit, 'Editor (Alt+2)', () => onViewChange('editor'), activeView === 'editor')}
-          {menuAction('menu-band-sync', Radio, 'Band Sync (Alt+3)', onOpenStageTools)}
-          {menuAction('menu-cast', Cast, isCastActive ? 'Cast (on) (Alt+4)' : 'Cast (Alt+4)', () => { onOpenCast?.() }, isCastActive)}
-          {menuAction('menu-trash', Trash2, `Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`, () => onViewChange('trash'), activeView === 'trash')}
-          <div className="h-[1px] bg-app-border/60 my-1" />
-          {menuAction('menu-stage-settings', Settings, 'Stage Settings', onOpenStageSettings)}
-          {menuAction('menu-import-songs', FolderOpen, 'Import Songs...', onOpenImportModal)}
-          {compact && menuAction('menu-web-sources', Globe, 'Web Sources', onOpenWebsiteUrlSource)}
-          {!isAppInstalled && menuAction('menu-install-app', Download, 'Install App (PWA)', () => { void handleTriggerInstall() })}
+          {/* 0. Install App (PWA) */}
+          {!isAppInstalled && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverflowMenu(false)
+                  handleTriggerInstall()
+                }}
+                className="w-full text-left px-4 py-2.5 text-xs text-app-action hover:bg-app-base transition-colors flex items-center gap-3 cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-app-action" />
+                <span className="font-semibold">Install App (PWA)</span>
+              </button>
+              <div className="h-[1px] bg-app-border/60 my-1" />
+            </>
+          )}
 
-          {/* Debug Logs: PROD super-admins / debug builds only. On DEV the profile menu's
+          {/* 1. Stage Settings */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOverflowMenu(false)
+              onOpenStageSettings()
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Settings className="w-4 h-4 text-app-action" />
+            <span className="font-semibold">Stage Settings</span>
+          </button>
+
+          <div className="h-[1px] bg-app-border/60 my-1" />
+
+          {/* 2. Web Sources */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOverflowMenu(false)
+              onOpenWebsiteUrlSource()
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Globe className="w-4 h-4 text-app-action" />
+            <span className="font-semibold">Web Sources</span>
+          </button>
+
+          <div className="h-[1px] bg-app-border/60 my-1" />
+
+          {/* 2. Import... */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOverflowMenu(false)
+              onOpenImportModal()
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <FolderOpen className="w-4 h-4 text-app-action" />
+            <span className="font-semibold">Import Songs...</span>
+          </button>
+
+
+
+          {/* 5. Debug Logs: PROD super-admins / debug builds only. On DEV the profile menu's
               Advanced Tools replace this menu item (#191, #299). */}
           {isDevApp && !isDevEnv && (
             <>
               <div className="h-[1px] bg-app-border/60 my-1" />
-              <button type="button" role="menuitem"
-                onClick={() => { setShowOverflowMenu(false); setShowDebugLogsModal(true) }}
-                className={`${menuItem} justify-between`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverflowMenu(false)
+                  setShowDebugLogsModal(true)
+                }}
+                className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center justify-between gap-3 cursor-pointer"
+              >
                 <div className="flex items-center gap-3">
                   <Terminal className="w-4 h-4 text-app-action" />
                   <span className="font-semibold">Debug Logs</span>
                 </div>
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-status-error/15 text-status-error border border-status-error/30">DIAG</span>
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600/25 text-status-error border border-red-500/30">
+                  {isDevEnv ? 'DEV' : 'DIAG'}
+                </span>
               </button>
             </>
           )}

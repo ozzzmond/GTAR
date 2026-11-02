@@ -85,6 +85,24 @@ test('DEV3A_STAGE_DOCK_VISUAL_SIZING: Floating stage dock visibly enlarged with 
 // =============================================================================
 // 3. REMOVE DUPLICATE TRASH ACTION FROM MORE MENU
 // =============================================================================
+test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin (Basurahan) removed from More menu; primary toolbar retained', () => {
+  const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
+
+  // More menu section must NOT contain Trash Bin (Basurahan)
+  assert.ok(!headerSource.includes('Trash Bin (Basurahan)'), 'Trash Bin (Basurahan) copy removed from More menu')
+
+  // Count occurrences of onViewChange('trash') - must only be in primary toolbar
+  const trashNavMatches = headerSource.match(/onViewChange\('trash'\)/g)
+  assert.equal(trashNavMatches?.length, 1, "Exactly one onViewChange('trash') call remains in Header")
+
+  // Primary toolbar must retain dedicated Trash button
+  assert.ok(headerSource.includes('label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : \'\'} (Alt+6)`}'), 'Dedicated primary Trash button preserved')
+  assert.ok(headerSource.includes("isActive={activeView === 'trash'}"), 'Primary Trash button tracks active view')
+})
+
+// =============================================================================
+// 4. SETLIST HIDE BEHAVIOR: SELECT HIDDEN WITH SETLIST CONTROLS
+// =============================================================================
 test('DEV3A_NEW_BLANK_SONG_EDITOR_ACTION: New Song icon in toolbar between Insert Section and Paste with unsaved protection', () => {
   const editorSource = readSource(path.join(webDir, 'src/components/DesktopEditor.tsx'))
 

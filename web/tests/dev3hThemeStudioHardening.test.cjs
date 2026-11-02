@@ -180,6 +180,76 @@ test('FACTORY RESTORE: Exact canonical restoration, deletion safety, immutable f
   assert.deepEqual(theme.THEME_OPTIONS, factorySnapshot)
 }))
 
+test('TOOLBAR ALIGNMENT: 8 primary controls, 44px targets, canonical order, CSS centering contract', (t) => {
+  const css = fs.readFileSync(require.resolve('../src/index.css'), 'utf8')
+  // Verify CSS shared centering contract
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*width:\s*36px;/)
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*height:\s*36px;/)
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*min-width:\s*36px;/)
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*min-height:\s*36px;/)
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*display:\s*inline-flex;/)
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*align-items:\s*center;/)
+  assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*justify-content:\s*center;/)
+  assert.match(css, /\.toolbar-icon-btn svg\s*\{[^}]*width:\s*16px;/)
+  assert.match(css, /\.toolbar-icon-btn svg\s*\{[^}]*height:\s*16px;/)
+
+  // Verify Header toolbar render
+  const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { url: 'https://gtar.test' })
+  global.window = dom.window; global.document = dom.window.document; global.IS_REACT_ACT_ENVIRONMENT = true
+  global.localStorage = dom.window.localStorage
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  window.requestAnimationFrame = fn => setTimeout(fn, 0)
+  const root = createRoot(document.getElementById('root'))
+  t.after(() => { act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document; delete global.localStorage; delete global.IS_REACT_ACT_ENVIRONMENT })
+  act(() => {
+    root.render(React.createElement(Header, {
+      activeView: 'songbook',
+      onViewChange() {},
+      onOpenWebsiteUrlSource() {},
+      onOpenStageTools() {},
+      onToggleTheme() {},
+      onOpenStageSettings() {},
+      onOpenImportModal() {},
+      onOpenBackupRestoreModal() {},
+      searchQuery: '',
+      onSearchQueryChange() {},
+    }))
+  })
+
+  const sheet = document.createElement('style')
+  sheet.textContent = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0] + css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0] + css.match(/^header \.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
+  document.head.appendChild(sheet)
+  const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
+  assert.ok(scroll.classList.contains('overflow-x-auto'))
+  const content = scroll.firstElementChild
+  assert.ok(content.classList.contains('justify-center'))
+  assert.ok(!content.className.includes('justify-start'))
+  const layout = window.getComputedStyle(content)
+  assert.equal(layout.width, 'max-content')
+  assert.match(css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0], /margin-inline:\s*auto;/)
+  const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
+  assert.equal(toolbarButtons.length, 8)
+  const labels = [...toolbarButtons].map(btn => btn.getAttribute('aria-label'))
+  assert.deepEqual(labels, [
+    'Back',
+    'Stage Preview (Alt+1)',
+    'Editor (Alt+2)',
+    'Band Sync (Alt+3)',
+    'Cast (Alt+4)',
+    'Theme (Alt+5)',
+    'Trash (Alt+6)',
+    'More',
+  ])
+  for (const btn of toolbarButtons) {
+    assert.ok(btn.classList.contains('shrink-0'))
+    assert.equal(btn.parentElement, content)
+    const footprint = window.getComputedStyle(btn)
+    assert.equal(footprint.minWidth, '44px'); assert.equal(footprint.height, '44px')
+    assert.equal(footprint.display, 'inline-flex')
+    assert.equal(footprint.alignItems, 'center'); assert.equal(footprint.justifyContent, 'center')
+  }
+})
+
 test('FACTORY PALETTE: All presets provide 38 valid semantic tokens; revamps follow design guidelines', () => {
   const fields = palette.CANONICAL_CUSTOM_PALETTE_FIELDS
   assert.equal(fields.length, 38)
