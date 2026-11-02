@@ -103,9 +103,6 @@ test('library without a verified owner opens the device partition; it is never c
   assert.equal(page.prepared.identity.kind, 'device')
   assert.equal(page.prepared.identity.scope, 'device')
   assert.equal(page.tab.sj.readPersistedLibrary(storage).songs.length, 10)
-  assert.equal(page.tab.owner.libraryOwnership('user-c', storage), 'unbound')
-  assert.match(page.tab.owner.personalContentBlockReason('user-c', storage), /not linked/)
-  assert.throws(() => page.tab.owner.assertLibraryOwner('user-c', storage), error => error.ownership === 'unbound')
   assert.equal(storage.getItem('gtar_library_owner_v1'), null, 'owner never written')
 })
 

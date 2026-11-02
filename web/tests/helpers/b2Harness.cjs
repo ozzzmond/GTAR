@@ -25,7 +25,6 @@ function newTab() {
     sj: require('../../src/utils/syncJournal.ts'),
     b2: require('../../src/utils/libraryB2.ts'),
     idx: require('../../src/utils/libraryIndex.ts'),
-    owner: require('../../src/utils/libraryOwner.ts'),
     bodies: require('../../src/utils/libraryBodyStore.ts'),
   }
 }

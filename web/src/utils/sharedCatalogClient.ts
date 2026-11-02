@@ -12,7 +12,6 @@ import {
   CatalogApiError,
 } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
-import { personalContentBlockReason } from './libraryOwner'
 
 export const DEFAULT_CATALOG_TIMEOUT_MS = 15000
 export const DEFAULT_PAGE_LIMIT = 20
@@ -31,17 +30,18 @@ export interface FetchCatalogSongParams {
   timeoutMs?: number
 }
 
+/** Publishing is an explicit action of the signed-in, active account. */
+function assertActiveCatalogAccount(): void {
+  const { session } = getStoredSessionStatus()
+  if ((session?.access_status || session?.user?.access_status) !== 'active') {
+    throw new CatalogApiError('An active approved session is required to publish to Shared Catalog', 403, 'ACTIVE_ACCOUNT_REQUIRED')
+  }
+}
+
 /**
  * Extracts bearer token and accountId from authenticated session.
  * Throws structured CatalogApiError(401) if not authenticated.
  */
-/** #247: personal songs and setlists are published only from a library this account owns. */
-export function assertPublishFromOwnLibrary(): void {
-  const { session } = getStoredSessionStatus()
-  const reason = personalContentBlockReason(session?.user?.id)
-  if (reason) throw new CatalogApiError(reason, 409, 'LIBRARY_OWNER')
-}
-
 export function getAuthenticatedSessionToken(): { token: string; accountId: string } {
   const { session, isExpired } = getStoredSessionStatus()
   if (!session || isExpired) {
@@ -276,7 +276,7 @@ export async function publishSharedCatalogSong(
   }
 
   const { token } = getAuthenticatedSessionToken()
-  assertPublishFromOwnLibrary()
+  assertActiveCatalogAccount()
   return catalogFetch<PublishSharedSongResponse>('/api/catalog/songs', {
     method: 'POST',
     token,
@@ -306,7 +306,7 @@ export async function updateSharedCatalogSong(
   }
 
   const { token } = getAuthenticatedSessionToken()
-  assertPublishFromOwnLibrary()
+  assertActiveCatalogAccount()
   return catalogFetch<{ success: boolean; song: SharedCatalogSongItem }>(
     `/api/catalog/songs/${encodeURIComponent(id.trim())}`,
     {

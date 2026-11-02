@@ -1,4 +1,4 @@
-import { assertPublishFromOwnLibrary, catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
+import { catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
 import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
@@ -54,13 +54,6 @@ export async function listPublishedSetlists(offset = 0, signal?: AbortSignal): P
 }
 
 export function publicationError(error: unknown): string {
-  if (error instanceof CatalogApiError && error.code === 'LIBRARY_OWNER') {
-    // #253: a local ownership refusal (no request was sent) is not a publication conflict.
-    const b2Unlinked = personalSyncPausedByB2() && /not linked to an account/.test(error.message)
-    return b2Unlinked
-      ? 'This device\'s songbook (new device storage, B2) is not linked to your account, so it cannot be shared. Turn B2 off in Review local recovery, link the songbook in Sync Center, then turn B2 on again. Nothing was published.'
-      : error.message
-  }
   if (error instanceof CatalogApiError) {
     const messages: Record<number, string> = {
       0: 'Connection failed. Retry the same confirmed request to recover its result.',
@@ -100,7 +93,6 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
     client = !!probeToken && await clientSnapshotsSupported(probeToken)
     if (!client) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   }
-  assertPublishFromOwnLibrary()
   const { token, accountId } = publisherSession()
   const local = getLocal()
   if (blocked()) throw new Error('Save your edits and resolve local recovery or cross-tab conflicts before publishing.')
@@ -334,8 +326,6 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   if (link.pending?.method !== 'DELETE' && !isClientIntent(link.pending) && personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
-  // #247: a create/update sends a snapshot of this device's setlist; unpublishing sends none.
-  if (link.pending.method !== 'DELETE') assertPublishFromOwnLibrary()
   // Detach from caller-owned objects before crossing any asynchronous boundary.
   link = JSON.parse(JSON.stringify(link)) as PublicationLink
   const intent = link.pending!
@@ -374,7 +364,6 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   // was prepared for (client-side prevention; the server authorizes only the token it receives).
   const current = publisherSession()
   if (current.accountId !== accountId || current.token !== token) throw new Error('Account or session changed. Reopen and review again.')
-  if (intent.method !== 'DELETE') assertPublishFromOwnLibrary()
   let result: PublicationResult
   try {
     result = await catalogFetch<PublicationResult>(`/api/catalog/setlists${intent.id ? `/${encodeURIComponent(intent.id)}` : ''}`, {
