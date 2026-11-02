@@ -1,5 +1,5 @@
 // #292/#299: manual cloud backup and restore in the Backup & Restore center (shared restore preview).
-const { test } = require('node:test')
+const { test, after } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const ts = require('typescript')
@@ -10,6 +10,13 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 require.extensions['.png'] = module => { module.exports = '/logo.png' }
 const { JSDOM } = require('jsdom')
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://dev.gtar-web.pages.dev' })
+const globalKeys = ['window', 'document', 'localStorage', 'HTMLElement', 'Node', 'IS_REACT_ACT_ENVIRONMENT', 'navigator', 'fetch']
+const originalGlobals = new Map(globalKeys.map(key => [key, Object.getOwnPropertyDescriptor(global, key)]))
+// Always runs, even after a failed assertion: close the JSDOM window and restore globals so no handle stays open.
+after(() => {
+ dom.window.close()
+ for (const [key, descriptor] of originalGlobals) { if (descriptor) Object.defineProperty(global, key, descriptor); else delete global[key] }
+})
 Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true })
 Object.defineProperty(global, 'navigator', { configurable: true, value: dom.window.navigator })
 const React = require('react')
@@ -21,6 +28,7 @@ const {computeSongbookChecksum}=require('../src/utils/cloudSongbookSync.ts')
 const {persistLibrary,readPersistedLibrary}=require('../src/utils/syncJournal.ts')
 const {expectedRestoredLibrary}=require('../src/utils/backupExport.ts')
 const {getRestoreSafetySnapshot}=require('../src/utils/jsonBackup.ts')
+const {STORAGE_KEY:DEBUG_LOG_KEY}=require('../src/utils/logger.ts')
 const song=(id)=>({id,title:id,rawContent:'[C]Hello',artist:'A'})
 const local={songs:[song('11111111-1111-4111-8111-111111111111')],setlists:[]}
 const remote={songs:[song('22222222-2222-4222-8222-222222222222')],setlists:[]}
@@ -38,14 +46,19 @@ async function setup(signedIn=true){
  return {calls,root,signIns:()=>signIns}
 }
 test('opening and device edits make no POST; backup confirms account and verifies unchanged device',async()=>{
- const {calls,root}=await setup();assert.deepEqual(calls,['GET'])
- persistLibrary({...local,songs:[...local.songs,song('33333333-3333-4333-8333-333333333333')]},localStorage)
- window.dispatchEvent(new window.Event('storage'));window.dispatchEvent(new window.Event('focus'))
- assert.deepEqual(calls,['GET'])
- await click('Back up to cloud');assert.match(document.body.textContent,/b@example.com/);assert.match(document.body.textContent,/overwrites/)
- const bytes=JSON.stringify(readPersistedLibrary());const storageBytes=JSON.stringify({...localStorage});await click('Confirm backup')
- assert.deepEqual(calls,['GET','GET','POST','GET']);assert.equal(JSON.stringify(readPersistedLibrary()),bytes);assert.equal(JSON.stringify({...localStorage}),storageBytes)
- await act(async()=>root.unmount())
+ const {calls,root}=await setup()
+ try{
+  assert.deepEqual(calls,['GET'])
+  persistLibrary({...local,songs:[...local.songs,song('33333333-3333-4333-8333-333333333333')]},localStorage)
+  window.dispatchEvent(new window.Event('storage'));window.dispatchEvent(new window.Event('focus'))
+  assert.deepEqual(calls,['GET'])
+  await click('Back up to cloud');assert.match(document.body.textContent,/b@example.com/);assert.match(document.body.textContent,/overwrites/)
+  // Only the debug-log key (logger STORAGE_KEY) may change; every other key stays byte-identical.
+  const withoutDebugLogs=()=>{const all={...localStorage};delete all[DEBUG_LOG_KEY];return JSON.stringify(all)}
+  const bytes=JSON.stringify(readPersistedLibrary());const storageBytes=withoutDebugLogs();await click('Confirm backup')
+  assert.deepEqual(calls,['GET','GET','POST','GET']);assert.equal(JSON.stringify(readPersistedLibrary()),bytes);assert.equal(withoutDebugLogs(),storageBytes)
+  assert.ok(JSON.parse(localStorage.getItem(DEBUG_LOG_KEY)??'[]').some(entry=>entry.tag==='BackupSaved'),'BackupSaved logged')
+ }finally{await act(async()=>root.unmount())}
 })
 for(const mode of ['replace','merge'])test(`restore ${mode}: cancel unchanged; snapshot before apply; no POST`,async()=>{
  const {calls,root}=await setup();const bytes=JSON.stringify(readPersistedLibrary())
