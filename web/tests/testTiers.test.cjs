@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
-const { discover, partition, runFiles } = require('../scripts/run-tests.cjs')
+const { discover, partition, runFiles, shardFiles } = require('../scripts/run-tests.cjs')
 const manifest = require('./tiers.json')
 
 test('every discovered file belongs to exactly one tier; unlisted files default to fast', () => {
@@ -42,4 +42,22 @@ test('runner executes all selected files, reports failures and preserves child e
   assert.ok(messages.some(message => message.includes('tier sentinel failure')))
   assert.equal((await runFiles([files[1]], { report: () => {} })).success, true)
   await assert.rejects(runFiles(files, { concurrency: 0 }), /positive integer/)
+})
+
+
+test('fast CI shards partition all fast files exactly once and reject invalid coordinates', () => {
+  const groups = partition(discover(), manifest)
+  const parts = Array.from({ length: 8 }, (_, index) => shardFiles(groups.fast, `${index}/8`))
+  assert.deepEqual(parts.flat().sort(), groups.fast)
+  assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '0/2'), ['a', 'c', 'e'])
+  assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '1/2'), ['b', 'd'])
+  for (const invalid of ['-1/8', '1/0', '8/8', 'garbage', '1/2/3', '0/9007199254740992']) {
+    assert.throws(() => shardFiles(groups.fast, invalid), /Invalid fast shard/)
+  }
+  const { spawnSync } = require('node:child_process')
+  const result = spawnSync(process.execPath, [path.join(__dirname, '../scripts/run-tests.cjs'), 'all'], {
+    encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: undefined, GTAR_TEST_SHARD: '0/8' },
+  })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /Sharding is only supported for fast/)
 })

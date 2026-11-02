@@ -12,8 +12,13 @@ concurrency:
   group: validate-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  web:
+  fast:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     defaults:
       run:
         working-directory: web
@@ -29,11 +34,38 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - name: Fast PR gate
+        run: npm test -- --timing
+        env:
+          GTAR_TEST_SHARD: ${{ matrix.shard }}/8
+          GTAR_TEST_CONCURRENCY: '2'
+  web:
+    needs: fast
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Require every fast shard
+        working-directory: .
+        run: test "$FAST_RESULT" = "$EXPECTED_RESULT"
+        env:
+          FAST_RESULT: ${{ needs.fast.result }}
+          EXPECTED_RESULT: ${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
       # Controller support tests remain mandatory for every event.
       - run: node --test ../tests/*.test.cjs
-      - name: Fast PR gate
-        if: github.event_name == 'pull_request'
-        run: npm test -- --timing
       - name: Full suite (push and weekly)
         if: github.event_name != 'pull_request'
         run: npm run test:all -- --timing

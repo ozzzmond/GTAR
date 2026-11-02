@@ -27,6 +27,15 @@ function partition(files, manifest) {
   return Object.fromEntries(tiers.map(tier => [tier, files.filter(file => (overrides.get(file) ?? manifest.default) === tier)]))
 }
 
+function shardFiles(files, shard) {
+  const match = /^(\d+)\/([1-9]\d*)$/.exec(shard)
+  const index = Number(match?.[1]), count = Number(match?.[2])
+  if (!match || !Number.isSafeInteger(index) || !Number.isSafeInteger(count) || index >= count) {
+    throw new Error(`Invalid fast shard: ${shard}; expected zero-based index/count`)
+  }
+  return files.filter((_, position) => position % count === index)
+}
+
 // Isolated processes retain each file's globals, hooks and complete test selection.
 // Bound concurrency to avoid launching the whole suite (and its DOMs) at once.
 async function runFiles(files, { concurrency = 4, report = console.log } = {}) {
@@ -63,9 +72,14 @@ async function main(args) {
   const groups = partition(files, JSON.parse(fs.readFileSync(manifestPath, 'utf8')))
   // The human category catalog still covers every file exactly once, regardless of tier.
   require('./test-catalog.cjs').run('--check')
-  const selected = tier === 'all' ? files : groups[tier]
+  let selected = tier === 'all' ? files : groups[tier]
+  const shard = process.env.GTAR_TEST_SHARD
+  if (shard !== undefined) {
+    if (tier !== 'fast') throw new Error('Sharding is only supported for fast; test:all always runs everything')
+    selected = shardFiles(selected, shard)
+  }
   const concurrency = process.env.GTAR_TEST_CONCURRENCY === undefined ? Math.min(4, availableParallelism()) : Number(process.env.GTAR_TEST_CONCURRENCY)
-  console.log(`Test tier ${tier}: ${selected.length}/${files.length} files; concurrency ${concurrency}`)
+  console.log(`Test tier ${tier}: ${selected.length}/${files.length} files${shard === undefined ? '' : `; shard ${shard}`}; concurrency ${concurrency}`)
   const result = await runFiles(selected.map(file => path.join(directory, file)), { concurrency })
   const totals = Object.fromEntries(['tests', 'pass', 'fail', 'skipped'].map(key => [key, result.results.reduce((n, row) => n + row[key], 0)]))
   console.log(`Test tier ${tier}: ${result.success ? 'PASS' : 'FAIL'}; ${result.results.length} files; ${JSON.stringify(totals)}; ${(result.ms / 1000).toFixed(3)} s`)
@@ -77,4 +91,4 @@ async function main(args) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1 })
-module.exports = { tiers, discover, partition, runFiles }
+module.exports = { tiers, discover, partition, runFiles, shardFiles }

@@ -148,5 +148,8 @@ Use these exact terms in code, tests, PRs, and reports:
 - `web/tests/tiers.json` maps non-fast files to one tier; unlisted files default
   to fast. All scripts validate the assignments and the complete test catalog.
   Use `-- --timing` for the 25 slowest files; each run reports file/total time.
+- CI partitions fast across eight required shards (no tests omitted); local
+  `npm test` runs all fast files. `GTAR_TEST_SHARD=0/8` selects one fast shard;
+  this option is rejected by every other tier, including `test:all`.
 - After adding/removing test files, run
   `node web/scripts/test-catalog.cjs --write` from the repo root.
