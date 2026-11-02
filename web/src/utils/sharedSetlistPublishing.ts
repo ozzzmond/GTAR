@@ -1,7 +1,7 @@
-import { assertPublishFromOwnLibrary, catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
+import { catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
-import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudSongbookSync'
+import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
 import { B2_SETLIST_PUBLISH_MESSAGE, personalSyncPausedByB2, readPersistedLibrary } from './syncJournal'
 import type { SyncLibrary } from './syncMerge'
 import { snapshotFromSongbook } from './sharedSetlistSnapshot'
@@ -54,13 +54,6 @@ export async function listPublishedSetlists(offset = 0, signal?: AbortSignal): P
 }
 
 export function publicationError(error: unknown): string {
-  if (error instanceof CatalogApiError && error.code === 'LIBRARY_OWNER') {
-    // #253: a local ownership refusal (no request was sent) is not a publication conflict.
-    const b2Unlinked = personalSyncPausedByB2() && /not linked to an account/.test(error.message)
-    return b2Unlinked
-      ? 'This device\'s songbook (new device storage, B2) is not linked to your account, so it cannot be shared. Turn B2 off in Review local recovery, link the songbook in Sync Center, then turn B2 on again. Nothing was published.'
-      : error.message
-  }
   if (error instanceof CatalogApiError) {
     const messages: Record<number, string> = {
       0: 'Connection failed. Retry the same confirmed request to recover its result.',
@@ -73,7 +66,7 @@ export function publicationError(error: unknown): string {
       413: 'This setlist is too large to share (256 KB limit). Split it or shorten long charts, then review again.',
       422: 'The cloud source contains missing, ambiguous or unsupported songs. Fix it and sync before reviewing again.',
       429: 'Publication quota or rate limit reached. Wait before retrying; retained storage quotas may require operator help.',
-      501: 'This server does not accept device setlists yet. Use Cloud Sync, then review again.',
+      501: 'This server does not accept device setlists yet. Use Backup to cloud, then review again.',
       503: 'Catalog storage is unavailable. Retry the same request later.',
     }
     return messages[error.status] || error.message
@@ -100,7 +93,6 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
     client = !!probeToken && await clientSnapshotsSupported(probeToken)
     if (!client) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   }
-  assertPublishFromOwnLibrary()
   const { token, accountId } = publisherSession()
   const local = getLocal()
   if (blocked()) throw new Error('Save your edits and resolve local recovery or cross-tab conflicts before publishing.')
@@ -127,27 +119,27 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
   assertAccount(accountId, token, true)
   const cloud = response?.cloudRecord
   if (!response?.success || response.userId !== accountId || !cloud || cloud.userId !== accountId || !positive(cloud.version)) {
-    throw new Error('Exact cloud source unavailable. Use Cloud Sync for this account, then retry preview.')
+    throw new Error('Exact cloud source unavailable. Use Backup to cloud for this account, then retry preview.')
   }
   const current = getLocal()
   const latestPersisted = readPersistedLibrary()
   if (blocked() || !latestPersisted || sourceChecksum(current) !== sourceChecksum(latestPersisted) ||
     cloud.checksum !== computeSongbookChecksum(cloud.data) || sourceChecksum(current) !== sourceChecksum(local) ||
     sourceChecksum(current) !== sourceChecksum(cloud.data)) {
-    throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
+    throw new Error('Local and cloud versions differ. Use Backup to cloud for this account, then retry preview. Nothing was published.')
   }
   let snapshot: SetlistSnapshot
   try {
     snapshot = snapshotFromSongbook(cloud.data, sourceId)
   } catch (error) {
     if (error instanceof Error && error.message === 'Missing or ambiguous source setlist') {
-      throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.', { cause: error })
+      throw new Error('Local and cloud versions differ. Use Backup to cloud for this account, then retry preview. Nothing was published.', { cause: error })
     }
     throw error
   }
   if (canonical(snapshotFromSongbook(latestPersisted, sourceId)) !== canonical(snapshot) ||
     canonical(snapshotFromSongbook(current, sourceId)) !== canonical(snapshot)) {
-    throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
+    throw new Error('Local and cloud versions differ. Use Backup to cloud for this account, then retry preview. Nothing was published.')
   }
   return { account: accountId, token, sourceId, version: cloud.version, checksum: sourceChecksum(current), snapshot, mode: 'songbook' }
 }
@@ -334,8 +326,6 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   if (link.pending?.method !== 'DELETE' && !isClientIntent(link.pending) && personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
-  // #247: a create/update sends a snapshot of this device's setlist; unpublishing sends none.
-  if (link.pending.method !== 'DELETE') assertPublishFromOwnLibrary()
   // Detach from caller-owned objects before crossing any asynchronous boundary.
   link = JSON.parse(JSON.stringify(link)) as PublicationLink
   const intent = link.pending!
@@ -374,7 +364,6 @@ export async function sendPublicationIntent(account: string, sourceId: string | 
   // was prepared for (client-side prevention; the server authorizes only the token it receives).
   const current = publisherSession()
   if (current.accountId !== accountId || current.token !== token) throw new Error('Account or session changed. Reopen and review again.')
-  if (intent.method !== 'DELETE') assertPublishFromOwnLibrary()
   let result: PublicationResult
   try {
     result = await catalogFetch<PublicationResult>(`/api/catalog/setlists${intent.id ? `/${encodeURIComponent(intent.id)}` : ''}`, {

@@ -20,7 +20,7 @@ const { DesktopEditor } = require('../src/components/DesktopEditor.tsx')
 const { normalizeTags, matchesSongTags } = require('../src/utils/songTags.ts')
 const { createBackupPayload, parseBackupJson } = require('../src/utils/jsonBackup.ts')
 const { normalizeSongbookIds } = require('../src/utils/songbookFoundation.ts')
-const { songEquals } = require('../src/utils/cloudSongbookSync.ts')
+
 const song = { id: 'multi-1', title: 'Song', artist: 'A', key: 'G', rawContent: '{title: Song}\n{artist: A}\n{key: G}\n{tempo: 120 BPM}\n[G] Lyrics', capo: '', bpm: '120', tags: ' Worship, Acoustic ', format: 'CHORD_PRO', transposeOffset: 0 }
 
 test('normalization: legacy, arrays, empties, ordering, first spelling, no input mutation', () => {
@@ -32,7 +32,6 @@ test('normalization: legacy, arrays, empties, ordering, first spelling, no input
   assert.equal(matchesSongTags(' Folk, Jazz', 'JAZ'), true)
   assert.equal(matchesSongTags(['Folk', 'Jazz'], 'jaz'), true)
   assert.equal(matchesSongTags(null, 'rock'), false)
-  assert.equal(songEquals({...song, tags:'Folk, Jazz'}, {...song, tags:['Jazz', 'folk']}), true)
 })
 
 test('backup round-trip: arrays and legacy; no ID/reference/content mutation or eager migration', () => {

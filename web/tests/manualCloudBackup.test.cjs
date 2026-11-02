@@ -10,7 +10,7 @@ test('signed out makes no cloud requests', async () => {
 })
 test('backup uses confirmed revision and verifies without modifying device', async () => {
  const library = {songs:[],setlists:[]}; const bytes=JSON.stringify(library)
- const {computeSongbookChecksum}=require('../src/utils/cloudSongbookSync.ts')
+ const {computeSongbookChecksum}=require('../src/utils/cloudBackupFormat.ts')
  const checksum=computeSongbookChecksum(library); const calls=[]
  global.fetch=async (_,opts)=>{ calls.push(opts); return new Response(JSON.stringify({success:true,cloudRecord:{version:2,checksum,updatedAt:'2026-11-01',data:library}})) }
  await writeCloudBackup({token:'token',userId:'B'},library,{version:1,checksum:'old'})
@@ -50,7 +50,7 @@ test('each successful file handoff records BackupSaved once without account data
 test('verified cloud backup and restore each record one count-only event', async () => {
  const {appLogger}=require('../src/utils/logger.ts');appLogger.resume();appLogger.clearLogs()
  const {restoreCloudBackup}=require('../src/utils/manualCloudBackup.ts')
- const {computeSongbookChecksum}=require('../src/utils/cloudSongbookSync.ts')
+ const {computeSongbookChecksum}=require('../src/utils/cloudBackupFormat.ts')
  const library={songs:[],setlists:[]};const checksum=computeSongbookChecksum(library)
  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:{version:1,checksum,data:library}}))
  await writeCloudBackup({token:'secret-token',userId:'private@example.com'},library,null)

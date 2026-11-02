@@ -199,7 +199,7 @@ export interface ShadowCleanupPlan {
 
 // Protect bodies referenced anywhere in the current library or retained recovery history.
 // Unknown/malformed JSON fails closed rather than guessing which bodies are disposable.
-/** Same key as cloudSongbookSync.CLOUD_SYNC_BASE_KEY (not imported, to keep sync code out of this chunk). */
+/** Historical sync base: retain body references so cleanup preserves existing recovery data. */
 export const CLOUD_SYNC_BASE_STORAGE_KEY = 'gtar_cloud_sync_base'
 function shadowStorageRaw(storage: Storage): string {
   const sources = recoveryData(storage)

@@ -60,17 +60,14 @@ async function publishWith(link) {
   return api.sendPublicationIntent(preview.account, SOURCE, { ...link, pending: api.makePublicationIntent(link, preview) })
 }
 
-test('root cause A: an unlinked device library is refused locally (409 LIBRARY_OWNER), not a publication conflict; nothing sent', async () => {
-  localStorage.removeItem(OWNER_KEY)
-  const error = await api.preparePublication(SOURCE, getLocal, () => false).then(() => null, e => e)
-  assert.ok(error instanceof CatalogApiError)
-  assert.deepEqual([error.status, error.code], [409, 'LIBRARY_OWNER'])
-  assert.doesNotMatch(api.publicationError(error), /conflict/i, 'actionable ownership message, not a publication conflict')
-  assert.match(api.publicationError(error), /not linked to an account/)
-  localStorage.setItem('gtar_library_b2_enabled', '1')
-  assert.match(api.publicationError(error), /Turn B2 off in Review local recovery, link the songbook in Sync Center/)
-  assert.deepEqual(posts(), [])
-  assert.deepEqual(journalKeys(), [])
+for (const kind of ['unbound', 'mismatch']) test(`device-owned ${kind} library publishes under the active account without changing owner bytes`, async () => {
+  if (kind === 'unbound') localStorage.removeItem(OWNER_KEY)
+  else localStorage.setItem(OWNER_KEY, ' {"v":1,"userId":"other","env":"gtar.test","boundAt":5,"reason":"confirmed"} ')
+  const owner = localStorage.getItem(OWNER_KEY)
+  const published = await publishWith(await api.newPublicationLink('member', SOURCE))
+  assert.equal(published.saved, true)
+  assert.deepEqual(heads().map(h => [h.publisher_user_id, h.current_revision]), [['member', 1]])
+  assert.equal(localStorage.getItem(OWNER_KEY), owner)
 })
 
 test('root cause B: lost journal + existing publication: a deterministic re-create is 409 forever; recovery adopts and updates it', async () => {

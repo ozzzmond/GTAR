@@ -18,7 +18,7 @@ const { resolveSetlistPublicationStatus, SETLIST_STATUS_DESCRIPTORS } = require(
 const { SetlistCloudStatusBadge } = require('../src/components/SetlistCloudStatusBadge.tsx')
 const api = require('../src/utils/sharedSetlistPublishing.ts')
 const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts')
-const { computeSongbookChecksum } = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
 const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
@@ -238,7 +238,7 @@ test('SetlistCloudStatusBadge renders accessible popover without native title to
   assert.equal(button.getAttribute('aria-expanded'), 'false')
 })
 
-test('preparePublication throws actionable Cloud Sync error instead of ambiguous source error when local has unsynced imported setlist', async () => {
+test('preparePublication throws actionable cloud backup error instead of ambiguous source error when local has unsynced imported setlist', async () => {
   cloud = {
     version: 1,
     songs: library.songs,
@@ -252,7 +252,7 @@ test('preparePublication throws actionable Cloud Sync error instead of ambiguous
     (err) => {
       assert.ok(err instanceof Error)
       assert.ok(
-        err.message.includes('Local and cloud versions differ. Use existing Cloud Sync'),
+        err.message.includes('Local and cloud versions differ. Use Backup to cloud'),
         `Unexpected error message: ${err.message}`
       )
       assert.ok(!err.message.includes('Missing or ambiguous source setlist'))

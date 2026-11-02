@@ -1,4 +1,3 @@
-import { personalContentBlockReason } from '../utils/libraryOwner';
 import React, { useState, useEffect } from 'react';
 import { generateQrSvgDataUri } from '../utils/qrCode';
 import { sanitizeSetlistForShare } from '../utils/sharedSetlist';
@@ -67,10 +66,6 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
         if (userStatus !== 'active') {
           throw new Error('Active account approval required to share setlist');
         }
-        // #247: a share snapshot is made only from a library this account owns.
-        const ownerBlock = personalContentBlockReason(session.user?.id);
-        if (ownerBlock) throw new Error(ownerBlock);
-
         const payload: SharedSetlistPayload = sanitizeSetlistForShare(setlist, allSongs);
 
         // Request share token from backend with active session authorization

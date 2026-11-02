@@ -1105,9 +1105,7 @@ export async function upsertUserSongbook(
   dataJson: string,
   checksum: string,
   updatedAt: string,
-  expected: SongbookRevision,
-  /** #208 F2: also require that the user has no per-record cursor, in the same statement. */
-  options: { unlessRecordsActive?: boolean } = {}
+  expected: SongbookRevision
 ): Promise<{ version: number; checksum: string; updated_at: string } | null> {
   // One SQLite statement owns both the revision predicate and increment.
   // RETURNING reports only this write, without a second (racy) read.
@@ -1116,21 +1114,15 @@ export async function upsertUserSongbook(
         typeof expected.checksum !== 'string' || !/^ck_[0-9a-f]{16}$/.test(expected.checksum))) {
     return null
   }
-  const noCursor = 'NOT EXISTS (SELECT 1 FROM user_songbook_cursors WHERE user_id = ?)'
-  const guarded = options.unlessRecordsActive === true
   const statement = expected.version === 0
-    ? guarded
-      ? db.prepare(`INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
-          SELECT ?, 1, ?, ?, ? WHERE ${noCursor} ON CONFLICT(user_id) DO NOTHING
-          RETURNING version, checksum, updated_at`).bind(userId, dataJson, checksum, updatedAt, userId)
-      : db.prepare(`INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
+    ? db.prepare(`INSERT INTO user_songbooks (user_id, version, data_json, checksum, updated_at)
           VALUES (?, 1, ?, ?, ?) ON CONFLICT(user_id) DO NOTHING
           RETURNING version, checksum, updated_at`).bind(userId, dataJson, checksum, updatedAt)
     : db.prepare(`UPDATE user_songbooks SET version = version + 1,
         data_json = ?, checksum = ?, updated_at = ?
-        WHERE user_id = ? AND version = ? AND checksum = ? AND version < 9007199254740991${guarded ? ` AND ${noCursor}` : ''}
+        WHERE user_id = ? AND version = ? AND checksum = ? AND version < 9007199254740991
         RETURNING version, checksum, updated_at`)
-      .bind(dataJson, checksum, updatedAt, userId, expected.version, expected.checksum, ...(guarded ? [userId] : []))
+      .bind(dataJson, checksum, updatedAt, userId, expected.version, expected.checksum)
   return statement.first<{ version: number; checksum: string; updated_at: string }>()
 }
 

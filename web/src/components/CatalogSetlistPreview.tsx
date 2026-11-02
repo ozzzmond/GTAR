@@ -216,7 +216,7 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
         {savedId && (
           <div role="status" className="mt-3 p-3 rounded-lg bg-status-success/10 border border-status-success/30">
             <p className="text-sm font-bold text-status-success">Personal copy saved and verified locally.</p>
-            <p className="text-xs text-app-muted mt-1">Cloud sync is pending; use Cloud Sync and resolve any reported limit or failure.</p>
+            <p className="text-xs text-app-muted mt-1">Use Backup & Restore to keep a backup of your personal copy.</p>
             <button className={`${buttonClass} mt-2`} onClick={() => open(savedId)}>Open Setlist</button>
           </div>
         )}

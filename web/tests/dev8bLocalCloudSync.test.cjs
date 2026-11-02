@@ -27,10 +27,7 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const {
-  performCloudSongbookSync,
-  computeSongbookChecksum,
-} = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const {
   insertUser,
   findUserById,
@@ -39,19 +36,8 @@ const {
   createSessionToken,
   verifySessionToken,
 } = require('../functions/lib/authCore.ts')
-const syncApi = require('../functions/api/songbook/sync.ts')
-const { generateUUID } = require('../src/utils/uuid.ts')
-const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
 
-function createMockStorage(initial = {}) {
-  const store = new Map(Object.entries(initial))
-  return {
-    getItem(k) { return store.has(k) ? store.get(k) : null },
-    setItem(k, v) { store.set(k, String(v)) },
-    removeItem(k) { store.delete(k) },
-    clear() { store.clear() },
-  }
-}
+const { generateUUID } = require('../src/utils/uuid.ts')
 
 // ---------------------------------------------------------------------------
 // 1. API ROUTING GUARD (Vite Middleware)
@@ -98,43 +84,6 @@ test('1: API routing guard intercepts unhandled /api/ requests and responds with
 // ---------------------------------------------------------------------------
 // 2. VITE PROXY 503 ERROR HANDLING IN CLIENT
 // ---------------------------------------------------------------------------
-test('2: Client safeParseJsonResponse handles 503 Service Unavailable JSON from offline Vite proxy without data loss', async () => {
-  const storage = createMockStorage()
-  persistLibrary({
-    songs: [{ id: generateUUID(), title: 'Safe Local Song', rawContent: '[G]Lyrics' }],
-    setlists: [{ id: generateUUID(), name: 'Safe Local Setlist', songs: [] }],
-  }, storage)
-
-  const originalFetch = global.fetch
-  global.fetch = async () => ({
-    ok: false,
-    status: 503,
-    headers: {
-      get: (header) => (header.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null),
-    },
-    text: async () => JSON.stringify({
-      success: false,
-      error: 'Local API backend unavailable. Ensure wrangler pages dev is running on port 8788 (npm run dev:api).',
-    }),
-  })
-
-  try {
-    const result = await performCloudSongbookSync('dummy_token', { storage })
-    assert.equal(result.success, false)
-    assert.equal(result.status, 'OFFLINE')
-    assert.equal(result.actionTaken, 'NONE')
-    assert.match(result.error, /Local API backend unavailable/)
-
-    // Confirm local library is completely intact
-    const preserved = readPersistedLibrary(storage)
-    assert.equal(preserved.songs.length, 1)
-    assert.equal(preserved.songs[0].title, 'Safe Local Song')
-    assert.equal(preserved.setlists.length, 1)
-    assert.equal(preserved.setlists[0].name, 'Safe Local Setlist')
-  } finally {
-    global.fetch = originalFetch
-  }
-})
 
 // ---------------------------------------------------------------------------
 // 3. LOCAL D1 MIGRATION & SCHEMA READINESS

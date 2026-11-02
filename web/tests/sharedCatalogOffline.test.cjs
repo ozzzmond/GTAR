@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const path = require('node:path')
+
 const ts = require('typescript')
 
 // Set up ts transpilation for web utils
@@ -36,12 +36,6 @@ if (typeof globalThis.IDBKeyRange === 'undefined') {
 }
 
 const {
-  listSharedCatalogSongs,
-  getSharedCatalogSong,
-  getAuthenticatedSessionToken,
-} = require('../src/utils/sharedCatalogClient.ts')
-
-const {
   saveSongsToCache,
   getCachedSongs,
   getCachedSongById,
@@ -59,9 +53,7 @@ const {
   cloneSharedCatalogSongToPersonal,
 } = require('../src/utils/sharedCatalogImport.ts')
 
-const {
-  computeSongbookChecksum,
-} = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 
 const {
   generateUUID,

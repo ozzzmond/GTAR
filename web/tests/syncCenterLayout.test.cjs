@@ -16,7 +16,7 @@ const { act } = React
 const { createRoot } = require('react-dom/client')
 const auth = require('../src/utils/authContext.ts')
 const { CloudSyncModal } = require('../src/components/CloudSyncModal.tsx')
-const { computeSongbookChecksum } = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { persistLibrary } = require('../src/utils/syncJournal.ts')
 const library = { songs: [{ id: '11111111-1111-4111-8111-111111111111', title: 'A', rawContent: '[C]Hi', artist: 'A' }], setlists: [] }
 const q = id => document.querySelector(`[data-testid="${id}"]`)

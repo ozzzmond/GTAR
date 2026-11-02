@@ -693,7 +693,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action Icons & User Avatar */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Cloud Sync Button & Health Indicator */}
+          {/* Backup & Restore button */}
           <button type="button" data-testid="header-cloud-sync-button" onClick={() => setShowCloudSyncModal(true)}
             className="relative before:absolute before:content-[''] before:-inset-1.5 p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
             aria-label="Backup & Restore">

@@ -1,7 +1,7 @@
 import { appLogger } from './logger'
 import { ensureRestoreSafetySnapshot, verifyRestoredLibrary } from './backupExport'
 import { parseBackupJson } from './jsonBackup'
-import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudSongbookSync'
+import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
 import type { SyncLibrary } from './syncMerge'
 import { readPersistedLibrary } from './syncJournal'
 export interface BackupAccount { token: string; userId: string; isCurrent?: () => boolean }
