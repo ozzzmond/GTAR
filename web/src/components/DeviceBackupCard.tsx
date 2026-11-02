@@ -1,3 +1,4 @@
+import type { SetlistFolder } from '../types/gtar'
 import { appLogger } from '../utils/logger'
 import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
 import React, { useEffect, useRef, useState } from 'react'
@@ -45,11 +46,12 @@ interface DeviceBackupCardProps {
   onBusyChange?: (busy: boolean) => void
   currentSong?: ActiveSongState
   allSongs: ActiveSongState[]
+  folders?: SetlistFolder[]
   setlists?: WebSetlist[]
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
   onFullRestoreSongs?: (songs: Array<Partial<ActiveSongState>>) => void
-  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
+  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   storage?: Storage
   /** Test seam for the share sheet, file and download APIs. */
   exportEnv?: ExportEnvironment
@@ -66,6 +68,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   onBusyChange,
   allSongs,
   setlists = [],
+  folders,
   onImportAllSongs,
   onFullRestoreSongs,
   onFullRestore,
@@ -93,10 +96,10 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   // Re-check trigger for settings changes (restore in this tab, or another tab via `storage`).
   const [settingsTick, setSettingsTick] = useState(0)
   // Latest library for work done after render.
-  const libraryRef = useRef({ songs: allSongs, setlists })
-  useEffect(() => { libraryRef.current = { songs: allSongs, setlists } }, [allSongs, setlists])
+  const libraryRef = useRef({ songs: allSongs, setlists, folders })
+  useEffect(() => { libraryRef.current = { songs: allSongs, setlists, folders } }, [allSongs, setlists, folders])
   const currentFingerprint = () => {
-    try { return libraryFingerprint(libraryRef.current.songs, libraryRef.current.setlists) } catch { return null }
+    try { return libraryFingerprint(libraryRef.current.songs, libraryRef.current.setlists, libraryRef.current.folders) } catch { return null }
   }
   const refreshSettingsRecovery = () => {
     setSettingsRecovery(inspectSettingsRecovery(targetStorage))
@@ -157,10 +160,10 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   // #251: every export builds the file once and verifies its bytes before handing it out.
   const prepareBackup = (): VerifiedBackup | null => {
     try {
-      return buildVerifiedBackup(allSongs, setlists, isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION)
+      return buildVerifiedBackup(allSongs, setlists, isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION, folders)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      exportRecoveryData({ songs: allSongs, setlists })
+      exportRecoveryData({ songs: allSongs, setlists, folders })
       showFeedback('error', `Backup not created: ${msg}. A raw recovery archive was downloaded with every original entry.`)
       return null
     }
@@ -277,7 +280,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       // #251: every restore (merge or replace) saves a verified safety snapshot before the library changes.
       if (verifiable || replace) {
         try {
-          await ensureRestoreSafetySnapshot({ songs: allSongs, setlists }, targetStorage)
+          await ensureRestoreSafetySnapshot({ songs: allSongs, setlists, folders }, targetStorage)
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err)
           setPendingRestore(null)
@@ -289,21 +292,21 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       if (restoreBlockedRef.current) { setPendingRestore(null); showFeedback('error', RESTORE_BLOCKED_MESSAGE); return }
       if (replace) {
         if (onFullRestore) {
-          await onFullRestore(parsed.songs, parsed.setlists)
+          await onFullRestore(parsed.songs, parsed.setlists, parsed.folders)
         } else if (onFullRestoreSongs) {
           await onFullRestoreSongs(parsed.songs)
         } else {
           onImportAllSongs(parsed.songs)
         }
       } else if (onSmartMerge) {
-        await onSmartMerge(parsed.songs, parsed.setlists)
+        await onSmartMerge(parsed.songs, parsed.setlists, parsed.folders)
       } else {
         onImportAllSongs(parsed.songs)
       }
 
       // #251: success is claimed only after the saved library is read back and matches the backup.
       if (verifiable) {
-        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary({ songs: allSongs, setlists }, { songs: parsed.songs, setlists: parsed.setlists },
+        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary({ songs: allSongs, setlists, folders }, { songs: parsed.songs, setlists: parsed.setlists, folders: parsed.folders },
           replace ? 'replace' : 'merge', targetStorage)]
         if (problems.length) {
           setPendingRestore(null)
@@ -371,10 +374,10 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
         const preview = previewBackupImport(text)
         if (preview.isValid && preview.importAsNew) {
           if (!onSmartMerge) throw new Error('Import as New requires library merge support.')
-          const imported = confirmImportAsNew(preview, { songs: allSongs, setlists }, message => window.confirm(message))
+          const imported = confirmImportAsNew(preview, { songs: allSongs, setlists, folders }, message => window.confirm(message))
           if (imported) {
             if (!imported.isValid) throw new Error(imported.error)
-            await onSmartMerge(imported.songs, imported.setlists)
+            await onSmartMerge(imported.songs, imported.setlists, imported.folders)
             showFeedback('success', `Imported as new: ${imported.songs.length} songs, ${imported.setlists.length} setlists`)
           }
           return

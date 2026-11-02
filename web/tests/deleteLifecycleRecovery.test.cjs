@@ -54,23 +54,23 @@ test('bulk Trash matches sequential Trash including Restore positions', () => {
   assert.deepEqual(restored.setlists,lists)
   validRoundtrip(restored)
 })
-for(const kind of ['permanent','empty']) test(`${kind} removes only actual tombstone IDs from every setlist`,()=>{
+for(const kind of ['permanent','empty']) test(`${kind} keeps shortcuts when physically removing tombstone songs`,()=>{
   const before=transitionSongLibrary(initial(),{kind:'trash',ids:['a','c'],blank})
   const next=transitionSongLibrary(before,{kind,ids:['a','b','missing']})
-  assert.deepEqual(next.setlists[0].songs.map(s=>s.id), kind==='empty'?['b']:['b','c'])
-  assert.deepEqual(next.setlists[1].songs.map(s=>s.id), kind==='empty'?[]:['c'])
+  assert.deepEqual(next.setlists[0].songs, before.setlists[0].songs)
+  assert.deepEqual(next.setlists[1].songs, before.setlists[1].songs)
   assert.equal(next.setlists[1].isDeleted,true)
   assert.equal(next.setlists[0].createdAt,42)
   assert.deepEqual(next.active,before.active)
   validRoundtrip(next)
 })
-test('unknown missing refs survive lifecycle operations and strict validation rejects them',()=>{
+test('missing shortcuts survive lifecycle operations and remain valid stored data',()=>{
   let state=initial();state.setlists[0].songs.push(ref('missing'))
   state=transitionSongLibrary(state,{kind:'trash',ids:['a'],blank})
   for(const op of [{kind:'permanent',ids:['a','missing']},{kind:'empty'}]) {
     const next=transitionSongLibrary(state,op)
     assert.equal(next.setlists[0].songs.at(-1).id,'missing')
-    assert.throws(()=>validateLibrary(complete(next)),/damaged/)
+    assert.doesNotThrow(()=>validateLibrary(complete(next)))
   }
 })
 test('final single and bulk Trash retain valid blank replacement',()=>{
@@ -79,16 +79,17 @@ test('final single and bulk Trash retain valid blank replacement',()=>{
     assert.deepEqual(next.active,[blank]); assert.equal(next.deleted.length,active.length);validRoundtrip(next)
   }
 })
-test('retained tombstone valid; physically absent ID and genuine corruption invalid',()=>{
+test('retained tombstone and broken shortcuts valid; genuine corruption invalid',()=>{
   const library={songs:[{...song('a'),isDeleted:true}],setlists:[lists[1]]}
   library.setlists=[{id:'s',name:'S',songs:[ref('a')]}]
   validateLibrary(library)
-  for(const bad of [{...library,songs:[]},{...library,songs:[null]},{...library,songs:[song('a'),song('a')]}])assert.throws(()=>validateLibrary(bad),/damaged/)
+  validateLibrary({...library,songs:[]})
+  for(const bad of [{...library,songs:[null]},{...library,songs:[song('a'),song('a')]}])assert.throws(()=>validateLibrary(bad),/damaged/)
 })
 test('prewrite rejection and storage failure preserve prior canonical bytes',()=>{
   const store=storage();persistLibrary(complete(initial()),store)
   const raw=store.getItem(LIBRARY_KEY)
-  for(const bad of [{songs:[],setlists:lists},{songs:[null],setlists:[]},{songs:null,setlists:[]}]) {
+  for(const bad of [{songs:[],setlists:[{id:1,name:"Bad",songs:[{id:{},title:"Bad"}]}]},{songs:[null],setlists:[]},{songs:null,setlists:[]}]) {
     assert.throws(()=>persistLibrary(bad,store),/damaged/);assert.equal(store.getItem(LIBRARY_KEY),raw)
   }
   for(const message of ['quota','blocked']) {

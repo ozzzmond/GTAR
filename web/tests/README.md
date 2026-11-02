@@ -251,6 +251,7 @@ New or renamed tests await a human choice of primary category.
 - [editorLeaveSaveFeedback.test.cjs](editorLeaveSaveFeedback.test.cjs)
 - [explorerFullPort.test.cjs](explorerFullPort.test.cjs)
 - [explorerPhase2Layout.test.cjs](explorerPhase2Layout.test.cjs)
+- [foldersTagsShortcuts.test.cjs](foldersTagsShortcuts.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryStore.test.cjs](libraryStore.test.cjs)

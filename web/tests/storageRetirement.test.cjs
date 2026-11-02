@@ -64,7 +64,7 @@ test('uncertain upload retains all sources even with an old retirement marker', 
   assert.equal(performStorageHousekeeping(storage), false)
   assert.deepEqual([...storage.store], before)
 })
-for (const library of [{ songs: [null], setlists: [] }, { songs: [{ id: 'a' }], setlists: [] }, { ...base, setlists: [{id:'x',name:'Set',songs:[{id:'missing',title:'Missing'}]}] }, { songs: [...base.songs, ...base.songs], setlists: [] }]) test('malformed canonical records/references preserve sources', () => {
+for (const library of [{ songs: [null], setlists: [] }, { songs: [{ id: 'a' }], setlists: [] }, { ...base, setlists: [{id:'x',name:'Set',songs:[{id:{},title:'Missing'}]}] }, { songs: [...base.songs, ...base.songs], setlists: [] }]) test('malformed canonical records/references preserve sources', () => {
   const storage = setup({ version: 1, baseline: base })
   storage.setItem(LIBRARY_KEY, JSON.stringify(library))
   const before = [...storage.store]

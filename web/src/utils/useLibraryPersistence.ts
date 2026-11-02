@@ -5,7 +5,7 @@ import { appLogger } from './logger'
  * loading), the unload guard and the canonical persist effect. Behavior is unchanged.
  */
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
-import type { ActiveSongState } from '../types/gtar'
+import type { ActiveSongState, SetlistFolder } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import {
   StaleWriteConflictError, decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
@@ -18,6 +18,8 @@ export interface LibraryPersistenceInput {
   songs: ActiveSongState[]
   deletedSongs: ActiveSongState[]
   setlists: WebSetlist[]
+  folders?: SetlistFolder[]
+  setFolders?: Dispatch<SetStateAction<SetlistFolder[]>>
   setSongs: Dispatch<SetStateAction<ActiveSongState[]>>
   setDeletedSongs: Dispatch<SetStateAction<ActiveSongState[]>>
   setSetlists: Dispatch<SetStateAction<WebSetlist[]>>
@@ -26,7 +28,7 @@ export interface LibraryPersistenceInput {
 }
 
 export function useLibraryPersistence({
-  songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef,
+  songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef,
 }: LibraryPersistenceInput) {
   const persistedBaselineRef = useRef<string | null>(getPersistedLibraryRaw())
   const [crossTabConflict, setCrossTabConflict] = useState<{ remoteRaw: string | null; detectedAt: number } | null>(null)
@@ -35,13 +37,13 @@ export function useLibraryPersistence({
   const getConflictDraft = useCallback(() => {
     const librarySongs = [...songs, ...deletedSongs]
     const editorDraft = editorRecoveryDraftRef.current?.()
-    if (!editorDraft) return { songs: librarySongs, setlists }
+    if (!editorDraft) return { songs: librarySongs, setlists, folders }
     const found = librarySongs.some(song => String(song.id) === String(editorDraft.id))
     return {
       songs: found ? librarySongs.map(song => String(song.id) === String(editorDraft.id) ? editorDraft : song) : [...librarySongs, editorDraft],
-      setlists,
+      setlists, folders,
     }
-  }, [songs, deletedSongs, setlists, editorRecoveryDraftRef])
+  }, [songs, deletedSongs, setlists, folders, editorRecoveryDraftRef])
 
   const lastStorageWarningTimeRef = useRef<number>(0)
 
@@ -80,16 +82,16 @@ export function useLibraryPersistence({
   // arrays, so state made only of adopted arrays has nothing local to save or protect, even when a
   // concurrent render commits an older adoption after the baseline has moved to a newer one.
   const adoptedStateRef = useRef(new WeakMap<object, string>())
-  const isAdoptedState = (state: { songs: object; deletedSongs: object; setlists: object }) =>
-    [state.songs, state.deletedSongs, state.setlists].every(part => adoptedStateRef.current.has(part))
-  const localLibraryRef = useRef<{ songs: ActiveSongState[]; deletedSongs: ActiveSongState[]; setlists: WebSetlist[] } | null>(null)
-  useEffect(() => { localLibraryRef.current = { songs, deletedSongs, setlists } }, [songs, deletedSongs, setlists])
+  const isAdoptedState = (state: { songs: object; deletedSongs: object; setlists: object; folders?: object }) =>
+    [state.songs, state.deletedSongs, state.setlists, ...(state.folders ? [state.folders] : [])].every(part => adoptedStateRef.current.has(part))
+  const localLibraryRef = useRef<{ songs: ActiveSongState[]; deletedSongs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] } | null>(null)
+  useEffect(() => { localLibraryRef.current = { songs, deletedSongs, setlists, folders } }, [songs, deletedSongs, setlists, folders])
 
   // Cross-tab storage conflict protection for the persisted library
   useEffect(() => {
     const cleanup = setupCrossTabLibraryConflictGuard((externalRaw) => {
-      const local = localLibraryRef.current ?? { songs, deletedSongs, setlists }
-      const currentLocal = { songs: [...local.songs, ...local.deletedSongs], setlists: local.setlists }
+      const local = localLibraryRef.current ?? { songs, deletedSongs, setlists, folders }
+      const currentLocal = { songs: [...local.songs, ...local.deletedSongs], setlists: local.setlists, folders: local.folders }
       const baselineRaw = persistedBaselineRef.current
       // Match JSON storage semantics, including omitted optional editor fields.
       let hasLocalChanges = !isAdoptedState(local)
@@ -110,14 +112,16 @@ export function useLibraryPersistence({
         console.info('[Storage] External library update adopted into clean tab.')
         if (externalRaw) {
           const adopt = () => {
-            const parsed = decodeLibraryRevision(externalRaw) as { songs: ActiveSongState[]; setlists: WebSetlist[] }
+            const parsed = decodeLibraryRevision(externalRaw) as { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }
             persistedBaselineRef.current = externalRaw
             const partitioned = partitionSongs(parsed.songs)
-            for (const adopted of [partitioned.active, partitioned.deleted, parsed.setlists]) adoptedStateRef.current.set(adopted, externalRaw)
-            localLibraryRef.current = { songs: partitioned.active, deletedSongs: partitioned.deleted, setlists: parsed.setlists }
+            const adoptedFolders = parsed.folders ?? []
+            for (const adopted of [partitioned.active, partitioned.deleted, parsed.setlists, adoptedFolders]) adoptedStateRef.current.set(adopted, externalRaw)
+            localLibraryRef.current = { songs: partitioned.active, deletedSongs: partitioned.deleted, setlists: parsed.setlists, folders: adoptedFolders }
             setSongs(partitioned.active)
             setDeletedSongs(partitioned.deleted)
             setSetlists(parsed.setlists)
+            setFolders?.(adoptedFolders)
             setToastMessage('Songbook library updated from another tab.')
             setTimeout(() => setToastMessage(null), 4000)
           }
@@ -139,7 +143,7 @@ export function useLibraryPersistence({
       }
     })
     return cleanup
-  }, [songs, deletedSongs, setlists, getConflictDraft, editorRecoveryDraftRef, setSongs, setDeletedSongs, setSetlists, setToastMessage])
+  }, [songs, deletedSongs, setlists, folders, setFolders, getConflictDraft, editorRecoveryDraftRef, setSongs, setDeletedSongs, setSetlists, setToastMessage])
 
   // #300: a save is committed to IndexedDB after it returns; a failed commit (another tab's newer
   // save, quota) is reported here and the edits stay in memory.
@@ -147,34 +151,34 @@ export function useLibraryPersistence({
     const failed = (event: Event) => {
       const error = (event as CustomEvent).detail
       if (error && typeof error === 'object' && (error as { name?: string }).name === 'LibraryStaleWriteError') {
-        handleStorageWriteFailure(new StaleWriteConflictError((error as Error).message, (error as { currentRaw?: string | null }).currentRaw ?? null, { songs: [...songs, ...deletedSongs], setlists }))
+        handleStorageWriteFailure(new StaleWriteConflictError((error as Error).message, (error as { currentRaw?: string | null }).currentRaw ?? null, { songs: [...songs, ...deletedSongs], setlists, folders }))
       } else handleStorageWriteFailure(error)
     }
     window.addEventListener(LIBRARY_WRITE_FAILED_EVENT, failed)
     return () => window.removeEventListener(LIBRARY_WRITE_FAILED_EVENT, failed)
-  }, [songs, deletedSongs, setlists, handleStorageWriteFailure])
+  }, [songs, deletedSongs, setlists, folders, setFolders, handleStorageWriteFailure])
 
   // State-only mutations can outlive a failed save outside the editor.
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (libraryStorePending()) { event.preventDefault(); event.returnValue = ''; return }
-      if (isAdoptedState({ songs, deletedSongs, setlists })) return
+      if (isAdoptedState({ songs, deletedSongs, setlists, folders })) return
       // An unreadable baseline cannot establish durability.
-      if (libraryMatchesRevision({ songs: [...songs, ...deletedSongs], setlists }, persistedBaselineRef.current)) return
+      if (libraryMatchesRevision({ songs: [...songs, ...deletedSongs], setlists, folders }, persistedBaselineRef.current)) return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
-  }, [songs, deletedSongs, setlists])
+  }, [songs, deletedSongs, setlists, folders])
 
   // Persist canonical library on any songs, trash, or setlists change (with quota relief)
   useEffect(() => {
     if (crossTabConflict) {
       return
     }
-    if (isAdoptedState({ songs, deletedSongs, setlists })) return
-    const candidate = { songs: [...songs, ...deletedSongs], setlists }
+    if (isAdoptedState({ songs, deletedSongs, setlists, folders })) return
+    const candidate = { songs: [...songs, ...deletedSongs], setlists, folders }
     if (libraryMatchesRevision(candidate, persistedBaselineRef.current)) return
     try {
       persistLibrary(candidate, localStorage, { expectedRaw: persistedBaselineRef.current })
@@ -184,7 +188,7 @@ export function useLibraryPersistence({
         handleStorageWriteFailure(err)
       }, 0)
     }
-  }, [songs, deletedSongs, setlists, handleStorageWriteFailure, crossTabConflict])
+  }, [songs, deletedSongs, setlists, folders, setFolders, handleStorageWriteFailure, crossTabConflict])
 
   return {
     persistedBaselineRef, crossTabConflict, setCrossTabConflict, conflictRecoverySaved, setConflictRecoverySaved,

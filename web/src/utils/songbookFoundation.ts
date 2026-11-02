@@ -2,7 +2,7 @@ import { normalizeTags } from './songTags'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, SongEntity, WebSetlist } from '../types/gtar'
-import { resolveSetlistSong, bindLegacySetlists } from './setlistSongs'
+import { bindLegacySetlists } from './setlistSongs'
 import { transposeKey, CHORD_TOKEN_REGEX } from './chordTransposer'
 import { extractChordTokensFromLine, isChordLine, isSectionHeader, isTabChartLine } from './songParser'
 import { getTrustworthySongKey, isValidMusicalKey } from './nashvilleNotation'
@@ -82,19 +82,11 @@ export function normalizeSongbookIds(
       if (ref.id !== undefined) {
         const target = normalizedSongs.find((s) => s.id === ref.id)
         if (target) {
-          return { ...ref, id: target.id, title: target.title, artist: target.artist }
+          return { ...ref, id: target.id!, title: target.title, artist: target.artist }
         }
       }
 
-      // Legacy title/artist binding applies only to ID-less references.
-      const resolved = resolveSetlistSong(ref, normalizedSongs)
-      if (resolved && resolved.id) {
-        if (ref.id !== resolved.id) {
-          migrated = true
-        }
-        return { ...ref, id: resolved.id, title: resolved.title, artist: resolved.artist }
-      }
-
+      // The S4 upgrade below binds exact title+artist, then exact title, once.
       return { ...ref }
     })
 
@@ -106,7 +98,7 @@ export function normalizeSongbookIds(
     }
   })
 
-  // Phase 3: Final pass with bindLegacySetlists to ensure title/artist synchronization
+  // Phase 3: non-destructive shortcut upgrade; unmatched entries stay broken.
   const finalSetlists = bindLegacySetlists(normalizedSetlists, normalizedSongs)
 
   return {

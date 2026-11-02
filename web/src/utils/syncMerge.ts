@@ -1,10 +1,11 @@
 import { bindLegacySetlists, ensureSongIds, resolveSetlistSong } from './setlistSongs'
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import type { CloudThemeSettings } from './backupSettings'
 
 export interface SyncLibrary {
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  folders?: SetlistFolder[]
   allowedUsers?: string[]
   themeSettings?: CloudThemeSettings
 }
@@ -18,7 +19,7 @@ function aliases<T extends { id?: string | number }>(groups: T[][]) {
 function unionRefs(a: WebSetlist['songs'], b: WebSetlist['songs']) {
   const seen = new Set<string>()
   return [...a, ...b].filter(ref => {
-    const key = ref.id === undefined ? JSON.stringify([ref.title, ref.artist]) : String(ref.id)
+    const key = ref.entryId ?? (ref.id === undefined ? JSON.stringify([ref.title, ref.artist]) : String(ref.id))
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -51,5 +52,5 @@ function align(libraries: SyncLibrary[]): SyncLibrary[] {
 
 /** Normalize references without collapsing distinct stable IDs within a library. */
 export function deduplicateLibrary(library: SyncLibrary): SyncLibrary {
-  return align([library])[0]
+  return { ...library, ...align([library])[0] }
 }

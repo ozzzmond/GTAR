@@ -1,3 +1,4 @@
+import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { openRecoveryData } from '../utils/recoveryReview'
 import { SyncStatusPill } from './SyncStatusPill'
@@ -100,6 +101,7 @@ interface HeaderProps {
   onOpenSetlistDrawer?: () => void
   isExplorerOpen?: boolean
   shortcutsBlocked?: boolean
+  folders?: SetlistFolder[]
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
   activeSetlistName?: string
@@ -109,8 +111,8 @@ interface HeaderProps {
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
   onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | Promise<boolean>
-  onCloudRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
-  onCloudMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
+  onCloudRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
+  onCloudMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
   /** RFC #188 S6: pause automatic sync (editor open, cross-tab conflict). */
   autoSyncBlocked?: boolean
@@ -245,6 +247,7 @@ export const Header: React.FC<HeaderProps> = ({
   isExplorerOpen = false,
   shortcutsBlocked = false,
   setlists = [],
+  folders,
   onSelectSetlistSong,
   onSelectSetlist,
   onDirectImportOnlineSong,
@@ -1252,7 +1255,7 @@ export const Header: React.FC<HeaderProps> = ({
         }}
       />
       {/* Cloud Songbook Sync Modal */}
-      <CloudSyncModal
+      <CloudSyncModal folders={folders}
         isOpen={showCloudSyncModal}
         onClose={() => setShowCloudSyncModal(false)}
         onSyncApplied={onCloudSyncApplied}

@@ -148,7 +148,7 @@ test('S1_SETLIST: missing or trashed song rows show as unavailable and are disab
   for (const idx of [1, 2]) {
     const row = $(`[data-testid="workspace-entry-${idx}"]`)
     assert.equal(row.getAttribute('aria-disabled'), 'true')
-    assert.match(row.textContent, /Unavailable/)
+    assert.match(row.textContent, /Song missing/)
     assert.equal($(`[data-testid="workspace-entry-play-${idx}"]`).disabled, true)
     assert.equal($(`[data-testid="workspace-entry-open-${idx}"]`).disabled, true)
     await click(row)
@@ -321,4 +321,13 @@ test('S1_TOKENS: workspace uses theme tokens only and 36px minimum touch targets
   const source = workspaceSource()
   assert.doesNotMatch(source, /\b(?:bg|text|border|ring)-(?:purple|amber|red|sky|white|black)\b|\b(?:bg|text|border|ring)-(?:purple|amber|red|sky)-\d|\[#[0-9a-fA-F]{3,8}\]/)
   assert.match(source, /const touch = 'min-h-9 min-w-9'/)
+})
+test('S4_FOLDER: folder scopes and Unfiled filter the existing workspace without losing setlists', async () => {
+  const folders=[{id:'folder',name:'Sunday Services',parentId:null}]
+  const filed=setlists.map((list,i)=>i===0?{...list,folderId:'folder'}:list)
+  await mount(baseProps({folders,setlists:filed,view:{type:'FOLDER',folderId:'folder'}}))
+  assert.match($('[data-testid="setlist-workspace-heading"]').textContent,/Sunday Services.*\(1\)/)
+  assert.deepEqual($$('[data-testid^="workspace-setlist-card-"]').map(card=>card.dataset.testid),['workspace-setlist-card-sl-1'])
+  await act(async()=>root.render(React.createElement(SongbookHomeView,baseProps({folders,setlists:filed,view:{type:'UNFILED_SETLISTS'}}))))
+  assert.deepEqual($$('[data-testid^="workspace-setlist-card-"]').map(card=>card.dataset.testid),['workspace-setlist-card-sl-2','workspace-setlist-card-sl-3'])
 })

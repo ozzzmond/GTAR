@@ -76,33 +76,33 @@ test('EXPLORER_DRAWER_1: hamburger drawer content is the Music Explorer hierarch
     assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-unfiled-setlists"]').textContent, /Unfiled Setlists/)
 
     // No permanent sidebar and no legacy tab switcher in explorer mode.
-    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Rock"]') !== null, true)
+    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-rock"]') !== null, true)
   })
 })
 
 test('EXPLORER_DRAWER_2: tags use canonical multi-tag membership counts and case-insensitive labels', async () => {
   await mount(async () => {
-    const worship = document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Worship"]')
+    const worship = document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-worship"]')
     assert.ok(worship, 'legacy comma string and array tags share the same category')
-    assert.match(worship.textContent, /#Worship/)
+    assert.match(worship.textContent, /#worship/)
     assert.match(worship.textContent, /2/, 'both songs with worship count once each')
-    assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Rock"]').textContent, /1/)
-    assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Acoustic"]').textContent, /1/)
+    assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-rock"]').textContent, /1/)
+    assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-acoustic"]').textContent, /1/)
     // No duplicate Worship entry from the lowercase array spelling.
-    assert.equal(document.querySelector('[role=dialog]').querySelectorAll('[data-testid="explorer-nav-tag-worship"]').length, 0)
+    assert.equal(document.querySelector('[role=dialog]').querySelectorAll('[data-testid="explorer-nav-tag-worship"]').length, 1)
   })
 })
 
 test('EXPLORER_DRAWER_3: selection routes through the supplied handler and quick actions stay wired', async () => {
   await mount(async ({ click, calls }) => {
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-songs"]'))
-    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Worship"]'))
+    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-worship"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-unfiled-setlists"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-shared-catalog"]'))
     assert.deepEqual(calls.select, [
       { type: 'ALL_SONGS' },
-      { type: 'TAG', tag: 'Worship' },
+      { type: 'TAG', tag: 'worship' },
       { type: 'ALL_SETLISTS' },
       { type: 'UNFILED_SETLISTS' },
       { type: 'SHARED_CATALOG' },
@@ -132,7 +132,7 @@ test('EXPLORER_DRAWER_6: Tags are nested under Songbook and master song counts p
     assert.ok(tags, 'Tags subgroup belongs to the Songbook section')
     assert.match(songbook.textContent, /3 master songs/)
     assert.match(tags.textContent, /Tags \(4\)/)
-    assert.ok(tags.contains(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-Worship"]')))
+    assert.ok(tags.contains(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-worship"]')))
     assert.equal(allSongs.tagName, 'BUTTON')
     assert.equal(document.querySelector('[role=dialog]').querySelector('h2'), null, 'Explorer header removed')
     await click(document.querySelector('[role=dialog]').querySelector('[aria-label="Close Music Explorer"]'))

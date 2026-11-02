@@ -1,9 +1,11 @@
+import { bindLegacySetlists } from './utils/setlistSongs'
+import { deleteSetlistFolder, validateFolderParentChange } from './utils/folders'
+import { normalizeTags, songHasTag, renameTagInList, removeTagFromList } from './utils/songTags'
 import { Menu } from 'lucide-react'
 import { RecoveryDataPanel } from './components/RecoveryDataPanel'
 import { SetlistManager } from './components/SetlistManager'
 import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
 import { CatalogImportContext } from './utils/catalogImportContext'
-import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
 import { PublishSetlistModal } from './components/PublishSetlistModal'
 import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
@@ -77,7 +79,7 @@ import { stageCast2Enabled } from './utils/stageCast2Local'
 import { stageCast } from './utils/stageCast'
 import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
-import type { ActiveSongState } from './types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { exportAllDataJson } from './utils/jsonBackup'
 import { isDevEnv } from './utils/env'
@@ -86,14 +88,7 @@ import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHisto
 // The import dialog pulls in ChordSheetJS (~230 KB); load it only when first opened (#85).
 const ImportDialogModal = lazy(() => import('./components/ImportDialogModal').then(m => ({ default: m.ImportDialogModal })))
 
-export interface WebSetlist {
-  catalogSource?: CatalogSetlistLineage
-  id: string | number
-  name: string
-  createdAt?: number
-  isDeleted?: boolean
-  songs: Array<{ title: string; artist?: string; id?: string | number }>
-}
+export type { WebSetlist } from './types/gtar'
 
 function App() {
   const isPresentationRoute =
@@ -256,7 +251,7 @@ function LibraryApp() {
           persistLibrary(savedLibrary)
         } catch { /* storage quota or error */ }
       }
-      return { ...partitionSongs(savedLibrary.songs), setlists: savedLibrary.setlists }
+      return { ...partitionSongs(savedLibrary.songs), setlists: bindLegacySetlists(savedLibrary.setlists, savedLibrary.songs), folders: savedLibrary.folders ?? [] }
     }
     const readSongs = (key: string, fallback: ActiveSongState[]) => {
       try {
@@ -280,7 +275,7 @@ function LibraryApp() {
       performStorageHousekeeping()
     } catch { /* ignore */ }
     const migrated = readPersistedLibrary() ?? repaired
-    return { ...partitionSongs(migrated.songs), setlists: migrated.setlists }
+    return { ...partitionSongs(migrated.songs), setlists: bindLegacySetlists(migrated.setlists, migrated.songs), folders: migrated.folders ?? [] }
   })
 
   // Recover active stage session if valid session existed prior to browser/OS restart
@@ -354,6 +349,7 @@ function LibraryApp() {
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
 
   // Custom Setlists (persisted in localStorage)
+  const [folders, setFolders] = useState<SetlistFolder[]>(initialLibrary.folders)
   const [setlists, setSetlists] = useState<WebSetlist[]>(initialLibrary.setlists)
 
   const editorRecoveryDraftRef = useRef<(() => ActiveSongState | null) | null>(null)
@@ -421,7 +417,7 @@ function LibraryApp() {
   const {
     persistedBaselineRef, crossTabConflict, setCrossTabConflict, conflictRecoverySaved, setConflictRecoverySaved,
     getConflictDraft, handleStorageWriteFailure,
-  } = useLibraryPersistence({ songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef })
+  } = useLibraryPersistence({ songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef })
 
   // #257 F3: a stable array, so the backup dialog re-checks "changed since backup" only when the library really changes.
   const backupDialogSongs = useMemo(() => [...songs, ...deletedSongs], [songs, deletedSongs])
@@ -753,7 +749,7 @@ function LibraryApp() {
     importStateRef, handleSmartMerge, handleImportSong, handleImportAllSongs, handleFullRestore,
     handleImportSingleSetlist, handleImportSharedSetlist,
   } = useLibraryImports({
-    songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
+    songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
     setToastMessage, setActiveSongIndex, setActiveSetlistId, setActiveSetlistSongIndex, setQueueMode, setIncomingSharedSetlist,
   })
 
@@ -960,7 +956,7 @@ function LibraryApp() {
     setIsSetlistDrawerOpen(false)
     setIsSetlistManagerOpen(true)
   })
-  const commitManagedSetlists = (nextSetlists: WebSetlist[], message: string) => {
+  const commitManagedSetlists = (nextSetlists: WebSetlist[], message: string, nextFolders = folders) => {
     if (crossTabConflict) {
       setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
       return false
@@ -968,16 +964,41 @@ function LibraryApp() {
     try {
       const expectedBaseline = persistedBaselineRef.current
       persistLibrary(
-        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        { folders: nextFolders, songs: [...songs, ...deletedSongs], setlists: bindLegacySetlists(nextSetlists, songs) },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
       persistedBaselineRef.current = libraryRevision()
     }
     catch (err) { handleStorageWriteFailure(err); return false }
-    setSetlists(nextSetlists)
+    setSetlists(bindLegacySetlists(nextSetlists, songs))
+    setFolders(nextFolders)
     setToastMessage(message)
     setTimeout(() => setToastMessage(null), 3000)
+    return true
+  }
+  const handleSaveFolder = (folder: SetlistFolder) => {
+    if (!folder.name.trim() || !validateFolderParentChange(folders, folder.id, folder.parentId)) return false
+    const next = folders.some(item => item.id === folder.id) ? folders.map(item => item.id === folder.id ? folder : item) : [...folders, folder]
+    return commitManagedSetlists(setlists, 'Folder saved', next)
+  }
+  const handleDeleteFolder = (id: string) => {
+    const next = deleteSetlistFolder(folders, setlists, id)
+    if (!commitManagedSetlists(next.setlists, 'Folder deleted; setlists moved to Unfiled', next.folders)) return false
+    if (explorerSelection.type === 'FOLDER' && explorerSelection.folderId === id) setExplorerSelection({ type: 'UNFILED_SETLISTS' })
+    return true
+  }
+  const handleChangeTag = (tag: string, renamed?: string) => {
+    if (crossTabConflict) return false
+    if (renamed !== undefined && normalizeTags([renamed]).length !== 1) return false
+    const update = (song: ActiveSongState) => songHasTag(song.tags, tag) ? { ...song, tags: renamed === undefined ? removeTagFromList(song.tags, tag) : renameTagInList(song.tags, tag, renamed) } : song
+    const nextSongs = songs.map(update), nextDeleted = deletedSongs.map(update)
+    try {
+      persistLibrary({ songs: [...nextSongs, ...nextDeleted], setlists, folders }, localStorage, { expectedRaw: persistedBaselineRef.current })
+      persistedBaselineRef.current = libraryRevision()
+    } catch (err) { handleStorageWriteFailure(err); return false }
+    setSongs(nextSongs); setDeletedSongs(nextDeleted)
+    if (explorerSelection.type === 'TAG') setExplorerSelection(renamed === undefined ? { type: 'ALL_SONGS' } : { type: 'TAG', tag: normalizeTags([renamed])[0] })
     return true
   }
   const managedSetlist = (setlistId: string | number) => setlists.find(sl => String(sl.id) === String(setlistId) && !sl.isDeleted)
@@ -1149,7 +1170,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { songs: [...next.active, ...next.deleted], setlists: next.setlists },
+        { folders, songs: [...next.active, ...next.deleted], setlists: next.setlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1283,7 +1304,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        { folders, songs: [...songs, ...deletedSongs], setlists: nextSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1310,7 +1331,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        { folders, songs: [...songs, ...deletedSongs], setlists: nextSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1332,6 +1353,7 @@ function LibraryApp() {
     const created: WebSetlist = {
       id: newId,
       name: newSetlistName,
+      folderId: explorerSelection.type === 'FOLDER' ? explorerSelection.folderId : null,
       createdAt: Date.now(),
       songs: [],
     }
@@ -1432,7 +1454,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists },
+        { folders, songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1440,7 +1462,7 @@ function LibraryApp() {
         persistedBaselineRef.current = libraryRevision()
       }
       if (typeof importStateRef !== 'undefined') {
-        importStateRef.current = { songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists }
+        importStateRef.current = { folders, songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists }
       }
     }
     catch (err) { handleStorageWriteFailure(err); return false }
@@ -1464,7 +1486,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { songs: [...nextSongs, ...deletedSongs], setlists },
+        { folders, songs: [...nextSongs, ...deletedSongs], setlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1498,8 +1520,9 @@ function LibraryApp() {
       id: generateUUID(),
       name: shared.name,
       createdAt: Date.now(),
-      songs: newSongStates.map((ns) => ({
-        id: ns.id,
+      songs: newSongStates.map((ns, position) => ({
+        entryId: generateUUID(), position,
+        id: ns.id!,
         title: ns.title,
         artist: ns.artist,
       })),
@@ -1546,6 +1569,7 @@ function LibraryApp() {
       setSongs(partitioned.active)
       setDeletedSongs(partitioned.deleted)
       setSetlists(reloaded.setlists)
+      setFolders(reloaded.folders ?? [])
       setToastMessage('Loaded latest library; local draft recovery copy verified.')
     } catch {
       setToastMessage('Reload cancelled: recovery copy or latest library could not be verified. Keep this tab open and export your draft.')
@@ -1569,6 +1593,7 @@ function LibraryApp() {
       setSongs(partitioned.active)
       setDeletedSongs(partitioned.deleted)
       setSetlists(candidate.setlists)
+      setFolders(candidate.folders ?? [])
       setCrossTabConflict(null)
       setToastMessage('Storage overwritten with local edits.')
       setTimeout(() => setToastMessage(null), 4000)
@@ -1585,7 +1610,7 @@ function LibraryApp() {
     {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
-    {isSetlistManagerOpen && <SetlistManager
+    {isSetlistManagerOpen && <SetlistManager folders={folders} onSetlistFolderChange={(id, folderId) => { const target = managedSetlist(id); return !!target && commitManagedSetlists(replaceSetlist({ ...target, folderId }), 'Setlist folder saved') }}
       setlists={setlists.filter(sl => !sl.isDeleted)}
       songs={songs}
       selectedSetlistId={setlistManagerId}
@@ -1653,10 +1678,11 @@ function LibraryApp() {
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
           onNewSong={() => navigateSafely(handleNewSong)}
-          activeSection={explorerSelection.type === 'ALL_SETLISTS' || explorerSelection.type === 'UNFILED_SETLISTS' ? 'setlists'
+          activeSection={explorerSelection.type === 'ALL_SETLISTS' || explorerSelection.type === 'UNFILED_SETLISTS' || explorerSelection.type === 'FOLDER' ? 'setlists'
             : explorerSelection.type === 'ALL_SONGS' || explorerSelection.type === 'TAG' ? 'songs' : null}
           onOpenSection={(section) => handleExplorerSelect({ type: section === 'songs' ? 'ALL_SONGS' : 'ALL_SETLISTS' })}
           autoSyncBlocked={activeView === 'editor' || Boolean(crossTabConflict)}
+          folders={folders}
           onCloudRestore={handleFullRestore}
           onCloudMerge={handleSmartMerge}
           onCloudSyncApplied={(updated) => {
@@ -1669,6 +1695,7 @@ function LibraryApp() {
             setSongs(partition.active)
             setDeletedSongs(partition.deleted)
             setSetlists(stored.setlists)
+            setFolders(stored.folders ?? [])
             setToastMessage('Songbook synced with Cloud')
             setTimeout(() => setToastMessage(null), 3500)
           }}
@@ -1725,11 +1752,11 @@ function LibraryApp() {
       {/* Main Workspace: Songbook Library vs Split Desktop Editor vs Trash vs 1:1 Stage View */}
       <div className="flex flex-1 min-h-0">
         <ExplorerNavigation isOpen={isSetlistDrawerOpen} onClose={() => setIsSetlistDrawerOpen(false)}
-          songs={songs} setlists={setlists} currentSelection={explorerSelection} onSelect={handleExplorerSelect}
+          songs={songs} setlists={setlists} folders={folders} onSaveFolder={handleSaveFolder} onDeleteFolder={handleDeleteFolder} onChangeTag={handleChangeTag} currentSelection={explorerSelection} onSelect={handleExplorerSelect}
           onNewSong={() => navigateSafely(handleNewSong)} onNewSetlist={() => navigateSafely(handleNewSetlist)} />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
-          <SongbookHomeView
+          <SongbookHomeView folders={folders}
             songs={songs}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
@@ -1891,7 +1918,7 @@ function LibraryApp() {
           setIsStageSettingsModalOpen(false)
           setIsThemeModalOpen(true)
         }}
-        onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
+        onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists, folders)}
         onOpenBackupRestoreModal={() => {
           setIsStageSettingsModalOpen(false)
           openBackupCenter()

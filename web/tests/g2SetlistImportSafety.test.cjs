@@ -135,7 +135,7 @@ test('Smart Merge repeated tombstones and active records are idempotent without 
   assert.equal(first.songs.length, 2)
 })
 
-test('ordered legacy references preserve playback/export; unsupported or ambiguous references reject', () => {
+test('ordered legacy references preserve playback/export; malformed references reject; missing shortcuts remain and title-only matches upgrade', () => {
   const second = normalizeBackupSong({ ...song, id: 2, title: 'Second', rawContent: 'Second chart' })
   const parsed = parse({ songs: [song, second], setlists: [{ ...list, songs: [
     { title: second.title, artist: second.artist, position: 0 }, { title: song.title, position: 1 }, { id: song.id, title: song.title, position: 2 },
@@ -144,10 +144,12 @@ test('ordered legacy references preserve playback/export; unsupported or ambiguo
   assert.deepEqual(parsed.setlists[0].songs.map(ref => resolveSetlistSong(ref, parsed.songs).rawContent), ['Second chart', song.rawContent, song.rawContent])
   const exported = createSingleSetlistPayload(parsed.setlists[0], parsed.songs)
   assert.deepEqual(parse(exported).setlists[0].songs.map(ref => ref.id), [2, song.id, song.id])
-  for (const ref of ['Song', { songId: song.id }, { id: 'missing', title: song.title }]) {
+  for (const ref of ['Song', { songId: song.id }]) {
     assert.equal(parse({ songs: [song], setlists: [{ ...list, songs: [ref] }] }).isValid, false)
   }
-  assert.equal(parse({ songs: [song, { ...song, id: 'other' }], setlists: [{ ...list, songs: [{ title: song.title }] }] }).isValid, false)
+  const upgraded = parse({ songs: [song, { ...song, id: 'other' }], setlists: [{ ...list, songs: [{ title: song.title }, {id:'missing',title:song.title}] }] })
+  assert.equal(upgraded.isValid, true, upgraded.error)
+  assert.deepEqual(upgraded.setlists[0].songs.map(ref => ref.id), [song.id, 'missing'])
 })
 
 test('stale cross-tab merge rejects while retaining recovery snapshots and archive bytes', () => {

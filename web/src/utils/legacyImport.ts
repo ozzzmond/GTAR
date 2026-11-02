@@ -1,4 +1,4 @@
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { parseBackupJson, type BackupParseOptions, type ParsedBackupResult } from './jsonBackup'
 import { generateUUID } from './uuid'
@@ -23,19 +23,19 @@ export function previewBackupImport(raw: string, options: BackupParseOptions = {
     while ([...used].some(id => id.startsWith(prefix))) prefix += ':'
     records.forEach((record, index) => { if (record && !('id' in record)) record.id = `${prefix}${index}` })
     // Resolve legacy display references only inside this backup, never against
-    // the device library. Ambiguous or dangling references still fail closed.
+    // the device library. Unmatched references remain broken shortcuts after the upgrade.
     const parsed = parseBackupJson(JSON.stringify(data))
     return parsed.isValid ? { ...parsed, importAsNew: true } : parsed
   } catch { return strict }
 }
 
 /** Explicit confirmation is required on every attempt, including retries. */
-export function confirmImportAsNew(preview: ImportPreview, existing: { songs: ActiveSongState[]; setlists: WebSetlist[] }, confirm: (message: string) => boolean): ParsedBackupResult | null {
+export function confirmImportAsNew(preview: ImportPreview, existing: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }, confirm: (message: string) => boolean): ParsedBackupResult | null {
   if (!preview.isValid || !preview.importAsNew) throw new Error('A valid legacy import preview is required.')
-  if (!confirm(`Import as New: ${preview.songs.length} songs and ${preview.setlists.length} setlists? All imported records receive fresh IDs. Unique title/artist references are bound only within this backup. Existing songs, setlists, trash and settings stay unchanged. Importing again creates another copy and requires confirmation.`)) return null
+  if (!confirm(`Import as New: ${preview.songs.length} songs and ${preview.setlists.length} setlists? All imported records receive fresh IDs. Title/artist references are bound only within this backup; missing songs stay as broken shortcuts. Existing songs, setlists, trash and settings stay unchanged. Importing again creates another copy and requires confirmation.`)) return null
   assertImportIds(existing.songs, 'Existing songs')
   assertImportIds(existing.setlists, 'Existing setlists')
-  const used = new Set([...existing.songs, ...existing.setlists, ...preview.songs, ...preview.setlists].map(record => canonicalImportId(record.id)))
+  const used = new Set([...existing.songs, ...existing.setlists, ...(existing.folders ?? []), ...preview.songs, ...preview.setlists, ...(preview.folders ?? [])].map(record => canonicalImportId(record.id)))
   const fresh = () => {
     const id = generateUUID()
     if (used.has(canonicalImportId(id))) throw new Error('Generated canonical ID collision; import aborted. Retry explicitly.')
@@ -44,11 +44,12 @@ export function confirmImportAsNew(preview: ImportPreview, existing: { songs: Ac
   }
   const ids = new Map(preview.songs.map(song => [canonicalImportId(song.id), fresh()]))
   const songs = preview.songs.map(song => ({ ...song, id: ids.get(canonicalImportId(song.id))! }))
-  const setlists = preview.setlists.map(list => ({ ...list, id: fresh(), songs: list.songs.map(ref => {
-    const id = ids.get(canonicalImportId(ref.id))
-    if (!id) throw new Error('Unresolved legacy reference; import aborted.')
-    return { ...ref, id }
+  const folderIds = new Map((preview.folders ?? []).map(folder => [folder.id, fresh()]))
+  const folders = preview.folders?.map(folder => ({ ...folder, id: folderIds.get(folder.id)!, parentId: folder.parentId ? folderIds.get(folder.parentId) ?? null : null }))
+  const setlists = preview.setlists.map(list => ({ ...list, id: fresh(), ...(list.folderId ? { folderId: folderIds.get(list.folderId) ?? null } : {}), songs: list.songs.map((ref, position) => {
+    const id = ids.get(canonicalImportId(ref.id)) ?? fresh()
+    return { ...ref, id, entryId: fresh(), position }
   }) }))
   // Import as New is always additive and never restores device/account settings.
-  return parseBackupJson(JSON.stringify({ songs, setlists }))
+  return parseBackupJson(JSON.stringify({ songs, setlists, ...(folders ? { folders } : {}) }))
 }

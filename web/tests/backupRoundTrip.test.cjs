@@ -25,12 +25,12 @@ test('transpose accepts only safe integers within -11..11, including embedded so
   for (const offset of [-11, 0, 11]) assert.equal(parse({ songs: [{ ...song, transposeOffset: offset }] }).isValid, true)
 })
 
-test('replacement rejects orphans and authoritative missing IDs; merge accepts existing IDs', () => {
+test('replacement and merge retain missing IDs as broken shortcuts; duplicate song IDs reject', () => {
   const payload = { songs: [], setlists: [setlist] }
-  assert.equal(parse(payload).isValid, false)
+  assert.equal(parse(payload).isValid, true)
   assert.equal(parse(payload, { mode: 'merge', existingSongs: [song] }).isValid, true)
-  assert.equal(parse(payload, { mode: 'merge', existingSongs: [] }).isValid, false)
-  assert.equal(parse({ songs: [song], setlists: [{ ...setlist, songs: [{ ...setlist.songs[0], id: 'missing' }] }] }).isValid, false)
+  assert.equal(parse(payload, { mode: 'merge', existingSongs: [] }).isValid, true)
+  assert.equal(parse({ songs: [song], setlists: [{ ...setlist, songs: [{ ...setlist.songs[0], id: 'missing' }] }] }).isValid, true)
   assert.equal(parse({ songs: [], setlists: [] }).isValid, true)
   assert.equal(parse({ songs: [song, song] }).isValid, false)
 })

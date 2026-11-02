@@ -48,7 +48,7 @@ function library(n, setlistCount = 300) {
   const live = songs.filter(song => !song.isDeleted)
   const setlists = Array.from({ length: setlistCount }, (_, i) => ({
     id: `set-${i}`, name: `Setlist ${i}`, createdAt: 1_700_000_000_000 + i, ...(i % 30 === 29 ? { isDeleted: true } : {}),
-    songs: live.slice((i * 17) % Math.max(1, live.length - 12), (i * 17) % Math.max(1, live.length - 12) + 12).map(s => ({ id: s.id, title: s.title, artist: s.artist })),
+    songs: live.slice((i * 17) % Math.max(1, live.length - 12), (i * 17) % Math.max(1, live.length - 12) + 12).map((s, position) => ({ id: s.id, title: s.title, artist: s.artist, entryId: `entry:set-${i}:${position}`, position })),
   }))
   return { songs, setlists }
 }

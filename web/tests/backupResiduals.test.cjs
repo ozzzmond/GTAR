@@ -45,7 +45,7 @@ test('independent IDs never claim same-name slots', () => {
   assert.throws(() => mergeBackupLibrary([a], [a, a], []), /canonical ID collision/)
 })
 
-test('full backup rejects unresolved references and preserves originals until songs are restored', () => {
+test('full backup retains broken shortcuts and preserves originals until songs are restored', () => {
   const previousStorage = global.localStorage
   global.localStorage = { getItem: () => null }
   try {
@@ -57,7 +57,9 @@ test('full backup rejects unresolved references and preserves originals until so
       { id: 'empty-gig', name: 'Empty Gig', songs: [gone] },
     ]
     const before = JSON.stringify(setlists)
-    assert.throws(() => createBackupPayload([a, trashed], setlists), /Backup blocked.*permanently-deleted/)
+    const broken = createBackupPayload([a, trashed], setlists)
+    assert.equal(parseBackupJson(JSON.stringify(broken)).isValid, true)
+    assert.equal(broken.setlists[0].songs[1].id, 'permanently-deleted')
     assert.equal(JSON.stringify(setlists), before)
     const recovered = { ...gone, rawContent: 'Recovered chart' }
     const exported = createBackupPayload([a, trashed, recovered], setlists)

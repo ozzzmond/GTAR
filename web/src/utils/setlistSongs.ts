@@ -1,12 +1,12 @@
 import { assertSongLifecycle } from './importIdentity'
 import { generateUUID } from './uuid'
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, LegacySetlistSongRef } from '../types/gtar'
 
 export type SongReference = WebSetlist['songs'][number]
 export const songIdentity = (song: { title: string; artist?: string }) =>
   JSON.stringify([song.title.trim().toLowerCase(), (song.artist ?? '').trim().toLowerCase()])
 
-export function resolveSetlistSong(ref: SongReference, songs: ActiveSongState[]): ActiveSongState | undefined {
+export function resolveSetlistSong(ref: LegacySetlistSongRef, songs: ActiveSongState[]): ActiveSongState | undefined {
   if (ref.id !== undefined) return songs.find(song => song.id !== undefined && String(song.id) === String(ref.id))
   const matches = songs.filter(song => song.title.trim().toLowerCase() === ref.title.trim().toLowerCase() &&
     (!ref.artist?.trim() || song.artist.trim().toLowerCase() === ref.artist.trim().toLowerCase()))
@@ -21,16 +21,31 @@ export function songIdIndex(songs: ActiveSongState[]): Map<string, ActiveSongSta
 }
 
 /** Same result as resolveSetlistSong, with O(1) ID lookups; legacy title refs fall back to the scan. */
-export function resolveSetlistSongIndexed(ref: SongReference, songs: ActiveSongState[], index: Map<string, ActiveSongState>): ActiveSongState | undefined {
+export function resolveSetlistSongIndexed(ref: LegacySetlistSongRef, songs: ActiveSongState[], index: Map<string, ActiveSongState>): ActiveSongState | undefined {
   return ref.id !== undefined ? index.get(String(ref.id)) : resolveSetlistSong(ref, songs)
 }
 
 /** Run at library load/import; saved IDs remain authoritative after edits. */
-export function bindLegacySetlists(setlists: WebSetlist[], songs: ActiveSongState[]): WebSetlist[] {
-  return setlists.map(setlist => ({ ...setlist, songs: setlist.songs.map(ref => {
-    const song = resolveSetlistSong(ref, songs)
-    return song ? { ...ref, id: song.id, title: song.title, artist: song.artist } : ref
-  }) }))
+export function bindLegacySetlists(setlists: Array<Omit<WebSetlist, 'songs'> & { songs: LegacySetlistSongRef[] }>, songs: ActiveSongState[]): WebSetlist[] {
+  const byId = songIdIndex(songs)
+  const byTitle = new Map<string, ActiveSongState>(), byTitleArtist = new Map<string, ActiveSongState>()
+  for (const song of songs) {
+    if (!byTitle.has(song.title)) byTitle.set(song.title, song)
+    const identity = JSON.stringify([song.title, song.artist])
+    if (!byTitleArtist.has(identity)) byTitleArtist.set(identity, song)
+  }
+  return setlists.map(setlist => {
+    const used = new Set<string>()
+    return { ...setlist, songs: setlist.songs.map((ref, position) => {
+      // Stable deterministic IDs also make legacy backup fingerprints repeatable.
+      let entryId = ref.entryId || `entry:${setlist.id}:${position}`
+      while (used.has(entryId)) entryId += ':duplicate'
+      used.add(entryId)
+      const song = ref.id !== undefined ? byId.get(String(ref.id)) :
+        byTitleArtist.get(JSON.stringify([ref.title, ref.artist ?? ''])) ?? byTitle.get(ref.title)
+      return { ...ref, id: song?.id ?? ref.id ?? `missing:${entryId}`, entryId, position }
+    }) }
+  })
 }
 
 export function validateSetlistReferences(setlists: WebSetlist[], songs: ActiveSongState[]): string[] {
@@ -92,8 +107,6 @@ export function mergeBackupLibrary(existing: ActiveSongState[], incoming: Active
   })
   const rebound = setlists.map(setlist => ({ ...setlist, songs: setlist.songs.map(ref =>
     ref.id !== undefined && remapped.has(String(ref.id)) ? { ...ref, id: remapped.get(String(ref.id)) } : ref) }))
-  const errors = validateSetlistReferences(rebound, songs)
-  if (errors.length) throw new Error(errors.join('\n'))
   return { songs, setlists: bindLegacySetlists(rebound, songs) }
 }
 
@@ -104,10 +117,10 @@ export function isSongInSetlist(setlist: WebSetlist, songId: string | number): b
 
 export function setSongMembership(setlist: WebSetlist, song: ActiveSongState, included: boolean): WebSetlist {
   if (song.id === undefined) throw new Error('Setlist membership requires a stable song ID.')
-  const matches = (ref: SongReference) => ref.id !== undefined && String(ref.id) === String(song.id)
-  if (!included) return { ...setlist, songs: setlist.songs.filter(ref => !matches(ref)) }
+  const matches = (ref: LegacySetlistSongRef) => ref.id !== undefined && String(ref.id) === String(song.id)
+  if (!included) return { ...setlist, songs: setlist.songs.filter(ref => !matches(ref)).map((ref, position) => ({ ...ref, position })) }
   if (isSongInSetlist(setlist, song.id)) return setlist
-  return { ...setlist, songs: [...setlist.songs, { id: song.id, title: song.title, artist: song.artist }] }
+  return { ...setlist, songs: [...setlist.songs, { id: song.id, entryId: generateUUID(), position: setlist.songs.length, title: song.title, artist: song.artist }] }
 }
 
 export interface SongLifecycleState {
@@ -121,7 +134,7 @@ export type SongLifecycleOperation =
   | { kind: 'restore' | 'permanent'; ids: Array<string | number> }
   | { kind: 'empty' }
 
-/** Pure complete-state transition. Only physically removed tombstone IDs prune membership. */
+/** Pure complete-state transition. Song removal retains broken shortcuts for context. */
 export function transitionSongLibrary(state: SongLifecycleState, operation: SongLifecycleOperation): SongLifecycleState {
   const ids = new Set(operation.kind === 'empty' ? state.deleted.map(song => String(song.id)) : operation.ids.map(String))
   const selected = (song: ActiveSongState) => song.id !== undefined && ids.has(String(song.id))
@@ -137,10 +150,7 @@ export function transitionSongLibrary(state: SongLifecycleState, operation: Song
   if (operation.kind === 'restore') return { ...state,
     active: [...moved.map(song => ({ ...song, isDeleted: false })), ...state.active],
     deleted: state.deleted.filter(song => !selected(song)) }
-  const removed = new Set(moved.map(song => String(song.id)))
-  return { ...state, deleted: state.deleted.filter(song => !selected(song)),
-    setlists: state.setlists.map(list => ({ ...list,
-      songs: list.songs.filter(ref => ref.id === undefined || !removed.has(String(ref.id))) })) }
+  return { ...state, deleted: state.deleted.filter(song => !selected(song)) }
 }
 
 /** #149: point setlist refs from `from` ids to kept songs. Refuses targets that are not active songs. */
@@ -160,7 +170,7 @@ export function repointSetlists(setlists: WebSetlist[], repoint: Record<string, 
       const target = index.get(moves.get(String(ref.id))!)!
       if (present.has(String(target.id))) continue
       present.add(String(target.id))
-      songs.push({ id: target.id, title: target.title, artist: target.artist })
+      songs.push({ ...ref, id: target.id!, title: target.title, artist: target.artist })
     }
     return { ...list, songs }
   })

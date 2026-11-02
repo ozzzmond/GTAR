@@ -56,8 +56,8 @@ test('setlist content and ordering diverge even when every ID exists', () => {
   archive('download:1', { ...original, setlists: [{ ...list, songs: [...list.songs].reverse() }] })
   assert.equal(inspectRecovery().divergentVersions, 1); assert.equal(hasActionableRecovery(), true)
 })
-test('malformed, damaged, dangling and ambiguous raw envelopes remain invalid and cannot be resolved', async () => {
-  for (const value of [{ raw: '{' }, { raw: JSON.stringify(original), local: original }, { raw: JSON.stringify({ songs: [], setlists: [{ id: 'bad', name: 'Bad', songs: [{ id: 'absent', title: 'Absent' }] }] }) }, null, []]) {
+test('malformed, damaged and ambiguous raw envelopes remain invalid and cannot be resolved', async () => {
+  for (const value of [{ raw: '{' }, { raw: JSON.stringify(original), local: original }, { raw: JSON.stringify({ songs: [], setlists: [{ id: 'bad', name: 'Bad', songs: [{ id: {}, title: 'Absent' }] }] }) }, null, []]) {
     archive('replacement:1', value)
     const before = bytes()
     assert.equal(inspectRecovery().invalid, true); assert.equal(hasActionableRecovery(), true)
@@ -286,7 +286,7 @@ test('readback mismatch preserves concurrent decisions without rollback or a suc
 
 // #240: an older build saved Replace snapshots whose cloud half had a setlist listing deleted songs.
 test('#240: a snapshot with a valid device copy and an invalid cloud copy is reviewable; the cloud copy is reported, kept and not used', async () => {
-  const dangling = { songs: [song('current')], setlists: [{ id: 'list', name: 'Set', songs: [{ id: 'gone', title: 'Gone' }] }] }
+  const dangling = { songs: [song('current')], setlists: [{ id: 'list', name: 'Set', songs: [{ id: {}, title: 'Gone' }] }] }
   archive('download:1792983944459:a', { local: original, remote: dangling })
   const before = bytes()
   const review = inspectRecovery()
@@ -300,13 +300,13 @@ test('#240: a snapshot with a valid device copy and an invalid cloud copy is rev
 })
 
 test('#240: a device copy that is not a valid library still makes the archive invalid', () => {
-  archive('download:2', { local: { songs: [song('x')], setlists: [{ id: 'l', name: 'S', songs: [{ id: 'gone', title: 'Gone' }] }] }, remote: original })
+  archive('download:2', { local: { songs: [song('x')], setlists: [{ id: 'l', name: 'S', songs: [{ id: {}, title: 'Gone' }] }] }, remote: original })
   assert.equal(inspectRecovery().invalid, true)
   assert.equal(hasActionableRecovery(), true)
 })
 
 test('#240: with the cloud copy unreadable, a differing device copy is actionable and Choose current library can resolve it', async () => {
-  const dangling = { songs: [], setlists: [{ id: 'list', name: 'Set', songs: [{ id: 'gone', title: 'Gone' }] }] }
+  const dangling = { songs: [], setlists: [{ id: 'list', name: 'Set', songs: [{ id: {}, title: 'Gone' }] }] }
   archive('download:3', { local: { songs: [song('current', { rawContent: 'older' })], setlists: [] }, remote: dangling })
   const review = inspectRecovery()
   assert.equal(review.invalid, false)
@@ -317,7 +317,7 @@ test('#240: with the cloud copy unreadable, a differing device copy is actionabl
 })
 
 test('#240 P1-F2: archived cloud records of a conflict choice are differences with their revision', async () => {
-  const cloudSetlist = { id: 'list', name: 'Set', songs: [{ id: 'current', title: 'Same title' }, { id: 'gone', title: 'Gone' }] }
+  const cloudSetlist = { id: 'list', name: 'Set', songs: [{ id: 'current', title: 'Same title' }, { id: {}, title: 'Gone' }] }
   archive('records:1:a', { local: original, remoteRecords: [{ kind: 'setlist', id: 'list', rev: 4, removed: false, checksum: 'x', data: cloudSetlist }, null] })
   const before = bytes()
   const source = inspectRecovery().sources.find(s => s.key.startsWith('gtar_sync_recovery:records:'))

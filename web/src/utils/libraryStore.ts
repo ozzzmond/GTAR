@@ -4,7 +4,7 @@
  * (per-account partitions).
  *
  * Database `gtar_library_db`, forward-only versions. Stores: `songs` and `setlists` (one record per
- * stable ID, `{ id: String(id), data }`), `folders` (empty, ready for S4), `snapshots` (safety
+ * stable ID, `{ id: String(id), data }`), `folders` (S4 records), `snapshots` (safety
  * snapshots, last 5 / 50 MB) and `meta` (head: revision token, record order, top-level fields;
  * migration receipt).
  *
@@ -16,6 +16,7 @@
  *
  * No syncJournal import here, so syncJournal can depend on this module.
  */
+import type { SetlistFolder } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
 
 export const LIBRARY_DB_NAME = 'gtar_library_db'
@@ -34,7 +35,7 @@ type Song = SyncLibrary['songs'][number]
 type Setlist = SyncLibrary['setlists'][number]
 type Extra = Record<string, unknown>
 interface RecordRow<T> { id: string; data: T }
-interface HeadRecord { key: 'head'; schemaVersion: number; rev: number; token: string; songOrder: string[]; setlistOrder: string[]; extra: Extra; updatedAt: number }
+interface HeadRecord { key: 'head'; schemaVersion: number; rev: number; token: string; songOrder: string[]; setlistOrder: string[]; folderOrder?: string[]; extra: Extra; updatedAt: number }
 export interface MigrationReceipt { key: 'migration'; schemaVersion: number; source: string; songs: number; setlists: number; at: number; ms: number }
 export interface SafetySnapshot { id: string; at: number; reason: string; bytes: number; songs: number; setlists: number; raw: string }
 export type SafetySnapshotInfo = Omit<SafetySnapshot, 'raw'>
@@ -93,7 +94,7 @@ export function openLibraryDatabase(factory: IDBFactory): Promise<IDBDatabase> {
 }
 
 // In-memory state of this tab.
-interface Mirror { token: string | null; songs: Map<string, string>; setlists: Map<string, string>; songOrder: string[]; setlistOrder: string[]; extra: string }
+interface Mirror { token: string | null; songs: Map<string, string>; setlists: Map<string, string>; folders: Map<string, string>; songOrder: string[]; setlistOrder: string[]; folderOrder?: string[]; extra: string }
 interface State {
   db: IDBDatabase | null
   readOnly: boolean
@@ -114,11 +115,11 @@ let state: State | null = null
 let channel: BroadcastChannel | null = null
 const jsonCache = new WeakMap<object, string>()
 const json = (value: object) => { let s = jsonCache.get(value); if (s === undefined) { s = JSON.stringify(value); jsonCache.set(value, s) } return s }
-const emptyMirror = (): Mirror => ({ token: null, songs: new Map(), setlists: new Map(), songOrder: [], setlistOrder: [], extra: '{}' })
+const emptyMirror = (): Mirror => ({ token: null, songs: new Map(), setlists: new Map(), folders: new Map(), songOrder: [], setlistOrder: [], extra: '{}' })
 
 function extraOf(library: SyncLibrary): Extra {
-  const { songs: _s, setlists: _l, ...rest } = library as SyncLibrary & Extra
-  void _s; void _l
+  const { songs: _s, setlists: _l, folders: _f, ...rest } = library as SyncLibrary & Extra
+  void _s; void _l; void _f
   return JSON.parse(JSON.stringify(rest)) as Extra
 }
 function mirrorOf(token: string | null, library: SyncLibrary): Mirror {
@@ -126,6 +127,8 @@ function mirrorOf(token: string | null, library: SyncLibrary): Mirror {
     token,
     songs: new Map(library.songs.map(song => [String(song.id), json(song)])),
     setlists: new Map(library.setlists.map(list => [String(list.id), json(list)])),
+    folders: new Map((library.folders ?? []).map(folder => [folder.id, json(folder)])),
+    ...(library.folders ? { folderOrder: library.folders.map(folder => folder.id) } : {}),
     songOrder: library.songs.map(song => String(song.id)),
     setlistOrder: library.setlists.map(list => String(list.id)),
     extra: JSON.stringify(extraOf(library)),
@@ -223,18 +226,19 @@ export function flushLibraryStore(): Promise<void> {
 }
 
 async function commit(db: IDBDatabase, from: Mirror, to: Mirror, library: SyncLibrary, base: { token: string | null; any: boolean; full: boolean }): Promise<void> {
-  const tx = db.transaction([SONGS, SETLISTS, META], 'readwrite')
+  const tx = db.transaction([SONGS, SETLISTS, FOLDERS, META], 'readwrite')
   let conflict: LibraryStaleWriteError | null = null
   const finished = done(tx, () => conflict ?? undefined)
-  const songs = tx.objectStore(SONGS), setlists = tx.objectStore(SETLISTS), meta = tx.objectStore(META)
+  const songs = tx.objectStore(SONGS), setlists = tx.objectStore(SETLISTS), folders = tx.objectStore(FOLDERS), meta = tx.objectStore(META)
   const headRequest = meta.get('head')
   headRequest.onsuccess = () => {
     const stored = (headRequest.result as HeadRecord | undefined)?.token ?? null
     if (!base.any && stored !== base.token) { conflict = new LibraryStaleWriteError(stored); tx.abort(); return }
     if (base.full) {
-      songs.clear(); setlists.clear()
+      songs.clear(); setlists.clear(); folders.clear()
       for (const song of library.songs) songs.put({ id: String(song.id), data: song } satisfies RecordRow<Song>)
       for (const list of library.setlists) setlists.put({ id: String(list.id), data: list } satisfies RecordRow<Setlist>)
+      for (const folder of library.folders ?? []) folders.put({ id: folder.id, data: folder })
     } else {
       const bySong = new Map(library.songs.map(song => [String(song.id), song]))
       for (const [id, text] of to.songs) if (from.songs.get(id) !== text) songs.put({ id, data: bySong.get(id)! })
@@ -243,20 +247,26 @@ async function commit(db: IDBDatabase, from: Mirror, to: Mirror, library: SyncLi
       for (const [id, text] of to.setlists) if (from.setlists.get(id) !== text) setlists.put({ id, data: byList.get(id)! })
       for (const id of from.setlists.keys()) if (!to.setlists.has(id)) setlists.delete(id)
     }
+    const byFolder = new Map((library.folders ?? []).map(folder => [folder.id, folder]))
+    if (!base.full) {
+      for (const [id, text] of to.folders) if (from.folders.get(id) !== text) folders.put({ id, data: byFolder.get(id)! })
+      for (const id of from.folders.keys()) if (!to.folders.has(id)) folders.delete(id)
+    }
     meta.put({
       key: 'head', schemaVersion: LIBRARY_SCHEMA_VERSION, rev: tokenRev(to.token), token: to.token!,
-      songOrder: to.songOrder, setlistOrder: to.setlistOrder, extra: JSON.parse(to.extra) as Extra, updatedAt: Date.now(),
+      songOrder: to.songOrder, setlistOrder: to.setlistOrder, ...(to.folderOrder ? { folderOrder: to.folderOrder } : {}), extra: JSON.parse(to.extra) as Extra, updatedAt: Date.now(),
     } satisfies HeadRecord)
   }
   await finished
 }
 
 async function readAll(db: IDBDatabase): Promise<{ head: HeadRecord | null; receipt: MigrationReceipt | null; library: SyncLibrary }> {
-  const tx = db.transaction([SONGS, SETLISTS, META], 'readonly')
+  const tx = db.transaction([SONGS, SETLISTS, FOLDERS, META], 'readonly')
   const finished = done(tx)
-  const [songRows, setlistRows, head, receipt] = await Promise.all([
+  const [songRows, setlistRows, folderRows, head, receipt] = await Promise.all([
     request(tx.objectStore(SONGS).getAll()) as Promise<RecordRow<Song>[]>,
     request(tx.objectStore(SETLISTS).getAll()) as Promise<RecordRow<Setlist>[]>,
+    request(tx.objectStore(FOLDERS).getAll()) as Promise<RecordRow<SetlistFolder>[]>,
     request(tx.objectStore(META).get('head')) as Promise<HeadRecord | undefined>,
     request(tx.objectStore(META).get('migration')) as Promise<MigrationReceipt | undefined>,
   ])
@@ -268,7 +278,8 @@ async function readAll(db: IDBDatabase): Promise<{ head: HeadRecord | null; rece
     if (list.length !== records.size || new Set(list).size !== list.length || !list.every(id => records.has(id))) throw new Error(`Stored ${label} order does not match the stored records`)
     return list.map(id => records.get(id)!)
   }
-  const library = { ...(head?.extra ?? {}), songs: order(head?.songOrder, songs, 'song'), setlists: order(head?.setlistOrder, setlists, 'setlist') } as SyncLibrary
+  const library = { ...(head?.extra ?? {}), songs: order(head?.songOrder, songs, 'song'), setlists: order(head?.setlistOrder, setlists, 'setlist'),
+    ...(head?.folderOrder || folderRows.length ? { folders: order(head?.folderOrder, new Map(folderRows.map(row => [row.id, row.data])), 'folder') } : {}) } as SyncLibrary
   return { head: head ?? null, receipt: receipt ?? null, library }
 }
 
@@ -387,6 +398,7 @@ function verifyCopy(source: SyncLibrary, copy: SyncLibrary): void {
   }
   check('song', source.songs, copy.songs)
   check('setlist', source.setlists, copy.setlists)
+  check('folder', source.folders ?? [], copy.folders ?? [])
   if (recordText(extraOf(source)) !== recordText(extraOf(copy))) throw new Error('library fields differ')
 }
 
@@ -419,14 +431,14 @@ export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<Libra
     const library = source ? JSON.parse(JSON.stringify(source.library)) as SyncLibrary : null
     if (library) deps.validate(library)
     step('snapshot')
-    if (library && library.songs.length + library.setlists.length > 0) await takeSafetySnapshot('before-migration', library, db)
+    if (library && library.songs.length + library.setlists.length + (library.folders?.length ?? 0) > 0) await takeSafetySnapshot('before-migration', library, db)
     step('write')
     const token = library ? makeToken(1) : null
     let migratedHere = false
     {
-      const tx = db.transaction([SONGS, SETLISTS, META], 'readwrite')
+      const tx = db.transaction([SONGS, SETLISTS, FOLDERS, META], 'readwrite')
       const finished = done(tx)
-      const songs = tx.objectStore(SONGS), setlists = tx.objectStore(SETLISTS), meta = tx.objectStore(META)
+      const songs = tx.objectStore(SONGS), setlists = tx.objectStore(SETLISTS), folders = tx.objectStore(FOLDERS), meta = tx.objectStore(META)
       const receiptRequest = meta.get('migration')
       receiptRequest.onsuccess = () => {
         // #300 review: another tab may have completed the migration between our first read and this
@@ -434,12 +446,13 @@ export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<Libra
         // adopt the committed library below instead of replacing them with the older source.
         if (receiptRequest.result) return
         migratedHere = true
-        songs.clear(); setlists.clear(); meta.delete('head')
+        songs.clear(); setlists.clear(); folders.clear(); meta.delete('head')
         if (library && token) {
           for (const song of library.songs) songs.put({ id: String(song.id), data: song })
           for (const list of library.setlists) setlists.put({ id: String(list.id), data: list })
+          for (const folder of library.folders ?? []) folders.put({ id: folder.id, data: folder })
           const mirror = mirrorOf(token, library)
-          meta.put({ key: 'head', schemaVersion: LIBRARY_SCHEMA_VERSION, rev: 1, token, songOrder: mirror.songOrder, setlistOrder: mirror.setlistOrder, extra: extraOf(library), updatedAt: Date.now() } satisfies HeadRecord)
+          meta.put({ key: 'head', schemaVersion: LIBRARY_SCHEMA_VERSION, rev: 1, token, songOrder: mirror.songOrder, setlistOrder: mirror.setlistOrder, ...(mirror.folderOrder ? { folderOrder: mirror.folderOrder } : {}), extra: extraOf(library), updatedAt: Date.now() } satisfies HeadRecord)
         }
       }
       await finished
@@ -455,7 +468,7 @@ export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<Libra
     step('verify')
     const copy = await readAll(db)
     if (library) verifyCopy(library, copy.library)
-    else if (copy.library.songs.length || copy.library.setlists.length) throw new Error('Empty migration left records behind')
+    else if (copy.library.songs.length || copy.library.setlists.length || copy.library.folders?.length) throw new Error('Empty migration left records behind')
     step('receipt')
     const receipt: MigrationReceipt = { key: 'migration', schemaVersion: LIBRARY_SCHEMA_VERSION, source: source?.key ?? 'empty', songs: library?.songs.length ?? 0, setlists: library?.setlists.length ?? 0, at: Date.now(), ms: Date.now() - started }
     {

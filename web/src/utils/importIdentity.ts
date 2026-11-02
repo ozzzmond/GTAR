@@ -27,7 +27,7 @@ export function mergeImportedSetlists(existing: WebSetlist[], incoming: WebSetli
     if (String(previous.id) !== String(list.id)) throw new Error(`Setlist canonical ID collision (${list.id}); resolve whitespace aliases explicitly.`)
     if (!!previous.isDeleted !== !!list.isDeleted) throw new Error(`Setlist lifecycle conflict (${list.id}); resolve explicitly. Original records and tombstones retained.`)
     // Without a shared base, neither a timestamp nor arrival order proves a revision safe.
-    const revision = (value: WebSetlist) => JSON.stringify([value.name, value.songs.map(ref => [ref.id === undefined ? null : canonicalImportId(ref.id), ref.title, ref.artist ?? ''])])
+    const revision = (value: WebSetlist) => JSON.stringify([value.name, value.folderId ?? null, value.songs.map((ref, position) => [ref.id === undefined ? null : canonicalImportId(ref.id), ref.entryId ?? `entry:${value.id}:${position}`, position, ref.title, ref.artist ?? ''])])
     if (revision(previous) !== revision(list)) throw new Error(`Setlist revision conflict (${list.id}); resolve explicitly. Original record retained.`)
   }
   return result

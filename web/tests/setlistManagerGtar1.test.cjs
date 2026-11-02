@@ -261,7 +261,7 @@ test('MANAGER_LAYOUT: header bar, name + Rename, Delete, Play in Stage, picker b
   const rows = $$('[data-testid^="setlist-manager-entry-"]').filter(el => /entry-\d+$/.test(el.dataset.testid))
   assert.equal(rows.length, 3)
   assert.match(rows[0].textContent, /^1.*Hallelujah.*Leonard Cohen/)
-  assert.match(rows[1].textContent, /Unavailable/)
+  assert.match(rows[1].textContent, /Song missing/)
   assert.match(rows[2].textContent, /Hotel California/)
   for (const b of $$('[role="dialog"] button')) assert.match(b.className, /min-h-11|w-11 h-11/, `44px target: ${b.textContent || b.getAttribute('aria-label')}`)
 })
