@@ -27,7 +27,6 @@ const React = require('react')
 const { renderToString } = require('react-dom/server')
 const { JSDOM } = require('jsdom')
 global.localStorage = new JSDOM('', {url:'https://gtar.test'}).window.localStorage
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { SongbookHomeView: SongbookView } = require('../src/components/SongbookHomeView.tsx')
 const { AuthContext } = require('../src/utils/authContext.ts')
 const SongbookHomeView = props => React.createElement(AuthContext.Provider, {value:{session:{user:{id:'layout-user'}},accessStatus:'active',role:'USER'}}, React.createElement(SongbookView,props))
@@ -60,77 +59,6 @@ const sampleSetlists = [
     songs: [{ id: 'song-1', title: 'Hotel California', artist: 'Eagles' }],
   },
 ]
-
-// 1. SONGBOOK SIDE PANEL COMPACT ACTIONS & REDUNDANT GREEN CHECK REMOVAL
-test('DEV5C_QA_1_2: Side-panel cards render compact metadata status icon and compact Add to Setlist button, removing text badges and redundant check', () => {
-  const songs = [sampleCompleteSong, sampleIncompleteSong]
-
-  const html = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs,
-      activeSongIndex: 0, // song-1 is active
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      onNewSong: () => {},
-      setlists: sampleSetlists,
-    })
-  )
-
-  // 1. Metadata status: rendered as compact icon state with role and accessible label
-  assert.ok(html.includes('data-testid="drawer-song-metadata-status-0"'), 'Drawer renders metadata status container for song 0')
-  assert.ok(html.includes('aria-label="Metadata OK"'), 'Complete song has aria-label="Metadata OK"')
-  assert.ok(html.includes('aria-label="Needs Metadata"'), 'Incomplete song has aria-label="Needs Metadata"')
-
-  // Crucial: verbose text badges MUST NOT be in drawer cards
-  assert.ok(!html.includes('<span>Metadata OK</span>'), 'Must NOT render textual "Metadata OK" badge span')
-  assert.ok(!html.includes('<span>Needs Metadata</span>'), 'Must NOT render textual "Needs Metadata" badge span')
-
-  // 2. Add to Setlist: rendered as compact icon button with accessible label
-  assert.ok(html.includes('data-testid="drawer-song-add-to-setlist-0"'), 'Drawer renders add-to-setlist button for song 0')
-  assert.ok(html.includes('aria-label="Add to Setlist"'), 'Add to setlist button has aria-label="Add to Setlist"')
-  assert.ok(!html.includes('<span>Add to Setlist</span>'), 'Must NOT render textual "Add to Setlist" label span')
-
-  // 3. Redundant green check removal:
-  // Active song has the playing pulse icon, but NOT a redundant standalone green check action
-  const drawerSource = readSource(path.join(webDir, 'src/components/SetlistDrawer.tsx'))
-  assert.ok(
-    !drawerSource.includes('{isActive && (\n                      <CheckCircle2 className="w-3.5 h-3.5 text-status-success shrink-0" />\n                    )}'),
-    'Redundant green circled-check icon indicator must be removed from Songbook drawer cards'
-  )
-})
-
-// 2. MAIN PAGE SIDEPANEL ENTRY CONTROLS (UNIFIED CANONICAL HEADER BUTTON)
-test('DEV5C_QA_3: Canonical hamburger button in Header replaces redundant section-header hamburger buttons', () => {
-  const html = renderToString(
-    React.createElement(SongbookHomeView, {
-      songs: [sampleCompleteSong],
-      activeSongIndex: 0,
-      onSelectSong: () => {},
-      onNewSong: () => {},
-      onOpenSetlists: () => {},
-      onOpenSongbook: () => {},
-      onDeleteSong: () => {},
-      setlists: sampleSetlists,
-      onSongMembershipChange: () => {},
-      onCreateSetlistForSong: () => {},
-    })
-  )
-
-  // 1. Redundant section entry controls are removed from SongbookHomeView
-  assert.ok(!html.includes('data-testid="open-setlists-panel-btn"'), 'Gig Setlists redundant open-setlists-panel-btn removed')
-  assert.ok(!html.includes('data-testid="open-songbook-panel-btn"'), 'Songs Library redundant open-songbook-panel-btn removed')
-
-  // 2. Existing bulk Songs Library "Manage" button remains present beside filters
-  assert.ok(html.includes('data-testid="toggle-song-selection-mode"'), 'Bulk Songs Library Manage button preserved')
-  assert.ok(html.includes('>Manage<'), 'Bulk Manage button retains text label Manage')
-
-  // 3. Header source verifies canonical Side Panel hamburger button
-  const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-  assert.ok(headerSource.includes('testId="canonical-sidepanel-toggle-btn"'), 'Header renders canonical sidepanel button')
-  assert.ok(headerSource.includes('label="Side Panel"'), 'Canonical button has label Side Panel')
-})
 
 // 3. MAIN SONGS LIBRARY CARDS METADATA STATUS ICON
 test('DEV5C_QA_4: Main Songs Library cards render compact canonical metadata status icons', () => {
@@ -187,14 +115,4 @@ test('DEV5C_QA_5: Main Gig Setlists toolbar Share Setlist button is a compact QR
   assert.ok(html.includes('data-testid="main-share-setlist-btn"'), 'Main share setlist button preserved')
   assert.ok(html.includes('aria-label="Share Setlist"'), 'Share setlist button has aria-label="Share Setlist"')
   assert.ok(!html.includes('<span>Share Setlist</span>'), 'Main toolbar share setlist button must NOT render text span')
-})
-
-// 5. DRAWER INITIAL TAB WIRE-UP IN APP.TSX
-test('DEV5C_QA_APP_WIRING: App.tsx wires onOpenSetlists to setlists mode, onOpenSongbook to songbook mode, and passes initialTab', () => {
-  const appSource = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
-
-  assert.ok(appSource.includes("drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')"), 'App.tsx defines drawerInitialTab state')
-  assert.ok(appSource.includes("setDrawerInitialTab('setlists')"), 'onOpenSetlists sets initialTab to setlists')
-  assert.ok(appSource.includes("setDrawerInitialTab('songbook')"), 'onOpenSongbook sets initialTab to songbook')
-  assert.ok(appSource.includes('initialTab={drawerInitialTab}'), 'SetlistDrawer receives initialTab')
 })

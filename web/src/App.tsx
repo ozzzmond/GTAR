@@ -1,3 +1,4 @@
+import { Menu } from 'lucide-react'
 import { RecoveryDataPanel } from './components/RecoveryDataPanel'
 import { SetlistManager } from './components/SetlistManager'
 import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
@@ -58,12 +59,10 @@ import { StagePresentationView } from './components/StagePresentationView'
 import { SongbookHomeView } from './components/SongbookHomeView'
 import { TrashView } from './components/TrashView'
 import { KeyPickerModal } from './components/KeyPickerModal'
-import { SetlistDrawer } from './components/SetlistDrawer'
+import { ExplorerNavigation } from './components/ExplorerNavigation'
 import type { ExplorerTarget } from './components/MusicExplorerNav'
 import { getStoredSessionStatus } from './utils/googleAuth'
 import { useOptionalGoogleAuth } from './utils/authContext'
-import { EdgeSwipePanelCoordinator } from './components/EdgeSwipePanelCoordinator'
-import { EDGE_SWIPE_STORAGE_KEY } from './utils/edgeSwipe'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
 import type { SharedSetlistPayload } from './utils/sharedSetlist'
@@ -421,13 +420,6 @@ function LibraryApp() {
     } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
     return false
   })
-  const [isEdgeSwipePanelEnabled, setIsEdgeSwipePanelEnabled] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(EDGE_SWIPE_STORAGE_KEY)
-      if (saved !== null) return JSON.parse(saved)
-    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
-    return false
-  })
 
   useEffect(() => {
     const reloadSettings = () => {
@@ -439,10 +431,6 @@ function LibraryApp() {
       setCustomThemeColors(hydrated.standalone)
       if (settings.stageSettings?.fontStyle !== undefined) setFontStyle(settings.stageSettings.fontStyle)
       if (settings.stageSettings?.isTwoColumn !== undefined) setIsTwoColumn(settings.stageSettings.isTwoColumn)
-      try {
-        const savedSwipe = localStorage.getItem(EDGE_SWIPE_STORAGE_KEY)
-        if (savedSwipe !== null) setIsEdgeSwipePanelEnabled(JSON.parse(savedSwipe))
-      } catch { /* Best-effort */ }
     }
     window.addEventListener(SETTINGS_CHANGED, reloadSettings)
     return () => window.removeEventListener(SETTINGS_CHANGED, reloadSettings)
@@ -483,13 +471,6 @@ function LibraryApp() {
       localStorage.setItem(SETTINGS_KEYS.isTwoColumn, JSON.stringify(isTwoColumn))
     } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
   }, [isTwoColumn])
-
-  // Save edge swipe panel state to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(EDGE_SWIPE_STORAGE_KEY, JSON.stringify(isEdgeSwipePanelEnabled))
-    } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
-  }, [isEdgeSwipePanelEnabled])
 
   // Apply theme to document.body and persist
   useEffect(() => {
@@ -551,10 +532,6 @@ function LibraryApp() {
   })
 
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = modals.setlistDrawer
-  const [drawerInitialTab, setDrawerInitialTab] = useState<'songbook' | 'setlists'>('setlists')
-  // Music Explorer: the canonical hamburger opens the drawer in 'explorer' mode; the
-  // Stage quick-pick and in-app setlist entries keep the original browsable 'library' mode.
-  const [drawerMode, setDrawerMode] = useState<'library' | 'explorer'>('library')
   const [explorerSelection, setExplorerSelection] = useState<ExplorerTarget>({ type: 'ALL_SONGS' })
   // Canonical Songbook workspace navigation (shared with the in-page tabs and filters).
   const [songbookTab, setSongbookTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>('my_songs')
@@ -989,50 +966,6 @@ function LibraryApp() {
     setQueueMode('setlist')
   }
 
-  // Reorder song in a setlist
-  const handleReorderSetlistSong = (
-    setlistId: string | number,
-    songIndex: number,
-    moveUp: boolean
-  ) => {
-    setSetlists((prev) =>
-      prev.map((sl) => {
-        if (sl.id !== setlistId) return sl
-        const targetIndex = moveUp ? songIndex - 1 : songIndex + 1
-        if (targetIndex < 0 || targetIndex >= sl.songs.length) return sl
-        const updatedSongs = [...sl.songs]
-        const [moved] = updatedSongs.splice(songIndex, 1)
-        updatedSongs.splice(targetIndex, 0, moved)
-        return { ...sl, songs: updatedSongs }
-      })
-    )
-    if (activeSetlistId === setlistId) {
-      if (activeSetlistSongIndex === songIndex) {
-        setActiveSetlistSongIndex(moveUp ? songIndex - 1 : songIndex + 1)
-      } else if (activeSetlistSongIndex === (moveUp ? songIndex - 1 : songIndex + 1)) {
-        setActiveSetlistSongIndex(songIndex)
-      }
-    }
-  }
-
-  // Remove song from a setlist
-  const handleRemoveSetlistSong = (setlistId: string | number, songIndex: number) => {
-    setSetlists((prev) =>
-      prev.map((sl) => {
-        if (sl.id !== setlistId) return sl
-        return {
-          ...sl,
-          songs: sl.songs.filter((_, idx) => idx !== songIndex),
-        }
-      })
-    )
-    if (activeSetlistId === setlistId) {
-      if (activeSetlistSongIndex >= songIndex && activeSetlistSongIndex > 0) {
-        setActiveSetlistSongIndex(activeSetlistSongIndex - 1)
-      }
-    }
-  }
-
   // Delete setlist (tombstone for cloud sync propagation)
   const handleDeleteSetlist = (setlistId: string | number) => {
     setSetlists((prev) =>
@@ -1067,12 +1000,7 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  // Manage setlist: #312 S2 Setlist Manager in DEV; PROD keeps the slide-over drawer.
-  const handleManageSetlist = (setlist: WebSetlist) => {
-    if (isDevEnv) { openSetlistManager(setlist); return }
-    setActiveSetlistId(setlist.id)
-    setIsSetlistDrawerOpen(true)
-  }
+  const handleManageSetlist = (setlist: WebSetlist) => openSetlistManager(setlist)
 
   // #312 S2 (DEV): GTAR1 Setlist Manager. Each change is one guarded write (stale-write guard);
   // a handler returns false and reports the failure when nothing was saved.
@@ -1166,7 +1094,6 @@ function LibraryApp() {
   // Music Explorer navigation: route into existing GTAR handlers and close the drawer.
   const handleExplorerSelect = (target: ExplorerTarget) => {
     setExplorerSelection(target)
-    setDrawerMode('library')
     setIsSetlistDrawerOpen(false)
     if (target.type === 'ALL_SONGS') {
       navigateSafely(() => {
@@ -1735,7 +1662,7 @@ function LibraryApp() {
     {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
-    {isDevEnv && isSetlistManagerOpen && <SetlistManager
+    {isSetlistManagerOpen && <SetlistManager
       setlists={setlists.filter(sl => !sl.isDeleted)}
       songs={songs}
       selectedSetlistId={setlistManagerId}
@@ -1785,7 +1712,9 @@ function LibraryApp() {
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}
           onOverlayChange={setIsHeaderOverlayOpen}
-          onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode(isDevEnv ? 'explorer' : 'library'); setIsSetlistDrawerOpen(true) })}
+          onOpenSetlistDrawer={() => navigateSafely(() => { setIsSetlistDrawerOpen(true) })}
+          isExplorerOpen={isSetlistDrawerOpen}
+          shortcutsBlocked={isSetlistDrawerOpen || isSetlistManagerOpen || isImportModalOpen || isStageSettingsModalOpen || isStageToolsModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
           activeSetlistName={activeSetlist?.name}
@@ -1861,8 +1790,18 @@ function LibraryApp() {
         </aside>
       )}
 
+      {isStagePerformanceMode && <button type="button" aria-label="Open Music Explorer"
+        onClick={() => setIsSetlistDrawerOpen(true)}
+        className="lg:hidden fixed top-2 left-2 z-40 flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-app-toolbar text-app-text border border-app-border">
+        <Menu className="h-5 w-5" />
+      </button>}
       {/* Main Workspace: Songbook Library vs Split Desktop Editor vs Trash vs 1:1 Stage View */}
-      <main className="flex-1 flex overflow-hidden">
+      <div className="flex flex-1 min-h-0">
+        <ExplorerNavigation isOpen={isSetlistDrawerOpen} onClose={() => setIsSetlistDrawerOpen(false)}
+          songs={songs} setlists={setlists} currentSelection={explorerSelection} onSelect={handleExplorerSelect}
+          onNewSong={() => navigateSafely(handleNewSong)} onNewSetlist={() => navigateSafely(handleNewSetlist)}
+          onOpenSources={() => navigateSafely(() => setIsWebsiteUrlModalOpen(true))} />
+      <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
           <SongbookHomeView
             songs={songs}
@@ -1877,23 +1816,10 @@ function LibraryApp() {
             onCreateSetlistForSong={handleCreateSetlistForSong}
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}
-            onOpenSetlists={() => {
-              navigateSafely(() => {
-                setDrawerMode('library')
-                setDrawerInitialTab('setlists')
-                setIsSetlistDrawerOpen(true)
-              })
-            }}
-            onOpenSongbook={() => {
-              navigateSafely(() => {
-                setActiveSetlistId(null)
-                setDrawerMode('library')
-                setDrawerInitialTab('songbook')
-                setIsSetlistDrawerOpen(true)
-              })
-            }}
+            onOpenSetlists={() => handleExplorerSelect({ type: 'ALL_SETLISTS' })}
+            onOpenSongbook={() => handleExplorerSelect({ type: 'ALL_SONGS' })}
             onManageSetlist={handleManageSetlist}
-            onOpenSetlistManager={isDevEnv ? openSetlistManager : undefined}
+            onOpenSetlistManager={openSetlistManager}
             onDeleteSong={handleDeleteSong}
             onDeleteSetlist={handleDeleteSetlist}
             onRenameSetlist={handleRenameSetlist}
@@ -1965,7 +1891,7 @@ function LibraryApp() {
               activeSetlistName={activeSetlist?.name}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
-              onOpenSetlistDrawer={() => navigateSafely(() => { setDrawerMode('library'); setIsSetlistDrawerOpen(true) })}
+              onOpenSetlistDrawer={() => navigateSafely(() => { setIsSetlistDrawerOpen(true) })}
               isSetlistDrawerOpen={isSetlistDrawerOpen}
               isStageSettingsModalOpen={isStageSettingsModalOpen}
               isAnyModalOpen={
@@ -1994,63 +1920,7 @@ function LibraryApp() {
           </StageErrorBoundary>
         )}
       </main>
-
-      {/* Slide-over Setlist / Library Drawer with Opt-in Edge Swipe Coordination */}
-      <EdgeSwipePanelCoordinator
-        enabled={isEdgeSwipePanelEnabled}
-        isOpen={isSetlistDrawerOpen}
-        onOpen={() => setIsSetlistDrawerOpen(true)}
-        onClose={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false) }}
-      >
-        {({ drawerStyle, backdropStyle, drawerTouchHandlers }) => (
-          <SetlistDrawer
-            isOpen={isSetlistDrawerOpen}
-            confirmedCatalogIds={confirmedCatalogIds}
-            freshCatalogIds={freshCatalogIds}
-            initialTab={drawerInitialTab}
-            mode={drawerMode}
-            explorerSelection={explorerSelection}
-            onExplorerSelect={handleExplorerSelect}
-            onOpenSources={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false); setIsWebsiteUrlModalOpen(true) }}
-            drawerStyle={drawerStyle}
-            backdropStyle={backdropStyle}
-            drawerTouchHandlers={drawerTouchHandlers}
-            onClose={() => { setDrawerMode('library'); setIsSetlistDrawerOpen(false) }}
-            songs={songs}
-            activeSongIndex={activeSongIndex}
-            onSelectSongIndex={(idx) => {
-              navigateSafely(() => {
-                handleSelectLibrarySong(idx)
-                setActiveView('stage')
-                setIsSetlistDrawerOpen(false)
-              })
-            }}
-            setlists={setlists}
-            activeSetlistId={activeSetlistId}
-            activeSetlistSongIndex={activeSetlistSongIndex}
-            onSelectSetlistSong={(setlistId, songIdx) => {
-              navigateSafely(() => {
-                handleSelectSetlistSong(setlistId, songIdx)
-                setActiveView('stage')
-                setIsSetlistDrawerOpen(false)
-              })
-            }}
-            onReorderSetlistSong={handleReorderSetlistSong}
-            onRemoveSetlistSong={handleRemoveSetlistSong}
-            onDeleteSetlist={handleDeleteSetlist}
-            onDeleteSong={handleDeleteSong}
-            onSongMembershipChange={handleSongMembership}
-            onCreateSetlistForSong={handleCreateSetlistForSong}
-            onNewSong={handleNewSong}
-            onNewSetlist={handleNewSetlist}
-            onImportSingleSetlist={handleImportSingleSetlist}
-            onSmartMerge={handleSmartMerge}
-            onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists)}
-            onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
-            onShareSetlist={(sl) => setSharingSetlist(sl)}
-          />
-        )}
-      </EdgeSwipePanelCoordinator>
+      </div>
 
       {/* Stage Color Theme Modal */}
       <ThemeModal
@@ -2093,8 +1963,6 @@ function LibraryApp() {
         onSelectFontStyle={setFontStyle}
         isTwoColumn={isTwoColumn}
         onToggleTwoColumn={setIsTwoColumn}
-        edgeSwipePanel={isEdgeSwipePanelEnabled}
-        onToggleEdgeSwipePanel={setIsEdgeSwipePanelEnabled}
         onOpenStageTools={() => {
           setIsStageSettingsModalOpen(false)
           setIsStageToolsModalOpen(true)

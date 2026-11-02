@@ -78,7 +78,6 @@ const {
 } = require('../src/types/sharedCatalog.ts')
 
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { normalizeBackupSong } = require('../src/utils/jsonBackup.ts')
 
 const { SharedCatalogBrowser: CatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
@@ -666,20 +665,6 @@ test('PHASE 4 - TEST 4: Imported clone does not falsely show published', () => {
     })
   )
   assert.equal(htmlHome.includes('data-testid="song-published-status-'), false)
-
-  const htmlDrawer = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs: [clone],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      onNewSong: () => {},
-      confirmedCatalogIds: confirmedIds,
-    })
-  )
-  assert.equal(htmlDrawer.includes('data-testid="drawer-song-published-status-'), false)
 })
 
 test('PHASE 4 - TEST 5: Duplicate titles cannot produce false matches', () => {
@@ -836,31 +821,13 @@ test('PHASE 4 - TEST 9: Main Songbook and Side Panel agree on confirmed publicat
     })
   )
 
-  const htmlDrawerFresh = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs: [publishedSong, unpublishedSong],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      onNewSong: () => {},
-      confirmedCatalogIds: confirmedIds,
-      freshCatalogIds: freshIds,
-    })
-  )
-
   // Both have index 0 published with fresh Server Confirmed label
   assert.ok(htmlHomeFresh.includes('data-testid="song-published-status-0"'))
-  assert.ok(htmlDrawerFresh.includes('data-testid="drawer-song-published-status-0"'))
   assert.ok(htmlHomeFresh.includes('aria-label="Published to Shared Catalog (Server Confirmed)"'))
-  assert.ok(htmlDrawerFresh.includes('aria-label="Published to Shared Catalog (Server Confirmed)"'))
   assert.ok(htmlHomeFresh.includes('text-status-success'))
-  assert.ok(htmlDrawerFresh.includes('text-emerald-400'))
 
   // Neither has index 1 published
   assert.equal(htmlHomeFresh.includes('data-testid="song-published-status-1"'), false)
-  assert.equal(htmlDrawerFresh.includes('data-testid="drawer-song-published-status-1"'), false)
 
   // Stale cached indicator parity: when in confirmedIds but not in freshIds
   const htmlHomeCached = renderToString(
@@ -877,24 +844,8 @@ test('PHASE 4 - TEST 9: Main Songbook and Side Panel agree on confirmed publicat
     })
   )
 
-  const htmlDrawerCached = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs: [publishedSong, unpublishedSong],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      onNewSong: () => {},
-      confirmedCatalogIds: confirmedIds,
-      freshCatalogIds: new Set(),
-    })
-  )
-
   assert.ok(htmlHomeCached.includes('aria-label="Published to Shared Catalog (Cached)"'))
-  assert.ok(htmlDrawerCached.includes('aria-label="Published to Shared Catalog (Cached)"'))
   assert.ok(htmlHomeCached.includes('text-amber-400'))
-  assert.ok(htmlDrawerCached.includes('text-amber-400'))
 })
 
 test('PHASE 4 - TEST 10: Publication success with confirmed personal persistence', () => {
@@ -1192,29 +1143,9 @@ test('PHASE 5 - TEST 4: GREEN_ICON_SHARED_BETWEEN_MAIN_AND_SIDEPANEL', () => {
     })
   )
 
-  const htmlDrawer = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs: [publishedSong],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      setlists: [],
-      activeSetlistId: null,
-      onSelectSetlist: () => {},
-      onDeleteSetlist: () => {},
-      onNewSong: () => {},
-      confirmedCatalogIds: confirmedIds,
-      freshCatalogIds: freshIds,
-    })
-  )
-
   // Both Main Home View and Side Panel drawer render confirmed published status
   assert.ok(htmlHome.includes('data-testid="song-published-status-0"'))
   assert.ok(htmlHome.includes('text-status-success'))
-  assert.ok(htmlDrawer.includes('data-testid="drawer-song-published-status-0"'))
-  assert.ok(htmlDrawer.includes('text-emerald-400'))
 })
 
 test('PHASE 5 - TEST 5: STALE_CACHE_NEVER_PRODUCES_FALSE_GREEN', () => {
@@ -1591,38 +1522,6 @@ test('PHASE 5 - PROVENANCE 6: Imported personal clone never inherits published i
   // MUST show imported status icon
   assert.ok(htmlHome.includes('data-testid="song-imported-status-0"'))
   assert.ok(htmlHome.includes('aria-label="Imported from Shared Catalog"'))
-})
-
-test('PHASE 5 - PROVENANCE 7: Side Panel renders imported provenance icon (CloudDownload)', () => {
-  const personalImported = {
-    id: 'pers-song-1',
-    title: 'Imported in Drawer',
-    artist: 'Band',
-    key: 'C',
-    bpm: '120',
-    capo: '',
-    format: 'PLAIN',
-    transposeOffset: 0,
-    rawContent: 'test',
-    sharedSourceSongId: 'scs_drawer_source',
-    sharedSourcePublisherName: 'Dave Murray',
-  }
-
-  const htmlDrawer = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs: [personalImported],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      onNewSong: () => {},
-    })
-  )
-
-  assert.ok(htmlDrawer.includes('data-testid="drawer-song-imported-status-0"'))
-  assert.ok(htmlDrawer.includes('aria-label="Imported from Shared Catalog"'))
-  assert.equal(htmlDrawer.includes('data-testid="drawer-song-published-status-0"'), false)
 })
 
 test('PHASE 5 - PROVENANCE 8: Email addresses are never exposed in publisher names or tooltips', () => {

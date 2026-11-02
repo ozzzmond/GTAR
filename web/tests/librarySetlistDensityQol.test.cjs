@@ -243,14 +243,15 @@ test('EXISTING_SEARCH+FILTER_REGRESSION: Search and key/setlist/sort controls re
   assert.match(html, /Songs Library.*1.*of.*2/)
 })
 
-test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid expands to 4 columns and cards truncate long titles', () => {
+test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid reserves title width and cards truncate long titles with tooltips', () => {
   const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
 
-  // Multi-column responsive layout with 4 columns on large/desktop screens
+  // Fit desktop tracks to the available workspace, including the Explorer sidebar.
   assert.ok(
-    viewCode.includes('xl:grid-cols-4'),
-    'Songs grid must include xl:grid-cols-4 for increased desktop density'
+    viewCode.includes('lg:grid-cols-[repeat(auto-fit,minmax(24rem,1fr))]'),
+    'Desktop song tracks must reserve enough width for typical titles'
   )
+  assert.ok(viewCode.includes("title={song.title || 'Untitled Song'}"), 'Truncated titles retain a tooltip')
 
   // Title and artist use truncate to prevent overflow
   assert.ok(

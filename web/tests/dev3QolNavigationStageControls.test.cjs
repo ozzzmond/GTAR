@@ -167,26 +167,6 @@ test('DEV3_SECTION_NAVIGATION_ABSOLUTE_BOTTOM: Up from absolute bottom navigates
 })
 
 // =============================================================================
-// 8. MANAGE SETLIST DIRECT STAGE NAVIGATION
-// =============================================================================
-test('DEV3_SETLIST_DRAWER_NAVIGATION: Selecting song from SetlistDrawer or Header setlist directly routes to Stage view', () => {
-  const appSource = readSource(path.join(webDir, 'src/App.tsx'))
-
-  // SetlistDrawer onSelectSongIndex and onSelectSetlistSong route to stage
-  const setlistDrawerBlock = appSource.substring(appSource.indexOf('<SetlistDrawer'))
-  assert.ok(
-    setlistDrawerBlock.includes("handleSelectLibrarySong(idx)\n            setActiveView('stage')") ||
-    setlistDrawerBlock.includes("handleSelectLibrarySong(idx)") && setlistDrawerBlock.includes("setActiveView('stage')"),
-    'Selecting song in SetlistDrawer activates stage view'
-  )
-  assert.ok(
-    setlistDrawerBlock.includes("handleSelectSetlistSong(setlistId, songIdx)\n            setActiveView('stage')") ||
-    setlistDrawerBlock.includes("handleSelectSetlistSong(setlistId, songIdx)") && setlistDrawerBlock.includes("setActiveView('stage')"),
-    'Selecting setlist song in SetlistDrawer activates stage view'
-  )
-})
-
-// =============================================================================
 // 9. DESKTOP GLOBAL KEYBOARD NAVIGATION SHORTCUTS
 // =============================================================================
 test('DEV3_KEYBOARD_SHORTCUTS: Alt+1..6 and Alt+0/H navigation shortcuts registered with editable-field exclusion', () => {

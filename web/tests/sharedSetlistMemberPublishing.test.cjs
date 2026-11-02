@@ -472,13 +472,6 @@ test('TEST_SONGBOOK_AND_DRAWER_ICON_PARITY', () => {
   assert.equal(typeof SetlistCloudStatusBadge, 'function')
 })
 
-test('TEST_QR_SHARING_UNCHANGED', () => {
-  // Verify qrSharing / share mechanisms exist without shared catalog coupling
-  const qrFile = fs.readFileSync(path.join(__dirname, '../src/components/SetlistDrawer.tsx'), 'utf8')
-  assert.ok(qrFile.includes('Share Setlist (QR Code)'))
-  assert.ok(/Publish/.test(qrFile))
-})
-
 test('TEST_SHARED_SONGS_UNCHANGED', () => {
   const catalogFile = fs.readFileSync(path.join(__dirname, '../src/components/SharedCatalogBrowser.tsx'), 'utf8')
   assert.ok(catalogFile.includes('Songs'))

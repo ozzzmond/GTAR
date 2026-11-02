@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const ts = require('typescript')
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(
-  fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'),
+  fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:true})'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }
 ).outputText, filename)
 require.extensions['.png'] = (module, filename) => { module.exports = filename }
@@ -15,9 +15,9 @@ const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 
 for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${width}px`, async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' })
-  const keys = ['window', 'document', 'Node', 'localStorage', 'sessionStorage', 'IS_REACT_ACT_ENVIRONMENT']
+  const keys = ['window', 'document', 'Node', 'HTMLElement', 'localStorage', 'sessionStorage', 'IS_REACT_ACT_ENVIRONMENT']
   const previous = Object.fromEntries(keys.map(key => [key, global[key]]))
-  Object.assign(global, { window: dom.window, document: dom.window.document, Node: dom.window.Node,
+  Object.assign(global, { window: dom.window, document: dom.window.document, Node: dom.window.Node, HTMLElement: dom.window.HTMLElement,
     localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
   Object.defineProperty(window, 'innerWidth', { value: width })
   Object.defineProperty(window, 'innerHeight', { value: 600 })
@@ -46,8 +46,8 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
   const managed = []
   // Render App and observe its public child props; keep the real badge UI.
   const homeModule = require('../src/components/SongbookHomeView.tsx')
-  const drawerModule = require('../src/components/SetlistDrawer.tsx')
-  const originalDrawer = drawerModule.SetlistDrawer
+  const drawerModule = require('../src/components/SetlistManager.tsx')
+  const originalDrawer = drawerModule.SetlistManager
   homeModule.SongbookHomeView = props => {
     home = props
     return React.createElement(SongbookHomeView, {
@@ -57,7 +57,7 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
       onManageSetlist: sl => { managed.push(sl); props.onManageSetlist(sl) },
     })
   }
-  drawerModule.SetlistDrawer = props => { drawer = props; return null }
+  drawerModule.SetlistManager = props => { drawer = props; return null }
   localStorage.setItem('gtar_library_v1', JSON.stringify({ songs, setlists }))
   const root = createRoot(document.getElementById('root'))
   const App = require('../src/App.tsx').default
@@ -103,8 +103,8 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     assert.equal(find('membership-popover-0').getAttribute('role'), 'dialog')
     await click(find('jump-setlist-stable-a'))
     assert.equal(managed.at(-1), home.setlists[0], 'passes canonical object')
-    assert.equal(drawer.activeSetlistId, 'stable-a')
-    assert.equal(drawer.isOpen, true)
+    assert.equal(drawer.selectedSetlistId, 'stable-a')
+    assert.ok(drawer, 'Setlist Manager opened')
     assert.equal(portal(), null)
 
     const multiple = find('song-setlist-indicator-1')
@@ -113,7 +113,7 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     await click(multiple)
     expectItems(1, setlists.slice(0, 3))
     await click(find('jump-setlist-42'))
-    assert.equal(drawer.activeSetlistId, home.setlists[1].id, 'duplicate names navigate by selected stable ID')
+    assert.equal(drawer.selectedSetlistId, home.setlists[1].id, 'duplicate names navigate by selected stable ID')
     assert.equal(managed.at(-1), home.setlists[1])
     assert.equal(managed.length, 2, 'each item activation navigates once')
     await click(multiple)
@@ -138,21 +138,21 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     assert.equal(find('song-setlist-count-1').textContent, '2')
     assert.deepEqual([...find('membership-popover-1').querySelectorAll('button')].map(button => button.textContent), ['Renamed current', 'Current third'])
     await click(find('jump-setlist-stable-c'))
-    assert.equal(drawer.activeSetlistId, 'stable-c')
+    assert.equal(drawer.selectedSetlistId, 'stable-c')
     assert.equal(managed.at(-1), home.setlists[2])
     assert.equal(selected, 0, 'badge and item never launch normal song action')
     assert.equal(openedOverview, 0, 'item only opens selected manage drawer')
     // App normalizes persisted numeric IDs to strings. Its callback must also
     // preserve a numeric ID supplied by a child without source-level assumptions.
     await act(async () => home.onManageSetlist(setlists[1]))
-    assert.equal(drawer.activeSetlistId, 42)
-    assert.equal(drawer.isOpen, true)
+    assert.equal(drawer.selectedSetlistId, 42)
+    assert.ok(drawer, 'Setlist Manager opened')
     await click(find('song-card-0'))
     assert.equal(selected, 1, 'normal card action still works')
   } finally {
     await act(async () => root.unmount())
     homeModule.SongbookHomeView = SongbookHomeView
-    drawerModule.SetlistDrawer = originalDrawer
+    drawerModule.SetlistManager = originalDrawer
     for (const timer of timers) clearTimeout(timer)
     global.setTimeout = nativeSetTimeout
     dom.window.close()

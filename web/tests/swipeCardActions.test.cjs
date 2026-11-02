@@ -128,12 +128,12 @@ test('ASSERT_ARMED_RIGHT_SETLIST_CALLS_MANAGE_HANDLER_WITH_CORRECT_SETLIST: Setl
 
   // App wires handleManageSetlist
   assert.ok(
-    appCode.includes('const handleManageSetlist = (setlist: WebSetlist) => {'),
+    appCode.includes('const handleManageSetlist = (setlist: WebSetlist) => openSetlistManager(setlist)'),
     'App must implement handleManageSetlist'
   )
   assert.ok(
-    appCode.includes('setActiveSetlistId(setlist.id)'),
-    'handleManageSetlist must set activeSetlistId to exact setlist id'
+    appCode.includes('setSetlistManagerId(setlist?.id ??'),
+    'Setlist Manager receives the exact selected setlist id'
   )
   assert.ok(
     appCode.includes('onManageSetlist={handleManageSetlist}'),

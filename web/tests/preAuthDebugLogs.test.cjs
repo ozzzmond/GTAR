@@ -263,8 +263,12 @@ test('Header simplifies Cloud Sync to canonical header button and removes duplic
   const headerSource = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
 
   // Canonical primary Cloud Sync button beside avatar exists
-  assert.match(headerSource, /["']Backup & Restore["']/)
-  assert.match(headerSource, /Last cloud backup:/)
+  assert.match(headerSource, /<SyncStatusPill/)
+  const pillSource = fs.readFileSync(require.resolve('../src/components/SyncStatusPill.tsx'), 'utf8')
+  assert.match(pillSource, /Backup & Restore/)
+  assert.match(pillSource, /aria-label=\{description\}/)
+  const statusSource = fs.readFileSync(require.resolve('../src/utils/syncStatus.ts'), 'utf8')
+  assert.match(statusSource, /Last cloud backup:/)
 
   // Verify Cloud Songbook Sync is NOT in overflow menu
   const overflowMenuIdx = headerSource.indexOf('showOverflowMenu &&')

@@ -254,8 +254,8 @@ test('MANAGER_LAYOUT: header bar, name + Rename, Delete, Play in Stage, picker b
   assert.ok(dialog)
   assert.ok($('[data-testid="setlist-manager-header"]'))
   assert.match($('[data-testid="setlist-manager-name"]').textContent, /Sunday AM/)
-  for (const label of ['Rename', 'Delete Setlist', 'Play Setlist in Stage', 'Search Songs (Outlook-style Picker)', '+ Add Shortcut']) assert.ok(button(label), label)
-  assert.equal(button('Search Songs (Outlook-style Picker)').getAttribute('aria-keyshortcuts'), 'Control+K Alt+S')
+  for (const label of ['Rename', 'Delete Setlist', 'Play Setlist in Stage', 'Search Multi-Songs', '+ Add Shortcut']) assert.ok(button(label), label)
+  assert.equal(button('Search Multi-Songs').getAttribute('aria-keyshortcuts'), 'Control+K Alt+S')
   assert.ok($('[data-testid="setlist-manager-shortcut-select"]'))
   assert.doesNotMatch(dialog.textContent, /Folder/)
   const rows = $$('[data-testid^="setlist-manager-entry-"]').filter(el => /entry-\d+$/.test(el.dataset.testid))
@@ -311,7 +311,7 @@ test('MANAGER_ADD_SHORTCUT: Add Shortcut adds one song through the same add hand
 test('MANAGER_PICKER: picker adds N songs in one call and reports success', async () => {
   const { props, calls } = managerProps()
   await mount(SetlistManager, props)
-  await click(button('Search Songs (Outlook-style Picker)'))
+  await click(button('Search Multi-Songs'))
   const row = text => options().find(el => el.textContent.includes(text))
   await click(row('Jeff Buckley'))
   await click(row('Amazing Grace'))
@@ -377,7 +377,7 @@ test('MANAGER_FOCUS: Tab and Shift+Tab wrap inside the manager, the picker and t
   await key(items[0], { key: 'Tab', shiftKey: true })
   assert.equal(document.activeElement, items.at(-1), 'Shift+Tab on first wraps to last')
 
-  await click(button('Search Songs (Outlook-style Picker)'))
+  await click(button('Search Multi-Songs'))
   const pickerSel = '[role="dialog"][aria-label="Multi-song search picker"]'
   items = focusables(pickerSel)
   items.at(-1).focus()
@@ -410,7 +410,7 @@ test('MANAGER_FOCUS: Escape closes only the topmost layer (rename → delete →
   assert.equal($('[role="alertdialog"]'), null, 'delete confirm closed')
   assert.equal(document.activeElement, button('Delete Setlist'))
 
-  await click(button('Search Songs (Outlook-style Picker)'))
+  await click(button('Search Multi-Songs'))
   const firstOption = $('[role="option"]')
   firstOption.focus()
   await key(firstOption, { key: 'Escape' })

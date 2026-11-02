@@ -136,7 +136,7 @@ test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collap
   assert.ok(songbookSource.includes('data-testid="main-import-setlist-btn"'), 'Import setlist button preserved')
   assert.ok(songbookSource.includes("{setlistsCollapsed ? 'Show' : 'Hide'}"), 'Show/Hide toggle button preserved')
   const headerSource = readSource(path.join(webDir, 'src/components/Header.tsx'))
-  assert.ok(headerSource.includes('testId="canonical-sidepanel-toggle-btn"'), 'Canonical Side Panel button in Header')
+  assert.ok(headerSource.includes('aria-label="Open Music Explorer"'), 'Canonical Side Panel button in Header')
 })
 
 // =============================================================================

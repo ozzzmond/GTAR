@@ -1,5 +1,5 @@
 // #312 S2: App wiring for the DEV Setlist Manager: guarded saves survive a reload, cancel adds
-// nothing, a stale write is refused, and PROD keeps the drawer manage flow.
+// nothing, a stale write is refused, and manage remains available after removing the legacy drawer.
 const { test, afterEach } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -64,7 +64,7 @@ async function click(el) { assert.ok(el, 'control exists'); await act(async () =
 async function openManagerPicker() {
   await act(async () => home.onManageSetlist(home.setlists[0]))
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'), 'DEV manage opens the Setlist Manager')
-  await click(button('Search Songs (Outlook-style Picker)'))
+  await click(button('Search Multi-Songs'))
 }
 
 test('DEV: select N songs → one guarded add, appended in selection order, kept after reload', async () => {
@@ -129,11 +129,10 @@ test('DEV: rename, reorder, remove and delete persist through the guarded path',
   assert.equal(home.setlists.filter(sl => !sl.isDeleted).length, 0)
 })
 
-test('PROD: manage keeps the existing drawer flow; no Setlist Manager, no ⋯ override', async () => {
+// #311 removes the legacy drawer in every build; manage must retain its replacement action.
+test('manage remains available without the legacy drawer outside local development', async () => {
   await mountApp('https://gtar.example/')
-  assert.equal(home.onOpenSetlistManager, undefined)
-  assert.equal($('[aria-label="Close Drawer"]'), null, 'drawer starts closed')
+  assert.equal(typeof home.onOpenSetlistManager, 'function')
   await act(async () => home.onManageSetlist(home.setlists[0]))
-  assert.equal($('[role="dialog"][aria-label="Setlist Manager"]'), null)
-  assert.ok($('[aria-label="Close Drawer"]'), 'existing manage flow opens the setlist drawer')
+  assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'))
 })

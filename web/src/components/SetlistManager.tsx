@@ -296,7 +296,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                   className={primaryButton}
                 >
                   <Search className="w-4 h-4" aria-hidden="true" />
-                  <span>Search Songs (Outlook-style Picker)</span>
+                  <span>Search Multi-Songs</span>
                   <kbd className="hidden sm:inline-block font-mono text-[10px] bg-app-base/20 px-1.5 py-0.5 rounded">Ctrl+K</kbd>
                 </button>
                 <div className="flex flex-col sm:flex-row gap-2">

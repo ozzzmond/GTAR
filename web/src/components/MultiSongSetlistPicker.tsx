@@ -198,7 +198,7 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
                 onChange={e => { setInputValue(e.target.value); setActiveHighlightIndex(-1) }}
                 onKeyDown={handleInputKeyDown}
                 placeholder="e.g. Goodness of God, key:G, artist:Bethel"
-                className="flex-1 min-w-[160px] min-h-9 bg-transparent text-sm text-app-text placeholder:text-app-muted/70 focus:outline-none px-1"
+                className="flex-1 min-w-[160px] min-h-11 bg-transparent text-sm text-app-text placeholder:text-app-muted/70 focus:outline-none px-1"
               />
             </div>
           </div>

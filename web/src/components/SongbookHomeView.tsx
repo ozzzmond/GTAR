@@ -2422,7 +2422,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
         ) : (
           <div ref={songGridRef} data-testid="song-grid" data-window={songWindow.active ? `${songWindow.start}-${songWindow.end}` : undefined}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-2.5"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(24rem,1fr))] gap-2 sm:gap-2.5"
             style={songWindow.active ? { paddingTop: songWindow.padTop, paddingBottom: songWindow.padBottom } : undefined}>
             {visibleIndexedSongs.map(({ song, originalIdx }, visibleIdx) => {
               const displayIdx = songWindow.start + visibleIdx
@@ -2499,7 +2499,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <h3 className="font-bold text-xs sm:text-sm ui-primary-text text-app-heading group-hover:text-app-action transition-colors truncate">
+                        <h3 title={song.title || 'Untitled Song'} className="font-bold text-xs sm:text-sm ui-primary-text text-app-heading group-hover:text-app-action transition-colors truncate">
                           {song.title || 'Untitled Song'}
                         </h3>
                         <SongStatusBadge

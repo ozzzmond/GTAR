@@ -615,11 +615,8 @@ test('G7.4: Setlist heading rename, toolbar action order (New Setlist | Manage |
 
     // 8. SetlistDrawer and Header also use "Song Setlists" label
     const headerTsx = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-    const drawerTsx = fs.readFileSync(path.join(webDir, 'src/components/SetlistDrawer.tsx'), 'utf8')
     assert.ok(headerTsx.includes('Song Setlists'))
     assert.ok(!headerTsx.includes('Gig Setlists'))
-    assert.ok(drawerTsx.includes('Song Setlists'))
-    assert.ok(!drawerTsx.includes('Gig Setlists'))
   } finally {
     await act(async () => root.unmount())
   }

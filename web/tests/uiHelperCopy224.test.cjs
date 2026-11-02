@@ -26,7 +26,7 @@ test('TV pairing controls: status, labels and errors kept; steps behind a native
 })
 
 // #224 slice 2: no hover tooltips (title on HTML elements) except on truncated text, where it shows the full value.
-test('no title tooltips on HTML elements, except truncated text', () => {
+test('no title tooltips except truncated text and the owner-approved cloud status (#311)', () => {
   const ts = require('typescript')
   const dir = path.join(__dirname, '..', 'src')
   const found = []
@@ -38,7 +38,8 @@ test('no title tooltips on HTML elements, except truncated text', () => {
         const attrs = node.attributes.properties.filter(ts.isJsxAttribute)
         const title = attrs.find(a => a.name.getText(sf) === 'title')
         const cls = attrs.find(a => a.name.getText(sf) === 'className')
-        if (title && !/truncate/.test(cls ? cls.getText(sf) : '')) found.push(`${rel}:${sf.getLineAndCharacterOfPosition(title.getStart(sf)).line + 1}`)
+        const cloudStatus = attrs.some(a => a.name.getText(sf) === 'data-testid' && a.initializer?.text === 'header-cloud-sync-button')
+        if (title && !cloudStatus && !/truncate/.test(cls ? cls.getText(sf) : '')) found.push(`${rel}:${sf.getLineAndCharacterOfPosition(title.getStart(sf)).line + 1}`)
       }
       ts.forEachChild(node, visit)
     }
