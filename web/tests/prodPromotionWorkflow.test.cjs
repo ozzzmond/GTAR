@@ -220,7 +220,7 @@ test('workflow isolates tested source and protected mutation; fresh recheck, one
   assert.match(yaml, /ref: \$\{\{ needs.plan.outputs.sha \}\}/)
   assert.match(yaml, /VALIDATED_SHA:[\s\S]+PLANNED_REFS:/)
   assert.match(yaml, /token: \$\{\{ secrets.PROD_PUSH_TOKEN \}\}/)
-  for (const cmd of ['npm ci', 'npm test', 'npm run lint:sync', 'npm run build']) assert.equal(yaml.split(`run: ${cmd}\n`).length - 1, 1)
+  for (const cmd of ['npm ci', 'npm run test:all', 'npm run lint:sync', 'npm run build']) assert.equal(yaml.split(`run: ${cmd}\n`).length - 1, 1)
   assert.match(yaml, /needs: \[plan, validate, promote, verify\]/)
   assert.doesNotMatch(yaml, /contents: write|wrangler|gradle|\.apk|setup-java|release_metadata\.py/)
   assert.doesNotMatch(yaml, /^  (push|schedule|pull_request):/m)

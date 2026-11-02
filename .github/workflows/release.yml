@@ -48,6 +48,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -71,6 +72,7 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -78,7 +80,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - run: npm test
+      - run: npm run test:all
       - run: npm run lint:sync
       - run: npm run build
         env:
@@ -99,6 +101,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          fetch-tags: true
           # Protected environment credential; no force or rules bypass is used.
           token: ${{ secrets.PROD_PUSH_TOKEN }}
           persist-credentials: true

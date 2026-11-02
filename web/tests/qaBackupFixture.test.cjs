@@ -20,57 +20,6 @@ test('generator: deterministic bytes, valid schema-v2, exact counts and referenc
   assert.notEqual(sha(gen.generate({ ...options, seed: 253 }).json), sha(first.json), 'seed changes content')
 })
 
-test('generator default: 10,000 active + 100 trash + 300 setlists, valid and deterministic; restores into B2 exactly', async () => {
-  const built = gen.generate()
-  const report = gen.validate(built)
-  assert.deepEqual(report.counts, { songs: 10000, trash: 100, setlists: 300 })
-  assert.equal(sha(gen.generate().json), sha(built.json), 'repeatable')
-  console.log(`[QA fixture] ${Buffer.byteLength(built.json)} bytes, ${report.references} setlist entries, chart chars ${JSON.stringify(report.chartChars)}`)
-
-  // A fresh, unlinked device with B2 on (as in the QA plan): Full Restore goes into the B2 partition.
-  const storage = h.freshStorage()
-  const factory = new h.Factory()
-  const setup = h.newTab()
-  setup.sj.enableLibraryB2(storage)
-  const tab = h.newTab()
-  assert.equal((await tab.sj.prepareLibraryB2(storage, { factory })).active, true)
-  const jb = require('../src/utils/jsonBackup.ts')
-  const parsed = jb.parseBackupJson(built.json)
-  assert.equal(parsed.isValid, true)
-  const ex = require('../src/utils/backupExport.ts')
-  await ex.ensureRestoreSafetySnapshot(tab.sj.readPersistedLibrary(storage), storage)
-  const expectedRaw = tab.sj.libraryRevision(storage)
-  tab.sj.preserveStoredLibrary(expectedRaw, storage)
-  tab.sj.persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, storage, { expectedRaw })
-  assert.deepEqual(ex.verifyRestoredLibrary({ songs: [], setlists: [] }, { songs: parsed.songs, setlists: parsed.setlists }, 'replace', storage), [])
-  await tab.b2.flushB2()
-  // Reload: the restored library comes back from IndexedDB, identical.
-  const page = h.newTab()
-  assert.equal((await page.sj.prepareLibraryB2(storage, { factory })).active, true)
-  const back = page.sj.readPersistedLibrary(storage)
-  assert.equal(back.songs.filter(s => !s.isDeleted).length, 10000)
-  assert.equal(back.songs.filter(s => s.isDeleted).length, 100)
-  assert.equal(back.setlists.length, 300)
-  assert.equal(jb.libraryFingerprint(back.songs, back.setlists), built.payload.contentFingerprint)
-  // Export from B2 re-creates the same library content.
-  const exported = jb.buildVerifiedBackup(back.songs, back.setlists)
-  assert.equal(exported.fingerprint, built.payload.contentFingerprint)
-  assert.deepEqual(exported.counts, { songs: 10000, trash: 100, setlists: 300 })
-})
-
-test('B2 off: restoring the 10k file into a ~5 MB localStorage fails safely and leaves the library unchanged', () => {
-  const built = gen.generate()
-  const storage = new h.QuotaStorage(5 * 1024 * 1024)
-  global.localStorage = storage
-  const tab = h.newTab()
-  const small = { songs: [{ id: 'keep-1', title: 'Kept song', artist: '', rawContent: '[G]kept' }], setlists: [] }
-  tab.sj.persistLibrary(small, storage)
-  const before = storage.getItem('gtar_library_v1')
-  const parsed = require('../src/utils/jsonBackup.ts').parseBackupJson(built.json)
-  assert.throws(() => tab.sj.persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, storage, { expectedRaw: before }), /quota/i)
-  assert.equal(storage.getItem('gtar_library_v1'), before, 'nothing partially written')
-})
-
 // Codex P2 (PR #259): --out never overwrites, truncates or follows an existing path.
 test('generator --out: existing files, symlinks and dangling symlinks are never overwritten; new paths are created', async t => {
   const fs = require('node:fs')

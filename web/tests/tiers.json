@@ -1,0 +1,63 @@
+{
+  "default": "fast",
+  "files": [
+    {
+      "file": "accountAccessFoundation.test.cjs",
+      "tier": "fast",
+      "fastShard": 0
+    },
+    {
+      "file": "backupV2Scale.test.cjs",
+      "tier": "scale"
+    },
+    {
+      "file": "cloudSyncConcurrency.test.cjs",
+      "tier": "workerd"
+    },
+    {
+      "file": "devVersionAndReleaseIdentity.test.cjs",
+      "tier": "release"
+    },
+    {
+      "file": "githubTagMetadata.test.cjs",
+      "tier": "release"
+    },
+    {
+      "file": "libraryB2IsolationScale.test.cjs",
+      "tier": "scale"
+    },
+    {
+      "file": "libraryB2Safety.test.cjs",
+      "tier": "fast",
+      "fastShard": 0
+    },
+    {
+      "file": "libraryB2StorageScale.test.cjs",
+      "tier": "scale"
+    },
+    {
+      "file": "libraryIndexB1Scale.test.cjs",
+      "tier": "scale"
+    },
+    {
+      "file": "prodCleanRebaseline.test.cjs",
+      "tier": "release"
+    },
+    {
+      "file": "prodPromotionWorkflow.test.cjs",
+      "tier": "release"
+    },
+    {
+      "file": "qaBackupFixtureScale.test.cjs",
+      "tier": "scale"
+    },
+    {
+      "file": "sharedSetlistCatalog.test.cjs",
+      "tier": "workerd"
+    },
+    {
+      "file": "stageCast2Runtime.test.cjs",
+      "tier": "workerd"
+    }
+  ]
+}
