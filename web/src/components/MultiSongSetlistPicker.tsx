@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Check, Music, Plus, Search, X } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { parseSearchPhrases, songMatchesPhrase } from '../utils/setlistPickerSearch'
+import { trapTab } from '../utils/focusTrap'
 
 /**
  * #312 S2: GTAR1 "Search Songs (Outlook-style Picker)", ported from GTAR1 @ da2bdee
@@ -38,6 +39,7 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeHighlightIndex, setActiveHighlightIndex] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   const songs = useMemo(() => allSongs.filter(song => song.id !== undefined && !song.isDeleted), [allSongs])
   const songMap = useMemo(() => new Map(songs.map(song => [songKey(song), song])), [songs])
@@ -136,7 +138,12 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
       className="fixed inset-0 z-[110] flex items-stretch sm:items-center justify-center sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
     >
       <div
+        ref={dialogRef}
         role="dialog"
+        onKeyDown={e => {
+          if (trapTab(e, dialogRef.current)) return
+          if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); e.stopPropagation(); close() }
+        }}
         aria-modal="true"
         aria-label="Multi-song search picker"
         className="w-full h-full sm:h-auto sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl border-app-border sm:border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col"

@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, ListMusic, Play, Search, Trash2, X } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
+import { trapTab } from '../utils/focusTrap'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
 import { dangerButton, primaryButton, secondaryButton, sectionCard, sectionLabel } from './backupCenterUi'
 
@@ -27,6 +29,8 @@ export interface SetlistManagerProps {
   onPlaySetlist?: (setlistId: string | number, position: number) => void
   /** True while Stage (or another app surface that owns the keyboard) is active. */
   shortcutsBlocked?: boolean
+  /** Element that opened the manager; focus returns to it on close. */
+  returnFocusTo?: HTMLElement | null
 }
 
 const iconButton = 'w-11 h-11 shrink-0 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed'
@@ -53,6 +57,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   onAddSongs,
   onPlaySetlist,
   shortcutsBlocked = false,
+  returnFocusTo = null,
 }) => {
   const current = useMemo(
     () => setlists.find(sl => String(sl.id) === String(selectedSetlistId)) || setlists[0] || null,
@@ -65,6 +70,11 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   const [isPickerOpen, setIsPickerOpen] = useState(false)
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const alertRef = useRef<HTMLDivElement>(null)
+  const renameButtonRef = useRef<HTMLButtonElement>(null)
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef<'rename' | 'delete' | 'title' | null>(null)
   const searchTriggerRef = useRef<HTMLButtonElement>(null)
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -85,6 +95,53 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   const shortcutOptions = useMemo(() => activeSongs.filter(song => !memberIds.has(String(song.id))), [activeSongs, memberIds])
 
   useEffect(() => () => { if (statusTimer.current) clearTimeout(statusTimer.current) }, [])
+
+  // #314 (Codex P2): focus moves in on open, the app behind is inert (aria-hidden fallback) while
+  // open, and focus returns to the opener on close.
+  useEffect(() => {
+    const appRoot = document.getElementById('root')
+    const dialog = dialogRef.current
+    const isolate = !!appRoot && !!dialog && !appRoot.contains(dialog)
+    const prior = isolate ? { inert: appRoot.hasAttribute('inert'), hidden: appRoot.getAttribute('aria-hidden') } : null
+    if (isolate) {
+      appRoot.setAttribute('inert', '')
+      appRoot.setAttribute('aria-hidden', 'true')
+    }
+    titleRef.current?.focus()
+    return () => {
+      if (isolate && prior) {
+        if (!prior.inert) appRoot.removeAttribute('inert')
+        if (prior.hidden === null) appRoot.removeAttribute('aria-hidden')
+        else appRoot.setAttribute('aria-hidden', prior.hidden)
+      }
+      if (returnFocusTo?.isConnected) returnFocusTo.focus()
+    }
+  }, [returnFocusTo])
+  // After an inner layer closes, focus goes back to the control that opened it.
+  useEffect(() => {
+    const target = pendingFocus.current
+    if (!target) return
+    pendingFocus.current = null
+    ;(target === 'rename' ? renameButtonRef : target === 'delete' ? deleteButtonRef : titleRef).current?.focus()
+  })
+  const closeRename = () => { pendingFocus.current = 'rename'; setEditingName(false) }
+  const cancelDelete = () => { pendingFocus.current = 'delete'; setConfirmDelete(false) }
+  // Escape closes the topmost layer only. Layers handle their own Escape and mark it handled;
+  // this fallback covers Escape while focus is on the page body.
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const target = e.target as Node | null
+      if (target && target !== document.body && target !== document.documentElement && (target as Node) !== (document as unknown as Node)) return
+      e.preventDefault()
+      if (confirmDelete) cancelDelete()
+      else if (isPickerOpen) setIsPickerOpen(false)
+      else if (editingName) closeRename()
+      else onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  })
   const report = (ok: boolean, success: string) => {
     if (statusTimer.current) clearTimeout(statusTimer.current)
     setStatus(ok ? { tone: 'success', text: success } : { tone: 'error', text: 'Not saved. Nothing was changed.' })
@@ -115,8 +172,8 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   const handleRename = () => {
     if (!current) return
     const name = nameInput.trim()
-    if (!name || name === current.name) { setEditingName(false); return }
-    if (report(onRenameSetlist(current.id, name), `Renamed to "${name}"`)) setEditingName(false)
+    if (!name || name === current.name) { closeRename(); return }
+    if (report(onRenameSetlist(current.id, name), `Renamed to "${name}"`)) closeRename()
   }
   const handleAddShortcut = async () => {
     if (!current || !shortcutSongId) return
@@ -133,11 +190,12 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   }
   const handleDelete = () => {
     if (!current) return
+    pendingFocus.current = 'title'
     setConfirmDelete(false)
     report(onDeleteSetlist(current.id), `Deleted "${current.name}"`)
   }
 
-  return (
+  return createPortal(
     <div
       data-testid="setlist-manager-backdrop"
       className="fixed inset-0 z-[100] flex items-stretch sm:items-center justify-center sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
@@ -148,6 +206,10 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
         aria-modal="true"
         aria-label="Setlist Manager"
         data-testid="setlist-manager"
+        onKeyDown={e => {
+          if (trapTab(e, dialogRef.current)) return
+          if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); onClose() }
+        }}
         className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:rounded-2xl border-app-border sm:border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col"
       >
         <div data-testid="setlist-manager-header" className="px-4 sm:px-5 py-2 border-b border-app-border/80 flex items-center justify-between gap-2 bg-app-base/60">
@@ -155,7 +217,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
             <div className="w-8 h-8 shrink-0 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
               <ListMusic className="w-4 h-4" aria-hidden="true" />
             </div>
-            <h2 className="font-extrabold text-sm sm:text-base tracking-wide">Setlist Manager</h2>
+            <h2 ref={titleRef} tabIndex={-1} data-testid="setlist-manager-title" className="font-extrabold text-sm sm:text-base tracking-wide">Setlist Manager</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Close Setlist Manager"
             className="w-11 h-11 -mr-2 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer">
@@ -196,17 +258,17 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                       aria-label="Setlist name"
                       value={nameInput}
                       onChange={e => setNameInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setEditingName(false) } }}
+                      onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRename() } }}
                       autoFocus
                       className={`${field} flex-1 min-w-[180px] font-bold text-app-heading`}
                     />
                     <button type="submit" className={`${inlineButton} bg-app-action text-app-on-action border-app-action hover:bg-app-action`}>Save</button>
-                    <button type="button" onClick={() => setEditingName(false)} className={inlineButton}>Cancel</button>
+                    <button type="button" onClick={closeRename} className={inlineButton}>Cancel</button>
                   </form>
                 ) : (
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 data-testid="setlist-manager-name" className="ui-primary-text text-lg font-bold text-app-heading break-words min-w-0">{current.name}</h3>
-                    <button type="button" onClick={() => { setNameInput(current.name); setEditingName(true) }} className={inlineButton}>Rename</button>
+                    <button ref={renameButtonRef} type="button" onClick={() => { setNameInput(current.name); setEditingName(true) }} className={inlineButton}>Rename</button>
                   </div>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -216,7 +278,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                       <span>Play Setlist in Stage</span>
                     </button>
                   )}
-                  <button type="button" onClick={() => setConfirmDelete(true)} className={dangerButton}>
+                  <button ref={deleteButtonRef} type="button" onClick={() => setConfirmDelete(true)} className={dangerButton}>
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>Delete Setlist</span>
                   </button>
@@ -320,11 +382,15 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
 
         {confirmDelete && current && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60">
-            <div role="alertdialog" aria-modal="true" aria-label="Delete setlist"
+            <div ref={alertRef} role="alertdialog" aria-modal="true" aria-label="Delete setlist"
+              onKeyDown={e => {
+                if (trapTab(e, alertRef.current)) return
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelDelete() }
+              }}
               className="w-full max-w-sm rounded-2xl border border-app-border bg-app-surface p-5 space-y-4 shadow-2xl">
               <p className="text-sm text-app-heading">Delete setlist <strong>{current.name}</strong>? Songs stay in your Songbook.</p>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" autoFocus onClick={() => setConfirmDelete(false)} className={secondaryButton}>Cancel</button>
+                <button type="button" autoFocus onClick={cancelDelete} className={secondaryButton}>Cancel</button>
                 <button type="button" onClick={handleDelete} className={dangerButton}>Delete</button>
               </div>
             </div>
@@ -342,6 +408,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
           triggerRef={searchTriggerRef}
         />
       )}
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -1078,7 +1078,13 @@ function LibraryApp() {
   // a handler returns false and reports the failure when nothing was saved.
   const [isSetlistManagerOpen, setIsSetlistManagerOpen] = useState(false)
   const [setlistManagerId, setSetlistManagerId] = useState<string | number | null>(null)
+  const [setlistManagerOpener, setSetlistManagerOpener] = useState<HTMLElement | null>(null)
   const openSetlistManager = (setlist: WebSetlist | null) => navigateSafely(() => {
+    // Focus returns here on close; a menu item is gone by then, so use its menu button.
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setSetlistManagerOpener(active?.closest('[role="menu"]')
+      ? document.querySelector<HTMLElement>('[aria-haspopup="menu"][aria-expanded="true"]')
+      : active)
     setSetlistManagerId(setlist?.id ?? setlists.find(sl => !sl.isDeleted)?.id ?? null)
     setIsSetlistDrawerOpen(false)
     setIsSetlistManagerOpen(true)
@@ -1745,7 +1751,8 @@ function LibraryApp() {
         handleSelectSetlistSong(setlistId, position)
         setActiveView('stage')
       })}
-      shortcutsBlocked={activeView === 'stage' || isStagePerformanceMode} />}
+      shortcutsBlocked={activeView === 'stage' || isStagePerformanceMode}
+      returnFocusTo={setlistManagerOpener} />}
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
       {!isStagePerformanceMode && (

@@ -353,3 +353,89 @@ test('MANAGER_SHORTCUT: Ctrl+K / Alt+S open the picker except while typing, bloc
   await key(window, { key: 'k', ctrlKey: true })
   assert.ok(picker(), 'works again once unblocked')
 })
+
+// Codex P2 on #314: focus moves into the manager, stays there, and returns to the trigger.
+const focusables = sel => $$(`${sel} button:not([disabled]), ${sel} input:not([disabled]), ${sel} select:not([disabled]), ${sel} [tabindex="0"]`)
+const managerDialog = () => $('[role="dialog"][aria-label="Setlist Manager"]')
+
+test('MANAGER_FOCUS: focus moves into the manager on open', async () => {
+  const { props } = managerProps()
+  await mount(SetlistManager, props)
+  assert.equal(document.activeElement, $('[data-testid="setlist-manager-title"]'))
+  assert.equal(document.activeElement.getAttribute('tabindex'), '-1')
+  assert.ok(managerDialog().contains(document.activeElement))
+})
+
+test('MANAGER_FOCUS: Tab and Shift+Tab wrap inside the manager, the picker and the delete dialog', async () => {
+  const { props } = managerProps()
+  await mount(SetlistManager, props)
+  const sel = '[role="dialog"][aria-label="Setlist Manager"]'
+  let items = focusables(sel)
+  items.at(-1).focus()
+  await key(items.at(-1), { key: 'Tab' })
+  assert.equal(document.activeElement, items[0], 'Tab on last wraps to first')
+  await key(items[0], { key: 'Tab', shiftKey: true })
+  assert.equal(document.activeElement, items.at(-1), 'Shift+Tab on first wraps to last')
+
+  await click(button('Search Songs (Outlook-style Picker)'))
+  const pickerSel = '[role="dialog"][aria-label="Multi-song search picker"]'
+  items = focusables(pickerSel)
+  items.at(-1).focus()
+  await key(items.at(-1), { key: 'Tab' })
+  assert.equal(document.activeElement, items[0], 'picker traps its own focus')
+  await key(items[0], { key: 'Tab', shiftKey: true })
+  assert.equal(document.activeElement, items.at(-1))
+  await key($('#multi-song-search-input'), { key: 'Escape' })
+
+  await click(button('Delete Setlist'))
+  const confirmItems = $$('[role="alertdialog"] button')
+  assert.equal(document.activeElement, confirmItems[0], 'delete dialog focuses Cancel')
+  await key(confirmItems.at(-1), { key: 'Tab' })
+  assert.equal(document.activeElement, confirmItems[0])
+  await key(confirmItems[0], { key: 'Tab', shiftKey: true })
+  assert.equal(document.activeElement, confirmItems.at(-1))
+})
+
+test('MANAGER_FOCUS: Escape closes only the topmost layer (rename → delete → picker → manager)', async () => {
+  const { props, calls } = managerProps()
+  await mount(SetlistManager, props)
+  await click(button('Rename'))
+  await key($('[data-testid="setlist-manager-rename-input"]'), { key: 'Escape' })
+  assert.equal($('[data-testid="setlist-manager-rename-input"]'), null, 'rename edit closed')
+  assert.ok(managerDialog(), 'manager still open')
+  assert.equal(document.activeElement, button('Rename'))
+
+  await click(button('Delete Setlist'))
+  await key(document.activeElement, { key: 'Escape' })
+  assert.equal($('[role="alertdialog"]'), null, 'delete confirm closed')
+  assert.equal(document.activeElement, button('Delete Setlist'))
+
+  await click(button('Search Songs (Outlook-style Picker)'))
+  const firstOption = $('[role="option"]')
+  firstOption.focus()
+  await key(firstOption, { key: 'Escape' })
+  assert.equal($('[aria-label="Multi-song search picker"]'), null, 'picker closed')
+  assert.ok(managerDialog())
+  assert.deepEqual(calls.filter(c => c[0] === 'close'), [])
+
+  await key(document.activeElement, { key: 'Escape' })
+  assert.deepEqual(calls.filter(c => c[0] === 'close'), [['close']], 'then the manager closes')
+})
+
+test('MANAGER_FOCUS: background is inert while open; focus returns to the trigger on close', async () => {
+  const trigger = document.createElement('button')
+  trigger.textContent = 'Edit in Setlist Manager'
+  document.getElementById('root').before(trigger)
+  trigger.focus()
+  const { props } = managerProps()
+  await mount(SetlistManager, { ...props, returnFocusTo: trigger })
+  const appRoot = document.getElementById('root')
+  assert.ok(appRoot.hasAttribute('inert'), 'app root inert')
+  assert.equal(appRoot.getAttribute('aria-hidden'), 'true', 'aria-hidden fallback')
+  assert.ok(!appRoot.contains(managerDialog()), 'manager renders outside the inert root')
+  assert.notEqual(document.activeElement, trigger)
+  await act(async () => root.render(null))
+  assert.equal(appRoot.hasAttribute('inert'), false, 'inert removed on close')
+  assert.equal(appRoot.hasAttribute('aria-hidden'), false)
+  assert.equal(document.activeElement, trigger, 'focus back on the trigger')
+})
