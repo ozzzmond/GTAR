@@ -1300,23 +1300,23 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       {/* 1. Breadcrumbs & scope bar (GTAR1 filter bar) */}
       {!isSetlistContext && (
-      <div data-testid="songbook-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border px-4 py-2 flex flex-wrap items-center justify-between gap-2">
-        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-xs text-app-muted min-w-0">
+      <div data-testid="songbook-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border px-4 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
+        <nav aria-label="Breadcrumb" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
           {breadcrumbItems.map((item, idx) => (
             <React.Fragment key={idx}>
               {idx > 0 && <ChevronRight className="w-3.5 h-3.5 text-app-muted/70 shrink-0" />}
               {item.target ? (
                 <button type="button" onClick={() => onSelectView?.(item.target!)}
-                  className="min-h-11 text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer">
+                  className="min-h-11 shrink-0 text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer">
                   {item.label}
                 </button>
               ) : (
-                <span aria-current={idx === breadcrumbItems.length - 1 ? 'page' : undefined} className="ui-primary-text text-app-heading font-semibold">{item.label}</span>
+                <span aria-current={idx === breadcrumbItems.length - 1 ? 'page' : undefined} className="ui-primary-text text-app-heading font-semibold truncate">{item.label}</span>
               )}
             </React.Fragment>
           ))}
           {searchQuery && isSongsContext && (
-            <span data-testid="songbook-search-filter" className="ml-2 px-2 py-0.5 rounded-full bg-app-surface border border-app-border text-app-accent text-[11px] flex items-center gap-1">
+            <span data-testid="songbook-search-filter" className="ml-1 shrink-0 px-2 py-0.5 rounded-full bg-app-surface border border-app-border text-app-accent text-[11px] flex items-center gap-1">
               <span>Filter: &quot;{searchQuery}&quot;</span>
               <button type="button" onClick={() => handleSearchChange('')} aria-label="Clear active filter"
                 className="min-h-6 min-w-6 flex items-center justify-center hover:text-app-heading cursor-pointer">
@@ -1327,9 +1327,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </nav>
 
         {isSongsContext && (
-          <div data-testid="songs-library-toolbar" className="flex flex-wrap items-center gap-2">
+          <div data-testid="songs-library-toolbar" className="contents">
             {songs.length > 0 && (
-              <>
+              <div data-testid="songs-library-filters" className="col-start-1 row-start-2 flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar sm:ml-auto sm:overflow-visible">
                 <select
                   data-testid="filter-metadata-select"
                   aria-label="Filter songs by metadata"
@@ -1357,24 +1357,26 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     ))}
                   </select>
                 )}
-                <div role="group" aria-label="Sort songs" className="flex items-center bg-app-surface border border-app-border rounded-xl p-0.5 text-xs">
+                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs">
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
                       onClick={() => handleSortChange(field)}
-                      className={`min-h-11 px-2.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                      className={`min-h-11 px-2.5 rounded-xl font-medium whitespace-nowrap transition-colors cursor-pointer ${
                         sortBy === field ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-text'}`}>
                       {field === 'title' ? 'Title' : field === 'artist' ? 'Artist' : 'Date'}{sortBy === field && (sortDirection === 'asc' ? ' ↑' : ' ↓')}
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {songs.length > 0 && (
                 <button type="button" data-testid="toggle-song-selection-mode" aria-pressed={isSongSelectionMode}
                   onClick={() => { setIsSongSelectionMode(!isSongSelectionMode); setSelectedSongIds(new Set()) }}
-                  className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  className={`col-start-2 row-start-1 justify-self-end shrink-0 min-h-11 px-2.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
                     isSongSelectionMode ? 'bg-app-action/15 border-app-action text-app-action' : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'}`}>
                   {isSongSelectionMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                   <span>Select</span>
                 </button>
-              </>
             )}
             {(onOpenImportSongs || onTrashDuplicates) && (
               <>
@@ -1389,7 +1391,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     closeAllMenus()
                     setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
                   }}
-                  className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0`}
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -1456,7 +1458,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </div>
       )}
 
-      <div className="p-4 sm:p-6 w-full">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
       {/* Publish Success Toast */}
       {publishSuccessNotice && (
         <div role="status" aria-live="polite" data-testid="songbook-publish-toast"
@@ -1563,21 +1565,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       {isExportSongsOpen && <ExportSongsDialog songs={songs} onClose={() => setIsExportSongsOpen(false)} />}
 
       {/* 3. Songs heading (GTAR1): title + count, Browse Sources, Add Song */}
-      <section aria-label="Songs Library" className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2">
-            <Music className="ui-section-icon w-4 h-4 text-app-section" />
-            <span>{currentView.type === 'TAG' ? `Songs tagged #${currentView.tag}` : 'All Songs'}</span>
-            <span data-testid="songs-library-count" className="text-xs font-normal text-app-muted">
+      <section aria-label="Songs Library" className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2 min-w-0">
+            <Music className="ui-section-icon w-4 h-4 text-app-section shrink-0" />
+            <span className="truncate">{currentView.type === 'TAG' ? `Songs tagged #${currentView.tag}` : 'All Songs'}</span>
+            <span data-testid="songs-library-count" className="shrink-0 text-xs font-normal text-app-muted">
               ({sortedIndexedSongs.length} {sortedIndexedSongs.length === 1 ? 'song' : 'songs'})
             </span>
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             {onOpenSources && (
-              <button type="button" data-testid="songs-browse-sources" onClick={onOpenSources}
-                className="ui-button min-h-11 px-3 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+              <button type="button" data-testid="songs-browse-sources" onClick={onOpenSources} aria-label="Browse Sources"
+                className="ui-button min-h-11 min-w-11 px-3 justify-center rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
                 <Globe className="w-3.5 h-3.5 text-app-accent" />
-                <span>Browse Sources</span>
+                <span className="hidden sm:inline">Browse Sources</span>
               </button>
             )}
             <button type="button" data-testid="songs-add-song" onClick={onNewSong}
@@ -1619,7 +1621,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
         ) : (
           <div ref={songGridRef} id="songbook-song-cards" data-testid="song-grid" data-window={songWindow.active ? `${songWindow.start}-${songWindow.end}` : undefined}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-2.5"
             style={songWindow.active ? { paddingTop: songWindow.padTop, paddingBottom: songWindow.padBottom } : undefined}>
             {visibleIndexedSongs.map(({ song, originalIdx }) => {
               const isSelected = originalIdx === activeSongIndex
@@ -1638,7 +1640,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   id={song.id || originalIdx}
                   dataTestId={`song-card-${originalIdx}`}
                   className="rounded-2xl"
-                  cardClassName={`ui-song-card group relative p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm h-full ${
+                  cardClassName={`ui-song-card group relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm h-full ${
                     isSongChosen || isSelected
                       ? 'ui-selection-card bg-app-selected border-app-selected-border'
                       : 'bg-app-song hover:brightness-95 border-app-border'
@@ -1759,7 +1761,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
                     {/* Tag pills (GTAR1) */}
                     {tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2.5">
+                      <div className="flex flex-wrap gap-1 mt-2">
                         {tags.slice(0, 3).map((t) => (
                           <button key={t} type="button" data-testid={`song-tag-${originalIdx}-${t}`}
                             onClick={(e) => { e.stopPropagation(); onSelectView?.({ type: 'TAG', tag: t }) }}
@@ -1773,7 +1775,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   </div>
 
                   {/* Card footer: key, BPM, status badges, Stage, date */}
-                  <div className="mt-3 pt-2.5 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
+                  <div className="mt-2.5 pt-2 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                     <div className="flex items-center gap-1.5 min-w-0">
                       {song.key && (
                         <span className="px-1.5 py-0.5 rounded bg-app-base border border-app-border text-app-accent font-mono font-bold text-[11px]">{song.key}</span>

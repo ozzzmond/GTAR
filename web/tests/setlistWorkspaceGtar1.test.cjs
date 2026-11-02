@@ -253,7 +253,7 @@ test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setli
   await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onOpenSetlists: () => opened.push('manage') }))
   const btn = $('[data-testid="workspace-scope-menu-btn"]')
   assert.equal(btn.getAttribute('aria-label'), 'Setlist actions')
-  assert.match(btn.className, /min-h-9/)
+  assert.match(btn.className, /min-h-11/) // compact toolbar: 44px, same height as the rest of the row
   await openMenu()
   assert.deepEqual(menuItems(), [
     'workspace-sort-manual', 'workspace-sort-title_asc', 'workspace-sort-title_desc',

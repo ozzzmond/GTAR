@@ -108,10 +108,10 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const crumbCurrent = 'ui-primary-text text-app-heading font-semibold truncate'
 
   return (
-    <div data-testid="setlist-workspace" className="mb-6">
-      {/* Breadcrumbs & scope bar */}
-      <div className="ui-filter-bar bg-app-filter border border-app-border rounded-2xl px-3 py-1 mb-4 flex items-center justify-between gap-2">
-        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="flex items-center gap-1 text-xs text-app-muted min-w-0">
+    <div data-testid="setlist-workspace" className="mb-4">
+      {/* Breadcrumbs & scope bar: full-bleed like the Songbook filter bar. Compact: row 1 crumbs | Manage, row 2 Sort | QR ⋯ */}
+      <div data-testid="setlist-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border -mx-4 -mt-3 sm:-mx-6 sm:-mt-4 px-4 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
+        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
           <button
             type="button"
             data-crumb
@@ -141,7 +141,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           )}
         </nav>
         {menu && (
-          <div data-testid="setlist-toolbar" className="flex flex-wrap items-center gap-2">
+          <div data-testid="setlist-toolbar" className="contents">
             {!openSetlist && (
               <>
                 <select
@@ -149,7 +149,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   aria-label="Sort setlists"
                   value={menu.sortValue}
                   onChange={(e) => menu.onSortChange(e.target.value)}
-                  className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="col-start-1 row-start-2 justify-self-start sm:ml-auto min-w-0 max-w-full min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                 >
                   {menu.sortOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -157,7 +157,21 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     </option>
                   ))}
                 </select>
-                {menu.onShareAll && (
+                {menu.onManageSetlists && (
+                  <button
+                    type="button"
+                    data-testid="toggle-setlist-selection-mode"
+                    onClick={() => menu.onManageSetlists?.(null)}
+                    className="col-start-2 row-start-1 justify-self-end ui-button min-h-11 px-3 bg-app-button hover:brightness-110 border border-app-border rounded-xl text-xs text-app-button-text font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-app-section" />
+                    <span>Manage</span>
+                  </button>
+                )}
+              </>
+            )}
+            <div className={`${openSetlist ? 'row-start-1' : 'row-start-2'} col-start-2 justify-self-end flex items-center gap-1.5`}>
+                {!openSetlist && menu.onShareAll && (
                   <button
                     type="button"
                     data-testid="main-share-setlist-btn"
@@ -168,19 +182,6 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     <QrCode className="w-4 h-4" />
                   </button>
                 )}
-                {menu.onManageSetlists && (
-                  <button
-                    type="button"
-                    data-testid="toggle-setlist-selection-mode"
-                    onClick={() => menu.onManageSetlists?.(null)}
-                    className="ui-button min-h-11 px-3 bg-app-button hover:brightness-110 border border-app-border rounded-xl text-xs text-app-button-text font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-app-section" />
-                    <span>Manage</span>
-                  </button>
-                )}
-              </>
-            )}
             <button
               type="button"
               data-testid="workspace-scope-menu-btn"
@@ -188,10 +189,11 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               aria-haspopup="menu"
               aria-expanded={!!menuAnchor}
               onClick={e => { e.stopPropagation(); setMenuAnchor(menuAnchor ? null : e.currentTarget) }}
-              className={`${touch} shrink-0 rounded-lg border border-app-border text-app-muted hover:text-app-heading hover:border-app-action/40 flex items-center justify-center transition-colors cursor-pointer`}
+              className="ui-button min-h-11 min-w-11 shrink-0 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer"
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
+            </div>
             <DropdownPortal anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)} align="right">
               <ScopeMenu menu={menu} openSetlist={openSetlist} onDone={() => setMenuAnchor(null)} />
             </DropdownPortal>
@@ -201,10 +203,10 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
 
       {openSetlist ? (
         /* Single setlist view (GTAR1 CASE A) */
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div
             data-testid="workspace-setlist-header"
-            className="ui-setlist-card flex flex-wrap items-center justify-between gap-3 p-4 bg-app-setlist border border-app-border rounded-2xl"
+            className="ui-setlist-card flex flex-wrap items-center justify-between gap-3 p-3.5 bg-app-setlist border border-app-border rounded-2xl"
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-app-section/15 text-app-section flex items-center justify-center shrink-0">
@@ -315,7 +317,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
         </div>
       ) : (
         /* Setlist collection view (GTAR1 CASE B, no folders) */
-        <div className="space-y-4">
+        <div className="space-y-3">
           <h2 data-testid="setlist-workspace-heading" className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2">
             <ListMusic className="ui-section-icon w-4 h-4 text-app-section" />
             <span>{SCOPE_LABEL[scope]}</span>
@@ -329,7 +331,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               <p className="text-xs text-app-muted mt-1">Create a new setlist from the Music Explorer.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {setlists.map(sl => {
                 const count = sl.songs?.length || 0
                 const created = formatCreated(sl.createdAt)
@@ -347,7 +349,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         setOpenSetlistId(sl.id)
                       }
                     }}
-                    className="ui-setlist-card group p-4 rounded-2xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
+                    className="ui-setlist-card group p-3.5 rounded-2xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
@@ -363,7 +365,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         {count} {count === 1 ? 'song' : 'songs'}
                       </span>
                     </div>
-                    <div className="mt-4 pt-3 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
+                    <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                       {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
                       <button
                         type="button"
