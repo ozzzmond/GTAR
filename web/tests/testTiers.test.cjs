@@ -47,10 +47,19 @@ test('runner executes all selected files, reports failures and preserves child e
 
 test('fast CI shards partition all fast files exactly once and reject invalid coordinates', () => {
   const groups = partition(discover(), manifest)
-  const parts = Array.from({ length: 8 }, (_, index) => shardFiles(groups.fast, `${index}/8`))
+  const dedicated = manifest.files.filter(entry => entry.dedicatedFastShard).map(entry => entry.file)
+  const parts = Array.from({ length: 8 }, (_, index) => shardFiles(groups.fast, `${index}/8`, dedicated))
   assert.deepEqual(parts.flat().sort(), groups.fast)
+  assert.deepEqual(parts[0], ['libraryB2Safety.test.cjs'])
   assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '0/2'), ['a', 'c', 'e'])
   assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '1/2'), ['b', 'd'])
+  assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '0/3', ['c']), ['c'])
+  assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '1/3', ['c']), ['a', 'd'])
+  assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '2/3', ['c']), ['b', 'e'])
+  assert.deepEqual(shardFiles(['a', 'b'], '0/1', ['b']), ['a', 'b'])
+  assert.throws(() => shardFiles(['a'], '0/2', ['missing']), /Invalid dedicated/)
+  assert.throws(() => shardFiles(['a'], '0/2', ['a', 'a']), /Invalid dedicated/)
+  assert.throws(() => shardFiles(['a', 'b'], '0/2', ['a', 'b']), /Invalid fast shard/)
   for (const invalid of ['-1/8', '1/0', '8/8', 'garbage', '1/2/3', '0/9007199254740992']) {
     assert.throws(() => shardFiles(groups.fast, invalid), /Invalid fast shard/)
   }

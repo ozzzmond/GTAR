@@ -22,6 +22,11 @@
       "tier": "scale"
     },
     {
+      "file": "libraryB2Safety.test.cjs",
+      "tier": "fast",
+      "dedicatedFastShard": true
+    },
+    {
       "file": "libraryB2StorageScale.test.cjs",
       "tier": "scale"
     },

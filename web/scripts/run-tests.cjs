@@ -21,19 +21,28 @@ function partition(files, manifest) {
   for (const entry of manifest.files) {
     if (!entry || !known.has(entry.file)) throw new Error(`Unknown test file: ${entry?.file}`)
     if (!tiers.includes(entry.tier)) throw new Error(`Unknown tier: ${entry.tier}`)
+    if (entry.dedicatedFastShard !== undefined && (entry.dedicatedFastShard !== true || entry.tier !== 'fast')) {
+      throw new Error('Dedicated shards are only supported for fast files')
+    }
     if (overrides.has(entry.file)) throw new Error(`Duplicate tier assignment: ${entry.file}`)
     overrides.set(entry.file, entry.tier)
   }
   return Object.fromEntries(tiers.map(tier => [tier, files.filter(file => (overrides.get(file) ?? manifest.default) === tier)]))
 }
 
-function shardFiles(files, shard) {
+function shardFiles(files, shard, dedicated = []) {
   const match = /^(\d+)\/([1-9]\d*)$/.exec(shard)
   const index = Number(match?.[1]), count = Number(match?.[2])
   if (!match || !Number.isSafeInteger(index) || !Number.isSafeInteger(count) || index >= count) {
     throw new Error(`Invalid fast shard: ${shard}; expected zero-based index/count`)
   }
-  return files.filter((_, position) => position % count === index)
+  const reserved = new Set(dedicated)
+  if (reserved.size !== dedicated.length || dedicated.some(file => !files.includes(file))) throw new Error('Invalid dedicated fast file')
+  if (count === 1) return files
+  if (dedicated.length >= count) throw new Error('Invalid fast shard: not enough shards for dedicated files')
+  if (index < dedicated.length) return [dedicated[index]]
+  return files.filter(file => !reserved.has(file))
+    .filter((_, position) => position % (count - dedicated.length) === index - dedicated.length)
 }
 
 // Isolated processes retain each file's globals, hooks and complete test selection.
@@ -69,14 +78,15 @@ async function main(args) {
     throw new Error('Usage: node scripts/run-tests.cjs [fast|scale|release|workerd|all] [--timing]')
   }
   const files = discover()
-  const groups = partition(files, JSON.parse(fs.readFileSync(manifestPath, 'utf8')))
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  const groups = partition(files, manifest)
   // The human category catalog still covers every file exactly once, regardless of tier.
   require('./test-catalog.cjs').run('--check')
   let selected = tier === 'all' ? files : groups[tier]
   const shard = process.env.GTAR_TEST_SHARD
   if (shard !== undefined) {
     if (tier !== 'fast') throw new Error('Sharding is only supported for fast; test:all always runs everything')
-    selected = shardFiles(selected, shard)
+    selected = shardFiles(selected, shard, manifest.files.filter(entry => entry.dedicatedFastShard).map(entry => entry.file))
   }
   const concurrency = process.env.GTAR_TEST_CONCURRENCY === undefined ? Math.min(4, availableParallelism()) : Number(process.env.GTAR_TEST_CONCURRENCY)
   console.log(`Test tier ${tier}: ${selected.length}/${files.length} files${shard === undefined ? '' : `; shard ${shard}`}; concurrency ${concurrency}`)
