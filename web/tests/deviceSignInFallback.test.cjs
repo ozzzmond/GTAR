@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const fs = require('node:fs'), ts = require('typescript')
+const fs = require('node:fs'), path = require('node:path'), ts = require('typescript')
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(
   fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false,VITE_GOOGLE_CLIENT_ID:"test-client"})'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }
@@ -9,9 +9,10 @@ require.extensions['.png'] = module => { module.exports = '/logo.png' }
 const React = require('react'), { act } = React
 const { createRoot } = require('react-dom/client')
 const { JSDOM } = require('jsdom')
+const src = path.join(__dirname, '../src')
 
 async function fallback(mode, run, storedStatus) {
-  for (const key of Object.keys(require.cache)) if (key.includes('/web/src/')) delete require.cache[key]
+  for (const key of Object.keys(require.cache)) if (key.startsWith(src)) delete require.cache[key]
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar.example/' })
   const prior = Object.fromEntries(['window', 'document', 'localStorage', 'sessionStorage', 'fetch', 'IS_REACT_ACT_ENVIRONMENT'].map(k => [k, global[k]]))
   Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
