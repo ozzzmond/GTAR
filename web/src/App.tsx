@@ -1,4 +1,5 @@
 import { RecoveryDataPanel } from './components/RecoveryDataPanel'
+import { SetlistManager } from './components/SetlistManager'
 import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
 import { CatalogImportContext } from './utils/catalogImportContext'
 import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
@@ -1066,10 +1067,100 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  // Manage setlist in slide-over drawer
+  // Manage setlist: #312 S2 Setlist Manager in DEV; PROD keeps the slide-over drawer.
   const handleManageSetlist = (setlist: WebSetlist) => {
+    if (isDevEnv) { openSetlistManager(setlist); return }
     setActiveSetlistId(setlist.id)
     setIsSetlistDrawerOpen(true)
+  }
+
+  // #312 S2 (DEV): GTAR1 Setlist Manager. Each change is one guarded write (stale-write guard);
+  // a handler returns false and reports the failure when nothing was saved.
+  const [isSetlistManagerOpen, setIsSetlistManagerOpen] = useState(false)
+  const [setlistManagerId, setSetlistManagerId] = useState<string | number | null>(null)
+  const [setlistManagerOpener, setSetlistManagerOpener] = useState<HTMLElement | null>(null)
+  const openSetlistManager = (setlist: WebSetlist | null) => navigateSafely(() => {
+    // Focus returns here on close; a menu item is gone by then, so use its menu button.
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setSetlistManagerOpener(active?.closest('[role="menu"]')
+      ? document.querySelector<HTMLElement>('[aria-haspopup="menu"][aria-expanded="true"]')
+      : active)
+    setSetlistManagerId(setlist?.id ?? setlists.find(sl => !sl.isDeleted)?.id ?? null)
+    setIsSetlistDrawerOpen(false)
+    setIsSetlistManagerOpen(true)
+  })
+  const commitManagedSetlists = (nextSetlists: WebSetlist[], message: string) => {
+    if (crossTabConflict) {
+      setToastMessage('Cannot modify setlist while a cross-tab conflict is unresolved.')
+      return false
+    }
+    try {
+      const expectedBaseline = persistedBaselineRef.current
+      persistLibrary(
+        { songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        localStorage,
+        expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
+      )
+      persistedBaselineRef.current = libraryRevision()
+    }
+    catch (err) { handleStorageWriteFailure(err); return false }
+    setSetlists(nextSetlists)
+    setToastMessage(message)
+    setTimeout(() => setToastMessage(null), 3000)
+    return true
+  }
+  const managedSetlist = (setlistId: string | number) => setlists.find(sl => String(sl.id) === String(setlistId) && !sl.isDeleted)
+  const replaceSetlist = (next: WebSetlist) => setlists.map(sl => String(sl.id) === String(next.id) ? next : sl)
+  // Same semantics as handleBulkAddSongsToSetlist (setSongMembership: no duplicates), in the given order.
+  const handleManagerAddSongs = (setlistId: string | number, ids: Array<string | number>) => {
+    const target = managedSetlist(setlistId)
+    const picked = ids.map(id => songs.find(s => s.id !== undefined && !s.isDeleted && String(s.id) === String(id)))
+      .filter((s): s is ActiveSongState => Boolean(s))
+    if (!target || picked.length === 0) return false
+    const updated = picked.reduce((sl, song) => setSongMembership(sl, song, true), target)
+    const added = updated.songs.length - target.songs.length
+    if (added === 0) return true
+    return commitManagedSetlists(replaceSetlist(updated), `Added ${added} ${added === 1 ? 'song' : 'songs'} to ${target.name}`)
+  }
+  const handleManagerRename = (setlistId: string | number, name: string) => {
+    const target = managedSetlist(setlistId)
+    const trimmed = name.trim()
+    if (!target || !trimmed) return false
+    return commitManagedSetlists(replaceSetlist({ ...target, name: trimmed }), `Renamed setlist to "${trimmed}"`)
+  }
+  const handleManagerDelete = (setlistId: string | number) => {
+    const target = managedSetlist(setlistId)
+    if (!target || !commitManagedSetlists(replaceSetlist({ ...target, isDeleted: true }), `Deleted "${target.name}"`)) return false
+    if (String(activeSetlistId) === String(setlistId)) {
+      setActiveSetlistId(null)
+      setQueueMode('library')
+    }
+    setSetlistManagerId(null)
+    return true
+  }
+  const handleManagerMove = (setlistId: string | number, index: number, direction: 'up' | 'down') => {
+    const target = managedSetlist(setlistId)
+    const to = direction === 'up' ? index - 1 : index + 1
+    if (!target || index < 0 || index >= target.songs.length || to < 0 || to >= target.songs.length) return false
+    const reordered = [...target.songs]
+    const [moved] = reordered.splice(index, 1)
+    reordered.splice(to, 0, moved)
+    if (!commitManagedSetlists(replaceSetlist({ ...target, songs: reordered }), `Moved "${moved.title}" ${direction}`)) return false
+    if (String(activeSetlistId) === String(setlistId)) {
+      if (activeSetlistSongIndex === index) setActiveSetlistSongIndex(to)
+      else if (activeSetlistSongIndex === to) setActiveSetlistSongIndex(index)
+    }
+    return true
+  }
+  const handleManagerRemove = (setlistId: string | number, index: number) => {
+    const target = managedSetlist(setlistId)
+    if (!target || index < 0 || index >= target.songs.length) return false
+    const removed = target.songs[index]
+    if (!commitManagedSetlists(replaceSetlist({ ...target, songs: target.songs.filter((_, i) => i !== index) }), `Removed "${removed.title}"`)) return false
+    if (String(activeSetlistId) === String(setlistId) && activeSetlistSongIndex >= index && activeSetlistSongIndex > 0) {
+      setActiveSetlistSongIndex(activeSetlistSongIndex - 1)
+    }
+    return true
   }
 
   // Music Explorer navigation: route into existing GTAR handlers and close the drawer.
@@ -1644,6 +1735,24 @@ function LibraryApp() {
     {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
+    {isDevEnv && isSetlistManagerOpen && <SetlistManager
+      setlists={setlists.filter(sl => !sl.isDeleted)}
+      songs={songs}
+      selectedSetlistId={setlistManagerId}
+      onSelectSetlist={setSetlistManagerId}
+      onClose={() => setIsSetlistManagerOpen(false)}
+      onRenameSetlist={handleManagerRename}
+      onDeleteSetlist={handleManagerDelete}
+      onMoveSong={handleManagerMove}
+      onRemoveSong={handleManagerRemove}
+      onAddSongs={handleManagerAddSongs}
+      onPlaySetlist={(setlistId, position) => navigateSafely(() => {
+        setIsSetlistManagerOpen(false)
+        handleSelectSetlistSong(setlistId, position)
+        setActiveView('stage')
+      })}
+      shortcutsBlocked={activeView === 'stage' || isStagePerformanceMode}
+      returnFocusTo={setlistManagerOpener} />}
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
       {!isStagePerformanceMode && (
@@ -1784,6 +1893,7 @@ function LibraryApp() {
               })
             }}
             onManageSetlist={handleManageSetlist}
+            onOpenSetlistManager={isDevEnv ? openSetlistManager : undefined}
             onDeleteSong={handleDeleteSong}
             onDeleteSetlist={handleDeleteSetlist}
             onRenameSetlist={handleRenameSetlist}
@@ -1868,7 +1978,8 @@ function LibraryApp() {
                 isHeaderKeyPickerOpen ||
                 isTvPresentationModalOpen ||
                 isHeaderOverlayOpen ||
-                recoveryDataOpen
+                recoveryDataOpen ||
+                isSetlistManagerOpen
               }
               onBack={() => setActiveView('songbook')}
               transposeOffset={currentSong.transposeOffset || 0}

@@ -57,6 +57,8 @@ interface SongbookHomeViewProps {
   onOpenSetlists: () => void
   onOpenSongbook?: () => void
   onManageSetlist?: (setlist: WebSetlist) => void
+  /** #312 S2 (DEV): ⋯ Manage Setlists opens the Setlist Manager instead of the drawer. */
+  onOpenSetlistManager?: (setlist: WebSetlist | null) => void
   onDeleteSong: (index: number) => void
   onDeleteSetlist?: (setlistId: string | number) => void
   onRenameSetlist?: (setlistId: string | number, newName: string) => void
@@ -102,6 +104,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onNewSetlist,
   onOpenSetlists,
   onManageSetlist,
+  onOpenSetlistManager,
   onDeleteSong,
   onDeleteSetlist,
   onRenameSetlist,
@@ -1675,7 +1678,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   ? 'Update or Unpublish in Shared Catalog'
                   : 'Publish to Shared Catalog'
               },
-              onManageSetlists: onOpenSetlists,
+              onManageSetlists: onOpenSetlistManager ?? onOpenSetlists,
             }}
           />
         </>

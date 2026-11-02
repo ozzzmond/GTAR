@@ -176,6 +176,8 @@ Library/setlist UI, editing, chords, metadata, search, and sharing interactions.
 - [onlineSearchProvider.test.cjs](onlineSearchProvider.test.cjs)
 - [setlistCountConsistency.test.cjs](setlistCountConsistency.test.cjs)
 - [setlistImportRouting.test.cjs](setlistImportRouting.test.cjs)
+- [setlistManagerAppWiring.test.cjs](setlistManagerAppWiring.test.cjs)
+- [setlistManagerGtar1.test.cjs](setlistManagerGtar1.test.cjs)
 - [setlistMembership.test.cjs](setlistMembership.test.cjs)
 - [sharedCatalogOffline.test.cjs](sharedCatalogOffline.test.cjs)
 - [sharedCatalogUi.test.cjs](sharedCatalogUi.test.cjs)

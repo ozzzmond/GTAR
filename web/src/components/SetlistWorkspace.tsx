@@ -23,7 +23,7 @@ export interface SetlistWorkspaceProps {
   onPlaySetlistPosition?: (setlistId: string | number, position: number) => void
   /** Opens the resolved song by its library index. */
   onOpenSong?: (libraryIndex: number) => void
-  /** Existing GTAR manage flow (GTAR1-style Setlist Manager is S2). */
+  /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
   menu?: SetlistWorkspaceMenu
@@ -41,7 +41,8 @@ export interface SetlistWorkspaceMenu {
   /** Present only when the existing publishing gate allows it. */
   onPublishSetlist?: (setlist: WebSetlist) => void
   publishLabel?: (setlist: WebSetlist) => string
-  onManageSetlists?: () => void
+  /** Receives the open setlist (null in the collection view). */
+  onManageSetlists?: (openSetlist: WebSetlist | null) => void
 }
 
 const SCOPE_LABEL: Record<SetlistWorkspaceScope, string> = {
@@ -407,7 +408,7 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
           type="button"
           role="menuitem"
           data-testid="workspace-menu-manage"
-          onClick={run(menu.onManageSetlists)}
+          onClick={run(() => menu.onManageSetlists!(openSetlist))}
           className={`${menuItem} border-t border-app-border/50`}
         >
           <Layers className={menuIcon} />
