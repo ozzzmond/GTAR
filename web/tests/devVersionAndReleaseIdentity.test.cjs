@@ -821,13 +821,22 @@ test('STEP_8.3: Header layout renders DEV branding without redundant version, di
   assert.ok(devHeaderHtml.includes('>DEV<'), 'Header must contain DEV badge')
   assert.ok(!devHeaderHtml.includes('header-secondary-text'), 'DEV Header must not contain secondary version label beside DEV badge')
 
-  // Right column diagnostics are present and NOT hidden on mobile/small screens
+  // Inline diagnostics sit beside the branding and carry the diagnostic lines.
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diagnostics"'), 'Diagnostics block must be rendered in DEV mode')
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diag-line1"'), 'Diagnostic Line 1 must be rendered')
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diag-line2"'), 'Diagnostic Line 2 must be rendered')
 
-  // Responsive requirement: diagnostic block must NOT use hidden classes on small/mobile screens
-  assert.ok(!devHeaderHtml.includes('hidden sm:flex'), 'Diagnostics must remain visible on mobile and NOT be hidden on small screens')
+  // Responsive requirement: DEV diagnostics stay visible on small/mobile screens.
+  // #320 splits the diagnostics into the inline block beside the branding (>=sm,
+  // `hidden sm:flex`) and the compact strip below row 1 (<sm, `sm:hidden`), so the
+  // check is scoped to the mobile diagnostics element's own class list instead of
+  // the whole header HTML (which also carries the unrelated main navigation's
+  // `hidden sm:flex`).
+  const compactDiagnostics = devHeaderHtml.match(/data-testid="dev-header-diagnostics-compact"[^>]*?\sclass="([^"]*)"/)
+  assert.ok(compactDiagnostics, 'Compact DEV diagnostics strip must be rendered for phones')
+  const compactDiagnosticsClass = compactDiagnostics[1]
+  assert.ok(compactDiagnosticsClass.includes('sm:hidden'), 'Compact diagnostics must be the <sm presentation')
+  assert.ok(!/(^|\s)hidden(\s|$)/.test(compactDiagnosticsClass), 'Diagnostics must remain visible on mobile and NOT be hidden on small screens')
   assert.ok(devHeaderHtml.includes('truncate'), 'Diagnostics lines must truncate to prevent overflow')
 })
 
