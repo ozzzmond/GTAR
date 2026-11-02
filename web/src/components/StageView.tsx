@@ -124,6 +124,7 @@ export const StageView: React.FC<StageViewProps> = ({
   activeSetlistSongs = [],
   activeSetlistSongIndex = 0,
   onSelectSetlistSongIndex,
+  activeSetlistName,
   onOpenSetlistDrawer,
   isSetlistDrawerOpen = false,
   isStageSettingsModalOpen = false,
@@ -137,6 +138,7 @@ export const StageView: React.FC<StageViewProps> = ({
   onOpenBandSync,
   onPerformanceModeChange,
 }) => {
+  void onOpenBandSync
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
   // Stage view configuration & controls (matching Jetpack Compose SongViewerScreen.kt)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
@@ -460,7 +462,9 @@ export const StageView: React.FC<StageViewProps> = ({
     try {
       const saved = localStorage.getItem('gtar_stage_show_dock') ?? localStorage.getItem('gtar1_stage_show_dock')
       if (saved !== null) return saved === 'true'
-    } catch {}
+    } catch {
+      /* ignore storage error */
+    }
     return false
   })
 
@@ -469,7 +473,34 @@ export const StageView: React.FC<StageViewProps> = ({
     try {
       localStorage.setItem('gtar_stage_show_dock', String(enabled))
       localStorage.setItem('gtar1_stage_show_dock', String(enabled))
-    } catch {}
+    } catch {
+      /* ignore storage error */
+    }
+  }, [])
+
+  // Keep screen awake preference & controller
+  const [isWakeLockEnabled, setIsWakeLockEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('gtar_stage_wake_lock')
+      if (saved !== null) return saved === 'true'
+    } catch {
+      /* ignore storage error */
+    }
+    return true
+  })
+
+  const wakeLockCtrl = useMemo(() => createWakeLockController(), [])
+
+  const handleToggleWakeLock = useCallback(() => {
+    setIsWakeLockEnabled((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('gtar_stage_wake_lock', String(next))
+      } catch {
+        /* ignore storage error */
+      }
+      return next
+    })
   }, [])
 
   // Track whether any modal, drawer, or dialog overlay is active
@@ -1516,15 +1547,21 @@ export const StageView: React.FC<StageViewProps> = ({
   }
 
   // ---------------------------------------------------------------------------
-  // Screen Wake Lock — acquire on mount, re-acquire on tab return, release on unmount
+  // Screen Wake Lock — acquire when enabled, release when disabled or unmounted
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const wakeLock = createWakeLockController()
-    wakeLock.acquire()
-    return () => {
-      wakeLock.cleanup()
+    if (isWakeLockEnabled) {
+      wakeLockCtrl.acquire()
+    } else {
+      wakeLockCtrl.release()
     }
-  }, [])
+  }, [isWakeLockEnabled, wakeLockCtrl])
+
+  useEffect(() => {
+    return () => {
+      wakeLockCtrl.cleanup()
+    }
+  }, [wakeLockCtrl])
 
   // Single source of truth for base reference key:
   // Explicit song key, parsed directive, detected tonic chord progression, or manual key override
@@ -1780,7 +1817,9 @@ export const StageView: React.FC<StageViewProps> = ({
                 setNotation(next)
                 try {
                   localStorage.setItem(NOTATION_STORAGE_KEY, next)
-                } catch {}
+                } catch {
+                  /* ignore storage error */
+                }
                 triggerOverlaysShow()
               }}
               aria-label="Toggle Chords vs Numbers"
@@ -1793,19 +1832,27 @@ export const StageView: React.FC<StageViewProps> = ({
               {notation === 'numbers' ? 'NNS' : 'Chords'}
             </button>
 
-            {/* Speed / Stage Tools button */}
+            {/* Stage Top Bar Quick Autoscroll Action Button */}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                if (onOpenBandSync) onOpenBandSync()
-                else setIsBandSyncModalOpen(true)
+                handleToggleAutoScroll()
                 triggerOverlaysShow()
               }}
-              aria-label="Open Stage Tools"
-              className="ui-button min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text flex items-center justify-center shrink-0 cursor-pointer"
+              aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
+              className={`ui-button min-w-[44px] min-h-[44px] px-2.5 h-11 rounded-xl border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+                isAutoScrolling
+                  ? 'bg-status-error/15 border-status-error text-status-error hover:bg-status-error/25 shadow-sm'
+                  : 'bg-app-button hover:brightness-110 border-app-border text-app-button-text'
+              }`}
             >
-              <Gauge className="w-5 h-5" />
+              {isAutoScrolling ? (
+                <Pause className="w-4 h-4 fill-current" />
+              ) : (
+                <Gauge className="w-4 h-4" />
+              )}
+              <span className="text-xs font-mono font-bold">{scrollSpeed}</span>
             </button>
 
             {/* Stage Options */}
@@ -1939,7 +1986,9 @@ export const StageView: React.FC<StageViewProps> = ({
               setNotation(next)
               try {
                 localStorage.setItem(NOTATION_STORAGE_KEY, next)
-              } catch {}
+              } catch {
+                /* ignore storage error */
+              }
             }}
             aria-label="Toggle Chords vs Numbers"
             className={`hidden sm:inline-flex min-h-[44px] px-3 items-center rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 ${
@@ -1951,17 +2000,23 @@ export const StageView: React.FC<StageViewProps> = ({
             {notation === 'numbers' ? 'NNS' : 'Chords'}
           </button>
 
-          {/* Speed / Stage Tools button */}
+          {/* Stage Top Bar Quick Autoscroll Action Button */}
           <button
             type="button"
-            onClick={() => {
-              if (onOpenBandSync) onOpenBandSync()
-              else setIsBandSyncModalOpen(true)
-            }}
-            aria-label="Open Stage Tools"
-            className="ui-button min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text flex items-center justify-center shrink-0 cursor-pointer"
+            onClick={handleToggleAutoScroll}
+            aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
+            className={`ui-button min-w-[44px] min-h-[44px] px-2.5 h-11 rounded-xl border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+              isAutoScrolling
+                ? 'bg-status-error/15 border-status-error text-status-error hover:bg-status-error/25 shadow-sm'
+                : 'bg-app-button hover:brightness-110 border-app-border text-app-button-text'
+            }`}
           >
-            <Gauge className="w-5 h-5" />
+            {isAutoScrolling ? (
+              <Pause className="w-4 h-4 fill-current" />
+            ) : (
+              <Gauge className="w-4 h-4" />
+            )}
+            <span className="text-xs font-mono font-bold">{scrollSpeed}</span>
           </button>
 
           {/* Stage Options Button */}
@@ -2075,19 +2130,19 @@ export const StageView: React.FC<StageViewProps> = ({
                     Chart Key: <strong className="text-app-text">{keyContext.chartKey}{keyContext.chartEstimated ? ' (est)' : ''}</strong>
                   </span>
                 )}
-                {Boolean(song.bpm || (parsedSong as any).bpm) && (
+                {Boolean(song.bpm || parsedSong.bpm) && (
                   <span className="bg-app-surface px-2.5 py-1 rounded-full border border-app-border text-app-muted">
-                    Tempo: <strong className="text-app-text">{String(song.bpm || (parsedSong as any).bpm).replace(/\s*bpm$/i, '')} BPM</strong>
+                    Tempo: <strong className="text-app-text">{String(song.bpm || parsedSong.bpm).replace(/\s*bpm$/i, '')} BPM</strong>
                   </span>
                 )}
-                {Boolean(song.time || (parsedSong as any).time) && (
+                {Boolean(song.time || parsedSong.time) && (
                   <span className="bg-app-surface px-2.5 py-1 rounded-full border border-app-border text-app-muted">
-                    Time: <strong className="text-app-text">{song.time || (parsedSong as any).time}</strong>
+                    Time: <strong className="text-app-text">{song.time || parsedSong.time}</strong>
                   </span>
                 )}
-                {Boolean(song.year || (parsedSong as any).year) && (
+                {Boolean(song.year || parsedSong.year) && (
                   <span className="bg-app-surface px-2.5 py-1 rounded-full border border-app-border text-app-muted">
-                    Year: <strong className="text-app-text">{song.year || (parsedSong as any).year}</strong>
+                    Year: <strong className="text-app-text">{song.year || parsedSong.year}</strong>
                   </span>
                 )}
               </div>
@@ -2193,8 +2248,8 @@ export const StageView: React.FC<StageViewProps> = ({
       {((isInSetlistMode && activeSetlistSongs.length > 1) ||
         (!isInSetlistMode && songs.length > 1)) && (
         <div
-          className={`absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center gap-0
-                     bg-app-surface/90 backdrop-blur-md rounded-t-2xl border-x border-t shadow-xl text-xs font-mono select-none
+          className={`fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-0
+                     bg-app-surface/95 backdrop-blur-md ${inPerformanceMode && !showDock ? 'rounded-2xl border' : 'rounded-t-2xl border-x border-t'} shadow-xl text-xs font-mono select-none
                      transition-all duration-300 ease-in-out transform ${
                        inPerformanceMode
                          ? showStageOverlays
@@ -2204,7 +2259,12 @@ export const StageView: React.FC<StageViewProps> = ({
                      }`}
           style={{
             borderColor: 'var(--custom-dock-border)',
-            paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))',
+            bottom: inPerformanceMode && !showDock
+              ? 'calc(4.25rem + env(safe-area-inset-bottom, 0px))'
+              : '0px',
+            paddingBottom: inPerformanceMode && !showDock
+              ? '4px'
+              : 'max(10px, env(safe-area-inset-bottom, 10px))',
           }}
         >
           <button
@@ -2445,9 +2505,6 @@ export const StageView: React.FC<StageViewProps> = ({
         Key: ${effectivePerformanceKey || 'Not Set'}
         data-testid="stage-numbers-key-missing"
       */}
-      <div className="hidden">
-        <TvPresentationOptions />
-      </div>
       <StageOptionsSheet
         isOpen={isStageMenuOpen}
         onClose={() => setIsStageMenuOpen(false)}
@@ -2471,19 +2528,28 @@ export const StageView: React.FC<StageViewProps> = ({
         onToggleAutoHideControls={setControlsAutoHide}
         showDock={showDock}
         onToggleShowDock={handleToggleShowDock}
-        wakeLockActive={true}
-        onToggleWakeLock={() => {}}
+        wakeLockActive={isWakeLockEnabled}
+        wakeLockAcquired={isWakeLockEnabled && wakeLockCtrl.isSupported}
+        wakeLockStatus={!wakeLockCtrl.isSupported ? 'unsupported' : isWakeLockEnabled ? 'active' : 'disabled'}
+        onToggleWakeLock={handleToggleWakeLock}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
         isFullscreenSupported={fullscreenCtrl.isSupported}
-        queueSongs={songs}
-        currentQueueIndex={activeSongIndex}
+        queueSongs={isInSetlistMode && activeSetlistSongs && activeSetlistSongs.length > 0 ? activeSetlistSongs : songs}
+        currentQueueIndex={isInSetlistMode && activeSetlistSongs && activeSetlistSongs.length > 0 ? (activeSetlistSongIndex ?? 0) : activeSongIndex}
         onSelectQueueIndex={(index) => {
           setIsStageMenuOpen(false)
-          onSelectSongIndex?.(index)
+          if (isInSetlistMode && onSelectSetlistSongIndex) {
+            onSelectSetlistSongIndex(index)
+          } else {
+            onSelectSongIndex?.(index)
+          }
         }}
+        setlistName={isInSetlistMode ? activeSetlistName : undefined}
         onOpenTvPresentation={() => setIsTvPresentationModalOpen(true)}
-      />
+      >
+        <TvPresentationOptions />
+      </StageOptionsSheet>
 
       {/* Lightweight Responsive Chord Quick Preview Popover */}
       <ChordQuickPreview

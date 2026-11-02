@@ -221,7 +221,7 @@ test('STAGE_PREVIEW_GTAR1: Song format renders GTAR1 song view with metadata chi
   assert.ok(html.includes('Year:'), 'Must render Year chip')
 
   // Top row controls
-  assert.ok(html.includes('aria-label="Open Stage Tools"'), 'Top row must contain Stage Tools / speed button')
+  assert.ok(html.includes('aria-label="Start autoscroll"'), 'Top row must contain autoscroll start/stop button')
   assert.ok(html.includes('aria-label="Open Stage Options"'), 'Top row must contain Stage Options button')
   assert.ok(html.includes('Cast / Pop-out Screen'), 'Second row must contain Cast button')
   assert.ok(html.includes('Enter fullscreen'), 'Top row must contain Fullscreen button')
@@ -261,5 +261,50 @@ test('STAGE_PREVIEW_GTAR1: Fixed bottom transport controls in fullscreen mode', 
   assert.ok(
     stageViewSource.includes('data-testid="stage-bottom-transpose-up-btn"'),
     'Must render transpose up semitone button'
+  )
+
+  // P1 & P2 Review Verification
+  // 1. P1: Quick jump uses setlist songs and index when in setlist mode
+  assert.ok(
+    stageViewSource.includes('queueSongs={isInSetlistMode && activeSetlistSongs && activeSetlistSongs.length > 0 ? activeSetlistSongs : songs}'),
+    'Quick jump must use active setlist songs when in setlist mode'
+  )
+  assert.ok(
+    stageViewSource.includes('currentQueueIndex={isInSetlistMode && activeSetlistSongs && activeSetlistSongs.length > 0 ? (activeSetlistSongIndex ?? 0) : activeSongIndex}'),
+    'Quick jump must use active setlist index when in setlist mode'
+  )
+  assert.ok(
+    stageViewSource.includes('if (isInSetlistMode && onSelectSetlistSongIndex) {'),
+    'Quick jump selection must call onSelectSetlistSongIndex in setlist mode'
+  )
+
+  // 2. P2: In fullscreen, song navigator pill is offset above bottom transport bar
+  assert.ok(
+    stageViewSource.includes('calc(4.25rem + env(safe-area-inset-bottom, 0px))'),
+    'Song navigator pill must be offset above bottom transport controls when dock is off'
+  )
+
+  // 3. P2: TV presentation options inside Stage Options sheet (not hidden)
+  assert.ok(
+    !stageViewSource.includes('<div className="hidden">'),
+    'TvPresentationOptions must not be hidden in a hidden div'
+  )
+  assert.ok(
+    stageViewSource.includes('<StageOptionsSheet') && stageViewSource.includes('<TvPresentationOptions />'),
+    'TvPresentationOptions must be placed inside StageOptionsSheet'
+  )
+
+  // 4. P2: Wake lock controller wired with toggle
+  assert.ok(
+    stageViewSource.includes('createWakeLockController()'),
+    'StageView must instantiate wakeLockController'
+  )
+  assert.ok(
+    stageViewSource.includes('wakeLockActive={isWakeLockEnabled}'),
+    'StageOptionsSheet must receive wakeLockActive bound to state'
+  )
+  assert.ok(
+    stageViewSource.includes('onToggleWakeLock={handleToggleWakeLock}'),
+    'StageOptionsSheet must receive handleToggleWakeLock'
   )
 })
