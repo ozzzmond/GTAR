@@ -86,7 +86,7 @@ export function normalizeSongbookIds(
         }
       }
 
-      // The S4 upgrade below binds exact title+artist, then exact title, once.
+      // The S4 upgrade below binds normalized names only when the match is unambiguous.
       return { ...ref }
     })
 

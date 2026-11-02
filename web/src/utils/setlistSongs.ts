@@ -28,11 +28,12 @@ export function resolveSetlistSongIndexed(ref: LegacySetlistSongRef, songs: Acti
 /** Run at library load/import; saved IDs remain authoritative after edits. */
 export function bindLegacySetlists(setlists: Array<Omit<WebSetlist, 'songs'> & { songs: LegacySetlistSongRef[] }>, songs: ActiveSongState[]): WebSetlist[] {
   const byId = songIdIndex(songs)
-  const byTitle = new Map<string, ActiveSongState>(), byTitleArtist = new Map<string, ActiveSongState>()
+  const byTitle = new Map<string, ActiveSongState | null>(), byTitleArtist = new Map<string, ActiveSongState | null>()
   for (const song of songs) {
-    if (!byTitle.has(song.title)) byTitle.set(song.title, song)
-    const identity = JSON.stringify([song.title, song.artist])
-    if (!byTitleArtist.has(identity)) byTitleArtist.set(identity, song)
+    const title = song.title.trim().toLowerCase()
+    byTitle.set(title, byTitle.has(title) ? null : song)
+    const identity = songIdentity(song)
+    byTitleArtist.set(identity, byTitleArtist.has(identity) ? null : song)
   }
   return setlists.map(setlist => {
     const used = new Set<string>()
@@ -42,7 +43,7 @@ export function bindLegacySetlists(setlists: Array<Omit<WebSetlist, 'songs'> & {
       while (used.has(entryId)) entryId += ':duplicate'
       used.add(entryId)
       const song = ref.id !== undefined ? byId.get(String(ref.id)) :
-        byTitleArtist.get(JSON.stringify([ref.title, ref.artist ?? ''])) ?? byTitle.get(ref.title)
+        (ref.artist?.trim() ? byTitleArtist.get(songIdentity(ref)) : undefined) ?? byTitle.get(ref.title.trim().toLowerCase())
       return { ...ref, id: song?.id ?? ref.id ?? `missing:${entryId}`, entryId, position }
     }) }
   })

@@ -175,7 +175,10 @@ export function libraryStorePersist(library: SyncLibrary, options: { expectedRaw
   const s = state
   if (!s) throw new Error('Library storage not open')
   if (s.readOnly) throw new LibraryReadOnlyError()
-  const plain = JSON.parse(JSON.stringify(library)) as SyncLibrary
+  // Older/partial callers omit folders; only an explicit array (including []) replaces them.
+  const complete = library.folders === undefined && s.current.library?.folders !== undefined
+    ? { ...library, folders: s.current.library.folders } : library
+  const plain = JSON.parse(JSON.stringify(complete)) as SyncLibrary
   const sameContent = s.current.library !== null && deepEqual(s.current.library, plain)
   if (!options.force && options.expectedRaw !== undefined && options.expectedRaw !== s.head && !sameContent) throw new LibraryStaleWriteError(s.head)
   if (sameContent && s.current.token === s.head) return 'unchanged'

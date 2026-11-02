@@ -145,7 +145,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       await restoreCloudBackup(device, preview.cloud.data, mode, library => {
         if (restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
         if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
-        return apply(library.songs, library.setlists)
+        return apply(library.songs, library.setlists, library.folders)
       }, localStorage)
       setPreview(null); setMessage(restoredMessage(preview.cloud.data), 'success')
     }

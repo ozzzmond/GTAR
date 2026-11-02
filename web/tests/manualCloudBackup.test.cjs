@@ -63,3 +63,12 @@ test('verified cloud backup and restore each record one count-only event', async
   ['RestoreApplied','Restore applied (replace, cloud): 0 songs, 0 setlists'],
  ])
 })
+test('cloud restore verification rejects folders dropped by the apply callback',async()=>{
+ const {restoreCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const {persistLibrary,readPersistedLibrary}=require('../src/utils/syncJournal.ts')
+ const values=new Map();const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)}
+ const before={songs:[],setlists:[]}
+ persistLibrary(before,storage)
+ const incoming={songs:[],setlists:[],folders:[{id:'root',name:'Root',parentId:null},{id:'child',name:'Child',parentId:'root'}]}
+ await assert.rejects(()=>restoreCloudBackup(readPersistedLibrary(storage),incoming,'replace',library=>persistLibrary({...library,folders:[]},storage),storage),/Restore could not be verified/)
+})

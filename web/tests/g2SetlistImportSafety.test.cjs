@@ -149,7 +149,8 @@ test('ordered legacy references preserve playback/export; malformed references r
   }
   const upgraded = parse({ songs: [song, { ...song, id: 'other' }], setlists: [{ ...list, songs: [{ title: song.title }, {id:'missing',title:song.title}] }] })
   assert.equal(upgraded.isValid, true, upgraded.error)
-  assert.deepEqual(upgraded.setlists[0].songs.map(ref => ref.id), [song.id, 'missing'])
+  assert.match(upgraded.setlists[0].songs[0].id, /^missing:/)
+  assert.equal(upgraded.setlists[0].songs[1].id, 'missing')
 })
 
 test('stale cross-tab merge rejects while retaining recovery snapshots and archive bytes', () => {
