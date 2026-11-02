@@ -225,3 +225,54 @@ test('#300: the recovery export includes the safety snapshots', async () => {
   assert.equal(snapshots.length, 2)
   assert.ok(snapshots.some(([, raw]) => /pre-restore/.test(raw)), 'the pre-restore snapshot is exported')
 })
+
+test('#300: PROD v1.1.141 first load migrates v1 without B1/B2 flags and keeps the source frozen', async () => {
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const { storage, factory, sourceRaw } = device(10, 2)
+  const source = JSON.parse(sourceRaw)
+  const priorUrl = h.dom.window.location.href
+  const priorFactory = global.indexedDB
+  const priorAct = global.IS_REACT_ACT_ENVIRONMENT
+  h.dom.reconfigure({ url: 'https://gtar-web.pages.dev/' })
+  global.indexedDB = factory
+  global.IS_REACT_ACT_ENVIRONMENT = true
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  document.body.innerHTML = '<div id="root"></div>'
+  const tab = h.newTab()
+  const App = require('../src/App.tsx').default
+  const root = createRoot(document.getElementById('root'))
+  try {
+    assert.equal(require('../src/utils/env.ts').isDevEnv, false)
+    assert.equal(storage.getItem('gtar_library_b1_enabled'), null)
+    assert.equal(storage.getItem('gtar_library_b2_enabled'), null)
+    await act(async () => root.render(React.createElement(App)))
+    for (let i = 0; i < 100 && !tab.sj.isLibraryStoreActive(storage); i++) {
+      await act(async () => { await h.settle(10) })
+    }
+    assert.equal(tab.sj.isLibraryStoreActive(storage), true, 'PROD startup must open the IndexedDB library')
+    const back = tab.sj.readPersistedLibrary(storage)
+    assert.equal(back.songs.length, 10)
+    assert.equal(back.setlists.length, 2)
+    assert.deepEqual(back.songs.map(s => s.id), source.songs.map(s => s.id))
+    assert.deepEqual(back.setlists.map(s => s.id), source.setlists.map(s => s.id))
+    assert.deepEqual(plain(back), source)
+    const snapshots = await tab.store.listSafetySnapshots()
+    assert.equal(snapshots.length, 1)
+    assert.equal(snapshots[0].reason, 'before-migration')
+    await act(async () => root.unmount())
+    tab.sj.persistLibrary(titled(back, 'Saved on PROD'), storage)
+    await tab.store.flushLibraryStore()
+    assert.equal(storage.getItem(V1), sourceRaw, 'v1 stays byte-identical after a PROD save')
+    const again = await open(storage, factory)
+    assert.equal(again.prepared.migrated, false)
+    assert.equal(again.tab.sj.readPersistedLibrary(storage).songs[0].title, 'Saved on PROD')
+    assert.equal((await again.tab.store.listSafetySnapshots()).length, 1, 'migration runs once')
+  } finally {
+    await act(async () => root.unmount())
+    h.dom.reconfigure({ url: priorUrl })
+    global.indexedDB = priorFactory
+    global.IS_REACT_ACT_ENVIRONMENT = priorAct
+  }
+})

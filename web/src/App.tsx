@@ -106,10 +106,10 @@ function App() {
 }
 
 // #167 B1c (DEV): recovery archives load from IndexedDB before anything reads recovery state.
-// #300 B3 (DEV until the soak passes; PROD keeps gtar_library_v1): the library opens from IndexedDB,
+// #300 B3 (DEV and PROD): the library opens from IndexedDB,
 // moved there once from the earlier storage, before the library renders.
 const needsArchiveStartup = () => isDevEnv && typeof indexedDB !== 'undefined' && !recoveryArchivesInIndexedDb()
-const LIBRARY_STORE_ENABLED = isDevEnv
+const LIBRARY_STORE_ENABLED = true
 function LibraryStartup() {
   const [ready, setReady] = useState(() => !needsArchiveStartup() && (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined'))
   const [storageNotice, setStorageNotice] = useState<string | null>(null)
