@@ -1,9 +1,9 @@
 // #252 real-device QA fixture: the synthetic schema-v2 backup is valid, deterministic, and restores
-// into B2 exactly (and fails safely into a ~5 MB localStorage with B2 off), using the app's own code.
+// into the IndexedDB library exactly (#300; and fails safely into a ~5 MB localStorage), using the app's own code.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
-const h = require('./helpers/b2Harness.cjs')
+const h = require('./helpers/tabHarness.cjs')
 const { installNavigatorLocks } = require('./helpers/fakeLocks.cjs')
 const gen = require('../scripts/generate-qa-backup.cjs')
 

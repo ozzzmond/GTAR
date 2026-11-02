@@ -13,8 +13,8 @@ test('every discovered file belongs to exactly one tier; unlisted files default 
   assert.deepEqual(partition(['new.test.cjs'], { default: 'fast', files: [] }), {
     fast: ['new.test.cjs'], scale: [], release: [], workerd: [],
   })
-  for (const file of ['libraryB2Storage.test.cjs', 'libraryB2Isolation.test.cjs', 'libraryIndexB1.test.cjs', 'qaBackupFixture.test.cjs', 'scaleBaseline.test.cjs']) assert.ok(groups.fast.includes(file), file)
-  for (const file of ['libraryB2StorageScale.test.cjs', 'libraryB2IsolationScale.test.cjs', 'libraryIndexB1Scale.test.cjs', 'qaBackupFixtureScale.test.cjs', 'backupV2Scale.test.cjs']) assert.ok(groups.scale.includes(file), file)
+  for (const file of ['libraryStore.test.cjs', 'qaBackupFixture.test.cjs', 'scaleBaseline.test.cjs']) assert.ok(groups.fast.includes(file), file)
+  for (const file of ['libraryStoreScale.test.cjs', 'qaBackupFixtureScale.test.cjs', 'backupV2Scale.test.cjs']) assert.ok(groups.scale.includes(file), file)
 })
 
 test('duplicate, stale and invalid tier assignments fail closed', () => {
@@ -50,7 +50,7 @@ test('fast CI shards partition all fast files exactly once and reject invalid co
   const pinned = Object.fromEntries(manifest.files.filter(entry => entry.fastShard !== undefined).map(entry => [entry.file, entry.fastShard]))
   const parts = Array.from({ length: 8 }, (_, index) => shardFiles(groups.fast, `${index}/8`, pinned))
   assert.deepEqual(parts.flat().sort(), groups.fast)
-  assert.deepEqual(parts[0], ['accountAccessFoundation.test.cjs', 'libraryB2Safety.test.cjs'])
+  assert.deepEqual(parts[0], ['accountAccessFoundation.test.cjs'])
   assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '0/2'), ['a', 'c', 'e'])
   assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '1/2'), ['b', 'd'])
   assert.deepEqual(shardFiles(['a', 'b', 'c', 'd', 'e'], '0/3', { c: 0, e: 0 }), ['c', 'e'])

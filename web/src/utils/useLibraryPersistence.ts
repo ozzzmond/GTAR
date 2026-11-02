@@ -1,17 +1,17 @@
 import { appLogger } from './logger'
 /**
  * #85 slice 1: library persistence glue moved verbatim from App.tsx. Owns the persisted baseline
- * (revision token), the cross-tab conflict state and guard (#177 adoption tracking, #171 B1 body
+ * (revision token), the cross-tab conflict state and guard (#177 adoption tracking, #300 IndexedDB revision
  * loading), the unload guard and the canonical persist effect. Behavior is unchanged.
  */
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { ActiveSongState } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import {
-  decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
+  StaleWriteConflictError, decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
   persistLibrary, saveCrossTabConflictSnapshot, setupCrossTabLibraryConflictGuard,
 } from './syncJournal'
-import { isMissingLibraryBodyError } from './libraryIndex'
+import { LIBRARY_WRITE_FAILED_EVENT, isMissingLibraryBodyError, libraryStorePending } from './libraryStore'
 import { partitionSongs } from './setlistSongs'
 
 export interface LibraryPersistenceInput {
@@ -93,7 +93,7 @@ export function useLibraryPersistence({
       const baselineRaw = persistedBaselineRef.current
       // Match JSON storage semantics, including omitted optional editor fields.
       let hasLocalChanges = !isAdoptedState(local)
-      // #252: with B2 this compares records by identity instead of stringifying the library.
+      // Compares the persisted JSON representation of the library at the baseline revision.
       if (hasLocalChanges && baselineRaw && libraryMatchesRevision(currentLocal, baselineRaw)) hasLocalChanges = false
 
       if (editorRecoveryDraftRef.current?.()) hasLocalChanges = true
@@ -124,8 +124,7 @@ export function useLibraryPersistence({
           try {
             adopt()
           } catch (error) {
-            // #171 B1: another tab saved charts this tab has not loaded; fetch them before adopting.
-            // #252 B2: another tab's save is loaded from IndexedDB once its transaction committed.
+            // #300: another tab's committed IndexedDB save is loaded before adopting.
             if (isMissingLibraryBodyError(error)) {
               loadLibraryRevision(externalRaw)
                 .then(() => { if (libraryRevision() === externalRaw) adopt() })
@@ -142,9 +141,23 @@ export function useLibraryPersistence({
     return cleanup
   }, [songs, deletedSongs, setlists, getConflictDraft, editorRecoveryDraftRef, setSongs, setDeletedSongs, setSetlists, setToastMessage])
 
+  // #300: a save is committed to IndexedDB after it returns; a failed commit (another tab's newer
+  // save, quota) is reported here and the edits stay in memory.
+  useEffect(() => {
+    const failed = (event: Event) => {
+      const error = (event as CustomEvent).detail
+      if (error && typeof error === 'object' && (error as { name?: string }).name === 'LibraryStaleWriteError') {
+        handleStorageWriteFailure(new StaleWriteConflictError((error as Error).message, (error as { currentRaw?: string | null }).currentRaw ?? null, { songs: [...songs, ...deletedSongs], setlists }))
+      } else handleStorageWriteFailure(error)
+    }
+    window.addEventListener(LIBRARY_WRITE_FAILED_EVENT, failed)
+    return () => window.removeEventListener(LIBRARY_WRITE_FAILED_EVENT, failed)
+  }, [songs, deletedSongs, setlists, handleStorageWriteFailure])
+
   // State-only mutations can outlive a failed save outside the editor.
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
+      if (libraryStorePending()) { event.preventDefault(); event.returnValue = ''; return }
       if (isAdoptedState({ songs, deletedSongs, setlists })) return
       // An unreadable baseline cannot establish durability.
       if (libraryMatchesRevision({ songs: [...songs, ...deletedSongs], setlists }, persistedBaselineRef.current)) return

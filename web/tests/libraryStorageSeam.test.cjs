@@ -20,6 +20,8 @@ test('no module outside syncJournal touches the library key directly', () => {
   const offenders = []
   for (const file of files(src)) {
     if (file.endsWith(path.join('utils', 'syncJournal.ts'))) continue
+    // #300: the one-time migration reads the earlier library keys (read-only).
+    if (file.endsWith(path.join('utils', 'legacyLibrarySources.ts'))) continue
     const text = fs.readFileSync(file, 'utf8')
     const lines = text.split('\n')
     lines.forEach((line, i) => {

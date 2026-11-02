@@ -14,7 +14,8 @@ import { mergeBackupLibrary } from './setlistSongs'
 import { mergeImportedSetlists } from './importIdentity'
 import { canonicalSongKey } from './musicalKey'
 import { recordBackupStatus, type BackupDelivery } from './backupStatus'
-import { isLibraryB2Active, isQuotaError, libraryMatchesRevision, libraryRevision, noteSafetySnapshotRevision, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
+import { takeSafetySnapshot, flushLibraryStore } from './libraryStore'
+import { isLibraryStoreActive, isQuotaError, libraryMatchesRevision, libraryRevision, noteSafetySnapshotRevision, readPersistedLibrary, readRecoveryArchive, writeRecoverySnapshot } from './syncJournal'
 import { generateUUID } from './uuid'
 
 export interface ExportEnvironment {
@@ -90,7 +91,7 @@ export async function copyBackup(backup: VerifiedBackup, env: ExportEnvironment 
   return finish(backup, 'copy', { kind: 'copied' })
 }
 
-export interface SafetySnapshotResult { location: 'restore-snapshot' | 'recovery-archive'; key: string }
+export interface SafetySnapshotResult { location: 'restore-snapshot' | 'recovery-archive' | 'safety-snapshot'; key: string }
 
 /**
  * Pre-restore copy of the current library, verified by reading it back. The usual single
@@ -99,15 +100,18 @@ export interface SafetySnapshotResult { location: 'restore-snapshot' | 'recovery
  * caller must not change the library then.
  */
 export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
-  const result = await writeRestoreSafetySnapshot(library, storage)
-  // #252 B2: the restore that follows may rely on this verified copy to preserve the stored revision.
-  try { if (isLibraryB2Active(storage)) { const revision = libraryRevision(storage); noteSafetySnapshotRevision(libraryMatchesRevision(library, revision) ? revision : null) } } catch { /* not covered */ }
-  return result
+  // #300: with the IndexedDB library, a verified safety snapshot (last 5, 50 MB) in the same database.
+  if (isLibraryStoreActive(storage)) {
+    let revision: string | null = null
+    try { revision = libraryRevision(storage) } catch { /* not covered */ }
+    const key = await takeSafetySnapshot('before-restore', library)
+    // The restore that follows relies on this verified copy to preserve the stored revision.
+    noteSafetySnapshotRevision(libraryMatchesRevision(library, revision) ? revision : null)
+    return { location: 'safety-snapshot', key }
+  }
+  return writeRestoreSafetySnapshot(library, storage)
 }
 async function writeRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
-  // #258 F6: with B2 the snapshot is a recovery archive of this account's partition, never the
-  // single shared snapshot key (which another account's restore would replace or read).
-  if (isLibraryB2Active(storage)) return archiveSafetySnapshot(library, storage, null)
   try {
     createRestoreSafetySnapshot(library, storage)
     return { location: 'restore-snapshot', key: RESTORE_SNAPSHOT_KEY }
@@ -163,6 +167,12 @@ function recordDiff(kind: 'song' | 'setlist', expected: Record<string, unknown>[
  * restore should have produced: every song and setlist, every supported field, chart content,
  * order, setlist membership and references, trash state. Any unexplained difference is an error.
  */
+/** #300: waits until this tab's saves are committed to IndexedDB; returns a problem when they failed. */
+export async function libraryWritesSaved(): Promise<string[]> {
+  try { await flushLibraryStore(); return [] }
+  catch (error) { return [`saved library could not be written to device storage (${error instanceof Error ? error.message : String(error)})`] }
+}
+
 export function verifyRestoredLibrary(before: Library, incoming: Library, mode: 'replace' | 'merge', storage: Storage): string[] {
   let saved: Library | null
   try { saved = readPersistedLibrary(storage) } catch (error) {

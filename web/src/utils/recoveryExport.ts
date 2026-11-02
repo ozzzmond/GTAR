@@ -2,11 +2,11 @@
  * #299: the one recovery action left in the normal UI. Old recovery archives (left by the removed
  * auto-sync, restore snapshots that went to the archive store, legacy stores) stay on the device;
  * users can only export them. The export is the same full set the Recovery data panel saves,
- * B2 partitions included. Nothing here deletes or changes recovery data.
+ * earlier B2 partitions included (read-only, #300). Nothing here deletes or changes recovery data.
  */
 import { useSyncExternalStore } from 'react'
 import { inspectRecovery, recoveryExportData } from './syncJournal'
-import { b2RecoveryScopes, exportB2Partition } from './libraryB2'
+import { exportB2Partitions } from './legacyLibrarySources'
 import { RECOVERY_CHANGED_EVENT } from './recoveryAttention'
 
 /** Signature of the archives covered by the last export handed out on this device. */
@@ -18,12 +18,7 @@ const EVENTS = ['gtar-library-persisted', 'storage', RECOVERY_CHANGED_EVENT, SAV
 /** Full recovery export: every recovery source plus every B2 partition (a failing partition is recorded, not fatal). */
 export async function recoveryExportWithPartitions(storage: Storage = localStorage): Promise<Record<string, string>> {
   const data = recoveryExportData(storage)
-  for (const scope of b2RecoveryScopes(storage)) {
-    try { data[`gtar_library_b2::${scope}`] = JSON.stringify(await exportB2Partition(scope, storage)) }
-    catch (error) {
-      data[`gtar_library_b2_error::${scope}`] = JSON.stringify({ scope, message: error instanceof Error ? error.message : String(error) })
-    }
-  }
+  Object.assign(data, await exportB2Partitions(storage, typeof indexedDB !== 'undefined' ? indexedDB : null))
   return data
 }
 

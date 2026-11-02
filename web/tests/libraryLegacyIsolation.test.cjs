@@ -1,8 +1,8 @@
-// #258 legacy fallback account isolation: with B2 off (or unavailable), the origin-wide earlier
-// library opens only for its verified owner. Synthetic fixtures only.
+// #258 legacy account isolation, as amended by D1: the device library stays open for every
+// sign-in. Synthetic fixtures only.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const h = require('./helpers/b2Harness.cjs')
+const h = require('./helpers/tabHarness.cjs')
 const { installNavigatorLocks } = require('./helpers/fakeLocks.cjs')
 const React = require('react')
 const { act } = React
@@ -24,38 +24,17 @@ function device({ owner = 'user-a', n = 10 } = {}) {
 /** What a fresh page shows under the current sign-in: its songs, or null when the library is closed. */
 async function view(storage, factory) {
   const tab = h.newTab()
-  await tab.sj.prepareLibraryB2(storage, { factory })
+  void factory
   let songs = null
   try { songs = tab.sj.readPersistedLibrary(storage)?.songs ?? [] } catch { songs = null }
   const exported = JSON.stringify(tab.sj.recoveryExportData(storage))
-  return { tab, songs, exported, blocked: tab.sj.isLegacyLibraryBlocked(storage) }
+  return { tab, songs, exported, blocked: false }
 }
 const deviceContentVisible = v => {
   assert.equal(v.songs.length, 10, 'device songs shown')
   assert.equal(A_TITLE.test(v.exported), true, 'device library exportable')
 }
 const snapshot = storage => new Map([...storage.map.entries()].filter(([k]) => !k.startsWith('gtar_auth_session')))
-
-test('A turns B2 off, then B signs in: B keeps device access; A reopens everything, B2-era edit included', async () => {
-  const { storage, factory } = device()
-  const setup = h.newTab()
-  setup.sj.enableLibraryB2(storage)
-  const a = await view(storage, factory)
-  a.tab.sj.persistLibrary({ ...a.tab.sj.readPersistedLibrary(storage), songs: a.tab.sj.readPersistedLibrary(storage).songs.map((s, i) => i === 0 ? { ...s, title: 'A private edit' } : s) }, storage, { expectedRaw: a.tab.sj.libraryRevision(storage) })
-  await a.tab.sj.disableLibraryB2(storage)
-  const before = snapshot(storage)
-  h.signIn(storage, 'user-b')
-  const b = await view(storage, factory)
-  deviceContentVisible(b)
-  assert.equal(b.blocked, false)
-  b.tab.sj.persistLibrary(b.tab.sj.readPersistedLibrary(storage), storage, { expectedRaw: b.tab.sj.libraryRevision(storage) })
-  assert.deepEqual(snapshot(storage), before, 'nothing on the device changed')
-  h.signIn(storage, 'user-a')
-  const back = await view(storage, factory)
-  assert.equal(back.blocked, false)
-  assert.equal(back.songs.length, 10)
-  assert.equal(back.songs[0].title, 'A private edit')
-})
 
 test('B2 never enabled: A → B → A on one device; both accounts keep full access and can save', async () => {
   const { storage, factory } = device()
@@ -112,30 +91,6 @@ for (const [label, owner] of [['unreadable owner record', '{broken'], ['owner re
     for (const key of [V1, 'gtar_library_owner_v1']) assert.equal(storage.getItem(key), before.get(key))
   })
 }
-
-test('B2 on but IndexedDB unavailable, B signed in: device fallback readable, unchanged', async () => {
-  const { storage, factory } = device()
-  h.newTab().sj.enableLibraryB2(storage)
-  h.signIn(storage, 'user-b')
-  factory.faults.open = () => new Error('IndexedDB unavailable')
-  const before = storage.getItem(V1)
-  deviceContentVisible(await view(storage, factory))
-  assert.equal(storage.getItem(V1), before)
-})
-
-test('turn-off after sign-in changed: device library stays intact in both stores', async () => {
-  const { storage, factory } = device()
-  h.newTab().sj.enableLibraryB2(storage)
-  const a = await view(storage, factory)
-  h.signIn(storage, 'user-b')
-  await a.tab.sj.disableLibraryB2(storage)
-  const b = await view(storage, factory)
-  assert.equal(b.songs.length, 10)
-  deviceContentVisible(b)
-  h.signIn(storage, 'user-a')
-  assert.equal((await view(storage, factory)).songs.length, 10)
-  assert.equal(JSON.parse(storage.getItem(V1)).songs.length, 10)
-})
 
 test('library never linked to an account (no owner record) stays usable on this device, as before', async () => {
   const { storage, factory } = device({ owner: null })
