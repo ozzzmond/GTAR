@@ -2,9 +2,17 @@
 Baseline when written: `dev` @ 7a362fe. PROD v1.1.141 @ 4fe9504. GitHub stays source of truth.
 Roles: Claude = validator (prompts + PR review). Tier 1 = owner (pafs). Tier 2 = Codex, Claude Code, AGY, OpenCode/DeepSeek (backup).
 
-## Status
-- PR-X Music Explorer layout: DONE — #286 merged to dev as cf59f2f; owner DEV QA on iPhone PASS (structure matches GTAR1).
-- PR-A: next (Codex), after the repo source-of-truth docs PR (#287).
+## Status (2026-11-02)
+- PR-X Music Explorer layout = GTAR1: #286 (cf59f2f). DEV QA PASS.
+- PR-A device-owned library, no login gate: #289 (309a82b). DEV QA PASS.
+- PR-B manual cloud Backup/Restore, auto-sync off: #292 (d010d25) + layout restore #296. DEV QA PASS.
+- Backup & Restore center (#299): #303 (dcd34a0). DEV QA PASS.
+- PR-C Shared Catalog sign-in (#301): #302 (f368ccb). DEV QA PASS.
+- S1 setlist workspace (#290): #293 (71c0446).
+- Post-QA cleanup (#304): #305 GIS button sign-in (FedCM), #306 UI cleanup, #308 Recovery data panel + Manage Users.
+- Debug logs 20-entry FIFO (#256): #307 (8b8c2dd).
+- PR-D personal sync code removal (#255): in progress.
+- Next: PR-E test tiering (#280); B3 storage (#300) after PR-D; S2 Setlist Manager + picker; coordinated PROD release (D6).
 
 ## Goal (owner, 2026-11-01)
 1. No login gate: app opens and works fully without Google sign-in (same as GTAR1).
