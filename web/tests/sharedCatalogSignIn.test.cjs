@@ -74,11 +74,10 @@ test('local song actions stay available while publishing is hidden signed out',a
 })
 
 const { renderToString } = require('react-dom/server')
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 for (const status of ['pending','denied']) test(`${status} masked session hides local catalog actions without extra hints`,()=>{
  const value={session:null,accessStatus:status,role:'USER'}
  const setlists=[{id:'s',name:'Local setlist',songs:[]}]
- for (const [Component,props] of [[SongbookHomeView,{initialTab:'setlists'}],[SetlistDrawer,{isOpen:true,initialTab:'setlists'}]]) {
+ for (const [Component,props] of [[SongbookHomeView,{initialTab:'setlists'}]]) {
   const html=renderToString(React.createElement(AuthContext.Provider,{value},React.createElement(Component,{...props,songs:[],setlists,onShareSetlist(){},onPublishSetlist(){},onClose(){}})))
   assert.doesNotMatch(html,/main-share-setlist-btn|Share Setlist \(QR Code\)|Publish .* to Shared|Sign in to use the Shared Catalog/)
   assert.match(html,/Local setlist/)

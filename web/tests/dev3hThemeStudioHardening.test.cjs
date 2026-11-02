@@ -180,7 +180,7 @@ test('FACTORY RESTORE: Exact canonical restoration, deletion safety, immutable f
   assert.deepEqual(theme.THEME_OPTIONS, factorySnapshot)
 }))
 
-test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, CSS centering contract', () => {
+test('TOOLBAR ALIGNMENT: 8 primary controls, 44px targets, canonical order, CSS centering contract', (t) => {
   const css = fs.readFileSync(require.resolve('../src/index.css'), 'utf8')
   // Verify CSS shared centering contract
   assert.match(css, /\.toolbar-icon-btn\s*\{[^}]*width:\s*36px;/)
@@ -200,6 +200,7 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   window.requestAnimationFrame = fn => setTimeout(fn, 0)
   const root = createRoot(document.getElementById('root'))
+  t.after(() => { act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document; delete global.localStorage; delete global.IS_REACT_ACT_ENVIRONMENT })
   act(() => {
     root.render(React.createElement(Header, {
       activeView: 'songbook',
@@ -216,7 +217,7 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   })
 
   const sheet = document.createElement('style')
-  sheet.textContent = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0] + css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
+  sheet.textContent = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0] + css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0] + css.match(/^header \.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
   document.head.appendChild(sheet)
   const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
   assert.ok(scroll.classList.contains('overflow-x-auto'))
@@ -227,7 +228,7 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
   assert.equal(layout.width, 'max-content')
   assert.match(css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0], /margin-inline:\s*auto;/)
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
-  assert.equal(toolbarButtons.length, 9)
+  assert.equal(toolbarButtons.length, 8)
   const labels = [...toolbarButtons].map(btn => btn.getAttribute('aria-label'))
   assert.deepEqual(labels, [
     'Back',
@@ -238,18 +239,15 @@ test('TOOLBAR ALIGNMENT: 7 primary controls, 36x36 footprint, canonical order, C
     'Theme (Alt+5)',
     'Trash (Alt+6)',
     'More',
-    'Side Panel',
   ])
   for (const btn of toolbarButtons) {
     assert.ok(btn.classList.contains('shrink-0'))
     assert.equal(btn.parentElement, content)
     const footprint = window.getComputedStyle(btn)
-    assert.equal(footprint.width, '36px'); assert.equal(footprint.height, '36px')
+    assert.equal(footprint.minWidth, '44px'); assert.equal(footprint.height, '44px')
     assert.equal(footprint.display, 'inline-flex')
     assert.equal(footprint.alignItems, 'center'); assert.equal(footprint.justifyContent, 'center')
   }
-  act(() => root.unmount()); dom.window.close()
-  delete global.window; delete global.document; delete global.localStorage; delete global.IS_REACT_ACT_ENVIRONMENT
 })
 
 test('FACTORY PALETTE: All presets provide 38 valid semantic tokens; revamps follow design guidelines', () => {

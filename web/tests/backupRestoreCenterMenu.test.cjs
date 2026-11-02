@@ -54,7 +54,7 @@ test('profile menu: "Manage Users", no Backup & Restore entry; header cloud butt
     assert.ok(buttonTexts(popover).includes('Manage Users'))
     assert.doesNotMatch(popover.textContent, /Whitelist|Backup & Restore/)
     const cloud = document.querySelector('[data-testid="header-cloud-sync-button"]')
-    assert.equal(cloud.getAttribute('aria-label'), 'Backup & Restore')
+    assert.match(cloud.getAttribute('aria-label'), /^Backup & Restore.*Last cloud backup|^Backup & Restore.*No cloud backup yet/)
     assert.equal(center.isOpen, false)
     await act(async () => cloud.click())
     assert.equal(center.isOpen, true)

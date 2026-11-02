@@ -14,7 +14,6 @@ require.extensions['.png'] = (module) => { module.exports = '/assets/dev-logo.pn
 
 const React = require('react')
 const { renderToString } = require('react-dom/server')
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 const { Header } = require('../src/components/Header.tsx')
 
@@ -80,31 +79,6 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
 
   assert.match(htmlSongInSetlist, /Song Setlists.*1 of 2/)
   assert.match(htmlSongInSetlist, /Rock Night/)
-})
-
-test('3. SetlistDrawer provides tab-aware placeholder and filters setlists on setlists tab', () => {
-  const songs = [
-    { id: 1, title: 'Hotel California', artist: 'Eagles', key: 'Bm', rawContent: '' },
-    { id: 2, title: 'Wonderwall', artist: 'Oasis', key: 'Em', rawContent: '' },
-  ]
-  const setlists = [
-    { id: 'sl-1', name: 'Friday Gig', songs: [{ id: 1, title: 'Hotel California', artist: 'Eagles' }] },
-    { id: 'sl-2', name: 'Saturday Party', songs: [{ id: 2, title: 'Wonderwall', artist: 'Oasis' }] },
-  ]
-
-  const html = renderToString(React.createElement(SetlistDrawer, {
-    isOpen: true,
-    onClose: () => {},
-    songs,
-    setlists,
-    activeSongIndex: 0,
-    onSelectSongIndex: () => {},
-    onDeleteSong: () => {},
-    onNewSong: () => {},
-  }))
-
-  // Drawer has search input with clear placeholder
-  assert.match(html, /placeholder="Search by title or artist\.\.\."/)
 })
 
 test('4. Main song library view has exactly one primary search surface in Header and no duplicate in SongbookHomeView', () => {

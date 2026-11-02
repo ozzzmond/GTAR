@@ -116,7 +116,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           type="button"
           data-testid="explorer-nav-new-song"
           onClick={onNewSong}
-          className="flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-app-action px-2.5 text-xs font-semibold text-app-on-action transition-colors hover:brightness-110 cursor-pointer"
+          className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-app-action px-2.5 text-xs font-semibold text-app-on-action transition-colors hover:brightness-110 cursor-pointer"
         >
           <Plus className="h-3.5 w-3.5" />
           <span>New Song</span>
@@ -125,7 +125,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           type="button"
           data-testid="explorer-nav-new-set"
           onClick={onNewSetlist}
-          className="flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-app-border bg-app-button px-2.5 text-xs font-semibold text-app-button-text transition-colors hover:brightness-110 cursor-pointer"
+          className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-app-border bg-app-button px-2.5 text-xs font-semibold text-app-button-text transition-colors hover:brightness-110 cursor-pointer"
         >
           <ListMusic className="h-3.5 w-3.5 text-app-section" />
           <span>New Set</span>

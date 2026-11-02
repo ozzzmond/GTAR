@@ -20,7 +20,6 @@ const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
 const { CatalogApiError } = require('../src/types/sharedCatalog.ts')
 const { PublishSetlistModal } = require('../src/components/PublishSetlistModal.tsx')
 const { SharedCatalogBrowser: CatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { AuthContext } = require('../src/utils/authContext.ts')
 const SharedCatalogBrowser = props => React.createElement(AuthContext.Provider,{value:{session:JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)),accessStatus:'active'}},React.createElement(CatalogBrowser,props))
 const { sharedCatalogService } = require('../src/utils/sharedCatalogService.ts')
@@ -341,15 +340,6 @@ test('mobile and keyboard controls use native modal focus, named dialog, touch s
   await act(async () => dialog.dispatchEvent(new dom.window.Event('cancel', { bubbles: true, cancelable: true })))
   assert.equal(closed, 1)
   assert.equal(calls.filter(c => c.method === 'POST').length, 0)
-})
-test('active admin and active member personal workflows expose publishing; pending and denied controls stay hidden', async () => {
-  for (const [role, access] of [['member', 'active'], ['admin', 'pending'], ['admin', 'active'], ['member', 'denied']]) {
-    if (root) { await act(async () => root.unmount()); root = null }
-    const authSession = session('account-a', role, access)
-    await mount(React.createElement(AuthContext.Provider, { value: { session: authSession, role: role === 'admin' ? 'SUPER_ADMIN' : 'USER', accessStatus: access } },
-      React.createElement(SetlistDrawer, { isOpen: true, initialTab: 'setlists', onClose() {}, songs: library.songs, setlists: library.setlists, activeSongIndex: 0, onSelectSongIndex() {}, onDeleteSong() {}, onNewSong() {}, onPublishSetlist() {} })))
-    assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared"]'), (role === 'admin' || role === 'member') && access === 'active')
-  }
 })
 
 test('REQUIRED: 62_SONG_COMPACT_JOURNAL_SIZE and NO_RAW_CHART_CONTENT_IN_NEW_JOURNAL', async () => {

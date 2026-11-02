@@ -25,7 +25,6 @@ for (const ext of ['.ts', '.tsx']) {
 const React = require('react')
 const { renderToString } = require('react-dom/server')
 const { getSongMetadataStatus } = require('../src/utils/chordProMetadata.ts')
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 
 // -------------------------------------------------------------------------
@@ -326,43 +325,6 @@ test('METADATA_STATUS_36: SongbookHomeView uses getSongMetadataStatus for card i
 
   assert.ok(html.includes('aria-label="Metadata OK"'), 'Complete card renders Metadata OK status')
   assert.ok(html.includes('aria-label="Needs Metadata"'), 'Incomplete card renders Needs Metadata status')
-})
-
-// -------------------------------------------------------------------------
-// Target 37: Side panel uses canonical predicate
-// -------------------------------------------------------------------------
-test('METADATA_STATUS_37: SetlistDrawer uses getSongMetadataStatus for drawer item indicators', () => {
-  const songOk = {
-    id: 's-ok',
-    title: 'How Great Is Our God',
-    artist: 'Chris Tomlin',
-    originalKey: 'G',
-    bpm: '120',
-    time: '4/4',
-    year: '2004',
-    rawContent: '{title: How Great Is Our God}\n{artist: Chris Tomlin}\n{original_key: G}\n{tempo: 120}\n{time: 4/4}\n{year: 2004}\n[G]The splendor',
-  }
-  const songNeeds = {
-    id: 's-needs',
-    title: 'Incomplete Track',
-    artist: '',
-    rawContent: '[C]Hello',
-  }
-
-  const html = renderToString(
-    React.createElement(SetlistDrawer, {
-      isOpen: true,
-      onClose: () => {},
-      songs: [songOk, songNeeds],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onDeleteSong: () => {},
-      onNewSong: () => {},
-    })
-  )
-
-  assert.ok(html.includes('data-testid="drawer-song-metadata-status-0"'))
-  assert.ok(html.includes('data-testid="drawer-song-metadata-status-1"'))
 })
 
 // -------------------------------------------------------------------------

@@ -20,7 +20,7 @@ interface CloudSyncModalProps {
   onClose: () => void
   restoreBlocked?: boolean
   onSyncApplied?: (library: SyncLibrary) => void
-  onBackupSummary?: (date: string | null) => void
+  onBackupSummary?: (date: string | null, checksum?: string | null) => void
   onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
   /** App library (songs including trash) for the file card; read from device storage when omitted. */
@@ -84,7 +84,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     if (signedIn) {
       readCloudBackup({ token, userId }).then(record => {
         if (!active) return
-        setCloud(record); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null)
+        setCloud(record); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
       }).catch(error => { if (active) { setMessageText(String(error.message)); setMessageTone('error') } })
     }
     return () => { active = false; trigger?.focus?.() }
@@ -109,7 +109,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     const captured = identity.current
     const record = await readCloudBackup(account)
     if (identity.current !== captured) throw new Error('Account changed; open the dialog again.')
-    setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null)
+    setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
     if (kind === 'restore' && !record) throw new Error('No cloud backup yet')
     const device = readPersistedLibrary()
     if (!device) throw new Error('Device library could not be read')
@@ -128,12 +128,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       try {
         const record = await writeCloudBackup(account, device, preview.cloud)
         if (identity.current !== captured) return
-        setCloud(record); summaryCallback.current?.(record.updatedAt); setPreview(null); setMessage('Cloud backup saved and checksum verified.', 'success')
+        setCloud(record); summaryCallback.current?.(record.updatedAt, record.checksum); setPreview(null); setMessage('Cloud backup saved and checksum verified.', 'success')
       } catch (error) {
         setPreview(null)
         if (error instanceof CloudBackupChanged) {
           const record = await readCloudBackup(account)
-          if (identity.current === captured) { setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null) }
+          if (identity.current === captured) { setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null) }
         }
         throw error
       }

@@ -61,11 +61,11 @@ test('STEP_2 & STEP_5: Header canonical sidepanel hamburger and global search so
 
   // STEP_5: Canonical hamburger button beside More menu
   assert.ok(
-    headerHtml.includes('data-testid="canonical-sidepanel-toggle-btn"'),
+    headerHtml.includes('aria-label="Open Music Explorer"'),
     'Header must render canonical-sidepanel-toggle-btn'
   )
   assert.ok(
-    headerHtml.includes('aria-label="Side Panel"'),
+    headerHtml.includes('aria-label="Open Music Explorer"'),
     'Canonical hamburger must have descriptive aria-label'
   )
 
@@ -225,12 +225,5 @@ test('STEP_7: SongbookHomeView Sort & Filter controls and Manage button placemen
   assert.ok(
     songbookHtml.indexOf('data-testid="toggle-setlist-selection-mode"') < songbookHtml.indexOf('data-testid="setlists-menu-btn"'),
     'Setlists ⋯ menu must follow Manage'
-  )
-
-  // FOLLOWUP: text-only buttons in SetlistDrawer (no plus icon)
-  const drawerSource = fs.readFileSync(path.join(webDir, 'src/components/SetlistDrawer.tsx'), 'utf8')
-  assert.ok(
-    !drawerSource.includes('<Plus className="w-4 h-4'),
-    'Sidepanel New Song and New Setlist buttons must not have Plus icon'
   )
 })

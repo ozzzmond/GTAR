@@ -251,7 +251,6 @@ test('DELIVERABLE 10: migrate-dev-remote.cjs strictly enforces preview env, DB n
 // 6. DELIVERABLE 6, 7, 8, 9: UI AND SOURCE CODE CONTRACT VERIFICATION
 test('DELIVERABLES 6, 7, 8, 9: Source code checks for Manage parity, Metadata filtering, Active Setlist only, and Side Panel badges', () => {
   const songbookSource = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
-  const drawerSource = fs.readFileSync(path.join(webDir, 'src/components/SetlistDrawer.tsx'), 'utf8')
 
   // Manage parity (Deliverable 6)
   assert.ok(songbookSource.includes('Manage'), 'SongbookHomeView must display Manage action')
@@ -275,9 +274,4 @@ test('DELIVERABLES 6, 7, 8, 9: Source code checks for Manage parity, Metadata fi
   // Tombstone exclusion (Deliverable 8)
   assert.ok(songbookSource.includes('activeSetlists'), 'SongbookHomeView must filter activeSetlists')
   assert.ok(!songbookSource.includes('setlists.map((sl) =>'), 'Must not map unfiltered setlists for selection choices')
-
-  // Side-panel cards (Deliverable 9)
-  assert.ok(drawerSource.includes('getSongMetadataStatus'), 'SetlistDrawer must use getSongMetadataStatus')
-  assert.ok(drawerSource.includes('drawer-song-metadata-status'), 'SetlistDrawer cards must render metadata status badge')
-  assert.ok(drawerSource.includes('drawer-song-add-to-setlist'), 'SetlistDrawer cards must render Add to Setlist button')
 })

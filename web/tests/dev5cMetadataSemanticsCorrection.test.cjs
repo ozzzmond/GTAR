@@ -175,14 +175,11 @@ test('DEV5C_CORRECTION_8 & 9: Apply Metadata never changes chord body and never 
 
 test('DEV5C_CORRECTION_10: main Songbook and side-panel Metadata status use identical corrected semantics', () => {
   const songbookSource = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
-  const drawerSource = fs.readFileSync(path.join(webDir, 'src/components/SetlistDrawer.tsx'), 'utf8')
   const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
 
   // Both SongbookHomeView and SetlistDrawer import and use getSongMetadataStatus
   assert.ok(songbookSource.includes("import { getSongMetadataStatus } from '../utils/chordProMetadata'"))
-  assert.ok(drawerSource.includes("import { getSongMetadataStatus } from '../utils/chordProMetadata'"))
   assert.ok(songbookSource.includes('getSongMetadataStatus(song).status'))
-  assert.ok(drawerSource.includes('getSongMetadataStatus(item)'))
 
   // DesktopEditor handles meta.title in handleApplyMetadataOnly
   assert.ok(editorSource.includes('setLocalTitle(meta.title.trim())'))

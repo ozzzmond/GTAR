@@ -1,5 +1,8 @@
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { openRecoveryData } from '../utils/recoveryReview'
+import { SyncStatusPill } from './SyncStatusPill'
+import { computeSongbookChecksum } from '../utils/cloudBackupFormat'
+import { readPersistedLibrary } from '../utils/syncJournal'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,7 +14,6 @@ import {
   MoreVertical,
   Settings,
   FolderOpen,
-  Cloud,
   Wrench,
   History,
   Eye,
@@ -97,6 +99,8 @@ interface HeaderProps {
   /** #303: reports whether a header-owned dialog (Backup & Restore center, debug logs) is open, so Stage shortcuts pause. */
   onOverlayChange?: (open: boolean) => void
   onOpenSetlistDrawer?: () => void
+  isExplorerOpen?: boolean
+  shortcutsBlocked?: boolean
   setlists?: WebSetlist[]
   activeSetlistId?: string | number | null
   activeSetlistName?: string
@@ -189,6 +193,7 @@ function ToolbarIconButton({
         className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
       >
         <Icon className="w-4 h-4" />
+        <span className="hidden lg:inline text-xs">{label.replace(/ \(Alt\+\d\)/, '')}</span>
         <span className="active-dot" />
       </button>
       {anchor && createPortal(
@@ -234,6 +239,8 @@ export const Header: React.FC<HeaderProps> = ({
   onImportAllSongs,
   onOverlayChange,
   onOpenSetlistDrawer,
+  isExplorerOpen = false,
+  shortcutsBlocked = false,
   setlists = [],
   onSelectSetlistSong,
   onSelectSetlist,
@@ -248,7 +255,38 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
+  const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchTriggerRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const resize = () => setCompact(window.innerWidth < 1024)
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+  useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus() }, [mobileSearchOpen])
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (activeView === 'stage' || shortcutsBlocked || showCloudSyncModal || showDebugLogsModal) return
+      const target = event.target instanceof HTMLElement ? event.target : null
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
+        if (target?.closest('dialog, [role=dialog]') || target?.id === 'multi-song-search-input') return
+        event.preventDefault()
+        if (compact) setMobileSearchOpen(true)
+        searchInputRef.current?.focus()
+      } else if (event.key === 'Escape') {
+        onSearchQueryChange('')
+        setIsSearchFocused(false)
+        setMobileSearchOpen(false)
+        searchInputRef.current?.blur()
+        if (compact) searchTriggerRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', keydown)
+    return () => window.removeEventListener('keydown', keydown)
+  }, [activeView, shortcutsBlocked, compact, onSearchQueryChange, showCloudSyncModal, showDebugLogsModal])
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
   const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
@@ -256,7 +294,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [importingId, setImportingId] = useState<string | number | null>(null)
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isAppInstalled, setIsAppInstalled] = useState(false)
-  const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [showUserManagementModal, setShowUserManagementModal] = useState(false)
   const [showAvatarPopover, setShowAvatarPopover] = useState(false)
   const [pendingCount, setPendingCount] = useState<number>(0)
@@ -282,6 +319,20 @@ export const Header: React.FC<HeaderProps> = ({
       return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
     } catch { return {} }
   })
+  const [backupChecksums, setBackupChecksums] = useState<Record<string, string | null>>(() => {
+    try { return JSON.parse(localStorage.getItem('gtar_manual_cloud_backup_checksums') || '{}') || {} } catch { return {} }
+  })
+  const [libraryVersion, setLibraryVersion] = useState(0)
+  useEffect(() => {
+    const refresh = () => setLibraryVersion(v => v + 1)
+    window.addEventListener('gtar-library-persisted', refresh)
+    window.addEventListener('storage', refresh)
+    return () => { window.removeEventListener('gtar-library-persisted', refresh); window.removeEventListener('storage', refresh) }
+  }, [])
+  const localChecksum = useMemo(() => {
+    try { const library = readPersistedLibrary(); return library ? computeSongbookChecksum(library) : null } catch { return null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Persistence events re-read the committed library, including trash.
+  }, [libraryVersion])
   const [backupClock, setBackupClock] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setBackupClock(Date.now()), 60000)
@@ -324,7 +375,10 @@ export const Header: React.FC<HeaderProps> = ({
   const backupUserId = String(currentSession?.user?.id || '')
   const cachedBackupDate = backupDates[backupUserId]
   const lastCloudBackup = typeof cachedBackupDate === 'string' && Number.isFinite(Date.parse(cachedBackupDate)) ? cachedBackupDate : null
-  const setLastCloudBackup = (date: string | null) => {
+  const setLastCloudBackup = (date: string | null, checksum?: string | null) => {
+    const checksums = { ...backupChecksums, [backupUserId]: checksum ?? null }
+    setBackupChecksums(checksums)
+    try { localStorage.setItem('gtar_manual_cloud_backup_checksums', JSON.stringify(checksums)) } catch { /* Optional device status. */ }
     const next = { ...backupDates, [backupUserId]: date }
     setBackupDates(next)
     try { localStorage.setItem('gtar_manual_cloud_backup_dates', JSON.stringify(next)) } catch { /* Summary caching is optional. */ }
@@ -643,7 +697,11 @@ export const Header: React.FC<HeaderProps> = ({
       {/* =================================================================== */}
       {/* TIER 1 (Top Bar): Branding & User Profile Avatar                   */}
       {/* =================================================================== */}
-      <div className="h-12 sm:h-14 px-3 sm:px-5 flex items-center justify-between w-full">
+      <div className="relative min-h-14 px-2 lg:px-4 flex items-center justify-between gap-1 w-full">
+        <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
+          onClick={onOpenSetlistDrawer} className="lg:hidden min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-text hover:bg-app-base">
+          <Menu className="h-5 w-5" />
+        </button>
         {/* Left: Logo + App Title ("GTAR-Dev") + DEV Badge + PROD Version Badge + DEV Diagnostics */}
         <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
           <div
@@ -657,7 +715,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-full h-full object-contain rounded-lg"
               />
             </div>
-            <div className="flex flex-col">
+            <div className="hidden lg:flex flex-col">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-mono font-bold text-sm sm:text-base tracking-wider header-primary-text text-app-heading">
                   {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
@@ -679,7 +737,7 @@ export const Header: React.FC<HeaderProps> = ({
           {isDevEnv && (
             <div
               data-testid="dev-header-diagnostics"
-              className="flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0"
+              className="hidden xl:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0"
             >
               <div data-testid="dev-header-diag-line1" className="truncate whitespace-nowrap">
                 {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
@@ -691,233 +749,18 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Action Icons & User Avatar */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Backup & Restore button */}
-          <button type="button" data-testid="header-cloud-sync-button" onClick={() => setShowCloudSyncModal(true)}
-            className="relative before:absolute before:content-[''] before:-inset-1.5 p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-app-base hover:bg-app-surface text-app-action border border-app-border hover:border-app-action transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95"
-            aria-label="Backup & Restore">
-            <Cloud className="w-4 h-4 text-app-action" />
-            <span className="hidden md:inline font-mono text-[11px]">{lastCloudBackup ? `Last cloud backup: ${Math.max(0, Math.floor((backupClock - Date.parse(lastCloudBackup)) / 60000))}m ago` : 'No cloud backup yet'}</span>
-          </button>
-
-          {/* PWA Install Button */}
-          {deferredInstallPrompt && !isAppInstalled && (
-            <button
-              type="button"
-              onClick={handleTriggerInstall}
-              className="px-2.5 py-1 rounded-xl bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-              aria-label="Install GTAR App to Home Screen"
-            >
-              <Download className="w-4 h-4 header-neutral-icon" />
-            </button>
-          )}
-
-          {/* Avatar with Auth Status Dot */}
-          <div
-            ref={avatarPopoverRef}
-            className="avatar-wrapper"
-            onClick={() => setShowAvatarPopover(!showAvatarPopover)}
-          >
-            {currentSession?.user.picture ? (
-              <img
-                src={currentSession.user.picture}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="w-8 h-8 rounded-full border-2 border-app-border hover:border-app-action transition-colors"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-app-base border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
-                <User className="w-4 h-4 header-neutral-icon" />
-              </div>
-            )}
-            <span className={`auth-dot ${userDotClass}`} />
-            {isSuperAdmin && pendingCount > 0 && (
-              <span
-                className="pending-badge"
-              >
-                {pendingCount > 99 ? '99+' : pendingCount}
-              </span>
-            )}
-
-            {/* Avatar Popover */}
-            {showAvatarPopover && (
-              <div className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
-                {currentSession ? (
-                  <>
-                    <div className="flex items-center gap-3 mb-3">
-                      {currentSession.user.picture && (
-                        <img
-                          src={currentSession.user.picture}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-10 rounded-full"
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold ui-primary-text text-app-heading truncate">
-                            {(currentSession.user as { name?: string }).name || 'User'}
-                          </span>
-                          {isSuperAdmin ? (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">
-                              ADMIN
-                            </span>
-                          ) : (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">
-                              USER
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] ui-secondary-text text-app-muted truncate">
-                          {currentSession.user.email}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Super Admin Access Control */}
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAvatarPopover(false)
-                          setShowUserManagementModal(true)
-                        }}
-                        className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2"
-                      >
-                        <Shield className="w-3.5 h-3.5" />
-                        <span>Manage Users</span>
-                      </button>
-                    )}
-
-                    {recoveryDataRow}
-                    {advancedTools}
-
-                    <div className="h-[1px] bg-app-border/60 mb-2" />
-
-                    {/* Sign Out */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAvatarPopover(false)
-                        handleSignOut?.()
-                      }}
-                      className="w-full px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Sign Out</span>
-                    </button>
-                  </>
-                ) : (
-                  <div className="text-center py-2 space-y-3">
-                    <p className="text-xs ui-muted-text text-app-muted">
-                      Sign in to use cloud backup and the Shared Catalog.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAvatarPopover(false)
-                        void handleSignIn?.()
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      <User className="w-3.5 h-3.5" />
-                      <span>Sign In with Google</span>
-                    </button>
-                    {(recoveryDataRow || advancedTools) && <div className="text-left">{recoveryDataRow}{advancedTools}</div>}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* =================================================================== */}
-      {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
-      {/* =================================================================== */}
-      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
-        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
-          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
-            <ToolbarIconButton
-              icon={ArrowLeft}
-              label="Back"
-              onClick={() => { navigateBack() }}
-              className="shrink-0"
-              testId="toolbar-back"
-            />
-            <ToolbarIconButton
-              icon={PlaySquare}
-              label="Stage Preview (Alt+1)"
-              isActive={activeView === 'stage'}
-              onClick={() => onViewChange('stage')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={FileEdit}
-              label="Editor (Alt+2)"
-              isActive={activeView === 'editor'}
-              onClick={() => onViewChange('editor')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Radio}
-              label="Band Sync (Alt+3)"
-              onClick={onOpenStageTools}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Cast}
-              label="Cast (Alt+4)"
-              isActive={isCastActive}
-              onClick={onOpenCast || (() => {})}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Palette}
-              label="Theme (Alt+5)"
-              onClick={onToggleTheme}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Trash2}
-              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
-              isActive={activeView === 'trash'}
-              onClick={() => onViewChange('trash')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              buttonRef={moreButtonRef}
-              icon={MoreVertical}
-              label="More"
-              isActive={showOverflowMenu}
-              onClick={() => setShowOverflowMenu((prev) => !prev)}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Menu}
-              label="Side Panel"
-              onClick={onOpenSetlistDrawer || (() => {})}
-              className="shrink-0"
-              testId="canonical-sidepanel-toggle-btn"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* =================================================================== */}
-      {/* TIER 3 (Bottom Search Bar): Full Width Search Input Container       */}
-      {/* =================================================================== */}
-      {activeView === 'songbook' && (
+      {activeView !== 'stage' && (!compact || mobileSearchOpen) && (
         <div
           ref={searchContainerRef}
-          className="w-full px-3 sm:px-6 py-2 bg-app-surface border-t border-app-border/50 relative"
+          className={`header-search min-w-0 ${compact ? 'absolute inset-x-0 top-0 z-40 bg-app-surface p-2' : 'relative flex-1 mx-3'}`}
         >
           <div className="w-full flex items-center relative">
             <div className="pill-search w-full flex items-center">
               <Search className="w-4 h-4 text-app-muted shrink-0" />
               <input
                 id="search-input"
+                ref={searchInputRef}
+                aria-label="Search songs, artists and setlists"
                 type="text"
                 value={searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
@@ -926,18 +769,20 @@ export const Header: React.FC<HeaderProps> = ({
                   setIsSearchFocused(true)
                 }}
                 placeholder="Search songs, artists, setlists & online chords..."
-                className="min-w-0 flex-1 w-full"
+                className="min-h-11 min-w-0 flex-1 w-full"
               />
               <span className="kbd-hint hidden sm:inline shrink-0">Ctrl K</span>
-              {searchQuery && (
+              {(searchQuery || compact) && (
                 <button
                   type="button"
                   onClick={() => {
                     onSearchQueryChange('')
                     setIsSearchFocused(false)
+                    setMobileSearchOpen(false)
+                    searchTriggerRef.current?.focus()
                   }}
-                  className="ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
-                  aria-label="Clear search"
+                  className="min-h-11 min-w-11 flex items-center justify-center ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
+                  aria-label={compact ? 'Close search' : 'Clear search'}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1286,6 +1131,218 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
         )}
+        {/* Right Action Icons & User Avatar */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {compact && activeView !== 'stage' && <button ref={searchTriggerRef} type="button" aria-label="Open search"
+            onClick={() => setMobileSearchOpen(true)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-text hover:bg-app-base">
+            <Search className="h-5 w-5" />
+          </button>}
+          {/* Backup & Restore button */}
+          <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
+            backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
+            recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
+
+          {/* PWA Install Button */}
+          {deferredInstallPrompt && !isAppInstalled && (
+            <button
+              type="button"
+              onClick={handleTriggerInstall}
+              className="px-2.5 py-1 rounded-xl bg-app-action/15 hover:bg-app-action text-app-action hover:text-app-on-action border border-app-action/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              aria-label="Install GTAR App to Home Screen"
+            >
+              <Download className="w-4 h-4 header-neutral-icon" />
+            </button>
+          )}
+
+          {/* Avatar with Auth Status Dot */}
+          <div
+            ref={avatarPopoverRef}
+            className="avatar-wrapper"
+            onClick={() => setShowAvatarPopover(!showAvatarPopover)}
+          >
+            {currentSession?.user.picture ? (
+              <img
+                src={currentSession.user.picture}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="w-8 h-8 rounded-full border-2 border-app-border hover:border-app-action transition-colors"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-app-base border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
+                <User className="w-4 h-4 header-neutral-icon" />
+              </div>
+            )}
+            <span className={`auth-dot ${userDotClass}`} />
+            {isSuperAdmin && pendingCount > 0 && (
+              <span
+                className="pending-badge"
+              >
+                {pendingCount > 99 ? '99+' : pendingCount}
+              </span>
+            )}
+
+            {/* Avatar Popover */}
+            {showAvatarPopover && (
+              <div className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                {currentSession ? (
+                  <>
+                    <div className="flex items-center gap-3 mb-3">
+                      {currentSession.user.picture && (
+                        <img
+                          src={currentSession.user.picture}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="w-10 h-10 rounded-full"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold ui-primary-text text-app-heading truncate">
+                            {(currentSession.user as { name?: string }).name || 'User'}
+                          </span>
+                          {isSuperAdmin ? (
+                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">
+                              ADMIN
+                            </span>
+                          ) : (
+                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">
+                              USER
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] ui-secondary-text text-app-muted truncate">
+                          {currentSession.user.email}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Super Admin Access Control */}
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAvatarPopover(false)
+                          setShowUserManagementModal(true)
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>Manage Users</span>
+                      </button>
+                    )}
+
+                    {recoveryDataRow}
+                    {advancedTools}
+
+                    <div className="h-[1px] bg-app-border/60 mb-2" />
+
+                    {/* Sign Out */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAvatarPopover(false)
+                        handleSignOut?.()
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-center py-2 space-y-3">
+                    <p className="text-xs ui-muted-text text-app-muted">
+                      Sign in to use cloud backup and the Shared Catalog.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAvatarPopover(false)
+                        void handleSignIn?.()
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <User className="w-3.5 h-3.5" />
+                      <span>Sign In with Google</span>
+                    </button>
+                    {(recoveryDataRow || advancedTools) && <div className="text-left">{recoveryDataRow}{advancedTools}</div>}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* =================================================================== */}
+      {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
+      {/* =================================================================== */}
+      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
+        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
+          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
+            <ToolbarIconButton
+              icon={ArrowLeft}
+              label="Back"
+              onClick={() => { navigateBack() }}
+              className="shrink-0"
+              testId="toolbar-back"
+            />
+            <ToolbarIconButton
+              icon={PlaySquare}
+              label="Stage Preview (Alt+1)"
+              isActive={activeView === 'stage'}
+              onClick={() => onViewChange('stage')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={FileEdit}
+              label="Editor (Alt+2)"
+              isActive={activeView === 'editor'}
+              onClick={() => onViewChange('editor')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Radio}
+              label="Band Sync (Alt+3)"
+              onClick={onOpenStageTools}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Cast}
+              label="Cast (Alt+4)"
+              isActive={isCastActive}
+              onClick={onOpenCast || (() => {})}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Palette}
+              label="Theme (Alt+5)"
+              onClick={onToggleTheme}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              icon={Trash2}
+              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+              isActive={activeView === 'trash'}
+              onClick={() => onViewChange('trash')}
+              className="shrink-0"
+            />
+            <ToolbarIconButton
+              buttonRef={moreButtonRef}
+              icon={MoreVertical}
+              label="More"
+              isActive={showOverflowMenu}
+              onClick={() => setShowOverflowMenu((prev) => !prev)}
+              className="shrink-0"
+            />
+
+          </div>
+        </div>
+      </div>
+
+      {/* =================================================================== */}
+      {/* TIER 3 (Bottom Search Bar): Full Width Search Input Container       */}
+      {/* =================================================================== */}
       </header>
 
       {/* 3-Dots Overflow Menu */}

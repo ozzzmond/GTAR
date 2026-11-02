@@ -69,7 +69,7 @@ export const RestorePreview: React.FC<RestorePreviewProps> = ({
       <label className="min-h-11 flex items-center gap-2.5 text-app-heading cursor-pointer">
         <input type="checkbox" className="w-4 h-4 shrink-0 accent-app-action" checked={settings.choice.preferences} disabled={busy}
           onChange={e => settings.onChoice({ ...settings.choice, preferences: e.target.checked })} />
-        <span>Also restore preferences (songbook sort, filters, edge-swipe panel)</span>
+        <span>Also restore preferences (songbook sort and filters)</span>
       </label>
     </fieldset>}
     {note}
