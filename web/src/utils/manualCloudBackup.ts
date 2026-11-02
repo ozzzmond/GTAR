@@ -1,3 +1,4 @@
+import { appLogger } from './logger'
 import { ensureRestoreSafetySnapshot, verifyRestoredLibrary } from './backupExport'
 import { parseBackupJson } from './jsonBackup'
 import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudSongbookSync'
@@ -26,6 +27,7 @@ export async function writeCloudBackup(account: BackupAccount, library: SyncLibr
   if (!response.ok || !body.success) throw new Error(body.error || 'Cloud backup failed')
   const verified = await readCloudBackup(account)
   if (!verified || verified.checksum !== checksum) throw new Error('Cloud backup verification failed; cloud changed or upload was not saved')
+  appLogger.info('BackupSaved', `Backup saved (cloud): ${library.songs.length} songs, ${library.setlists.length} setlists`)
   return verified
 }
 
@@ -39,4 +41,5 @@ export async function restoreCloudBackup(before: SyncLibrary, incoming: SyncLibr
   await apply(library)
   const problems = verifyRestoredLibrary(before, library, mode, storage)
   if (problems.length) throw new Error(`Restore could not be verified: ${problems.join('; ')}. Previous library is kept in the safety snapshot.`)
+  appLogger.info('RestoreApplied', `Restore applied (${mode}, cloud): ${library.songs.length} songs, ${library.setlists.length} setlists`)
 }

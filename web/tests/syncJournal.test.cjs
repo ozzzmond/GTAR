@@ -273,7 +273,7 @@ test('estimateStorageFootprint accurately calculates bytes, MB, key counts, and 
   assert.equal(typeof fp.totalMB, 'number')
 })
 
-test('logger caps localStorage to MAX_PERSISTED_LOGS (30) and prunes to 10 on quota hit', () => {
+test('logger caps localStorage to 20 even when legacy callers request emergency pruning', () => {
   const { prunePersistedLogs, MAX_PERSISTED_LOGS } = require('../src/utils/logger.ts')
   const store = storage()
   const logs = Array.from({ length: 50 }, (_, i) => ({
@@ -285,15 +285,15 @@ test('logger caps localStorage to MAX_PERSISTED_LOGS (30) and prunes to 10 on qu
   }))
   store.setItem('gtar_web_debug_logs', JSON.stringify(logs))
 
-  // Normal pruning caps to 30
+  // Normal pruning caps to 20
   prunePersistedLogs(store, MAX_PERSISTED_LOGS)
-  const parsed30 = JSON.parse(store.getItem('gtar_web_debug_logs'))
-  assert.equal(parsed30.length, 30)
-  assert.equal(parsed30[29].message, 'log entry 49')
+  const parsed20 = JSON.parse(store.getItem('gtar_web_debug_logs'))
+  assert.equal(parsed20.length, 20)
+  assert.equal(parsed20[19].message, 'log entry 49')
 
-  // Emergency quota pruning caps to 10
+  // Legacy quota callers use the same 20-entry policy
   prunePersistedLogs(store, 10)
-  const parsed10 = JSON.parse(store.getItem('gtar_web_debug_logs'))
-  assert.equal(parsed10.length, 10)
-  assert.equal(parsed10[9].message, 'log entry 49')
+  const afterQuota = JSON.parse(store.getItem('gtar_web_debug_logs'))
+  assert.equal(afterQuota.length, 20)
+  assert.equal(afterQuota[19].message, 'log entry 49')
 })

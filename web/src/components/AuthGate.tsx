@@ -1,3 +1,4 @@
+import { appLogger } from '../utils/logger'
 import { isPresentationLocation } from '../utils/presentationRoute'
 import { AuthContext, useOptionalGoogleAuth } from '../utils/authContext'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -124,6 +125,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
     setError('')
     setStatusMessage('')
     setIsExpiredOffline(false)
+    appLogger.info('SignOut', 'Signed out')
 
     if (token) {
       logoutFromServer(token).catch((err) => {
@@ -293,6 +295,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
         saveGoogleSession(updated)
         setSession(updated)
         if (serverUser.access_status === 'active') {
+          appLogger.info('SignIn', 'Signed in', undefined, !hasServerApproval(session))
           setStatusMessage('Access granted! Unlocking...')
         } else if (serverUser.access_status === 'denied') {
           setStatusMessage('')
@@ -344,6 +347,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
       saveGoogleSession(serverSession)
       setBypass(false)
       setSession(serverSession)
+      appLogger.info('SignIn', 'Signed in', undefined, hasServerApproval(serverSession))
       setShowSignInDialog(false)
     } catch (failure) {
       if (isMountedRef.current && gen === epoch.current) {

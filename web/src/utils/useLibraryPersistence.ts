@@ -1,3 +1,4 @@
+import { appLogger } from './logger'
 /**
  * #85 slice 1: library persistence glue moved verbatim from App.tsx. Owns the persisted baseline
  * (revision token), the cross-tab conflict state and guard (#177 adoption tracking, #171 B1 body
@@ -45,6 +46,7 @@ export function useLibraryPersistence({
   const lastStorageWarningTimeRef = useRef<number>(0)
 
   const handleStorageWriteFailure = useCallback((err: unknown) => {
+    appLogger.warn('StorageSaveFailure', String((err as Error)?.name ?? 'Error'))
     if (isStaleWriteConflictError(err)) {
       console.warn('[Storage] Stale write rejected: library updated externally.', err)
       const currentRaw = getPersistedLibraryRaw()

@@ -108,20 +108,16 @@ test('pill: accessible label, state attribute and click opens the Sync Center', 
   assert.equal(opened, 1)
 })
 
-test('debug logging switch: off records only warnings and errors; on records info too', () => {
-  const logger = require('../src/utils/logger.ts')
-  logger.appLogger.resume()
-  logger.appLogger.clearLogs?.()
-  logger.setDebugLoggingEnabled(false)
-  const before = logger.appLogger.getLogs().length
-  logger.appLogger.info('Probe', 'info while off')
-  logger.appLogger.warn('Probe', 'warn while off')
-  const offLogs = logger.appLogger.getLogs().slice(before).map(l => `${l.level}:${l.message}`)
-  assert.deepEqual(offLogs, ['WARN:warn while off'])
-  logger.setDebugLoggingEnabled(true)
-  logger.appLogger.info('Probe', 'info while on')
-  assert.ok(logger.appLogger.getLogs().some(l => l.message === 'info while on'))
-  logger.setDebugLoggingEnabled(false)
+test('capture always records WARN/ERROR and only key INFO events without an enabled setting', () => {
+  const { appLogger } = require('../src/utils/logger.ts')
+  appLogger.resume(); appLogger.clearLogs()
+  appLogger.info('Probe', 'routine noise')
+  appLogger.debug('Probe', 'debug noise')
+  appLogger.warn('Probe', 'warning')
+  appLogger.error('Probe', 'error')
+  for (const event of ['AppStart', 'BackupSaved', 'RestoreApplied', 'SignIn', 'SignOut', 'StorageSaveFailure']) appLogger.info(event, event)
+  assert.deepEqual(appLogger.getLogs().map(e => e.tag), ['Probe', 'Probe', 'AppStart', 'BackupSaved', 'RestoreApplied', 'SignIn', 'SignOut', 'StorageSaveFailure'])
+  assert.doesNotMatch(fs.readFileSync(require.resolve('../src/utils/logger.ts'), 'utf8'), /gtar_debug_logs_enabled/)
 })
 
 test('no render loop when the dialog re-emits its sync state on every render', async () => {

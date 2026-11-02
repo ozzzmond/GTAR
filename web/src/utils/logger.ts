@@ -1,10 +1,11 @@
+import { GTAR_APP_VERSION } from '../types/gtar'
 import { isDevEnv } from './env'
-import { applyLogRetention, debugLogBackend, entryBytes, LOG_MAX_BYTES as LOG_MAX_BYTES_REF, LOG_RETENTION_MS as LOG_RETENTION_MS_REF, type DebugLogBackend } from './debugLogStore'
+import { applyLogRetention, debugLogBackend, LOG_MAX_ENTRIES, type DebugLogBackend } from './debugLogStore'
 /**
  * Web Logging Engine for GTAR
  * Intercepts console errors, warnings, unhandled window exceptions and promise rejections.
- * #204 S1: stores timestamped logs in IndexedDB (12 h, 10 MB; see debugLogStore), with the old
- * 30-entry localStorage copy only as a fallback when IndexedDB is unavailable.
+ * #204 S1: stores timestamped logs in IndexedDB (newest 20; see debugLogStore), with the old
+ * 20-entry localStorage copy only as a fallback when IndexedDB is unavailable.
  */
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
@@ -20,21 +21,10 @@ export interface LogEntry {
 }
 
 export const STORAGE_KEY = 'gtar_web_debug_logs'
-export const MAX_MEMORY_LOGS = 1000
-export const MAX_LOGS = MAX_MEMORY_LOGS
-export const MAX_PERSISTED_LOGS = 30
-/**
- * Owner choice (2026-10-24): debug logging switch, OFF by default. Off = only warnings and
- * errors are recorded (quietly, so a problem that already happened can still be reviewed);
- * on = info and debug entries too. Per device, in localStorage.
- */
-export const DEBUG_LOGS_ENABLED_KEY = 'gtar_debug_logs_enabled'
-export function isDebugLoggingEnabled(): boolean {
-  try { return typeof localStorage !== 'undefined' && localStorage.getItem(DEBUG_LOGS_ENABLED_KEY) === '1' } catch { return false }
-}
-export function setDebugLoggingEnabled(enabled: boolean): void {
-  try { localStorage.setItem(DEBUG_LOGS_ENABLED_KEY, enabled ? '1' : '0') } catch { /* storage unavailable */ }
-}
+export const MAX_MEMORY_LOGS = LOG_MAX_ENTRIES
+export const MAX_LOGS = LOG_MAX_ENTRIES
+export const MAX_PERSISTED_LOGS = LOG_MAX_ENTRIES
+const INFO_EVENTS = new Set(['AppStart', 'BackupSaved', 'RestoreApplied', 'SignIn', 'SignOut', 'StorageSaveFailure'])
 
 /**
  * #204 S2: identifiers of the signed-in account (user id, Google subject) registered at sign-in,
@@ -72,7 +62,8 @@ export function redactSensitiveData(text: string): string {
     .replace(/((?:session|token|auth_token)=)[^;\s&"']+/gi, '$1[REDACTED]')
 }
 
-export function prunePersistedLogs(storage: Storage = localStorage, targetCount = 10): void {
+export function prunePersistedLogs(storage: Storage = localStorage, targetCount = MAX_PERSISTED_LOGS): void {
+  targetCount = MAX_PERSISTED_LOGS // Legacy callers cannot select a different retention policy.
   try {
     const raw = storage.getItem(STORAGE_KEY)
     if (!raw) return
@@ -97,7 +88,7 @@ class WebLoggerEngine {
   private storageEnabled = false
   // #204 S1: IndexedDB store. Memory keeps the newest MAX_MEMORY_LOGS for the viewer; the store keeps all within retention.
   private store: DebugLogBackend | null = null
-  private stored = new Map<string, { timestamp: string; bytes: number }>()
+  private stored = new Map<string, { timestamp: string }>()
   private pending: LogEntry[] = []
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private flushing: Promise<void> = Promise.resolve()
@@ -139,7 +130,7 @@ class WebLoggerEngine {
       await backend.write(keep.filter(e => !known.has(e.id)), drop.filter(id => known.has(id)))
       this.store = backend
       this.pending = []
-      this.stored = new Map(keep.map(e => [e.id, { timestamp: e.timestamp, bytes: entryBytes(e) }]))
+      this.stored = new Map(keep.map(e => [e.id, { timestamp: e.timestamp }]))
       this.logs = keep.slice(-MAX_MEMORY_LOGS)
       try { storage?.removeItem(STORAGE_KEY) } catch { /* the next startup retries */ }
       if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
@@ -173,16 +164,9 @@ class WebLoggerEngine {
     this.flushing = this.flushing.then(async () => {
       const put = this.pending
       this.pending = []
-      for (const entry of put) this.stored.set(entry.id, { timestamp: entry.timestamp, bytes: entryBytes(entry) })
-      const now = Date.now()
-      const ordered = [...this.stored].sort((a, b) => b[1].timestamp.localeCompare(a[1].timestamp))
-      const drop: string[] = []
-      let bytes = 0
-      for (const [id, meta] of ordered) {
-        const time = Date.parse(meta.timestamp)
-        if (!Number.isFinite(time) || now - time > LOG_RETENTION_MS_REF || bytes + meta.bytes > LOG_MAX_BYTES_REF) drop.push(id)
-        else bytes += meta.bytes
-      }
+      for (const entry of put) this.stored.set(entry.id, { timestamp: entry.timestamp })
+      const ordered = [...this.stored].sort((a, b) => a[1].timestamp.localeCompare(b[1].timestamp))
+      const drop = ordered.slice(0, Math.max(0, ordered.length - LOG_MAX_ENTRIES)).map(([id]) => id)
       for (const id of drop) this.stored.delete(id)
       const dropped = new Set(drop)
       try { await store.write(put.filter(e => !dropped.has(e.id)), drop) } catch { /* best effort: memory copy remains */ }
@@ -194,7 +178,11 @@ class WebLoggerEngine {
   public async getAllLogs(): Promise<LogEntry[]> {
     if (!this.store) return this.getLogs()
     await this.flush()
-    try { return applyLogRetention(await this.store.loadAll()).keep } catch { return this.getLogs() }
+    try {
+      const { keep, drop } = applyLogRetention(await this.store.loadAll())
+      await this.store.write([], drop)
+      return keep
+    } catch { return this.getLogs() }
   }
 
   public suspend() { this.storageEnabled = false }
@@ -206,7 +194,8 @@ class WebLoggerEngine {
       if (raw) {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
-          this.logs = parsed.slice(-MAX_MEMORY_LOGS)
+          this.logs = applyLogRetention(parsed).keep
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
         }
       }
     } catch {
@@ -228,7 +217,7 @@ class WebLoggerEngine {
     } catch {
       // If quota exceeded, emergency prune or swallow to prevent error storm cascades
       try {
-        prunePersistedLogs(localStorage, 10)
+        prunePersistedLogs(localStorage)
       } catch { /* swallow quota errors inside logger persistence */ }
     }
   }
@@ -286,7 +275,7 @@ class WebLoggerEngine {
       })
     })
 
-    this.info('WebLogger', `Logger initialized. Environment: ${isDevEnv ? 'development' : 'production'}`)
+    this.info('AppStart', `App started. Version: ${GTAR_APP_VERSION}; Environment: ${isDevEnv ? 'development' : 'production'}`)
   }
 
   private captureConsoleEntry(level: LogLevel, args: unknown[]) {
@@ -330,7 +319,7 @@ class WebLoggerEngine {
     details?: string
   }) {
     if (!this.storageEnabled) return
-    if ((entry.level === 'INFO' || entry.level === 'DEBUG') && !isDebugLoggingEnabled()) return
+    if (entry.level === 'DEBUG' || (entry.level === 'INFO' && !INFO_EVENTS.has(entry.tag))) return
     const newLog: LogEntry = {
       id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: new Date().toISOString(),
@@ -355,7 +344,8 @@ class WebLoggerEngine {
     this.addEntry({ level: 'DEBUG', tag, message, details })
   }
 
-  public info(tag: string, message: string, details?: string) {
+  public info(tag: string, message: string, details?: string, record = true) {
+    if (!record) return
     this.addEntry({ level: 'INFO', tag, message, details })
   }
 
@@ -375,6 +365,8 @@ class WebLoggerEngine {
   }
 
   public getLogs(): LogEntry[] {
+    this.logs = applyLogRetention(this.logs).keep
+    if (!this.store && typeof localStorage !== 'undefined') prunePersistedLogs(localStorage)
     return [...this.logs]
   }
 
@@ -384,7 +376,8 @@ class WebLoggerEngine {
       const ids = [...this.stored.keys(), ...this.pending.map(e => e.id)]
       this.stored.clear()
       this.pending = []
-      void this.store.write([], ids).catch(() => { /* best effort */ })
+      const store = this.store
+      this.flushing = this.flushing.then(() => store.write([], ids)).catch(() => { /* best effort */ })
     }
     if (typeof localStorage !== 'undefined') {
       try {
@@ -411,7 +404,7 @@ class WebLoggerEngine {
     }
   }
 
-  /** #204 S1: export everything stored (12 h, 10 MB), not just the viewer's newest entries. */
+  /** #204 S1: export the newest 20 stored entries, not just the viewer's newest entries. */
   public async exportAllLogsAsText(): Promise<string> {
     return this.formatLogs(await this.getAllLogs())
   }

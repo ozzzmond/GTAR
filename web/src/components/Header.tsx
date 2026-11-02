@@ -1,7 +1,6 @@
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { openRecoveryReview } from '../utils/recoveryReview'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
-import { isDebugLoggingEnabled, setDebugLoggingEnabled } from '../utils/logger'
 import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -268,7 +267,6 @@ export const Header: React.FC<HeaderProps> = ({
   // DEV Advanced Tools: Local Recovery Review still flags undecided recovery (#181).
   const recoveryAttention = useRecoveryAttention()
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
-  const [debugLogs, setDebugLogs] = useState(() => isDebugLoggingEnabled())
   // #303: the center (with its restore preview) and the debug-log dialog block Stage keyboard/pedal shortcuts.
   const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal
   const overlayCallback = useRef(onOverlayChange)
@@ -350,18 +348,8 @@ export const Header: React.FC<HeaderProps> = ({
           {recoveryAttention && <span data-testid="advanced-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
         </button>
         <button type="button" data-testid="advanced-debug-logs" onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }} className={advancedItem}>
-          <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Debug logs
+          <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Debug logs options
         </button>
-        <div className="w-full min-h-11 pl-3 rounded-xl bg-app-base border border-app-border flex items-center justify-between gap-2">
-          <span className="text-xs font-bold ui-primary-text text-app-heading">Record debug logs</span>
-          <button type="button" role="switch" data-testid="advanced-debug-switch" aria-label="Record debug logs" aria-checked={debugLogs}
-            onClick={() => { setDebugLoggingEnabled(!debugLogs); setDebugLogs(!debugLogs) }}
-            className="relative shrink-0 w-11 h-11 flex items-center justify-center cursor-pointer">
-            <span aria-hidden="true" className={`relative block w-9 h-5 rounded-full border transition-colors ${debugLogs ? 'bg-app-action border-app-action' : 'bg-app-border/60 border-app-border'}`}>
-              <span className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-app-surface shadow transition-transform ${debugLogs ? 'translate-x-4' : ''}`} />
-            </span>
-          </button>
-        </div>
       </div>}
     </div>
   ) : null

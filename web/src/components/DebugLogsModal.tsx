@@ -107,11 +107,6 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-app-border text-app-action font-bold">
                   {logs.length} entries
                 </span>
-                {import.meta.env.VITE_APP_ENV === 'debug' && (
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-600 text-white shadow-sm animate-pulse">
-                    DEV PORT 5174
-                  </span>
-                )}
               </div>
             </div>
           </div>
@@ -211,7 +206,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               <Terminal className="w-8 h-8 opacity-40 text-app-action" />
               <p className="font-sans text-sm font-semibold">No debug logs captured yet</p>
               <p className="font-sans text-xs text-app-muted max-w-sm">
-                Console warnings, unhandled errors, and Stage Cast events will appear here automatically.
+                Warnings, errors, and key app events will appear here automatically.
               </p>
             </div>
           ) : (

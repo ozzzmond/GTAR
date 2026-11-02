@@ -293,3 +293,7 @@ test('Header Debug Logs access is enabled in dev environment or when dev logs en
   assert.match(headerSource, /setShowDebugLogsModal\(true\)/)
 })
 
+
+test('viewer has no hardcoded DEV PORT badge', () => {
+  assert.doesNotMatch(fs.readFileSync(require.resolve('../src/components/DebugLogsModal.tsx'), 'utf8'), /DEV PORT/)
+})

@@ -1,3 +1,4 @@
+import { appLogger } from '../utils/logger'
 import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
 import React, { useEffect, useRef, useState } from 'react'
 import { Download, Copy, Share2, Upload } from 'lucide-react'
@@ -316,6 +317,8 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
           : `Imported ${parsed.songs.length} songs as new copies. Setlists and settings were not restored.`)
         return
       }
+
+      appLogger.info('RestoreApplied', `Restore applied (${replace ? 'replace' : 'merge'}, file): ${parsed.songs.length} songs, ${parsed.setlists.length} setlists`)
 
       // Library persistence and settings writes are separate operations; never claim
       // an aborted library write when settings fail after the library has been saved.

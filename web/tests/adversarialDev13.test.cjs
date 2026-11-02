@@ -114,7 +114,7 @@ test('Adversarial 6: Near-quota cleanup precedence prunes expendables first and 
   // Only disposable logs are trimmed; every recovery source survives.
   assert.deepEqual(removedKeys, [])
   const logs = JSON.parse(store.getItem('gtar_web_debug_logs'))
-  assert.equal(logs.length, 10)
+  assert.equal(logs.length, 20)
   for (const key of ['gtar_songs_store', 'gtar_trash_songs_store', 'gtar_setlists_store', 'gtar_sync_recovery:acc:1_snap', 'gtar_sync_recovery:acc:2_snap', 'gtar_sync_recovery:other:3_snap']) assert.ok(store.getItem(key))
   // 4. Canonical user data keys were preserved
   assert.ok(store.getItem('gtar_library_v1'))

@@ -1,3 +1,4 @@
+import { appLogger } from './logger'
 /**
  * #251 Cloud V2 P0: handing a verified backup file to the user, and the restore safety net.
  *
@@ -46,6 +47,7 @@ export function canShareBackupFile(backup: Pick<VerifiedBackup, 'json' | 'fileNa
 
 function finish(backup: VerifiedBackup, delivery: BackupDelivery, outcome: ExportOutcome): ExportOutcome {
   recordBackupStatus(backup, delivery)
+  appLogger.info('BackupSaved', `Backup saved (file): ${backup.counts.songs} songs, ${backup.counts.setlists} setlists`)
   return outcome
 }
 
