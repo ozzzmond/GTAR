@@ -1,5 +1,5 @@
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
-import { openRecoveryReview } from '../utils/recoveryReview'
+import { openRecoveryData } from '../utils/recoveryReview'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
@@ -264,8 +264,6 @@ export const Header: React.FC<HeaderProps> = ({
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   )
 
-  // DEV Advanced Tools: Local Recovery Review still flags undecided recovery (#181).
-  const recoveryAttention = useRecoveryAttention()
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
   // #303: the center (with its restore preview) and the debug-log dialog block Stage keyboard/pedal shortcuts.
   const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal
@@ -342,16 +340,21 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-status-error/15 text-status-error border border-status-error/30">DEV</span>
       </button>
       {showAdvancedTools && <div className="pl-2 border-l-2 border-app-border/60 mb-2">
-        <button type="button" data-testid="advanced-recovery-review" onClick={() => { setShowAvatarPopover(false); openRecoveryReview() }} className={advancedItem}
-          aria-label={recoveryAttention ? 'Local Recovery Review, needs a decision' : undefined}>
-          <History className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Local Recovery Review
-          {recoveryAttention && <span data-testid="advanced-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
-        </button>
         <button type="button" data-testid="advanced-debug-logs" onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }} className={advancedItem}>
           <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Debug logs options
         </button>
       </div>}
     </div>
+  ) : null
+  // #304: "Recovery data" — DEV, and admins (role === 'admin') in PROD; never other users.
+  const showRecoveryData = isDevEnv || isSuperAdmin
+  const recoveryAttention = useRecoveryAttention(showRecoveryData)
+  const recoveryDataRow = showRecoveryData ? (
+    <button type="button" data-testid="profile-recovery-data" onClick={() => { setShowAvatarPopover(false); openRecoveryData() }} className={advancedItem}
+      aria-label={recoveryAttention ? 'Recovery data, some copies can\'t be opened' : undefined}>
+      <History className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Recovery data
+      {recoveryAttention && <span data-testid="profile-recovery-data-dot" aria-hidden="true" className={recoveryDotClass} />}
+    </button>
   ) : null
 
   const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
@@ -787,6 +790,7 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
+                    {recoveryDataRow}
                     {advancedTools}
 
                     <div className="h-[1px] bg-app-border/60 mb-2" />
@@ -820,7 +824,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
                     </button>
-                    {advancedTools && <div className="text-left">{advancedTools}</div>}
+                    {(recoveryDataRow || advancedTools) && <div className="text-left">{recoveryDataRow}{advancedTools}</div>}
                   </div>
                 )}
               </div>
@@ -1353,7 +1357,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
           >
             <FolderOpen className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Import Songs &amp; Setlists...</span>
+            <span className="font-semibold">Import Songs...</span>
           </button>
 
 

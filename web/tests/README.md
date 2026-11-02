@@ -243,6 +243,7 @@ New or renamed tests await a human choice of primary category.
 
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [appModalsReducer.test.cjs](appModalsReducer.test.cjs)
+- [appStartVersionLog.test.cjs](appStartVersionLog.test.cjs)
 - [backupRestoreCenterMenu.test.cjs](backupRestoreCenterMenu.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
@@ -260,6 +261,7 @@ New or renamed tests await a human choice of primary category.
 - [libraryIndexB1.test.cjs](libraryIndexB1.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryV1Retirement.test.cjs](libraryV1Retirement.test.cjs)
+- [manageUsersLayout.test.cjs](manageUsersLayout.test.cjs)
 - [manualCloudBackup.test.cjs](manualCloudBackup.test.cjs)
 - [manualCloudBackupApi.test.cjs](manualCloudBackupApi.test.cjs)
 - [manualCloudBackupUi.test.cjs](manualCloudBackupUi.test.cjs)
@@ -267,6 +269,7 @@ New or renamed tests await a human choice of primary category.
 - [musicExplorerDrawer.test.cjs](musicExplorerDrawer.test.cjs)
 - [onsongImport.test.cjs](onsongImport.test.cjs)
 - [recoveryArchivesIdb.test.cjs](recoveryArchivesIdb.test.cjs)
+- [recoveryDataPanel.test.cjs](recoveryDataPanel.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)
 - [recoveryRetentionGuidance.test.cjs](recoveryRetentionGuidance.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)

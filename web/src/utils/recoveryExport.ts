@@ -1,7 +1,7 @@
 /**
  * #299: the one recovery action left in the normal UI. Old recovery archives (left by the removed
  * auto-sync, restore snapshots that went to the archive store, legacy stores) stay on the device;
- * users can only export them. The export is the same full set Local Recovery Review exports,
+ * users can only export them. The export is the same full set the Recovery data panel saves,
  * B2 partitions included. Nothing here deletes or changes recovery data.
  */
 import { useSyncExternalStore } from 'react'

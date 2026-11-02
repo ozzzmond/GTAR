@@ -14,8 +14,8 @@ test('RECOVERY_DOT_CONTRACT: App.tsx alerts only a damaged library; Header and C
   assert.ok(appTsx.includes('Export recovery data') && appTsx.includes('exportRecovery'), 'Damaged-state export remains')
   const header = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
   const modal = fs.readFileSync(path.join(webDir, 'src/components/CloudSyncModal.tsx'), 'utf8')
-  // #304: no header dot and no old-recovery export in the center; undecided recovery is flagged in DEV Advanced Tools.
-  assert.ok(!header.includes('data-testid="header-recovery-dot"') && !header.includes('useOldRecoveryData()') && header.includes('useRecoveryAttention()'))
+  // #304: no header dot and no old-recovery export in the center; unreadable recovery is flagged on the "Recovery data" row.
+  assert.ok(!header.includes('data-testid="header-recovery-dot"') && !header.includes('useOldRecoveryData()') && header.includes('useRecoveryAttention(showRecoveryData)'))
   assert.ok(!modal.includes('data-testid="old-recovery-dot"') && !modal.includes('useOldRecoveryData()'))
 })
 

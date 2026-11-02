@@ -241,7 +241,7 @@ test('Open rejects stale chart state even when personal setlist identity still m
 
 test('exact blocker categories reject before network revalidation and remain checked inside import lock', async () => {
   const preview = await prepare(), h = host(), original = localStorage.getItem(LIBRARY_KEY)
-  for (const [reason, message] of [['editor-draft', /editor changes/], ['cross-tab-conflict', /active cross-tab/], ['actionable-recovery', /Review local recovery/], ['invalid-recovery', /invalid or unreadable/]]) {
+  for (const [reason, message] of [['editor-draft', /editor changes/], ['cross-tab-conflict', /active cross-tab/], ['actionable-recovery', /Open Recovery data, save it, then delete it/], ['invalid-recovery', /invalid or unreadable/]]) {
     h.blockers = () => [reason]
     const count = calls.length
     await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }), message)
@@ -249,7 +249,7 @@ test('exact blocker categories reject before network revalidation and remain che
   }
   let checks = 0
   h.blockers = () => ++checks === 1 ? [] : ['actionable-recovery']
-  await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }), /Review local recovery/)
+  await assert.rejects(api.importCatalogSetlist(preview, h, { kind: 'new' }), /Open Recovery data/)
   assert.equal(localStorage.getItem(LIBRARY_KEY), original)
 })
 test('represented/raw archives permit clean import; genuine conflicts require explicit preserved decision', async () => {

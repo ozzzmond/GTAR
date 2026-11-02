@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import type { SettingsRestoreChoice } from '../utils/backupSettings'
-import { only, outlinedButton, primaryButton, provenanceLine, secondaryButton, type BackupProvenance, type Library } from './backupCenterUi'
+import { dangerButton, only, outlinedButton, primaryButton, provenanceLine, secondaryButton, type BackupProvenance, type Library } from './backupCenterUi'
 
 export interface RestorePreviewProps {
   /** What the backup is, e.g. "Backup file" or "Cloud backup". */
@@ -24,7 +24,6 @@ export interface RestorePreviewProps {
   onCancel: () => void
 }
 
-const dangerButton = 'w-full min-h-11 py-2 px-3 rounded-xl bg-status-error/10 hover:bg-status-error/20 text-status-error border border-status-error/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
 /** Like the cloud card's counts, plus deleted setlists (kept in backups and restored with them). */
 const previewCounts = (library: Library) => {
   const deleted = library.setlists.filter(setlist => setlist.isDeleted).length

@@ -82,7 +82,7 @@ for (const auth of [signedIn, { session: null, isSuperAdmin: false }]) {
       assert.doesNotMatch(popover.textContent, /Advanced Tools|Local Recovery Review|JSON Bridge|Debug logs|Record debug logs/)
     } finally { await act(async () => root.unmount()) }
   })
-  test(`DEV (${auth.session ? 'signed in' : 'signed out'}): Advanced Tools opens Local Recovery Review and debug logs (no JSON Bridge)`, async () => {
+  test(`DEV (${auth.session ? 'signed in' : 'signed out'}): Advanced Tools holds debug logs only (no JSON Bridge)`, async () => {
     const { root, popover } = await mountHeader({ dev: true, auth })
     try {
       const toggle = document.querySelector('[data-testid="advanced-tools-button"]')
@@ -90,19 +90,65 @@ for (const auth of [signedIn, { session: null, isSuperAdmin: false }]) {
       assert.equal(toggle.getAttribute('aria-expanded'), 'false')
       await act(async () => toggle.click())
       const tools = document.querySelector('[data-testid="advanced-tools"]')
-      assert.deepEqual(buttonTexts(tools), ['Advanced ToolsDEV', 'Local Recovery Review', 'Debug logs options'])
+      assert.deepEqual(buttonTexts(tools), ['Advanced ToolsDEV', 'Debug logs options'])
       assert.equal(tools.querySelector('[role="switch"]'), null)
-      let reviews = 0
-      const onReview = () => { reviews++ }
-      window.addEventListener('gtar-review-recovery', onReview)
-      await act(async () => document.querySelector('[data-testid="advanced-recovery-review"]').click())
-      window.removeEventListener('gtar-review-recovery', onReview)
-      assert.equal(reviews, 1, 'opens the existing Local Recovery Review')
-      assert.ok(popover.isConnected === false || !document.querySelector('.avatar-popover'), 'menu closes')
+      assert.doesNotMatch(popover.textContent, /Local Recovery Review/)
       assert.equal(document.querySelector('[data-testid="advanced-json-bridge"]'), null, '#304: JSON Bridge removed')
     } finally { await act(async () => root.unmount()) }
   })
 }
+
+// #304 item 8: "Recovery data" row — DEV for everyone, PROD for admins (role === 'admin') only.
+const member = { session: { token: 't', user: { id: 'u2', email: 'member@example.com', name: 'Member' } }, isSuperAdmin: false }
+for (const [label, options, visible] of [
+  ['DEV signed out', { dev: true, auth: { session: null, isSuperAdmin: false } }, true],
+  ['DEV member', { dev: true, auth: member }, true],
+  ['PROD admin', { dev: false, auth: signedIn }, true],
+  ['PROD member', { dev: false, auth: member }, false],
+  ['PROD signed out', { dev: false, auth: { session: null, isSuperAdmin: false } }, false],
+]) {
+  test(`#304: ${label} ${visible ? 'sees' : 'does not see'} the Recovery data row`, async () => {
+    const { root, popover } = await mountHeader(options)
+    try {
+      const row = document.querySelector('[data-testid="profile-recovery-data"]')
+      if (!visible) { assert.equal(row, null); assert.doesNotMatch(popover.textContent, /Recovery data/); return }
+      assert.equal(row.textContent, 'Recovery data')
+      assert.match(row.className, /min-h-11/)
+      let opened = 0
+      const onOpen = () => { opened++ }
+      window.addEventListener('gtar-open-recovery-data', onOpen)
+      await act(async () => row.click())
+      window.removeEventListener('gtar-open-recovery-data', onOpen)
+      assert.equal(opened, 1, 'opens the Recovery data panel')
+      assert.equal(document.querySelector('.avatar-popover'), null, 'menu closes')
+    } finally { await act(async () => root.unmount()) }
+  })
+}
+
+test('#304: the Recovery data dot shows only while some copies cannot be opened', async () => {
+  localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [{ id: 's1', title: 'A', rawContent: 'C' }], setlists: [] }))
+  localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify({ songs: [{ id: 'old', title: 'Old', rawContent: 'D' }], setlists: [] }))
+  const dot = () => document.querySelector('[data-testid="profile-recovery-data-dot"]')
+  try {
+    let { root } = await mountHeader({ dev: false, auth: signedIn })
+    assert.equal(dot(), null, 'readable copies: no dot')
+    await act(async () => root.unmount())
+    localStorage.setItem('gtar_sync_recovery:download:2', '{broken')
+    ;({ root } = await mountHeader({ dev: false, auth: signedIn }))
+    assert.ok(dot(), 'unreadable copy: dot')
+    assert.equal(document.querySelector('[data-testid="profile-recovery-data"]').getAttribute('aria-label'), "Recovery data, some copies can't be opened")
+    await act(async () => root.unmount())
+    ;({ root } = await mountHeader({ dev: false, auth: member }))
+    assert.equal(dot(), null, 'members never see it')
+    await act(async () => root.unmount())
+  } finally { localStorage.clear() }
+})
+
+test('#304: header overflow menu says "Import Songs..."', () => {
+  const header = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
+  assert.ok(header.includes('>Import Songs...</span>'))
+  assert.ok(!header.includes('Import Songs &amp; Setlists'))
+})
 
 test('#304: App no longer renders the JSON Bridge or the JSON backup dialog', () => {
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')

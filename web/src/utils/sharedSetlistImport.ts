@@ -12,7 +12,7 @@ export type ImportBlocker = 'editor-draft' | 'cross-tab-conflict' | 'actionable-
 export const importBlockerMessages: Record<ImportBlocker, string> = {
   'editor-draft': 'Save or discard editor changes before importing.',
   'cross-tab-conflict': 'Resolve the active cross-tab conflict before importing.',
-  'actionable-recovery': 'Review local recovery and choose which versions to keep before importing.',
+  'actionable-recovery': 'Open Recovery data, save it, then delete it before importing.',
   'invalid-recovery': 'Local recovery data is invalid or unreadable. Export recovery data for manual recovery.',
 }
 export interface ImportHost {

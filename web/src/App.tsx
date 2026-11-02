@@ -1,4 +1,5 @@
-import { RecoveryReviewDialog } from './components/RecoveryReviewDialog'
+import { RecoveryDataPanel } from './components/RecoveryDataPanel'
+import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
 import { CatalogImportContext } from './utils/catalogImportContext'
 import type { CatalogSetlistLineage } from './utils/catalogSetlistLineage'
 import { PublishSetlistModal } from './components/PublishSetlistModal'
@@ -216,8 +217,8 @@ function LibraryStartupReadyInner() {
       setStatus(checkRecovery())
     } catch (err) { setRepairError(err instanceof Error ? err.message : 'Repair failed. Original data remains available for export.') }
   }
-  // #181: only a damaged library gets the full-width alert (the app cannot load). Actionable recovery
-  // is flagged in DEV Advanced Tools (Local Recovery Review).
+  // #181: only a damaged library gets the full-width alert (the app cannot load). Unreadable recovery
+  // copies are flagged on the profile menu row "Recovery data" (#304).
   return <>
     {b2Hold && <aside role="alert" data-testid="library-b2-hold" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
       <span className="flex-1 min-w-0">{holdMessage(b2Hold)}</span>
@@ -249,13 +250,13 @@ function LibraryStartupReadyInner() {
 }
 
 function LibraryApp() {
-  const [reviewRecovery, setReviewRecovery] = useState(false)
+  const [recoveryDataOpen, setRecoveryDataOpen] = useState(false)
   // #303: Backup & Restore center / debug logs are owned by the header; Stage shortcuts pause while they are open.
   const [isHeaderOverlayOpen, setIsHeaderOverlayOpen] = useState(false)
   useEffect(() => {
-    const open = () => setReviewRecovery(true)
-    window.addEventListener('gtar-review-recovery', open)
-    return () => window.removeEventListener('gtar-review-recovery', open)
+    const open = () => setRecoveryDataOpen(true)
+    window.addEventListener(OPEN_RECOVERY_DATA_EVENT, open)
+    return () => window.removeEventListener(OPEN_RECOVERY_DATA_EVENT, open)
   }, [])
   const editorNavigationGuard = useRef<((next: () => void) => void) | null>(null)
   const navigateSafely = (next: () => void) => {
@@ -1640,9 +1641,9 @@ function LibraryApp() {
       ...catalogImportHost,
       open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
     }}>
-    {reviewRecovery && <RecoveryReviewDialog
+    {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
-      onClose={() => setReviewRecovery(false)} />}
+      onClose={() => setRecoveryDataOpen(false)} />}
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
       {/* Unified Android v1.0.44 Top Bar — hidden in stage performance mode */}
       {!isStagePerformanceMode && (
@@ -1867,7 +1868,7 @@ function LibraryApp() {
                 isHeaderKeyPickerOpen ||
                 isTvPresentationModalOpen ||
                 isHeaderOverlayOpen ||
-                reviewRecovery
+                recoveryDataOpen
               }
               onBack={() => setActiveView('songbook')}
               transposeOffset={currentSong.transposeOffset || 0}

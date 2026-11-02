@@ -27,10 +27,10 @@ test('recovery download keeps healthy B2 and legacy sources when another partiti
   const el = document.createElement('div'); document.body.append(el)
   const root = createRoot(el)
   try {
-    const { RecoveryReviewDialog } = require('../src/components/RecoveryReviewDialog.tsx')
-    await act(async () => root.render(React.createElement(RecoveryReviewDialog, { blocked: () => false, onClose() {} })))
+    const { RecoveryDataPanel } = require('../src/components/RecoveryDataPanel.tsx')
+    await act(async () => root.render(React.createElement(RecoveryDataPanel, { blocked: () => false, onClose() {} })))
     await act(async () => {
-      document.querySelector('[data-testid="export-recovery-btn"]').click()
+      document.querySelector('[data-testid="recovery-data-save"]').click()
       // IndexedDB export spans several queued transactions.
       for (let i = 0; !blob && i < 100; i++) await h.settle(5)
     })

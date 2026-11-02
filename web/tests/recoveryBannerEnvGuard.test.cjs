@@ -145,12 +145,15 @@ test('RECOVERY_BANNER_PROD_DAMAGED: production renders damage alert if library d
   }
 })
 
-test('RECOVERY_BANNER_CONTRACT (#181): only damage alerts; the recovery dot is DEV-gated', () => {
+test('RECOVERY_BANNER_CONTRACT (#181/#304): only damage alerts; the recovery dot is computed only for users who see the row', () => {
   const appSrc = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8')
   assert.ok(appSrc.includes('{status.damaged && <aside role="alert"'))
   assert.doesNotMatch(appSrc, /showBanner/)
   const attention = fs.readFileSync(path.resolve(__dirname, '../src/utils/recoveryAttention.ts'), 'utf8')
-  assert.match(attention, /if \(!isDevEnv\) return false/)
+  assert.match(attention, /enabled \? subscribe : off, enabled \? snapshot : never/)
+  const header = fs.readFileSync(path.resolve(__dirname, '../src/components/Header.tsx'), 'utf8')
+  assert.match(header, /const showRecoveryData = isDevEnv \|\| isSuperAdmin/)
+  assert.match(header, /useRecoveryAttention\(showRecoveryData\)/)
 })
 
 test('8j startup recovery is refreshed after child migration and stays resolved on reload', async () => {

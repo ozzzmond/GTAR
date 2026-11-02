@@ -1,4 +1,4 @@
-import { GTAR_APP_VERSION } from '../types/gtar'
+import { GTAR_DEV_PROVENANCE, GTAR_DEV_VERSION } from '../types/gtar'
 import { isDevEnv } from './env'
 import { applyLogRetention, debugLogBackend, LOG_MAX_ENTRIES, type DebugLogBackend } from './debugLogStore'
 /**
@@ -7,6 +7,16 @@ import { applyLogRetention, debugLogBackend, LOG_MAX_ENTRIES, type DebugLogBacke
  * #204 S1: stores timestamped logs in IndexedDB (newest 20; see debugLogStore), with the old
  * 20-entry localStorage copy only as a fallback when IndexedDB is unavailable.
  */
+
+// Build-time PROD identity without the legacy '1.1.108' fallback of GTAR_APP_VERSION.
+declare const __GTAR_PROD_VERSION__: string | null | undefined
+const PROD_BUILD_VERSION: string | null = typeof __GTAR_PROD_VERSION__ === 'string' ? __GTAR_PROD_VERSION__ : null
+
+/** AppStart version: DEV "<GTAR_DEV_VERSION> (<sha>)", PROD the tag-derived GTAR_APP_VERSION; never a legacy fallback. */
+export function appStartVersion(dev: boolean, devVersion: string, commitSha: string, prodVersion: string | null): string {
+  if (dev) return commitSha && commitSha !== 'unknown' ? `${devVersion} (${commitSha})` : devVersion
+  return prodVersion ?? 'unknown (untagged build)'
+}
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
 
@@ -275,7 +285,7 @@ class WebLoggerEngine {
       })
     })
 
-    this.info('AppStart', `App started. Version: ${GTAR_APP_VERSION}; Environment: ${isDevEnv ? 'development' : 'production'}`)
+    this.info('AppStart', `App started. Version: ${appStartVersion(isDevEnv, GTAR_DEV_VERSION, GTAR_DEV_PROVENANCE.commitSha, PROD_BUILD_VERSION)}; Environment: ${isDevEnv ? 'development' : 'production'}`)
   }
 
   private captureConsoleEntry(level: LogLevel, args: unknown[]) {
