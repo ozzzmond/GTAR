@@ -4,7 +4,11 @@
   "version": "1.0.141-dev.1",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.cjs",
+    "test": "node scripts/run-tests.cjs fast",
+    "test:scale": "node scripts/run-tests.cjs scale",
+    "test:release": "node scripts/run-tests.cjs release",
+    "test:workerd": "node scripts/run-tests.cjs workerd",
+    "test:all": "node scripts/run-tests.cjs all",
     "dev": "vite --port 5173",
     "dev:debug": "vite --port 5174 --mode debug",
     "dev:api": "wrangler pages dev --port 8788",

@@ -53,14 +53,6 @@ for (const n of [100, 1500]) {
   })
 }
 
-test('5,000 songs: encode/decode is byte-identical with every body cached (no IndexedDB)', () => {
-  const lib = makeLibrary(5000, 0, { chars: 1200 })
-  index.rememberLibraryBodies(lib.songs.map((song, i) => [`sha256:${i}`, song.rawContent]))
-  const { payload, pending } = index.encodeLibraryIndex(lib)
-  assert.equal(pending.length, 0)
-  assert.deepEqual(bodiesOf(index.decodeLibraryIndex(JSON.parse(payload))), bodiesOf(lib))
-})
-
 test('save keeps new bodies inline until IndexedDB confirms; the next save drops the inline copy', async () => {
   const lib = seed()
   await api.enableLibraryIndex(localStorage)

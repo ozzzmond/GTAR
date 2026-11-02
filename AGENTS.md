@@ -134,3 +134,19 @@ Use these exact terms in code, tests, PRs, and reports:
 - Online services use Google credentials; never move, log, or commit secrets.
 - No PROD, D1 migration, Cloudflare, or tag operations without explicit
   owner approval.
+
+## Test tiers
+
+- From `web/`, agents run `npm test` for PRs (fast; CI target under 60 s).
+- Run `npm run test:scale` for 5k/10k-song and large-migration coverage;
+  153/1,500-song variants stay fast.
+- Run `npm run test:release` for release/version tooling and git-history checks;
+  fetch full history and tags first (`git fetch --tags`; unshallow if needed).
+- Run `npm run test:workerd` for Miniflare/workerd runtime coverage.
+- Agents run `npm run test:all` only when asked. CI runs it on pushes to dev,
+  weekly (Monday 00:00 UTC), and in release validation before tagging.
+- `web/tests/tiers.json` maps non-fast files to one tier; unlisted files default
+  to fast. All scripts validate the assignments and the complete test catalog.
+  Use `-- --timing` for the 25 slowest files; each run reports file/total time.
+- After adding/removing test files, run
+  `node web/scripts/test-catalog.cjs --write` from the repo root.

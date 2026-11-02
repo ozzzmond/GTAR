@@ -29,7 +29,7 @@ async function reopen(storage, factory, options = {}) {
 }
 
 for (const mode of ['v1', 'b1']) {
-  for (const n of [153, 1500, 5000, 10000]) {
+  for (const n of [153, 1500]) {
     test(`migration ${mode} → B2 at ${n} songs + 300 setlists: exact counts, identity, content, checksum; source untouched`, async () => {
       const { storage, factory, tab, source } = await device(n, 300, mode)
       const sourceKey = mode === 'v1' ? V1 : V2

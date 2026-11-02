@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main, dev]
+  schedule:
+    - cron: '0 0 * * 1'
 permissions:
   contents: read
   pull-requests: read
@@ -18,16 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref }}
           fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      # Preserve DEV's complete Web suite and PR16's controller support tests.
+      # Controller support tests remain mandatory for every event.
       - run: node --test ../tests/*.test.cjs
-      - run: npm test
+      - name: Fast PR gate
+        if: github.event_name == 'pull_request'
+        run: npm test -- --timing
+      - name: Full suite (push and weekly)
+        if: github.event_name != 'pull_request'
+        run: npm run test:all -- --timing
       - run: npm run lint:sync
       - run: npm run lint
       - run: npm run build

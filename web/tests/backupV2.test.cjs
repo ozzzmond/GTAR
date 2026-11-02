@@ -82,46 +82,6 @@ const EXCLUDED = {
   gtar_backup_status_v1: '{"SECRET":"status"}', gtar_backup_reminder_v1: '{"SECRET":"reminder"}', gtar_pending_share_token: 'SECRET-share',
 }
 
-function largeLibrary() {
-  const { songs } = makeLibrary(10000, 0)
-  songs.forEach((song, i) => { if (i % 50 === 0) song.isDeleted = true })
-  const setlists = Array.from({ length: 300 }, (_, i) => ({
-    id: `set-${i}`, name: `Setlist ${i}`, createdAt: 1_700_000_000_000 + i, ...(i % 30 === 0 ? { isDeleted: true } : {}),
-    songs: songs.filter(s => !s.isDeleted).slice((i * 17) % 9000, (i * 17) % 9000 + 12).map(s => ({ id: s.id, title: s.title, artist: s.artist })),
-  }))
-  return { songs, setlists }
-}
-
-test('10,000 songs + 300 setlists + trash + every setting: export → verify → import is lossless', async () => {
-  const { storage, raw } = fullSettingsStorage()
-  for (const [k, v] of Object.entries(EXCLUDED)) storage.setItem(k, v)
-  global.localStorage = storage
-  const { songs, setlists } = largeLibrary()
-  const backup = jb.buildVerifiedBackup(songs, setlists, '1.0.139-dev.1')
-  assert.equal(backup.schemaVersion, 2)
-  assert.deepEqual(backup.counts, { songs: 9800, trash: 200, setlists: 300 })
-  assert.ok(backup.bytes > 10 * 1024 * 1024, 'synthetic library is realistically large')
-  for (const secret of Object.values(EXCLUDED)) assert.equal(backup.json.includes(secret), false, `excluded value leaked: ${secret}`)
-
-  const parsed = jb.parseBackupJson(backup.json)
-  assert.equal(parsed.isValid, true, parsed.error)
-  assert.deepEqual(parsed.ignoredFields, [])
-  const expected = songs.map(jb.normalizeBackupSong)
-  assert.equal(JSON.stringify(parsed.songs), JSON.stringify(expected))
-  assert.equal(jb.stableStringify(parsed.setlists), jb.stableStringify(setlists))
-  assert.equal(jb.libraryFingerprint(parsed.songs, parsed.setlists), backup.fingerprint)
-
-  // Restoring every group into a clean device reproduces every key byte-for-byte, and nothing else.
-  const target = new MemoryStorage()
-  const result = await bs.restoreBackupSettingsV2(parsed.settings, { appearance: true, preferences: true }, target)
-  assert.deepEqual(new Set(result.written), new Set(Object.keys(raw)))
-  for (const [k, v] of Object.entries(raw)) assert.equal(target.getItem(k), v, k)
-  // The previous-settings copy is retired after a verified success (#257).
-  assert.equal(target.length, Object.keys(raw).length)
-  assert.equal(target.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
-  global.localStorage = new MemoryStorage()
-})
-
 test('the backup keys are exactly the documented appearance + preference keys', async () => {
   assert.deepEqual(new Set(bs.backupSettingsStorageKeys()), new Set([...APPEARANCE_KEYS, ...PREFERENCE_KEYS]))
   const { raw } = fullSettingsStorage()
