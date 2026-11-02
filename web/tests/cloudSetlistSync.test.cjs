@@ -26,16 +26,7 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const {
-  computeSongbookChecksum,
-  evaluateSyncDecision,
-  reconcileSongbook,
-  readCloudSyncMeta,
-  saveCloudSyncMeta,
-  readCloudSyncBase,
-  saveCloudSyncBase,
-  performCloudSongbookSync,
-} = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 
 const {
   insertUser,
@@ -89,7 +80,6 @@ function createMockD1() {
             users.set(id, { id, google_sub, email, display_name, picture_url, role, access_status, created_at, updated_at, last_login_at })
             return { success: true }
           }
-
 
           return { success: true }
         },
@@ -170,174 +160,30 @@ test('2: checksum_sensitivity detects tombstone changes and song order changes',
 // ---------------------------------------------------------------------------
 // 3. 3-WAY ADD
 // ---------------------------------------------------------------------------
-test('3: 3way_add reconciles clean additions on local and remote without conflict', () => {
-  const base = { songs: [], setlists: [] }
-  const localSetlist = { id: generateUUID(), name: 'Local Gig', songs: [] }
-  const remoteSetlist = { id: generateUUID(), name: 'Remote Gig', songs: [] }
-
-  const local = { songs: [], setlists: [localSetlist] }
-  const remote = { songs: [], setlists: [remoteSetlist] }
-
-  const result = reconcileSongbook(local, remote, base)
-  assert.equal(result.hasConflicts, false)
-  assert.equal(result.merged.setlists.length, 2)
-  assert.ok(result.merged.setlists.some((sl) => sl.id === localSetlist.id))
-  assert.ok(result.merged.setlists.some((sl) => sl.id === remoteSetlist.id))
-})
 
 // ---------------------------------------------------------------------------
 // 4. 3-WAY RENAME
 // ---------------------------------------------------------------------------
-test('4: 3way_rename cleanly accepts single-sided rename against base', () => {
-  const setlistId = generateUUID()
-  const baseSl = { id: setlistId, name: 'Old Setlist Name', songs: [] }
-  const base = { songs: [], setlists: [baseSl] }
-
-  // Local renames, remote unchanged
-  const local = { songs: [], setlists: [{ ...baseSl, name: 'Local Renamed Setlist' }] }
-  const remote = { songs: [], setlists: [{ ...baseSl }] }
-
-  const resultLocalRenamed = reconcileSongbook(local, remote, base)
-  assert.equal(resultLocalRenamed.hasConflicts, false)
-  assert.equal(resultLocalRenamed.merged.setlists[0].name, 'Local Renamed Setlist')
-
-  // Remote renames, local unchanged
-  const remote2 = { songs: [], setlists: [{ ...baseSl, name: 'Remote Renamed Setlist' }] }
-  const resultRemoteRenamed = reconcileSongbook(remote, remote2, base)
-  assert.equal(resultRemoteRenamed.hasConflicts, false)
-  assert.equal(resultRemoteRenamed.merged.setlists[0].name, 'Remote Renamed Setlist')
-})
 
 // ---------------------------------------------------------------------------
 // 5. 3-WAY REORDER
 // ---------------------------------------------------------------------------
-test('5: 3way_reorder cleanly accepts single-sided song reordering against base', () => {
-  const s1 = generateUUID()
-  const s2 = generateUUID()
-  const setlistId = generateUUID()
-
-  const baseSl = {
-    id: setlistId,
-    name: 'Order Set',
-    songs: [{ id: s1, title: 'Song 1' }, { id: s2, title: 'Song 2' }],
-  }
-  const base = { songs: [], setlists: [baseSl] }
-
-  // Local reorders: Song 2 then Song 1
-  const local = {
-    songs: [],
-    setlists: [
-      {
-        ...baseSl,
-        songs: [{ id: s2, title: 'Song 2' }, { id: s1, title: 'Song 1' }],
-      },
-    ],
-  }
-  const remote = { songs: [], setlists: [{ ...baseSl }] }
-
-  const result = reconcileSongbook(local, remote, base)
-  assert.equal(result.hasConflicts, false)
-  assert.equal(result.merged.setlists[0].songs[0].id, s2)
-  assert.equal(result.merged.setlists[0].songs[1].id, s1)
-})
 
 // ---------------------------------------------------------------------------
 // 6. CONCURRENT CONFLICT COPY
 // ---------------------------------------------------------------------------
-test('6: concurrent_conflict_copy preserves local setlist and creates (Cloud Copy) with distinct UUID', () => {
-  const s1 = generateUUID()
-  const setlistId = generateUUID()
-
-  const baseSl = {
-    id: setlistId,
-    name: 'Shared Setlist',
-    songs: [{ id: s1, title: 'Song 1' }],
-  }
-  const base = { songs: [], setlists: [baseSl] }
-
-  // Local modifies name
-  const local = {
-    songs: [],
-    setlists: [{ ...baseSl, name: 'Local Acoustic Version' }],
-  }
-  // Remote modifies name differently
-  const remote = {
-    songs: [],
-    setlists: [{ ...baseSl, name: 'Remote Electric Version' }],
-  }
-
-  const result = reconcileSongbook(local, remote, base)
-  assert.equal(result.hasConflicts, true)
-  assert.equal(result.conflicts.length, 1)
-  assert.equal(result.conflicts[0].type, 'setlist')
-  assert.equal(result.merged.setlists.length, 2)
-
-  const keptLocal = result.merged.setlists.find((sl) => sl.id === setlistId)
-  assert.ok(keptLocal)
-  assert.equal(keptLocal.name, 'Local Acoustic Version')
-
-  const cloudCopy = result.merged.setlists.find((sl) => sl.id !== setlistId)
-  assert.ok(cloudCopy)
-  assert.ok(isValidUUID(cloudCopy.id), 'Cloud copy must have a valid new UUID')
-  assert.equal(cloudCopy.name, 'Remote Electric Version (Cloud Copy)')
-})
 
 // ---------------------------------------------------------------------------
 // 7. LOCAL DELETE TOMBSTONE
 // ---------------------------------------------------------------------------
-test('7: local_delete_tombstone propagates tombstone to merge when remote is unchanged from base', () => {
-  const setlistId = generateUUID()
-  const baseSl = { id: setlistId, name: 'Setlist To Delete', songs: [] }
-  const base = { songs: [], setlists: [baseSl] }
-
-  // Local marks tombstone (isDeleted: true)
-  const local = { songs: [], setlists: [{ ...baseSl, isDeleted: true }] }
-  const remote = { songs: [], setlists: [{ ...baseSl }] }
-
-  const result = reconcileSongbook(local, remote, base)
-  assert.equal(result.hasConflicts, false)
-  assert.equal(result.merged.setlists.length, 1)
-  assert.equal(result.merged.setlists[0].id, setlistId)
-  assert.equal(result.merged.setlists[0].isDeleted, true)
-})
 
 // ---------------------------------------------------------------------------
 // 8. REMOTE DELETE TOMBSTONE
 // ---------------------------------------------------------------------------
-test('8: remote_delete_tombstone propagates tombstone to merge when local is unchanged from base', () => {
-  const setlistId = generateUUID()
-  const baseSl = { id: setlistId, name: 'Setlist Remote Deleted', songs: [] }
-  const base = { songs: [], setlists: [baseSl] }
-
-  const local = { songs: [], setlists: [{ ...baseSl }] }
-  // Remote marks tombstone (isDeleted: true)
-  const remote = { songs: [], setlists: [{ ...baseSl, isDeleted: true }] }
-
-  const result = reconcileSongbook(local, remote, base)
-  assert.equal(result.hasConflicts, false)
-  assert.equal(result.merged.setlists.length, 1)
-  assert.equal(result.merged.setlists[0].id, setlistId)
-  assert.equal(result.merged.setlists[0].isDeleted, true)
-})
 
 // ---------------------------------------------------------------------------
 // 9. ANTI RESURRECTION
 // ---------------------------------------------------------------------------
-test('9: anti_resurrection prevents tombstoned setlist from resurrecting against base snapshot', () => {
-  const setlistId = generateUUID()
-  const baseSl = { id: setlistId, name: 'Deleted Setlist', songs: [] }
-  const base = { songs: [], setlists: [baseSl] }
-
-  // Local deleted/tombstoned setlist
-  const local = { songs: [], setlists: [{ ...baseSl, isDeleted: true }] }
-  // Remote still has unmodified setlist from base
-  const remote = { songs: [], setlists: [{ ...baseSl }] }
-
-  const result = reconcileSongbook(local, remote, base)
-  // Must NOT resurrect as active
-  assert.equal(result.hasConflicts, false)
-  assert.equal(result.merged.setlists[0].isDeleted, true, 'Must remain tombstoned, not resurrected')
-})
 
 // ---------------------------------------------------------------------------
 // 10. SONG DELETE REFERENTIAL SAFETY

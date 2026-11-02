@@ -1,4 +1,4 @@
-// #299: class constants and helpers shared by the Backup & Restore center cards (from the #296 Sync Center layout).
+// #299: class constants and helpers shared by the Backup & Restore center cards.
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 export type Library = { songs: Array<Partial<ActiveSongState>>; setlists: WebSetlist[] }

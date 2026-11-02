@@ -13,7 +13,7 @@ const { act } = React
 const { createRoot } = require('react-dom/client')
 const api = require('../src/utils/sharedSetlistPublishing.ts')
 const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts')
-const { computeSongbookChecksum } = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
 const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
@@ -106,7 +106,7 @@ test('unsaved edits, persistence mismatch and cloud conflict never write or sile
   library.songs[0].rawContent += ' draft'
   await assert.rejects(prepare, /not safely persisted/)
   persist()
-  await assert.rejects(prepare, /Cloud Sync/)
+  await assert.rejects(prepare, /Backup to cloud/)
   assert.ok(calls.every(c => !c.method || c.method === 'GET'))
   await assert.rejects(api.preparePublication('set-a', () => library, () => true), /recovery/)
 })
@@ -114,10 +114,10 @@ test('remote newer version, local and cross-tab edits invalidate stale preview a
   const preview = await prepare(); version++
   await assert.rejects(api.verifyPreview(preview, () => library, () => false), /stale/)
   version--; cloud.songs[0].capo = '4'
-  await assert.rejects(api.verifyPreview(preview, () => library, () => false), /Cloud Sync/)
+  await assert.rejects(api.verifyPreview(preview, () => library, () => false), /Backup to cloud/)
   cloud = structuredClone(library)
   responder = () => { const changed = structuredClone(library); changed.songs[0].rawContent += ' other tab'; localStorage.setItem(LIBRARY_KEY, JSON.stringify(changed)); return sourceResponse() }
-  await assert.rejects(prepare, /Cloud Sync/)
+  await assert.rejects(prepare, /Backup to cloud/)
 })
 test('no cloud record, account mismatch and invalid checksum block exact-source verification', async () => {
   for (const body of [{ success: true, userId: 'account-a', cloudRecord: null }, { success: true, userId: 'other', cloudRecord: { userId: 'other', version, data: cloud } },
@@ -351,7 +351,6 @@ test('active admin and active member personal workflows expose publishing; pendi
     assert.equal(!!document.querySelector('[aria-label="Publish Sunday to Shared"]'), (role === 'admin' || role === 'member') && access === 'active')
   }
 })
-
 
 test('REQUIRED: 62_SONG_COMPACT_JOURNAL_SIZE and NO_RAW_CHART_CONTENT_IN_NEW_JOURNAL', async () => {
   const songs = []

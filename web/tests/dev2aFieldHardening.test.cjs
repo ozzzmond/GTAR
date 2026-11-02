@@ -14,7 +14,7 @@ const { syncCanonicalDirectives } = require('../src/utils/chordProMetadata.ts')
 const { chordLyricWords, twoLineSegments } = require('../src/utils/chordLyricLayout.ts')
 const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
 const { createBackupPayload, parseBackupJson } = require('../src/utils/jsonBackup.ts')
-const { computeSongbookChecksum, songEquals } = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const song = { id: 'field-song', title: 'Field Song', artist: 'Old Band', key: 'Bb', capo: '2', bpm: '96', time: '4/4', year: '2024', tags: '', transposeOffset: 0, format: 'CHORD_PRO', rawContent: '{title: Field Song}\n{artist: Old Band}\n{subtitle: Legacy Band}\n{a: Old Alias}\n{capo: 2}\n{custom: keep}\n[Bb]Sing the [F/A]song' }
 const change = async (el, value) => act(async () => {
   Object.getOwnPropertyDescriptor(el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value').set.call(el, value)
@@ -46,7 +46,6 @@ test('DEV2A artist edit, clear, reload, backup and cloud contract agree without 
     assert.equal(backup.songs[0].artist, 'New Band')
     assert.equal(parseGtarSong(backup.songs[0].rawContent).artist, 'New Band')
     assert.notEqual(computeSongbookChecksum({ songs: [song], setlists: [] }), computeSongbookChecksum({ songs: [saved], setlists: [] }))
-    assert.equal(songEquals(song, saved), false)
     await act(async () => root.render(null))
     saved = reloaded
     await act(async () => root.render(React.createElement(DesktopEditor, props())))

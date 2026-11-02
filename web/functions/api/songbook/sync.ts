@@ -9,7 +9,7 @@ import {
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
-import { computeSongbookChecksum } from '../../../src/utils/cloudSongbookSync.ts'
+import { computeSongbookChecksum } from '../../../src/utils/cloudBackupFormat.ts'
 import {
   validateCloudThemeSettings,
   normalizeCloudThemeSettings,

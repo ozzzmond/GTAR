@@ -78,7 +78,7 @@ export function isPristineSampleRecord(kind: string, data: unknown): boolean {
 
 /**
  * #240: setlist ids this device has synced through per-record sync (its saved state, key
- * `gtar_records_sync_v1`, written by recordsSync.ts). Read directly to avoid an import cycle.
+ * `gtar_records_sync_v1`, written by retired per-record sync). Read directly to avoid an import cycle.
  */
 export function cloudSyncedSetlistIds(storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage !== 'undefined' ? localStorage : undefined): Set<string> {
   const ids = new Set<string>()

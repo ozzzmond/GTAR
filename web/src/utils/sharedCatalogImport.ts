@@ -8,7 +8,7 @@
  * - Tracks source catalog identity additively via `sharedSourceSongId` and `sharedSourceRevision`.
  * - Drops server publisher ownership and editor identity from personal song representation.
  * - Does not perform remote writes or alter the shared catalog song.
- * - Integrates cleanly with personal Songbook storage and cloud sync.
+ * - Integrates cleanly with personal Songbook storage and manual cloud backups.
  */
 
 import type { ActiveSongState, SongFormat } from '../types/gtar'

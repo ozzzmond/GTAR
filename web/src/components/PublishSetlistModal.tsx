@@ -133,7 +133,7 @@ export function PublishSetlistModal({ sourceId, getLocal, blocked, onClose }: {
       </p>
       {preview?.mode === 'client' ? (
         <p className="text-[11px] text-app-muted leading-relaxed">
-          Shares the saved setlist on this device with its charts. Cloud Sync is not needed.
+          Shares the saved setlist on this device with its charts.
         </p>
       ) : (
         <p className="text-[11px] text-app-muted leading-relaxed">

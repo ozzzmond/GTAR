@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const path = require('node:path')
+
 const ts = require('typescript')
 
 // Set up ts/tsx transpilation hook for web source files
@@ -63,9 +63,7 @@ const {
   cloneSharedCatalogSongToPersonal,
 } = require('../src/utils/sharedCatalogImport.ts')
 
-const {
-  computeSongbookChecksum,
-} = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 
 const {
   isValidUUID,
@@ -82,7 +80,7 @@ const {
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
 const { normalizeBackupSong } = require('../src/utils/jsonBackup.ts')
-const { songEquals } = require('../src/utils/cloudSongbookSync.ts')
+
 const { SharedCatalogBrowser: CatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
 const { AuthContext } = require('../src/utils/authContext.ts')
 const SharedCatalogBrowser = props => React.createElement(AuthContext.Provider, {value:{session:{user:{id:'user-1'}},accessStatus:'active'}}, React.createElement(CatalogBrowser,props))
@@ -639,8 +637,6 @@ test('PHASE 4 - TEST 3: Association survives personal sync and backup lifecycle'
 
   // 2. Cloud Sync equality and checksum change detection
   const songWithoutId = { ...originalSong, publishedCatalogSongId: undefined }
-  assert.equal(songEquals(originalSong, originalSong), true)
-  assert.equal(songEquals(originalSong, songWithoutId), false)
 
   const libWithId = { songs: [originalSong], setlists: [] }
   const libWithoutId = { songs: [songWithoutId], setlists: [] }
@@ -1141,7 +1137,6 @@ test('PHASE 5 - TEST 2: PERSISTED_ASSOCIATION_SURVIVES_REFRESH', () => {
 
   // Equality check must consider publishedCatalogSongId identical
   const clone = { ...publishedSong }
-  assert.ok(songEquals(publishedSong, clone))
 })
 
 test('PHASE 5 - TEST 3: GREEN_ICON_APPEARS_AFTER_CONFIRMED_PUBLISH', () => {

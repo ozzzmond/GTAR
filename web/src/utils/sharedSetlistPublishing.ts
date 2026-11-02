@@ -1,7 +1,7 @@
 import { assertPublishFromOwnLibrary, catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClient'
 import { CatalogApiError } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
-import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudSongbookSync'
+import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
 import { B2_SETLIST_PUBLISH_MESSAGE, personalSyncPausedByB2, readPersistedLibrary } from './syncJournal'
 import type { SyncLibrary } from './syncMerge'
 import { snapshotFromSongbook } from './sharedSetlistSnapshot'
@@ -73,7 +73,7 @@ export function publicationError(error: unknown): string {
       413: 'This setlist is too large to share (256 KB limit). Split it or shorten long charts, then review again.',
       422: 'The cloud source contains missing, ambiguous or unsupported songs. Fix it and sync before reviewing again.',
       429: 'Publication quota or rate limit reached. Wait before retrying; retained storage quotas may require operator help.',
-      501: 'This server does not accept device setlists yet. Use Cloud Sync, then review again.',
+      501: 'This server does not accept device setlists yet. Use Backup to cloud, then review again.',
       503: 'Catalog storage is unavailable. Retry the same request later.',
     }
     return messages[error.status] || error.message
@@ -127,27 +127,27 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
   assertAccount(accountId, token, true)
   const cloud = response?.cloudRecord
   if (!response?.success || response.userId !== accountId || !cloud || cloud.userId !== accountId || !positive(cloud.version)) {
-    throw new Error('Exact cloud source unavailable. Use Cloud Sync for this account, then retry preview.')
+    throw new Error('Exact cloud source unavailable. Use Backup to cloud for this account, then retry preview.')
   }
   const current = getLocal()
   const latestPersisted = readPersistedLibrary()
   if (blocked() || !latestPersisted || sourceChecksum(current) !== sourceChecksum(latestPersisted) ||
     cloud.checksum !== computeSongbookChecksum(cloud.data) || sourceChecksum(current) !== sourceChecksum(local) ||
     sourceChecksum(current) !== sourceChecksum(cloud.data)) {
-    throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
+    throw new Error('Local and cloud versions differ. Use Backup to cloud for this account, then retry preview. Nothing was published.')
   }
   let snapshot: SetlistSnapshot
   try {
     snapshot = snapshotFromSongbook(cloud.data, sourceId)
   } catch (error) {
     if (error instanceof Error && error.message === 'Missing or ambiguous source setlist') {
-      throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.', { cause: error })
+      throw new Error('Local and cloud versions differ. Use Backup to cloud for this account, then retry preview. Nothing was published.', { cause: error })
     }
     throw error
   }
   if (canonical(snapshotFromSongbook(latestPersisted, sourceId)) !== canonical(snapshot) ||
     canonical(snapshotFromSongbook(current, sourceId)) !== canonical(snapshot)) {
-    throw new Error('Local and cloud versions differ. Use existing Cloud Sync and resolve any conflict, then retry preview. Nothing was published.')
+    throw new Error('Local and cloud versions differ. Use Backup to cloud for this account, then retry preview. Nothing was published.')
   }
   return { account: accountId, token, sourceId, version: cloud.version, checksum: sourceChecksum(current), snapshot, mode: 'songbook' }
 }

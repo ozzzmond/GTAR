@@ -9,7 +9,7 @@ for (const extension of ['.ts', '.tsx']) require.extensions[extension] = (module
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
 const { upsertUserSongbook, createSessionToken } = require('../functions/lib/authCore.ts')
 const api = require('../functions/api/songbook/sync.ts')
-const sync = require('../src/utils/cloudSongbookSync.ts')
+const sync = require('../src/utils/cloudBackupFormat.ts')
 const songId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
 const library = content => ({ songs: [{ id: songId, title: 'Song', rawContent: content }], setlists: [] })
 const emptyRevision = { version: 0, checksum: null }
@@ -35,9 +35,9 @@ const postBody = (data, rev) => ({ data, expectedVersion: rev.version, expectedC
 
 test('manual backup accepts account with per-record cursor and rows', async () => {
  const {db,request}=await fixture()
- const core=require('../functions/lib/songbookRecordsCore.ts')
  await write(db,library('old'),emptyRevision)
- await core.ensureRecordsSeeded(db,'user-a','2026-11-01T00:00:00Z')
+ db.sqlite.prepare('INSERT INTO user_songbook_cursors (user_id, seq, seeded_at) VALUES (?, ?, ?)').run('user-a', 1, '2026-11-01T00:00:00Z')
+ db.sqlite.prepare('INSERT INTO user_songbook_records (user_id, kind, record_id, rev, seq, removed, data_json, checksum, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('user-a', 'song', songId, 1, 1, 0, JSON.stringify(library('old').songs[0]), 'historical-checksum', '2026-11-01T00:00:00Z')
  const old=(await (await request('GET')).json()).cloudRecord
  const result=await request('POST',postBody(library('manual backup'),revision(old)))
  assert.equal(result.status,200)

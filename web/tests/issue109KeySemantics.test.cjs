@@ -154,7 +154,6 @@ test('109 field QA: canonical original_key supersedes stale entity chart metadat
  assert.equal(transposeContext({...stale,originalKey:undefined,rawContent:'[E]song'},0).originalKey,'')
 })
 
-
 test('109 field QA: actual stage renders the same raw E performance as its picker, zero and Reset',async()=>{
  const {StageView}=require('../src/components/StageView.tsx')
  const stale={...song,rawContent:'{original_key: E}\n[E]My [Esus4]song'}
@@ -171,7 +170,6 @@ test('109 field QA: actual stage renders the same raw E performance as its picke
   await render();assert.deepEqual(chords(),['E','Esus4']);assert.equal(stale.key,'G');assert.equal(stale.originalKey,'E')
  }finally{await act(async()=>root.unmount())}
 })
-
 
 test('111: confirmed chart key authorizes original zero without changing authored text or saved playback',()=>{
  const raw='{original_key: E}\n[G] [D] [Em]'
@@ -204,7 +202,6 @@ test('109: canonical E needs no confirmation and preserves C# playback; original
  }finally{await act(async()=>root.unmount())}
 })
 
-
 test('111: text transposition rebases nonzero offset once, including slash bass, Save/reload and recovery',async()=>{
  for(const fail of [false,true]){
   localStorage.clear();let stored={...song,transposeOffset:2};const recovery={current:null},root=createRoot(document.getElementById('root'))
@@ -230,13 +227,13 @@ test('111: text transposition rebases nonzero offset once, including slash bass,
 
 test('111: confirmed chart survives backup and sync; confirmation-only changes are not discarded',()=>{
  const {normalizeBackupSong,createBackupPayload}=require('../src/utils/jsonBackup.ts')
- const {computeSongbookChecksum,songEquals}=require('../src/utils/cloudSongbookSync.ts')
+ const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
  const raw='{original_key: E}\n[E]My [Esus4]song',confirmed={...song,key:'E',confirmedChartKey:'E',rawContent:raw,transposeOffset:-3}
  const normalized=normalizeBackupSong(confirmed);assert.equal(normalized.confirmedChartKey,'E');assert.equal(normalized.rawContent,raw);assert.equal(normalized.transposeOffset,-3)
  const backup=createBackupPayload([confirmed],[{id:'list',name:'List',songs:[{id:song.id,title:song.title}]}])
  assert.equal(backup.songs[0].confirmedChartKey,'E');assert.equal(backup.setlists[0].songs[0].id,song.id)
  const legacy={...confirmed};delete legacy.confirmedChartKey
- assert.notEqual(require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(legacy),require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(confirmed));assert.equal(songEquals(legacy,confirmed),false);assert.notEqual(computeSongbookChecksum({songs:[legacy],setlists:[]}),computeSongbookChecksum({songs:[confirmed],setlists:[]}))
+ assert.notEqual(require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(legacy),require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(confirmed));assert.notEqual(computeSongbookChecksum({songs:[legacy],setlists:[]}),computeSongbookChecksum({songs:[confirmed],setlists:[]}))
  localStorage.clear();persistLibrary({songs:[normalized],setlists:[]});assert.equal(readPersistedLibrary().songs[0].confirmedChartKey,'E')
 })
 
@@ -265,7 +262,6 @@ test('111: stage cast broadcasts the same performance key and actual offset as r
  }finally{stageCast.broadcastState=previous;await act(async()=>root.unmount())}
 })
 
-
 test('111: conflicting raw confirmation is rejected; failed confirmation keeps recoverable draft and CAS baseline',async()=>{
  for(const conflict of [true,false]){
   localStorage.clear();const raw=conflict?song.rawContent:'[E]My [Esus4]song'
@@ -281,7 +277,6 @@ test('111: conflicting raw confirmation is rejected; failed confirmation keeps r
  }
  const {validateBackupEntries}=require('../src/utils/jsonBackup.ts');assert.ok(validateBackupEntries([{...song,confirmedChartKey:'H'}],[]).some(e=>e.includes('confirmedChartKey')))
 })
-
 
 test('111 prior review: key shorthand survives Save, repairs synchronize stale entity, steppers wrap stored boundaries',async()=>{
  for(const raw of [song.rawContent.replace('{key: G}','{k: G}'),song.rawContent+'\n{key: A}']){
@@ -303,7 +298,6 @@ test('111 prior review: key shorthand survives Save, repairs synchronize stale e
   }finally{await act(async()=>root.unmount())}
  }
 })
-
 
 test('109 final: six-field Bb canonical chart ignores first-chord tonic, picker +2, Save/reload and backup preserve basis',async()=>{
  const raw='{title: House of the Lord}\n{artist: Band}\n{original_key: Bb}\n{tempo: 120 BPM}\n{time: 4/4}\n{year: 2026}\n[Bb] [Bb] [F] [Eb]'
@@ -391,7 +385,6 @@ test('109 final: blank six-field template requires explicit original selection; 
  assert.equal(resolveSongKeys({rawContent:'{k: G}\n[G]song',originalKey:'E'}).chartKey,'G')
  assert.equal(resolveSongKeys({rawContent:'[D]intro [G]song'}).chartEstimated,true)
 })
-
 
 test('109 final: clearing key value cannot bypass deletion choice; failed B remains recoverable and retryable',async()=>{
  let stored={...song},fail=true;const recovery={current:null},root=createRoot(document.getElementById('root'))

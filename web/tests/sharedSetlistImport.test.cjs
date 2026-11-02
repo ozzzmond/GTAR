@@ -16,17 +16,13 @@ const { CatalogImportContext } = require('../src/utils/catalogImportContext.ts')
 const { CatalogSetlistPreview } = require('../src/components/CatalogSetlistPreview.tsx')
 const { createBackupPayload, parseBackupJson } = require('../src/utils/jsonBackup.ts')
 const { normalizeSongbookIds } = require('../src/utils/songbookFoundation.ts')
-const { setlistEquals, reconcileSongbook, performCloudSongbookSync } = require('../src/utils/cloudSongbookSync.ts')
+
 const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts')
-const { computeSongbookChecksum } = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
 const { bindOwner, OWNER_KEY } = require('./helpers/libraryOwner.cjs')
-const { CatalogApiError } = require('../src/types/sharedCatalog.ts')
-const { PublishSetlistModal } = require('../src/components/PublishSetlistModal.tsx')
-const { SharedCatalogBrowser } = require('../src/components/SharedCatalogBrowser.tsx')
-const { SetlistDrawer } = require('../src/components/SetlistDrawer.tsx')
-const { AuthContext } = require('../src/utils/authContext.ts')
+
 const { sharedCatalogService } = require('../src/utils/sharedCatalogService.ts')
 
 let dom, root, library, cloud, calls, version, responder
@@ -158,7 +154,7 @@ test('quota, denied storage and recovery failures never apply partial library or
     finally { proto.setItem = originalSet }
   }
 })
-test('lineage survives backup, normalization and cloud serialization; equality/checksum include lineage', async () => {
+test('lineage survives backup, normalization and cloud serialization; checksum includes lineage', async () => {
   await api.importCatalogSetlist(await prepare(), host(), { kind: 'new' })
   const parsed = parseBackupJson(JSON.stringify(createBackupPayload(library.songs, library.setlists)))
   assert.equal(parsed.isValid, true, parsed.error)
@@ -167,7 +163,6 @@ test('lineage survives backup, normalization and cloud serialization; equality/c
   const roundtrip = JSON.parse(JSON.stringify(library)); assert.equal(computeSongbookChecksum(roundtrip), computeSongbookChecksum(library))
   roundtrip.setlists[1].catalogSource.revision++
   assert.notEqual(computeSongbookChecksum(roundtrip), computeSongbookChecksum(library))
-  assert.equal(setlistEquals(roundtrip.setlists[1], library.setlists[1]), false)
   roundtrip.setlists[1].catalogSource.revision = 0
   assert.equal(parseBackupJson(JSON.stringify(createBackupPayload(library.songs, library.setlists)).replace('"revision":1','"revision":0')).isValid, false)
 })
@@ -181,31 +176,6 @@ test('mobile dialog escapes injection, confirms import, reports local verificati
   await click(button('Confirm import'))
   assert.match(document.body.textContent, /saved and verified locally/)
   await click(button('Open Setlist')); assert.equal(host.opened, library.setlists[1].id)
-})
-
-test('cloud upload/download and conflicting setlist copies retain lineage and independent occurrences', async () => {
-  await api.importCatalogSetlist(await prepare(), host(), { kind: 'new' })
-  const uploaded = structuredClone(library)
-  responder = (_url, options) => options.method === 'POST'
-    ? response({ success: true, userId: 'account-a', cloudRecord: { userId: 'account-a', version: 1, checksum: computeSongbookChecksum(uploaded), data: uploaded } })
-    : response({ success: true, userId: 'account-a', cloudRecord: null })
-  const result = await performCloudSongbookSync('token-account-a', { forceAction: 'upload', localLibraryOverride: uploaded })
-  assert.equal(result.status, 'IN_SYNC', result.error)
-  assert.equal(result.actionTaken, 'UPLOADED')
-  assert.deepEqual(result.updatedLibrary.setlists[1].catalogSource, uploaded.setlists[1].catalogSource)
-  const wire = JSON.parse(JSON.stringify(result.updatedLibrary))
-  localStorage.setItem(LIBRARY_KEY, JSON.stringify({ songs: [], setlists: [] }))
-  responder = () => response({ success: true, userId: 'account-a', cloudRecord: { userId: 'account-a', version: 1, checksum: computeSongbookChecksum(wire), data: wire } })
-  const downloaded = await performCloudSongbookSync('token-account-a', { forceAction: 'download' })
-  assert.equal(downloaded.actionTaken, 'DOWNLOADED', downloaded.error)
-  assert.deepEqual(downloaded.updatedLibrary.setlists[1].catalogSource, uploaded.setlists[1].catalogSource)
-  const remote = structuredClone(uploaded); remote.setlists[1].name = 'Remote edit'
-  library.setlists[1].name = 'Local edit'
-  const merged = reconcileSongbook(library, remote, uploaded)
-  assert.ok(merged.conflicts.length)
-  const copies = merged.merged.setlists.filter(list => list.catalogSource)
-  assert.ok(copies.length >= 2)
-  for (const copy of copies) assert.deepEqual(copy.catalogSource, uploaded.setlists[1].catalogSource)
 })
 
 test('mid-request account switch, changed snapshot, recovery block and missing restored song fail closed', async () => {
@@ -237,7 +207,6 @@ test('Open rejects stale chart state even when personal setlist identity still m
   localStorage.setItem(LIBRARY_KEY, JSON.stringify(external))
   assert.throws(() => api.openCatalogImport(destination, preview, h), /unavailable/)
 })
-
 
 test('exact blocker categories reject before network revalidation and remain checked inside import lock', async () => {
   const preview = await prepare(), h = host(), original = localStorage.getItem(LIBRARY_KEY)

@@ -106,38 +106,7 @@ test('library without a verified owner opens the device partition; it is never c
   assert.equal(page.tab.owner.libraryOwnership('user-c', storage), 'unbound')
   assert.match(page.tab.owner.personalContentBlockReason('user-c', storage), /not linked/)
   assert.throws(() => page.tab.owner.assertLibraryOwner('user-c', storage), error => error.ownership === 'unbound')
-  await assert.rejects(page.tab.owner.confirmLibraryOwner('user-c', storage), /not available while library storage B2 is on/)
   assert.equal(storage.getItem('gtar_library_owner_v1'), null, 'owner never written')
-})
-
-test('Cloud V1 boundary: with B2 on, classic, per-record and automatic sync make no request and change nothing', async () => {
-  const { storage, factory } = device()
-  const page = await open(storage, factory)
-  const records = require('../src/utils/recordsSync.ts')
-  const classic = require('../src/utils/cloudSongbookSync.ts')
-  const realFetch = global.fetch
-  let requests = 0
-  global.fetch = async () => { requests++; throw new Error('network must not be used') }
-  try {
-    const head = page.tab.sj.libraryRevision(storage)
-    for (const run of [
-      () => records.performSongbookSync('token', { storage }),
-      () => records.performRecordsSync('token', { storage }),
-      () => classic.performCloudSongbookSync('token', { storage }),
-      () => records.performSongbookSync('token', { storage, forceAction: 'upload' }),
-      () => records.performSongbookSync('token', { storage, forceAction: 'download' }),
-    ]) {
-      const result = await run()
-      assert.equal(result.success, false)
-      assert.match(result.error, /paused while the new device storage \(B2\) is on/)
-    }
-    edit(page.tab, storage, 0, { title: 'offline edit' })
-    await page.tab.b2.flushB2()
-    assert.equal(requests, 0, 'zero uploads or downloads')
-    assert.notEqual(page.tab.sj.libraryRevision(storage), head)
-    assert.equal(storage.getItem('gtar_cloud_sync_base'), null)
-    assert.equal(storage.getItem('gtar_records_sync_v1'), null)
-  } finally { global.fetch = realFetch }
 })
 
 test('Cloud V1 unchanged with B2 off: the guard is inert and the legacy save path is used', async () => {

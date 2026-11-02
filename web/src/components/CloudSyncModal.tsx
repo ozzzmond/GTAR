@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Cloud, CloudDownload, CloudUpload, Info, LogIn, User, X } from 'lucide-react'
 import { useOptionalGoogleAuth } from '../utils/authContext'
-import { estimateSongbookUploadBytes, songbookUploadHeadroom, type CloudSongbookRecord } from '../utils/cloudSongbookSync'
+import { estimateSongbookUploadBytes, songbookUploadHeadroom, type CloudSongbookRecord } from '../utils/cloudBackupFormat'
 import { readPersistedLibrary } from '../utils/syncJournal'
 import type { SyncLibrary } from '../utils/syncMerge'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'

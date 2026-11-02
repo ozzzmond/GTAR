@@ -28,7 +28,7 @@ const { normalizeMusicalKey, keysArePitchEquivalent } = require('../src/utils/mu
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 const { transposeChordToken } = require('../src/utils/chordTransposer.ts')
 const { normalizeBackupSong, parseBackupJson, createBackupPayload } = require('../src/utils/jsonBackup.ts')
-const { computeSongbookChecksum, songEquals } = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { computeSemanticSongFingerprint } = require('../src/utils/songbookFoundation.ts')
 
 const webDir = path.resolve(__dirname, '..')
@@ -171,8 +171,6 @@ test('TIME_SIGNATURE_ROUND_TRIP: persists through backup, cloud checksum, and re
     computeSongbookChecksum({ songs: [songAltTime], setlists: [] })
   )
 
-  assert.equal(songEquals(song, song), true)
-  assert.equal(songEquals(song, songAltTime), false)
 })
 
 test('NO_GETSONGBPM_REFERENCES_ANYWHERE: Zero runtime, client, functions, or config references', () => {

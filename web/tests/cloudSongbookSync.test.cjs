@@ -26,14 +26,7 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const {
-  computeSongbookChecksum,
-  evaluateSyncDecision,
-  reconcileSongbook,
-  readCloudSyncMeta,
-  saveCloudSyncMeta,
-  performCloudSongbookSync,
-} = require('../src/utils/cloudSongbookSync.ts')
+const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 
 const {
   insertUser,
@@ -103,30 +96,6 @@ function createMockD1() {
   }
 }
 
-function createMockStorage(initial = {}) {
-  const store = new Map(Object.entries(initial))
-  return {
-    getItem(k) {
-      return store.has(k) ? store.get(k) : null
-    },
-    setItem(k, v) {
-      store.set(k, String(v))
-    },
-    removeItem(k) {
-      store.delete(k)
-    },
-    clear() {
-      store.clear()
-    },
-    get length() {
-      return store.size
-    },
-    key(i) {
-      return Array.from(store.keys())[i] || null
-    },
-  }
-}
-
 // ---------------------------------------------------------------------------
 // 1. DETERMINISTIC CHECKSUM
 // ---------------------------------------------------------------------------
@@ -165,198 +134,10 @@ test('CHECKSUM: produces deterministic collision-resistant fingerprint regardles
 // ---------------------------------------------------------------------------
 // 2. DETERMINISTIC DECISION LOGIC: 7 CORE STATES
 // ---------------------------------------------------------------------------
-test('DECISION: LOCAL_ONLY triggers UPLOAD when cloud is empty', () => {
-  const localLib = {
-    songs: [{ id: generateUUID(), title: 'My Song', rawContent: '[C]Hello' }],
-    setlists: [],
-  }
-  const result = evaluateSyncDecision({
-    localData: localLib,
-    cloudRecord: null,
-    baseMeta: null,
-  })
-
-  assert.equal(result.decision, 'UPLOAD')
-  assert.equal(result.state, 'LOCAL_ONLY')
-})
-
-test('DECISION: CLOUD_ONLY triggers DOWNLOAD when local is empty and cloud has songs', () => {
-  const localLib = { songs: [], setlists: [] }
-  const remoteSong = { id: generateUUID(), title: 'Cloud Song', rawContent: '[G]Sky' }
-  const remoteLib = { songs: [remoteSong], setlists: [] }
-  const cloudRecord = {
-    version: 1,
-    checksum: computeSongbookChecksum(remoteLib),
-    updatedAt: new Date().toISOString(),
-    data: remoteLib,
-  }
-
-  const result = evaluateSyncDecision({
-    localData: localLib,
-    cloudRecord,
-    baseMeta: null,
-  })
-
-  assert.equal(result.decision, 'DOWNLOAD')
-  assert.equal(result.state, 'CLOUD_ONLY')
-})
-
-test('DECISION: SAME_STATE triggers NOOP when checksums match', () => {
-  const song = { id: generateUUID(), title: 'Synced Song', rawContent: '[D]Sync' }
-  const lib = { songs: [song], setlists: [] }
-  const checksum = computeSongbookChecksum(lib)
-  const cloudRecord = {
-    version: 5,
-    checksum,
-    updatedAt: new Date().toISOString(),
-    data: lib,
-  }
-
-  const result = evaluateSyncDecision({
-    localData: lib,
-    cloudRecord,
-    baseMeta: { lastSyncedChecksum: checksum, lastSyncedAt: Date.now(), cloudVersion: 5 },
-  })
-
-  assert.equal(result.decision, 'NOOP')
-  assert.equal(result.state, 'SAME_STATE')
-})
-
-test('DECISION: LOCAL_NEWER triggers UPLOAD when cloud matches base and local changed', () => {
-  const songBase = { id: generateUUID(), title: 'Base Song', rawContent: '[A]Base' }
-  const baseLib = { songs: [songBase], setlists: [] }
-  const baseChecksum = computeSongbookChecksum(baseLib)
-
-  const localEdited = { songs: [{ ...songBase, rawContent: '[A]Edited locally' }], setlists: [] }
-
-  const cloudRecord = {
-    version: 2,
-    checksum: baseChecksum, // cloud unchanged
-    updatedAt: new Date().toISOString(),
-    data: baseLib,
-  }
-
-  const result = evaluateSyncDecision({
-    localData: localEdited,
-    cloudRecord,
-    baseMeta: { lastSyncedChecksum: baseChecksum, lastSyncedAt: Date.now(), cloudVersion: 2 },
-  })
-
-  assert.equal(result.decision, 'UPLOAD')
-  assert.equal(result.state, 'LOCAL_NEWER')
-})
-
-test('DECISION: CLOUD_NEWER triggers DOWNLOAD when local matches base and cloud changed', () => {
-  const songBase = { id: generateUUID(), title: 'Base Song', rawContent: '[A]Base' }
-  const baseLib = { songs: [songBase], setlists: [] }
-  const baseChecksum = computeSongbookChecksum(baseLib)
-
-  const remoteEdited = { songs: [{ ...songBase, rawContent: '[A]Edited on another device' }], setlists: [] }
-  const remoteChecksum = computeSongbookChecksum(remoteEdited)
-
-  const cloudRecord = {
-    version: 3,
-    checksum: remoteChecksum,
-    updatedAt: new Date().toISOString(),
-    data: remoteEdited,
-  }
-
-  const result = evaluateSyncDecision({
-    localData: baseLib, // local unchanged
-    cloudRecord,
-    baseMeta: { lastSyncedChecksum: baseChecksum, lastSyncedAt: Date.now(), cloudVersion: 2 },
-  })
-
-  assert.equal(result.decision, 'DOWNLOAD')
-  assert.equal(result.state, 'CLOUD_NEWER')
-})
-
-test('DECISION: CONFLICT detected when both local and cloud have changed since base', () => {
-  const songBase = { id: generateUUID(), title: 'Base Song', rawContent: '[A]Base' }
-  const baseLib = { songs: [songBase], setlists: [] }
-  const baseChecksum = computeSongbookChecksum(baseLib)
-
-  const localEdited = { songs: [{ ...songBase, rawContent: '[A]Local change' }], setlists: [] }
-  const remoteEdited = { songs: [{ ...songBase, rawContent: '[A]Remote change' }], setlists: [] }
-  const remoteChecksum = computeSongbookChecksum(remoteEdited)
-
-  const cloudRecord = {
-    version: 3,
-    checksum: remoteChecksum,
-    updatedAt: new Date().toISOString(),
-    data: remoteEdited,
-  }
-
-  const result = evaluateSyncDecision({
-    localData: localEdited,
-    cloudRecord,
-    baseMeta: { lastSyncedChecksum: baseChecksum, lastSyncedAt: Date.now(), cloudVersion: 2 },
-  })
-
-  assert.equal(result.decision, 'CONFLICT')
-  assert.equal(result.state, 'CONFLICT')
-})
-
-test('DECISION: OFFLINE_OR_CLOUD_FAILURE prevents destructive action when offline', () => {
-  const song = { id: generateUUID(), title: 'Offline Song', rawContent: '[E]Off' }
-  const lib = { songs: [song], setlists: [] }
-
-  const result = evaluateSyncDecision({
-    localData: lib,
-    cloudRecord: null,
-    baseMeta: null,
-    isOffline: true,
-  })
-
-  assert.equal(result.decision, 'OFFLINE')
-  assert.equal(result.state, 'OFFLINE_OR_CLOUD_FAILURE')
-})
 
 // ---------------------------------------------------------------------------
 // 3. RECONCILIATION & SAFE CONFLICT RESOLUTION
 // ---------------------------------------------------------------------------
-test('RECONCILE: clean additions on either side merge without conflict', () => {
-  const songA = { id: generateUUID(), title: 'Song Local', rawContent: '[C]Local' }
-  const songB = { id: generateUUID(), title: 'Song Remote', rawContent: '[D]Remote' }
-
-  const local = { songs: [songA], setlists: [] }
-  const remote = { songs: [songB], setlists: [] }
-
-  const result = reconcileSongbook(local, remote, null)
-
-  assert.equal(result.hasConflicts, false)
-  assert.equal(result.merged.songs.length, 2)
-  assert.ok(result.merged.songs.some((s) => s.id === songA.id))
-  assert.ok(result.merged.songs.some((s) => s.id === songB.id))
-})
-
-test('RECONCILE: conflict creates safe non-destructive copy with distinct UUID and zero data loss', () => {
-  const sharedId = generateUUID()
-  const baseSong = { id: sharedId, title: 'Shared Song', rawContent: '[G]Original' }
-  const localSong = { id: sharedId, title: 'Shared Song', rawContent: '[G]Local modification' }
-  const remoteSong = { id: sharedId, title: 'Shared Song', rawContent: '[G]Cloud modification' }
-
-  const local = { songs: [localSong], setlists: [] }
-  const remote = { songs: [remoteSong], setlists: [] }
-  const base = { songs: [baseSong], setlists: [] }
-
-  const result = reconcileSongbook(local, remote, base)
-
-  assert.equal(result.hasConflicts, true)
-  assert.equal(result.conflicts.length, 1)
-  assert.equal(result.conflicts[0].id, sharedId)
-
-  // Both versions are preserved!
-  assert.equal(result.merged.songs.length, 2)
-  const keptLocal = result.merged.songs.find((s) => s.id === sharedId)
-  assert.equal(keptLocal.rawContent, '[G]Local modification')
-
-  const conflictCopy = result.merged.songs.find((s) => s.id !== sharedId)
-  assert.ok(conflictCopy, 'Cloud copy must be preserved as distinct item')
-  assert.ok(isValidUUID(conflictCopy.id), 'Conflict copy receives valid UUID')
-  assert.equal(conflictCopy.rawContent, '[G]Cloud modification')
-  assert.ok(conflictCopy.title.includes('Cloud Copy'))
-})
 
 // ---------------------------------------------------------------------------
 // 4. SERVER D1 ENDPOINT SECURITY & USER ISOLATION
