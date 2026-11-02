@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const h = require('./helpers/b2Harness.cjs')
+const h = require('./helpers/tabHarness.cjs')
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')

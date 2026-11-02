@@ -1,9 +1,9 @@
 // #252 real-device QA fixture: the synthetic schema-v2 backup is valid, deterministic, and restores
-// into B2 exactly (and fails safely into a ~5 MB localStorage with B2 off), using the app's own code.
+// into the IndexedDB library exactly (#300; and fails safely into a ~5 MB localStorage), using the app's own code.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
-const h = require('./helpers/b2Harness.cjs')
+const h = require('./helpers/tabHarness.cjs')
 const { installNavigatorLocks } = require('./helpers/fakeLocks.cjs')
 const gen = require('../scripts/generate-qa-backup.cjs')
 
@@ -12,45 +12,43 @@ const sha = text => crypto.createHash('sha256').update(text).digest('hex')
 
 
 
-test('generator default: 10,000 active + 100 trash + 300 setlists, valid and deterministic; restores into B2 exactly', async () => {
+test('generator default: 10,000 active + 100 trash + 300 setlists, valid and deterministic; restores into the IndexedDB library exactly', async () => {
   const built = gen.generate()
   const report = gen.validate(built)
   assert.deepEqual(report.counts, { songs: 10000, trash: 100, setlists: 300 })
   assert.equal(sha(gen.generate().json), sha(built.json), 'repeatable')
   console.log(`[QA fixture] ${Buffer.byteLength(built.json)} bytes, ${report.references} setlist entries, chart chars ${JSON.stringify(report.chartChars)}`)
 
-  // A fresh, unlinked device with B2 on (as in the QA plan): Full Restore goes into the B2 partition.
+  // A fresh device (as in the QA plan): Full Restore goes into the IndexedDB library.
   const storage = h.freshStorage()
   const factory = new h.Factory()
-  const setup = h.newTab()
-  setup.sj.enableLibraryB2(storage)
   const tab = h.newTab()
-  assert.equal((await tab.sj.prepareLibraryB2(storage, { factory })).active, true)
+  assert.equal((await tab.sj.prepareLibraryStorage(storage, { factory })).active, true)
   const jb = require('../src/utils/jsonBackup.ts')
   const parsed = jb.parseBackupJson(built.json)
   assert.equal(parsed.isValid, true)
   const ex = require('../src/utils/backupExport.ts')
-  await ex.ensureRestoreSafetySnapshot(tab.sj.readPersistedLibrary(storage), storage)
+  await ex.ensureRestoreSafetySnapshot(tab.sj.readPersistedLibrary(storage) ?? { songs: [], setlists: [] }, storage)
   const expectedRaw = tab.sj.libraryRevision(storage)
   tab.sj.preserveStoredLibrary(expectedRaw, storage)
   tab.sj.persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, storage, { expectedRaw })
   assert.deepEqual(ex.verifyRestoredLibrary({ songs: [], setlists: [] }, { songs: parsed.songs, setlists: parsed.setlists }, 'replace', storage), [])
-  await tab.b2.flushB2()
+  await tab.store.flushLibraryStore()
   // Reload: the restored library comes back from IndexedDB, identical.
   const page = h.newTab()
-  assert.equal((await page.sj.prepareLibraryB2(storage, { factory })).active, true)
+  assert.equal((await page.sj.prepareLibraryStorage(storage, { factory })).active, true)
   const back = page.sj.readPersistedLibrary(storage)
   assert.equal(back.songs.filter(s => !s.isDeleted).length, 10000)
   assert.equal(back.songs.filter(s => s.isDeleted).length, 100)
   assert.equal(back.setlists.length, 300)
   assert.equal(jb.libraryFingerprint(back.songs, back.setlists), built.payload.contentFingerprint)
-  // Export from B2 re-creates the same library content.
+  // Export from IndexedDB re-creates the same library content.
   const exported = jb.buildVerifiedBackup(back.songs, back.setlists)
   assert.equal(exported.fingerprint, built.payload.contentFingerprint)
   assert.deepEqual(exported.counts, { songs: 10000, trash: 100, setlists: 300 })
 })
 
-test('B2 off: restoring the 10k file into a ~5 MB localStorage fails safely and leaves the library unchanged', () => {
+test('without IndexedDB: restoring the 10k file into a ~5 MB localStorage fails safely and leaves the library unchanged', () => {
   const built = gen.generate()
   const storage = new h.QuotaStorage(5 * 1024 * 1024)
   global.localStorage = storage

@@ -1,0 +1,22 @@
+// #300 B3 scale tier: one-time migration of a 1,500-song library into IndexedDB, then reload.
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const h = require('./helpers/tabHarness.cjs')
+
+test('migration (1,500 songs + 300 setlists): counts, IDs and content equal; source untouched; reload identical', async () => {
+  const storage = h.freshStorage()
+  const factory = new h.Factory()
+  h.newTab().sj.persistLibrary(h.library(1500, 300), storage)
+  const sourceRaw = storage.getItem('gtar_library_v1')
+  const tab = h.newTab()
+  const prepared = await tab.sj.prepareLibraryStorage(storage, { factory })
+  assert.equal(prepared.migrated, true, prepared.error)
+  const back = tab.sj.readPersistedLibrary(storage)
+  assert.equal(back.songs.length, 1500)
+  assert.equal(back.setlists.length, 300)
+  assert.deepEqual(JSON.parse(JSON.stringify(back)), JSON.parse(sourceRaw))
+  assert.equal(storage.getItem('gtar_library_v1'), sourceRaw)
+  const page = h.newTab()
+  assert.equal((await page.sj.prepareLibraryStorage(storage, { factory })).active, true)
+  assert.deepEqual(JSON.parse(JSON.stringify(page.sj.readPersistedLibrary(storage))), JSON.parse(sourceRaw))
+})

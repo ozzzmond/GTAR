@@ -2,7 +2,7 @@ import { catalogFetch, getAuthenticatedSessionToken } from './sharedCatalogClien
 import { CatalogApiError } from '../types/sharedCatalog'
 import { getStoredSessionStatus } from './googleAuth'
 import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
-import { B2_SETLIST_PUBLISH_MESSAGE, personalSyncPausedByB2, readPersistedLibrary } from './syncJournal'
+import { readPersistedLibrary } from './syncJournal'
 import type { SyncLibrary } from './syncMerge'
 import { snapshotFromSongbook } from './sharedSetlistSnapshot'
 import { generateUUID } from './uuid'
@@ -85,14 +85,6 @@ export async function clientSnapshotsSupported(token: string): Promise<boolean> 
 }
 
 export async function preparePublication(sourceId: string | number, getLocal: () => SyncLibrary, blocked: () => boolean): Promise<SourcePreview> {
-  let client: boolean | undefined
-  if (personalSyncPausedByB2()) {
-    // #258 F7: a legacy server snapshots the personal cloud songbook, which is paused while B2 is on.
-    let probeToken = ''
-    try { probeToken = getAuthenticatedSessionToken().token } catch { /* no session: legacy refusal below */ }
-    client = !!probeToken && await clientSnapshotsSupported(probeToken)
-    if (!client) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
-  }
   const { token, accountId } = publisherSession()
   const local = getLocal()
   if (blocked()) throw new Error('Save your edits and resolve local recovery or cross-tab conflicts before publishing.')
@@ -101,8 +93,8 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
     canonical(snapshotFromSongbook(local, sourceId)) !== canonical(snapshotFromSongbook(persisted, sourceId))) {
     throw new Error('Local edits are not safely persisted. Save and resolve storage/recovery errors first.')
   }
-  if (client ?? await clientSnapshotsSupported(token)) {
-    // #253: the saved local setlist is the source. No personal cloud upload is needed (works with B2 on).
+  if (await clientSnapshotsSupported(token)) {
+    // #253: the saved local setlist is the source. No personal cloud upload is needed.
     assertAccount(accountId, token, true)
     const current = getLocal()
     const latest = readPersistedLibrary()
@@ -113,8 +105,7 @@ export async function preparePublication(sourceId: string | number, getLocal: ()
     }
     return { account: accountId, token, sourceId, version: 1, checksum: sourceChecksum(current), snapshot, mode: 'client' }
   }
-  // #258 F7: legacy cloud-source flow (B2 may have been turned on during the probe).
-  if (personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
+  // Legacy cloud-source flow.
   const response = await catalogFetch<{ success: boolean; userId: string; cloudRecord: CloudSongbookRecord | null }>('/api/songbook/sync', { token })
   assertAccount(accountId, token, true)
   const cloud = response?.cloudRecord
@@ -321,9 +312,6 @@ export function makePublicationIntent(link: PublicationLink, preview?: SourcePre
 }
 
 export async function sendPublicationIntent(account: string, sourceId: string | number, link: PublicationLink): Promise<{ result: PublicationResult; saved: boolean }> {
-  // #258 F7: legacy create/update need the paused personal cloud copy; unpublishing sends no content.
-  // #253: a client-snapshot request carries its own content and is not blocked by B2.
-  if (link.pending?.method !== 'DELETE' && !isClientIntent(link.pending) && personalSyncPausedByB2()) throw new Error(B2_SETLIST_PUBLISH_MESSAGE)
   const { token, accountId } = publisherSession()
   if (account !== accountId || !link.pending) throw new Error('Account changed or request unavailable. Reopen and review again.')
   // Detach from caller-owned objects before crossing any asynchronous boundary.

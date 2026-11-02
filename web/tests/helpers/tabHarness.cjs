@@ -1,5 +1,5 @@
-// #252 B2 test harness: TypeScript loader, jsdom globals on the DEV host, fresh "tabs" (separate
-// module instances sharing one localStorage and one IndexedDB), identities and synthetic libraries.
+// Test harness: TypeScript loader, jsdom globals on the DEV host, fresh "tabs" (separate module
+// instances sharing one localStorage and one IndexedDB), identities and synthetic libraries.
 'use strict'
 const fs = require('node:fs')
 const path = require('node:path')
@@ -23,9 +23,7 @@ function newTab() {
   for (const key of Object.keys(require.cache)) if (key.startsWith(SRC)) delete require.cache[key]
   return {
     sj: require('../../src/utils/syncJournal.ts'),
-    b2: require('../../src/utils/libraryB2.ts'),
-    idx: require('../../src/utils/libraryIndex.ts'),
-    bodies: require('../../src/utils/libraryBodyStore.ts'),
+    store: require('../../src/utils/libraryStore.ts'),
   }
 }
 

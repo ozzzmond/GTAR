@@ -21,16 +21,10 @@ import {
   performStorageHousekeeping,
   requestDurableStorage,
   prepareLibraryStorage,
-  autoEnableLibraryIndex,
-  retireLibraryV1,
-  prepareLibraryB2,
   recoveryExportData,
-  isLibraryB2Active,
-  isLibraryClosedForSignIn,
-  enableLibraryB2,
+  isLibraryStoreActive,
 } from './utils/syncJournal'
-import { B2_FLAG_KEY, LibraryPartitionError, clearB2Hold, flushB2, holdMessage, readB2Hold, type B2Hold } from './utils/libraryB2'
-import { LIBRARY_B1_KEY } from './utils/libraryIndex'
+import { exportOldRecoveryData, useOldRecoveryData } from './utils/recoveryExport'
 import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
 import { appLogger } from './utils/logger'
 import { useLibraryPersistence } from './utils/useLibraryPersistence'
@@ -111,85 +105,78 @@ function App() {
   return <LibraryStartup />
 }
 
-// #167 B1c (DEV): recovery archives load from IndexedDB, and with the #171 B1 toggle on, chart bodies
-// too, before anything reads the library or recovery state.
+// #167 B1c (DEV): recovery archives load from IndexedDB before anything reads recovery state.
+// #300 B3 (DEV until the soak passes; PROD keeps gtar_library_v1): the library opens from IndexedDB,
+// moved there once from the earlier storage, before the library renders.
 const needsArchiveStartup = () => isDevEnv && typeof indexedDB !== 'undefined' && !recoveryArchivesInIndexedDb()
+const LIBRARY_STORE_ENABLED = isDevEnv
 function LibraryStartup() {
-  const [ready, setReady] = useState(() => {
-    try { return localStorage.getItem(LIBRARY_B1_KEY) !== '1' && !needsArchiveStartup() && localStorage.getItem(B2_FLAG_KEY) !== '1' } catch { return true }
-  })
+  const [ready, setReady] = useState(() => !needsArchiveStartup() && (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined'))
+  const [storageNotice, setStorageNotice] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<string | null>(null)
   useEffect(() => {
     if (ready) return
     let live = true
-    const warn = (tag: string, message: string) => (error: unknown) => appLogger.warn(tag, message, error instanceof Error ? error.message : String(error))
     const startup = async () => {
       if (needsArchiveStartup()) {
         await prepareRecoveryArchives(recoveryArchiveBackend(), localStorage, (level, message) => appLogger[level]('RecoveryArchives', message))
-          .catch(warn('RecoveryArchives', 'IndexedDB unavailable; archives stay in localStorage'))
+          .catch((error: unknown) => appLogger.warn('RecoveryArchives', 'IndexedDB unavailable; archives stay in localStorage', error instanceof Error ? error.message : String(error)))
       }
-      // #167 (DEV): B1 on by default, then retire gtar_library_v1 once the index fully loads.
-      if (isDevEnv) await autoEnableLibraryIndex().catch(warn('LibraryIndex', 'Automatic B1 enable skipped; gtar_library_v1 stays the source'))
+      // Without IndexedDB (old browsers, some private modes) gtar_library_v1 stays in use, as before.
+      if (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined') return
       const prepared = await prepareLibraryStorage()
-      if (isDevEnv && prepared.indexed) await retireLibraryV1().catch(warn('LibraryIndex', 'gtar_library_v1 retirement deferred'))
-    }
-    const timeout = new Promise(resolve => setTimeout(resolve, 15000))
-    // #252: B2 opens (or migrates into) this account's partition after the legacy source is readable.
-    // No timeout here: rendering before it finishes would show one storage and save into another.
-    const b2 = async () => {
-      if (localStorage.getItem(B2_FLAG_KEY) !== '1') return
-      try {
-        const prepared = await prepareLibraryB2()
-        if (prepared.active) appLogger.info('LibraryB2', `B2 ready in ${prepared.ms} ms: ${prepared.songs} songs, ${prepared.setlists} setlists${prepared.migrated ? ' (moved now)' : ''}${prepared.replayed ? `, ${prepared.replayed} journalled saves replayed` : ''}`)
-      } catch (error) {
-        if (error instanceof LibraryPartitionError) {
-          // Another account in this page: finish this partition's saves, then start clean for the new account.
-          await flushB2().catch(() => undefined)
-          window.location.reload()
-          return new Promise<void>(() => {})
-        }
-        warn('LibraryB2', 'B2 storage unavailable; the earlier library stays in use')(error)
+      if (prepared.active) appLogger.info('LibraryStore', `Library ready in ${prepared.ms} ms: ${prepared.songs} songs, ${prepared.setlists} setlists${prepared.migrated ? ` (moved from ${prepared.source})` : ''}`)
+      else if (live) {
+        // #300 review: after the move to IndexedDB, an unreadable start must not show or write the
+        // frozen gtar_library_v1. The library is not loaded: only the error and a recovery export.
+        if (prepared.blocked) setBlocked(prepared.error ?? 'The songbook could not be opened from the new device storage.')
+        else setStorageNotice(prepared.readOnly
+          ? `Your songbook could not be moved to the new device storage (${prepared.error}). It is shown read-only so nothing is lost: export a backup, then reload to retry.`
+          : `Your songbook could not be moved to the new device storage (${prepared.error}). The earlier storage stays in use and nothing was changed; reload to retry.`)
       }
     }
-    Promise.race([startup(), timeout]).then(b2).finally(() => { if (live) setReady(true) })
+    startup().catch(() => undefined).finally(() => { if (live) setReady(true) })
     return () => { live = false }
   }, [ready])
   if (!ready) return <p role="status" className="p-4 text-app-muted">Loading library…</p>
-  return <LibraryStartupReady />
+  if (blocked) return <>
+    <aside role="alert" data-testid="library-store-blocked" className="p-4 bg-amber-100 text-black">{blocked}</aside>
+    <div className="p-4">
+      <button className="underline cursor-pointer" onClick={() => { exportOldRecoveryData().catch(() => undefined) }}>Export recovery data</button>
+    </div>
+  </>
+  return <>
+    {storageNotice && <aside role="alert" data-testid="library-store-fallback" className="p-4 bg-amber-100 text-black">{storageNotice}</aside>}
+    <OldRecoveryExportPrompt />
+    <LibraryStartupReadyInner />
+  </>
 }
 
-function LibraryStartupReady() {
-  // #258 F5: with B2 on, this sign-in may not open the earlier library (another account's, or owner
-  // unknown) and has no B2 partition open: show nothing of it, change nothing, offer no export of it.
-  const [partitionBlocked] = useState(() => isLibraryClosedForSignIn())
-  if (partitionBlocked) return <PartitionBlocked />
-  return <LibraryStartupReadyInner />
-}
-function PartitionBlocked() {
-  const hold = readB2Hold(localStorage)
-  const b2On = (() => { try { return localStorage.getItem(B2_FLAG_KEY) === '1' } catch { return true } })()
-  return <aside role="alert" data-testid="library-partition-blocked" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
-    <span className="flex-1 min-w-0">{hold ? `${holdMessage(hold)} ` : ''}The songbook on this device belongs to another account, or its owner is unknown, so it is not shown and nothing in it was changed. Sign in with the account that owns it{hold ? ', or retry the new device storage' : ''}.</span>
-    {hold && <button className="underline cursor-pointer" onClick={() => { clearB2Hold(localStorage); window.location.reload() }}>Retry</button>}
-    {/* DEV: a separate (empty) songbook for this account in the new device storage; the other one is untouched. */}
-    {!hold && !b2On && isDevEnv && <button className="underline cursor-pointer" data-testid="open-own-b2-songbook" onClick={() => { enableLibraryB2(); window.location.reload() }}>Use a separate songbook for this account (B2)</button>}
+/** #300: once, after the move to IndexedDB, offer an export of the old recovery archives (kept read-only, never deleted). */
+const OLD_RECOVERY_PROMPT_KEY = 'gtar_old_recovery_prompted_v1'
+function OldRecoveryExportPrompt() {
+  const old = useOldRecoveryData()
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem(OLD_RECOVERY_PROMPT_KEY) !== null } catch { return true } })
+  if (!LIBRARY_STORE_ENABLED || dismissed || !old.exists || old.exported || !isLibraryStoreActive()) return null
+  const close = () => { try { localStorage.setItem(OLD_RECOVERY_PROMPT_KEY, String(Date.now())) } catch { /* shown again next time */ } setDismissed(true) }
+  return <aside role="status" data-testid="old-recovery-export-prompt" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
+    <span className="flex-1 min-w-0">Your songbook now lives in the new device storage. Old recovery copies are kept on this device, read-only. Export them once to keep a copy elsewhere.</span>
+    <span className="flex gap-3">
+      <button className="underline cursor-pointer" onClick={() => { exportOldRecoveryData().then(close, () => undefined) }}>Export old recovery data</button>
+      <button className="underline cursor-pointer" onClick={close}>Not now</button>
+    </span>
   </aside>
 }
 function LibraryStartupReadyInner() {
   const [repairPreview, setRepairPreview] = useState<DanglingReferenceRepair | null>(null)
   const [repairError, setRepairError] = useState<string | null>(null)
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
-  const [b2Hold, setB2Hold] = useState<B2Hold | null>(() => { try { return localStorage.getItem(B2_FLAG_KEY) === '1' ? readB2Hold(localStorage) : null } catch { return null } })
   useEffect(() => {
-    const onHold = () => setB2Hold(readB2Hold(localStorage))
-    window.addEventListener('gtar-library-b2-hold', onHold)
-    return () => window.removeEventListener('gtar-library-b2-hold', onHold)
-  }, [])
-  useEffect(() => {
-    // #252: with B2 (10,000+ songs) a full recovery review per save is costly; coalesce bursts of saves.
+    // #300: with large IndexedDB libraries a full recovery review per save is costly; coalesce bursts of saves.
     let timer: ReturnType<typeof setTimeout> | null = null
     const refreshNow = () => setStatus(checkRecovery())
     const refresh = () => {
-      if (!isLibraryB2Active()) { refreshNow(); return }
+      if (!isLibraryStoreActive()) { refreshNow(); return }
       if (timer !== null) clearTimeout(timer)
       timer = setTimeout(() => { timer = null; refreshNow() }, 300)
     }
@@ -220,13 +207,6 @@ function LibraryStartupReadyInner() {
   // #181: only a damaged library gets the full-width alert (the app cannot load). Unreadable recovery
   // copies are flagged on the profile menu row "Recovery data" (#304).
   return <>
-    {b2Hold && <aside role="alert" data-testid="library-b2-hold" className="p-4 bg-amber-100 text-black flex flex-wrap items-center justify-between gap-3">
-      <span className="flex-1 min-w-0">{holdMessage(b2Hold)}</span>
-      <span className="flex gap-3">
-        <button className="underline cursor-pointer" onClick={exportRecovery}>Export recovery data</button>
-        <button className="underline cursor-pointer" onClick={() => { clearB2Hold(localStorage); window.location.reload() }}>Retry</button>
-      </span>
-    </aside>}
     {status.damaged && <aside role="alert" className="p-4 bg-amber-100 text-black flex items-center justify-between gap-3">
       <div className="flex-1 min-w-0">
         <span>Device library needs recovery. Original browser data has been preserved.</span>

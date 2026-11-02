@@ -1,5 +1,5 @@
 import { appLogger } from './logger'
-import { ensureRestoreSafetySnapshot, verifyRestoredLibrary } from './backupExport'
+import { ensureRestoreSafetySnapshot, libraryWritesSaved, verifyRestoredLibrary } from './backupExport'
 import { parseBackupJson } from './jsonBackup'
 import { computeSongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
 import type { SyncLibrary } from './syncMerge'
@@ -39,7 +39,7 @@ export async function restoreCloudBackup(before: SyncLibrary, incoming: SyncLibr
   catch (error) { throw new Error(`Restore aborted: safety snapshot failed to save (${error instanceof Error ? error.message : String(error)}). Device library preserved.`, { cause: error }) }
   if (JSON.stringify(readPersistedLibrary(storage)) !== JSON.stringify(before)) throw new Error('Device library changed while saving the safety snapshot. Restore aborted; review again.')
   await apply(library)
-  const problems = verifyRestoredLibrary(before, library, mode, storage)
+  const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary(before, library, mode, storage)]
   if (problems.length) throw new Error(`Restore could not be verified: ${problems.join('; ')}. Previous library is kept in the safety snapshot.`)
   appLogger.info('RestoreApplied', `Restore applied (${mode}, cloud): ${library.songs.length} songs, ${library.setlists.length} setlists`)
 }

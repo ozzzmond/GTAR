@@ -273,6 +273,17 @@ test('estimateStorageFootprint accurately calculates bytes, MB, key counts, and 
   assert.equal(typeof fp.totalMB, 'number')
 })
 
+test('#300 review: archives tagged by an old B2 scope stay visible to the device-owned view', () => {
+  const { recoveryData, recoveryView } = require('../src/utils/syncJournal.ts')
+  const store = storage()
+  const tagged = 'gtar_sync_recovery:old-b2-partition:1'
+  store.setItem(tagged, JSON.stringify(base))
+  store.setItem('gtar_recovery_scopes_v1', JSON.stringify({ [tagged]: 'b2|other-account|1|x' }))
+  assert.deepEqual(recoveryView(store), { legacy: true, scope: null })
+  const data = recoveryData(store)
+  assert.ok(Object.hasOwn(data, tagged), 'a draft archived under an old B2 scope stays exportable, not hidden')
+})
+
 test('logger caps localStorage to 20 even when legacy callers request emergency pruning', () => {
   const { prunePersistedLogs, MAX_PERSISTED_LOGS } = require('../src/utils/logger.ts')
   const store = storage()

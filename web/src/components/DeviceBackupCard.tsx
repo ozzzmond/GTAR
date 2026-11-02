@@ -21,7 +21,7 @@ import {
 } from '../utils/backupSettings'
 import { isQuotaError } from '../utils/syncJournal'
 import {
-  canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, shareOrDownloadBackup, verifyRestoredLibrary,
+  canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, libraryWritesSaved, shareOrDownloadBackup, verifyRestoredLibrary,
   type ExportEnvironment, type ExportOutcome,
 } from '../utils/backupExport'
 
@@ -303,8 +303,8 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
 
       // #251: success is claimed only after the saved library is read back and matches the backup.
       if (verifiable) {
-        const problems = verifyRestoredLibrary({ songs: allSongs, setlists }, { songs: parsed.songs, setlists: parsed.setlists },
-          replace ? 'replace' : 'merge', targetStorage)
+        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary({ songs: allSongs, setlists }, { songs: parsed.songs, setlists: parsed.setlists },
+          replace ? 'replace' : 'merge', targetStorage)]
         if (problems.length) {
           setPendingRestore(null)
           showFeedback('error', `Restore could not be verified: ${problems.join('; ')}. Settings were not changed. The previous library is kept in the safety snapshot.`)
