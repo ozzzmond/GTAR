@@ -1,5 +1,5 @@
 import { ReportContentButton } from './ReportContentButton'
-import { openRecoveryReview } from '../utils/recoveryReview'
+import { openRecoveryData } from '../utils/recoveryReview'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { CatalogImportContext } from '../utils/catalogImportContext'
 import { existingCatalogImports, importCatalogSetlist, openCatalogImport, previewCatalogSetlist, type CatalogPreview } from '../utils/sharedSetlistImport'
@@ -96,9 +96,9 @@ export function CatalogSetlistPreview({ id, revision, onClose }: { id: string; r
         type="button"
         className="min-h-11 border border-app-border rounded px-3 py-2 ml-2"
         disabled={busy}
-        onClick={openRecoveryReview}
+        onClick={openRecoveryData}
       >
-        Review local recovery
+        Recovery data
       </button>
 
       {!preview && !error && <p role="status" className="mt-3">Loading exact revision…</p>}

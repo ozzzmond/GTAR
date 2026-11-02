@@ -48,6 +48,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   // #253: moderation queue for catalog reports.
   const [view, setView] = useState<'accounts' | 'reports'>('accounts')
   const [openReports, setOpenReports] = useState<number | null>(null)
+  const [reportsRefresh, setReportsRefresh] = useState(0)
 
   const auth = useOptionalGoogleAuth()
   const sessionToken = auth?.session?.sessionToken || auth?.session?.idToken
@@ -212,7 +213,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-app-heading">D1 Account &amp; Access Control</h2>
+                <h2 className="text-base font-bold text-app-heading">Manage Users</h2>
               </div>
             </div>
           </div>
@@ -239,10 +240,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               Content reports{openReports ? ` (${openReports})` : ''}
             </button>
           </div>
-          {view === 'reports' ? <CatalogReportsQueue onOpenCount={setOpenReports} /> : <>
+          {view === 'reports' ? <CatalogReportsQueue onOpenCount={setOpenReports} refreshToken={reportsRefresh} /> : <>
           {/* Status Filter Tabs */}
-          <div className="flex items-center justify-between gap-2 border-b border-app-border/60 pb-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
+          <div className="space-y-2 border-b border-app-border/60 pb-3">
+            <div data-testid="account-filters" className="flex flex-wrap items-center gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setFilter('all')}
@@ -292,15 +293,17 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleCopyEmails}
-              className="text-[11px] text-app-action hover:underline flex items-center gap-1 cursor-pointer shrink-0"
-              aria-label="Copy active user emails"
-            >
-              {copied ? <Check className="w-3 h-3 text-status-success" /> : <Copy className="w-3 h-3" />}
-              <span>{copied ? 'Copied!' : 'Copy Active'}</span>
-            </button>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleCopyEmails}
+                className="text-[11px] text-app-action hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                aria-label="Copy active user emails"
+              >
+                {copied ? <Check className="w-3 h-3 text-status-success" /> : <Copy className="w-3 h-3" />}
+                <span>{copied ? 'Copied!' : 'Copy Active'}</span>
+              </button>
+            </div>
           </div>
 
           {error && <p className="text-xs text-status-error font-semibold">{error}</p>}
@@ -438,8 +441,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         <div className="px-5 py-3 border-t border-app-border bg-app-base flex items-center justify-between">
           <button
             type="button"
-            onClick={() => void loadUsers()}
-            disabled={loading}
+            onClick={() => { if (view === 'reports') setReportsRefresh(n => n + 1); else void loadUsers() }}
+            disabled={view === 'accounts' && loading}
             className="text-[11px] text-app-muted hover:text-app-heading flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
           >
             <RotateCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />

@@ -6,14 +6,11 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText, filename)
 const { JSDOM } = require('jsdom')
-const React = require('react'), { act } = React
-const { createRoot } = require('react-dom/client')
 const { inspectRecovery, hasActionableRecovery, recordRecoveryChoice, recoveryData, LIBRARY_KEY, RECOVERY_DECISIONS_KEY } = require('../src/utils/syncJournal.ts')
-const { RecoveryReviewDialog } = require('../src/components/RecoveryReviewDialog.tsx')
 const { recoverySourceDigest } = require('../src/utils/recoverySourceDigest.ts')
 const { createHash } = require('node:crypto')
 const song = (id, extra = {}) => ({ id, title: 'Same title', rawContent: 'private chart', ...extra })
-let dom, root
+let dom
 const original = { songs: [song('current'), song('deleted', { isDeleted: true })], setlists: [] }
 const bytes = () => Object.fromEntries(Object.keys(localStorage).map(key => [key, localStorage.getItem(key)]))
 const archive = (name, value) => localStorage.setItem(`gtar_sync_recovery:${name}`, JSON.stringify(value))
@@ -25,7 +22,7 @@ beforeEach(() => {
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   localStorage.setItem(LIBRARY_KEY, JSON.stringify(original))
 })
-afterEach(async () => { if (root) { await act(async () => root.unmount()); root = null } dom.window.close() })
+afterEach(() => { dom.window.close() })
 
 test('download, cross-tab and valid raw envelopes represented by canonical records are read-only and non-actionable', () => {
   archive('download:1', original); archive('cross-tab-conflict:1', { songs: [original.songs[1]], setlists: [] })
@@ -123,21 +120,6 @@ test('quota failure preserves sources and leaves recovery blocking', async () =>
   try { await assert.rejects(choose(), /Not enough browser storage/); assert.deepEqual(bytes(), before); assert.equal(hasActionableRecovery(), true) }
   finally { dom.window.Storage.prototype.setItem = originalSet }
 })
-test('review/cancel is read-only, private charts omitted, approval required and explicit choice can be reopened', async () => {
-  archive('download:1', { songs: [song('missing')], setlists: [] })
-  const before = bytes()
-  root = createRoot(document.getElementById('root'))
-  await act(async () => root.render(React.createElement(RecoveryReviewDialog, { blocked: () => false, onClose() {} })))
-  const click = async text => act(async () => { const button = [...document.querySelectorAll('button')].find(button => button.textContent === text); assert.ok(button, text); button.click() })
-  assert.match(document.body.textContent, /1 distinct missing records/); assert.doesNotMatch(document.body.textContent, /private chart/)
-  await click('Choose current library'); assert.equal([...document.querySelectorAll('button')].find(button => button.textContent === 'Confirm recovery choice').disabled, true)
-  await click('Cancel recovery choice'); assert.deepEqual(bytes(), before)
-  await click('Choose current library'); await act(async () => document.querySelector('input[type=checkbox]').click()); await click('Confirm recovery choice')
-  assert.equal(hasActionableRecovery(), false)
-  await click('Reopen recovery conflicts'); await act(async () => document.querySelector('input[type=checkbox]').click()); await click('Confirm recovery choice')
-  assert.equal(hasActionableRecovery(), true)
-})
-
 test('concurrent decision changes reject stale approval and read-back failure cannot report success', async () => {
   archive('download:1', { songs: [song('missing')], setlists: [] })
   const stale = inspectRecovery(); await choose()
@@ -302,34 +284,6 @@ test('readback mismatch preserves concurrent decisions without rollback or a suc
   } finally { dom.window.Storage.prototype.setItem = set }
 })
 
-test('failed V1 upgrade preserves its exact stored value and UI keeps export available', async () => {
-  archive('download:1', { songs: [song('missing')], setlists: [] })
-  const v1 = '{ "version": 1, "decisions": [] }\n'
-  localStorage.setItem(RECOVERY_DECISIONS_KEY, v1)
-  const before = bytes(), proto = dom.window.Storage.prototype, set = proto.setItem
-  root = createRoot(document.getElementById('root'))
-  await act(async () => root.render(React.createElement(RecoveryReviewDialog, { blocked: () => false, onClose() {} })))
-  const click = async text => act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === text).click())
-  await click('Choose current library')
-  assert.match(document.body.textContent, /digest, counts, timestamp and integrity references/)
-  await act(async () => document.querySelector('input[type=checkbox]').click())
-  proto.setItem = function(k, v) { if (k === RECOVERY_DECISIONS_KEY) throw new DOMException('full', 'QuotaExceededError'); return set.call(this, k, v) }
-  try { await click('Confirm recovery choice') } finally { proto.setItem = set }
-  assert.match(document.querySelector('[role=alert]').textContent, /Not enough browser storage/)
-  assert.deepEqual(bytes(), before); assert.equal(hasActionableRecovery(), true)
-  assert.equal([...document.querySelectorAll('button')].find(b => b.textContent === 'Export all recovery data').disabled, false)
-  let exported, downloaded = false
-  const create = URL.createObjectURL, revoke = URL.revokeObjectURL, anchorClick = dom.window.HTMLAnchorElement.prototype.click
-  URL.createObjectURL = blob => { exported = blob; return 'blob:recovery-export' }
-  URL.revokeObjectURL = () => {}
-  dom.window.HTMLAnchorElement.prototype.click = function () { downloaded = this.download === 'GTAR-storage-recovery.json' }
-  try {
-    await click('Export all recovery data')
-    assert.equal(downloaded, true); assert.deepEqual(JSON.parse(await exported.text()), before)
-    await click('Refresh review'); assert.equal(hasActionableRecovery(), true); assert.deepEqual(bytes(), before)
-  } finally { URL.createObjectURL = create; URL.revokeObjectURL = revoke; dom.window.HTMLAnchorElement.prototype.click = anchorClick }
-})
-
 // #240: an older build saved Replace snapshots whose cloud half had a setlist listing deleted songs.
 test('#240: a snapshot with a valid device copy and an invalid cloud copy is reviewable; the cloud copy is reported, kept and not used', async () => {
   const dangling = { songs: [song('current')], setlists: [{ id: 'list', name: 'Set', songs: [{ id: 'gone', title: 'Gone' }] }] }
@@ -343,10 +297,6 @@ test('#240: a snapshot with a valid device copy and an invalid cloud copy is rev
   assert.equal(source.canKeepCurrent, true)
   assert.equal(hasActionableRecovery(), false, 'no red recovery notice for it')
   assert.deepEqual(bytes(), before, 'read-only: archive bytes untouched')
-  // The note is shown in the review.
-  root = createRoot(document.getElementById('root'))
-  await act(async () => root.render(React.createElement(RecoveryReviewDialog, { onClose() {} })))
-  assert.match(document.body.textContent, /The cloud copy in this archive is not a valid library, so only this device's copy is reviewed here\. The full archive is kept/)
 })
 
 test('#240: a device copy that is not a valid library still makes the archive invalid', () => {
@@ -366,7 +316,7 @@ test('#240: with the cloud copy unreadable, a differing device copy is actionabl
   assert.equal(hasActionableRecovery(), false)
 })
 
-test('#240 P1-F2: archived cloud records of a conflict choice are differences with their revision, disclosed in the review', async () => {
+test('#240 P1-F2: archived cloud records of a conflict choice are differences with their revision', async () => {
   const cloudSetlist = { id: 'list', name: 'Set', songs: [{ id: 'current', title: 'Same title' }, { id: 'gone', title: 'Gone' }] }
   archive('records:1:a', { local: original, remoteRecords: [{ kind: 'setlist', id: 'list', rev: 4, removed: false, checksum: 'x', data: cloudSetlist }, null] })
   const before = bytes()
@@ -375,11 +325,4 @@ test('#240 P1-F2: archived cloud records of a conflict choice are differences wi
   assert.equal(source.cloudRecordsOnly, true)
   assert.deepEqual(source.differences.map(d => [d.kind, d.id, d.difference, d.revision]), [['setlist', 'list', 'missing', 4]])
   assert.deepEqual(bytes(), before)
-  root = createRoot(document.getElementById('root'))
-  await act(async () => root.render(React.createElement(RecoveryReviewDialog, { onClose() {} })))
-  assert.match(document.body.textContent, /cloud versions a conflict choice did not keep .* cannot be restored from this review/)
-  const details = document.querySelector('[data-testid^="recovery-source-"]')
-  details.open = true
-  await act(async () => {})
-  assert.match(document.body.textContent, /cloud revision 4/)
 })

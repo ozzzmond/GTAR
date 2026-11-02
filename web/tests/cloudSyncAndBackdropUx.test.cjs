@@ -222,6 +222,7 @@ test('DESTRUCTIVE_CONFIRMATION_PROTECTION: guarded dialogs retain protection', (
   )
   assert.ok(!deleteSongsDialog.includes('onClick={(e) => { if (e.target === e.currentTarget)'), 'Bulk delete songs dialog is guarded')
 
-  const recoveryContent = fs.readFileSync(path.join(__dirname, '../src/components/RecoveryReviewDialog.tsx'), 'utf8')
-  assert.ok(!recoveryContent.includes('onClick={event => { if (event.target === event.currentTarget)'), 'Recovery review dialog is guarded')
+  // #304: the Recovery data panel closes on its backdrop only while no delete is running.
+  const recoveryContent = fs.readFileSync(path.join(__dirname, '../src/components/RecoveryDataPanel.tsx'), 'utf8')
+  assert.ok(recoveryContent.includes('if (event.target === event.currentTarget && !busyRef.current) onClose()'), 'Recovery data panel is guarded while busy')
 })

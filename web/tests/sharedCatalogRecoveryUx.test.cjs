@@ -30,14 +30,10 @@ const { act } = React
 const { createRoot } = require('react-dom/client')
 
 const {
-  inspectRecovery,
-  hasActionableRecovery,
-  recordRecoveryChoice,
   recoveryData,
   LIBRARY_KEY,
-  RECOVERY_DECISIONS_KEY,
 } = require('../src/utils/syncJournal.ts')
-const { RecoveryReviewDialog } = require('../src/components/RecoveryReviewDialog.tsx')
+const { RecoveryDataPanel } = require('../src/components/RecoveryDataPanel.tsx')
 const { SharedSetlistCatalogPanel } = require('../src/components/SharedSetlistCatalogPanel.tsx')
 const { CatalogSetlistPreview } = require('../src/components/CatalogSetlistPreview.tsx')
 const { CatalogImportContext } = require('../src/utils/catalogImportContext.ts')
@@ -334,139 +330,28 @@ test('CROSS_USER_PUBLICATION_ISOLATION', () => {
 // SCOPE B: LOCAL RECOVERY REVIEW UX TESTS
 // =========================================================================
 
-test('RECOVERY_ZERO_ACTIONABLE_STATE & RECOVERY_RESOLVED_HISTORY & ACCESSIBILITY', async () => {
-  // Create an archive with a divergent version of song-1
-  const archivePayload = {
-    songs: [{ id: 'song-1', title: 'Amazing Grace', rawContent: '[A]Different chords', format: 'CHORD_PRO' }],
-    setlists: [],
-  }
-  localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify(archivePayload))
-
-  // Review before decision: 1 actionable source
-  const reviewBefore = inspectRecovery()
-  assert.equal(reviewBefore.sources.filter(s => s.status === 'actionable').length, 1)
-
-  // Explicitly choose current library -> resolves the source and retains history
-  await recordRecoveryChoice(reviewBefore, 'keep-current', () => false)
-
-  await render(React.createElement(RecoveryReviewDialog, {
-    blocked: () => false,
-    onClose() {},
-  }))
-
-  // Summary metrics
-  const metricArchives = document.querySelector('[data-testid="recovery-metric-archives"]')
-  const metricActionable = document.querySelector('[data-testid="recovery-metric-actionable"]')
-  const metricResolved = document.querySelector('[data-testid="recovery-metric-resolved"]')
-  const metricInvalid = document.querySelector('[data-testid="recovery-metric-invalid"]')
-
-  assert.ok(metricArchives)
-  assert.ok(metricActionable)
-  assert.ok(metricResolved)
-  assert.ok(metricInvalid)
-
-  assert.equal(metricActionable.textContent.includes('0'), true, '0 actionable conflicts')
-  assert.equal(metricResolved.textContent.includes('1'), true, '1 resolved history')
-
-  // RECOVERY_ZERO_ACTIONABLE_STATE: distinct banner
-  const zeroState = document.querySelector('[data-testid="recovery-no-actionable-state"]')
-  assert.ok(zeroState, 'Zero-actionable state rendered')
-  assert.match(zeroState.textContent, /No active conflicts/)
-  assert.match(zeroState.textContent, /1 resolved source is retained as history/)
-
-  // Choose current library is disabled with clear reason
-  const chooseBtn = document.querySelector('[data-testid="choose-current-library-btn"]')
-  assert.ok(chooseBtn.disabled, 'Choose current library is disabled when no actionable conflicts')
-  const disabledReason = document.querySelector('[data-testid="keep-current-disabled-reason"]')
-  assert.ok(disabledReason)
-  assert.match(disabledReason.textContent, /No actionable conflicts exist/)
-
-  // ACCESSIBILITY: dialog has aria-label, buttons have min-h-11
-  const dialog = document.querySelector('dialog')
-  assert.equal(dialog.getAttribute('aria-label'), 'Local recovery review')
-  assert.ok(chooseBtn.className.includes('min-h-11'))
-})
-
-test('RECOVERY_MISSING_RECORD_CLASSIFICATION & RECOVERY_EXPORT_PRESERVATION & NO_RECOVERY_DATA_MUTATION', async () => {
+test('RECOVERY_EXPORT_PRESERVATION & NO_RECOVERY_DATA_MUTATION (#304 Recovery data panel)', async () => {
   const missingSong = { id: 'missing-song-id', title: 'Lost In Time', rawContent: 'content', format: 'CHORD_PRO' }
-  localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify({
-    songs: [missingSong],
-    setlists: [],
-  }))
-
+  localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify({ songs: [missingSong], setlists: [] }))
   const beforeStorage = Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)]))
 
-  await render(React.createElement(RecoveryReviewDialog, {
-    blocked: () => false,
-    onClose() {},
-  }))
+  await render(React.createElement(RecoveryDataPanel, { blocked: () => false, onClose() {} }))
+  assert.equal(document.querySelector('[data-testid="recovery-data-count"]').textContent, '1')
+  assert.doesNotMatch(document.body.textContent, /Lost In Time/, 'no titles or record details in the panel')
 
-  // Metric displays 1 actionable conflict
-  const metricActionable = document.querySelector('[data-testid="recovery-metric-actionable"]')
-  assert.match(metricActionable.textContent, /1/)
-
-  // Missing record count displays
-  const missingSummary = document.querySelector('[data-testid="recovery-missing-count"]')
-  assert.ok(missingSummary)
-  assert.match(missingSummary.textContent, /1 distinct missing records/)
-
-  // Source item displays classified missing record
-  const sourceDetails = document.querySelector('[data-testid="recovery-source-0"]')
-  assert.ok(sourceDetails)
-  assert.match(sourceDetails.textContent, /Currently missing — not present in current library/)
-
-  // RECOVERY_EXPORT_PRESERVATION: Export button works and produces complete raw snapshot
   let exportedBlob = null
   let exportedFilename = null
   const createUrl = URL.createObjectURL
   URL.createObjectURL = blob => { exportedBlob = blob; return 'blob:test' }
   URL.revokeObjectURL = () => {}
   dom.window.HTMLAnchorElement.prototype.click = function () { exportedFilename = this.download }
-
   try {
-    const exportBtn = document.querySelector('[data-testid="export-recovery-btn"]')
-    assert.ok(exportBtn, 'Export button exists')
-    await act(async () => exportBtn.click())
-
+    await act(async () => document.querySelector('[data-testid="recovery-data-save"]').click())
     assert.equal(exportedFilename, 'GTAR-storage-recovery.json')
-    assert.ok(exportedBlob)
-    const parsedExport = JSON.parse(await exportedBlob.text())
-    assert.deepEqual(parsedExport, recoveryData(localStorage))
+    assert.deepEqual(JSON.parse(await exportedBlob.text()), recoveryData(localStorage))
   } finally {
     URL.createObjectURL = createUrl
   }
-
-  // NO_RECOVERY_DATA_MUTATION: storage has not been modified
   const afterStorage = Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)]))
-  assert.deepEqual(afterStorage, beforeStorage, 'Review and export caused ZERO data mutation')
-})
-
-test('RECOVERY_REOPEN_CONFIRMATION', async () => {
-  // Create an archive with a divergent version and resolve it
-  localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify({
-    songs: [{ id: 'song-1', title: 'Amazing Grace', rawContent: '[E]Alternate', format: 'CHORD_PRO' }],
-    setlists: [],
-  }))
-  await recordRecoveryChoice(inspectRecovery(), 'keep-current', () => false)
-
-  await render(React.createElement(RecoveryReviewDialog, {
-    blocked: () => false,
-    onClose() {},
-  }))
-
-  // Reopen button triggers confirmation step
-  const reopenBtn = document.querySelector('[data-testid="reopen-recovery-btn"]')
-  assert.ok(reopenBtn, 'Reopen recovery conflicts button exists')
-  await act(async () => reopenBtn.click())
-
-  // Confirmation section renders
-  const confirmSection = document.querySelector('[data-testid="recovery-confirmation-section"]')
-  assert.ok(confirmSection, 'Reopen confirmation section is displayed')
-  assert.match(confirmSection.textContent, /Reopen these recovery conflicts/)
-
-  // Cancel button dismisses without reopening
-  const cancelBtn = document.querySelector('[data-testid="cancel-recovery-choice-btn"]')
-  assert.ok(cancelBtn)
-  await act(async () => cancelBtn.click())
-  assert.equal(document.querySelector('[data-testid="recovery-confirmation-section"]'), null)
+  assert.deepEqual(afterStorage, beforeStorage, 'opening and saving cause ZERO data mutation')
 })

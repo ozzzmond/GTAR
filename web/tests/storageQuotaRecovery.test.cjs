@@ -167,31 +167,6 @@ test('represented archives can be explicitly reviewed before pruning; decision c
   finally { dom.window.Storage.prototype.setItem = set }
   await cleanup(); assert.equal(localStorage.getItem(key), null)
 })
-test('review UI requires separate checked confirmation for archive cleanup and reports backend sizes', async () => {
-  const React = require('react'), { act } = React, { createRoot } = require('react-dom/client')
-  const { RecoveryReviewDialog } = require('../src/components/RecoveryReviewDialog.tsx')
-  global.IS_REACT_ACT_ENVIRONMENT = true
-  dom.window.HTMLDialogElement.prototype.showModal = function() { this.open = true }
-  document.body.innerHTML = '<div id="root"></div>'
-  const key = add(1); await choose()
-  const root = createRoot(document.getElementById('root'))
-  const click = selector => act(async () => document.querySelector(selector).click())
-  try {
-    await act(async () => root.render(React.createElement(RecoveryReviewDialog, { blocked: () => false, onClose: () => {} })))
-    assert.match(document.body.textContent, /localStorage gtar_library_v1/)
-    assert.match(document.body.textContent, /gtar_recovery_decisions_v1/)
-    await click('[data-testid="review-cleanup-btn"]')
-    assert.equal(document.querySelector('[data-testid="confirm-recovery-choice-btn"]').disabled, true)
-    assert.match(document.body.textContent, /SHA-256 still matches/)
-    await click('[data-testid="cancel-recovery-choice-btn"]')
-    assert.notEqual(localStorage.getItem(key), null)
-    await click('[data-testid="review-cleanup-btn"]')
-    await click('input[type="checkbox"]')
-    await click('[data-testid="confirm-recovery-choice-btn"]')
-    assert.equal(localStorage.getItem(key), null)
-  } finally { await act(async () => root.unmount()) }
-})
-
 test('pending archive operations remain protected even if an old record claims keep-current with an exact digest', async () => {
   const key = add(1, { local: lib(), remote: null, journal: { pending: {} } }), raw = localStorage.getItem(key)
   localStorage.setItem(api.RECOVERY_DECISIONS_KEY, JSON.stringify({ version: 2, legacyV1Raw: null, decisions: [{

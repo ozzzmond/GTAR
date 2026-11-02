@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Flag, Loader2, RotateCcw } from 'lucide-react'
+import { Flag, Loader2 } from 'lucide-react'
 import {
   REPORT_REASON_LABELS, listCatalogReports, moderateCatalogReport,
   type CatalogReport, type ModerationAction, type ReportStatus,
@@ -17,7 +17,8 @@ const failure = (error: unknown) => {
 }
 
 /** #253 admin moderation queue (reactive). The server re-checks the admin role on every call. */
-export function CatalogReportsQueue({ onOpenCount }: { onOpenCount?: (count: number) => void }) {
+/** `refreshToken`: the dialog footer's Refresh bumps it to reload the current filter (#304). */
+export function CatalogReportsQueue({ onOpenCount, refreshToken = 0 }: { onOpenCount?: (count: number) => void; refreshToken?: number }) {
   const [status, setStatus] = useState<ReportStatus | 'all'>('open')
   const [reports, setReports] = useState<CatalogReport[]>([])
   const [loading, setLoading] = useState(false)
@@ -36,7 +37,7 @@ export function CatalogReportsQueue({ onOpenCount }: { onOpenCount?: (count: num
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- External admin request on open/filter change, same pattern as the accounts list.
     void load()
-  }, [load])
+  }, [load, refreshToken])
 
   // Idempotency keys survive ambiguous failures so a retry replays the same request.
   const keys = useRef(new Map<string, string>())
@@ -64,14 +65,8 @@ export function CatalogReportsQueue({ onOpenCount }: { onOpenCount?: (count: num
   )
 
   return <div data-testid="catalog-reports-queue" className="space-y-3">
-    <div className="flex items-center justify-between gap-2 border-b border-app-border/60 pb-3">
-      <div className="flex items-center gap-1.5 overflow-x-auto text-xs">
-        {tab('open', 'Open')}{tab('actioned', 'Actioned')}{tab('dismissed', 'Dismissed')}{tab('all', 'All')}
-      </div>
-      <button type="button" onClick={() => void load()} disabled={loading}
-        className="text-[11px] text-app-muted hover:text-app-heading flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
-        <RotateCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} /><span>Refresh</span>
-      </button>
+    <div data-testid="catalog-reports-filters" className="flex flex-wrap items-center gap-2 border-b border-app-border/60 pb-3 text-xs">
+      {tab('open', 'Open')}{tab('actioned', 'Actioned')}{tab('dismissed', 'Dismissed')}{tab('all', 'All')}
     </div>
     <p className="text-[11px] text-app-muted">Reports never hide content on their own. Review the item, then dismiss or remove it.</p>
     {error && <p role="alert" className="text-xs text-status-error font-semibold">{error}</p>}

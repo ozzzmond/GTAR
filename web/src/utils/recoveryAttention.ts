@@ -1,11 +1,10 @@
 /**
- * #181: whether local recovery needs a decision (any actionable source). DEV only, like the
- * former banner. Shown as a red dot on Local Recovery Review in the DEV profile menu Advanced Tools (#299).
+ * #181 / #304: whether some recovery copies on this device can't be opened. Shown as a red dot on the
+ * profile menu row "Recovery data" (DEV, and admins in PROD); other users never compute it.
  * Recomputed only on the events that can change it, never per render.
  */
 import { useSyncExternalStore } from 'react'
-import { hasActionableRecovery } from './syncJournal'
-import { isDevEnv } from './env'
+import { summarizeRecoveryData } from './recoveryDataSummary'
 
 export const RECOVERY_CHANGED_EVENT = 'gtar-recovery-changed'
 const EVENTS = ['gtar-library-persisted', 'storage', RECOVERY_CHANGED_EVENT] as const
@@ -15,8 +14,7 @@ let computed = false
 const listeners = new Set<() => void>()
 
 function compute(): boolean {
-  if (!isDevEnv) return false
-  try { return hasActionableRecovery() } catch { return false }
+  try { return summarizeRecoveryData().unreadable } catch { return false }
 }
 function refresh() {
   const next = compute()
@@ -29,7 +27,10 @@ function subscribe(listener: () => void) {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
-    if (listeners.size === 0 && typeof window !== 'undefined') EVENTS.forEach(type => window.removeEventListener(type, refresh))
+    if (listeners.size > 0) return
+    // Unwatched storage can change; the next subscriber recomputes.
+    computed = false
+    if (typeof window !== 'undefined') EVENTS.forEach(type => window.removeEventListener(type, refresh))
   }
 }
 function snapshot() {
@@ -42,8 +43,11 @@ export function notifyRecoveryChanged(): void {
   try { if (typeof window !== 'undefined') window.dispatchEvent(new window.Event(RECOVERY_CHANGED_EVENT)) } catch { /* ignore */ }
 }
 
-export function useRecoveryAttention(): boolean {
-  return useSyncExternalStore(subscribe, snapshot, () => false)
+const off = () => () => {}
+const never = () => false
+/** `enabled` is false for users who don't see the row: nothing is subscribed or computed. */
+export function useRecoveryAttention(enabled: boolean): boolean {
+  return useSyncExternalStore(enabled ? subscribe : off, enabled ? snapshot : never, never)
 }
 
 /** Small red dot; `label` is announced to screen readers. */

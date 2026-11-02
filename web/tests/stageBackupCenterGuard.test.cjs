@@ -81,11 +81,11 @@ test('Stage shortcuts pause while the Backup & Restore center is open and work a
   }
 })
 
-test('App folds the header dialogs and Local Recovery Review into the Stage overlay guard', () => {
+test('App folds the header dialogs and the Recovery data panel into the Stage overlay guard', () => {
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
   assert.match(app, /onOverlayChange=\{setIsHeaderOverlayOpen\}/)
   const guard = app.slice(app.indexOf('isAnyModalOpen={'), app.indexOf('onBack={() => setActiveView(\'songbook\')}'))
-  for (const flag of ['isHeaderOverlayOpen', 'reviewRecovery']) assert.ok(guard.includes(flag), flag)
+  for (const flag of ['isHeaderOverlayOpen', 'recoveryDataOpen']) assert.ok(guard.includes(flag), flag)
   const header = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
   assert.match(header, /const headerOverlayOpen = showCloudSyncModal \|\| showDebugLogsModal/)
 })
