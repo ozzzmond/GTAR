@@ -2,6 +2,11 @@
   "default": "fast",
   "files": [
     {
+      "file": "accountAccessFoundation.test.cjs",
+      "tier": "fast",
+      "fastShard": 0
+    },
+    {
       "file": "backupV2Scale.test.cjs",
       "tier": "scale"
     },
@@ -24,7 +29,7 @@
     {
       "file": "libraryB2Safety.test.cjs",
       "tier": "fast",
-      "dedicatedFastShard": true
+      "fastShard": 0
     },
     {
       "file": "libraryB2StorageScale.test.cjs",

@@ -21,8 +21,8 @@ function partition(files, manifest) {
   for (const entry of manifest.files) {
     if (!entry || !known.has(entry.file)) throw new Error(`Unknown test file: ${entry?.file}`)
     if (!tiers.includes(entry.tier)) throw new Error(`Unknown tier: ${entry.tier}`)
-    if (entry.dedicatedFastShard !== undefined && (entry.dedicatedFastShard !== true || entry.tier !== 'fast')) {
-      throw new Error('Dedicated shards are only supported for fast files')
+    if (entry.fastShard !== undefined && (entry.tier !== 'fast' || !Number.isSafeInteger(entry.fastShard) || entry.fastShard < 0)) {
+      throw new Error('Reserved shards require a nonnegative integer and a fast file')
     }
     if (overrides.has(entry.file)) throw new Error(`Duplicate tier assignment: ${entry.file}`)
     overrides.set(entry.file, entry.tier)
@@ -30,19 +30,24 @@ function partition(files, manifest) {
   return Object.fromEntries(tiers.map(tier => [tier, files.filter(file => (overrides.get(file) ?? manifest.default) === tier)]))
 }
 
-function shardFiles(files, shard, dedicated = []) {
+function shardFiles(files, shard, pinned = {}) {
   const match = /^(\d+)\/([1-9]\d*)$/.exec(shard)
   const index = Number(match?.[1]), count = Number(match?.[2])
   if (!match || !Number.isSafeInteger(index) || !Number.isSafeInteger(count) || index >= count) {
     throw new Error(`Invalid fast shard: ${shard}; expected zero-based index/count`)
   }
-  const reserved = new Set(dedicated)
-  if (reserved.size !== dedicated.length || dedicated.some(file => !files.includes(file))) throw new Error('Invalid dedicated fast file')
+  const entries = Object.entries(pinned)
+  if (entries.some(([file, bucket]) => !files.includes(file) || !Number.isSafeInteger(bucket) || bucket < 0)) {
+    throw new Error('Invalid reserved fast file or shard')
+  }
   if (count === 1) return files
-  if (dedicated.length >= count) throw new Error('Invalid fast shard: not enough shards for dedicated files')
-  if (index < dedicated.length) return [dedicated[index]]
-  return files.filter(file => !reserved.has(file))
-    .filter((_, position) => position % (count - dedicated.length) === index - dedicated.length)
+  if (entries.some(([, bucket]) => bucket >= count)) throw new Error('Invalid fast shard: reserved shard out of range')
+  const reserved = new Set(entries.map(([, bucket]) => bucket))
+  if (reserved.size >= count) throw new Error('Invalid fast shard: no unreserved shards')
+  if (reserved.has(index)) return files.filter(file => pinned[file] === index)
+  const free = Array.from({ length: count }, (_, bucket) => bucket).filter(bucket => !reserved.has(bucket))
+  return files.filter(file => !Object.hasOwn(pinned, file))
+    .filter((_, position) => position % free.length === free.indexOf(index))
 }
 
 // Isolated processes retain each file's globals, hooks and complete test selection.
@@ -86,7 +91,7 @@ async function main(args) {
   const shard = process.env.GTAR_TEST_SHARD
   if (shard !== undefined) {
     if (tier !== 'fast') throw new Error('Sharding is only supported for fast; test:all always runs everything')
-    selected = shardFiles(selected, shard, manifest.files.filter(entry => entry.dedicatedFastShard).map(entry => entry.file))
+    selected = shardFiles(selected, shard, Object.fromEntries(manifest.files.filter(entry => entry.fastShard !== undefined).map(entry => [entry.file, entry.fastShard])))
   }
   const concurrency = process.env.GTAR_TEST_CONCURRENCY === undefined ? Math.min(4, availableParallelism()) : Number(process.env.GTAR_TEST_CONCURRENCY)
   console.log(`Test tier ${tier}: ${selected.length}/${files.length} files${shard === undefined ? '' : `; shard ${shard}`}; concurrency ${concurrency}`)
