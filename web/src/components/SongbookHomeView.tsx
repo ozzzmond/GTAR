@@ -33,7 +33,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react'
-import { exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
+import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
 import { extractShareToken, type SharedSetlistPayload } from '../utils/sharedSetlist'
 import { Link, Globe, UploadCloud, CloudCheck, CloudDownload } from 'lucide-react'
@@ -57,6 +57,7 @@ interface SongbookHomeViewProps {
   activeSongIndex: number
   onSelectSong: (index: number) => void
   onNewSong: () => void
+  onNewSetlist?: () => void
   onOpenSetlists: () => void
   onOpenSongbook?: () => void
   onManageSetlist?: (setlist: WebSetlist) => void
@@ -100,6 +101,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   activeSongIndex,
   onSelectSong,
   onNewSong,
+  onNewSetlist,
   onOpenSetlists,
   onManageSetlist,
   onOpenSetlistManager,
@@ -485,12 +487,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
   const [filterSetlistId, setFilterSetlistId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('gtar_songbook_filter_setlist') || 'ALL'
+      // #320 Codex P2: Clear persisted setlist filter on load so pre-PR state does not trap users with hidden songs
+      try { localStorage.removeItem('gtar_songbook_filter_setlist') } catch { /* ignore */ }
     }
     return 'ALL'
   })
 
-  // Recover safely if persisted filterSetlistId points to a deleted or nonexistent setlist
+  // Recover safely if filterSetlistId points to a deleted or nonexistent setlist
   React.useEffect(() => {
     if (filterSetlistId !== 'ALL') {
       const exists = activeSetlists.some(sl => String(sl.id) === String(filterSetlistId))
@@ -498,12 +501,25 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         queueMicrotask(() => {
           setFilterSetlistId('ALL')
           if (typeof window !== 'undefined') {
-            localStorage.setItem('gtar_songbook_filter_setlist', 'ALL')
+            try { localStorage.removeItem('gtar_songbook_filter_setlist') } catch { /* ignore */ }
           }
         })
       }
     }
   }, [filterSetlistId, activeSetlists])
+
+  const handleFilterSetlistChange = (slId: string) => {
+    setFilterSetlistId(slId)
+    if (typeof window !== 'undefined') {
+      try {
+        if (slId === 'ALL') {
+          localStorage.removeItem('gtar_songbook_filter_setlist')
+        } else {
+          localStorage.setItem('gtar_songbook_filter_setlist', slId)
+        }
+      } catch { /* ignore */ }
+    }
+  }
 
   // GTAR1 sort pills: selecting the active field flips the direction.
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
@@ -1310,36 +1326,99 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           )}
         </nav>
 
-        {isSongsContext && songs.length > 0 && (
+        {isSongsContext && (
           <div data-testid="songs-library-toolbar" className="flex flex-wrap items-center gap-2">
-            <select
-              data-testid="filter-metadata-select"
-              aria-label="Filter songs by metadata"
-              value={filterMetadata}
-              onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
-              className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
-            >
-              <option value="ALL">All Metadata</option>
-              <option value="METADATA_OK">Metadata OK</option>
-              <option value="NEEDS_METADATA">Needs Metadata</option>
-            </select>
-            <div role="group" aria-label="Sort songs" className="flex items-center bg-app-surface border border-app-border rounded-xl p-0.5 text-xs">
-              {(['title', 'artist', 'date'] as const).map((field) => (
-                <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
-                  onClick={() => handleSortChange(field)}
-                  className={`min-h-10 px-2.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                    sortBy === field ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-text'}`}>
-                  {field === 'title' ? 'Title' : field === 'artist' ? 'Artist' : 'Date'}{sortBy === field && (sortDirection === 'asc' ? ' ↑' : ' ↓')}
+            {songs.length > 0 && (
+              <>
+                <select
+                  data-testid="filter-metadata-select"
+                  aria-label="Filter songs by metadata"
+                  value={filterMetadata}
+                  onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
+                  className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                >
+                  <option value="ALL">All Metadata</option>
+                  <option value="METADATA_OK">Metadata OK</option>
+                  <option value="NEEDS_METADATA">Needs Metadata</option>
+                </select>
+                {activeSetlists.length > 0 && (
+                  <select
+                    data-testid="filter-setlist-select"
+                    aria-label="Filter songs by setlist"
+                    value={filterSetlistId}
+                    onChange={(e) => handleFilterSetlistChange(e.target.value)}
+                    className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Setlists</option>
+                    {activeSetlists.map((sl) => (
+                      <option key={sl.id} value={String(sl.id)}>
+                        {sl.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div role="group" aria-label="Sort songs" className="flex items-center bg-app-surface border border-app-border rounded-xl p-0.5 text-xs">
+                  {(['title', 'artist', 'date'] as const).map((field) => (
+                    <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
+                      onClick={() => handleSortChange(field)}
+                      className={`min-h-11 px-2.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                        sortBy === field ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-text'}`}>
+                      {field === 'title' ? 'Title' : field === 'artist' ? 'Artist' : 'Date'}{sortBy === field && (sortDirection === 'asc' ? ' ↑' : ' ↓')}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" data-testid="toggle-song-selection-mode" aria-pressed={isSongSelectionMode}
+                  onClick={() => { setIsSongSelectionMode(!isSongSelectionMode); setSelectedSongIds(new Set()) }}
+                  className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    isSongSelectionMode ? 'bg-app-action/15 border-app-action text-app-action' : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'}`}>
+                  {isSongSelectionMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                  <span>Select</span>
                 </button>
-              ))}
-            </div>
-            <button type="button" data-testid="toggle-song-selection-mode" aria-pressed={isSongSelectionMode}
-              onClick={() => { setIsSongSelectionMode(!isSongSelectionMode); setSelectedSongIds(new Set()) }}
-              className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
-                isSongSelectionMode ? 'bg-app-action/15 border-app-action text-app-action' : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'}`}>
-              {isSongSelectionMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-              <span>Select</span>
-            </button>
+              </>
+            )}
+            {(onOpenImportSongs || onTrashDuplicates) && (
+              <>
+                <button
+                  type="button"
+                  data-testid="songs-library-menu-btn"
+                  aria-label="Songs Library actions"
+                  aria-haspopup="menu"
+                  aria-expanded={!!libraryMenuAnchor}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeAllMenus()
+                    setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
+                  }}
+                  className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                <DropdownPortal anchorEl={libraryMenuAnchor} open={!!libraryMenuAnchor} onClose={() => setLibraryMenuAnchor(null)} align="right">
+                  <div role="menu" onClick={(e) => e.stopPropagation()}
+                    className="w-52 bg-app-surface border border-app-border rounded-xl shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
+                    {onOpenImportSongs && (
+                      <button type="button" role="menuitem" data-testid="songs-library-menu-import"
+                        onClick={() => { setLibraryMenuAnchor(null); onOpenImportSongs() }} className={cardMenuItem}>
+                        <Upload className="w-3.5 h-3.5 text-app-action" />
+                        <span>Import songs…</span>
+                      </button>
+                    )}
+                    <button type="button" role="menuitem" data-testid="songs-library-menu-export" disabled={songs.length === 0}
+                      onClick={() => { setLibraryMenuAnchor(null); setIsExportSongsOpen(true) }} className={cardMenuItem}>
+                      <Upload className="w-3.5 h-3.5 text-app-action rotate-180" />
+                      <span>Export songs (TXT / PDF)…</span>
+                    </button>
+                    {onTrashDuplicates && (
+                      <button type="button" role="menuitem" data-testid="songs-library-menu-duplicates" disabled={songs.length < 2}
+                        onClick={() => { setLibraryMenuAnchor(null); setIsDuplicateReviewOpen(true) }} className={cardMenuItem}>
+                        <Copy className="w-3.5 h-3.5 text-app-action" />
+                        <span>AI Worker: check duplicates…</span>
+                      </button>
+                    )}
+                  </div>
+                </DropdownPortal>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1469,6 +1548,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : 'Publish to Shared Catalog'
               },
               onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs),
+              onExportAllSetlists: () => exportAllDataJson(songs, setlists),
+              onNewSetlist: onNewSetlist,
               onManageSetlists: onOpenSetlistManager ?? onOpenSetlists,
             }}
           />
@@ -1504,49 +1585,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               <Plus className="w-3.5 h-3.5" />
               <span>Add Song</span>
             </button>
-            {(onOpenImportSongs || onTrashDuplicates) && (
-              <>
-                <button
-                  type="button"
-                  data-testid="songs-library-menu-btn"
-                  aria-label="Songs Library actions"
-                  aria-haspopup="menu"
-                  aria-expanded={!!libraryMenuAnchor}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeAllMenus()
-                    setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
-                  }}
-                  className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-                <DropdownPortal anchorEl={libraryMenuAnchor} open={!!libraryMenuAnchor} onClose={() => setLibraryMenuAnchor(null)} align="right">
-                  <div role="menu" onClick={(e) => e.stopPropagation()}
-                    className="w-52 bg-app-surface border border-app-border rounded-xl shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
-                    {onOpenImportSongs && (
-                      <button type="button" role="menuitem" data-testid="songs-library-menu-import"
-                        onClick={() => { setLibraryMenuAnchor(null); onOpenImportSongs() }} className={cardMenuItem}>
-                        <Upload className="w-3.5 h-3.5 text-app-action" />
-                        <span>Import songs…</span>
-                      </button>
-                    )}
-                    <button type="button" role="menuitem" data-testid="songs-library-menu-export" disabled={songs.length === 0}
-                      onClick={() => { setLibraryMenuAnchor(null); setIsExportSongsOpen(true) }} className={cardMenuItem}>
-                      <Upload className="w-3.5 h-3.5 text-app-action rotate-180" />
-                      <span>Export songs (TXT / PDF)…</span>
-                    </button>
-                    {onTrashDuplicates && (
-                      <button type="button" role="menuitem" data-testid="songs-library-menu-duplicates" disabled={songs.length < 2}
-                        onClick={() => { setLibraryMenuAnchor(null); setIsDuplicateReviewOpen(true) }} className={cardMenuItem}>
-                        <Copy className="w-3.5 h-3.5 text-app-action" />
-                        <span>AI Worker: check duplicates…</span>
-                      </button>
-                    )}
-                  </div>
-                </DropdownPortal>
-              </>
-            )}
           </div>
         </div>
 
@@ -1569,7 +1607,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <h3 className="text-sm font-semibold text-app-heading">No matching songs found</h3>
             <p className="text-xs text-app-muted max-w-sm mx-auto mt-1 mb-4">Try clearing your search query or adjusting filters.</p>
             <button type="button"
-              onClick={() => { handleSearchChange(''); handleFilterMetadataChange('ALL'); if (currentView.type === 'TAG') onSelectView?.({ type: 'ALL_SONGS' }) }}
+              onClick={() => {
+                handleSearchChange('')
+                handleFilterMetadataChange('ALL')
+                handleFilterSetlistChange('ALL')
+                if (currentView.type === 'TAG') onSelectView?.({ type: 'ALL_SONGS' })
+              }}
               className="ui-button min-h-11 px-3 bg-app-button hover:brightness-110 rounded-xl text-xs text-app-button-text font-semibold border border-app-border cursor-pointer">
               Reset Filters
             </button>

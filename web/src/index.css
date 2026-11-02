@@ -169,18 +169,14 @@ body.theme-custom {
 body.theme-custom header { background-color: var(--custom-chrome-header-bg) !important; }
 /* 2. APP CHROME: Search Bar & Search Border */
 body.theme-custom .pill-search,
-body.theme-custom header input[type="text"],
-body.theme-custom .header-search-input {
+body.theme-custom .pill-search-box {
   background-color: var(--custom-chrome-search-bg, var(--custom-stage-bg, #121820)) !important;
   border-color: var(--custom-chrome-search-border, var(--custom-stage-border, #2A3644)) !important;
-  color: var(--custom-control-input-text, #F1F5F9) !important;
 }
 body.theme-custom .pill-search input {
   color: var(--custom-control-input-text, #F1F5F9) !important;
 }
-body.theme-custom .pill-search input::placeholder,
-body.theme-custom header input[type="text"]::placeholder,
-body.theme-custom .header-search-input::placeholder {
+body.theme-custom .pill-search input::placeholder {
   color: var(--custom-chrome-icon, #94A3B8) !important;
   opacity: 0.7;
 }
@@ -199,13 +195,60 @@ body.theme-custom .header-search-box:focus-within {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--custom-control-accent, #F59E0B) 20%, transparent) !important;
 }
 
-body.theme-custom .header-search-box input {
-  color: var(--custom-control-input-text, var(--custom-uiPrimaryText, #F1F5F9)) !important;
+/* Neutralize inner input so ONE rounded search field owns border, background and focus ring */
+.header-search-input,
+.header-search-box input,
+#search-input {
+  background: transparent !important;
   background-color: transparent !important;
+  border: 0 !important;
   border-color: transparent !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
-body.theme-custom .header-search-box input::placeholder {
+.header-search-input:focus,
+.header-search-input:focus-visible,
+.header-search-box input:focus,
+.header-search-box input:focus-visible,
+#search-input:focus,
+#search-input:focus-visible {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+}
+
+body.theme-custom .header-search-box input,
+body.theme-custom .header-search-input,
+body.theme-custom #search-input {
+  color: var(--custom-control-input-text, var(--custom-uiPrimaryText, #F1F5F9)) !important;
+  background-color: transparent !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-custom :is(.header-search-box input, .header-search-input, #search-input):focus,
+body.theme-custom :is(.header-search-box input, .header-search-input, #search-input):focus-visible {
+  background-color: transparent !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-custom .header-search-box input::placeholder,
+body.theme-custom .header-search-input::placeholder {
   color: var(--custom-chrome-icon, var(--custom-uiMutedText, #94A3B8)) !important;
   opacity: 0.7;
 }
@@ -270,7 +313,7 @@ body.theme-custom .view-toggle-btn.active {
 
 /* 8. CONTROLS: Inputs & Selects Dropdowns */
 body.theme-custom select,
-body.theme-custom input:not([type="checkbox"]):not([type="color"]):not(.pill-search input),
+body.theme-custom input:not([type="checkbox"]):not([type="color"]):not(.pill-search input):not(.header-search-box input):not(.header-search-input):not(#search-input),
 body.theme-custom textarea {
   background-color: var(--custom-control-input-bg, var(--custom-stage-bg, #121820)) !important;
   color: var(--custom-control-input-text, var(--custom-stage-text, #F1F5F9)) !important;
@@ -278,7 +321,7 @@ body.theme-custom textarea {
 }
 
 /* 9. CONTROLS: Accent & Focus State */
-body.theme-custom input:focus,
+body.theme-custom input:not(.header-search-box input):not(.header-search-input):not(#search-input):focus,
 body.theme-custom select:focus,
 body.theme-custom textarea:focus {
   border-color: var(--custom-control-accent, #F59E0B) !important;
@@ -598,7 +641,7 @@ body.theme-custom .theme-studio .ui-button :is(span, svg) { color: inherit !impo
 /* Shared states use the same palette in native controls and portal content. */
 body.theme-custom :is(input, textarea)::placeholder { color: var(--custom-uiMutedText); opacity: .7; }
 body.theme-custom :is(input[type="checkbox"], input[type="range"]) { accent-color: var(--custom-control-accent); }
-body.theme-custom :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--custom-control-accent); outline-offset: 2px; }
+body.theme-custom :is(button, a, input:not(.header-search-box input):not(.header-search-input):not(#search-input), select, textarea):focus-visible { outline: 2px solid var(--custom-control-accent); outline-offset: 2px; }
 /* The picker container owns its visible focus-within border. */
 #multi-song-search-input {
   appearance: none;

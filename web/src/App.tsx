@@ -1761,6 +1761,7 @@ function LibraryApp() {
             onSongMembershipChange={handleSongMembership}
             onCreateSetlistForSong={handleCreateSetlistForSong}
             onNewSong={handleNewSong}
+            onNewSetlist={handleNewSetlist}
             onOpenSetlists={() => handleExplorerSelect({ type: 'ALL_SETLISTS' })}
             onOpenSongbook={() => handleExplorerSelect({ type: 'ALL_SONGS' })}
             onManageSetlist={handleManageSetlist}

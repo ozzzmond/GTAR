@@ -791,7 +791,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onFocus={() => setIsSearchFocused(true)}
                 onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
                 placeholder="Search songs & setlists... (Esc to clear)"
-                className="header-search-input min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none" />
+                className="header-search-input min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 shadow-none" />
               {searchQuery && (
                 <button type="button" aria-label="Clear search"
                   onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus() }}
@@ -964,7 +964,7 @@ export const Header: React.FC<HeaderProps> = ({
               onFocus={() => setIsSearchFocused(true)}
               onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
               placeholder="Search songs & setlists..."
-              className="header-search-input min-h-11 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none" />
+              className="header-search-input min-h-11 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none focus:ring-0 shadow-none" />
             {searchQuery && (
               <button type="button" aria-label="Clear search"
                 onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus() }}

@@ -42,6 +42,9 @@ export interface SetlistWorkspaceMenu {
   onPublishSetlist?: (setlist: WebSetlist) => void
   /** #319: per-setlist JSON export (previously on the removed Song Setlists cards). */
   onExportSetlist?: (setlist: WebSetlist) => void
+  /** #320: full setlists JSON export / backup. */
+  onExportAllSetlists?: () => void
+  onNewSetlist?: () => void
   publishLabel?: (setlist: WebSetlist) => string
   /** Receives the open setlist (null in the collection view). */
   onManageSetlists?: (openSetlist: WebSetlist | null) => void
@@ -138,7 +141,46 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           )}
         </nav>
         {menu && (
-          <>
+          <div data-testid="setlist-toolbar" className="flex flex-wrap items-center gap-2">
+            {!openSetlist && (
+              <>
+                <select
+                  data-testid="setlist-sort-select"
+                  aria-label="Sort setlists"
+                  value={menu.sortValue}
+                  onChange={(e) => menu.onSortChange(e.target.value)}
+                  className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                >
+                  {menu.sortOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {menu.onShareAll && (
+                  <button
+                    type="button"
+                    data-testid="main-share-setlist-btn"
+                    aria-label="Share Setlist"
+                    onClick={menu.onShareAll}
+                    className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  >
+                    <QrCode className="w-4 h-4" />
+                  </button>
+                )}
+                {menu.onManageSetlists && (
+                  <button
+                    type="button"
+                    data-testid="toggle-setlist-selection-mode"
+                    onClick={() => menu.onManageSetlists?.(null)}
+                    className="ui-button min-h-11 px-3 bg-app-button hover:brightness-110 border border-app-border rounded-xl text-xs text-app-button-text font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-app-section" />
+                    <span>Manage</span>
+                  </button>
+                )}
+              </>
+            )}
             <button
               type="button"
               data-testid="workspace-scope-menu-btn"
@@ -153,7 +195,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             <DropdownPortal anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)} align="right">
               <ScopeMenu menu={menu} openSetlist={openSetlist} onDone={() => setMenuAnchor(null)} />
             </DropdownPortal>
-          </>
+          </div>
         )}
       </div>
 
