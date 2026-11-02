@@ -53,17 +53,13 @@ test('PROVE_SELECTION: Song & Setlist selection mode toggling, counts, and isola
 
   // Selection mode buttons
   assert.ok(songbookHome.includes('data-testid="toggle-song-selection-mode"'), 'Must have song selection mode toggle')
-  assert.ok(songbookHome.includes('data-testid="toggle-setlist-selection-mode"'), 'Must have setlist selection mode toggle')
 
   // Selection bars and counts
   assert.ok(songbookHome.includes('data-testid="song-selection-bar"'), 'Must have song selection toolbar')
-  assert.ok(songbookHome.includes('data-testid="setlist-selection-bar"'), 'Must have setlist selection toolbar')
   assert.ok(songbookHome.includes('data-testid="song-selection-count"'), 'Must have song selection count')
-  assert.ok(songbookHome.includes('data-testid="setlist-selection-count"'), 'Must have setlist selection count')
 
   // Cancel buttons reset selection
   assert.ok(songbookHome.includes('data-testid="cancel-song-selection"'), 'Must have cancel song selection button')
-  assert.ok(songbookHome.includes('data-testid="cancel-setlist-selection"'), 'Must have cancel setlist selection button')
 
   // Stage view launch and normal actions bypassed when selection mode is active
   assert.ok(songbookHome.includes('if (isSongSelectionMode) {'), 'Song click must check selection mode before opening stage view')
@@ -101,30 +97,3 @@ test('PROVE_BULK_SONG_DELETE: Confirmation states reversible Trash semantics', (
 })
 
 // 7. PROVE_BULK_SETLIST_DELETE: CONFIRMATION & SONGS REMAIN IN LIBRARY
-test('PROVE_BULK_SETLIST_DELETE: Confirmation states songs remain, only selected setlists deleted', () => {
-  const songbookHome = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
-  const appTsx = fs.readFileSync(path.join(webDir, 'src/App.tsx'), 'utf8')
-
-  // Dialog and confirmation details
-  assert.ok(songbookHome.includes('data-testid="bulk-delete-setlists-confirm-dialog"'), 'Must render bulk delete setlists dialog')
-  assert.ok(songbookHome.includes('data-testid="confirm-bulk-delete-setlists"'), 'Must have confirm bulk delete setlists button')
-  assert.ok(songbookHome.includes('data-testid="cancel-bulk-delete-setlists"'), 'Must have cancel bulk delete setlists button')
-  assert.ok(songbookHome.includes('Songs in these setlists will remain in your songbook'), 'Must state songs will remain in songbook')
-
-  // App.tsx marks setlists deleted without deleting songs
-  assert.ok(appTsx.includes('handleBulkDeleteSetlists'), 'App.tsx must define handleBulkDeleteSetlists')
-
-  // Test setlist delete semantics:
-  const songs = [{ id: 's1', title: 'Song 1' }, { id: 's2', title: 'Song 2' }]
-  const setlists = [
-    { id: 'sl-1', name: 'Gig 1', isDeleted: false },
-    { id: 'sl-2', name: 'Gig 2', isDeleted: false }
-  ]
-  const selectedSetlists = ['sl-1']
-
-  const updatedSetlists = setlists.map(sl => selectedSetlists.includes(sl.id) ? { ...sl, isDeleted: true } : sl)
-
-  assert.equal(updatedSetlists[0].isDeleted, true, 'Selected setlist marked deleted')
-  assert.equal(updatedSetlists[1].isDeleted, false, 'Unselected setlist remains active')
-  assert.equal(songs.length, 2, 'Underlying songs remain untouched in songbook')
-})

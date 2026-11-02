@@ -260,14 +260,15 @@ test('DELIVERABLES 6, 7, 8, 9: Source code checks for Manage parity, Metadata fi
   assert.ok(songbookSource.includes('data-testid="filter-metadata-select"'), 'SongbookHomeView must have metadata filter select')
   assert.ok(songbookSource.includes('Metadata OK'), 'Must have Metadata OK filter option')
   assert.ok(songbookSource.includes('Needs Metadata'), 'Must have Needs Metadata filter option')
-  assert.ok(songbookSource.includes('Library Order'), 'Must use Library Order instead of Date Added')
+  assert.ok(songbookSource.includes('data-testid={`sort-${field}`}'), 'GTAR1 sort pills (Title / Artist / Date = library order)')
 
   // Main page Share Setlist (Deliverable 4)
-  assert.ok(songbookSource.includes('data-testid="main-share-setlist-btn"'), 'Main Gig Setlists header must have Share Setlist button')
-  assert.ok(songbookSource.includes('Export JSON'), 'Legacy setlist export must be labeled Export JSON')
+  // #319: setlist share / export live in the setlist workspace ⋯ menu.
+  assert.ok(songbookSource.includes('onShareAll: isAuthActive'), 'Setlist workspace menu keeps Share Setlist')
+  assert.ok(songbookSource.includes('onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs)'), 'Setlist JSON export stays reachable')
 
   // Link-first setlist import (Deliverable 5)
-  assert.ok(songbookSource.includes('data-testid="main-import-setlist-btn"'), 'Main Gig Setlists header must have Import button')
+  assert.ok(songbookSource.includes('onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) }'), 'Setlist workspace menu keeps Import')
   assert.ok(songbookSource.includes('data-testid="setlist-import-dialog"'), 'Must have Link-first setlist import dialog')
   assert.ok(songbookSource.includes('data-testid="paste-share-link-input"'), 'Must have paste share link input')
 

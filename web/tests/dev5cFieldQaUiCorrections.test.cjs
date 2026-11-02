@@ -96,23 +96,3 @@ test('DEV5C_QA_4: Main Songs Library cards render compact canonical metadata sta
 })
 
 // 4. GIG SETLISTS TOOLBAR COMPACT QR/SHARE ICON
-test('DEV5C_QA_5: Main Gig Setlists toolbar Share Setlist button is a compact QR icon button', () => {
-  const html = renderToString(
-    React.createElement(SongbookHomeView, {
-      songs: [sampleCompleteSong],
-      activeSongIndex: 0,
-      onSelectSong: () => {},
-      onNewSong: () => {},
-      onOpenSetlists: () => {},
-      onOpenSongbook: () => {},
-      onDeleteSong: () => {},
-      setlists: sampleSetlists,
-      onSongMembershipChange: () => {},
-      onCreateSetlistForSong: () => {},
-    })
-  )
-
-  assert.ok(html.includes('data-testid="main-share-setlist-btn"'), 'Main share setlist button preserved')
-  assert.ok(html.includes('aria-label="Share Setlist"'), 'Share setlist button has aria-label="Share Setlist"')
-  assert.ok(!html.includes('<span>Share Setlist</span>'), 'Main toolbar share setlist button must NOT render text span')
-})

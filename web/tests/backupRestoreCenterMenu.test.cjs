@@ -44,7 +44,7 @@ async function mountHeader(options) {
   env.isDevEnv = options.dev; auth = options.auth
   const root = createRoot(document.getElementById('root'))
   await act(async () => root.render(React.createElement(Header, props)))
-  await act(async () => document.querySelector('.avatar-wrapper').click())
+  await act(async () => document.querySelector('[data-testid="header-avatar"]').click())
   return { root, popover: document.querySelector('.avatar-popover') }
 }
 

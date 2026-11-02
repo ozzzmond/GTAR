@@ -598,11 +598,12 @@ test('search-filtered visible setlists do not change full backup preview totals'
   const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
   const setlists = lifecycleSetlists(3)
   await act(async () => root.render(React.createElement(SongbookHomeView, {
-    songs: [mockSong1], setlists, searchQuery: 'Gig 1', activeSongIndex: 0,
+    songs: [mockSong1], setlists, searchQuery: 'Gig 1', activeSongIndex: 0, view: { type: 'ALL_SETLISTS' },
     onSongMembershipChange: () => true, onCreateSetlistForSong: () => true,
     onSelectSong: () => {}, onNewSong: () => {}, onOpenSetlists: () => {}, onDeleteSong: () => {},
   })))
-  assert.match(document.body.textContent, /Song Setlists \(1 of 3\)/)
+  // #319: the search-filtered setlist workspace shows one of the three setlists.
+  assert.equal(document.querySelectorAll('[data-testid^="workspace-setlist-card-"]').length, 1)
   const payload = createBackupPayload([mockSong1], setlists)
   await mountRestore(root)
   await selectBackup(dom, payload)

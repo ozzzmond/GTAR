@@ -154,7 +154,7 @@ function createSampleSharedSong(id, title, artist, revision = 1, publisher = 'us
   }
 }
 
-test('UI 1: SongbookHomeView renders My Songs as default tab and preserves personal library', () => {
+test('UI 1: SongbookHomeView defaults to Songbook › All Songs (no tabs, #319) and preserves personal library', () => {
   const songs = [
     createSampleSong('song-1', 'Personal Song One', 'Artist A'),
     createSampleSong('song-2', 'Personal Song Two', 'Artist B'),
@@ -173,11 +173,10 @@ test('UI 1: SongbookHomeView renders My Songs as default tab and preserves perso
     })
   )
 
-  // Tab navigation is present with My Songs selected by default
-  assert.match(html, /data-testid="tab-my-songs"/)
-  assert.match(html, /aria-selected="true"/)
-  assert.match(html, /data-testid="tab-shared-catalog"/)
-  assert.match(html, /aria-selected="false"/)
+  // #319: the Explorer selection drives one view; default is Songbook › All Songs, no tab bar
+  assert.doesNotMatch(html, /data-testid="tab-(my-songs|setlists|shared-catalog)"/)
+  assert.match(html, /aria-label="Breadcrumb"/)
+  assert.match(html, /aria-current="page"[^>]*>All Songs</)
 
   // Personal songs are rendered
   assert.match(html, /Personal Song One/)
@@ -845,7 +844,7 @@ test('PHASE 4 - TEST 9: Main Songbook and Side Panel agree on confirmed publicat
   )
 
   assert.ok(htmlHomeCached.includes('aria-label="Published to Shared Catalog (Cached)"'))
-  assert.ok(htmlHomeCached.includes('text-amber-400'))
+  assert.ok(htmlHomeCached.includes('text-status-warning'))
 })
 
 test('PHASE 4 - TEST 10: Publication success with confirmed personal persistence', () => {
@@ -1117,7 +1116,7 @@ test('PHASE 5 - TEST 3: GREEN_ICON_APPEARS_AFTER_CONFIRMED_PUBLISH', () => {
   assert.ok(html.includes('data-testid="song-published-status-0"'))
   assert.ok(html.includes('text-status-success'))
   assert.ok(html.includes('Published to Shared Catalog (Server Confirmed)'))
-  assert.equal(html.includes('text-amber-400'), false)
+  assert.equal(html.includes('text-status-warning'), false)
 })
 
 test('PHASE 5 - TEST 4: GREEN_ICON_SHARED_BETWEEN_MAIN_AND_SIDEPANEL', () => {
@@ -1174,7 +1173,7 @@ test('PHASE 5 - TEST 5: STALE_CACHE_NEVER_PRODUCES_FALSE_GREEN', () => {
 
   // Must render amber cached badge, NEVER green success
   assert.ok(htmlHome.includes('data-testid="song-published-status-0"'))
-  assert.ok(htmlHome.includes('text-amber-400'))
+  assert.ok(htmlHome.includes('text-status-warning'))
   assert.ok(htmlHome.includes('Published to Shared Catalog (Cached)'))
   assert.equal(htmlHome.includes('text-status-success'), false)
 })

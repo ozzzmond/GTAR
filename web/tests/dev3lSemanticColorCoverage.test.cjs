@@ -64,6 +64,8 @@ for (const [name, colors] of [
       React.createElement(theme.ThemeModal,{isOpen:true,currentTheme:'custom',customColors:colors,onClose:noop}),
       React.createElement(CustomPaletteEditor,{isOpen:true,customColors:colors,onClose:noop,onSaveAndApply:noop}),
       React.createElement(SongbookHomeView,{songs:[{id:'a',title:'Song A',artist:'Artist',rawContent:'[C]Hello',key:'C'}],activeSongIndex:0,setlists:[{id:'gig',name:'Sunday',songs:[{id:'a',title:'Song A'}]}],onSelectSong:noop,onNewSong:noop,onOpenSetlists:noop,onDeleteSong:noop,onSongMembershipChange:noop,onCreateSetlistForSong:noop}),
+      // #319: setlist cards live in the Explorer setlist workspace.
+      React.createElement(SongbookHomeView,{view:{type:'ALL_SETLISTS'},songs:[{id:'a',title:'Song A',artist:'Artist',rawContent:'[C]Hello',key:'C'}],activeSongIndex:0,setlists:[{id:'gig',name:'Sunday',songs:[{id:'a',title:'Song A'}]}],onSelectSong:noop,onNewSong:noop,onOpenSetlists:noop,onDeleteSong:noop,onSongMembershipChange:noop,onCreateSetlistForSong:noop}),
       React.createElement(FretboardDiagramModal,{voicing:{chord:'C',frets:[-1,3,2,0,1,0],fingers:[0,3,2,0,1,0],baseFret:1},onClose:noop})
     ))
     const candidates = [...new Set([...document.querySelectorAll('[class]')].flatMap(el=>[...el.classList]))]

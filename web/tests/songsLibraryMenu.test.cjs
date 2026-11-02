@@ -26,7 +26,7 @@ let root
 const mount = async (props = {}) => {
   root = createRoot(document.getElementById('root'))
   await act(async () => root.render(React.createElement(SongbookHomeView, {
-    songs, setlists: [], activeSongIndex: 0, activeTab: 'my_songs',
+    songs, setlists: [], activeSongIndex: 0,
     onSelectSong: () => {}, onNewSong: () => {}, onOpenSetlists: () => {}, onDeleteSong: () => {}, ...props,
   })))
 }
@@ -35,9 +35,11 @@ afterEach(async () => { await act(async () => root?.unmount()); root = null })
 
 test('no Key sort option and no Key filter', async () => {
   await mount()
+  // #319: GTAR1 sort pills (Title / Artist / Date)
+  const sorts = [...document.querySelectorAll('[data-testid^="sort-"]')].map(b => b.dataset.testid.slice(5))
+  assert.deepEqual(sorts, ['title', 'artist', 'date'])
   const options = [...document.querySelectorAll('option')].map(o => o.value)
-  assert.ok(options.includes('title') && options.includes('artist') && options.includes('date'))
-  assert.ok(!options.includes('key'), 'Key sort removed')
+  assert.ok(!options.includes('key') && !sorts.includes('key'), 'Key sort removed')
   assert.doesNotMatch(document.body.textContent, /All Keys|Key:/)
 })
 
@@ -45,9 +47,8 @@ test('a saved Key sort falls back to title, and a saved key filter no longer hid
   localStorage.setItem('gtar_songbook_sort', 'key')
   localStorage.setItem('gtar_songbook_filter_key', 'G')
   await mount()
-  const sort = [...document.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === 'artist'))
-  assert.equal(sort.value, 'title')
-  assert.match(document.body.textContent, /Songs Library \(2 of 2\)/)
+  assert.equal(document.querySelector('[data-testid="sort-title"]').getAttribute('aria-pressed'), 'true')
+  assert.match(document.body.textContent, /All Songs\(2 songs\)/)
   assert.ok(document.body.textContent.indexOf('Alpha') < document.body.textContent.indexOf('Bravo'), 'sorted by title')
 })
 
@@ -71,7 +72,7 @@ test('⋯ menu opens the existing import, and is absent without a handler', asyn
 test('⋯ menu is available on an empty library', async () => {
   root = createRoot(document.getElementById('root'))
   await act(async () => root.render(React.createElement(SongbookHomeView, {
-    songs: [], setlists: [], activeSongIndex: 0, activeTab: 'my_songs', onOpenImportSongs: () => {},
+    songs: [], setlists: [], activeSongIndex: 0, onOpenImportSongs: () => {},
     onSelectSong: () => {}, onNewSong: () => {}, onOpenSetlists: () => {}, onDeleteSong: () => {},
   })))
   assert.ok(document.querySelector('[data-testid="songs-library-menu-btn"]'))
@@ -88,22 +89,3 @@ test('#149 S2: ⋯ menu → AI Worker opens the duplicate check', async () => {
   assert.match(document.querySelector('[data-testid="duplicate-summary"]').textContent, /No duplicates found/)
 })
 
-test('#149 layout: Songs Library controls sit inside the filter box, right side Manage → ⋯ → Hide', async () => {
-  await mount({ onOpenImportSongs: () => {}, onTrashDuplicates: () => true })
-  const box = document.querySelector('[data-testid="songs-library-toolbar"]')
-  assert.ok(box.querySelector('#songbook-sort-filter-options select'), 'filters are inside the box')
-  const actions = box.querySelector('[data-testid="songs-library-actions"]')
-  assert.deepEqual([...actions.querySelectorAll('button')].map(b => b.getAttribute('data-testid')),
-    ['toggle-song-selection-mode', 'songs-library-menu-btn', 'toggle-songs-collapse'])
-  const header = document.querySelector('section[aria-label="Songs Library"] > div')
-  assert.equal(header.querySelector('button'), null, 'no controls left outside the box')
-  // Hide collapses the song cards (like Song Setlists); filters and controls stay
-  await act(async () => document.querySelector('[data-testid="toggle-songs-collapse"]').click())
-  assert.equal(document.getElementById('songbook-song-cards').hidden, true)
-  assert.equal(document.getElementById('songbook-sort-filter-options').hidden, false)
-  assert.equal(document.querySelector('[data-testid="toggle-songs-collapse"]').textContent.trim(), 'Show')
-  // Manage re-opens the list
-  await act(async () => document.querySelector('[data-testid="toggle-song-selection-mode"]').click())
-  assert.equal(document.getElementById('songbook-song-cards').hidden, false)
-  assert.ok(document.querySelector('[data-testid="song-selection-bar"]'))
-})

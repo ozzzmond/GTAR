@@ -99,14 +99,12 @@ test('Rendered library actions, selection and section icons respond independentl
   const noop = () => {}
   await render(SongbookHomeView, { songs: [{ id: 'a', title: 'Song A', artist: 'Artist', content: '[C]Hello', key: 'C' }], activeSongIndex: 0, setlists: [{ id: 'gig', name: 'Sunday', songs: [{ id: 'a', title: 'Song A' }] }], onSongMembershipChange: noop, onCreateSetlistForSong: noop, onSelectSong: noop, onNewSong: noop, onOpenSetlists: noop, onDeleteSong: noop, onSelectSetlistSong: noop, onDeleteSetlist: noop })
   apply(target)
-  for (const selector of ['[data-testid="play-setlist-gig"]', '[data-testid="toggle-song-selection-mode"]', '[data-testid="toggle-setlist-selection-mode"]']) {
-    assert.equal(style(selector).color, rgb(target.actionColor))
-    assert.match(style(selector).fontFamily, /Georgia/)
-  }
-  assert.ok(document.querySelectorAll('.ui-section-icon').length >= 3)
+  // #319: the GTAR1 Songbook view has no setlist panel; library Select is a themed ui-button.
+  assert.ok(document.querySelector('[data-testid="toggle-song-selection-mode"]').classList.contains('ui-button'))
+  assert.ok(document.querySelectorAll('.ui-section-icon').length >= 2)
   for (const icon of document.querySelectorAll('.ui-section-icon')) assert.equal(style(icon).color, rgb(target.sectionIconColor))
-  assert.equal(style('.ui-selection-indicator').backgroundColor, rgb(target.selectionColor))
-  await click('[data-testid="toggle-song-selection-mode"]'); await click('[data-testid="select-song-0"]')
+  await click('[data-testid="toggle-song-selection-mode"]'); await click('[data-testid="song-card-0"]')
+  assert.ok(document.querySelector('[data-testid="select-song-0"]').classList.contains('ui-selection-indicator'))
   assert.equal(style('[data-testid="select-song-0"]').backgroundColor, rgb(target.selectionColor))
   const destructive = [document.querySelector('[data-testid="bulk-delete-songs"]')].find(Boolean)
   assert.ok(destructive); assert.equal(destructive.classList.contains('ui-action-text'), false)

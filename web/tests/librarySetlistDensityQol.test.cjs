@@ -18,82 +18,6 @@ const React = require('react')
 const { renderToString } = require('react-dom/server')
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 
-test('SETLIST_CARD_DENSITY: Setlist cards use compact padding, reduced vertical space, and retain title + song count', () => {
-  const songs = [
-    { id: 1, title: 'Hotel California', artist: 'Eagles', key: 'Bm', rawContent: '' },
-    { id: 2, title: 'Take It Easy', artist: 'Eagles', key: 'G', rawContent: '' },
-  ]
-  const setlists = [
-    { id: 'sl-1', name: 'West Coast Set', songs: [{ id: 1 }, { id: 2 }] }
-  ]
-
-  const html = renderToString(React.createElement(SongbookHomeView, {
-    songs,
-    setlists,
-    searchQuery: '',
-    activeSongIndex: 0,
-    onSelectSong: () => {},
-    onSongMembershipChange: () => {},
-    onCreateSetlistForSong: () => {},
-    onNewSong: () => {},
-    onOpenSetlists: () => {},
-    onDeleteSong: () => {},
-    onDeleteSetlist: () => {},
-  }))
-
-  // Title and count rendered
-  assert.match(html, /West Coast Set/)
-  assert.match(html, /2.*songs/)
-
-  // Compact layout verification: uses py-1.5 / py-2 padding, not tall empty card
-  assert.ok(html.includes('py-1.5'), 'Setlist card must use compact vertical padding py-1.5')
-  assert.ok(html.includes('data-testid="setlist-card-sl-1"'), 'Setlist card has test identifier')
-})
-
-test('SETLIST_PLAY_QUICK_ACTION: Quick play action remains directly accessible on setlist card', () => {
-  const songs = [
-    { id: 1, title: 'Hotel California', artist: 'Eagles', key: 'Bm', rawContent: '' }
-  ]
-  const setlists = [
-    { id: 'sl-1', name: 'West Coast Set', songs: [{ id: 1 }] }
-  ]
-
-  const html = renderToString(React.createElement(SongbookHomeView, {
-    songs,
-    setlists,
-    searchQuery: '',
-    activeSongIndex: 0,
-    onSelectSong: () => {},
-    onSongMembershipChange: () => {},
-    onCreateSetlistForSong: () => {},
-    onNewSong: () => {},
-    onOpenSetlists: () => {},
-    onDeleteSong: () => {},
-    onDeleteSetlist: () => {},
-  }))
-
-  assert.ok(html.includes('data-testid="play-setlist-sl-1"'), 'Setlist card has quick play button')
-  assert.match(html, /aria-label="Play setlist /, 'Play button has an accessible name')
-  assert.ok(html.includes('aria-label="Play setlist West Coast Set"'), 'Play button has descriptive aria-label')
-})
-
-test('SETLIST_DELETE_OPTIONS_ACTION: Setlist delete is consolidated into options menu and preserves confirmation guard', () => {
-  const viewCode = readSource(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'))
-
-  // Setlist card does NOT have an always-visible trash button outside the options menu
-  const cardTrashOutsideMenu = viewCode.match(/<button[^>]*title="Delete setlist"[^>]*>[\s\S]*?<\/button>\s*\{?\/\*\s*Three-dot/i)
-  assert.equal(cardTrashOutsideMenu, null, 'Delete button must not be always-visible on setlist card beside menu')
-
-  // Delete option is inside the options menu
-  assert.ok(viewCode.includes('data-testid={`menu-delete-${sl.id}`}'), 'Delete option is present in setlist menu')
-  assert.ok(viewCode.includes('setConfirmDeleteSetlistId(sl.id)'), 'Selecting delete from menu triggers confirmation')
-
-  // Confirmation guard popover preserved
-  assert.ok(viewCode.includes('Delete setlist?'), 'Confirmation dialog text preserved')
-  assert.ok(viewCode.includes('onDeleteSetlist?.(sl.id)'), 'Confirmation executes onDeleteSetlist')
-  assert.ok(viewCode.includes('setConfirmDeleteSetlistId(null)'), 'Cancel dismisses confirmation')
-})
-
 test('SONG_CARD_TITLE+ARTIST_VISIBLE: Song library card clearly renders primary title and secondary artist', () => {
   const songs = [
     { id: 101, title: 'Comfortably Numb', artist: 'Pink Floyd', key: 'Bm', bpm: '127', rawContent: '' }
@@ -240,7 +164,7 @@ test('EXISTING_SEARCH+FILTER_REGRESSION: Search and key/setlist/sort controls re
 
   assert.match(html, /Alpha Song/)
   assert.equal(html.includes('Beta Song'), false, 'Search query must filter out non-matching songs')
-  assert.match(html, /Songs Library.*1.*of.*2/)
+  assert.match(html.replaceAll('<!-- -->', ''), /All Songs.*\(1 song\)/, '#319: GTAR1 heading count')
 })
 
 test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid reserves title width and cards truncate long titles with tooltips', () => {
@@ -248,7 +172,7 @@ test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid reserves title width
 
   // Fit desktop tracks to the available workspace, including the Explorer sidebar.
   assert.ok(
-    viewCode.includes('lg:grid-cols-[repeat(auto-fit,minmax(24rem,1fr))]'),
+    viewCode.includes('lg:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]'),
     'Desktop song tracks must reserve enough width for typical titles'
   )
   assert.ok(viewCode.includes("title={song.title || 'Untitled Song'}"), 'Truncated titles retain a tooltip')

@@ -103,45 +103,6 @@ test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin (Basurahan) removed from More menu
 // =============================================================================
 // 4. SETLIST HIDE BEHAVIOR: SELECT HIDDEN WITH SETLIST CONTROLS
 // =============================================================================
-test('DEV3A_SETLIST_HIDE_BEHAVIOR: Select button hidden when setlists are collapsed; restored when shown', () => {
-  const songbookSource = readSource(path.join(webDir, 'src/components/SongbookHomeView.tsx'))
-
-  // Select button must be conditionally rendered on !setlistsCollapsed alongside New Setlist
-  assert.ok(
-    songbookSource.includes('data-testid="main-new-setlist-btn"'),
-    'New Setlist button must be present in setlists action row'
-  )
-  assert.ok(
-    songbookSource.includes('data-testid="toggle-setlist-selection-mode"'),
-    'Select button must be present in setlists action row'
-  )
-  // #149 layout: New Setlist moved into the setlists ⋯ menu, which follows Manage
-  assert.ok(
-    songbookSource.indexOf('data-testid="toggle-setlist-selection-mode"') < songbookSource.indexOf('data-testid="setlists-menu-btn"'),
-    'Setlists ⋯ menu must follow the Manage button in setlists action row'
-  )
-
-  // toggleSetlists must exit selection mode when collapsing
-  assert.ok(
-    songbookSource.includes('setIsSetlistSelectionMode(false)'),
-    'Exits selection mode when setlists are collapsed'
-  )
-  assert.ok(
-    songbookSource.includes('setSelectedSetlistIds(new Set())'),
-    'Clears selected setlist IDs when collapsing'
-  )
-
-  // Preserves New Setlist and Import buttons in setlists header; canonical Side Panel is in Header
-  assert.ok(songbookSource.includes('<span>New Setlist</span>'), 'New Setlist button preserved')
-  assert.ok(songbookSource.includes('data-testid="main-import-setlist-btn"'), 'Import setlist button preserved')
-  assert.ok(songbookSource.includes("{setlistsCollapsed ? 'Show' : 'Hide'}"), 'Show/Hide toggle button preserved')
-  const headerSource = readSource(path.join(webDir, 'src/components/Header.tsx'))
-  assert.ok(headerSource.includes('aria-label="Open Music Explorer"'), 'Canonical Side Panel button in Header')
-})
-
-// =============================================================================
-// 5. NEW BLANK SONG EDITOR ACTION & UNSAVED CHANGES PROTECTION
-// =============================================================================
 test('DEV3A_NEW_BLANK_SONG_EDITOR_ACTION: New Song icon in toolbar between Insert Section and Paste with unsaved protection', () => {
   const editorSource = readSource(path.join(webDir, 'src/components/DesktopEditor.tsx'))
 

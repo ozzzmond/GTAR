@@ -33,7 +33,7 @@ test('1. Header search input has clear unified placeholder including setlists', 
     onOpenBackupRestoreModal: () => {},
   }))
 
-  assert.match(html, /Search songs, artists, setlists (&|&amp;) online chords\.\.\./)
+  assert.match(html, /Search songs (&|&amp;) setlists\.\.\./, '#319: GTAR1-style placeholder still names setlists')
 })
 
 test('2. SongbookHomeView filters gig setlists when search query is active', () => {
@@ -51,6 +51,7 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
     songs,
     setlists,
     searchQuery: 'Acoustic',
+    view: { type: 'ALL_SETLISTS' },
     activeSongIndex: 0,
     onSelectSong: () => {},
     onSongMembershipChange: () => {},
@@ -60,7 +61,8 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
     onDeleteSong: () => {},
   }))
 
-  assert.match(htmlAcoustic, /Song Setlists.*1 of 2/)
+  // #319: the setlist workspace filters by the global search query
+  assert.doesNotMatch(htmlAcoustic, /Rock Night/)
   assert.match(htmlAcoustic, /Acoustic Classics/)
 
   // Query matching song inside setlist "Wonderwall"
@@ -68,6 +70,7 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
     songs,
     setlists,
     searchQuery: 'Wonderwall',
+    view: { type: 'ALL_SETLISTS' },
     activeSongIndex: 0,
     onSelectSong: () => {},
     onSongMembershipChange: () => {},
@@ -77,7 +80,7 @@ test('2. SongbookHomeView filters gig setlists when search query is active', () 
     onDeleteSong: () => {},
   }))
 
-  assert.match(htmlSongInSetlist, /Song Setlists.*1 of 2/)
+  assert.doesNotMatch(htmlSongInSetlist, /Acoustic Classics/)
   assert.match(htmlSongInSetlist, /Rock Night/)
 })
 
@@ -106,7 +109,7 @@ test('4. Main song library view has exactly one primary search surface in Header
   }))
 
   // Primary global search input exists in Header
-  assert.match(headerHtml, /<input[^>]+type="text"[^>]+placeholder="Search songs, artists, setlists (&|&amp;) online chords\.\.\."/)
+  assert.match(headerHtml, /<input[^>]+type="text"[^>]+placeholder="Search songs (&|&amp;) setlists\.\.\./)
 
   // Render SongbookHomeView
   const homeHtml = renderToString(React.createElement(SongbookHomeView, {
@@ -127,8 +130,8 @@ test('4. Main song library view has exactly one primary search surface in Header
   const homeInputMatches = homeHtml.match(/<input[^>]+type="text"/g) || []
   assert.equal(homeInputMatches.length, 0, 'SongbookHomeView should have zero text inputs (no redundant lower search)')
 
-  // Filters must be preserved: Sort dropdown, Setlist dropdown (#149: the Key filter was removed by owner direction)
-  assert.match(homeHtml, /Sort:/)
+  // #319: GTAR1 filter bar keeps Metadata filter and Title/Artist/Date sort (#149: no Key filter)
+  assert.match(homeHtml, /aria-label="Sort songs"/)
+  assert.match(homeHtml, /data-testid="filter-metadata-select"/)
   assert.doesNotMatch(homeHtml, /Key:/)
-  assert.match(homeHtml, /Setlist:/)
 })

@@ -15,7 +15,7 @@ test('UI_COPY_CLEANUP: SongbookHomeView removes redundant Stage View instruction
 
   // Proves retentions
   assert.ok(homeViewContent.includes('Songs Library'), 'SongbookHomeView must retain Songs Library title')
-  assert.ok(homeViewContent.includes('filteredIndexedSongs.length'), 'SongbookHomeView must retain song count')
+  assert.ok(homeViewContent.includes('sortedIndexedSongs.length'), 'SongbookHomeView must retain song count')
 })
 
 test('PROD_VERSION_FALLBACK: tag-derived production version retains its fallback', () => {

@@ -1,29 +1,87 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { GripVertical, PanelLeftClose, X } from 'lucide-react'
 import { MusicExplorerNav, type MusicExplorerNavProps } from './MusicExplorerNav'
+import { EXPLORER_MAX_WIDTH, EXPLORER_MIN_WIDTH, clampExplorerWidth } from '../utils/explorerSidebar'
 
 const COLLAPSED_KEY = 'gtar_explorer_collapsed'
+const WIDTH_KEY = 'gtar_explorer_width'
+const KEY_STEP = 16
+/** GTAR1 shows the aside from md (768px); below that the Explorer is a drawer. */
+const DESKTOP_QUERY = 768
+
+const readWidth = (): number | null => {
+  try {
+    const value = Number(localStorage.getItem(WIDTH_KEY))
+    return Number.isFinite(value) && value > 0 ? clampExplorerWidth(value) : null
+  } catch { return null }
+}
+const remember = (key: string, value: string) => {
+  try { localStorage.setItem(key, value) } catch { /* Device preference is optional. */ }
+}
 
 export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNavProps & { isOpen: boolean; onClose: () => void }): React.ReactElement {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSED_KEY) === 'true' } catch { return false }
   })
+  // null = GTAR1 default widths (w-64 lg:w-72) until the user resizes on this device.
+  const [width, setWidth] = useState<number | null>(readWidth)
+  const asideRef = useRef<HTMLElement>(null)
+  const gripRef = useRef<HTMLButtonElement>(null)
+  const collapseRef = useRef<HTMLButtonElement>(null)
+  const restoreFocus = useRef<'grip' | 'collapse' | null>(null)
   const drawer = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   useEffect(() => { close.current = onClose }, [onClose])
-  const toggle = () => setCollapsed(value => {
-    const next = !value
-    try { localStorage.setItem(COLLAPSED_KEY, String(next)) } catch { /* Device preference is optional. */ }
-    return next
-  })
+  const setCollapsedPersisted = (next: boolean) => {
+    restoreFocus.current = next ? 'grip' : 'collapse'
+    setCollapsed(next)
+    remember(COLLAPSED_KEY, String(next))
+  }
+  useEffect(() => {
+    if (restoreFocus.current === 'grip') gripRef.current?.focus()
+    else if (restoreFocus.current === 'collapse') collapseRef.current?.focus()
+    restoreFocus.current = null
+  }, [collapsed])
+  const commitWidth = (value: number) => {
+    const next = clampExplorerWidth(value)
+    setWidth(next)
+    remember(WIDTH_KEY, String(next))
+  }
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const left = asideRef.current?.getBoundingClientRect().left ?? 0
+    const handle = event.currentTarget
+    handle.setPointerCapture?.(event.pointerId)
+    const move = (e: PointerEvent) => setWidth(clampExplorerWidth(e.clientX - left))
+    const end = (e: PointerEvent) => {
+      commitWidth(e.clientX - left)
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+  }
+  const resizeByKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const current = width ?? (asideRef.current?.getBoundingClientRect().width || 288)
+    const next = event.key === 'ArrowLeft' ? current - KEY_STEP
+      : event.key === 'ArrowRight' ? current + KEY_STEP
+        : event.key === 'Home' ? EXPLORER_MIN_WIDTH
+          : event.key === 'End' ? EXPLORER_MAX_WIDTH : null
+    if (next === null) return
+    event.preventDefault()
+    commitWidth(next)
+  }
   useEffect(() => {
     if (!isOpen) return
-    if (window.innerWidth >= 1024) {
+    if (window.innerWidth >= DESKTOP_QUERY) {
       let active = true
       void Promise.resolve().then(() => {
         if (!active) return
         setCollapsed(false)
-        try { localStorage.setItem(COLLAPSED_KEY, 'false') } catch { /* Device preference is optional. */ }
+        remember(COLLAPSED_KEY, 'false')
         close.current()
       })
       return () => { active = false }
@@ -40,7 +98,7 @@ export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNav
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
-    const resize = () => { if (window.innerWidth >= 1024) close.current() }
+    const resize = () => { if (window.innerWidth >= DESKTOP_QUERY) close.current() }
     window.addEventListener('keydown', keydown, true)
     window.addEventListener('resize', resize)
     return () => {
@@ -55,33 +113,49 @@ export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNav
     onSelect: (target: Parameters<MusicExplorerNavProps['onSelect']>[0]) => { nav.onSelect(target); onClose() },
     onNewSong: () => { nav.onNewSong(); onClose() },
     onNewSetlist: () => { nav.onNewSetlist(); onClose() },
-    onOpenSources: nav.onOpenSources ? () => { nav.onOpenSources?.(); onClose() } : undefined,
   }
+  const collapseButton = (
+    <button ref={collapseRef} type="button" data-testid="explorer-collapse" aria-label="Collapse Music Explorer" aria-expanded="true"
+      aria-controls="explorer-sidebar" onClick={() => setCollapsedPersisted(true)}
+      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface hover:text-app-heading">
+      <PanelLeftClose className="h-4 w-4" />
+    </button>
+  )
   return <>
-    <aside data-testid="explorer-sidebar" data-collapsed={collapsed} aria-label="Music Explorer sidebar"
-      className={`hidden lg:flex shrink-0 flex-col border-r border-app-border bg-app-toolbar ${collapsed ? 'w-14' : 'w-64 xl:w-72'}`}>
-      <div className="flex min-h-12 items-center justify-between px-1">
-        {!collapsed && <span className="pl-3 text-xs font-semibold text-app-heading">Music Explorer</span>}
-        <button type="button" aria-label={collapsed ? 'Expand Music Explorer' : 'Collapse Music Explorer'} aria-expanded={!collapsed}
-          onClick={toggle} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-app-muted hover:bg-app-surface hover:text-app-heading">
-          {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-        </button>
-      </div>
-      {!collapsed && <div className="overflow-y-auto"><MusicExplorerNav {...nav} /></div>}
-    </aside>
+    {collapsed ? (
+      <button ref={gripRef} type="button" data-testid="explorer-edge-grip" aria-label="Expand Music Explorer" aria-expanded="false"
+        aria-controls="explorer-sidebar" onClick={() => setCollapsedPersisted(false)}
+        className="group relative z-20 hidden md:flex shrink-0 w-3 self-stretch items-start justify-start overflow-visible border-r border-app-border bg-app-toolbar cursor-pointer">
+        {/* 44px target: the hit area overhangs the 12px edge strip. */}
+        <span className="mt-3 flex h-11 w-11 shrink-0 items-center justify-start">
+          <span className="flex h-11 w-5 items-center justify-center rounded-r-lg border border-l-0 border-app-border bg-app-surface text-app-muted shadow-md group-hover:text-app-heading group-focus-visible:ring-2 group-focus-visible:ring-app-action">
+            <GripVertical className="h-3.5 w-3.5" />
+          </span>
+        </span>
+      </button>
+    ) : (
+      <aside ref={asideRef} id="explorer-sidebar" data-testid="explorer-sidebar" data-collapsed="false" aria-label="Music Explorer sidebar"
+        style={width ? { width } : undefined}
+        className={`relative hidden md:block shrink-0 bg-app-toolbar border-r border-app-border ${width ? '' : 'w-64 lg:w-72'}`}>
+        <div className="h-full overflow-y-auto"><MusicExplorerNav {...nav} headerAction={collapseButton} /></div>
+        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize Music Explorer"
+          aria-valuemin={EXPLORER_MIN_WIDTH} aria-valuemax={EXPLORER_MAX_WIDTH}
+          aria-valuenow={width ?? 288}
+          data-testid="explorer-resize-handle" onPointerDown={startResize} onKeyDown={resizeByKey}
+          className="absolute inset-y-0 -right-1.5 z-10 w-3 cursor-col-resize touch-none outline-none hover:bg-app-action/30 focus-visible:bg-app-action/50" />
+      </aside>
+    )}
     {isOpen && <div role="dialog" aria-modal="true" aria-label="Music Explorer drawer"
-      className="lg:hidden fixed inset-0 z-50 flex" data-testid="music-explorer-drawer">
+      className="md:hidden fixed inset-0 z-50 flex" data-testid="music-explorer-drawer">
       <button type="button" tabIndex={-1} aria-label="Dismiss Music Explorer" onClick={onClose}
         className="fixed inset-0 bg-app-base/80" />
-      <div ref={drawer} className="relative z-10 flex h-full w-72 max-w-[85vw] flex-col border-r border-app-border bg-app-toolbar shadow-xl">
-        <div className="flex min-h-12 items-center justify-between pl-4 pr-1">
-          <span className="text-xs font-semibold text-app-heading">Music Explorer</span>
+      <div ref={drawer} className="relative z-10 flex h-full w-72 max-w-[80vw] flex-col border-r border-app-border bg-app-toolbar shadow-2xl">
+        <div className="flex-1 overflow-y-auto"><MusicExplorerNav {...drawerNav} headerAction={
           <button type="button" aria-label="Close Music Explorer" onClick={onClose}
-            className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-muted hover:bg-app-surface">
-            <X className="h-5 w-5" />
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface">
+            <X className="h-4 w-4" />
           </button>
-        </div>
-        <div className="flex-1 overflow-y-auto"><MusicExplorerNav {...drawerNav} /></div>
+        } /></div>
       </div>
     </div>}
   </>

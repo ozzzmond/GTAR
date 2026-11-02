@@ -513,9 +513,6 @@ function LibraryApp() {
 
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = modals.setlistDrawer
   const [explorerSelection, setExplorerSelection] = useState<ExplorerTarget>({ type: 'ALL_SONGS' })
-  // Canonical Songbook workspace navigation (shared with the in-page tabs and filters).
-  const [songbookTab, setSongbookTab] = useState<'my_songs' | 'setlists' | 'shared_catalog'>('my_songs')
-  const [songbookTag, setSongbookTag] = useState<string | null>(null)
   const [sharingSetlist, setSharingSetlist] = useState<WebSetlist | null>(null)
   const [incomingSharedSetlist, setIncomingSharedSetlist] = useState<SharedSetlistPayload | null>(null)
   // True when StageView enters fullscreen or focus mode — hides the global Header
@@ -946,40 +943,6 @@ function LibraryApp() {
     setQueueMode('setlist')
   }
 
-  // Delete setlist (tombstone for cloud sync propagation)
-  const handleDeleteSetlist = (setlistId: string | number) => {
-    setSetlists((prev) =>
-      prev.map((sl) => (String(sl.id) === String(setlistId) ? { ...sl, isDeleted: true } : sl))
-    )
-    if (activeSetlistId === setlistId) {
-      setActiveSetlistId(null)
-      setQueueMode('library')
-    }
-  }
-
-  // Bulk delete setlists
-  const handleBulkDeleteSetlists = (ids: Array<string | number>) => {
-    const idSet = new Set(ids.map(String))
-    setSetlists((prev) => prev.map((sl) => (idSet.has(String(sl.id)) ? { ...sl, isDeleted: true } : sl)))
-    if (activeSetlistId && idSet.has(String(activeSetlistId))) {
-      setActiveSetlistId(null)
-      setQueueMode('library')
-    }
-    setToastMessage(`Deleted ${ids.length} ${ids.length === 1 ? 'setlist' : 'setlists'}.`)
-    setTimeout(() => setToastMessage(null), 3000)
-  }
-
-  // Rename setlist
-  const handleRenameSetlist = (setlistId: string | number, newName: string) => {
-    const trimmed = newName.trim()
-    if (!trimmed) return
-    setSetlists((prev) =>
-      prev.map((sl) => (String(sl.id) === String(setlistId) ? { ...sl, name: trimmed } : sl))
-    )
-    setToastMessage(`Renamed setlist to "${trimmed}"`)
-    setTimeout(() => setToastMessage(null), 3000)
-  }
-
   const handleManageSetlist = (setlist: WebSetlist) => openSetlistManager(setlist)
 
   // #312 S2 (DEV): GTAR1 Setlist Manager. Each change is one guarded write (stale-write guard);
@@ -1071,31 +1034,11 @@ function LibraryApp() {
     return true
   }
 
-  // Music Explorer navigation: route into existing GTAR handlers and close the drawer.
+  // Music Explorer navigation (#319): the selection drives the single GTAR1 Songbook view.
   const handleExplorerSelect = (target: ExplorerTarget) => {
-    setExplorerSelection(target)
     setIsSetlistDrawerOpen(false)
-    if (target.type === 'ALL_SONGS') {
-      navigateSafely(() => {
-        setSongbookTag(null)
-        setSongbookTab('my_songs')
-        setActiveView('songbook')
-      })
-      return
-    }
-    if (target.type === 'TAG') {
-      navigateSafely(() => {
-        setSongbookTag(target.tag)
-        setSongbookTab('my_songs')
-        setActiveView('songbook')
-      })
-      return
-    }
-    // ALL_SETLISTS | UNFILED_SETLISTS: original GTAR has no folder model, so every
-    // existing setlist is unfiled and both targets open the canonical setlist workspace.
     navigateSafely(() => {
-      setSongbookTag(null)
-      setSongbookTab('setlists')
+      setExplorerSelection(target)
       setActiveView('songbook')
     })
   }
@@ -1709,6 +1652,10 @@ function LibraryApp() {
           onImportSharedCatalogSong={handleSaveSongFromEditor}
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
+          onNewSong={() => navigateSafely(handleNewSong)}
+          activeSection={explorerSelection.type === 'ALL_SETLISTS' || explorerSelection.type === 'UNFILED_SETLISTS' ? 'setlists'
+            : explorerSelection.type === 'ALL_SONGS' || explorerSelection.type === 'TAG' ? 'songs' : null}
+          onOpenSection={(section) => handleExplorerSelect({ type: section === 'songs' ? 'ALL_SONGS' : 'ALL_SETLISTS' })}
           autoSyncBlocked={activeView === 'editor' || Boolean(crossTabConflict)}
           onCloudRestore={handleFullRestore}
           onCloudMerge={handleSmartMerge}
@@ -1772,15 +1719,14 @@ function LibraryApp() {
 
       {isStagePerformanceMode && <button type="button" aria-label="Open Music Explorer"
         onClick={() => setIsSetlistDrawerOpen(true)}
-        className="lg:hidden fixed top-2 left-2 z-40 flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-app-toolbar text-app-text border border-app-border">
+        className="md:hidden fixed top-2 left-2 z-40 flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-app-toolbar text-app-text border border-app-border">
         <Menu className="h-5 w-5" />
       </button>}
       {/* Main Workspace: Songbook Library vs Split Desktop Editor vs Trash vs 1:1 Stage View */}
       <div className="flex flex-1 min-h-0">
         <ExplorerNavigation isOpen={isSetlistDrawerOpen} onClose={() => setIsSetlistDrawerOpen(false)}
           songs={songs} setlists={setlists} currentSelection={explorerSelection} onSelect={handleExplorerSelect}
-          onNewSong={() => navigateSafely(handleNewSong)} onNewSetlist={() => navigateSafely(handleNewSetlist)}
-          onOpenSources={() => navigateSafely(() => setIsWebsiteUrlModalOpen(true))} />
+          onNewSong={() => navigateSafely(handleNewSong)} onNewSetlist={() => navigateSafely(handleNewSetlist)} />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
           <SongbookHomeView
@@ -1801,8 +1747,6 @@ function LibraryApp() {
             onManageSetlist={handleManageSetlist}
             onOpenSetlistManager={openSetlistManager}
             onDeleteSong={handleDeleteSong}
-            onDeleteSetlist={handleDeleteSetlist}
-            onRenameSetlist={handleRenameSetlist}
             setlists={setlists}
             onSelectSetlistSong={(setlistId, songIdx) => {
               handleSelectSetlistSong(setlistId, songIdx)
@@ -1811,7 +1755,6 @@ function LibraryApp() {
             onImportSingleSetlist={handleImportSingleSetlist}
             onBulkDeleteSongs={handleBulkDeleteSongs}
             onBulkAddSongsToSetlist={handleBulkAddSongsToSetlist}
-            onBulkDeleteSetlists={handleBulkDeleteSetlists}
             onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
             onShareSetlist={(sl) => setSharingSetlist(sl)}
             onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
@@ -1821,16 +1764,13 @@ function LibraryApp() {
             onUpdateSong={handleUpdateSong}
             confirmedCatalogIds={confirmedCatalogIds}
             freshCatalogIds={freshCatalogIds}
-            activeTab={songbookTab}
-            onActiveTabChange={setSongbookTab}
-            tagFilter={songbookTag}
-            onTagFilterChange={setSongbookTag}
-            setlistScope={
-              isDevEnv && (explorerSelection.type === 'ALL_SETLISTS' || explorerSelection.type === 'UNFILED_SETLISTS')
-                ? explorerSelection.type
-                : null
-            }
-            onSelectSetlistScope={(scope) => handleExplorerSelect({ type: scope })}
+            view={explorerSelection}
+            onSelectView={handleExplorerSelect}
+            onEditSong={(songIdx) => navigateSafely(() => {
+              handleSelectLibrarySong(songIdx)
+              setActiveView('editor')
+            })}
+            onOpenSources={() => setIsWebsiteUrlModalOpen(true)}
           />
         ) : activeView === 'editor' ? (
           <DesktopEditor

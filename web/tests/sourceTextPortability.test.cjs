@@ -19,12 +19,12 @@ for (const eol of ['LF', 'CRLF']) {
     const result = spawnSync(process.execPath, [
       '--require', path.join(__dirname, 'helpers/checkoutEol.cjs'),
       '--test', '--test-reporter=tap',
-      '--test-name-pattern=DEV3A_SETLIST_HIDE_BEHAVIOR|DEV3A_NEW_BLANK_SONG_EDITOR_ACTION|workflow isolates|DEV5C_QA_1_2|single-state binding|DEV3_SETLIST_DRAWER_NAVIGATION|MENU_CLICK_DOES_NOT_LAUNCH_STAGE|RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING',
+      '--test-name-pattern=DEV3A_NEW_BLANK_SONG_EDITOR_ACTION|workflow isolates|DEV5C_QA_1_2|single-state binding|DEV3_SETLIST_DRAWER_NAVIGATION|MENU_CLICK_DOES_NOT_LAUNCH_STAGE|RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING',
       ...['dev3aFieldFixes', 'prodPromotionWorkflow', 'dev5cFieldQaUiCorrections', 'transposeKeyCorrectness', 'dev3QolNavigationStageControls', 'librarySetlistDensityQol'].map(name => path.join(__dirname, `${name}.test.cjs`)),
     ], { encoding: 'utf8', env, timeout: 60000 })
     assert.equal(result.error, undefined)
     assert.equal(result.status, 0, result.stdout + result.stderr)
     assert.match(result.stdout, /# fail 0/)
-    assert.match(result.stdout, /# tests 8\b/)
+    assert.match(result.stdout, /# tests 7\b/)
   })
 }
