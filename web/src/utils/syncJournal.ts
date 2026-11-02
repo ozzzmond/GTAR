@@ -8,14 +8,16 @@ import { recoverySourceDigest } from './recoverySourceDigest'
 import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, putRecoveryArchive, recoveryArchiveEntries,
   recoveryArchiveGet, recoveryArchivesInIndexedDb, removeRecoveryArchive } from './recoveryArchiveStore'
 import { LIBRARY_DB_NAME, LIBRARY_EXTERNAL_EVENT, LibraryStaleWriteError, isLibraryToken, libraryStoreActive, libraryStoreDecode, libraryStoreLoad,
-  libraryStorePersist, libraryStoreRead, libraryStoreRevision, openReadOnlyLibrary, prepareLibraryStore,
+  libraryStorePersist, libraryStoreRead, libraryStoreRevision, openReadOnlyLibrary, blockLibraryStore, prepareLibraryStore,
   type LibrarySource, type LibraryStorePreparation, type MigrationStep } from './libraryStore'
-import { LIBRARY_V2_KEY, readLegacyLibrary } from './legacyLibrarySources'
+import { LIBRARY_V2_KEY, B2_FLAG_KEY, LIBRARY_B1_KEY, readLegacyLibrary } from './legacyLibrarySources'
 
 const ownerKey = 'gtar_sync_library_owner'
 
 export const LIBRARY_KEY = 'gtar_library_v1'
 export const SYNC_RETIRED_KEY = 'gtar_sync_retired_v1'
+/** #300 review: set once the library lives in IndexedDB. A later start that cannot open it fails closed instead of writing the frozen gtar_library_v1. */
+export const LIBRARY_STORE_MIGRATED_KEY = 'gtar_library_b3_migrated'
 export { RESTORE_SNAPSHOT_KEY }
 
 import { STAGE_SESSION_KEY } from './stageSession'
@@ -211,6 +213,9 @@ function tagArchive(key: string, scope: string | null, storage: Storage): void {
 }
 function archiveVisible(key: string, view: RecoveryView, scopes: Record<string, string>): boolean {
   const tag = Object.hasOwn(scopes, key) ? scopes[key] : null
+  // #300 review: with the device-owned library (scope null) every archive belongs to this device, so
+  // archives tagged by an old B2 partition stay visible (read-only) instead of disappearing.
+  if (view.scope === null) return view.legacy
   return tag === null ? view.legacy : tag === view.scope
 }
 
@@ -1074,7 +1079,8 @@ function canonicalLibrary(library: SyncLibrary): SyncLibrary {
 /**
  * #300 B3 startup: opens the IndexedDB library and, on first run, copies the earlier library into
  * it (verified; the earlier keys stay as they are, read-only). On failure the earlier library stays
- * in use: gtar_library_v1 as before, or a read-only copy when only B1/B2 storage held it.
+ * in use: gtar_library_v1 as before, or a read-only copy when only B1/B2 storage held it. When this
+ * device already moved to IndexedDB (or the earlier copy is frozen B1/B2), it fails closed instead.
  */
 export async function prepareLibraryStorage(storage: Storage = localStorage, options: { factory?: IDBFactory | null; failAt?: MigrationStep } = {}): Promise<LibraryStorePreparation> {
   const factory = options.factory !== undefined ? options.factory : typeof indexedDB !== 'undefined' ? indexedDB : null
@@ -1085,11 +1091,27 @@ export async function prepareLibraryStorage(storage: Storage = localStorage, opt
     validate: library => validateLibrary(library),
     ...(options.failAt ? { failAt: options.failAt } : {}),
   })
-  if (prepared.active) return prepared
+  if (prepared.active) {
+    try { storage.setItem(LIBRARY_STORE_MIGRATED_KEY, '1') } catch { /* marker is best effort; the receipt in IndexedDB is authoritative */ }
+    return prepared
+  }
   appLogger.error('LibraryStore', 'Songbook not moved to IndexedDB; the earlier storage stays in use', undefined, prepared.error ?? undefined)
   const kept = source as LibrarySource | null
   if (kept && kept.key !== LIBRARY_KEY) {
     try { validateLibrary(kept.library); openReadOnlyLibrary(kept); return { ...prepared, readOnly: true } } catch { /* damaged: recovery flow below */ }
+  }
+  // #300 review: when this device already moved to IndexedDB, or the earlier copy is a frozen B1/B2
+  // source, the stale gtar_library_v1 must never become the writable library again (edits would be
+  // lost on the next start). Fail closed at the storage seam: hold an empty read-only state so every
+  // save is refused, and let the caller show the error instead of the stale copy.
+  if (storage.getItem(LIBRARY_STORE_MIGRATED_KEY) === '1' || storage.getItem(B2_FLAG_KEY) === '1' || storage.getItem(LIBRARY_B1_KEY) === '1') {
+    try { blockLibraryStore() } catch { /* no state: the caller still blocks the editor */ }
+    return {
+      ...prepared,
+      readOnly: true,
+      blocked: true,
+      error: `The songbook could not be opened from the new device storage (${prepared.error ?? 'unknown error'}). To avoid overwriting newer data it is not shown or changed: export recovery data, then reload to retry.`,
+    }
   }
   return prepared
 }

@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react'
 import { inspectRecovery, recoveryExportData } from './syncJournal'
 import { exportB2Partitions } from './legacyLibrarySources'
+import { exportSafetySnapshots } from './libraryStore'
 import { RECOVERY_CHANGED_EVENT } from './recoveryAttention'
 
 /** Signature of the archives covered by the last export handed out on this device. */
@@ -15,9 +16,10 @@ export const RECOVERY_EXPORT_FILE_NAME = 'GTAR-storage-recovery.json'
 const SAVED_EVENT = 'gtar-recovery-export-saved'
 const EVENTS = ['gtar-library-persisted', 'storage', RECOVERY_CHANGED_EVENT, SAVED_EVENT] as const
 
-/** Full recovery export: every recovery source plus every B2 partition (a failing partition is recorded, not fatal). */
+/** Full recovery export: every recovery source, the IndexedDB safety snapshots, plus every B2 partition (a failing partition is recorded, not fatal). */
 export async function recoveryExportWithPartitions(storage: Storage = localStorage): Promise<Record<string, string>> {
   const data = recoveryExportData(storage)
+  Object.assign(data, await exportSafetySnapshots())
   Object.assign(data, await exportB2Partitions(storage, typeof indexedDB !== 'undefined' ? indexedDB : null))
   return data
 }

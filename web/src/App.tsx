@@ -113,6 +113,7 @@ const LIBRARY_STORE_ENABLED = isDevEnv
 function LibraryStartup() {
   const [ready, setReady] = useState(() => !needsArchiveStartup() && (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined'))
   const [storageNotice, setStorageNotice] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<string | null>(null)
   useEffect(() => {
     if (ready) return
     let live = true
@@ -125,14 +126,25 @@ function LibraryStartup() {
       if (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined') return
       const prepared = await prepareLibraryStorage()
       if (prepared.active) appLogger.info('LibraryStore', `Library ready in ${prepared.ms} ms: ${prepared.songs} songs, ${prepared.setlists} setlists${prepared.migrated ? ` (moved from ${prepared.source})` : ''}`)
-      else if (live) setStorageNotice(prepared.readOnly
-        ? `Your songbook could not be moved to the new device storage (${prepared.error}). It is shown read-only so nothing is lost: export a backup, then reload to retry.`
-        : `Your songbook could not be moved to the new device storage (${prepared.error}). The earlier storage stays in use and nothing was changed; reload to retry.`)
+      else if (live) {
+        // #300 review: after the move to IndexedDB, an unreadable start must not show or write the
+        // frozen gtar_library_v1. The library is not loaded: only the error and a recovery export.
+        if (prepared.blocked) setBlocked(prepared.error ?? 'The songbook could not be opened from the new device storage.')
+        else setStorageNotice(prepared.readOnly
+          ? `Your songbook could not be moved to the new device storage (${prepared.error}). It is shown read-only so nothing is lost: export a backup, then reload to retry.`
+          : `Your songbook could not be moved to the new device storage (${prepared.error}). The earlier storage stays in use and nothing was changed; reload to retry.`)
+      }
     }
     startup().catch(() => undefined).finally(() => { if (live) setReady(true) })
     return () => { live = false }
   }, [ready])
   if (!ready) return <p role="status" className="p-4 text-app-muted">Loading library…</p>
+  if (blocked) return <>
+    <aside role="alert" data-testid="library-store-blocked" className="p-4 bg-amber-100 text-black">{blocked}</aside>
+    <div className="p-4">
+      <button className="underline cursor-pointer" onClick={() => { exportOldRecoveryData().catch(() => undefined) }}>Export recovery data</button>
+    </div>
+  </>
   return <>
     {storageNotice && <aside role="alert" data-testid="library-store-fallback" className="p-4 bg-amber-100 text-black">{storageNotice}</aside>}
     <OldRecoveryExportPrompt />

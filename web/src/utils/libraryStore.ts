@@ -352,6 +352,14 @@ export async function readSafetySnapshot(id: string): Promise<SyncLibrary | null
   const record = await request(state.db.transaction([SNAPSHOTS], 'readonly').objectStore(SNAPSHOTS).get(id)) as SafetySnapshot | undefined
   return record ? JSON.parse(record.raw) as SyncLibrary : null
 }
+/** Recovery export: every safety snapshot on this device (the pre-restore copy stays recoverable). */
+export async function exportSafetySnapshots(): Promise<Record<string, string>> {
+  if (!state?.db) return {}
+  const all = await request(state.db.transaction([SNAPSHOTS], 'readonly').objectStore(SNAPSHOTS).getAll()) as SafetySnapshot[]
+  const data: Record<string, string> = {}
+  for (const snapshot of all) data[`gtar_library_snapshot::${snapshot.id}`] = snapshot.raw
+  return data
+}
 
 // One-time migration and startup.
 export interface LibrarySource { key: string; library: SyncLibrary }
@@ -365,7 +373,7 @@ export interface LibraryStoreDeps {
   failAt?: MigrationStep
 }
 export interface LibraryStorePreparation {
-  active: boolean; migrated: boolean; readOnly: boolean; source: string | null; songs: number; setlists: number; ms: number; error: string | null
+  active: boolean; migrated: boolean; readOnly: boolean; /** #300 review: storage could not be opened and the earlier copy must not be written (fail closed). */ blocked: boolean; source: string | null; songs: number; setlists: number; ms: number; error: string | null
 }
 
 const recordText = (value: unknown) => JSON.stringify(value)
@@ -391,7 +399,7 @@ function verifyCopy(source: SyncLibrary, copy: SyncLibrary): void {
 export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<LibraryStorePreparation> {
   const started = Date.now()
   const result = (extra: Partial<LibraryStorePreparation>): LibraryStorePreparation =>
-    ({ active: false, migrated: false, readOnly: false, source: null, songs: 0, setlists: 0, ms: Date.now() - started, error: null, ...extra })
+    ({ active: false, migrated: false, readOnly: false, blocked: false, source: null, songs: 0, setlists: 0, ms: Date.now() - started, error: null, ...extra })
   const step = (name: MigrationStep) => { if (deps.failAt === name) throw new Error(`Migration interrupted at ${name}`) }
   let db: IDBDatabase | null = null
   let source: LibrarySource | null = null
@@ -414,18 +422,35 @@ export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<Libra
     if (library && library.songs.length + library.setlists.length > 0) await takeSafetySnapshot('before-migration', library, db)
     step('write')
     const token = library ? makeToken(1) : null
+    let migratedHere = false
     {
       const tx = db.transaction([SONGS, SETLISTS, META], 'readwrite')
       const finished = done(tx)
       const songs = tx.objectStore(SONGS), setlists = tx.objectStore(SETLISTS), meta = tx.objectStore(META)
-      songs.clear(); setlists.clear(); meta.delete('head')
-      if (library && token) {
-        for (const song of library.songs) songs.put({ id: String(song.id), data: song })
-        for (const list of library.setlists) setlists.put({ id: String(list.id), data: list })
-        const mirror = mirrorOf(token, library)
-        meta.put({ key: 'head', schemaVersion: LIBRARY_SCHEMA_VERSION, rev: 1, token, songOrder: mirror.songOrder, setlistOrder: mirror.setlistOrder, extra: extraOf(library), updatedAt: Date.now() } satisfies HeadRecord)
+      const receiptRequest = meta.get('migration')
+      receiptRequest.onsuccess = () => {
+        // #300 review: another tab may have completed the migration between our first read and this
+        // write (with edits since). Recheck the receipt inside the transaction: keep its records and
+        // adopt the committed library below instead of replacing them with the older source.
+        if (receiptRequest.result) return
+        migratedHere = true
+        songs.clear(); setlists.clear(); meta.delete('head')
+        if (library && token) {
+          for (const song of library.songs) songs.put({ id: String(song.id), data: song })
+          for (const list of library.setlists) setlists.put({ id: String(list.id), data: list })
+          const mirror = mirrorOf(token, library)
+          meta.put({ key: 'head', schemaVersion: LIBRARY_SCHEMA_VERSION, rev: 1, token, songOrder: mirror.songOrder, setlistOrder: mirror.setlistOrder, extra: extraOf(library), updatedAt: Date.now() } satisfies HeadRecord)
+        }
       }
       await finished
+    }
+    if (!migratedHere) {
+      // The receipt was committed by another tab before this write: reuse its result, do not migrate.
+      const adopted = await readAll(db)
+      const adoptedLibrary = adopted.head ? adopted.library : null
+      if (adoptedLibrary) deps.validate(adoptedLibrary)
+      install(db, adopted.head?.token ?? null, adoptedLibrary)
+      return result({ active: true, source: adopted.receipt?.source ?? source?.key ?? null, songs: adoptedLibrary?.songs.length ?? 0, setlists: adoptedLibrary?.setlists.length ?? 0 })
     }
     step('verify')
     const copy = await readAll(db)
@@ -454,6 +479,14 @@ export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<Libra
  */
 export function openReadOnlyLibrary(source: LibrarySource): void {
   install(null, `${TOKEN_PREFIX}0|readonly`, JSON.parse(JSON.stringify(source.library)) as SyncLibrary, true)
+}
+
+/**
+ * #300 review: no library could be opened and it must not be replaced by a stale copy. Hold a
+ * read-only, empty state so the storage seam refuses every save until a reload succeeds.
+ */
+export function blockLibraryStore(): void {
+  install(null, `${TOKEN_PREFIX}0|blocked`, null, true)
 }
 
 /** Tests: forget this tab's state (the database is left as it is). */

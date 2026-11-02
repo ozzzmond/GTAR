@@ -166,3 +166,62 @@ test('safety snapshots: taken before restore, last 5 kept, oldest dropped first'
   assert.equal((await tab.store.readSafetySnapshot(ids[5])).songs[0].title, 'v5')
   assert.equal(tab.store.SNAPSHOT_MAX_BYTES, 50 * 1024 * 1024)
 })
+
+// #300 review finding 1: two tabs migrating at once. The second tab must recheck the receipt inside
+// the write transaction and reuse the committed migration, never replace newer edits with its source.
+test('#300: a second tab registering after the migration reuses it instead of re-migrating', async () => {
+  const { storage, factory, sourceRaw } = device(20, 2)
+  const a = h.newTab()
+  const b = h.newTab()
+  // B's first read (no receipt yet) runs, then B must read its source. That hook does A's migration
+  // and an edit, so B's write transaction races the already-committed migration.
+  const prepB = await b.store.prepareLibraryStore({
+    factory,
+    validate: () => {},
+    readSource: async () => {
+      const prepA = await a.sj.prepareLibraryStorage(storage, { factory })
+      assert.equal(prepA.active, true, prepA.error)
+      const head = a.sj.libraryRevision(storage)
+      a.sj.persistLibrary(titled(a.sj.readPersistedLibrary(storage), 'From A'), storage, { expectedRaw: head })
+      await a.store.flushLibraryStore()
+      return { key: V1, library: JSON.parse(sourceRaw) }
+    },
+  })
+  assert.equal(prepB.active, true, prepB.error)
+  assert.equal(prepB.migrated, false, 'the second tab reused the committed migration')
+  assert.equal(b.sj.readPersistedLibrary(storage).songs[0].title, 'From A', 'the first tab edit was not replaced')
+  assert.equal(factory.dump(DB, 'songs').length, 20)
+})
+
+// #300 review finding 2: after migration, an unreadable IndexedDB start must fail closed instead of
+// making the frozen gtar_library_v1 writable (edits would vanish on the next start).
+test('#300: an unreadable start after migration fails closed, never writing the frozen gtar_library_v1', async () => {
+  const { storage, factory } = device(5, 1)
+  assert.equal((await open(storage, factory)).prepared.active, true, 'first start migrates')
+  factory.faults.open = name => name === DB ? new Error('IndexedDB corrupted') : undefined
+  const tab = h.newTab()
+  const prepared = await tab.sj.prepareLibraryStorage(storage, { factory })
+  delete factory.faults.open
+  assert.equal(prepared.active, false)
+  assert.equal(prepared.blocked, true)
+  assert.equal(prepared.readOnly, true)
+  assert.match(prepared.error, /new device storage/i)
+  assert.equal(tab.sj.isLibraryStoreActive(storage), true, 'a blocking read-only state is held')
+  assert.equal(tab.store.libraryStoreReadOnly(), true)
+  assert.equal(tab.store.libraryStoreRead(), null, 'the stale gtar_library_v1 is not offered as the library')
+  assert.throws(() => tab.sj.persistLibrary(h.library(2, 1), storage), /paused/i, 'every save is refused')
+})
+
+// #300 review finding 3: the safety snapshots (the only pre-restore copy) must be in the recovery export.
+test('#300: the recovery export includes the safety snapshots', async () => {
+  const { storage, factory } = device(5, 1)
+  const { tab } = await open(storage, factory)
+  const backup = require('../src/utils/backupExport.ts')
+  const recovery = require('../src/utils/recoveryExport.ts')
+  await backup.ensureRestoreSafetySnapshot(titled(tab.sj.readPersistedLibrary(storage), 'pre-restore'), storage)
+  const data = await recovery.recoveryExportWithPartitions(storage)
+  const snapshots = Object.entries(data).filter(([key]) => key.startsWith('gtar_library_snapshot::'))
+  // The migration's own before-migration snapshot is exported too; the pre-restore copy must be there.
+  assert.equal(snapshots.length, 2)
+  assert.ok(snapshots.some(([, raw]) => /pre-restore/.test(raw)), 'the pre-restore snapshot is exported')
+})
