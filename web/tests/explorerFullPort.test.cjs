@@ -7,9 +7,61 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }
 ).outputText, filename)
 require.extensions['.png'] = module => { module.exports = '/logo.png' }
+const { JSDOM } = require('jsdom')
+const bootDom = new JSDOM('<!doctype html>')
+Object.assign(global, { window: bootDom.window, document: bootDom.window.document })
 const React = require('react')
 const { act } = React
-const { JSDOM } = require('jsdom')
+const { createRoot } = require('react-dom/client')
+
+test('Explorer quick actions guard unsaved editor changes in the sidebar and drawer', async t => {
+  for (const width of [1280, 360]) {
+    for (const action of ['new-song', 'new-set', 'browse-sources']) {
+      await t.test(`${width}px: ${action}`, async () => ui(async ({ render, click }) => {
+        window.innerWidth = width
+        window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+        const keys = ['sessionStorage', 'Event', 'CustomEvent', 'fetch']
+        const previous = Object.fromEntries(keys.map(key => [key, global[key]]))
+        Object.assign(global, { sessionStorage: window.sessionStorage, Event: window.Event,
+          CustomEvent: window.CustomEvent, fetch: async () => { throw new Error('offline') } })
+        const song = { id: 'guard-song', title: 'Amazing Grace', artist: 'John Newton', key: 'G',
+          format: 'CHORD_PRO', transposeOffset: 0, rawContent: '{title: Amazing Grace}\n{key: G}\n[G]Grace' }
+        localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song], setlists: [] }))
+        try {
+          await render(require('../src/App.tsx').default, {})
+          await click(document.querySelector('[aria-label="Editor (Alt+2)"]'))
+          const editor = document.querySelector('textarea')
+          assert.ok(editor, 'existing song opens in the real editor')
+          if (width < 1024) await click(document.querySelector('[aria-label="Open Music Explorer"]'))
+          const draft = `${song.rawContent}\nUnsaved verse`
+          // Refuse the autosave at the browser boundary to leave a real unsaved lyric edit.
+          const setItem = window.Storage.prototype.setItem
+          window.Storage.prototype.setItem = function (key, value) {
+            if (key === 'gtar_library_v1') throw new window.DOMException('Full', 'QuotaExceededError')
+            return setItem.call(this, key, value)
+          }
+          try {
+            await act(async () => {
+              Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(editor, draft)
+              editor.dispatchEvent(new window.Event('input', { bubbles: true }))
+            })
+          } finally { window.Storage.prototype.setItem = setItem }
+          assert.equal(document.querySelector('[data-testid="editor-save-status"]').dataset.saveStatus, 'FAILED', 'draft is unsaved before navigation')
+          const surface = document.querySelector(width < 1024 ? '[data-testid="music-explorer-drawer"]' : '[data-testid="explorer-sidebar"]')
+          await click(surface.querySelector(`[data-testid="explorer-nav-${action}"]`))
+          const guard = document.querySelector('[role="dialog"][aria-label="Unsaved changes"]')
+          assert.ok(guard, 'unsaved-changes guard appears before the action runs')
+          assert.equal(document.querySelector('textarea'), editor, 'active song/editor is unchanged')
+          assert.equal(editor.value, draft, 'unsaved draft is preserved')
+          await click([...guard.querySelectorAll('button')].find(button => button.textContent === 'Cancel'))
+          assert.equal(document.querySelector('[aria-label="Unsaved changes"]'), null)
+          assert.equal(editor.value, draft, 'cancel keeps the draft')
+          assert.equal(document.querySelector('[data-testid="editor-save-status"]').dataset.saveStatus, 'FAILED')
+        } finally { Object.assign(global, previous) }
+      }))
+    }
+  }
+})
 
 async function ui(run) {
   const dom = new JSDOM('<button id="opener">Open</button><div id="root"></div>', { url: 'http://localhost' })
@@ -18,12 +70,31 @@ async function ui(run) {
   Object.assign(global, { window: dom.window, document: dom.window.document, Node: dom.window.Node,
     HTMLElement: dom.window.HTMLElement, localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true })
   window.matchMedia = () => ({ matches: false })
-  const root = require('react-dom/client').createRoot(document.getElementById('root'))
+  const root = createRoot(document.getElementById('root'))
   const click = async node => { assert.ok(node, 'control exists'); await act(async () => node.click()) }
   const render = async (component, props) => act(async () => root.render(React.createElement(component, props)))
   try { await run({ root, click, render }) }
   finally { await act(async () => root.unmount()); dom.window.close(); Object.assign(global, previous) }
 }
+
+test('windowed song grid uses workspace tracks instead of viewport breakpoints', async () => ui(async ({ render }) => {
+  window.innerWidth = 1280
+  window.innerHeight = 580
+  const { useListWindow } = require('../src/utils/listWindow.ts')
+  function Grid({ tracks }) {
+    const ref = React.useRef(null)
+    const range = useListWindow(1000, ref)
+    return React.createElement('div', { ref, style: { gridTemplateColumns: tracks }, 'data-range': JSON.stringify(range) })
+  }
+  const range = () => JSON.parse(document.querySelector('[data-range]').dataset.range)
+  await render(Grid, { tracks: '438px 438px' })
+  assert.equal(range().end, 32, 'two workspace columns render sixteen rows')
+  assert.equal(range().padBottom, 484 * 58, 'spacer represents remaining two-column rows')
+  await render(Grid, { tracks: '900px' })
+  await act(async () => window.dispatchEvent(new window.Event('resize')))
+  await act(async () => new Promise(resolve => setTimeout(resolve, 25)))
+  assert.equal(range().end, 16, 'resizing to one track recomputes the window')
+}))
 
 test('cloud button announces backup time accessibly, shows status badges and opens Backup & Restore', async () => ui(async ({ render, click }) => {
   const { SyncStatusPill } = require('../src/components/SyncStatusPill.tsx')

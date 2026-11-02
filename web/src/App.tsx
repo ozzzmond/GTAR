@@ -1799,8 +1799,8 @@ function LibraryApp() {
       <div className="flex flex-1 min-h-0">
         <ExplorerNavigation isOpen={isSetlistDrawerOpen} onClose={() => setIsSetlistDrawerOpen(false)}
           songs={songs} setlists={setlists} currentSelection={explorerSelection} onSelect={handleExplorerSelect}
-          onNewSong={handleNewSong} onNewSetlist={handleNewSetlist}
-          onOpenSources={() => setIsWebsiteUrlModalOpen(true)} />
+          onNewSong={() => navigateSafely(handleNewSong)} onNewSetlist={() => navigateSafely(handleNewSetlist)}
+          onOpenSources={() => navigateSafely(() => setIsWebsiteUrlModalOpen(true))} />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
           <SongbookHomeView

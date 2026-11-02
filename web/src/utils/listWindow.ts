@@ -2,7 +2,7 @@
  * #252: windowed rendering for long Songbook lists (10,000+ songs) without a dependency.
  *
  * Only the rows near the viewport are rendered; spacers above and below keep the scroll height
- * and position. Rows follow the responsive grid (1–4 columns), so a window always starts at the
+ * and position. Rows follow the rendered grid, so a window always starts at the
  * first card of a row. Short lists (below `threshold`) render in full, exactly as before.
  */
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react'
@@ -64,7 +64,8 @@ export function useListWindow(count: number, gridRef: RefObject<HTMLElement | nu
     const gridTop = grid.getBoundingClientRect().top
     const viewportTop = container ? container.getBoundingClientRect().top : 0
     const viewportHeight = container ? container.clientHeight : window.innerHeight
-    const columns = songGridColumns(window.innerWidth)
+    const tracks = window.getComputedStyle(grid).gridTemplateColumns
+    const columns = tracks && tracks !== 'none' ? tracks.trim().split(/\s+/).length : songGridColumns(window.innerWidth)
     const next = computeWindow({
       count, columns, rowHeight: rowHeightRef.current,
       // Grid-relative: the list starts at 0; the viewport starts where it is relative to the grid.
@@ -96,7 +97,9 @@ export function useListWindow(count: number, gridRef: RefObject<HTMLElement | nu
     const target = scrollParent(gridRef.current) ?? window
     target.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
-    return () => { if (frame) caf(frame); target.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule) }
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null
+    if (gridRef.current) observer?.observe(gridRef.current)
+    return () => { observer?.disconnect(); if (frame) caf(frame); target.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule) }
   }, [active, update, gridRef])
 
   if (!active) return { active: false, start: 0, end: count, padTop: 0, padBottom: 0 }

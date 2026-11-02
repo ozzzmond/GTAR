@@ -64,7 +64,7 @@ async function click(el) { assert.ok(el, 'control exists'); await act(async () =
 async function openManagerPicker() {
   await act(async () => home.onManageSetlist(home.setlists[0]))
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'), 'DEV manage opens the Setlist Manager')
-  await click(button('Search Songs (Outlook-style Picker)'))
+  await click(button('Search Multi-Songs'))
 }
 
 test('DEV: select N songs → one guarded add, appended in selection order, kept after reload', async () => {

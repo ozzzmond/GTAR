@@ -546,6 +546,13 @@ body.theme-custom .theme-studio .ui-button :is(span, svg) { color: inherit !impo
 body.theme-custom :is(input, textarea)::placeholder { color: var(--custom-uiMutedText); opacity: .7; }
 body.theme-custom :is(input[type="checkbox"], input[type="range"]) { accent-color: var(--custom-control-accent); }
 body.theme-custom :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--custom-control-accent); outline-offset: 2px; }
+/* The picker container owns its visible focus-within border. */
+#multi-song-search-input {
+  appearance: none;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
 body.theme-custom :is(button, input, select, textarea):disabled { opacity: .45; }
 body.theme-custom ::selection { background-color: var(--custom-selectionColor); color: var(--custom-selection-foreground); }
 
