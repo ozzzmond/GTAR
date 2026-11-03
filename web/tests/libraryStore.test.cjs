@@ -167,6 +167,20 @@ test('safety snapshots: taken before restore, last 5 kept, oldest dropped first'
   assert.equal(tab.store.SNAPSHOT_MAX_BYTES, 50 * 1024 * 1024)
 })
 
+test('#300: an oversized safety snapshot is rejected without pruning existing recovery copies', async () => {
+  const { storage, factory } = device(1, 0)
+  const { tab } = await open(storage, factory)
+  try {
+    const lib = tab.sj.readPersistedLibrary(storage)
+    const before = await tab.store.listSafetySnapshots()
+    const huge = { ...lib, songs: [{ ...lib.songs[0], rawContent: 'x'.repeat(tab.store.SNAPSHOT_MAX_BYTES / 2) }] }
+    await assert.rejects(tab.store.takeSafetySnapshot('before-restore', huge), error =>
+      tab.sj.isQuotaError(error) && /snapshot.*limit/i.test(error.message))
+    assert.deepEqual(await tab.store.listSafetySnapshots(), before)
+    assert.deepEqual(plain(await tab.store.readSafetySnapshot(before[0].id)), plain(lib))
+  } finally { tab.store.resetLibraryStoreForTests() }
+})
+
 // #300 review finding 1: two tabs migrating at once. The second tab must recheck the receipt inside
 // the write transaction and reuse the committed migration, never replace newer edits with its source.
 test('#300: a second tab registering after the migration reuses it instead of re-migrating', async () => {
@@ -210,6 +224,70 @@ test('#300: an unreadable start after migration fails closed, never writing the 
   assert.equal(tab.store.libraryStoreReadOnly(), true)
   assert.equal(tab.store.libraryStoreRead(), null, 'the stale gtar_library_v1 is not offered as the library')
   assert.throws(() => tab.sj.persistLibrary(h.library(2, 1), storage), /paused/i, 'every save is refused')
+})
+
+test('#300: a missing B3 receipt after migration blocks frozen v1 re-migration', async () => {
+  const { storage, factory, sourceRaw } = device(2, 0)
+  const first = (await open(storage, factory)).tab
+  first.sj.persistLibrary(titled(first.sj.readPersistedLibrary(storage), 'B3-only edit'), storage)
+  await first.store.flushLibraryStore()
+  first.store.resetLibraryStoreForTests()
+  // A new database factory models IndexedDB loss while localStorage survives.
+  const replacement = new h.Factory()
+  const { tab, prepared } = await open(storage, replacement)
+  try {
+    assert.equal(prepared.blocked, true)
+    assert.equal(prepared.migrated, false)
+    assert.equal(tab.sj.readPersistedLibrary(storage), null)
+    assert.throws(() => tab.sj.persistLibrary(h.library(1, 0), storage), /paused/i)
+    assert.equal(storage.getItem(V1), sourceRaw)
+    assert.equal(replacement.dump(DB, 'songs').length, 0, 'frozen source was not copied')
+    assert.equal(replacement.dump(DB, 'meta').length, 0, 'no replacement receipt was written')
+  } finally { tab.store.resetLibraryStoreForTests() }
+})
+
+test('#300: App without IndexedDB blocks migrated devices but keeps first-use fallback', async () => {
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  const priorFactory = global.indexedDB
+  const priorAct = global.IS_REACT_ACT_ENVIRONMENT
+  global.indexedDB = undefined
+  global.IS_REACT_ACT_ENVIRONMENT = true
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  try {
+    for (const migrated of [false, true]) {
+      const { storage, factory, sourceRaw } = device(2, 0)
+      if (migrated) {
+        const first = (await open(storage, factory)).tab
+        first.store.resetLibraryStoreForTests()
+      }
+      const tab = h.newTab()
+      document.body.innerHTML = '<div id="root"></div>'
+      const root = createRoot(document.getElementById('root'))
+      try {
+        const App = require('../src/App.tsx').default
+        await act(async () => root.render(React.createElement(App)))
+        assert.equal(!!document.querySelector('[data-testid="library-store-blocked"]'), migrated)
+        if (migrated) {
+          assert.equal(document.querySelector('main'), null)
+          assert.match(document.body.textContent, /Export recovery data/)
+          assert.equal(tab.sj.readPersistedLibrary(storage), null)
+          assert.throws(() => tab.sj.persistLibrary(h.library(1, 0), storage), /paused/i)
+        } else {
+          assert.ok(document.querySelector('main'), 'first-use legacy library remains usable')
+          assert.equal(tab.sj.readPersistedLibrary(storage).songs.length, 2)
+        }
+        assert.equal(storage.getItem(V1), sourceRaw)
+      } finally {
+        await act(async () => root.unmount())
+        tab.store.resetLibraryStoreForTests()
+      }
+    }
+  } finally {
+    global.indexedDB = priorFactory
+    global.IS_REACT_ACT_ENVIRONMENT = priorAct
+  }
 })
 
 // #300 review finding 3: the safety snapshots (the only pre-restore copy) must be in the recovery export.

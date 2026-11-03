@@ -515,3 +515,69 @@ test('Retirement cannot force an old library over a concurrent stored revision',
   assert.equal(retireDriveSyncState(store), false)
   assert.equal(store.getItem(LIBRARY_KEY), newerRaw)
 })
+
+test('#300: Reload Other Tab\'s Version adopts committed B3 content without overwriting it', async () => {
+  const prior = { window: global.window, document: global.document, location: global.location, localStorage: global.localStorage,
+    sessionStorage: global.sessionStorage, indexedDB: global.indexedDB, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT }
+  const h = require('./helpers/tabHarness.cjs')
+  h.dom.reconfigure({ url: 'https://gtar-web.pages.dev/' })
+  const storage = h.freshStorage()
+  const factory = new h.Factory()
+  Object.assign(global, { indexedDB: factory, sessionStorage: window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  document.body.innerHTML = '<div id="root"></div>'
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  h.newTab().sj.persistLibrary({ songs: [songA], setlists: [] }, storage)
+  const other = h.newTab()
+  await other.sj.prepareLibraryStorage(storage, { factory })
+  const local = h.newTab()
+  let home, header, editor
+  const names = ['SongbookHomeView', 'Header', 'DesktopEditor']
+  const modules = names.map(name => require(`../src/components/${name}.tsx`))
+  const originals = modules.map((module, i) => module[names[i]])
+  modules[0].SongbookHomeView = props => { home = props; return null }
+  modules[1].Header = props => { header = props; return null }
+  modules[2].DesktopEditor = props => { editor = props; return null }
+  const root = createRoot(document.getElementById('root'))
+  const originalTimeout = global.setTimeout
+  const timers = new Set()
+  global.setTimeout = (fn, delay, ...args) => {
+    const timer = originalTimeout(fn, delay, ...args)
+    timers.add(timer)
+    return timer
+  }
+  try {
+    const App = require('../src/App.tsx').default
+    await act(async () => { root.render(React.createElement(App)); await h.settle(30) })
+    for (let i = 0; i < 100 && !home; i++) await act(async () => { await h.settle(10) })
+    await act(async () => header.onViewChange('editor'))
+    editor.recoveryDraftRef.current = () => ({ ...songA, title: 'Private local draft' })
+    await act(async () => {
+      other.sj.persistLibrary({ songs: [{ ...songA, title: 'Newer committed title' }, songB], setlists: [] }, storage)
+      await other.store.flushLibraryStore()
+      await h.settle(30)
+    })
+    assert.ok(document.querySelector('[data-testid="cross-tab-conflict-alert"]'))
+    other.store.resetLibraryStoreForTests() // Separate tab windows do not receive their own broadcasts.
+    await act(async () => { document.querySelector('[data-testid="conflict-reload-button"]').click(); await h.settle(30) })
+    assert.equal(!!document.querySelector('[data-testid="cross-tab-conflict-alert"]'), false)
+    await act(async () => header.onViewChange('songbook'))
+    assert.deepEqual(home.songs.map(song => song.title), ['Newer committed title', 'Song Beta'])
+    await local.store.flushLibraryStore()
+    const reopened = h.newTab()
+    try {
+      await reopened.sj.prepareLibraryStorage(storage, { factory })
+      assert.deepEqual(reopened.sj.readPersistedLibrary(storage).songs.map(song => song.title), ['Newer committed title', 'Song Beta'])
+    } finally { reopened.store.resetLibraryStoreForTests() }
+  } finally {
+    await act(async () => root.unmount())
+    modules.forEach((module, i) => { module[names[i]] = originals[i] })
+    local.store.resetLibraryStoreForTests()
+    other.store.resetLibraryStoreForTests()
+    for (const timer of timers) clearTimeout(timer)
+    global.setTimeout = originalTimeout
+    Object.assign(global, prior)
+  }
+})
