@@ -228,3 +228,70 @@ test('Header reads existing backup metadata, tracks local edits without requests
     assert.equal(requests.length, 1)
   } finally { global.fetch = originalFetch }
 }))
+
+test('fullscreen hides the explorer sidebar and toggle, and exiting fullscreen restores previous state', async () => ui(async ({ render, click }) => {
+  window.innerWidth = 1280
+  window.innerHeight = 800
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  const keys = ['sessionStorage', 'Event', 'CustomEvent', 'fetch']
+  const previous = Object.fromEntries(keys.map(key => [key, global[key]]))
+  Object.assign(global, { sessionStorage: window.sessionStorage, Event: window.Event,
+    CustomEvent: window.CustomEvent, fetch: async () => { throw new Error('offline') } })
+  const song = { id: 'test-fs-song', title: 'Fullscreen Song', artist: 'Artist', key: 'C',
+    format: 'CHORD_PRO', transposeOffset: 0, rawContent: '{title: Fullscreen Song}\n{key: C}\n[C]Hello world' }
+  localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song], setlists: [] }))
+
+  try {
+    const App = require('../src/App.tsx').default
+    await render(App, {})
+
+    // 1. Outside fullscreen (Songbook): sidebar is visible
+    assert.ok(document.querySelector('[data-testid="explorer-sidebar"]'), 'sidebar visible in songbook')
+    assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null)
+
+    // Open song to enter Stage view
+    const songCard = document.querySelector('[data-testid="song-card-0"]') || document.querySelector('[aria-label="Stage (Alt+4)"]')
+    await click(songCard)
+
+    // In Stage view outside fullscreen: sidebar is still visible
+    assert.ok(document.querySelector('[data-testid="explorer-sidebar"]'), 'sidebar visible in stage outside fullscreen')
+
+    // 2. Enter fullscreen
+    const enterFullscreenBtn = document.querySelector('button[aria-label="Enter fullscreen"]')
+    assert.ok(enterFullscreenBtn, 'Enter fullscreen button present')
+    await click(enterFullscreenBtn)
+
+    // Fullscreen active: sidebar and grip toggle MUST BE HIDDEN
+    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar hidden in fullscreen')
+    assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null, 'edge grip hidden in fullscreen')
+    assert.equal(document.querySelector('[aria-label="Open Music Explorer"]'), null, 'open explorer toggle hidden in fullscreen')
+
+    // 3. Exit fullscreen
+    const exitFullscreenBtn = document.querySelector('button[aria-label="Exit fullscreen"]')
+    assert.ok(exitFullscreenBtn, 'Exit fullscreen button present')
+    await click(exitFullscreenBtn)
+
+    // Outside fullscreen: sidebar restored to expanded state
+    assert.ok(document.querySelector('[data-testid="explorer-sidebar"]'), 'sidebar restored after exit')
+    assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null)
+
+    // 4. Test with sidebar previously collapsed
+    await click(document.querySelector('[data-testid="explorer-collapse"]'))
+    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null)
+    assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'), 'sidebar is now collapsed')
+
+    // Enter fullscreen while collapsed
+    await click(document.querySelector('button[aria-label="Enter fullscreen"]'))
+    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar still hidden in fullscreen')
+    assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null, 'edge grip hidden in fullscreen')
+    assert.equal(document.querySelector('[aria-label="Open Music Explorer"]'), null)
+
+    // Exit fullscreen
+    await click(document.querySelector('button[aria-label="Exit fullscreen"]'))
+    // Edge grip restored (previous collapsed state restored)
+    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar remains collapsed')
+    assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'), 'edge grip restored after exit')
+  } finally {
+    Object.assign(global, previous)
+  }
+}))

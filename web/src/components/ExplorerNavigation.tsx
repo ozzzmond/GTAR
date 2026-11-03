@@ -19,7 +19,7 @@ const remember = (key: string, value: string) => {
   try { localStorage.setItem(key, value) } catch { /* Device preference is optional. */ }
 }
 
-export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNavProps & { isOpen: boolean; onClose: () => void }): React.ReactElement {
+export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }: MusicExplorerNavProps & { isOpen: boolean; onClose: () => void; isHidden?: boolean }): React.ReactElement | null {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSED_KEY) === 'true' } catch { return false }
   })
@@ -75,7 +75,7 @@ export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNav
     commitWidth(next)
   }
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || isHidden) return
     if (window.innerWidth >= DESKTOP_QUERY) {
       let active = true
       void Promise.resolve().then(() => {
@@ -107,7 +107,7 @@ export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNav
       window.removeEventListener('resize', resize)
       opener?.focus()
     }
-  }, [isOpen])
+  }, [isOpen, isHidden])
   const drawerNav = {
     ...nav,
     onSelect: (target: Parameters<MusicExplorerNavProps['onSelect']>[0]) => { nav.onSelect(target); onClose() },
@@ -121,6 +121,7 @@ export function ExplorerNavigation({ isOpen, onClose, ...nav }: MusicExplorerNav
       <PanelLeftClose className="h-4 w-4" />
     </button>
   )
+  if (isHidden) return null
   return <>
     {collapsed ? (
       <button ref={gripRef} type="button" data-testid="explorer-edge-grip" aria-label="Expand Music Explorer" aria-expanded="false"
