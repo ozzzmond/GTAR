@@ -56,6 +56,8 @@ interface SongbookHomeViewProps {
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
   onCreateSetlistForSong: (songId: string | number, name: string) => boolean
   folders?: SetlistFolder[]
+  trashDropIds?: Array<string | number> | null
+  onDismissTrashDrop?: () => void
   songs: ActiveSongState[]
   activeSongIndex: number
   onSelectSong: (index: number) => void
@@ -99,6 +101,7 @@ const cardMenuItem = 'w-full min-h-11 px-2.5 rounded-lg text-left hover:bg-app-b
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   songs,
+  trashDropIds, onDismissTrashDrop,
   folders = [],
   onSongMembershipChange,
   onCreateSetlistForSong,
@@ -420,8 +423,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     })
   }
 
+  const dismissTrashConfirm = () => { setIsBulkDeleteSongsConfirmOpen(false); onDismissTrashDrop?.() }
+  const trashConfirmIds = trashDropIds ?? Array.from(selectedSongIds)
   const handleConfirmBulkDeleteSongs = () => {
-    const ids = Array.from(selectedSongIds)
+    const ids = trashConfirmIds
     if (onBulkDeleteSongs) {
       onBulkDeleteSongs(ids)
     } else {
@@ -435,7 +440,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
     setSelectedSongIds(new Set())
     setIsSongSelectionMode(false)
-    setIsBulkDeleteSongsConfirmOpen(false)
+    dismissTrashConfirm()
   }
 
   const handleConfirmBulkAddToSetlist = (destSetlistId: string | number) => {
@@ -1305,18 +1310,18 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       )}
 
       {/* Bulk Delete Songs Confirmation Modal */}
-      {isBulkDeleteSongsConfirmOpen && (
+      {(isBulkDeleteSongsConfirmOpen || !!trashDropIds?.length) && (
         <dialog
           open
           data-testid="bulk-delete-songs-confirm-dialog"
-          onCancel={() => setIsBulkDeleteSongsConfirmOpen(false)}
+          onCancel={dismissTrashConfirm}
           className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-[#DC6E67] bg-app-surface ui-primary-text text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2.5 text-status-error mb-3">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <h2 className="ui-section-text text-base font-bold ui-primary-text text-app-heading">
-                Delete {selectedSongIds.size} {selectedSongIds.size === 1 ? 'song' : 'songs'}?
+                Delete {trashConfirmIds.length} {trashConfirmIds.length === 1 ? 'song' : 'songs'}?
               </h2>
             </div>
             <p className="text-xs ui-muted-text text-app-muted leading-relaxed mb-4">
@@ -1327,7 +1332,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 type="button"
                 autoFocus
                 data-testid="cancel-bulk-delete-songs"
-                onClick={() => setIsBulkDeleteSongsConfirmOpen(false)}
+                onClick={dismissTrashConfirm}
                 className="px-3.5 py-2 rounded-lg bg-app-base ui-secondary-text text-app-muted hover:text-app-heading transition-colors cursor-pointer"
               >
                 Cancel
@@ -1338,7 +1343,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 onClick={handleConfirmBulkDeleteSongs}
                 className="px-4 py-2 rounded-lg bg-[#DC6E67] text-white hover:bg-[#DC6E67]/90 transition-colors cursor-pointer"
               >
-                Delete {selectedSongIds.size} {selectedSongIds.size === 1 ? 'Song' : 'Songs'}
+                Delete {trashConfirmIds.length} {trashConfirmIds.length === 1 ? 'Song' : 'Songs'}
               </button>
             </div>
           </div>
@@ -1684,6 +1689,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   key={song.id || originalIdx}
                   id={song.id || originalIdx}
                   dataTestId={`song-card-${originalIdx}`}
+                  dragSongIds={song.id === undefined || isDeleting ? undefined : isSongSelectionMode && isSongChosen ? Array.from(selectedSongIds) : [song.id]}
                   className="rounded-2xl"
                   cardClassName={`ui-song-card group relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm h-full ${
                     isSongChosen || isSelected

@@ -657,3 +657,25 @@ header .toolbar-icon-btn { width: auto; min-width: 44px; height: 44px; min-heigh
 header .toolbar-icon-btn svg { margin: 0; }
 header .avatar-wrapper { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 @media (min-width: 1024px) { .header-search { max-width: 38rem; } }
+
+/* Explorer gestures: feedback uses existing theme tokens and never shifts controls. */
+[data-explorer-drop-active="true"] {
+  outline: 2px solid var(--color-app-action);
+  outline-offset: -2px;
+  background-color: var(--color-app-selected);
+}
+[data-explorer-drag-active="true"] { opacity: .55; }
+[data-explorer-drag-songs], [data-explorer-drag-setlist] { -webkit-touch-callout: none; }
+.explorer-song-drop-setlists { display: none; }
+body[data-explorer-drag-kind="songs"] .explorer-song-drop-setlists { display: block; }
+.explorer-drag-ghost {
+  position: fixed; pointer-events: none; z-index: 100;
+  max-width: 18rem; padding: .75rem 1rem; border-radius: .75rem;
+  border: 2px solid var(--color-app-action); color: var(--color-app-heading);
+  background: var(--color-app-surface); box-shadow: 0 .5rem 1rem var(--color-app-border);
+  transform: translate(-50%, -120%) scale(1.04);
+}
+
+body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"],
+body[data-explorer-drag-kind] [aria-label="Dismiss Music Explorer"] { pointer-events: none; }
+body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"] > div { pointer-events: auto; }

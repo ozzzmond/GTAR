@@ -92,7 +92,8 @@ test('PROVE_BULK_SONG_DELETE: Confirmation states reversible Trash semantics', (
   assert.ok(songbookHome.includes('data-testid="bulk-delete-songs-confirm-dialog"'))
   assert.ok(songbookHome.includes('data-testid="confirm-bulk-delete-songs"'))
   assert.ok(songbookHome.includes('data-testid="cancel-bulk-delete-songs"'))
-  assert.ok(songbookHome.includes('Delete {selectedSongIds.size}'))
+  assert.ok(songbookHome.includes('Delete {trashConfirmIds.length}'))
+  assert.ok(songbookHome.includes('trashDropIds ?? Array.from(selectedSongIds)'))
   assert.ok(songbookHome.includes('Setlist entries are preserved and become available again when restored.'))
 })
 

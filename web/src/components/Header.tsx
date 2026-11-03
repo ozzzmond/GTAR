@@ -132,6 +132,7 @@ function ToolbarIconButton({
   className = '',
   buttonRef,
   testId,
+  dropTrash,
 }: {
   icon: React.FC<{ className?: string }>
   label: string
@@ -140,6 +141,7 @@ function ToolbarIconButton({
   className?: string
   buttonRef?: React.Ref<HTMLButtonElement>
   testId?: string
+  dropTrash?: boolean
 }) {
   const tooltipId = useId()
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
@@ -192,6 +194,7 @@ function ToolbarIconButton({
         aria-label={label}
         aria-describedby={anchor ? tooltipId : undefined}
         data-testid={testId}
+        data-explorer-drop-trash={dropTrash ? 'true' : undefined}
         className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
       >
         <Icon className="w-4 h-4" />
@@ -995,6 +998,7 @@ export const Header: React.FC<HeaderProps> = ({
             />
             <ToolbarIconButton
               icon={Trash2}
+              dropTrash
               label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
               isActive={activeView === 'trash'}
               onClick={() => onViewChange('trash')}
