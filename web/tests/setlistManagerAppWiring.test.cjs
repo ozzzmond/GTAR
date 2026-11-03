@@ -32,7 +32,7 @@ afterEach(async () => { if (root) { await act(async () => root.unmount()); root 
 function freshModules() {
   for (const key of Object.keys(require.cache)) if (key.startsWith(srcDir)) delete require.cache[key]
 }
-async function mountApp(url, { keepStorage = false, realHome = false } = {}) {
+async function mountApp(url, { keepStorage = false, realHome = false, auth = null, requests = [] } = {}) {
   const previous = keepStorage ? dom.window.localStorage : null
   const saved = previous ? Object.fromEntries(Object.keys(previous).map(k => [k, previous.getItem(k)])) : null
   if (root) { await act(async () => root.unmount()); root = null }
@@ -43,17 +43,23 @@ async function mountApp(url, { keepStorage = false, realHome = false } = {}) {
     Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true,
   })
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
-  global.fetch = async () => { throw new Error('offline') }
+  global.fetch = async (url, options) => {
+    requests.push([url, options])
+    if (url === '/api/setlist/share') return new Response(JSON.stringify({ token: 'offline-test' }), { status: 200 })
+    throw new Error('offline')
+  }
   if (saved) for (const [k, v] of Object.entries(saved)) localStorage.setItem(k, v)
   else localStorage.setItem('gtar_library_v1', JSON.stringify(LIBRARY))
   freshModules()
+  if (auth?.session) localStorage.setItem('gtar_auth_session', JSON.stringify(auth.session))
   const homeModule = require('../src/components/SongbookHomeView.tsx')
   const Home = homeModule.SongbookHomeView
   homeModule.SongbookHomeView = props => { home = props; return realHome ? React.createElement(Home, props) : React.createElement('div', null, 'Songbook') }
   require('../src/components/Header.tsx').Header = () => null
   const App = require('../src/App.tsx').default
   root = createRoot(document.getElementById('root'))
-  await act(async () => root.render(React.createElement(App)))
+  const { AuthContext } = require('../src/utils/authContext.ts')
+  await act(async () => root.render(React.createElement(AuthContext.Provider, { value: auth }, React.createElement(App))))
 }
 const stored = () => require('../src/utils/syncJournal.ts').readPersistedLibrary()
 const storedOrder = () => stored().setlists.find(sl => sl.id === 'sl-1').songs.map(ref => ref.id)
@@ -72,9 +78,6 @@ test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-
   await mountApp('http://localhost/', { realHome: true })
   await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
   const before = localStorage.getItem('gtar_library_v1')
-  let approved = false
-  const prompts = []
-  window.confirm = message => { prompts.push(message); return approved }
   const swipeDelete = async () => {
     const card = $('[data-testid="workspace-setlist-card-sl-1"]')
     for (const [type, x] of [['touchstart', 150], ['touchmove', 50], ['touchend', 50]]) {
@@ -86,17 +89,90 @@ test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-
     }
   }
   await swipeDelete()
-  assert.match(prompts[0], /Sunday AM/)
+  assert.match($('[data-testid="workspace-setlist-card-sl-1"]').textContent, /Delete this setlist\?/)
   assert.equal(localStorage.getItem('gtar_library_v1'), before)
+  await click($('[data-testid="cancel-delete-setlist-sl-1"]'))
+  assert.equal(localStorage.getItem('gtar_library_v1'), before)
+  assert.equal($('[data-testid="confirm-delete-setlist-sl-1"]'), null)
   assert.ok($('[data-testid="workspace-setlist-card-sl-1"]'))
-  approved = true
   await swipeDelete()
-  assert.equal(prompts.length, 2)
+  await click($('[data-testid="confirm-delete-setlist-sl-1"]'))
   assert.equal($('[data-testid="workspace-setlist-card-sl-1"]'), null)
   assert.equal(stored().setlists.find(sl => sl.id === 'sl-1').isDeleted, true)
   assert.equal(stored().songs.length, LIBRARY.songs.length)
   await mountApp('http://localhost/', { keepStorage: true })
   assert.equal(home.setlists.find(sl => sl.id === 'sl-1').isDeleted, true, 'soft-delete survives reload')
+})
+
+test('#346 real signed-out App opens local share from header, menu and swipe without a share request', async () => {
+  const requests = []
+  await mountApp('http://localhost/', { realHome: true, requests })
+  await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
+  const assertLocalShare = () => {
+    const modal = $('[data-testid="share-setlist-modal-card"]')
+    assert.ok(modal)
+    assert.match(modal.textContent, /Sign in to create a QR code \/ share link\./)
+    assert.ok(button('Export JSON'))
+    assert.equal(modal.querySelector('img'), null)
+    assert.equal(modal.querySelector('input'), null)
+    assert.equal(button('Copy'), undefined)
+    assert.equal(button('Revoke Share Link'), undefined)
+    assert.equal(requests.filter(([url]) => url === '/api/setlist/share').length, 0)
+  }
+  await click($('[data-testid="workspace-setlist-card-sl-1"]'))
+  await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
+  assertLocalShare()
+  const downloads = []
+  const originalClick = window.HTMLAnchorElement.prototype.click
+  window.HTMLAnchorElement.prototype.click = function () { downloads.push(this.download) }
+  try { await click(button('Export JSON')); assert.deepEqual(downloads, ['gtar-setlist-sunday-am.json']) }
+  finally { window.HTMLAnchorElement.prototype.click = originalClick }
+  await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="workspace-menu-share"]'))
+  assertLocalShare()
+  await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
+  await click($('[data-testid="workspace-crumb-scope"]'))
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="workspace-menu-share"]'))
+  assertLocalShare()
+  await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
+  const card = $('[data-testid="workspace-setlist-card-sl-1"]')
+  for (const [type, x] of [['touchstart', 150], ['touchmove', 250], ['touchend', 250]]) {
+    const event = new window.Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 1, clientX: x, clientY: 20 }
+    Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : [point] }, changedTouches: { value: [point] } })
+    await act(async () => card.dispatchEvent(event))
+    if (type === 'touchmove') assert.ok($('[data-armed="true"][aria-label="Share Setlist"]'))
+  }
+  assertLocalShare()
+})
+
+for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus} App gates the QR section while keeping local export`, async () => {
+  const requests = [], now = Date.now()
+  const session = { version: 1, user: { id: 'owner', sub: 'owner', email: 'owner@example.test', access_status: accessStatus },
+    sessionToken: 'offline-token', access_status: accessStatus, authenticatedAt: now, lastVerifiedAt: now, localExpiresAt: now + 3600000, expiresAt: now + 3600000 }
+  await mountApp('http://localhost/', { realHome: true, requests, auth: { session, accessStatus, role: 'USER' } })
+  await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
+  await click($('[data-testid="workspace-setlist-card-sl-1"]'))
+  await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
+  const modal = $('[data-testid="share-setlist-modal-card"]')
+  assert.ok(modal)
+  assert.ok(button('Export JSON'))
+  const shares = requests.filter(([url]) => url === '/api/setlist/share')
+  if (accessStatus === 'active') {
+    assert.equal(shares.length, 1)
+    assert.equal(JSON.parse(shares[0][1].body).name, 'Sunday AM')
+    assert.ok(modal.querySelector('img[alt="QR Code for Setlist Sharing"]'))
+    assert.match(modal.querySelector('input').value, /\?share=offline-test$/)
+    assert.ok(button('Copy'))
+    assert.ok(button('Revoke Share Link'))
+  } else {
+    assert.equal(shares.length, 0)
+    assert.equal(modal.querySelector('img'), null)
+    assert.equal(modal.querySelector('input'), null)
+    assert.match(modal.textContent, /Sign in to create a QR code \/ share link\./)
+  }
 })
 
 test('DEV: select N songs → one guarded add, appended in selection order, kept after reload', async () => {

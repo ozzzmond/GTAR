@@ -5,6 +5,7 @@ import { sanitizeSetlistForShare } from '../utils/sharedSetlist';
 import type { SharedSetlistPayload } from '../utils/sharedSetlist';
 import type { WebSetlist, ActiveSongState } from '../types/gtar';
 import { getStoredSessionStatus } from '../utils/googleAuth';
+import { useOptionalGoogleAuth } from '../utils/authContext';
 
 interface ShareSetlistModalProps {
   setlist: WebSetlist;
@@ -17,14 +18,21 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
   allSongs,
   onClose,
 }) => {
-  const [loading, setLoading] = useState(false);
+  const auth = useOptionalGoogleAuth();
+  const stored = getStoredSessionStatus();
+  const canCreateShare = !!stored.session && !stored.isExpired && (
+    auth ? !!auth.session && auth.accessStatus === 'active' : stored.session.access_status === 'active'
+  );
+  const [shareLoading, setLoading] = useState(false);
+  const loading = canCreateShare && shareLoading;
   const [error, setError] = useState<string | null>(null);
   const [shareToken, setShareToken] = useState<string>('');
   const [shareUrl, setShareUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [qrDataUri, setQrDataUri] = useState<string>('');
   const [revoked, setRevoked] = useState(false);
-  const [revoking, setRevoking] = useState(false);
+  const [shareRevoking, setRevoking] = useState(false);
+  const revoking = canCreateShare && shareRevoking;
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   // Restore focus to triggering element when modal closes
@@ -48,6 +56,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
   }, [loading, revoking, onClose]);
 
   useEffect(() => {
+    if (!canCreateShare) return;
     let isCancelled = false;
 
     const createShare = async () => {
@@ -115,10 +124,10 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [setlist, allSongs]);
+  }, [setlist, allSongs, canCreateShare]);
 
   const handleCopy = async () => {
-    if (!shareUrl) return;
+    if (!canCreateShare || !shareUrl) return;
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
@@ -130,7 +139,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
   };
 
   const handleRevoke = async () => {
-    if (!shareToken || revoking) return;
+    if (!canCreateShare || !shareToken || revoking) return;
     if (
       !window.confirm(
         'Revoke this share link? Once revoked, anyone with the QR code or link will no longer be able to view or import this setlist.'
@@ -220,14 +229,18 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           </div>
         )}
 
-        {error && (
+        {!canCreateShare && (
+          <p className="text-xs text-slate-400">Sign in to create a QR code / share link.</p>
+        )}
+
+        {canCreateShare && error && (
           <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm space-y-2">
             <p className="font-semibold">Unable to generate share link</p>
             <p className="text-xs opacity-90">{error}</p>
           </div>
         )}
 
-        {revoked && (
+        {canCreateShare && revoked && (
           <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm space-y-2 text-center animate-fade-in">
             <p className="font-semibold flex items-center justify-center gap-1.5">
               <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +254,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           </div>
         )}
 
-        {!loading && !error && !revoked && qrDataUri && (
+        {canCreateShare && !loading && !error && !revoked && qrDataUri && (
           <div className="flex flex-col items-center space-y-4">
             <div className="p-3 bg-white rounded-xl shadow-inner border border-slate-200">
               <img
@@ -284,16 +297,6 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
               </button>
             </div>
 
-            <button
-              onClick={() => exportSingleSetlistJson(setlist, allSongs)}
-              className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v12m-4-4 4 4 4-4M5 15v5h14v-5" />
-              </svg>
-              Export JSON
-            </button>
-
             {revokeError && (
               <p className="text-xs text-rose-400 text-center">{revokeError}</p>
             )}
@@ -310,6 +313,16 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
             </button>
           </div>
         )}
+
+        <button
+          onClick={() => exportSingleSetlistJson(setlist, allSongs)}
+          className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition flex items-center justify-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v12m-4-4 4 4 4-4M5 15v5h14v-5" />
+          </svg>
+          Export JSON
+        </button>
 
         <div className="pt-2 border-t border-slate-800 flex justify-end">
           <button

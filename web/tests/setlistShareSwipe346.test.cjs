@@ -86,6 +86,26 @@ test('#346 QR dialog Export JSON downloads the existing single-setlist format', 
 
 const { resolveObjectURL } = require('node:buffer')
 
+test('#346 local export stays available while QR creation loads, and sign-out hides an in-flight QR result', async () => {
+  let finishShare
+  global.fetch = () => new Promise(resolve => { finishShare = resolve })
+  const render = async value => act(async () => root.render(React.createElement(AuthContext.Provider, { value },
+    React.createElement(ShareSetlistModal, { setlist: lists[1], allSongs: songs, onClose() {} }))))
+  await render(auth)
+  assert.ok(finishShare)
+  assert.ok(button('Export JSON'))
+  assert.match(host.textContent, /Creating snapshot/)
+  // Stored credentials remain, so this exercises the live context gate too.
+  await render({ session: null, accessStatus: 'pending' })
+  assert.match(host.textContent, /Sign in to create a QR code \/ share link\./)
+  assert.ok(button('Export JSON'))
+  assert.equal(button('Close').disabled, false)
+  await act(async () => finishShare(new Response(JSON.stringify({ token: 'late-share' }), { status: 200 })))
+  assert.equal(host.querySelector('img'), null)
+  assert.equal(host.querySelector('input'), null)
+  assert.equal(button('Revoke Share Link'), undefined)
+})
+
 test('#346 swipe right reveals Share Setlist and opens the selected QR dialog without opening the card', async () => {
   await mount({ view: { type: 'FOLDER', folderId: 'folder' }, folders: [{ id: 'folder', name: 'Folder', parentId: null }] })
   const card = await swipe('second', 100)

@@ -2016,7 +2016,7 @@ function LibraryApp() {
           onClose={() => setPublishingSetlistId(null)} />
       )}
       {/* Share Setlist QR Code Modal */}
-      {sharingSetlist && authContext?.session && authContext.accessStatus === 'active' && (
+      {sharingSetlist && (
         <ShareSetlistModal
           setlist={sharingSetlist}
           allSongs={[...songs, ...deletedSongs]}

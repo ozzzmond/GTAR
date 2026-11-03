@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Trash2, Upload, UploadCloud } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Trash2, Upload, UploadCloud } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
@@ -89,6 +89,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
   const [openSetlistId, setOpenSetlistId] = useState<string | number | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const openSetlist = useMemo(
     () => (openSetlistId === null ? null : setlists.find(sl => String(sl.id) === String(openSetlistId)) || null),
     [openSetlistId, setlists]
@@ -372,8 +373,9 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     id={`setlist-${sl.id}`}
                     dataTestId={`workspace-setlist-card-${sl.id}`}
                     dragSetlistId={sl.id}
+                    disabled={confirmDeleteId === sl.id}
                     ariaLabel={`Open setlist ${sl.name}`}
-                    onClick={() => setOpenSetlistId(sl.id)}
+                    onClick={() => { if (confirmDeleteId !== sl.id) setOpenSetlistId(sl.id) }}
                     leftAction={menu?.onShareSetlist ? {
                       icon: <QrCode className="w-4 h-4" />,
                       label: 'Share Setlist',
@@ -383,9 +385,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                       icon: <Trash2 className="w-4 h-4" />,
                       label: 'Delete',
                       isDestructive: true,
-                      onAction: () => {
-                        if (window.confirm(`Move setlist "${sl.name}" to Trash?`)) onDeleteSetlist(sl.id)
-                      },
+                      onAction: () => setConfirmDeleteId(sl.id),
                     } : undefined}
                     className="rounded-2xl"
                     cardClassName="ui-setlist-card group h-full p-3.5 rounded-2xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
@@ -415,6 +415,27 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         Manage →
                       </button>
                     </div>
+                    {confirmDeleteId === sl.id && (
+                      <div onClick={e => e.stopPropagation()}
+                        className="absolute inset-0 bg-app-surface border border-status-error rounded-2xl p-3 flex items-center justify-between z-20 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-center gap-2 text-xs text-status-error font-semibold">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span>Delete this setlist?</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-bold">
+                          <button type="button" data-testid={`confirm-delete-setlist-${sl.id}`}
+                            onClick={e => { e.stopPropagation(); onDeleteSetlist?.(sl.id); setConfirmDeleteId(null) }}
+                            className="min-h-11 px-3 rounded-lg bg-status-error text-app-base hover:brightness-110 transition-colors cursor-pointer">
+                            Delete
+                          </button>
+                          <button type="button" data-testid={`cancel-delete-setlist-${sl.id}`}
+                            onClick={e => { e.stopPropagation(); setConfirmDeleteId(null) }}
+                            className="min-h-11 px-2.5 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </SwipeableActionCard>
                 )
               })}

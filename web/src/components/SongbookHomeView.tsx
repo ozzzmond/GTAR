@@ -861,7 +861,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleMainShareSetlist = () => {
-    if (!isAuthActive || activeSetlists.length === 0) return
+    if (activeSetlists.length === 0) return
     if (activeSetlists.length === 1) {
       onShareSetlist?.(activeSetlists[0])
     } else {
@@ -1632,8 +1632,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : []),
               ],
               onSortChange: (value) => setSetlistSortBy(value as SetlistSortOption),
-              onShareAll: isAuthActive && activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
-              onShareSetlist: isAuthActive ? onShareSetlist : undefined,
+              onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
+              onShareSetlist,
               onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
               onPublishSetlist: onPublishSetlist && canPublishSetlist && setlistCapability.enabled ? onPublishSetlist : undefined,
               publishLabel: (sl) => {
