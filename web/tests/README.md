@@ -274,6 +274,7 @@ New or renamed tests await a human choice of primary category.
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [setlistShareSwipe346.test.cjs](setlistShareSwipe346.test.cjs)
+- [setlistTrashAppWiring.test.cjs](setlistTrashAppWiring.test.cjs)
 - [setlistWorkspaceGtar1.test.cjs](setlistWorkspaceGtar1.test.cjs)
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
 - [sharedCatalogSignIn.test.cjs](sharedCatalogSignIn.test.cjs)
