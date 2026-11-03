@@ -1203,7 +1203,8 @@ function LibraryApp() {
       setToastMessage('Cannot modify library while a cross-tab conflict is unresolved.')
       return null
     }
-    const next = transitionSongLibrary({ active: songs, deleted: deletedSongs, setlists }, operation)
+    const next = transitionSongLibrary({ active: songs, deleted: deletedSongs,
+      setlists: operation.kind === 'empty' ? setlists.filter(setlist => !setlist.isDeleted) : setlists }, operation)
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
@@ -1300,11 +1301,25 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 3500)
   }
 
-  // Permanently delete all songs in Trash
+  const deletedSetlists = setlists.filter(setlist => setlist.isDeleted)
+  const handleRestoreSetlist = (id: number | string) => {
+    const target = deletedSetlists.find(setlist => String(setlist.id) === String(id))
+    if (!target) return
+    const folderId = folders.some(folder => folder.id === target.folderId) ? target.folderId : null
+    commitManagedSetlists(replaceSetlist({ ...target, isDeleted: false, folderId }), `Restored "${target.name}"`)
+  }
+  const handlePermanentDeleteSetlist = (id: number | string) => {
+    const target = deletedSetlists.find(setlist => String(setlist.id) === String(id))
+    if (!target) return
+    commitManagedSetlists(setlists.filter(setlist => String(setlist.id) !== String(id)), `Permanently deleted "${target.name}"`)
+  }
+
+  // Permanently delete all songs and setlists in Trash in one guarded write
   const handleEmptyTrash = () => {
     const count = deletedSongs.length
+    const setlistCount = deletedSetlists.length
     if (!commitSongLifecycle({ kind: 'empty' })) return
-    setToastMessage(`Trash emptied (${count} songs permanently deleted).`)
+    setToastMessage(`Trash emptied (${count} songs and ${setlistCount} setlists permanently deleted).`)
     setTimeout(() => setToastMessage(null), 3500)
   }
 
@@ -1681,7 +1696,7 @@ function LibraryApp() {
           song={currentSong}
           allSongs={songs}
           songsCount={songs.length}
-          deletedSongsCount={deletedSongs.length}
+          deletedSongsCount={deletedSongs.length + deletedSetlists.length}
           activeSongIndex={activeSongIndex}
           queueMode={queueMode}
           activeSetlistSongsCount={activeSetlistSongs.length}
@@ -1869,6 +1884,9 @@ function LibraryApp() {
         ) : activeView === 'trash' ? (
           <TrashView
             deletedSongs={deletedSongs}
+            deletedSetlists={deletedSetlists}
+            onRestoreSetlist={handleRestoreSetlist}
+            onPermanentDeleteSetlist={handlePermanentDeleteSetlist}
             onRestoreSong={handleRestoreSong}
             onPermanentDeleteSong={handlePermanentDeleteSong}
             onEmptyTrash={handleEmptyTrash}
