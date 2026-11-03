@@ -1,7 +1,6 @@
 import { bindLegacySetlists } from './utils/setlistSongs'
 import { deleteSetlistFolder, validateFolderParentChange } from './utils/folders'
 import { normalizeTags, songHasTag, renameTagInList, removeTagFromList } from './utils/songTags'
-import { Menu } from 'lucide-react'
 import { RecoveryDataPanel } from './components/RecoveryDataPanel'
 import { SetlistManager } from './components/SetlistManager'
 import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
@@ -1744,16 +1743,23 @@ function LibraryApp() {
         </aside>
       )}
 
-      {isStagePerformanceMode && <button type="button" aria-label="Open Music Explorer"
-        onClick={() => setIsSetlistDrawerOpen(true)}
-        className="md:hidden fixed top-2 left-2 z-40 flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-app-toolbar text-app-text border border-app-border">
-        <Menu className="h-5 w-5" />
-      </button>}
       {/* Main Workspace: Songbook Library vs Split Desktop Editor vs Trash vs 1:1 Stage View */}
       <div className="flex flex-1 min-h-0">
-        <ExplorerNavigation isOpen={isSetlistDrawerOpen} onClose={() => setIsSetlistDrawerOpen(false)}
-          songs={songs} setlists={setlists} folders={folders} onSaveFolder={handleSaveFolder} onDeleteFolder={handleDeleteFolder} onChangeTag={handleChangeTag} currentSelection={explorerSelection} onSelect={handleExplorerSelect}
-          onNewSong={() => navigateSafely(handleNewSong)} onNewSetlist={() => navigateSafely(handleNewSetlist)} />
+        <ExplorerNavigation
+          isHidden={isStagePerformanceMode}
+          isOpen={isSetlistDrawerOpen && !isStagePerformanceMode}
+          onClose={() => setIsSetlistDrawerOpen(false)}
+          songs={songs}
+          setlists={setlists}
+          folders={folders}
+          onSaveFolder={handleSaveFolder}
+          onDeleteFolder={handleDeleteFolder}
+          onChangeTag={handleChangeTag}
+          currentSelection={explorerSelection}
+          onSelect={handleExplorerSelect}
+          onNewSong={() => navigateSafely(handleNewSong)}
+          onNewSetlist={() => navigateSafely(handleNewSetlist)}
+        />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
           <SongbookHomeView folders={folders}
@@ -1838,7 +1844,11 @@ function LibraryApp() {
               activeSetlistName={activeSetlist?.name}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
-              onOpenSetlistDrawer={() => navigateSafely(() => { setIsSetlistDrawerOpen(true) })}
+              onOpenSetlistDrawer={
+                isStagePerformanceMode
+                  ? undefined
+                  : () => navigateSafely(() => { setIsSetlistDrawerOpen(true) })
+              }
               isSetlistDrawerOpen={isSetlistDrawerOpen}
               isStageSettingsModalOpen={isStageSettingsModalOpen}
               isAnyModalOpen={
