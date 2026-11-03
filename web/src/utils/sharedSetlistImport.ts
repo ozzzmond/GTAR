@@ -48,7 +48,7 @@ export function cloneCatalogSetlist(preview: CatalogPreview) {
   } as ActiveSongState))
   const setlist: WebSetlist = { id: generateUUID(), name: preview.snapshot.name, createdAt: Date.now(),
     catalogSource: { environmentScope: preview.scope, setlistId: preview.id, revision: preview.revision },
-    songs: songs.map(song => ({ id: song.id, title: song.title, artist: song.artist })) }
+    songs: songs.map((song, position) => ({ entryId: generateUUID(), position, id: song.id!, title: song.title, artist: song.artist })) }
   return { songs, setlist }
 }
 function assertImportUnblocked(host: ImportHost) {

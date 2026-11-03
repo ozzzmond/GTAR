@@ -1,11 +1,12 @@
+import { validateFolderParentChange } from './folders'
 import { normalizeTags } from './songTags'
 import { validateCatalogLineage } from './catalogSetlistLineage'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { GTAR_APP_VERSION } from '../types/gtar'
 import { readBackupSettingsV2, settingsFromLegacy, validateBackupSettings, validateBackupSettingsV2, type BackupSettings, type BackupSettingsV2 } from './backupSettings'
-import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong, validateSetlistReferences } from './setlistSongs'
+import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong } from './setlistSongs'
 import { detectSongKey } from './songParser'
 import { canonicalSongKey, normalizeMusicalKey } from './musicalKey'
 import { recordBackupStatus } from './backupStatus'
@@ -42,6 +43,7 @@ export interface FullBackupPayload {
   settings: BackupSettingsV2
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  folders?: SetlistFolder[]
   allowedUsers?: string[]
 }
 export interface ParsedBackupResult extends BackupSettings {
@@ -54,6 +56,7 @@ export interface ParsedBackupResult extends BackupSettings {
   singleSetlistName?: string
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  folders?: SetlistFolder[]
   allowedUsers?: string[]
   metadata?: BackupMetadata
   error?: string
@@ -85,11 +88,9 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
 }
 
 /** Download and clipboard share the same metadata and settings payload. */
-export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, allowedUsers?: string[]): FullBackupPayload {
+export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, allowedUsers?: string[], folders?: SetlistFolder[]): FullBackupPayload {
   const normalized = ensureSongIds(songs).map(normalizeBackupSong)
   const exportedSetlists = bindLegacySetlists(setlists, normalized)
-  const errors = validateSetlistReferences(exportedSetlists, normalized)
-  if (errors.length) throw new Error(`Backup blocked: ${errors.join('; ')}. Restore the missing songs or repair the setlist entries before exporting. Original data is unchanged.`)
   const partition = partitionSongs(normalized)
   return {
     app: 'GTAR',
@@ -100,10 +101,11 @@ export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetli
     songCount: partition.active.length,
     setlistCount: exportedSetlists.length,
     trashCount: partition.deleted.length,
-    contentFingerprint: libraryFingerprint(normalized, exportedSetlists),
+    contentFingerprint: libraryFingerprint(normalized, exportedSetlists, folders),
     settings: readBackupSettingsV2(),
     songs: normalized,
     setlists: exportedSetlists,
+    ...(folders ? { folders } : {}),
     ...(allowedUsers && Array.isArray(allowedUsers) ? { allowedUsers } : {})
   }
 }
@@ -111,9 +113,33 @@ export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetli
 export { stableStringify }
 
 /** Fingerprint of the library content a backup would hold (songs incl. trash, setlists). No content is stored, only this digest. */
-export function libraryFingerprint(songs: ActiveSongState[], setlists: WebSetlist[]): string {
+export function libraryFingerprint(songs: ActiveSongState[], setlists: WebSetlist[], folders?: SetlistFolder[]): string {
   const normalized = ensureSongIds(songs).map(normalizeBackupSong)
-  return `c53:${cyrb53(JSON.stringify([normalized, bindLegacySetlists(setlists, normalized)]))}`
+  return `c53:${cyrb53(JSON.stringify([normalized, bindLegacySetlists(setlists, normalized), ...(folders ? [folders] : [])]))}`
+}
+
+/** v2 files exported before S4 used case-preserving tags and references without occurrence IDs.
+ * Verify their original manifest before upgrading, without loosening validation for new files. */
+function legacyLibraryFingerprint(songs: Partial<ActiveSongState>[], setlists: WebSetlist[]): string {
+  const normalized = songs.map(song => {
+    const value = normalizeBackupSong(song)
+    if (Array.isArray(song.tags)) {
+      const seen = new Set<string>()
+      value.tags = song.tags.map(tag => tag.trim()).filter(tag => {
+        const key = tag.toLowerCase()
+        if (!tag || seen.has(key)) return false
+        seen.add(key); return true
+      })
+    }
+    return value
+  })
+  const bound = setlists.map(list => ({ ...list, songs: list.songs.map(ref => {
+    const matches = normalized.filter(song => ref.id !== undefined ? String(song.id) === String(ref.id) :
+      song.title.trim().toLowerCase() === ref.title.trim().toLowerCase() && (!ref.artist?.trim() || song.artist.trim().toLowerCase() === ref.artist.trim().toLowerCase()))
+    const song = ref.id !== undefined || matches.length === 1 ? matches[0] : undefined
+    return song ? { ...ref, id: song.id, title: song.title, artist: song.artist } : ref
+  }) }))
+  return `c53:${cyrb53(JSON.stringify([normalized, bound]))}`
 }
 
 export interface BackupCounts { songs: number; trash: number; setlists: number }
@@ -143,6 +169,7 @@ export function verifyBackupJson(json: string, payload: FullBackupPayload): Back
     parsed.songs.length !== payload.songs.length) throw new Error('Backup verification failed: record counts differ after re-reading the file')
   if (JSON.stringify(parsed.songs) !== JSON.stringify(payload.songs)) throw new Error('Backup verification failed: songs differ after re-reading the file')
   if (stableStringify(parsed.setlists) !== stableStringify(payload.setlists)) throw new Error('Backup verification failed: setlists differ after re-reading the file')
+  if (stableStringify(parsed.folders) !== stableStringify(payload.folders)) throw new Error('Backup verification failed: folders differ after re-reading the file')
   if (stableStringify(parsed.settings) !== stableStringify(payload.settings)) throw new Error('Backup verification failed: settings differ after re-reading the file')
   return counts
 }
@@ -150,8 +177,8 @@ export function verifyBackupJson(json: string, payload: FullBackupPayload): Back
 export const backupFileName = (date = new Date()) => `gtar-stage-backup-${date.toISOString().slice(0, 10)}.json`
 
 /** Builds the full backup and verifies its bytes before anything is shown, shared or downloaded. */
-export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION): VerifiedBackup {
-  const payload = createBackupPayload(songs, setlists, version)
+export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, folders?: SetlistFolder[]): VerifiedBackup {
+  const payload = createBackupPayload(songs, setlists, version, undefined, folders)
   const json = JSON.stringify(payload, null, 2)
   const counts = verifyBackupJson(json, payload)
   return { json, fileName: backupFileName(), bytes: new TextEncoder().encode(json).length, counts,
@@ -159,8 +186,8 @@ export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetli
 }
 
 /** Download-only export (menus). Verified before the download starts; records the backup status. */
-export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[]): string {
-  const backup = buildVerifiedBackup(songs, setlists)
+export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[], folders?: SetlistFolder[]): string {
+  const backup = buildVerifiedBackup(songs, setlists, GTAR_APP_VERSION, folders)
   triggerDownload(backup.json, backup.fileName)
   recordBackupStatus(backup, 'download')
   return backup.fileName
@@ -212,6 +239,7 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
     const path = `setlists[${i}]`
     check(sl, path, false)
     if (!object(sl)) return
+    if (sl.folderId !== undefined && sl.folderId !== null && (typeof sl.folderId !== 'string' || !sl.folderId.trim())) errors.push(`${path}.folderId: must be a folder ID or null`)
     if (sl.catalogSource !== undefined) {
       try { validateCatalogLineage(sl.catalogSource) } catch { errors.push(`${path}.catalogSource: invalid lineage`) }
     }
@@ -221,6 +249,8 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
       if (embedded) { check(ref, refPath, true); return }
       if (!object(ref)) { errors.push(`${refPath}: must be an object`); return }
       if (typeof ref.title !== 'string' || !ref.title.trim()) errors.push(`${refPath}.title: must be a non-empty string`)
+      if ('entryId' in ref && (typeof ref.entryId !== 'string' || !ref.entryId.trim())) errors.push(`${refPath}.entryId: must be a non-empty string`)
+      if ('position' in ref && (typeof ref.position !== 'number' || !Number.isSafeInteger(ref.position) || ref.position < 0)) errors.push(`${refPath}.position: must be a non-negative integer`)
       if ('artist' in ref && typeof ref.artist !== 'string') errors.push(`${refPath}.artist: must be a string`)
       if ('id' in ref && !(typeof ref.id === 'string' && ref.id.trim()) && !(typeof ref.id === 'number' && Number.isSafeInteger(ref.id))) errors.push(`${refPath}.id: must be a non-empty string or integer`)
     })
@@ -230,12 +260,12 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
 
 const LEGACY_SETTING_FIELDS = ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const
 const KNOWN_TOP_LEVEL = new Set(['app', 'schemaVersion', 'version', 'exportedAt', 'exportType', 'songCount', 'setlistCount', 'trashCount', 'contentFingerprint',
-  'songs', 'setlists', 'allowedUsers', 'settings', 'metadata', 'setlist', ...LEGACY_SETTING_FIELDS])
+  'songs', 'setlists', 'folders', 'allowedUsers', 'settings', 'metadata', 'setlist', ...LEGACY_SETTING_FIELDS])
 const KNOWN_SONG_FIELDS = new Set(['id', 'title', 'artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format',
   'transposeOffset', 'rawContent', 'content', 'tags', 'isFavorite', 'isDeleted', 'createdAt', 'lastOpenedAt', 'isMissing',
   'sharedSourceSongId', 'sharedSourceRevision', 'sharedSourcePublisherId', 'sharedSourcePublisherName', 'publishedCatalogSongId'])
-const KNOWN_SETLIST_FIELDS = new Set(['id', 'name', 'createdAt', 'isDeleted', 'songs', 'catalogSource'])
-const KNOWN_REF_FIELDS = new Set(['id', 'title', 'artist'])
+const KNOWN_SETLIST_FIELDS = new Set(['id', 'name', 'createdAt', 'isDeleted', 'songs', 'catalogSource', 'folderId'])
+const KNOWN_REF_FIELDS = new Set(['id', 'entryId', 'position', 'title', 'artist'])
 
 function legacySettingsOf(settings: BackupSettingsV2): BackupSettings {
   const out: BackupSettings = {}
@@ -315,6 +345,18 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       sourceSetlists = Array.isArray(data.setlists) ? data.setlists : []
       errors.push(...validateBackupEntries(sourceSongs, sourceSetlists))
     }
+    const folders: SetlistFolder[] | undefined = data.folders
+    if (folders !== undefined) {
+      if (!Array.isArray(folders)) errors.push('folders: must be an array')
+      else {
+        const seen = new Set<string>()
+        for (const folder of folders) {
+          if (!folder || typeof folder.id !== 'string' || !folder.id.trim() || seen.has(folder.id) || typeof folder.name !== 'string' || !folder.name.trim() || (folder.parentId !== null && typeof folder.parentId !== 'string')) { errors.push('folders: invalid or duplicate folder'); continue }
+          seen.add(folder.id)
+        }
+        if (!errors.length && folders.some(folder => !validateFolderParentChange(folders, folder.id, folder.parentId))) errors.push('folders: missing parent or circular hierarchy')
+      }
+    }
     const setlistIds = new Set<string>()
     sourceSetlists.forEach((sl, i) => {
       if (sl && typeof sl === 'object' && 'id' in sl && sl.id !== undefined && sl.id !== null) {
@@ -348,11 +390,11 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       if (ids.has(String(song.id))) errors.push(`songs[${i}].id: duplicate song ID`)
       ids.add(String(song.id))
     })
-    const setlists: WebSetlist[] = single ? [{ ...data.setlist, id: canonicalImportId(data.setlist.id),
+    const setlists = single ? [{ ...data.setlist, id: canonicalImportId(data.setlist.id),
       ...(data.setlist.isDeleted !== undefined ? { isDeleted: Boolean(data.setlist.isDeleted) } : {}),
       songs: (data.setlist.songs as ActiveSongState[]).map(ref => {
         const song = songs.find(item => canonicalImportId(item.id) === canonicalImportId(ref.id))!
-        return { id: song.id, title: song.title, artist: song.artist }
+        return { id: song.id!, title: song.title, artist: song.artist }
       }) }] : sourceSetlists.map(setlist => ({
         ...setlist,
         id: canonicalImportId(setlist.id),
@@ -363,7 +405,7 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     // Resolve title-only legacy references within the incoming backup first, so
     // merging that backup into a matching library does not create ambiguity.
     const boundIncoming = bindLegacySetlists(setlists, songs)
-    errors.push(...validateSetlistReferences(boundIncoming, combined))
+
     // #251 F4: a declared manifest must describe the content. Counts exist only in exports made since
     // 2026-09 (always these semantics); files without them (older, unversioned, hand-made) still import.
     if (!single) {
@@ -377,7 +419,8 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       if ('contentFingerprint' in data) {
         if (!v2) errors.push('contentFingerprint: only schema v2 backups carry a content fingerprint')
         else if (typeof data.contentFingerprint !== 'string' || !FINGERPRINT_PATTERN.test(data.contentFingerprint)) errors.push('contentFingerprint: invalid format')
-        else if (libraryFingerprint(songs, boundIncoming) !== data.contentFingerprint) errors.push('contentFingerprint: songs or setlists do not match the fingerprint (damaged or edited backup)')
+        else if (libraryFingerprint(songs, boundIncoming, folders) !== data.contentFingerprint &&
+          !(folders === undefined && !sourceSetlists.some(list => list.songs.some(ref => ref.entryId !== undefined)) && legacyLibraryFingerprint(sourceSongs, sourceSetlists) === data.contentFingerprint)) errors.push('contentFingerprint: songs or setlists do not match the fingerprint (damaged or edited backup)')
       }
     }
     if (errors.length) return invalid(errors, single)
@@ -398,6 +441,7 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
       ...legacySettingsOf(settingsV2), settings: settingsV2, ignoredFields: unknownBackupFields(data, single),
       songs, setlists: bindLegacySetlists(boundIncoming, combined),
+      ...(folders ? { folders } : {}),
       metadata,
       ...(allowedUsers ? { allowedUsers } : {}) }
   } catch (err) { return invalid([err instanceof Error ? err.message : 'Invalid JSON']) }
@@ -408,16 +452,18 @@ export interface RestoreSafetySnapshot {
   library: {
     songs: ActiveSongState[]
     setlists: WebSetlist[]
+    folders?: SetlistFolder[]
   }
 }
 
 export function createRestoreSafetySnapshot(
-  library: { songs: ActiveSongState[]; setlists: WebSetlist[] },
+  library: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] },
   storage: Storage = localStorage
 ): void {
   const snapshot: RestoreSafetySnapshot = {
     createdAt: new Date().toISOString(),
     library: {
+      ...(library.folders ? { folders: library.folders.map(folder => ({ ...folder })) } : {}),
       songs: library.songs.map(s => ({ ...s })),
       setlists: library.setlists.map(sl => ({ ...sl, songs: sl.songs.map(ref => ({ ...ref })) })),
     },

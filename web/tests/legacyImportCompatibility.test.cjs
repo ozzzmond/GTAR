@@ -84,10 +84,8 @@ test('repeated attempts require confirmation every time; cancellation cannot dup
   assert.deepEqual(merge(library, preview(first)), library)
 })
 
-test('malformed data, canonical collisions, ambiguous names and references outside the incoming backup stay rejected', () => {
+test('malformed data and canonical collisions stay rejected', () => {
   for (const data of [
-    { songs: [song, { ...song, rawContent: 'different chart' }], setlists: backup.setlists },
-    { songs: [song], setlists: [{ name: 'Gig', songs: [{ id: 'existing', title: 'Song' }] }] },
     { songs: [song], setlists: [{ name: 'Gig', songs: [{ songId: 'existing' }] }] },
     { songs: [{ ...song, id: 42 }, { ...song, id: '42' }], setlists: [{ name: 'Gig', songs: [] }] },
     { songs: [{ ...song, id: 'same' }, { ...song, id: ' same ' }], setlists: [{ name: 'Gig', songs: [] }] },

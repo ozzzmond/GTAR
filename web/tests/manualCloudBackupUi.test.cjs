@@ -33,17 +33,17 @@ const song=(id)=>({id,title:id,rawContent:'[C]Hello',artist:'A'})
 const local={songs:[song('11111111-1111-4111-8111-111111111111')],setlists:[]}
 const remote={songs:[song('22222222-2222-4222-8222-222222222222')],setlists:[]}
 const click=async text=>act(async()=>{ const button=[...document.querySelectorAll('button')].find(b=>b.textContent===text);assert.ok(button,text);button.click();await new Promise(r=>setTimeout(r,5)) })
-async function setup(signedIn=true){
- localStorage.clear();persistLibrary(local,localStorage)
+async function setup(signedIn=true,{device=local,cloudLibrary=remote}={}){
+ localStorage.clear();persistLibrary(device,localStorage)
  localStorage.setItem('gtar_library_owner_v1','owner-A-preserved');localStorage.setItem('gtar_sync_library_owner','owner-A-preserved')
- let record={version:1,checksum:computeSongbookChecksum(remote),updatedAt:'2026-11-01T00:00:00Z',data:remote};const calls=[]
- global.fetch=async(_,opts)=>{calls.push(opts.method);if(opts.method==='POST'){const body=JSON.parse(opts.body);record={...record,version:2,data:body.data,checksum:body.clientChecksum}};return new Response(JSON.stringify({success:true,cloudRecord:record}))}
+ let record={version:1,checksum:computeSongbookChecksum(cloudLibrary),updatedAt:'2026-11-01T00:00:00Z',data:cloudLibrary};const calls=[],uploads=[],folderArgs=[]
+ global.fetch=async(_,opts)=>{calls.push(opts.method);if(opts.method==='POST'){const body=JSON.parse(opts.body);uploads.push(body);record={...record,version:2,data:body.data,checksum:body.clientChecksum}};return new Response(JSON.stringify({success:true,cloudRecord:record}))}
  let signIns=0
  auth.useOptionalGoogleAuth=()=>({session:signedIn?{token:'t',user:{id:'B',email:'b@example.com'}}:null,accessStatus:'active',signIn:async()=>{signIns++}})
- const apply=mode=>async(songs,setlists)=>{assert.ok(getRestoreSafetySnapshot(localStorage),'snapshot before apply');persistLibrary(expectedRestoredLibrary(readPersistedLibrary(),{songs,setlists},mode),localStorage)}
+ const apply=mode=>async(songs,setlists,folders)=>{folderArgs.push(folders);assert.ok(getRestoreSafetySnapshot(localStorage),'snapshot before apply');persistLibrary(expectedRestoredLibrary(readPersistedLibrary(),{songs,setlists,folders},mode),localStorage)}
  const root=createRoot(document.getElementById('root'))
  await act(async()=>{root.render(React.createElement(CloudSyncModal,{isOpen:true,onClose(){},onFullRestore:apply('replace'),onSmartMerge:apply('merge')}));await new Promise(r=>setTimeout(r,5))})
- return {calls,root,signIns:()=>signIns}
+ return {calls,uploads,folderArgs,root,signIns:()=>signIns}
 }
 test('opening and device edits make no POST; backup confirms account and verifies unchanged device',async()=>{
  const {calls,root}=await setup()
@@ -172,4 +172,28 @@ test('#299 signed out: file backup and restore work end to end through the cente
   assert.equal(readPersistedLibrary().songs.length,2);assert.ok(getRestoreSafetySnapshot(localStorage),'snapshot first')
   assert.deepEqual(calls,[],'no cloud request signed out')
  }finally{URL.createObjectURL=create;URL.revokeObjectURL=revoke;window.HTMLAnchorElement.prototype.click=anchor;await act(async()=>root.unmount())}
+})
+
+const nestedFolders=[{id:'root-folder',name:'Root',parentId:null},{id:'child-folder',name:'Child',parentId:'root-folder'}]
+const folderCloud={...remote,folders:nestedFolders,setlists:[{id:'folder-set',name:'Filed set',folderId:'child-folder',songs:[{id:remote.songs[0].id,title:remote.songs[0].title}]}]}
+for(const mode of ['replace','merge'])test(`cloud ${mode} carries two nested folders through the apply callback and saved verification`,async()=>{
+ const device={...local,folders:[{id:'local-folder',name:'Local',parentId:null}]}
+ const {root,folderArgs}=await setup(true,{device,cloudLibrary:folderCloud})
+ try {
+  await click('Restore from cloud')
+  if(mode==='replace'){await click('Replace device');await click('Confirm replace')}else await click('Merge into device')
+  assert.deepEqual(folderArgs,[nestedFolders],'apply must receive parsed folders')
+  const saved=readPersistedLibrary()
+  assert.deepEqual(saved.folders,mode==='replace'?nestedFolders:[...device.folders,...nestedFolders])
+  assert.equal(saved.setlists[0].folderId,'child-folder')
+  assert.match(document.body.textContent,/Backup restored: .*verified after saving/)
+ }finally{await act(async()=>root.unmount())}
+})
+test('cloud upload payload carries device folders and setlist folder placement',async()=>{
+ const {root,uploads}=await setup(true,{device:folderCloud})
+ try{
+  await click('Back up to cloud');await click('Confirm backup')
+  assert.deepEqual(uploads[0].data.folders,nestedFolders)
+  assert.equal(uploads[0].data.setlists[0].folderId,'child-folder')
+ }finally{await act(async()=>root.unmount())}
 })

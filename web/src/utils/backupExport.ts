@@ -8,9 +8,9 @@ import { appLogger } from './logger'
  * caller asks for one more tap. A resolved share or a started download only means the file left
  * GTAR; saving is confirmed by the user, not by the app.
  */
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { COPY_JSON_MAX_BYTES, RESTORE_SNAPSHOT_KEY, createRestoreSafetySnapshot, stableStringify, triggerDownload, type VerifiedBackup } from './jsonBackup'
-import { mergeBackupLibrary } from './setlistSongs'
+import { bindLegacySetlists, mergeBackupLibrary } from './setlistSongs'
 import { mergeImportedSetlists } from './importIdentity'
 import { canonicalSongKey } from './musicalKey'
 import { recordBackupStatus, type BackupDelivery } from './backupStatus'
@@ -99,7 +99,7 @@ export interface SafetySnapshotResult { location: 'restore-snapshot' | 'recovery
  * recovery archives (IndexedDB when available). Throws when neither could be verified: the
  * caller must not change the library then.
  */
-export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
+export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }, storage: Storage): Promise<SafetySnapshotResult> {
   // #300: with the IndexedDB library, a verified safety snapshot (last 5, 50 MB) in the same database.
   if (isLibraryStoreActive(storage)) {
     let revision: string | null = null
@@ -111,7 +111,7 @@ export async function ensureRestoreSafetySnapshot(library: { songs: ActiveSongSt
   }
   return writeRestoreSafetySnapshot(library, storage)
 }
-async function writeRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage): Promise<SafetySnapshotResult> {
+async function writeRestoreSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }, storage: Storage): Promise<SafetySnapshotResult> {
   try {
     createRestoreSafetySnapshot(library, storage)
     return { location: 'restore-snapshot', key: RESTORE_SNAPSHOT_KEY }
@@ -121,7 +121,7 @@ async function writeRestoreSafetySnapshot(library: { songs: ActiveSongState[]; s
     return archiveSafetySnapshot(library, storage, error)
   }
 }
-async function archiveSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[] }, storage: Storage, cause: unknown): Promise<SafetySnapshotResult> {
+async function archiveSafetySnapshot(library: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }, storage: Storage, cause: unknown): Promise<SafetySnapshotResult> {
   const key = `gtar_sync_recovery:restore-snapshot:${generateUUID()}`
   // #257 review: `local` is the recovery format Recovery Review reads (choose / export / cleanup).
   const raw = JSON.stringify({ local: library, restoreSnapshotAt: new Date().toISOString() })
@@ -134,19 +134,20 @@ async function archiveSafetySnapshot(library: { songs: ActiveSongState[]; setlis
   return { location: 'recovery-archive', key }
 }
 
-type Library = { songs: ActiveSongState[]; setlists: WebSetlist[] }
+type Library = { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }
 
 /** The persisted representation: JSON round-trip (undefined fields dropped) and canonical song keys, as persistLibrary stores them. */
 function canonicalLibrary(library: Library): Library {
-  const plain = JSON.parse(JSON.stringify({ songs: library.songs, setlists: library.setlists })) as Library
-  return { songs: plain.songs.map(song => song.key === undefined ? song : { ...song, key: canonicalSongKey(song.key) }), setlists: plain.setlists }
+  const plain = JSON.parse(JSON.stringify(library)) as Library
+  return { folders: plain.folders ?? [], songs: plain.songs.map(song => song.key === undefined ? song : { ...song, key: canonicalSongKey(song.key) }), setlists: bindLegacySetlists(plain.setlists, plain.songs) }
 }
 
 /** What the restore handlers must have saved: the backup itself (replace) or the existing merge rules applied to it (merge). */
 export function expectedRestoredLibrary(before: Library, incoming: Library, mode: 'replace' | 'merge'): Library {
-  if (mode === 'replace') return { songs: incoming.songs, setlists: incoming.setlists }
+  if (mode === 'replace') return { songs: incoming.songs, setlists: incoming.setlists, folders: incoming.folders ?? [] }
   const merged = mergeBackupLibrary(before.songs, incoming.songs, incoming.setlists)
-  return { songs: merged.songs, setlists: mergeImportedSetlists(before.setlists, merged.setlists) }
+  return { songs: merged.songs, setlists: mergeImportedSetlists(before.setlists, merged.setlists),
+    folders: incoming.folders ? [...new Map([...(before.folders ?? []), ...incoming.folders].map(folder => [folder.id, folder])).values()] : before.folders }
 }
 
 function recordDiff(kind: 'song' | 'setlist', expected: Record<string, unknown>[], saved: Record<string, unknown>[], out: string[]): void {

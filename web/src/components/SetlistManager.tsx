@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, ListMusic, Play, Search, Trash2, X } from 'lucide-react'
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { trapTab } from '../utils/focusTrap'
@@ -10,12 +10,14 @@ import { dangerButton, primaryButton, secondaryButton, sectionCard, sectionLabel
 
 /**
  * #312 S2: GTAR1 Setlist Manager, ported from GTAR1 @ da2bdee src/components/SetlistManager.tsx.
- * DEV-only. No folders (B3/S4), no per-entry transpose, no entryId: every write goes through
+ * DEV-only. Folder placement and canonical shortcuts: every write goes through
  * App's guarded setlist handlers, which return false when nothing was saved.
  */
 export interface SetlistManagerProps {
   /** Active setlists (deleted ones already removed). */
   setlists: WebSetlist[]
+  folders?: SetlistFolder[]
+  onSetlistFolderChange?: (id: string | number, folderId: string | null) => boolean
   songs: ActiveSongState[]
   selectedSetlistId: string | number | null
   onSelectSetlist: (setlistId: string | number) => void
@@ -47,6 +49,7 @@ const isTyping = (el: EventTarget | null) => {
 export const SetlistManager: React.FC<SetlistManagerProps> = ({
   setlists,
   songs,
+  folders = [], onSetlistFolderChange,
   selectedSetlistId,
   onSelectSetlist,
   onClose,
@@ -85,7 +88,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
     const available = song && !song.isDeleted ? song : undefined
     return {
       title: available?.title || ref.title || 'Untitled Song',
-      artist: available?.artist || ref.artist || '',
+      artist: available ? available.artist : ref.artist || '',
       available: Boolean(available),
       performanceKey: available ? transposeContext(available, available.transposeOffset || 0).performanceKey : '',
     }
@@ -225,6 +228,11 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
           </button>
         </div>
 
+        {current && onSetlistFolderChange && <label className="px-4 pt-3 text-xs text-app-muted">Folder
+          <select aria-label="Setlist folder" value={current.folderId ?? ''} className={`${field} ml-2 max-w-full`} onChange={event => report(onSetlistFolderChange(current.id, event.target.value || null), 'Folder saved')}>
+            <option value="">Unfiled</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+          </select>
+        </label>}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
           {!current ? (
             <div data-testid="setlist-manager-no-setlists" className={`${sectionCard} text-center text-xs text-app-muted py-10`}>
@@ -336,10 +344,10 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                   <ol className="space-y-2">
                     {entries.map((entry, index) => (
                       <li
-                        key={`${current.id}_${index}`}
+                        key={current.songs[index].entryId ?? `${current.id}_${index}`}
                         data-testid={`setlist-manager-entry-${index}`}
                         className={`ui-song-card p-2 pl-3 rounded-xl border flex items-center justify-between gap-2 ${
-                          entry.available ? 'bg-app-song border-app-border' : 'bg-status-error/10 border-status-error/30'
+                          entry.available ? 'bg-app-song border-app-border' : 'bg-app-surface border-app-border opacity-60'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -349,7 +357,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                             <div className="ui-secondary-text text-[11px] text-app-muted flex items-center gap-2 min-w-0">
                               {entry.available
                                 ? <span className="truncate">{entry.artist || 'Unknown Artist'}</span>
-                                : <span className="text-status-error font-semibold truncate">Unavailable{entry.artist ? ` · ${entry.artist}` : ''}</span>}
+                                : <span className="text-app-muted font-semibold truncate">Song missing{entry.artist ? ` · ${entry.artist}` : ''}</span>}
                               {entry.performanceKey && <span className="font-mono text-app-accent font-semibold shrink-0">{entry.performanceKey}</span>}
                             </div>
                           </div>

@@ -32,7 +32,7 @@ test('damaged canonical library shows recovery export and preserves raw sources'
   } finally {await act(async()=>root.unmount());URL.createObjectURL=create;URL.revokeObjectURL=revoke;Object.assign(global,prior);dom.window.close()}
 })
 
-test('supported recovery preview/cancel has zero writes; explicit apply mounts app without cloud upload',async()=>{
+test('broken shortcuts mount normally and upgrade without dropping entries or uploading',async()=>{
   const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'})
   const prior={window:global.window,document:global.document,localStorage:global.localStorage,sessionStorage:global.sessionStorage,IS_REACT_ACT_ENVIRONMENT:global.IS_REACT_ACT_ENVIRONMENT,fetch:global.fetch}
   Object.assign(global,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,sessionStorage:dom.window.sessionStorage,IS_REACT_ACT_ENVIRONMENT:true})
@@ -48,24 +48,15 @@ test('supported recovery preview/cancel has zero writes; explicit apply mounts a
   const raw=JSON.stringify(damaged,null,2)
   localStorage.setItem('gtar_library_v1',raw)
   const root=createRoot(document.getElementById('root'))
-  const click=async text=>act(async()=>{const button=[...document.querySelectorAll('button')].find(x=>x.textContent===text);assert.ok(button,text);button.click()})
   try{
     const App=require('../src/App.tsx').default
     await act(async()=>root.render(React.createElement(App)))
-    assert.match(document.body.textContent,/Repair dangling setlist references/)
-    const before=Object.fromEntries(Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)]))
-    await click('Preview')
-    assert.match(document.body.textContent,/Affected Gig.*entry 2: Missing Song.*missing song ID missing-id/)
-    await click('Cancel')
-    assert.deepEqual(Object.fromEntries(Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)])),before)
-    assert.equal(localStorage.getItem('gtar_library_v1'),raw)
-    await click('Preview');await click('Apply Repair')
-    assert.doesNotMatch(document.body.textContent,/Device library needs recovery/)
+    assert.doesNotMatch(document.body.textContent,/Repair dangling setlist references/)
     assert.ok(document.querySelector('[data-testid="toggle-song-selection-mode"]'),'normal Songbook mounts')
-    const repaired=JSON.parse(localStorage.getItem('gtar_library_v1'))
-    assert.deepEqual(repaired.setlists[0].songs,[damaged.setlists[0].songs[0]])
-    const archive=Object.keys(localStorage).find(k=>k.startsWith('gtar_sync_recovery:dangling-references:'))
-    assert.equal(localStorage.getItem(archive),raw)
+    const upgraded=JSON.parse(localStorage.getItem('gtar_library_v1'))
+    assert.deepEqual(upgraded.setlists[0].songs.map(ref=>ref.id),[song.id,'missing-id'])
+    assert.equal(upgraded.setlists[0].songs.length,2)
+    assert.ok(upgraded.setlists[0].songs.every(ref=>ref.entryId))
     assert.equal(uploads,0)
   }finally{await act(async()=>root.unmount());Object.assign(global,prior);dom.window.close()}
 })
@@ -95,6 +86,7 @@ test('App lifecycle commits valid complete libraries and rejected persistence ke
  try{
   const App=require('../src/App.tsx').default
   await actCall(()=>root.render(React.createElement(App)))
+  const upgradedList=valid().setlists[0]
   const unload = () => { const event=new window.Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented }
   assert.equal(unload(),false)
   const durableBefore=localStorage.getItem('gtar_library_v1')
@@ -110,12 +102,12 @@ test('App lifecycle commits valid complete libraries and rejected persistence ke
   assert.equal(valid().setlists.length,3)
   assert.equal(unload(),false,'A verified retry clears the refresh guard')
   await actCall(()=>home.onDeleteSong(0))
-  assert.deepEqual(valid().setlists[0],setlists[0])
+  assert.deepEqual(valid().setlists[0],upgradedList)
   assert.equal(home.songs.length,1);assert.equal(header.deletedSongsCount,1)
   await actCall(()=>header.onViewChange('trash'))
   await actCall(()=>trash.onRestoreSong(ids[0]))
   assert.equal(valid().songs.find(s=>s.id===ids[0]).isDeleted,false)
-  assert.deepEqual(valid().setlists[0],setlists[0])
+  assert.deepEqual(valid().setlists[0],upgradedList)
   await actCall(()=>trash.onBackToSongbook())
   const raw=localStorage.getItem('gtar_library_v1')
   window.Storage.prototype.setItem=function(k,v){if(k==='gtar_library_v1')throw Error('blocked write');return storageSet.call(this,k,v)}
@@ -124,13 +116,13 @@ test('App lifecycle commits valid complete libraries and rejected persistence ke
   assert.equal(home.songs.length,2);assert.equal(header.deletedSongsCount,0)
   window.Storage.prototype.setItem=storageSet
   await actCall(()=>home.onBulkDeleteSongs(ids))
-  assert.deepEqual(valid().setlists[0],setlists[0]);assert.equal(header.deletedSongsCount,2)
+  assert.deepEqual(valid().setlists[0],upgradedList);assert.equal(header.deletedSongsCount,2)
   assert.equal(home.songs.length,1);assert.equal(home.songs[0].title,'New Song')
   await actCall(()=>header.onViewChange('trash'))
   await actCall(()=>trash.onPermanentDeleteSong(ids[0]))
-  assert.deepEqual(valid().setlists[0].songs,[setlists[0].songs[1]])
+  assert.deepEqual(valid().setlists[0].songs,upgradedList.songs)
   await actCall(()=>trash.onEmptyTrash())
-  assert.deepEqual(valid().setlists[0].songs,[]);assert.equal(trash.deletedSongs.length,0)
+  assert.deepEqual(valid().setlists[0].songs,upgradedList.songs);assert.equal(trash.deletedSongs.length,0)
  }finally{
   window.Storage.prototype.setItem=storageSet
   await actCall(()=>root.unmount())

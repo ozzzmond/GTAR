@@ -42,7 +42,7 @@ import { resolvePublishedProvenance, resolveImportedProvenance, type CatalogSong
 import type { SharedCatalogSongItem } from '../types/sharedCatalog'
 import { sharedCatalogService } from '../utils/sharedCatalogService'
 import { SwipeableActionCard } from './SwipeableActionCard'
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { SharedCatalogBrowser } from './SharedCatalogBrowser'
 import { findCatalogDuplicates } from '../utils/catalogDuplicateAdvisory'
 import { publishSharedCatalogSong } from '../utils/sharedCatalogClient'
@@ -53,6 +53,7 @@ import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
 interface SongbookHomeViewProps {
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
   onCreateSetlistForSong: (songId: string | number, name: string) => boolean
+  folders?: SetlistFolder[]
   songs: ActiveSongState[]
   activeSongIndex: number
   onSelectSong: (index: number) => void
@@ -96,6 +97,7 @@ const cardMenuItem = 'w-full min-h-11 px-2.5 rounded-lg text-left hover:bg-app-b
 
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   songs,
+  folders = [],
   onSongMembershipChange,
   onCreateSetlistForSong,
   activeSongIndex,
@@ -173,9 +175,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
 
-  const currentView: ExplorerTarget = view ?? { type: 'ALL_SONGS' }
+  const currentView: ExplorerTarget = useMemo(() => view ?? { type: 'ALL_SONGS' }, [view])
   const activeTagFilter = currentView.type === 'TAG' ? currentView.tag : null
-  const isSetlistContext = currentView.type === 'ALL_SETLISTS' || currentView.type === 'UNFILED_SETLISTS'
+  const isSetlistContext = currentView.type === 'ALL_SETLISTS' || currentView.type === 'UNFILED_SETLISTS' || currentView.type === 'FOLDER'
   const isSongsContext = currentView.type === 'ALL_SONGS' || currentView.type === 'TAG'
   const breadcrumbItems: Array<{ label: string; target?: ExplorerTarget }> = currentView.type === 'TAG'
     ? [{ label: 'Songbook', target: { type: 'ALL_SONGS' } }, { label: 'Tags' }, { label: `#${currentView.tag}` }]
@@ -600,8 +602,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   // Filter setlists by search query (matching setlist name or tracks inside setlist)
   const filteredSetlists = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
-    if (!q) return activeSetlists
-    return activeSetlists.filter((sl) => {
+    const scoped = currentView.type === 'FOLDER' ? activeSetlists.filter(list => list.folderId === currentView.folderId) : currentView.type === 'UNFILED_SETLISTS' ? activeSetlists.filter(list => !list.folderId || !folders.some(folder => folder.id === list.folderId)) : activeSetlists
+    if (!q) return scoped
+    return scoped.filter((sl) => {
       const matchName = sl.name.toLowerCase().includes(q)
       const matchSong = (sl.songs || []).some((ref) => {
         const resolved = resolveSetlistSongIndexed(ref, songs, songIndex)
@@ -611,7 +614,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       })
       return matchName || matchSong
     })
-  }, [activeSetlists, searchQuery, songs, songIndex])
+  }, [activeSetlists, searchQuery, songs, songIndex, currentView, folders])
 
   type SetlistSortOption = 'manual' | 'title_asc' | 'title_desc' | 'newest' | 'oldest'
   const [setlistSortBy, setSetlistSortBy] = useState<SetlistSortOption>('manual')
@@ -1520,8 +1523,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             className="hidden"
           />
           <SetlistWorkspace
-            key={currentView.type}
-            scope={currentView.type as SetlistWorkspaceScope}
+            key={currentView.type === 'FOLDER' ? currentView.folderId : currentView.type}
+            folderName={currentView.type === 'FOLDER' ? folders.find(folder => folder.id === currentView.folderId)?.name : undefined}
+            scope={currentView.type === 'FOLDER' ? 'ALL_SETLISTS' : currentView.type as SetlistWorkspaceScope}
             setlists={sortedSetlists}
             songs={songs}
             onSelectScope={(scope) => onSelectView?.({ type: scope })}
@@ -1550,7 +1554,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : 'Publish to Shared Catalog'
               },
               onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs),
-              onExportAllSetlists: () => exportAllDataJson(songs, setlists),
+              onExportAllSetlists: () => exportAllDataJson(songs, setlists, folders),
               onNewSetlist: onNewSetlist,
               onManageSetlists: onOpenSetlistManager ?? onOpenSetlists,
             }}

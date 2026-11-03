@@ -1,3 +1,4 @@
+import { validateFolderParentChange } from './folders'
 import { validateCatalogLineage } from './catalogSetlistLineage'
 import type { SyncLibrary } from './syncMerge'
 import { appLogger, prunePersistedLogs } from './logger'
@@ -119,8 +120,17 @@ export function validateLibrary(value: unknown): asserts value is SyncLibrary {
     if (list.catalogSource !== undefined) validateCatalogLineage(list.catalogSource)
     lists.add(String(list.id))
     for (const ref of list.songs) {
-      if (!ref || !validId(ref.id) || !ids.has(String(ref.id)) || typeof ref.title !== 'string') return fail()
+      if (!ref || (ref.id !== undefined && !validId(ref.id)) || typeof ref.title !== 'string') return fail()
     }
+  }
+  if (lib.folders !== undefined) {
+    if (!Array.isArray(lib.folders)) return fail()
+    const folderIds = new Set<string>()
+    for (const folder of lib.folders) {
+      if (!folder || typeof folder.id !== 'string' || !folder.id.trim() || typeof folder.name !== 'string' || !folder.name.trim() || folderIds.has(folder.id) || (folder.parentId !== null && typeof folder.parentId !== 'string')) return fail()
+      folderIds.add(folder.id)
+    }
+    if (lib.folders.some(folder => !validateFolderParentChange(lib.folders!, folder.id, folder.parentId))) return fail()
   }
   if (lib.allowedUsers !== undefined && (!Array.isArray(lib.allowedUsers) || !lib.allowedUsers.every(x => typeof x === 'string'))) return fail()
   if (lib.themeSettings !== undefined && validateCloudThemeSettings(lib.themeSettings).length > 0) return fail()
@@ -779,7 +789,11 @@ export async function loadLibraryRevision(raw: string): Promise<void> {
 /** True when `candidate` equals the library stored at revision `raw` (persisted JSON representation). */
 export function libraryMatchesRevision(candidate: SyncLibrary, raw: string | null): boolean {
   if (raw === null) return false
-  try { return same(decodeLibraryRevision(raw), JSON.parse(JSON.stringify(candidate))) } catch { return false }
+  try {
+    const stored = decodeLibraryRevision(raw) as SyncLibrary
+    const plain = JSON.parse(JSON.stringify(candidate)) as SyncLibrary
+    return same({ ...stored, folders: stored.folders ?? [] }, { ...plain, folders: plain.folders ?? [] })
+  } catch { return false }
 }
 /** Parses the persisted library without validation or moving the cross-tab baseline (diagnostics). */
 export function peekPersistedLibrary(storage: Storage = localStorage): unknown {

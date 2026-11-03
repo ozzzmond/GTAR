@@ -127,7 +127,7 @@ test('duplicate setlist IDs are rejected before any state or storage mutation', 
   assert.deepEqual(result.setlists, [])
 })
 
-test('existing duplicate song ID and setlist reference validation remain enforced', () => {
+test('duplicate song IDs reject; missing setlist targets import as broken shortcuts', () => {
   // Duplicate song ID
   const dupSong = parseBackupJson(JSON.stringify({
     songs: [mockSong1, { ...mockSong2, id: mockSong1.id }],
@@ -141,8 +141,8 @@ test('existing duplicate song ID and setlist reference validation remain enforce
     songs: [mockSong1],
     setlists: [{ id: 'set-1', name: 'Set', songs: [{ id: 'non-existent', title: 'Ghost' }] }],
   }))
-  assert.equal(missingRef.isValid, false)
-  assert.match(missingRef.error, /missing or ambiguous/)
+  assert.equal(missingRef.isValid, true, missingRef.error)
+  assert.equal(missingRef.setlists[0].songs[0].id, 'non-existent')
 })
 
 // ACTION 5: Pre-restore safety snapshot lifecycle & recovery
@@ -583,7 +583,7 @@ for (const active of [3, 4, 21, 0]) {
     assert.equal(parsed.metadata.activeSetlistCount, active)
     assert.equal(parsed.metadata.deletedSetlistCount, 21 - active)
     assert.equal(parsed.metadata.activeSetlistCount + parsed.metadata.deletedSetlistCount, parsed.metadata.setlistCount)
-    assert.deepEqual(parsed.setlists, setlists)
+    assert.deepEqual(parsed.setlists, setlists.map(list => ({...list, songs:list.songs.map((ref, position) => ({...ref, entryId:`entry:${list.id}:${position}`, position}))})))
     assert.equal(JSON.stringify(setlists), before)
     assert.equal(createBackupPayload(parsed.songs, parsed.setlists).setlists.filter(sl => sl.isDeleted).length, 21 - active)
     await mountRestore(root, { onFullRestore: () => assert.fail('Preview wrote library') })

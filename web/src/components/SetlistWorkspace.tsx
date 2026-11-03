@@ -9,12 +9,13 @@ import { DropdownPortal } from './DropdownPortal'
  * #290 S1: GTAR1 setlist workspace (collection + single-setlist views), ported from
  * GTAR1 SongbookHomeView "CASE A"/"CASE B" and its breadcrumb/scope bar. DEV-only;
  * rendered when the Music Explorer target is All Setlists or Unfiled Setlists.
- * GTAR has no folder model, so every setlist is unfiled and no folder label is shown.
+ * S4 folder selections reuse this collection view with a folder breadcrumb label.
  */
 export type SetlistWorkspaceScope = 'ALL_SETLISTS' | 'UNFILED_SETLISTS'
 
 export interface SetlistWorkspaceProps {
   scope: SetlistWorkspaceScope
+  folderName?: string
   /** Active setlists in display order (already searched and sorted by the caller). */
   setlists: WebSetlist[]
   songs: ActiveSongState[]
@@ -71,7 +72,7 @@ interface EntryView {
 }
 
 export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
-  scope,
+  scope, folderName,
   setlists,
   songs,
   onSelectScope,
@@ -96,7 +97,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
       const available = song && !song.isDeleted ? song : undefined
       return {
         title: available?.title || ref.title || 'Untitled Song',
-        artist: available?.artist || ref.artist || '',
+        artist: available ? available.artist : ref.artist || '',
         libraryIndex: available ? songs.indexOf(available) : null,
         performanceKey: available ? transposeContext(available, available.transposeOffset || 0).performanceKey : '',
       }
@@ -131,13 +132,13 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 onClick={() => setOpenSetlistId(null)}
                 className={crumbButton}
               >
-                {SCOPE_LABEL[scope]}
+                {folderName ?? SCOPE_LABEL[scope]}
               </button>
               <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
               <span data-crumb aria-current="page" className={crumbCurrent}>{openSetlist.name}</span>
             </>
           ) : (
-            <span data-crumb aria-current="page" className={crumbCurrent}>{SCOPE_LABEL[scope]}</span>
+            <span data-crumb aria-current="page" className={crumbCurrent}>{folderName ?? SCOPE_LABEL[scope]}</span>
           )}
         </nav>
         {menu && (
@@ -255,7 +256,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 const open = () => { if (entry.libraryIndex !== null) onOpenSong?.(entry.libraryIndex) }
                 return (
                   <div
-                    key={`${openSetlist.id}_${idx}`}
+                    key={openSetlist.songs[idx].entryId ?? `${openSetlist.id}_${idx}`}
                     data-testid={`workspace-entry-${idx}`}
                     aria-disabled={unavailable ? 'true' : undefined}
                     onClick={open}
@@ -271,7 +272,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         </div>
                         <div className="ui-secondary-text text-xs text-app-muted truncate">
                           {unavailable ? (
-                            <span className="text-status-error font-semibold">Unavailable{entry.artist ? ` · ${entry.artist}` : ''}</span>
+                            <span className="text-app-muted font-semibold">Song missing{entry.artist ? ` · ${entry.artist}` : ''}</span>
                           ) : (
                             entry.artist || 'Unknown Artist'
                           )}
@@ -316,11 +317,11 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           )}
         </div>
       ) : (
-        /* Setlist collection view (GTAR1 CASE B, no folders) */
+        /* Setlist collection view (GTAR1 CASE B, including folder scope) */
         <div className="space-y-3">
           <h2 data-testid="setlist-workspace-heading" className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2">
             <ListMusic className="ui-section-icon w-4 h-4 text-app-section" />
-            <span>{SCOPE_LABEL[scope]}</span>
+            <span>{folderName ?? SCOPE_LABEL[scope]}</span>
             <span className="text-xs font-normal text-app-muted">({setlists.length})</span>
           </h2>
 

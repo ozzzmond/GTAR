@@ -25,9 +25,9 @@ const song = { id: 'multi-1', title: 'Song', artist: 'A', key: 'G', rawContent: 
 
 test('normalization: legacy, arrays, empties, ordering, first spelling, no input mutation', () => {
   for (const value of [null, undefined, '', ' , ', []]) assert.deepEqual(normalizeTags(value), [])
-  assert.deepEqual(normalizeTags(' Rock, jazz, ROCK, , Jazz '), ['Rock', 'jazz'])
+  assert.deepEqual(normalizeTags(' Rock, jazz, ROCK, , Jazz '), ['rock', 'jazz'])
   const input = [' Folk ', '', null, 'FOLK', 'Live, loud', 'Jazz']
-  assert.deepEqual(normalizeTags(input), ['Folk', 'Live, loud', 'Jazz'])
+  assert.deepEqual(normalizeTags(input), ['folk', 'live, loud', 'jazz'])
   assert.equal(input[0], ' Folk ')
   assert.equal(matchesSongTags(' Folk, Jazz', 'JAZ'), true)
   assert.equal(matchesSongTags(['Folk', 'Jazz'], 'jaz'), true)
@@ -63,8 +63,8 @@ test('Editor: legacy display, add/remove, dirty, save and reload arrays', async 
   try {
     await render(song)
     await act(async () => document.querySelector('[aria-label="Song Details & Metadata"]').click())
-    assert.ok(document.querySelector('[aria-label="Remove tag Worship"]'))
-    await act(async () => document.querySelector('[aria-label="Remove tag Worship"]').click())
+    assert.ok(document.querySelector('[aria-label="Remove tag worship"]'))
+    await act(async () => document.querySelector('[aria-label="Remove tag worship"]').click())
     assert.equal(document.querySelector('[data-testid="editor-save-status"]').dataset.saveStatus, 'UNSAVED')
     assert.equal(saved, undefined, 'tag drafts do not mutate the original song before save')
     const input = document.querySelector('[aria-label="Add tags"]')
@@ -73,12 +73,12 @@ test('Editor: legacy display, add/remove, dirty, save and reload arrays', async 
       input.dispatchEvent(new window.KeyboardEvent('keydown', {key:'Enter', bubbles:true}))
     })
     await act(async () => document.querySelector('[aria-label="Save changes"]').click())
-    assert.deepEqual(saved.tags, ['Acoustic', 'Jazz'])
+    assert.deepEqual(saved.tags, ['acoustic', 'jazz'])
     assert.equal(saved.id, song.id)
     assert.equal(saved.rawContent, song.rawContent)
     assert.equal(document.querySelector('[data-testid="editor-save-status"]').dataset.saveStatus, 'SAVED')
     await render({...saved})
-    assert.ok(document.querySelector('[aria-label="Remove tag Jazz"]'))
-    assert.equal(document.querySelector('[aria-label="Remove tag Worship"]'), null)
+    assert.ok(document.querySelector('[aria-label="Remove tag jazz"]'))
+    assert.equal(document.querySelector('[aria-label="Remove tag worship"]'), null)
   } finally { await act(async () => root.unmount()) }
 })

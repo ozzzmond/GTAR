@@ -4,7 +4,7 @@
  * React renders a committed merge.
  */
 import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
-import type { ActiveSongState } from '../types/gtar'
+import type { ActiveSongState, SetlistFolder } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import type { SharedSetlistPayload } from './sharedSetlist'
 import { libraryRevision, persistLibrary, preserveStoredLibrary } from './syncJournal'
@@ -19,6 +19,8 @@ export interface LibraryImportsInput {
   songs: ActiveSongState[]
   deletedSongs: ActiveSongState[]
   setlists: WebSetlist[]
+  folders?: SetlistFolder[]
+  setFolders?: Setter<SetlistFolder[]>
   setSongs: Setter<ActiveSongState[]>
   setDeletedSongs: Setter<ActiveSongState[]>
   setSetlists: Setter<WebSetlist[]>
@@ -33,32 +35,34 @@ export interface LibraryImportsInput {
 }
 
 export function useLibraryImports({
-  songs, deletedSongs, setlists, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
+  songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
   setToastMessage, setActiveSongIndex, setActiveSetlistId, setActiveSetlistSongIndex, setQueueMode, setIncomingSharedSetlist,
 }: LibraryImportsInput) {
   // Consecutive transport messages can arrive before React renders the first
   // committed merge. Keep that complete state available to the next reception.
-  const importStateRef = useRef({ songs: [...songs, ...deletedSongs], setlists })
+  const importStateRef = useRef({ songs: [...songs, ...deletedSongs], setlists, folders })
   // Pre-existing render-time ref sync (unchanged by #85): consecutive transport messages read it before React renders.
   // eslint-disable-next-line react-hooks/refs
-  importStateRef.current = { songs: [...songs, ...deletedSongs], setlists }
+  importStateRef.current = { songs: [...songs, ...deletedSongs], setlists, folders }
 
-  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
+  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[]) => {
     const existingSongs = importStateRef.current.songs
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }), { mode: 'merge', existingSongs })
+    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedFolders ? { folders: importedFolders } : {}) }), { mode: 'merge', existingSongs })
     if (!parsed.isValid) throw new Error(parsed.error)
     const merged = mergeBackupLibrary(existingSongs, parsed.songs, parsed.setlists)
     const partition = partitionSongs(merged.songs)
     const nextSetlists = mergeImportedSetlists(importStateRef.current.setlists, merged.setlists)
+    const nextFolders = importedFolders ? [...new Map([...(importStateRef.current.folders ?? []), ...importedFolders].map(folder => [folder.id, folder])).values()] : importStateRef.current.folders
     // A merge based on stale React state must never replace a newer tab's data.
-    persistLibrary({ songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
+    persistLibrary({ folders: nextFolders, songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
     persistedBaselineRef.current = libraryRevision()
-    importStateRef.current = { songs: merged.songs, setlists: nextSetlists }
+    importStateRef.current = { songs: merged.songs, setlists: nextSetlists, folders: nextFolders }
     setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(nextSetlists)
-  }, [persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists])
+    if (nextFolders) setFolders?.(nextFolders)
+  }, [setFolders, persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists])
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
@@ -75,20 +79,21 @@ export function useLibraryImports({
     setDeletedSongs(prev => [...prev, ...partition.deleted])
   }
 
-  const handleFullRestore = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[]) => {
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists }))
+  const handleFullRestore = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[]) => {
+    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedFolders ? { folders: importedFolders } : {}) }))
     if (!parsed.isValid) throw new Error(parsed.error)
     const partition = partitionSongs(parsed.songs)
     // Full restore is explicitly confirmed by the restore dialog; preserve the
     // current stored revision too, which may differ from the dialog's local state.
     const expectedRaw = libraryRevision()
     preserveStoredLibrary(expectedRaw)
-    persistLibrary({ songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
+    persistLibrary({ folders: parsed.folders ?? [], songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
     persistedBaselineRef.current = libraryRevision()
     setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(parsed.setlists)
+    setFolders?.(parsed.folders ?? [])
     setActiveSetlistId(null)
     setActiveSongIndex(0)
     setActiveSetlistSongIndex(0)
@@ -119,8 +124,9 @@ export function useLibraryImports({
       id: generateUUID(),
       name: shared.name,
       createdAt: Date.now(),
-      songs: newSongStates.map((ns) => ({
-        id: ns.id,
+      songs: newSongStates.map((ns, position) => ({
+        entryId: generateUUID(), position,
+        id: ns.id!,
         title: ns.title,
         artist: ns.artist,
       })),

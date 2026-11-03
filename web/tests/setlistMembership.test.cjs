@@ -9,7 +9,7 @@ const { setSongMembership, isSongInSetlist } = require('../src/utils/setlistSong
 const { normalizeBackupSong, parseBackupJson, createBackupPayload } = require('../src/utils/jsonBackup.ts')
 const song = normalizeBackupSong({ id: 0, title: 'Same title', rawContent: '[C]Song' })
 const other = { ...song, id: 'other' }
-const setlist = { id: 'gig', name: 'Gig', songs: [{ id: other.id, title: other.title }] }
+const setlist = { id: 'gig', name: 'Gig', songs: [{ id: other.id, title: other.title, entryId: 'other-entry', position: 0 }] }
 
 test('membership uses stable IDs, appends once and preserves the other song with the same title', () => {
   const added = setSongMembership(setlist, song, true)

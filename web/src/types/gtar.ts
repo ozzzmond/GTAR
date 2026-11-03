@@ -55,13 +55,33 @@ export interface SongEntity {
   lastOpenedAt?: number
 }
 
+export interface SetlistFolder {
+  id: string
+  name: string
+  parentId: string | null
+  createdAt?: number
+  updatedAt?: number
+}
+
+export interface WebSetlistSongRef {
+  id: string | number
+  entryId: string
+  position: number
+  title: string
+  artist?: string
+}
+
+/** Legacy input is upgraded at load/import/persist boundaries. */
+export type LegacySetlistSongRef = Partial<WebSetlistSongRef> & { title: string }
+
 export interface WebSetlist {
+  folderId?: string | null
   catalogSource?: CatalogSetlistLineage
   id: string | number
   name: string
   createdAt?: number
   isDeleted?: boolean
-  songs: Array<{ title: string; artist?: string; id?: string | number }>
+  songs: WebSetlistSongRef[]
 }
 
 export interface GtarSetlistSong {

@@ -34,7 +34,7 @@ export async function writeCloudBackup(account: BackupAccount, library: SyncLibr
 export async function restoreCloudBackup(before: SyncLibrary, incoming: SyncLibrary, mode: 'replace' | 'merge', apply: (library: SyncLibrary) => void | Promise<void>, storage: Storage) {
   const parsed = parseBackupJson(JSON.stringify(incoming), mode === 'merge' ? { mode, existingSongs: before.songs } : undefined)
   if (!parsed.isValid) throw new Error(parsed.error || 'Invalid cloud backup')
-  const library = { songs: parsed.songs, setlists: parsed.setlists }
+  const library = { songs: parsed.songs, setlists: parsed.setlists, ...(parsed.folders !== undefined ? { folders: parsed.folders } : {}) }
   try { await ensureRestoreSafetySnapshot(before, storage) }
   catch (error) { throw new Error(`Restore aborted: safety snapshot failed to save (${error instanceof Error ? error.message : String(error)}). Device library preserved.`, { cause: error }) }
   if (JSON.stringify(readPersistedLibrary(storage)) !== JSON.stringify(before)) throw new Error('Device library changed while saving the safety snapshot. Restore aborted; review again.')

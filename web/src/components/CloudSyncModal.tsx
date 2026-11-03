@@ -1,3 +1,4 @@
+import type { SetlistFolder } from '../types/gtar'
 // #299: the single Backup & Restore center (header cloud button). Two cards with the same verbs —
 // "This device (file)" (works signed out) and "Cloud (Google)" — and one restore preview for both.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
@@ -21,10 +22,11 @@ interface CloudSyncModalProps {
   restoreBlocked?: boolean
   onSyncApplied?: (library: SyncLibrary) => void
   onBackupSummary?: (date: string | null, checksum?: string | null) => void
-  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void | Promise<void>
+  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   /** App library (songs including trash) for the file card; read from device storage when omitted. */
   deviceSongs?: ActiveSongState[]
+  folders?: SetlistFolder[]
   deviceSetlists?: WebSetlist[]
   onImportAllSongs?: (songs: Array<Partial<ActiveSongState>>) => void
   /** Test seam for the share sheet, file and download APIs. */
@@ -54,7 +56,7 @@ function usePersistedLibrary(enabled: boolean) {
 }
 
 export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
-  isOpen, onClose, onBackupSummary, onFullRestore, onSmartMerge, restoreBlocked = false, deviceSongs, deviceSetlists, onImportAllSongs, exportEnv,
+  isOpen, onClose, onBackupSummary, onFullRestore, onSmartMerge, restoreBlocked = false, deviceSongs, deviceSetlists, folders, onImportAllSongs, exportEnv,
 }) => {
   const auth = useOptionalGoogleAuth()
   const session = auth?.session
@@ -143,7 +145,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       await restoreCloudBackup(device, preview.cloud.data, mode, library => {
         if (restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
         if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
-        return apply(library.songs, library.setlists)
+        return apply(library.songs, library.setlists, library.folders)
       }, localStorage)
       setPreview(null); setMessage(restoredMessage(preview.cloud.data), 'success')
     }
@@ -177,7 +179,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       </div>
 
       <div data-testid="cloud-sync-modal-body" className="p-5 space-y-4 overflow-y-auto flex-1">
-        <DeviceBackupCard
+        <DeviceBackupCard folders={folders ?? persisted?.folders}
           isOpen={isOpen}
           allSongs={fileSongs}
           setlists={fileSetlists}
