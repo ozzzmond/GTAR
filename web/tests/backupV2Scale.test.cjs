@@ -110,7 +110,12 @@ test('10,000 songs + 300 setlists + trash + every setting: export → verify →
   assert.deepEqual(parsed.ignoredFields, [])
   const expected = songs.map(jb.normalizeBackupSong)
   assert.equal(JSON.stringify(parsed.songs), JSON.stringify(expected))
-  assert.equal(jb.stableStringify(parsed.setlists), jb.stableStringify(setlists))
+  // S4 binds legacy refs to deterministic entry IDs and zero-based positions.
+  const expectedSetlists = setlists.map(setlist => ({
+    ...setlist,
+    songs: setlist.songs.map((ref, position) => ({ ...ref, entryId: `entry:${setlist.id}:${position}`, position })),
+  }))
+  assert.equal(jb.stableStringify(parsed.setlists), jb.stableStringify(expectedSetlists))
   assert.equal(jb.libraryFingerprint(parsed.songs, parsed.setlists), backup.fingerprint)
 
   // Restoring every group into a clean device reproduces every key byte-for-byte, and nothing else.
