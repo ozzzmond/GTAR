@@ -305,6 +305,28 @@ export async function libraryStoreLoad(token: string): Promise<void> {
   if (!libraryStorePending()) { s.committed = mirror; s.current = { token, library } }
 }
 
+/** Explicit conflict recovery: discard the protected local draft and adopt the committed library. */
+export async function reloadLibraryStore(validate: (library: unknown) => void): Promise<string | null> {
+  const s = state
+  if (!s?.db || s.readOnly) throw new Error('Library storage unavailable')
+  const localToken = s.current.token
+  // A queued save must finish (or fail) before its local state can be discarded.
+  try { await s.flushing } catch { /* the draft was preserved by the caller */ }
+  const { head, library } = await readAll(s.db)
+  if (state !== s || s.current.token !== localToken) throw new Error('Local library changed while loading. Retry reload.')
+  if (!head) throw new Error('Latest library unavailable')
+  validate(library)
+  const mirror = mirrorOf(head.token, library)
+  s.committed = mirror
+  s.current = { token: head.token, library }
+  s.head = head.token
+  s.base = null
+  s.dirty = false
+  s.lastError = null
+  s.loaded.clear()
+  return head.token
+}
+
 function setupChannel(): void {
   try { channel?.close() } catch { /* ignore */ }
   channel = null
@@ -340,6 +362,7 @@ export async function takeSafetySnapshot(reason: string, library: SyncLibrary, d
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, at: Date.now(), reason,
     bytes: raw.length * 2, songs: library.songs.length, setlists: library.setlists.length, raw,
   }
+  if (record.bytes > SNAPSHOT_MAX_BYTES) throw new DOMException('Safety snapshot exceeds the 50 MB storage limit. Export a backup before retrying.', 'QuotaExceededError')
   const tx = db.transaction([SNAPSHOTS], 'readwrite')
   const finished = done(tx)
   const store = tx.objectStore(SNAPSHOTS)
@@ -382,6 +405,8 @@ export interface LibrarySource { key: string; library: SyncLibrary }
 export type MigrationStep = 'open' | 'source' | 'snapshot' | 'write' | 'verify' | 'receipt'
 export interface LibraryStoreDeps {
   factory: IDBFactory | null
+  /** A surviving B3 marker forbids importing the frozen legacy source again. */
+  requireReceipt?: boolean
   /** Reads the earlier library (read-only); null when there is none. */
   readSource: () => Promise<LibrarySource | null>
   validate: (library: unknown) => void
@@ -431,6 +456,7 @@ export async function prepareLibraryStore(deps: LibraryStoreDeps): Promise<Libra
       install(db, existing.head?.token ?? null, library)
       return result({ active: true, source: existing.receipt.source, songs: library?.songs.length ?? 0, setlists: library?.setlists.length ?? 0 })
     }
+    if (deps.requireReceipt) throw new Error('Previously migrated library receipt is missing. Restore from a JSON backup in working storage.')
     step('source')
     source = await deps.readSource()
     const library = source ? JSON.parse(JSON.stringify(source.library)) as SyncLibrary : null

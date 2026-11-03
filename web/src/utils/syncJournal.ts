@@ -10,7 +10,7 @@ import { recoverySourceDigest } from './recoverySourceDigest'
 import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, putRecoveryArchive, recoveryArchiveEntries,
   recoveryArchiveGet, recoveryArchivesInIndexedDb, removeRecoveryArchive } from './recoveryArchiveStore'
 import { LIBRARY_DB_NAME, LIBRARY_EXTERNAL_EVENT, LibraryStaleWriteError, isLibraryToken, libraryStoreActive, libraryStoreDecode, libraryStoreLoad,
-  libraryStorePersist, libraryStoreRead, libraryStoreRevision, openReadOnlyLibrary, blockLibraryStore, prepareLibraryStore,
+  libraryStorePersist, libraryStoreRead, libraryStoreRevision, reloadLibraryStore, openReadOnlyLibrary, blockLibraryStore, prepareLibraryStore,
   type LibrarySource, type LibraryStorePreparation, type MigrationStep } from './libraryStore'
 import { LIBRARY_V2_KEY, B2_FLAG_KEY, LIBRARY_B1_KEY, readLegacyLibrary } from './legacyLibrarySources'
 
@@ -796,6 +796,10 @@ export function decodeLibraryRevision(raw: string): unknown {
 export async function loadLibraryRevision(raw: string): Promise<void> {
   if (isLibraryToken(raw)) await libraryStoreLoad(raw)
 }
+/** Explicit conflict recovery, after the caller has preserved its local draft. */
+export async function reloadLibraryRevision(storage: Storage = localStorage): Promise<string | null> {
+  return storeActive(storage) ? reloadLibraryStore(validateLibrary) : libraryRevision(storage)
+}
 /** True when `candidate` equals the library stored at revision `raw` (persisted JSON representation). */
 export function libraryMatchesRevision(candidate: SyncLibrary, raw: string | null): boolean {
   if (raw === null) return false
@@ -1111,6 +1115,7 @@ export async function prepareLibraryStorage(storage: Storage = localStorage, opt
   let source: LibrarySource | null = null
   const prepared = await prepareLibraryStore({
     factory,
+    requireReceipt: storage.getItem(LIBRARY_STORE_MIGRATED_KEY) === '1',
     readSource: async () => (source = await readLegacyLibrary(storage, factory)),
     validate: library => validateLibrary(library),
     ...(options.failAt ? { failAt: options.failAt } : {}),

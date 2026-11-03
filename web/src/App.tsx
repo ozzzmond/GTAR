@@ -13,6 +13,7 @@ import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
 import {
   libraryRevision,
+  reloadLibraryRevision,
   persistLibrary,
   planDanglingReferenceRepair,
   applyDanglingReferenceRepair,
@@ -26,6 +27,7 @@ import {
   prepareLibraryStorage,
   recoveryExportData,
   isLibraryStoreActive,
+  LIBRARY_STORE_MIGRATED_KEY,
 } from './utils/syncJournal'
 import { exportOldRecoveryData, useOldRecoveryData } from './utils/recoveryExport'
 import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInIndexedDb } from './utils/recoveryArchiveStore'
@@ -106,8 +108,10 @@ function App() {
 // moved there once from the earlier storage, before the library renders.
 const needsArchiveStartup = () => isDevEnv && typeof indexedDB !== 'undefined' && !recoveryArchivesInIndexedDb()
 const LIBRARY_STORE_ENABLED = true
+const needsLibraryStartup = () => LIBRARY_STORE_ENABLED &&
+  (typeof indexedDB !== 'undefined' || localStorage.getItem(LIBRARY_STORE_MIGRATED_KEY) === '1')
 function LibraryStartup() {
-  const [ready, setReady] = useState(() => !needsArchiveStartup() && (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined'))
+  const [ready, setReady] = useState(() => !needsArchiveStartup() && !needsLibraryStartup())
   const [storageNotice, setStorageNotice] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<string | null>(null)
   useEffect(() => {
@@ -118,8 +122,8 @@ function LibraryStartup() {
         await prepareRecoveryArchives(recoveryArchiveBackend(), localStorage, (level, message) => appLogger[level]('RecoveryArchives', message))
           .catch((error: unknown) => appLogger.warn('RecoveryArchives', 'IndexedDB unavailable; archives stay in localStorage', error instanceof Error ? error.message : String(error)))
       }
-      // Without IndexedDB (old browsers, some private modes) gtar_library_v1 stays in use, as before.
-      if (!LIBRARY_STORE_ENABLED || typeof indexedDB === 'undefined') return
+      // Without IndexedDB, only devices that have never migrated may use legacy storage.
+      if (!needsLibraryStartup()) return
       const prepared = await prepareLibraryStorage()
       if (prepared.active) appLogger.info('LibraryStore', `Library ready in ${prepared.ms} ms: ${prepared.songs} songs, ${prepared.setlists} setlists${prepared.migrated ? ` (moved from ${prepared.source})` : ''}`)
       else if (live) {
@@ -1581,13 +1585,13 @@ function LibraryApp() {
     }
   }
 
-  const handleReloadPersistedLibrary = () => {
+  const handleReloadPersistedLibrary = async () => {
     try {
       // Re-verify the exact current draft at discard time; an old snapshot or
       // a download being initiated does not prove that this draft is recoverable.
       saveCrossTabConflictSnapshot(getConflictDraft())
       setConflictRecoverySaved(true)
-      const raw = libraryRevision()
+      const raw = await reloadLibraryRevision()
       const reloaded = readPersistedLibrary()
       if (!reloaded || libraryRevision() !== raw) throw new Error('Latest library unavailable or changed. Retry reload.')
       persistedBaselineRef.current = raw
