@@ -249,6 +249,7 @@ New or renamed tests await a human choice of primary category.
 - [deviceSignInFallback.test.cjs](deviceSignInFallback.test.cjs)
 - [duplicateSongCheck.test.cjs](duplicateSongCheck.test.cjs)
 - [editorLeaveSaveFeedback.test.cjs](editorLeaveSaveFeedback.test.cjs)
+- [explorerDragDrop.test.cjs](explorerDragDrop.test.cjs)
 - [explorerFullPort.test.cjs](explorerFullPort.test.cjs)
 - [explorerPhase2Layout.test.cjs](explorerPhase2Layout.test.cjs)
 - [foldersTagsShortcuts.test.cjs](foldersTagsShortcuts.test.cjs)

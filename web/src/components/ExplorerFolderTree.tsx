@@ -28,7 +28,7 @@ export function ExplorerFolderTree({ folders, setlists, selectedId, onSelect, on
         className={button} onClick={() => setCollapsed(old => { const next = new Set(old); if (next.has(folder.id)) next.delete(folder.id); else next.add(folder.id); return next })}>
         {collapsed.has(folder.id) ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
-      <button type="button" aria-current={selectedId === folder.id ? 'page' : undefined} onClick={() => onSelect(folder.id)}
+      <button type="button" data-explorer-drop-folder={folder.id} aria-current={selectedId === folder.id ? 'page' : undefined} onClick={() => onSelect(folder.id)}
         className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-1 text-left ${selectedId === folder.id ? 'bg-app-action text-app-on-action' : 'text-app-text hover:bg-app-surface'}`}>
         <Folder className="h-4 w-4 shrink-0" /><span className="truncate">{folder.name}</span>
         <span className="ml-auto">{setlists.filter(list => !list.isDeleted && list.folderId === folder.id).length}</span>

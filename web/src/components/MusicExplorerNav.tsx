@@ -180,6 +180,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
                         <TagRow key={tag} tag={tag} onChange={onChangeTag}><button
                           type="button"
                           data-testid={`explorer-nav-tag-${tag}`}
+                          data-explorer-drop-tag={tag}
                           aria-current={isSelected(target) ? 'page' : undefined}
                           onClick={() => select(target)}
                           className={`${selectClass(target)} min-w-0 flex-1`}
@@ -223,6 +224,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
             <button
               type="button"
               data-testid="explorer-nav-unfiled-setlists"
+              data-explorer-drop-folder=""
               aria-current={isSelected({ type: 'UNFILED_SETLISTS' }) ? 'page' : undefined}
               onClick={() => select({ type: 'UNFILED_SETLISTS' })}
               className={selectClass({ type: 'UNFILED_SETLISTS' })}
@@ -231,6 +233,12 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
               <span>Unfiled Setlists</span>
               <span className={pillClass({ type: 'UNFILED_SETLISTS' })}>{unfiledSetlists.length}</span>
             </button>
+            <div className="explorer-song-drop-setlists space-y-0.5 pl-3" aria-label="Drop songs to add shortcuts">
+              {activeSetlists.map(sl => <div key={sl.id} data-explorer-drop-setlist={String(sl.id)}
+                data-testid={`explorer-drop-setlist-${sl.id}`} className={`${itemBase} ${itemIdle}`}>
+                <ListMusic className="h-4 w-4 shrink-0 text-app-section" /><span className="truncate">{sl.name}</span>
+              </div>)}
+            </div>
             <ExplorerFolderTree folders={folders} setlists={setlists} selectedId={currentSelection.type === 'FOLDER' ? currentSelection.folderId : undefined}
               onSelect={folderId => select({ type: 'FOLDER', folderId })} onSave={onSaveFolder} onDelete={onDeleteFolder} />
           </div>

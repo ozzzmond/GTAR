@@ -1,3 +1,4 @@
+import { ExplorerDragDrop } from './components/ExplorerDragDrop'
 import { TagLibraryContext } from './utils/tagLibraryContext'
 import { changeTagColorKey, validTagColors, type TagColors } from './utils/songTags'
 import { bindLegacySetlists } from './utils/setlistSongs'
@@ -311,6 +312,7 @@ function LibraryApp() {
   })
 
   // View state: Songbook Library Home vs Desktop Editor vs Stage View vs Trash Bin
+  const [trashDropIds, setTrashDropIds] = useState<Array<string | number> | null>(null)
   const [activeView, setActiveView] = useState<'songbook' | 'editor' | 'stage' | 'trash'>(
     initialStageSession.isValid ? initialStageSession.view : 'songbook'
   )
@@ -983,6 +985,10 @@ function LibraryApp() {
     setTimeout(() => setToastMessage(null), 3000)
     return true
   }
+  const handleSetlistFolderChange = (id: string | number, folderId: string | null) => {
+    const target = managedSetlist(id)
+    return !!target && commitManagedSetlists(replaceSetlist({ ...target, folderId }), 'Setlist folder saved')
+  }
   const handleSaveFolder = (folder: SetlistFolder) => {
     if (!folder.name.trim() || !validateFolderParentChange(folders, folder.id, folder.parentId)) return false
     const next = folders.some(item => item.id === folder.id) ? folders.map(item => item.id === folder.id ? folder : item) : [...folders, folder]
@@ -1641,10 +1647,14 @@ function LibraryApp() {
       ...catalogImportHost,
       open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
     }}>
+    {activeView === 'songbook' && <ExplorerDragDrop songs={songs} setlists={setlists} folders={folders}
+      onTag={handleBulkAddToTag} onSetlist={handleManagerAddSongs} onFolder={handleSetlistFolderChange}
+      onTrash={ids => { setIsSetlistDrawerOpen(false); setTrashDropIds(ids) }}
+      onTouchDrag={() => setIsSetlistDrawerOpen(true)} />}
     {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
-    {isSetlistManagerOpen && <SetlistManager folders={folders} onSetlistFolderChange={(id, folderId) => { const target = managedSetlist(id); return !!target && commitManagedSetlists(replaceSetlist({ ...target, folderId }), 'Setlist folder saved') }}
+    {isSetlistManagerOpen && <SetlistManager folders={folders} onSetlistFolderChange={handleSetlistFolderChange}
       setlists={setlists.filter(sl => !sl.isDeleted)}
       songs={songs}
       selectedSetlistId={setlistManagerId}
@@ -1798,7 +1808,7 @@ function LibraryApp() {
         />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
-          <SongbookHomeView folders={folders}
+          <SongbookHomeView folders={folders} trashDropIds={trashDropIds} onDismissTrashDrop={() => setTrashDropIds(null)}
             songs={songs}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}

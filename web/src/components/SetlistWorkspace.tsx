@@ -357,6 +357,9 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   <div
                     key={sl.id}
                     data-testid={`workspace-setlist-card-${sl.id}`}
+                    draggable
+                    data-explorer-drag-setlist={String(sl.id)}
+                    data-explorer-drop-setlist={String(sl.id)}
                     role="button"
                     tabIndex={0}
                     aria-label={`Open setlist ${sl.name}`}

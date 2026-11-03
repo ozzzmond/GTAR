@@ -19,6 +19,7 @@ export interface SwipeableActionCardProps {
   disabled?: boolean
   className?: string
   cardClassName?: string
+  dragSongIds?: Array<string | number>
   dataTestId?: string
   onClick?: (e: React.MouseEvent) => void
   children: React.ReactNode
@@ -82,6 +83,7 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   className = '',
   cardClassName = '',
   dataTestId,
+  dragSongIds,
   onClick,
   children,
 }) => {
@@ -295,6 +297,8 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
       {/* Front Card Surface */}
       <div
         data-testid={dataTestId}
+        draggable={!!dragSongIds?.length}
+        data-explorer-drag-songs={dragSongIds?.length ? JSON.stringify(dragSongIds) : undefined}
         onClick={handleClick}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
