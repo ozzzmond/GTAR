@@ -332,11 +332,14 @@ test('S4_FOLDER: folder scopes and Unfiled filter the existing workspace without
   assert.deepEqual($$('[data-testid^="workspace-setlist-card-"]').map(card=>card.dataset.testid),['workspace-setlist-card-sl-2','workspace-setlist-card-sl-3'])
 })
 
-test('desktop Trash action requests selected setlist without opening or deleting it', async () => {
+test('desktop Trash action requests selected setlist without opening or deleting it and is integrated next to Manage', async () => {
   const requests = [], mutations = []
   await mount(baseProps({ onRequestTrashSetlist: id => requests.push(id), onDeleteSetlist: id => mutations.push(id) }))
   const button = document.querySelector('[data-testid="desktop-delete-setlist-sl-1"]')
+  const manage = document.querySelector('[data-testid="workspace-manage-sl-1"]')
   assert.ok(button)
+  assert.ok(manage)
+  assert.equal(button.parentElement, manage.parentElement, 'delete and manage share the same action row container')
   assert.equal(button.getAttribute('aria-label'), 'Move setlist Gig Set A to Trash')
   button.focus()
   assert.equal(document.activeElement, button)
@@ -344,4 +347,28 @@ test('desktop Trash action requests selected setlist without opening or deleting
   assert.deepEqual(requests, ['sl-1'])
   assert.deepEqual(mutations, [])
   assert.ok(document.querySelector('[data-testid="workspace-setlist-card-sl-1"]'))
+})
+
+test('setlist detail header renders Delete action immediately after QR and requests trash confirmation', async () => {
+  const requests = [], mutations = []
+  await openSetlist('sl-1', {
+    onRequestTrashSetlist: id => requests.push(id),
+    onDeleteSetlist: id => mutations.push(id),
+  })
+  const header = $('[data-testid="workspace-setlist-header"]')
+  assert.ok(header)
+  const deleteBtn = $('[data-testid="workspace-delete-setlist"]')
+  assert.ok(deleteBtn, 'detail header delete button is rendered')
+  assert.equal(deleteBtn.getAttribute('aria-label'), 'Move setlist Gig Set A to Trash')
+
+  const actions = [...header.querySelectorAll('button')]
+  const qrIdx = actions.findIndex(b => b.getAttribute('aria-label') === 'Share Setlist' || b.getAttribute('data-testid') === 'workspace-share-setlist')
+  const deleteIdx = actions.indexOf(deleteBtn)
+  if (qrIdx !== -1) {
+    assert.equal(deleteIdx, qrIdx + 1, 'delete button appears immediately after QR button')
+  }
+
+  await click(deleteBtn)
+  assert.deepEqual(requests, ['sl-1'])
+  assert.deepEqual(mutations, [])
 })

@@ -697,10 +697,10 @@ body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"],
 body[data-explorer-drag-kind] [aria-label="Dismiss Music Explorer"] { pointer-events: none; }
 body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"] > div { pointer-events: auto; }
 
-.setlist-hover-delete { opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
-.setlist-hover-delete:focus-visible { opacity: 1; pointer-events: auto; }
+.setlist-hover-delete { display: none; }
 @media (hover: hover) and (pointer: fine) {
-  .ui-setlist-card .setlist-manage-action { margin-right: 3rem; }
+  .setlist-hover-delete { display: inline-flex; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+  .setlist-hover-delete:focus-visible { opacity: 1; pointer-events: auto; }
   .ui-setlist-card:hover .setlist-hover-delete,
   .ui-setlist-card:focus-within .setlist-hover-delete { opacity: 1; pointer-events: auto; }
 }
