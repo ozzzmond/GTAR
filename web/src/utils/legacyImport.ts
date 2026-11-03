@@ -30,7 +30,7 @@ export function previewBackupImport(raw: string, options: BackupParseOptions = {
 }
 
 /** Explicit confirmation is required on every attempt, including retries. */
-export function confirmImportAsNew(preview: ImportPreview, existing: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] }, confirm: (message: string) => boolean): ParsedBackupResult | null {
+export function confirmImportAsNew(preview: ImportPreview, existing: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[]; tagColors?: import('./songTags').TagColors }, confirm: (message: string) => boolean): ParsedBackupResult | null {
   if (!preview.isValid || !preview.importAsNew) throw new Error('A valid legacy import preview is required.')
   if (!confirm(`Import as New: ${preview.songs.length} songs and ${preview.setlists.length} setlists? All imported records receive fresh IDs. Title/artist references are bound only within this backup; missing songs stay as broken shortcuts. Existing songs, setlists, trash and settings stay unchanged. Importing again creates another copy and requires confirmation.`)) return null
   assertImportIds(existing.songs, 'Existing songs')
@@ -51,5 +51,5 @@ export function confirmImportAsNew(preview: ImportPreview, existing: { songs: Ac
     return { ...ref, id, entryId: fresh(), position }
   }) }))
   // Import as New is always additive and never restores device/account settings.
-  return parseBackupJson(JSON.stringify({ songs, setlists, ...(folders ? { folders } : {}) }))
+  return parseBackupJson(JSON.stringify({ songs, setlists, ...(preview.tagColors !== undefined ? { tagColors: preview.tagColors } : {}), ...(folders ? { folders } : {}) }))
 }

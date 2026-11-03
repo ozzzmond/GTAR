@@ -1,3 +1,5 @@
+import { TagLibraryContext } from './utils/tagLibraryContext'
+import { changeTagColorKey, validTagColors, type TagColors } from './utils/songTags'
 import { bindLegacySetlists } from './utils/setlistSongs'
 import { deleteSetlistFolder, validateFolderParentChange } from './utils/folders'
 import { normalizeTags, songHasTag, renameTagInList, removeTagFromList } from './utils/songTags'
@@ -250,7 +252,7 @@ function LibraryApp() {
           persistLibrary(savedLibrary)
         } catch { /* storage quota or error */ }
       }
-      return { ...partitionSongs(savedLibrary.songs), setlists: bindLegacySetlists(savedLibrary.setlists, savedLibrary.songs), folders: savedLibrary.folders ?? [] }
+      return { ...partitionSongs(savedLibrary.songs), setlists: bindLegacySetlists(savedLibrary.setlists, savedLibrary.songs), folders: savedLibrary.folders ?? [], tagColors: savedLibrary.tagColors }
     }
     const readSongs = (key: string, fallback: ActiveSongState[]) => {
       try {
@@ -274,7 +276,7 @@ function LibraryApp() {
       performStorageHousekeeping()
     } catch { /* ignore */ }
     const migrated = readPersistedLibrary() ?? repaired
-    return { ...partitionSongs(migrated.songs), setlists: bindLegacySetlists(migrated.setlists, migrated.songs), folders: migrated.folders ?? [] }
+    return { ...partitionSongs(migrated.songs), setlists: bindLegacySetlists(migrated.setlists, migrated.songs), folders: migrated.folders ?? [], tagColors: migrated.tagColors }
   })
 
   // Recover active stage session if valid session existed prior to browser/OS restart
@@ -348,6 +350,7 @@ function LibraryApp() {
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
 
   // Custom Setlists (persisted in localStorage)
+  const [tagColors, setTagColors] = useState<TagColors | undefined>(initialLibrary.tagColors)
   const [folders, setFolders] = useState<SetlistFolder[]>(initialLibrary.folders)
   const [setlists, setSetlists] = useState<WebSetlist[]>(initialLibrary.setlists)
 
@@ -416,7 +419,7 @@ function LibraryApp() {
   const {
     persistedBaselineRef, crossTabConflict, setCrossTabConflict, conflictRecoverySaved, setConflictRecoverySaved,
     getConflictDraft, handleStorageWriteFailure,
-  } = useLibraryPersistence({ songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef })
+  } = useLibraryPersistence({ songs, deletedSongs, setlists, folders, tagColors, setTagColors, setFolders, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef })
 
   // #257 F3: a stable array, so the backup dialog re-checks "changed since backup" only when the library really changes.
   const backupDialogSongs = useMemo(() => [...songs, ...deletedSongs], [songs, deletedSongs])
@@ -748,7 +751,7 @@ function LibraryApp() {
     importStateRef, handleSmartMerge, handleImportSong, handleImportAllSongs, handleFullRestore,
     handleImportSingleSetlist, handleImportSharedSetlist,
   } = useLibraryImports({
-    songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
+    songs, deletedSongs, setlists, folders, tagColors, setTagColors, setFolders, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
     setToastMessage, setActiveSongIndex, setActiveSetlistId, setActiveSetlistSongIndex, setQueueMode, setIncomingSharedSetlist,
   })
 
@@ -963,7 +966,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = persistedBaselineRef.current
       persistLibrary(
-        { folders: nextFolders, songs: [...songs, ...deletedSongs], setlists: bindLegacySetlists(nextSetlists, songs) },
+        { tagColors, folders: nextFolders, songs: [...songs, ...deletedSongs], setlists: bindLegacySetlists(nextSetlists, songs) },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -993,12 +996,37 @@ function LibraryApp() {
     const update = (song: ActiveSongState) => songHasTag(song.tags, tag) ? { ...song, tags: renamed === undefined ? removeTagFromList(song.tags, tag) : renameTagInList(song.tags, tag, renamed) } : song
     const nextSongs = songs.map(update), nextDeleted = deletedSongs.map(update)
     try {
-      persistLibrary({ songs: [...nextSongs, ...nextDeleted], setlists, folders }, localStorage, { expectedRaw: persistedBaselineRef.current })
+      persistLibrary({ songs: [...nextSongs, ...nextDeleted], setlists, folders, tagColors: changeTagColorKey(tagColors ?? {}, tag, renamed) }, localStorage, { expectedRaw: persistedBaselineRef.current })
       persistedBaselineRef.current = libraryRevision()
     } catch (err) { handleStorageWriteFailure(err); return false }
+    setTagColors(changeTagColorKey(tagColors ?? {}, tag, renamed))
     setSongs(nextSongs); setDeletedSongs(nextDeleted)
-    if (explorerSelection.type === 'TAG') setExplorerSelection(renamed === undefined ? { type: 'ALL_SONGS' } : { type: 'TAG', tag: normalizeTags([renamed])[0] })
+    if (explorerSelection.type === 'TAG' && explorerSelection.tag === tag) setExplorerSelection(renamed === undefined ? { type: 'ALL_SONGS' } : { type: 'TAG', tag: normalizeTags([renamed])[0] })
     return true
+  }
+  const handleTagColor = (tag: string, color?: string) => {
+    const next = { ...tagColors }
+    if (color === undefined) delete next[tag]
+    else Object.defineProperty(next, tag, { value: color, enumerable: true, writable: true, configurable: true })
+    if (crossTabConflict || !validTagColors(next)) return false
+    try {
+      persistLibrary({ songs: [...songs, ...deletedSongs], setlists, folders, tagColors: next }, localStorage, { expectedRaw: persistedBaselineRef.current })
+      persistedBaselineRef.current = libraryRevision()
+      setTagColors(next)
+      return true
+    } catch (err) { handleStorageWriteFailure(err); return false }
+  }
+  const handleBulkAddToTag = (ids: Array<string | number>, tag: string) => {
+    const canonical = normalizeTags([tag])
+    if (crossTabConflict || canonical.length !== 1 || !canonical[0]) return false
+    const selected = new Set(ids.map(String))
+    const nextSongs = songs.map((song, index) => selected.has(String(song.id ?? index)) ? { ...song, tags: normalizeTags([...normalizeTags(song.tags), canonical[0]]) } : song)
+    try {
+      persistLibrary({ songs: [...nextSongs, ...deletedSongs], setlists, folders, tagColors }, localStorage, { expectedRaw: persistedBaselineRef.current })
+      persistedBaselineRef.current = libraryRevision()
+      setSongs(nextSongs)
+      return true
+    } catch (err) { handleStorageWriteFailure(err); return false }
   }
   const managedSetlist = (setlistId: string | number) => setlists.find(sl => String(sl.id) === String(setlistId) && !sl.isDeleted)
   const replaceSetlist = (next: WebSetlist) => setlists.map(sl => String(sl.id) === String(next.id) ? next : sl)
@@ -1169,7 +1197,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { folders, songs: [...next.active, ...next.deleted], setlists: next.setlists },
+        { tagColors, folders, songs: [...next.active, ...next.deleted], setlists: next.setlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1303,7 +1331,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { folders, songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        { tagColors, folders, songs: [...songs, ...deletedSongs], setlists: nextSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1330,7 +1358,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { folders, songs: [...songs, ...deletedSongs], setlists: nextSetlists },
+        { tagColors, folders, songs: [...songs, ...deletedSongs], setlists: nextSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1453,7 +1481,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { folders, songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists },
+        { tagColors, folders, songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1461,7 +1489,7 @@ function LibraryApp() {
         persistedBaselineRef.current = libraryRevision()
       }
       if (typeof importStateRef !== 'undefined') {
-        importStateRef.current = { folders, songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists }
+        importStateRef.current = { tagColors, folders, songs: [...nextSongs, ...currentDeletedSongs], setlists: currentSetlists }
       }
     }
     catch (err) { handleStorageWriteFailure(err); return false }
@@ -1485,7 +1513,7 @@ function LibraryApp() {
     try {
       const expectedBaseline = typeof persistedBaselineRef !== 'undefined' ? persistedBaselineRef.current : undefined
       persistLibrary(
-        { folders, songs: [...nextSongs, ...deletedSongs], setlists },
+        { tagColors, folders, songs: [...nextSongs, ...deletedSongs], setlists },
         localStorage,
         expectedBaseline !== undefined ? { expectedRaw: expectedBaseline } : undefined
       )
@@ -1568,6 +1596,7 @@ function LibraryApp() {
       setSongs(partitioned.active)
       setDeletedSongs(partitioned.deleted)
       setSetlists(reloaded.setlists)
+      setTagColors(reloaded.tagColors)
       setFolders(reloaded.folders ?? [])
       setToastMessage('Loaded latest library; local draft recovery copy verified.')
     } catch {
@@ -1592,6 +1621,7 @@ function LibraryApp() {
       setSongs(partitioned.active)
       setDeletedSongs(partitioned.deleted)
       setSetlists(candidate.setlists)
+      setTagColors(candidate.tagColors)
       setFolders(candidate.folders ?? [])
       setCrossTabConflict(null)
       setToastMessage('Storage overwritten with local edits.')
@@ -1602,6 +1632,7 @@ function LibraryApp() {
   }
 
   return (
+    <TagLibraryContext.Provider value={{ colors: tagColors, onColorChange: handleTagColor, onAddToTag: handleBulkAddToTag }}>
     <CatalogImportContext.Provider value={{
       ...catalogImportHost,
       open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
@@ -1694,6 +1725,7 @@ function LibraryApp() {
             setSongs(partition.active)
             setDeletedSongs(partition.deleted)
             setSetlists(stored.setlists)
+            setTagColors(stored.tagColors)
             setFolders(stored.folders ?? [])
             setToastMessage('Songbook synced with Cloud')
             setTimeout(() => setToastMessage(null), 3500)
@@ -1928,7 +1960,7 @@ function LibraryApp() {
           setIsStageSettingsModalOpen(false)
           setIsThemeModalOpen(true)
         }}
-        onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists, folders)}
+        onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists, folders, tagColors)}
         onOpenBackupRestoreModal={() => {
           setIsStageSettingsModalOpen(false)
           openBackupCenter()
@@ -2005,6 +2037,7 @@ function LibraryApp() {
       )}
     </div>
     </CatalogImportContext.Provider>
+    </TagLibraryContext.Provider>
   )
 }
 

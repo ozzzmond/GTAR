@@ -1,3 +1,5 @@
+import type { TagColors } from '../utils/songTags'
+import { TagLibraryContext } from '../utils/tagLibraryContext'
 import type { SetlistFolder } from '../types/gtar'
 // #299: the single Backup & Restore center (header cloud button). Two cards with the same verbs —
 // "This device (file)" (works signed out) and "Cloud (Google)" — and one restore preview for both.
@@ -22,8 +24,8 @@ interface CloudSyncModalProps {
   restoreBlocked?: boolean
   onSyncApplied?: (library: SyncLibrary) => void
   onBackupSummary?: (date: string | null, checksum?: string | null) => void
-  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
+  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
   /** App library (songs including trash) for the file card; read from device storage when omitted. */
   deviceSongs?: ActiveSongState[]
   folders?: SetlistFolder[]
@@ -71,7 +73,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [messageTone, setMessageTone] = useState<'success' | 'error'>('error')
   const setMessage = (text: string, kind: 'success' | 'error' = 'error') => { setMessageText(text); setMessageTone(kind) }
   const [preview, setPreview] = useState<{ kind: 'backup' | 'restore'; device: SyncLibrary; cloud: CloudSongbookRecord | null } | null>(null)
-  const persisted = usePersistedLibrary(isOpen && (!deviceSongs || signedIn))
+  const persisted = usePersistedLibrary(isOpen)
   const restoreBlockedRef = useRef(restoreBlocked)
   useEffect(() => { restoreBlockedRef.current = restoreBlocked }, [restoreBlocked])
   const identity = useRef('')
@@ -145,7 +147,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       await restoreCloudBackup(device, preview.cloud.data, mode, library => {
         if (restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
         if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
-        return apply(library.songs, library.setlists, library.folders)
+        return apply(library.songs, library.setlists, library.folders, library.tagColors)
       }, localStorage)
       setPreview(null); setMessage(restoredMessage(preview.cloud.data), 'success')
     }
@@ -179,6 +181,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       </div>
 
       <div data-testid="cloud-sync-modal-body" className="p-5 space-y-4 overflow-y-auto flex-1">
+        <TagLibraryContext.Provider value={{ colors: persisted?.tagColors }}>
         <DeviceBackupCard folders={folders ?? persisted?.folders}
           isOpen={isOpen}
           allSongs={fileSongs}
@@ -190,6 +193,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           onBusyChange={setFileBusy}
           exportEnv={exportEnv}
         />
+        </TagLibraryContext.Provider>
 
         <div data-testid="cloud-backup-card" className={sectionCard}>
           <span className={sectionLabel}>Cloud (Google)</span>

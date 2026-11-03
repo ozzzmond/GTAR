@@ -1,8 +1,10 @@
+import { TagRow } from './TagRow'
+import { useTagLibrary } from '../utils/tagLibraryContext'
 import React, { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Plus, Tag } from 'lucide-react'
 import { ExplorerFolderTree } from './ExplorerFolderTree'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
-import { normalizeTags } from '../utils/songTags'
+import { normalizeTags, tagChipStyle } from '../utils/songTags'
 
 /** Music Explorer collections, canonical tags and nested setlist folders. */
 export type ExplorerTarget =
@@ -50,6 +52,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
   onNewSetlist,
   headerAction,
 }) => {
+  const { colors } = useTagLibrary()
   const [songbookExpanded, setSongbookExpanded] = useState(true)
   const [tagsExpanded, setTagsExpanded] = useState(true)
   const [setlistsExpanded, setSetlistsExpanded] = useState(true)
@@ -192,7 +195,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
                     tagCounts.map(({ tag, count }) => {
                       const target: ExplorerTarget = { type: 'TAG', tag }
                       return (
-                        <div key={tag} className="flex items-center min-w-0"><button
+                        <TagRow key={tag} tag={tag} onChange={onChangeTag}><button
                           type="button"
                           data-testid={`explorer-nav-tag-${tag}`}
                           aria-current={isSelected(target) ? 'page' : undefined}
@@ -200,18 +203,10 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
                           className={`${selectClass(target)} min-w-0 flex-1`}
                         >
                           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-app-section" aria-hidden="true" />
-                          <span className="truncate">#{tag}</span>
+                          <span className="truncate rounded-md px-1.5 py-0.5" style={tagChipStyle(colors, tag)}>#{tag}</span>
                           <span className={pillClass(target)}>{count}</span>
                         </button>
-                        {onChangeTag && <button type="button" aria-label={`Tag actions for ${tag}`} className="min-h-11 min-w-11 rounded-lg text-app-muted hover:bg-app-surface" onClick={() => {
-                          const action = window.prompt(`Tag #${tag}: enter a new name, or leave blank to remove it from the library.`, tag)
-                          if (action === null) return
-                          const renamed = normalizeTags([action])[0]
-                          if (renamed === tag) return
-                          if (window.confirm(renamed ? `Rename #${tag} to #${renamed} across the library?` : `Remove #${tag} from every song? Songs will be kept.`)) {
-                            if (!onChangeTag(tag, renamed)) window.alert('Tag change was not saved. Resolve the storage conflict and retry.')
-                          }
-                        }}>...</button>}</div>
+                        </TagRow>
                       )
                     })
                   )}

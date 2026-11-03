@@ -15,6 +15,7 @@ export interface CloudSongbookRecord {
 /**
  * Deterministic checksum of a canonical songbook library.
  * Orders songs and setlists deterministically and digests canonical properties.
+ * Optional tagColors travel in the payload; keep legacy checksum semantics so older readers can ignore them.
  * Preserves exact legacy checksum semantics when themeSettings is absent.
  */
 export function computeSongbookChecksum(library: SyncLibrary): string {

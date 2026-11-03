@@ -1,3 +1,4 @@
+import { validTagColors } from './songTags'
 import { validateFolderParentChange } from './folders'
 import { validateCatalogLineage } from './catalogSetlistLineage'
 import type { SyncLibrary } from './syncMerge'
@@ -123,6 +124,7 @@ export function validateLibrary(value: unknown): asserts value is SyncLibrary {
       if (!ref || (ref.id !== undefined && !validId(ref.id)) || typeof ref.title !== 'string') return fail()
     }
   }
+  if (lib.tagColors !== undefined && !validTagColors(lib.tagColors)) return fail()
   if (lib.folders !== undefined) {
     if (!Array.isArray(lib.folders)) return fail()
     const folderIds = new Set<string>()
@@ -164,6 +166,14 @@ function reconcile(local: SyncLibrary, incoming: SyncLibrary, base?: SyncLibrary
     return result
   }
   const result = { ...local, songs: records(local.songs, incoming.songs, base?.songs), setlists: records(local.setlists, incoming.setlists, base?.setlists) }
+  if (incoming.tagColors !== undefined) {
+    const colors = records(
+      Object.entries(local.tagColors ?? {}).map(([id, color]) => ({ id, color })),
+      Object.entries(incoming.tagColors).map(([id, color]) => ({ id, color })),
+      base ? Object.entries(base.tagColors ?? {}).map(([id, color]) => ({ id, color })) : undefined,
+    )
+    result.tagColors = Object.fromEntries(colors.map(({ id, color }) => [id, color]))
+  }
   if (incoming.allowedUsers !== undefined && !same(local.allowedUsers, incoming.allowedUsers)) throw new Error('Conflicting legacy access settings')
   validateLibrary(result)
   return result

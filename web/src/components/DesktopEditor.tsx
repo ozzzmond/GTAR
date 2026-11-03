@@ -1,4 +1,5 @@
-import { normalizeTags } from '../utils/songTags'
+import { useTagLibrary } from '../utils/tagLibraryContext'
+import { normalizeTags, tagChipStyle } from '../utils/songTags'
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import {
   Music,
@@ -101,6 +102,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const [localBpm, setLocalBpm] = useState(song.bpm || '')
   const [localTime, setLocalTime] = useState(song.time || '')
   const [localYear, setLocalYear] = useState(song.year || '')
+  const { colors: tagColors } = useTagLibrary()
   const [localTags, setLocalTags] = useState(normalizeTags(song.tags))
   const [localRawContent, setLocalRawContent] = useState(() =>
     standardizeChordProBrackets(song.rawContent || '')
@@ -1444,7 +1446,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </label>
               <div className="flex items-center gap-2 bg-app-base px-2.5 py-1.5 rounded-lg border border-app-border focus-within:border-app-accent/60 transition-colors">
                 <div className="flex flex-wrap gap-2 w-full">
-                  {localTags.map(tag => <button key={tag} type="button" aria-label={`Remove tag ${tag}`}
+                  {localTags.map(tag => <button key={tag} type="button" aria-label={`Remove tag ${tag}`} style={tagChipStyle(tagColors, tag)}
                     className="px-2 py-2 rounded border border-app-border text-app-text text-xs"
                     onClick={() => handleToggleTag(tag)}>{tag} ×</button>)}
                   <input type="text" aria-label="Add tags" placeholder="Add tags, separated by commas"

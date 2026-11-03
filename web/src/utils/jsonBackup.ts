@@ -1,5 +1,5 @@
 import { validateFolderParentChange } from './folders'
-import { normalizeTags } from './songTags'
+import { validTagColors, type TagColors, normalizeTags } from './songTags'
 import { validateCatalogLineage } from './catalogSetlistLineage'
 import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
@@ -43,6 +43,7 @@ export interface FullBackupPayload {
   settings: BackupSettingsV2
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  tagColors?: TagColors
   folders?: SetlistFolder[]
   allowedUsers?: string[]
 }
@@ -56,6 +57,7 @@ export interface ParsedBackupResult extends BackupSettings {
   singleSetlistName?: string
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  tagColors?: TagColors
   folders?: SetlistFolder[]
   allowedUsers?: string[]
   metadata?: BackupMetadata
@@ -88,7 +90,7 @@ export function normalizeBackupSong(s: Partial<ActiveSongState> & { content?: st
 }
 
 /** Download and clipboard share the same metadata and settings payload. */
-export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, allowedUsers?: string[], folders?: SetlistFolder[]): FullBackupPayload {
+export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, allowedUsers?: string[], folders?: SetlistFolder[], tagColors?: TagColors): FullBackupPayload {
   const normalized = ensureSongIds(songs).map(normalizeBackupSong)
   const exportedSetlists = bindLegacySetlists(setlists, normalized)
   const partition = partitionSongs(normalized)
@@ -105,6 +107,7 @@ export function createBackupPayload(songs: ActiveSongState[], setlists: WebSetli
     settings: readBackupSettingsV2(),
     songs: normalized,
     setlists: exportedSetlists,
+    ...(tagColors !== undefined ? { tagColors } : {}),
     ...(folders ? { folders } : {}),
     ...(allowedUsers && Array.isArray(allowedUsers) ? { allowedUsers } : {})
   }
@@ -151,6 +154,7 @@ export interface VerifiedBackup {
   fingerprint: string
   /** Identity of the settings in the file, to detect a stale prepared file (#251 F3). */
   settingsFingerprint: string
+  tagColorsFingerprint?: string
   schemaVersion: number
 }
 
@@ -169,6 +173,7 @@ export function verifyBackupJson(json: string, payload: FullBackupPayload): Back
     parsed.songs.length !== payload.songs.length) throw new Error('Backup verification failed: record counts differ after re-reading the file')
   if (JSON.stringify(parsed.songs) !== JSON.stringify(payload.songs)) throw new Error('Backup verification failed: songs differ after re-reading the file')
   if (stableStringify(parsed.setlists) !== stableStringify(payload.setlists)) throw new Error('Backup verification failed: setlists differ after re-reading the file')
+  if (stableStringify(parsed.tagColors) !== stableStringify(payload.tagColors)) throw new Error('Backup verification failed: tag colors differ after re-reading the file')
   if (stableStringify(parsed.folders) !== stableStringify(payload.folders)) throw new Error('Backup verification failed: folders differ after re-reading the file')
   if (stableStringify(parsed.settings) !== stableStringify(payload.settings)) throw new Error('Backup verification failed: settings differ after re-reading the file')
   return counts
@@ -177,17 +182,17 @@ export function verifyBackupJson(json: string, payload: FullBackupPayload): Back
 export const backupFileName = (date = new Date()) => `gtar-stage-backup-${date.toISOString().slice(0, 10)}.json`
 
 /** Builds the full backup and verifies its bytes before anything is shown, shared or downloaded. */
-export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, folders?: SetlistFolder[]): VerifiedBackup {
-  const payload = createBackupPayload(songs, setlists, version, undefined, folders)
+export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, folders?: SetlistFolder[], tagColors?: TagColors): VerifiedBackup {
+  const payload = createBackupPayload(songs, setlists, version, undefined, folders, tagColors)
   const json = JSON.stringify(payload, null, 2)
   const counts = verifyBackupJson(json, payload)
   return { json, fileName: backupFileName(), bytes: new TextEncoder().encode(json).length, counts,
-    fingerprint: payload.contentFingerprint, settingsFingerprint: settingsFingerprint(payload.settings), schemaVersion: payload.schemaVersion }
+    fingerprint: payload.contentFingerprint, tagColorsFingerprint: stableStringify(payload.tagColors), settingsFingerprint: settingsFingerprint(payload.settings), schemaVersion: payload.schemaVersion }
 }
 
 /** Download-only export (menus). Verified before the download starts; records the backup status. */
-export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[], folders?: SetlistFolder[]): string {
-  const backup = buildVerifiedBackup(songs, setlists, GTAR_APP_VERSION, folders)
+export function exportAllDataJson(songs: ActiveSongState[], setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors): string {
+  const backup = buildVerifiedBackup(songs, setlists, GTAR_APP_VERSION, folders, tagColors)
   triggerDownload(backup.json, backup.fileName)
   recordBackupStatus(backup, 'download')
   return backup.fileName
@@ -260,7 +265,7 @@ export function validateBackupEntries(songs: unknown[], setlists: unknown[], emb
 
 const LEGACY_SETTING_FIELDS = ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const
 const KNOWN_TOP_LEVEL = new Set(['app', 'schemaVersion', 'version', 'exportedAt', 'exportType', 'songCount', 'setlistCount', 'trashCount', 'contentFingerprint',
-  'songs', 'setlists', 'folders', 'allowedUsers', 'settings', 'metadata', 'setlist', ...LEGACY_SETTING_FIELDS])
+  'songs', 'setlists', 'tagColors', 'folders', 'allowedUsers', 'settings', 'metadata', 'setlist', ...LEGACY_SETTING_FIELDS])
 const KNOWN_SONG_FIELDS = new Set(['id', 'title', 'artist', 'key', 'originalKey', 'confirmedChartKey', 'capo', 'bpm', 'time', 'year', 'format',
   'transposeOffset', 'rawContent', 'content', 'tags', 'isFavorite', 'isDeleted', 'createdAt', 'lastOpenedAt', 'isMissing',
   'sharedSourceSongId', 'sharedSourceRevision', 'sharedSourcePublisherId', 'sharedSourcePublisherName', 'publishedCatalogSongId'])
@@ -345,6 +350,8 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       sourceSetlists = Array.isArray(data.setlists) ? data.setlists : []
       errors.push(...validateBackupEntries(sourceSongs, sourceSetlists))
     }
+    const tagColors = data.tagColors as TagColors | undefined
+    if (tagColors !== undefined && !validTagColors(tagColors)) errors.push('tagColors: expected canonical tags mapped to six-digit hex colors')
     const folders: SetlistFolder[] | undefined = data.folders
     if (folders !== undefined) {
       if (!Array.isArray(folders)) errors.push('folders: must be an array')
@@ -441,6 +448,7 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
       ...legacySettingsOf(settingsV2), settings: settingsV2, ignoredFields: unknownBackupFields(data, single),
       songs, setlists: bindLegacySetlists(boundIncoming, combined),
+      ...(tagColors !== undefined ? { tagColors } : {}),
       ...(folders ? { folders } : {}),
       metadata,
       ...(allowedUsers ? { allowedUsers } : {}) }
@@ -452,17 +460,19 @@ export interface RestoreSafetySnapshot {
   library: {
     songs: ActiveSongState[]
     setlists: WebSetlist[]
+    tagColors?: TagColors
     folders?: SetlistFolder[]
   }
 }
 
 export function createRestoreSafetySnapshot(
-  library: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[] },
+  library: { songs: ActiveSongState[]; setlists: WebSetlist[]; folders?: SetlistFolder[]; tagColors?: TagColors },
   storage: Storage = localStorage
 ): void {
   const snapshot: RestoreSafetySnapshot = {
     createdAt: new Date().toISOString(),
     library: {
+      ...(library.tagColors !== undefined ? { tagColors: { ...library.tagColors } } : {}),
       ...(library.folders ? { folders: library.folders.map(folder => ({ ...folder })) } : {}),
       songs: library.songs.map(s => ({ ...s })),
       setlists: library.setlists.map(sl => ({ ...sl, songs: sl.songs.map(ref => ({ ...ref })) })),
