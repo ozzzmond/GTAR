@@ -1409,7 +1409,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-label="Filter songs by metadata"
                   value={filterMetadata}
                   onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
-                  className="min-h-11 min-w-0 flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="min-h-11 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                 >
                   <option value="ALL">All Metadata</option>
                   <option value="METADATA_OK">Metadata OK</option>
@@ -1421,7 +1421,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-label="Filter songs by setlist"
                     value={filterSetlistId}
                     onChange={(e) => handleFilterSetlistChange(e.target.value)}
-                    className="min-h-11 min-w-0 flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                    className="min-h-11 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                   >
                     <option value="ALL">All Setlists</option>
                     {activeSetlists.map((sl) => (
@@ -1436,13 +1436,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-label="Filter songs by tags"
                   value={filterTags}
                   onChange={(e) => handleFilterTagsChange(e.target.value as TagsFilterOption)}
-                  className="min-h-11 min-w-0 flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="min-h-11 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                 >
                   <option value="ALL">All Tags</option>
                   <option value="TAGGED">Tagged</option>
                   <option value="NO_TAG">No tag</option>
                 </select>
-                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs w-full sm:w-auto">
+                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs w-fit">
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
                       onClick={() => handleSortChange(field)}
