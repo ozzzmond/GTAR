@@ -14,9 +14,9 @@ const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
 
-test('Explorer quick actions guard unsaved editor changes in the sidebar and drawer', async t => {
+test('Explorer navigation guards unsaved editor changes in the sidebar and drawer', async t => {
   for (const width of [1280, 360]) {
-    for (const action of ['new-song', 'new-set']) {
+    for (const action of ['all-songs', 'all-setlists']) {
       await t.test(`${width}px: ${action}`, async () => ui(async ({ render, click }) => {
         window.innerWidth = width
         window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })

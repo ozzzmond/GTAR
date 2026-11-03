@@ -128,7 +128,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   view,
   onSelectView,
   onEditSong,
-  onOpenSources,
 }) => {
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
@@ -1532,6 +1531,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             onManageSetlist={onManageSetlist}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
             onOpenSong={onSelectSong}
+            onNewSetlist={onNewSetlist}
             menu={{
               sortValue: effectiveSetlistSortBy,
               sortOptions: [
@@ -1579,13 +1579,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             </span>
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
-            {onOpenSources && (
-              <button type="button" data-testid="songs-browse-sources" onClick={onOpenSources} aria-label="Browse Sources"
-                className="ui-button min-h-11 min-w-11 px-3 justify-center rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
-                <Globe className="w-3.5 h-3.5 text-app-accent" />
-                <span className="hidden sm:inline">Browse Sources</span>
-              </button>
-            )}
             <button type="button" data-testid="songs-add-song" onClick={onNewSong}
               className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
               <Plus className="w-3.5 h-3.5" />

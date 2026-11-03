@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, QrCode, Upload, UploadCloud } from 'lucide-react'
+import { Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Upload, UploadCloud } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
@@ -26,6 +26,7 @@ export interface SetlistWorkspaceProps {
   onOpenSong?: (libraryIndex: number) => void
   /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
+  onNewSetlist?: () => void
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
   menu?: SetlistWorkspaceMenu
 }
@@ -79,8 +80,10 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onPlaySetlistPosition,
   onOpenSong,
   onManageSetlist,
+  onNewSetlist,
   menu,
 }) => {
+  const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
   const [openSetlistId, setOpenSetlistId] = useState<string | number | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const openSetlist = useMemo(
@@ -319,11 +322,25 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
       ) : (
         /* Setlist collection view (GTAR1 CASE B, including folder scope) */
         <div className="space-y-3">
-          <h2 data-testid="setlist-workspace-heading" className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2">
-            <ListMusic className="ui-section-icon w-4 h-4 text-app-section" />
-            <span>{folderName ?? SCOPE_LABEL[scope]}</span>
-            <span className="text-xs font-normal text-app-muted">({setlists.length})</span>
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 data-testid="setlist-workspace-heading" className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2 min-w-0">
+              <ListMusic className="ui-section-icon w-4 h-4 text-app-section shrink-0" />
+              <span className="truncate">{folderName ?? SCOPE_LABEL[scope]}</span>
+              <span className="shrink-0 text-xs font-normal text-app-muted">({setlists.length})</span>
+            </h2>
+            {handleNewSetlist && (
+              <button
+                type="button"
+                data-testid="setlists-add-new"
+                aria-label="Add new setlist"
+                onClick={handleNewSetlist}
+                className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add new setlist</span>
+              </button>
+            )}
+          </div>
 
           {setlists.length === 0 ? (
             <div data-testid="workspace-empty-collection" className={emptyState}>
