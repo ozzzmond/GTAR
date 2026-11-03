@@ -45,13 +45,13 @@ test('signed-out report is hidden without a hint',async()=>{
  await act(async()=>root.unmount())
 })
 const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
-test('local setlists remain available but signed-out QR is hidden and link import is disabled',async()=>{
+test('local setlists and share entry stay available signed out; link import is disabled',async()=>{
  const root=createRoot(document.getElementById('root'))
  await act(async()=>root.render(React.createElement(SongbookHomeView,{songs:[],setlists:[{id:'s',name:'Local setlist',songs:[]}],view:{type:'ALL_SETLISTS'},onShareSetlist(){},onOpenSetlists(){}})))
  // #319: setlist actions live in the setlist workspace ⋯ menu.
  assert.match(document.body.textContent,/Local setlist/)
  await act(async()=>document.querySelector('[data-testid="workspace-scope-menu-btn"]').click())
- assert.equal(document.querySelector('[data-testid="workspace-menu-share"]'),null,'signed-out QR is hidden')
+ assert.ok(document.querySelector('[data-testid="workspace-menu-share"]'),'signed-out local share remains available')
  await act(async()=>document.querySelector('[data-testid="workspace-menu-import"]').click())
  assert.ok(document.querySelector('[data-testid="load-share-link-btn"]').disabled)
  assert.ok(document.querySelector('[data-testid="paste-share-link-input"]').disabled)
@@ -79,7 +79,8 @@ for (const status of ['pending','denied']) test(`${status} masked session hides 
  const setlists=[{id:'s',name:'Local setlist',songs:[]}]
  for (const [Component,props] of [[SongbookHomeView,{view:{type:'ALL_SETLISTS'}}]]) {
   const html=renderToString(React.createElement(AuthContext.Provider,{value},React.createElement(Component,{...props,songs:[],setlists,onShareSetlist(){},onPublishSetlist(){},onClose(){}})))
-  assert.doesNotMatch(html,/main-share-setlist-btn|Share Setlist \(QR Code\)|Publish .* to Shared|Sign in to use the Shared Catalog/)
+  assert.ok(html.includes('main-share-setlist-btn'), 'local share stays available without active access')
+  assert.doesNotMatch(html,/Publish .* to Shared|Sign in to use the Shared Catalog/)
   assert.match(html,/Local setlist/)
  }
 })

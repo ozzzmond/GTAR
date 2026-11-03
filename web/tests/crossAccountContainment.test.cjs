@@ -86,7 +86,8 @@ for (const status of ['signed-out', 'pending']) test(`${status} account cannot p
   const root = createRoot(document.getElementById('root'))
   try {
     await act(async () => root.render(React.createElement(ShareSetlistModal, { setlist: library.setlists[0], allSongs: library.songs, onClose() {} })))
-    assert.match(document.body.textContent, /Authentication required|Active account approval required/)
+    assert.match(document.body.textContent, /Sign in to create a QR code \/ share link\./)
+    assert.ok([...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Export JSON'))
     assert.equal(document.querySelector('img'), null)
     assert.deepEqual(calls, [])
     assert.equal(localStorage.getItem(OWNER_KEY), owner)

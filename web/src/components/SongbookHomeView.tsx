@@ -69,6 +69,7 @@ interface SongbookHomeViewProps {
   /** #312 S2 (DEV): ⋯ Manage Setlists opens the Setlist Manager instead of the drawer. */
   onOpenSetlistManager?: (setlist: WebSetlist | null) => void
   onDeleteSong: (index: number) => void
+  onDeleteSetlist?: (setlistId: string | number) => boolean
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
@@ -113,6 +114,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onManageSetlist,
   onOpenSetlistManager,
   onDeleteSong,
+  onDeleteSetlist,
   setlists = [],
   onSelectSetlistSong,
   onImportSingleSetlist,
@@ -859,7 +861,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleMainShareSetlist = () => {
-    if (!isAuthActive || activeSetlists.length === 0) return
+    if (activeSetlists.length === 0) return
     if (activeSetlists.length === 1) {
       onShareSetlist?.(activeSetlists[0])
     } else {
@@ -1615,6 +1617,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             songs={songs}
             onSelectScope={(scope) => onSelectView?.({ type: scope })}
             onManageSetlist={onManageSetlist}
+            onDeleteSetlist={onDeleteSetlist}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
             onOpenSong={onSelectSong}
             onNewSetlist={onNewSetlist}
@@ -1629,8 +1632,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : []),
               ],
               onSortChange: (value) => setSetlistSortBy(value as SetlistSortOption),
-              onShareAll: isAuthActive && activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
-              onShareSetlist: isAuthActive ? onShareSetlist : undefined,
+              onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
+              onShareSetlist,
               onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
               onPublishSetlist: onPublishSetlist && canPublishSetlist && setlistCapability.enabled ? onPublishSetlist : undefined,
               publishLabel: (sl) => {

@@ -20,6 +20,8 @@ export interface SwipeableActionCardProps {
   className?: string
   cardClassName?: string
   dragSongIds?: Array<string | number>
+  dragSetlistId?: string | number
+  ariaLabel?: string
   dataTestId?: string
   onClick?: (e: React.MouseEvent) => void
   children: React.ReactNode
@@ -84,6 +86,8 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   cardClassName = '',
   dataTestId,
   dragSongIds,
+  dragSetlistId,
+  ariaLabel,
   onClick,
   children,
 }) => {
@@ -135,7 +139,9 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
 
     // Guard: ignore touch on interactive buttons or form controls
     const target = e.target as HTMLElement | null
-    if (target?.closest('button, [role="button"], select, input, textarea, a')) {
+    const control = target?.closest('button, [role="button"], select, input, textarea, a')
+    if (control && control !== e.currentTarget) {
+      gestureIntent.current = 'vertical'
       return
     }
 
@@ -297,8 +303,28 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
       {/* Front Card Surface */}
       <div
         data-testid={dataTestId}
-        draggable={!!dragSongIds?.length}
+        role={ariaLabel ? 'button' : undefined}
+        tabIndex={ariaLabel ? 0 : undefined}
+        aria-label={ariaLabel}
+        onKeyDown={e => {
+          if (ariaLabel && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            e.currentTarget.click()
+          }
+        }}
+        draggable={!!dragSongIds?.length || dragSetlistId !== undefined}
         data-explorer-drag-songs={dragSongIds?.length ? JSON.stringify(dragSongIds) : undefined}
+        data-explorer-drag-setlist={dragSetlistId === undefined ? undefined : String(dragSetlistId)}
+        data-explorer-drop-setlist={dragSetlistId === undefined ? undefined : String(dragSetlistId)}
+        onDragStart={e => {
+          if (gestureIntent.current === 'horizontal') {
+            e.preventDefault()
+            e.stopPropagation()
+            return
+          }
+          resetCard()
+          didMoveBeyondTap.current = true
+        }}
         onClick={handleClick}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
