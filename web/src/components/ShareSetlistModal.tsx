@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateQrSvgDataUri } from '../utils/qrCode';
+import { exportSingleSetlistJson } from '../utils/jsonBackup';
 import { sanitizeSetlistForShare } from '../utils/sharedSetlist';
 import type { SharedSetlistPayload } from '../utils/sharedSetlist';
 import type { WebSetlist, ActiveSongState } from '../types/gtar';
@@ -125,20 +126,6 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
     } catch {
       // Fallback
       setCopied(false);
-    }
-  };
-
-  const handleNativeShare = async () => {
-    if (!shareUrl || !navigator.share) return;
-    try {
-      const songCount = (setlist.songs || []).length;
-      await navigator.share({
-        title: `GTAR Setlist: ${setlist.name}`,
-        text: `Access the setlist "${setlist.name}" (${songCount} songs) in GTAR.`,
-        url: shareUrl,
-      });
-    } catch {
-      // User cancelled or share failed
     }
   };
 
@@ -297,17 +284,15 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
               </button>
             </div>
 
-            {typeof navigator !== 'undefined' && 'share' in navigator && (
-              <button
-                onClick={handleNativeShare}
-                className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
-                Share Link
-              </button>
-            )}
+            <button
+              onClick={() => exportSingleSetlistJson(setlist, allSongs)}
+              className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v12m-4-4 4 4 4-4M5 15v5h14v-5" />
+              </svg>
+              Export JSON
+            </button>
 
             {revokeError && (
               <p className="text-xs text-rose-400 text-center">{revokeError}</p>

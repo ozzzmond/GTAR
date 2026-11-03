@@ -69,6 +69,7 @@ interface SongbookHomeViewProps {
   /** #312 S2 (DEV): ⋯ Manage Setlists opens the Setlist Manager instead of the drawer. */
   onOpenSetlistManager?: (setlist: WebSetlist | null) => void
   onDeleteSong: (index: number) => void
+  onDeleteSetlist?: (setlistId: string | number) => boolean
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
@@ -113,6 +114,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onManageSetlist,
   onOpenSetlistManager,
   onDeleteSong,
+  onDeleteSetlist,
   setlists = [],
   onSelectSetlistSong,
   onImportSingleSetlist,
@@ -1615,6 +1617,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             songs={songs}
             onSelectScope={(scope) => onSelectView?.({ type: scope })}
             onManageSetlist={onManageSetlist}
+            onDeleteSetlist={onDeleteSetlist}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
             onOpenSong={onSelectSong}
             onNewSetlist={onNewSetlist}

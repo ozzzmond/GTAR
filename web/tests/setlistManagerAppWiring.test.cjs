@@ -32,7 +32,7 @@ afterEach(async () => { if (root) { await act(async () => root.unmount()); root 
 function freshModules() {
   for (const key of Object.keys(require.cache)) if (key.startsWith(srcDir)) delete require.cache[key]
 }
-async function mountApp(url, { keepStorage = false } = {}) {
+async function mountApp(url, { keepStorage = false, realHome = false } = {}) {
   const previous = keepStorage ? dom.window.localStorage : null
   const saved = previous ? Object.fromEntries(Object.keys(previous).map(k => [k, previous.getItem(k)])) : null
   if (root) { await act(async () => root.unmount()); root = null }
@@ -48,7 +48,8 @@ async function mountApp(url, { keepStorage = false } = {}) {
   else localStorage.setItem('gtar_library_v1', JSON.stringify(LIBRARY))
   freshModules()
   const homeModule = require('../src/components/SongbookHomeView.tsx')
-  homeModule.SongbookHomeView = props => { home = props; return React.createElement('div', null, 'Songbook') }
+  const Home = homeModule.SongbookHomeView
+  homeModule.SongbookHomeView = props => { home = props; return realHome ? React.createElement(Home, props) : React.createElement('div', null, 'Songbook') }
   require('../src/components/Header.tsx').Header = () => null
   const App = require('../src/App.tsx').default
   root = createRoot(document.getElementById('root'))
@@ -66,6 +67,37 @@ async function openManagerPicker() {
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'), 'DEV manage opens the Setlist Manager')
   await click(button('Search Multi-Songs'))
 }
+
+test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-deletes through the existing manager handler', async () => {
+  await mountApp('http://localhost/', { realHome: true })
+  await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
+  const before = localStorage.getItem('gtar_library_v1')
+  let approved = false
+  const prompts = []
+  window.confirm = message => { prompts.push(message); return approved }
+  const swipeDelete = async () => {
+    const card = $('[data-testid="workspace-setlist-card-sl-1"]')
+    for (const [type, x] of [['touchstart', 150], ['touchmove', 50], ['touchend', 50]]) {
+      const event = new window.Event(type, { bubbles: true, cancelable: true })
+      const point = { identifier: 1, clientX: x, clientY: 20 }
+      Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : [point] }, changedTouches: { value: [point] } })
+      await act(async () => card.dispatchEvent(event))
+      if (type === 'touchmove') assert.ok($('[aria-label="Delete"]'), 'swipe left reveals Delete')
+    }
+  }
+  await swipeDelete()
+  assert.match(prompts[0], /Sunday AM/)
+  assert.equal(localStorage.getItem('gtar_library_v1'), before)
+  assert.ok($('[data-testid="workspace-setlist-card-sl-1"]'))
+  approved = true
+  await swipeDelete()
+  assert.equal(prompts.length, 2)
+  assert.equal($('[data-testid="workspace-setlist-card-sl-1"]'), null)
+  assert.equal(stored().setlists.find(sl => sl.id === 'sl-1').isDeleted, true)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+  await mountApp('http://localhost/', { keepStorage: true })
+  assert.equal(home.setlists.find(sl => sl.id === 'sl-1').isDeleted, true, 'soft-delete survives reload')
+})
 
 test('DEV: select N songs → one guarded add, appended in selection order, kept after reload', async () => {
   await mountApp('http://localhost/')
