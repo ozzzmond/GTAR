@@ -26,7 +26,6 @@ import {
   User,
   Shield,
   Menu,
-  Cloud,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import {
@@ -190,10 +189,12 @@ function ToolbarIconButton({
         aria-describedby={anchor ? tooltipId : undefined}
         data-testid={testId}
         data-explorer-drop-trash={dropTrash ? 'true' : undefined}
-        className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
+        className={`toolbar-icon-btn relative flex min-h-11 min-w-9 sm:min-w-11 w-9 sm:w-auto shrink-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-app-border bg-app-base px-1.5 sm:px-2 text-app-action hover:border-app-action cursor-pointer transition-colors ${
+          isActive ? 'active border-app-accent text-app-accent' : ''
+        } ${className}`}
       >
-        <Icon className="w-4 h-4" />
-        <span className="hidden lg:inline text-xs">{label.replace(/ \(Alt\+\d\)/, '')}</span>
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className="hidden lg:inline text-xs font-semibold">{label.replace(/ \(Alt\+\d\)/, '')}</span>
         <span className="active-dot" />
       </button>
       {anchor && createPortal(
@@ -746,33 +747,38 @@ export const Header: React.FC<HeaderProps> = ({
     <>
       <header className="bg-app-header border-b border-app-border sticky top-0 z-40 flex flex-col select-none max-w-full">
       {/* Row 1 (GTAR1 header) — the compact search overlay covers this row only */}
-      <div className="relative px-3 py-2.5">
+      <div className="relative px-2 sm:px-3 py-2 sm:py-2.5">
       <div className="flex items-center justify-between gap-1 sm:gap-4">
         {/* Left: Explorer drawer toggle & GTAR branding (DEV deployment details / PROD version stay visible) */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-3 min-w-0">
           <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
             onClick={onOpenSetlistDrawer}
-            className="md:hidden min-h-11 min-w-11 flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors">
+            className="md:hidden min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0">
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <button type="button" onClick={onNavigateHome} aria-label={isDevEnv ? 'GTAR-Dev home' : 'GTAR home'}
-            className="flex items-center gap-2 text-left group min-h-11 cursor-pointer">
+            className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-11 cursor-pointer shrink-0">
             <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-opacity">
               <img src={isDevEnv ? devLogo : prodLogo} alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
                 className="w-full h-full object-cover select-none" />
             </div>
-            <div className={isDevEnv ? 'hidden sm:block' : 'block'}>
-              <span className="hidden sm:inline text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
+            <div className="hidden sm:block">
+              <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
                 {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
               </span>
               {isDevEnv ? (
                 <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
               ) : (
-                <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono sm:ml-2">
+                <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono ml-2">
                   {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
                 </span>
               )}
             </div>
+            {!isDevEnv && (
+              <span data-testid="header-prod-version-compact" className="sm:hidden text-[9px] leading-tight header-secondary-text text-app-muted font-mono select-none">
+                {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
+              </span>
+            )}
           </button>
           {devDiagnostics(true)}
         </div>
@@ -816,8 +822,8 @@ export const Header: React.FC<HeaderProps> = ({
           {compact && searchEnabled && (
             <button ref={searchTriggerRef} type="button" aria-label="Open search"
               onClick={() => setMobileSearchOpen(true)}
-              className={`ui-button mobile-search-trigger min-h-11 min-w-11 rounded-xl bg-app-surface border transition-colors flex items-center justify-center active:scale-95 ${
-                searchQuery ? 'text-app-accent border-app-accent' : 'border-app-border header-neutral-icon text-app-muted hover:text-app-heading hover:border-app-accent'}`}>
+              className={`ui-button mobile-search-trigger min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors flex items-center justify-center active:scale-95 ${
+                searchQuery ? 'text-app-accent border-app-accent' : ''}`}>
               <Search className="w-4 h-4" />
             </button>
           )}
@@ -841,11 +847,9 @@ export const Header: React.FC<HeaderProps> = ({
           />
 
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
-          <span className="hidden sm:inline-flex shrink-0">
-            <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
-              backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
-              recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
-          </span>
+          <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
+            backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
+            recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
 
           {/* More */}
           <ToolbarIconButton
@@ -1008,24 +1012,6 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="h-[1px] bg-app-border/60 my-1" />
             </>
           )}
-
-          {/* Backup & Restore (available in More menu on mobile < sm) */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              setShowCloudSyncModal(true)
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center justify-between gap-3 cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <Cloud className="w-4 h-4 text-app-action" />
-              <span className="font-semibold">Backup &amp; Restore</span>
-            </div>
-            {recoveryAttention && <span data-testid="cloud-recovery-dot-more" aria-hidden="true" className={recoveryDotClass} />}
-          </button>
-
-          <div className="h-[1px] bg-app-border/60 my-1" />
 
           {/* 1. Stage Settings */}
           <button

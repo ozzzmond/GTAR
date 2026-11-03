@@ -224,7 +224,7 @@ test('DEV5A_BACK_CONTROL: Back renders in Stage BOX, accessible, and invokes bro
     assert.equal(back.getAttribute('aria-label'), 'Back')
     assert.equal(back.getAttribute('type'), 'button')
     assert.equal(back.tagName, 'BUTTON')
-    assert.ok(back.classList.contains('toolbar-icon-btn'), 'shares toolbar touch target / theme tokens')
+    assert.ok(back.classList.contains('ui-button'), 'shares stage control touch target / theme tokens')
     assert.doesNotMatch(back.className, /(bg|text|border)-(red|blue|green|yellow|slate|gray|cyan|amber|sky)-\d/)
     assert.doesNotMatch(back.className, /#[0-9a-f]{3,6}/i)
 
