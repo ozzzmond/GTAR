@@ -1374,7 +1374,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       {/* 1. Breadcrumbs & scope bar (GTAR1 filter bar) */}
       {!isSetlistContext && (
-      <div data-testid="songbook-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border px-4 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
+      <div data-testid="songbook-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border px-4 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:flex-wrap sm:justify-between sm:gap-y-2">
         <nav aria-label="Breadcrumb" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
           {breadcrumbItems.map((item, idx) => (
             <React.Fragment key={idx}>
@@ -1401,15 +1401,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </nav>
 
         {isSongsContext && (
-          <div data-testid="songs-library-toolbar" className="contents">
+          <div data-testid="songs-library-toolbar" className="contents sm:flex sm:items-center sm:gap-1.5 sm:ml-auto sm:flex-wrap sm:justify-end">
             {songs.length > 0 && (
-              <div data-testid="songs-library-filters" className="col-start-1 row-start-2 flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar sm:ml-auto sm:overflow-visible">
+              <div data-testid="songs-library-filters" className="col-start-1 row-start-2 flex flex-wrap items-center gap-1.5 min-w-0 sm:ml-auto sm:flex-nowrap">
                 <select
                   data-testid="filter-metadata-select"
                   aria-label="Filter songs by metadata"
                   value={filterMetadata}
                   onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
-                  className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="min-h-11 min-w-0 flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                 >
                   <option value="ALL">All Metadata</option>
                   <option value="METADATA_OK">Metadata OK</option>
@@ -1421,7 +1421,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-label="Filter songs by setlist"
                     value={filterSetlistId}
                     onChange={(e) => handleFilterSetlistChange(e.target.value)}
-                    className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                    className="min-h-11 min-w-0 flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                   >
                     <option value="ALL">All Setlists</option>
                     {activeSetlists.map((sl) => (
@@ -1436,13 +1436,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-label="Filter songs by tags"
                   value={filterTags}
                   onChange={(e) => handleFilterTagsChange(e.target.value as TagsFilterOption)}
-                  className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="min-h-11 min-w-0 flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                 >
                   <option value="ALL">All Tags</option>
                   <option value="TAGGED">Tagged</option>
                   <option value="NO_TAG">No tag</option>
                 </select>
-                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs">
+                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs w-full sm:w-auto">
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
                       onClick={() => handleSortChange(field)}
@@ -1476,7 +1476,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     closeAllMenus()
                     setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
                   }}
-                  className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0`}
+                  className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0`}
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
