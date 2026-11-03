@@ -175,8 +175,8 @@ test('SCOPE 5 & 6: Folder inline form spacing matches search box design; delete 
 
   const nameInput = $('input[aria-label="Folder name"]')
   assert.ok(nameInput)
-  assert.match(nameInput.className, /rounded-xl border border-app-border bg-app-base px-3 text-xs/, 'Input tokens match search box')
-  assert.match(nameInput.className, /min-h-11/, '44px touch target on input')
+  assert.match(nameInput.className, /rounded-xl border border-app-border.*bg-app-surface.*px-3.*text-xs/, 'Input tokens match search box')
+  assert.match(nameInput.className, /min-h-\[36px\]/, 'matches search box height')
 
   // Click Delete button to trigger confirmation
   const deleteBtn = [...form.querySelectorAll('button')].find(b => b.textContent.trim() === 'Delete')
@@ -192,7 +192,7 @@ test('SCOPE 5 & 6: Folder inline form spacing matches search box design; delete 
   const confirmDeleteBtn = [...confirmBox.querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm delete folder')
   assert.ok(cancelBtn, 'Cancel button exists in delete confirmation')
   assert.ok(confirmDeleteBtn, 'Confirm delete folder button exists in confirmation')
-  assert.match(confirmDeleteBtn.className, /min-h-11/, '44px touch target on confirm button')
+  assert.match(confirmDeleteBtn.className, /h-7/, 'compact button with touch target')
 
   // Confirm deletion
   await click(confirmDeleteBtn)

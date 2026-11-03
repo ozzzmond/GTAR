@@ -33,6 +33,7 @@ import {
   Check,
   CheckCircle2,
   AlertCircle,
+  Tag,
 } from 'lucide-react'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus } from '../utils/chordProMetadata'
@@ -1206,22 +1207,40 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       {tagPickerOpen && <dialog open aria-label="Add selected songs to tag" data-testid="bulk-add-to-tag-dialog"
         onCancel={() => setTagPickerOpen(false)}
-        className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl z-50">
-        <form className="p-5 space-y-2" onKeyDown={event => { if (event.key === 'Escape') setTagPickerOpen(false) }} onSubmit={event => {
+        className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <form className="p-5 space-y-3" onKeyDown={event => { if (event.key === 'Escape') setTagPickerOpen(false) }} onSubmit={event => {
           event.preventDefault()
           const tag = normalizeTags([tagName])[0]
           if (!tag) { setTagError('Choose or enter a tag.'); return }
           if (onAddToTag?.(Array.from(selectedSongIds), tag)) { setTagPickerOpen(false); setTagError('') }
           else setTagError('Tags were not saved. Resolve the storage conflict and retry.')
         }}>
-          <h2 className="font-bold text-sm">Add {selectedSongIds.size} selected songs to tag</h2>
-          <label className="block text-xs">Existing or new tag<input autoFocus aria-label="Existing or new tag" list="songbook-tag-options"
-            className="min-h-11 w-full min-w-0 rounded-lg border border-app-border bg-app-base px-2 text-app-text"
-            value={tagName} onChange={event => setTagName(event.target.value)} /></label>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="ui-section-text font-bold text-sm flex items-center gap-2 ui-primary-text text-app-heading">
+              <Tag className="ui-action-text w-4 h-4 text-app-action" />
+              Add {selectedSongIds.size} {selectedSongIds.size === 1 ? 'Song' : 'Songs'} to Tag
+            </h2>
+            <button
+              type="button"
+              onClick={() => setTagPickerOpen(false)}
+              className="p-1 rounded-lg hover:bg-app-base ui-secondary-text text-app-muted hover:text-app-heading cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="relative flex items-center min-w-0 w-full">
+            <Tag className="absolute left-2.5 w-3.5 h-3.5 text-app-muted pointer-events-none" />
+            <input autoFocus aria-label="Existing or new tag" placeholder="Existing or new tag" list="songbook-tag-options"
+              className="min-h-[36px] w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface pl-8 pr-2.5 py-1.5 text-xs text-app-text placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200"
+              value={tagName} onChange={event => setTagName(event.target.value)} />
+          </div>
           <datalist id="songbook-tag-options">{[...new Set(songs.flatMap(song => normalizeTags(song.tags)))].sort().map(tag => <option key={tag} value={tag} />)}</datalist>
-          <div className="flex flex-wrap gap-2"><button type="submit" className={cardMenuItem}>Add to tag</button>
-            <button type="button" className={cardMenuItem} onClick={() => setTagPickerOpen(false)}>Cancel</button></div>
-          {tagError && <p role="alert" className="text-xs text-app-muted">{tagError}</p>}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button type="button" className="relative h-7 px-3 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => setTagPickerOpen(false)}>Cancel</button>
+            <button type="submit" className="relative h-7 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']">Add to tag</button>
+          </div>
+          {tagError && <p role="alert" className="text-xs font-medium text-status-error">{tagError}</p>}
         </form>
       </dialog>}
 

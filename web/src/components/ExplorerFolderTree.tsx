@@ -13,7 +13,7 @@ interface Props {
   onDelete?: (id: string) => boolean
 }
 const button = 'min-h-11 min-w-11 rounded-lg text-app-muted hover:bg-app-surface hover:text-app-heading flex items-center justify-center'
-const field = 'min-h-11 w-full min-w-0 rounded-xl border border-app-border bg-app-base px-3 text-xs text-app-text font-medium placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all'
+const field = 'min-h-[36px] w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface px-3 py-1.5 text-xs text-app-text font-medium placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200'
 /** Folder actions share the Explorer's existing compact navigation surface. */
 export function ExplorerFolderTree({ folders, setlists, selectedId, onSelect, onSave, onDelete }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -61,18 +61,18 @@ export function ExplorerFolderTree({ folders, setlists, selectedId, onSelect, on
         </select>
       </label>
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        <button type="submit" className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer">
+        <button type="submit" className="relative h-7 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']">
           Save
         </button>
-        <button type="button" className="min-h-11 px-3 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer" onClick={() => setEditing(null)}>
+        <button type="button" className="relative h-7 px-3 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => setEditing(null)}>
           Cancel
         </button>
         {folders.some(folder => folder.id === editing.id) && (
           <>
-            <button type="button" className="min-h-11 px-2.5 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer" onClick={() => create(editing.id)}>
+            <button type="button" className="relative h-7 px-2.5 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => create(editing.id)}>
               Subfolder
             </button>
-            <button type="button" className="min-h-11 px-2.5 rounded-xl bg-status-error/15 hover:bg-status-error/25 border border-status-error/30 text-status-error font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer" onClick={() => setConfirmDelete(true)}>
+            <button type="button" className="relative h-7 px-2.5 rounded-xl bg-status-error/15 hover:bg-status-error/25 border border-status-error/30 text-status-error font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => setConfirmDelete(true)}>
               Delete
             </button>
           </>
@@ -89,14 +89,14 @@ export function ExplorerFolderTree({ folders, setlists, selectedId, onSelect, on
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="min-h-11 flex-1 px-3 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer"
+              className="relative h-7 flex-1 px-3 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']"
               onClick={() => setConfirmDelete(false)}
             >
               Cancel
             </button>
             <button
               type="button"
-              className="min-h-11 flex-1 px-3 rounded-xl bg-status-error hover:brightness-110 text-white font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer"
+              className="relative h-7 flex-1 px-3 rounded-xl bg-status-error hover:brightness-110 text-white font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']"
               onClick={() => {
                 if (onDelete?.(editing.id)) setEditing(null)
                 else setError('Folder was not deleted.')
