@@ -5,8 +5,8 @@ import { useTagLibrary } from '../utils/tagLibraryContext'
 
 const rowActionBtn = 'min-h-11 min-w-11 rounded-lg text-app-muted hover:bg-app-surface hover:text-app-heading flex items-center justify-center transition-colors'
 const searchBoxInput = 'min-h-[36px] w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface px-3 py-1.5 text-xs text-app-text placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200'
-const primaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
-const secondaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
+const primaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer whitespace-nowrap after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
+const secondaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer whitespace-nowrap after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
 
 const presets = [
   ['Action', '--custom-actionColor'], ['Accent', '--custom-control-accent'],
@@ -48,7 +48,7 @@ export function TagRow({ tag, onChange, children }: { tag: string; onChange?: (t
         <Tag className="absolute left-2.5 w-3.5 h-3.5 text-app-muted pointer-events-none" />
         <input autoFocus aria-label="Tag name" placeholder="Tag name" className={`${searchBoxInput} pl-8`} value={name} onChange={event => setName(event.target.value)} />
       </div>
-      <div className="flex items-center gap-1.5 flex-nowrap">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <button type="submit" className={primaryPillBtn}>Save</button>
         <button type="button" className={secondaryPillBtn} onClick={close}>Cancel</button>
         <button type="button" className={secondaryPillBtn} onClick={() => { setConfirmRemove(true); setError('') }}>Remove</button>
@@ -65,29 +65,45 @@ export function TagRow({ tag, onChange, children }: { tag: string; onChange?: (t
       )}
       {showColors && (
         <div role="group" aria-label={`Color for ${tag}`} className="space-y-1.5 pt-0.5">
-          <div className="flex items-center gap-1 flex-nowrap">
-            {presets.map(([label, token]) => (
-              <button
-                key={token}
-                type="button"
-                aria-label={`${label} tag color`}
-                className="relative p-1 rounded-full hover:scale-110 transition-transform cursor-pointer after:absolute after:-inset-2 after:content-['']"
-                onClick={() => {
-                  const color = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim()
-                  saveColor(color)
-                }}
-              >
-                <span className="w-3.5 h-3.5 block rounded-full border border-app-border/60 shadow-sm" style={{ backgroundColor: `var(${token})` }} />
-                <span className="sr-only">{label}</span>
-              </button>
-            ))}
-          </div>
-          <input aria-label="Custom tag hex color" placeholder="Custom hex (#abcdef)" className={searchBoxInput} value={hex} onChange={event => setHex(event.target.value)} />
-          <div className="flex items-center gap-1.5 flex-nowrap pt-0.5">
-            <button type="button" className={secondaryPillBtn} onClick={() => saveColor(hex)}>Apply color</button>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1">
+              {presets.map(([label, token]) => (
+                <button
+                  key={token}
+                  type="button"
+                  aria-label={`${label} tag color`}
+                  className="relative p-1 rounded-full hover:scale-110 transition-transform cursor-pointer after:absolute after:-inset-2 after:content-['']"
+                  onClick={() => {
+                    const color = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim()
+                    saveColor(color)
+                  }}
+                >
+                  <span className="w-3.5 h-3.5 block rounded-full border border-app-border/60 shadow-sm" style={{ backgroundColor: `var(${token})` }} />
+                  <span className="sr-only">{label}</span>
+                </button>
+              ))}
+            </div>
             <button type="button" className={secondaryPillBtn} onClick={() => saveColor()}>Reset color</button>
-            <span className="inline-block rounded-xl border border-app-border px-2 py-1 text-xs font-medium shrink-0 leading-none" style={tagChipStyle({ [tag]: hex }, tag)}>#{tag}</span>
           </div>
+          <input
+            aria-label="Custom tag hex color"
+            placeholder="Custom hex (#abcdef)"
+            className={searchBoxInput}
+            value={hex}
+            onChange={event => setHex(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                event.stopPropagation()
+                saveColor(hex)
+              }
+            }}
+            onBlur={() => {
+              if (hex.trim() && hex.toLowerCase() !== savedColor.toLowerCase()) {
+                saveColor(hex)
+              }
+            }}
+          />
         </div>
       )}
       {error && <p role="alert" className="text-xs font-medium text-status-error">{error}</p>}
