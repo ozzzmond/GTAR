@@ -170,6 +170,7 @@ function renderHeader(props = {}) {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { url: 'https://gtar.test/' })
   global.window = dom.window; global.document = dom.window.document; global.IS_REACT_ACT_ENVIRONMENT = true
   global.localStorage = dom.window.localStorage
+  global.HTMLElement = dom.window.HTMLElement; global.Node = dom.window.Node
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   window.requestAnimationFrame = fn => setTimeout(fn, 0)
   delete require.cache[require.resolve(path.join(webDir, 'src/components/Header.tsx'))]
@@ -188,15 +189,38 @@ function renderHeader(props = {}) {
   return { dom, root, viewChanges }
 }
 
-test('DEV5A_BACK_CONTROL: Back renders first, beside Stage Preview, accessible, and invokes browser history only', () => {
-  const { dom, root, viewChanges } = renderHeader()
+function renderStageView(props = {}) {
+  const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { url: 'https://gtar.test' })
+  global.window = dom.window
+  global.document = dom.window.document
+  global.IS_REACT_ACT_ENVIRONMENT = true
+  global.localStorage = dom.window.localStorage
+  global.HTMLElement = dom.window.HTMLElement
+  global.Node = dom.window.Node
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  window.requestAnimationFrame = fn => setTimeout(fn, 0)
+  const root = createRoot(document.getElementById('root'))
+  const { StageView } = require('../src/components/StageView.tsx')
+  const song = { id: 'test', title: 'Test', rawContent: '[C]Hello' }
+  act(() => {
+    root.render(React.createElement(StageView, {
+      song,
+      songs: [song],
+      activeSongIndex: 0,
+      onSelectSongIndex() {},
+      transposeOffset: 0,
+      onTransposeChange() {},
+      ...props,
+    }))
+  })
+  return { dom, root }
+}
+
+test('DEV5A_BACK_CONTROL: Back renders in Stage BOX, accessible, and invokes browser history only', () => {
+  const { dom, root } = renderStageView()
   try {
-    const group = document.querySelector('[data-testid="main-toolbar-group"]')
-    const buttons = [...group.querySelectorAll('button.toolbar-icon-btn')]
     const back = document.querySelector('[data-testid="toolbar-back"]')
     assert.ok(back)
-    assert.equal(buttons[0], back)
-    assert.equal(buttons[1].getAttribute('aria-label'), 'Stage Preview (Alt+1)')
     assert.equal(back.getAttribute('aria-label'), 'Back')
     assert.equal(back.getAttribute('type'), 'button')
     assert.equal(back.tagName, 'BUTTON')
@@ -216,7 +240,6 @@ test('DEV5A_BACK_CONTROL: Back renders first, beside Stage Preview, accessible, 
     act(() => { back.click() })
     assert.equal(backCalls, 1)
     assert.equal(pushCalls, 0)
-    assert.deepEqual(viewChanges, [], 'Back must not hardcode a GTAR route via onViewChange')
     assert.equal(window.location.href, 'https://gtar.test/')
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
@@ -224,8 +247,8 @@ test('DEV5A_BACK_CONTROL: Back renders first, beside Stage Preview, accessible, 
 })
 
 test('DEV5A_BACK_NOT_HARDCODED: Back handler source references no GTAR view route', () => {
-  const header = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-  const backBlock = header.match(/icon=\{ArrowLeft\}[\s\S]*?\/>/)[0]
+  const stage = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
+  const backBlock = stage.match(/<button[\s\S]*?data-testid="toolbar-back"[\s\S]*?<\/button>/)[0]
   assert.match(backBlock, /navigateBack\(\)/)
   assert.doesNotMatch(backBlock, /onViewChange|'songbook'|'stage'|'editor'|'trash'|onNavigateHome/)
   const vh = fs.readFileSync(path.join(webDir, 'src/utils/viewHistory.ts'), 'utf8')
@@ -233,32 +256,21 @@ test('DEV5A_BACK_NOT_HARDCODED: Back handler source references no GTAR view rout
   assert.doesNotMatch(vh, /pushState|location\.(href|assign|replace)/)
 })
 
-test('DEV5A_TOOLBAR_LAYOUT: action group centered as a whole and existing actions preserved in order', () => {
-  const css = fs.readFileSync(path.join(webDir, 'src/index.css'), 'utf8')
-  const rule = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0]
-  assert.match(rule, /width:\s*max-content;/)
-  assert.match(rule, /margin-inline:\s*auto;/)
-  assert.doesNotMatch(rule, /min-width:\s*100%/)
+test('DEV5A_TOOLBAR_LAYOUT: actions preserved in Header and Stage BOX (#333)', () => {
   const { dom, root } = renderHeader()
   try {
-    const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
-    const group = scroll.firstElementChild
-    assert.equal(group.getAttribute('data-testid'), 'main-toolbar-group')
-    assert.ok(scroll.classList.contains('overflow-x-auto'))
-    assert.ok(group.classList.contains('justify-center'))
-    const labels = [...group.querySelectorAll('.toolbar-icon-btn')].map(b => b.getAttribute('aria-label'))
-    assert.deepEqual(labels, ['Back', 'Stage Preview (Alt+1)', 'Editor (Alt+2)', 'Band Sync (Alt+3)', 'Cast (Alt+4)', 'Theme (Alt+5)', 'Trash (Alt+6)', 'More'])
+    const labels = [...document.querySelectorAll('.toolbar-icon-btn')].map(b => b.getAttribute('aria-label'))
+    assert.deepEqual(labels, ['Theme (Alt+5)', 'Trash (Alt+6)', 'More'])
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
   }
 })
 
 test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement dismissal preserve actions', () => {
-  const { dom, root, viewChanges } = renderHeader()
+  const { dom, root } = renderHeader()
   const viewport = new window.EventTarget()
   Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true })
-  const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
-  const button = scroll.querySelectorAll('button')[1]
+  const button = document.querySelector('[aria-label="Theme (Alt+5)"]')
   const tooltip = () => document.querySelector('[role="tooltip"]')
   const focus = () => act(() => button.focus())
   const blur = () => act(() => button.blur())
@@ -268,11 +280,10 @@ test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement 
     assert.equal(tooltip().parentElement, document.body)
     assert.equal(tooltip().textContent, button.getAttribute('aria-label'))
     assert.equal(button.getAttribute('aria-describedby'), tooltip().id)
-    assert.equal(scroll.querySelector('.toolbar-tooltip'), null)
     act(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' })))
     assert.equal(tooltip(), null)
     assert.equal(document.activeElement, button, 'Escape preserves keyboard focus')
-    for (const [target, event] of [[scroll, 'scroll'], [window, 'resize'], [viewport, 'resize'], [viewport, 'scroll']]) {
+    for (const [target, event] of [[window, 'resize'], [viewport, 'resize'], [viewport, 'scroll']]) {
       blur(); focus(); assert.ok(tooltip())
       act(() => target.dispatchEvent(new window.Event(event)))
       assert.equal(tooltip(), null, `${event} dismisses stale anchor`)
@@ -284,7 +295,6 @@ test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement 
     assert.equal(tooltip(), null)
     focus()
     act(() => button.click())
-    assert.deepEqual(viewChanges, ['stage'])
     assert.equal(tooltip(), null)
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document

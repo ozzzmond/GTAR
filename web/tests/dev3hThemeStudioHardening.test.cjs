@@ -217,32 +217,18 @@ test('TOOLBAR ALIGNMENT: 8 primary controls, 44px targets, canonical order, CSS 
   })
 
   const sheet = document.createElement('style')
-  sheet.textContent = css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0] + css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0] + css.match(/^header \.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
+  sheet.textContent = css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0] + css.match(/^header \.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
   document.head.appendChild(sheet)
-  const scroll = document.querySelector('[data-testid="main-toolbar-scroll"]')
-  assert.ok(scroll.classList.contains('overflow-x-auto'))
-  const content = scroll.firstElementChild
-  assert.ok(content.classList.contains('justify-center'))
-  assert.ok(!content.className.includes('justify-start'))
-  const layout = window.getComputedStyle(content)
-  assert.equal(layout.width, 'max-content')
-  assert.match(css.match(/\.main-toolbar-content\s*\{[^}]*\}/)[0], /margin-inline:\s*auto;/)
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
-  assert.equal(toolbarButtons.length, 8)
+  assert.equal(toolbarButtons.length, 3)
   const labels = [...toolbarButtons].map(btn => btn.getAttribute('aria-label'))
   assert.deepEqual(labels, [
-    'Back',
-    'Stage Preview (Alt+1)',
-    'Editor (Alt+2)',
-    'Band Sync (Alt+3)',
-    'Cast (Alt+4)',
     'Theme (Alt+5)',
     'Trash (Alt+6)',
     'More',
   ])
   for (const btn of toolbarButtons) {
     assert.ok(btn.classList.contains('shrink-0'))
-    assert.equal(btn.parentElement, content)
     const footprint = window.getComputedStyle(btn)
     assert.equal(footprint.minWidth, '44px'); assert.equal(footprint.height, '44px')
     assert.equal(footprint.display, 'inline-flex')

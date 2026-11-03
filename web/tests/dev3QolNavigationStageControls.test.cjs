@@ -19,46 +19,40 @@ const webDir = path.resolve(__dirname, '..')
 const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
 
 // =============================================================================
-// 2. HEADER PRIMARY TOOLBAR ORDER & REPLACEMENTS
+// 2. HEADER UPPERBOX & STAGE VIEW ORDER (#333)
 // =============================================================================
-test('DEV3_HEADER_TOOLBAR_ORDER: Primary toolbar follows Stage Preview -> Editor -> Band Sync -> Cast -> Theme -> Trash -> More', () => {
+test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Theme -> Trash -> Backed up -> More -> profile; Stage follows Back -> Editor -> Band Sync', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-  const tier2Section = headerSource.substring(
-    headerSource.indexOf('TIER 2 (Middle Action Bar)'),
-    headerSource.indexOf('TIER 3 (Bottom Search Bar)')
-  )
+  const stageSource = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
 
-  // Stage Preview is first; uses PlaySquare, not Eye
-  const stagePreviewIdx = tier2Section.indexOf('label="Stage Preview (Alt+1)"')
-  const editorIdx = tier2Section.indexOf('label="Editor (Alt+2)"')
-  const bandSyncIdx = tier2Section.indexOf('label="Band Sync (Alt+3)"')
-  const castIdx = tier2Section.indexOf('label="Cast (Alt+4)"')
-  const themeIdx = tier2Section.indexOf('label="Theme (Alt+5)"')
-  const trashIdx = tier2Section.indexOf('Trash')
-  const moreIdx = tier2Section.indexOf('label="More"')
+  const themeIdx = headerSource.indexOf('label="Theme (Alt+5)"')
+  const trashIdx = headerSource.indexOf('label={`Trash')
+  const backupIdx = headerSource.indexOf('<SyncStatusPill')
+  const moreIdx = headerSource.indexOf('label="More"')
+  const avatarIdx = headerSource.indexOf('data-testid="header-avatar"')
 
-  assert.ok(stagePreviewIdx !== -1, 'Stage Preview action must exist')
-  assert.ok(editorIdx !== -1, 'Editor action must exist')
-  assert.ok(bandSyncIdx !== -1, 'Band Sync action must exist')
-  assert.ok(castIdx !== -1, 'Cast action must exist')
-  assert.ok(themeIdx !== -1, 'Theme action must exist')
-  assert.ok(trashIdx !== -1, 'Trash action must exist')
-  assert.ok(moreIdx !== -1, 'More action must exist')
+  assert.ok(themeIdx !== -1, 'Theme action must exist in Header')
+  assert.ok(trashIdx !== -1, 'Trash action must exist in Header')
+  assert.ok(backupIdx !== -1, 'Backed up action must exist in Header')
+  assert.ok(moreIdx !== -1, 'More action must exist in Header')
+  assert.ok(avatarIdx !== -1, 'Profile avatar must exist in Header')
 
-  // Verify strict ordering
-  assert.ok(stagePreviewIdx < editorIdx, 'Stage Preview must precede Editor')
-  assert.ok(editorIdx < bandSyncIdx, 'Editor must precede Band Sync')
-  assert.ok(bandSyncIdx < castIdx, 'Band Sync must precede Cast')
-  assert.ok(castIdx < themeIdx, 'Cast must precede Theme')
+  // Verify strict ordering in Header
   assert.ok(themeIdx < trashIdx, 'Theme must precede Trash')
-  assert.ok(trashIdx < moreIdx, 'Trash must precede More')
+  assert.ok(trashIdx < backupIdx, 'Trash must precede Backed up')
+  assert.ok(backupIdx < moreIdx, 'Backed up must precede More')
+  assert.ok(moreIdx < avatarIdx, 'More must precede profile')
 
-  // Verify Stage Preview uses PlaySquare icon
-  assert.ok(tier2Section.includes('icon={PlaySquare}'), 'Stage Preview must use PlaySquare icon')
+  // Verify Stage Box ordering
+  const backIdx = stageSource.indexOf('aria-label="Back"')
+  const editorIdx = stageSource.indexOf('aria-label="Editor (Alt+2)"')
+  const bandSyncIdx = stageSource.indexOf('aria-label="Band Sync (Alt+3)"')
 
-  // Dedicated Songbook and Setlist buttons removed from primary Tier 2 toolbar
-  assert.ok(!tier2Section.includes('label={`Songbook'), 'Dedicated Songbook button removed from primary toolbar')
-  assert.ok(!tier2Section.includes('label={`Setlists'), 'Dedicated Setlists button removed from primary toolbar')
+  assert.ok(backIdx !== -1, 'Back action must exist in StageView')
+  assert.ok(editorIdx !== -1, 'Editor action must exist in StageView')
+  assert.ok(bandSyncIdx !== -1, 'Band Sync action must exist in StageView')
+  assert.ok(backIdx < editorIdx, 'Back must precede Editor')
+  assert.ok(editorIdx < bandSyncIdx, 'Editor must precede Band Sync')
 
   // Home navigation preserved via the logo entry (#224: hover tooltip removed; Alt+0 still works)
   assert.ok(headerSource.includes('onClick={onNavigateHome}'), 'Logo home entry preserved')
@@ -71,12 +65,8 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Primary toolbar follows Stage Preview -> Editor
 test('DEV3_WEB_SOURCES_RELOCATION_AND_MORE_MENU: Web Sources relocated to More menu; More menu uses dynamic viewport-anchored positioning', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
 
-  // Web Sources removed from primary toolbar Tier 2
-  const tier2Section = headerSource.substring(
-    headerSource.indexOf('TIER 2 (Middle Action Bar)'),
-    headerSource.indexOf('TIER 3 (Bottom Search Bar)')
-  )
-  assert.ok(!tier2Section.includes('label="Web Sources"'), 'Web Sources removed from Tier 2 toolbar')
+  // Web Sources removed from primary header buttons
+  assert.ok(!headerSource.includes('label="Web Sources"'), 'Web Sources not in primary header')
 
   // Web Sources added inside More menu
   const moreMenuSection = headerSource.substring(headerSource.indexOf('3-Dots Overflow Menu'))

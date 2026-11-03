@@ -92,25 +92,26 @@ function headerProps(calls, extra = {}) {
     activeSection: 'songs', deletedSongsCount: 2, ...extra }
 }
 
-test('header: GTAR1 row plus the kept second toolbar row (19:20 owner correction); actions stay in the toolbar', async () => ui(async ({ $, click, render }) => {
+test('header: GTAR1 row with actions (Theme, Trash, More, cloud status) in UPPERBOX (#333)', async () => ui(async ({ $, click, render }) => {
   const { Header } = require('../src/components/Header.tsx')
   const calls = []
   await render(Header, headerProps(calls))
   assert.ok($('[data-testid="dev-header-diagnostics"]'), 'DEV deployment details stay next to the logo')
   assert.ok($('[data-testid="dev-header-diagnostics-compact"]'), 'compact DEV strip for phones')
   assert.ok($('[data-testid="header-cloud-sync-button"]'), 'cloud status button kept')
-  assert.equal($('[data-testid="header-more"]'), null, 'no extra header menu')
-  const toolbar = [...$('[data-testid="main-toolbar-group"]').querySelectorAll('button')].map(b => b.getAttribute('aria-label'))
-  assert.deepEqual(toolbar, ['Back', 'Stage Preview (Alt+1)', 'Editor (Alt+2)', 'Band Sync (Alt+3)', 'Cast (Alt+4)', 'Theme (Alt+5)', 'Trash (2) (Alt+6)', 'More'])
+  assert.ok($('[aria-label="Theme (Alt+5)"]'), 'Theme in header')
+  assert.ok($('[aria-label="Trash (2) (Alt+6)"]'), 'Trash in header')
+  assert.ok($('[aria-label="More"]'), 'More in header')
   assert.equal($('[data-testid="header-new-song"]'), null, 'no header New Song button (#332)')
   assert.equal($('[data-testid="header-sources"]'), null, 'no header Sources button (#332)')
   assert.equal($('nav[aria-label="Main navigation"]'), null, 'no header Songbook/Setlists switcher (#332)')
-  for (const label of toolbar.slice(1, 7)) await click($(`[aria-label="${label}"]`))
+  await click($('[aria-label="Theme (Alt+5)"]'))
+  await click($('[aria-label="Trash (2) (Alt+6)"]'))
   await click($('[aria-label="More"]'))
   assert.match(document.body.textContent, /Stage Settings[\s\S]*Web Sources[\s\S]*Import Songs\.\.\./, 'More keeps its pre-#319 items')
   await click($('[data-testid="header-avatar"]'))
-  assert.equal($('[data-testid="header-theme-settings-btn"]'), null, 'Theme stays in the toolbar, not the profile menu')
-  assert.deepEqual(calls, ['view:stage', 'view:editor', 'band-sync', 'cast', 'theme', 'view:trash'])
+  assert.equal($('[data-testid="header-theme-settings-btn"]'), null, 'Theme stays in header, not the profile menu')
+  assert.deepEqual(calls, ['theme', 'view:trash'])
   for (const button of document.querySelectorAll('header button')) {
     assert.doesNotMatch(button.className, /\[#|(bg|text|border)-(red|blue|green|amber|sky|slate|gray)-\d/, 'theme tokens only')
   }

@@ -18,10 +18,6 @@ import {
   FolderOpen,
   Wrench,
   History,
-  FileEdit,
-  PlaySquare,
-  Cast,
-  Radio,
   Command,
   Trash2,
   Download,
@@ -29,8 +25,8 @@ import {
   LogOut,
   User,
   Shield,
-  ArrowLeft,
   Menu,
+  Cloud,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import {
@@ -62,7 +58,6 @@ import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
-import { navigateBack } from '../utils/viewHistory'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -259,6 +254,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCast,
   isCastActive = false,
 }) => {
+  void onOpenStageTools
+  void onOpenCast
+  void isCastActive
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
@@ -824,10 +822,40 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {/* Theme */}
+          <ToolbarIconButton
+            icon={Palette}
+            label="Theme (Alt+5)"
+            onClick={onToggleTheme}
+            className="shrink-0"
+          />
+
+          {/* Trash */}
+          <ToolbarIconButton
+            icon={Trash2}
+            dropTrash
+            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+            isActive={activeView === 'trash'}
+            onClick={() => onViewChange('trash')}
+            className="shrink-0"
+          />
+
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
-          <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
-            backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
-            recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
+          <span className="hidden sm:inline-flex shrink-0">
+            <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
+              backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
+              recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
+          </span>
+
+          {/* More */}
+          <ToolbarIconButton
+            buttonRef={moreButtonRef}
+            icon={MoreVertical}
+            label="More"
+            isActive={showOverflowMenu}
+            onClick={() => setShowOverflowMenu((prev) => !prev)}
+            className="shrink-0"
+          />
 
           {deferredInstallPrompt && !isAppInstalled && !compact && (
             <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen" className={iconButton}>
@@ -950,76 +978,6 @@ export const Header: React.FC<HeaderProps> = ({
       )}
       </div>
 
-      {/* =================================================================== */}
-      {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
-      {/* =================================================================== */}
-      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
-        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
-          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
-            <ToolbarIconButton
-              icon={ArrowLeft}
-              label="Back"
-              onClick={() => { navigateBack() }}
-              className="shrink-0"
-              testId="toolbar-back"
-            />
-            <ToolbarIconButton
-              icon={PlaySquare}
-              label="Stage Preview (Alt+1)"
-              isActive={activeView === 'stage'}
-              onClick={() => onViewChange('stage')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={FileEdit}
-              label="Editor (Alt+2)"
-              isActive={activeView === 'editor'}
-              onClick={() => onViewChange('editor')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Radio}
-              label="Band Sync (Alt+3)"
-              onClick={onOpenStageTools}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Cast}
-              label="Cast (Alt+4)"
-              isActive={isCastActive}
-              onClick={onOpenCast || (() => {})}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Palette}
-              label="Theme (Alt+5)"
-              onClick={onToggleTheme}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Trash2}
-              dropTrash
-              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
-              isActive={activeView === 'trash'}
-              onClick={() => onViewChange('trash')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              buttonRef={moreButtonRef}
-              icon={MoreVertical}
-              label="More"
-              isActive={showOverflowMenu}
-              onClick={() => setShowOverflowMenu((prev) => !prev)}
-              className="shrink-0"
-            />
-
-          </div>
-        </div>
-      </div>
-
-      {/* =================================================================== */}
-      {/* TIER 3 (Bottom Search Bar): Full Width Search Input Container       */}
-      {/* =================================================================== */}
       </header>
 
       {/* 3-Dots Overflow Menu */}
@@ -1050,6 +1008,24 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="h-[1px] bg-app-border/60 my-1" />
             </>
           )}
+
+          {/* Backup & Restore (available in More menu on mobile < sm) */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOverflowMenu(false)
+              setShowCloudSyncModal(true)
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center justify-between gap-3 cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <Cloud className="w-4 h-4 text-app-action" />
+              <span className="font-semibold">Backup &amp; Restore</span>
+            </div>
+            {recoveryAttention && <span data-testid="cloud-recovery-dot-more" aria-hidden="true" className={recoveryDotClass} />}
+          </button>
+
+          <div className="h-[1px] bg-app-border/60 my-1" />
 
           {/* 1. Stage Settings */}
           <button
