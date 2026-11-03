@@ -1,12 +1,12 @@
 import React, { useState } from 'react'
+import { Tag } from 'lucide-react'
 import { normalizeTags, tagChipStyle } from '../utils/songTags'
 import { useTagLibrary } from '../utils/tagLibraryContext'
 
 const rowActionBtn = 'min-h-11 min-w-11 rounded-lg text-app-muted hover:bg-app-surface hover:text-app-heading flex items-center justify-center transition-colors'
-const pillInput = 'min-h-11 w-full min-w-0 rounded-full border border-app-border hover:border-app-border/80 bg-app-base px-3.5 text-xs text-app-text font-medium placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all'
-const primaryPillBtn = 'min-h-11 px-3.5 rounded-full bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer'
-const secondaryPillBtn = 'min-h-11 px-3.5 rounded-full bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer'
-const labelStyle = 'text-[11px] font-semibold text-app-muted'
+const searchBoxInput = 'min-h-[36px] w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface px-3 py-1.5 text-xs text-app-text placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200'
+const primaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
+const secondaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
 
 const presets = [
   ['Action', '--custom-actionColor'], ['Accent', '--custom-control-accent'],
@@ -35,7 +35,7 @@ export function TagRow({ tag, onChange, children }: { tag: string; onChange?: (t
       {onChange && <button type="button" aria-label={`Tag actions for ${tag}`} aria-expanded={open} className={rowActionBtn}
         onClick={() => { if (open) close(); else { setName(tag); setHex(savedColor); setOpen(true) } }}>...</button>}
     </div>
-    {open && <form aria-label={`Edit tag ${tag}`} className="space-y-1.5 rounded-xl border border-app-border bg-app-surface p-2.5 my-1"
+    {open && <form aria-label={`Edit tag ${tag}`} className="my-1.5 space-y-1.5 pl-3.5 pr-1"
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onSubmit={event => {
         event.preventDefault()
@@ -44,52 +44,49 @@ export function TagRow({ tag, onChange, children }: { tag: string; onChange?: (t
         if (renamed === tag || onChange?.(tag, renamed)) close()
         else setError('Tag was not saved. Resolve the storage conflict and retry.')
       }}>
-      <label className="block space-y-1">
-        <span className={labelStyle}>Tag name</span>
-        <input autoFocus aria-label="Tag name" className={pillInput} value={name} onChange={event => setName(event.target.value)} />
-      </label>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="relative flex items-center min-w-0 w-full">
+        <Tag className="absolute left-2.5 w-3.5 h-3.5 text-app-muted pointer-events-none" />
+        <input autoFocus aria-label="Tag name" placeholder="Tag name" className={`${searchBoxInput} pl-8`} value={name} onChange={event => setName(event.target.value)} />
+      </div>
+      <div className="flex items-center gap-1.5 flex-nowrap">
         <button type="submit" className={primaryPillBtn}>Save</button>
         <button type="button" className={secondaryPillBtn} onClick={close}>Cancel</button>
         <button type="button" className={secondaryPillBtn} onClick={() => { setConfirmRemove(true); setError('') }}>Remove</button>
         {onColorChange && <button type="button" className={secondaryPillBtn} aria-expanded={showColors} onClick={() => setShowColors(!showColors)}>Color</button>}
       </div>
       {confirmRemove && (
-        <div role="alert" className="space-y-1.5 rounded-lg border border-status-error/30 bg-status-error/10 p-2 text-xs">
+        <div role="alert" className="space-y-1.5 rounded-xl border border-status-error/30 bg-status-error/10 p-2 text-xs">
           <p className="text-app-heading font-medium leading-relaxed">Remove #{tag} from every song? Songs will be kept.</p>
-          <div className="flex items-center gap-1.5">
-            <button type="button" className="min-h-11 px-3.5 rounded-full bg-status-error hover:brightness-110 text-white font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer" onClick={() => { if (onChange?.(tag)) close(); else setError('Tag was not saved. Resolve the storage conflict and retry.') }}>Confirm remove tag</button>
+          <div className="flex items-center gap-1.5 flex-nowrap">
+            <button type="button" className="relative h-7 px-2.5 rounded-xl bg-status-error hover:brightness-110 text-white font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => { if (onChange?.(tag)) close(); else setError('Tag was not saved. Resolve the storage conflict and retry.') }}>Confirm remove tag</button>
             <button type="button" className={secondaryPillBtn} onClick={() => setConfirmRemove(false)}>Keep tag</button>
           </div>
         </div>
       )}
       {showColors && (
         <div role="group" aria-label={`Color for ${tag}`} className="space-y-1.5 pt-0.5">
-          <div className="flex items-center gap-0.5 flex-wrap">
+          <div className="flex items-center gap-1 flex-nowrap">
             {presets.map(([label, token]) => (
               <button
                 key={token}
                 type="button"
                 aria-label={`${label} tag color`}
-                className="min-h-11 min-w-11 flex items-center justify-center rounded-full hover:bg-app-base/60 transition-colors cursor-pointer"
+                className="relative p-1 rounded-full hover:scale-110 transition-transform cursor-pointer after:absolute after:-inset-2 after:content-['']"
                 onClick={() => {
                   const color = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim()
                   saveColor(color)
                 }}
               >
-                <span className="w-4 h-4 rounded-full border border-app-border/40 shadow-sm" style={{ backgroundColor: `var(${token})` }} />
+                <span className="w-3.5 h-3.5 block rounded-full border border-app-border/60 shadow-sm" style={{ backgroundColor: `var(${token})` }} />
                 <span className="sr-only">{label}</span>
               </button>
             ))}
           </div>
-          <label className="block space-y-1">
-            <span className={labelStyle}>Custom hex</span>
-            <input aria-label="Custom tag hex color" className={pillInput} placeholder="#abcdef" value={hex} onChange={event => setHex(event.target.value)} />
-          </label>
-          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+          <input aria-label="Custom tag hex color" placeholder="Custom hex (#abcdef)" className={searchBoxInput} value={hex} onChange={event => setHex(event.target.value)} />
+          <div className="flex items-center gap-1.5 flex-nowrap pt-0.5">
             <button type="button" className={secondaryPillBtn} onClick={() => saveColor(hex)}>Apply color</button>
             <button type="button" className={secondaryPillBtn} onClick={() => saveColor()}>Reset color</button>
-            <span className="inline-block rounded-full border border-app-border px-2.5 py-0.5 text-xs font-medium" style={tagChipStyle({ [tag]: hex }, tag)}>#{tag}</span>
+            <span className="inline-block rounded-xl border border-app-border px-2 py-1 text-xs font-medium shrink-0 leading-none" style={tagChipStyle({ [tag]: hex }, tag)}>#{tag}</span>
           </div>
         </div>
       )}

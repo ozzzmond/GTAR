@@ -1229,16 +1229,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
-          <label className="block space-y-1">
-            <span className="text-[11px] font-semibold text-app-muted">Existing or new tag</span>
-            <input autoFocus aria-label="Existing or new tag" list="songbook-tag-options"
-              className="min-h-11 w-full min-w-0 rounded-full border border-app-border hover:border-app-border/80 bg-app-base px-3.5 text-xs text-app-text font-medium placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all"
+          <div className="relative flex items-center min-w-0 w-full">
+            <Tag className="absolute left-2.5 w-3.5 h-3.5 text-app-muted pointer-events-none" />
+            <input autoFocus aria-label="Existing or new tag" placeholder="Existing or new tag" list="songbook-tag-options"
+              className="min-h-[36px] w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface pl-8 pr-2.5 py-1.5 text-xs text-app-text placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200"
               value={tagName} onChange={event => setTagName(event.target.value)} />
-          </label>
+          </div>
           <datalist id="songbook-tag-options">{[...new Set(songs.flatMap(song => normalizeTags(song.tags)))].sort().map(tag => <option key={tag} value={tag} />)}</datalist>
           <div className="flex items-center justify-end gap-2 pt-1">
-            <button type="button" className="min-h-11 px-4 rounded-full bg-app-button hover:brightness-110 border border-app-border text-app-button-text font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer" onClick={() => setTagPickerOpen(false)}>Cancel</button>
-            <button type="submit" className="min-h-11 px-4 rounded-full bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center justify-center cursor-pointer">Add to tag</button>
+            <button type="button" className="relative h-7 px-3 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => setTagPickerOpen(false)}>Cancel</button>
+            <button type="submit" className="relative h-7 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']">Add to tag</button>
           </div>
           {tagError && <p role="alert" className="text-xs font-medium text-status-error">{tagError}</p>}
         </form>
