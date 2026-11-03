@@ -253,6 +253,7 @@ New or renamed tests await a human choice of primary category.
 - [explorerPhase2Layout.test.cjs](explorerPhase2Layout.test.cjs)
 - [foldersTagsShortcuts.test.cjs](foldersTagsShortcuts.test.cjs)
 - [importedSetlistSharing.test.cjs](importedSetlistSharing.test.cjs)
+- [layoutDirective332.test.cjs](layoutDirective332.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryStore.test.cjs](libraryStore.test.cjs)
 - [libraryStoreScale.test.cjs](libraryStoreScale.test.cjs)

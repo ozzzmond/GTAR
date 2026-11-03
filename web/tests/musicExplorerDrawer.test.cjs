@@ -59,9 +59,9 @@ test('EXPLORER_DRAWER_1: hamburger drawer content is the Music Explorer hierarch
     assert.ok(nav, 'Music Explorer navigation renders inside the existing drawer shell')
     assert.equal(nav.getAttribute('aria-label'), 'Music Explorer')
 
-    // Top actions
-    assert.ok(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-song"]'))
-    assert.ok(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-set"]'))
+    // Top actions removed in #332
+    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-song"]'), null, 'no New Song in explorer (#332)')
+    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-set"]'), null, 'no New Set in explorer (#332)')
     // Songbook entries
     const allSongs = document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-songs"]')
     assert.ok(allSongs)
@@ -107,11 +107,8 @@ test('EXPLORER_DRAWER_3: selection routes through the supplied handler and quick
       { type: 'UNFILED_SETLISTS' },
       { type: 'SHARED_CATALOG' },
     ])
-    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-song"]'))
-    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-set"]'))
-    assert.equal(calls.newSong, 1)
-    assert.equal(calls.newSetlist, 1)
-    assert.ok(calls.close >= 2, 'quick actions close the drawer')
+    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-song"]'), null)
+    assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-set"]'), null)
   })
 })
 

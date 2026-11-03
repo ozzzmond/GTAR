@@ -111,8 +111,8 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
   const drawerNav = {
     ...nav,
     onSelect: (target: Parameters<MusicExplorerNavProps['onSelect']>[0]) => { nav.onSelect(target); onClose() },
-    onNewSong: () => { nav.onNewSong(); onClose() },
-    onNewSetlist: () => { nav.onNewSetlist(); onClose() },
+    onNewSong: () => { nav.onNewSong?.(); onClose() },
+    onNewSetlist: () => { nav.onNewSetlist?.(); onClose() },
   }
   const collapseButton = (
     <button ref={collapseRef} type="button" data-testid="explorer-collapse" aria-label="Collapse Music Explorer" aria-expanded="true"

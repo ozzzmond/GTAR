@@ -91,8 +91,8 @@ test('App lifecycle commits valid complete libraries and rejected persistence ke
   assert.equal(unload(),false)
   const durableBefore=localStorage.getItem('gtar_library_v1')
   window.Storage.prototype.setItem=function(k,v){if(k==='gtar_library_v1')throw Object.assign(Error('full'),{name:'QuotaExceededError'});return storageSet.call(this,k,v)}
-  // #319: setlist rename left the Songbook view; Explorer "New Set" exercises the same effect persistence path.
-  const newSet=()=>actCall(()=>document.querySelector('[data-testid="explorer-nav-new-set"]').click())
+  // #319, #332: create setlist exercises the effect persistence path.
+  const newSet=()=>actCall(()=>home.onNewSetlist())
   await newSet()
   assert.equal(home.setlists.length,2,'Failed effect persistence must retain the in-memory edit')
   assert.equal(localStorage.getItem('gtar_library_v1'),durableBefore)

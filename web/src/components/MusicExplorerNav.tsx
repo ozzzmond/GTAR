@@ -1,7 +1,7 @@
 import { TagRow } from './TagRow'
 import { useTagLibrary } from '../utils/tagLibraryContext'
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Plus, Tag } from 'lucide-react'
+import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Tag } from 'lucide-react'
 import { ExplorerFolderTree } from './ExplorerFolderTree'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { normalizeTags, tagChipStyle } from '../utils/songTags'
@@ -24,8 +24,8 @@ export interface MusicExplorerNavProps {
   setlists: WebSetlist[]
   currentSelection: ExplorerTarget
   onSelect: (target: ExplorerTarget) => void
-  onNewSong: () => void
-  onNewSetlist: () => void
+  onNewSong?: () => void
+  onNewSetlist?: () => void
   /** #319: Explorer header slot (sidebar collapse control); Browse Sources was removed from the Explorer. */
   headerAction?: React.ReactNode
 }
@@ -48,8 +48,6 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
   setlists,
   currentSelection,
   onSelect,
-  onNewSong,
-  onNewSetlist,
   headerAction,
 }) => {
   const { colors } = useTagLibrary()
@@ -119,28 +117,12 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
       data-testid="music-explorer-nav"
       className="flex select-none flex-col px-3 py-3 text-xs text-app-text"
     >
-      {/* Quick actions */}
-      <div className="mb-4 flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="explorer-nav-new-song"
-          onClick={onNewSong}
-          className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-app-action px-2.5 text-xs font-semibold text-app-on-action transition-colors hover:brightness-110 cursor-pointer"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>New Song</span>
-        </button>
-        <button
-          type="button"
-          data-testid="explorer-nav-new-set"
-          onClick={onNewSetlist}
-          className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-app-border bg-app-button px-2.5 text-xs font-semibold text-app-button-text transition-colors hover:brightness-110 cursor-pointer"
-        >
-          <ListMusic className="h-3.5 w-3.5 text-app-section" />
-          <span>New Set</span>
-        </button>
-        {headerAction}
-      </div>
+      {/* Header action (collapse / close) */}
+      {headerAction && (
+        <div className="mb-3 flex items-center justify-end">
+          {headerAction}
+        </div>
+      )}
 
       {/* Songbook */}
       <section className="mb-5">

@@ -22,10 +22,7 @@ import {
   PlaySquare,
   Cast,
   Radio,
-  Plus,
   Command,
-  Music,
-  ListMusic,
   Trash2,
   Download,
   Terminal,
@@ -258,9 +255,6 @@ export const Header: React.FC<HeaderProps> = ({
   autoSyncBlocked = false,
   onOpenCast,
   isCastActive = false,
-  onNewSong,
-  activeSection = null,
-  onOpenSection,
 }) => {
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
@@ -687,9 +681,12 @@ export const Header: React.FC<HeaderProps> = ({
   const closeMobileSearch = () => {
     onSearchQueryChange('')
     dismissResults()
-    requestAnimationFrame(() => searchTriggerRef.current?.focus())
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => searchTriggerRef.current?.focus())
+    } else {
+      searchTriggerRef.current?.focus()
+    }
   }
-  const openSources = () => { dismissResults(); onOpenWebsiteUrlSource() }
   const resultsPanel = (
     <SearchResults
       songs={matchingSearchSongs}
@@ -824,41 +821,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Main views switcher (GTAR1): Songbook ↔ Setlists */}
-          {onOpenSection && (
-            <nav aria-label="Main navigation" className="hidden sm:flex items-center bg-app-surface/80 p-0.5 rounded-xl border border-app-border text-xs font-semibold min-h-11">
-              {([['songs', 'Songbook', Music], ['setlists', 'Setlists', ListMusic]] as const).map(([section, label, Icon]) => {
-                const active = activeView === 'songbook' && activeSection === section
-                return (
-                  <button key={section} type="button" aria-label={label} aria-current={active ? 'page' : undefined}
-                    onClick={() => onOpenSection(section)}
-                    className={`min-h-10 px-2 min-[1440px]:px-3 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
-                      active ? 'bg-app-action text-app-on-action shadow-sm' : 'text-app-muted hover:text-app-heading'}`}>
-                    <Icon className="w-3.5 h-3.5" />
-                    <span className="hidden min-[1440px]:inline">{label}</span>
-                  </button>
-                )
-              })}
-            </nav>
-          )}
-
-          {onNewSong && (
-            <button type="button" aria-label="New Song" data-testid="header-new-song" onClick={onNewSong}
-              className={`min-h-11 min-w-11 px-2.5 sm:px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer`}>
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden min-[1440px]:inline">New Song</span>
-            </button>
-          )}
-
-          {/* Browse Song Sources (GTAR1 globe); compact keeps it inside the search overlay */}
-          {!compact && (
-            <button type="button" data-testid="header-sources" onClick={onOpenWebsiteUrlSource}
-              aria-label="Browse Song Sources" className={iconButton}>
-              <Globe className="w-3.5 h-3.5 text-app-accent" />
-              <span className="hidden min-[1440px]:inline">Sources</span>
-            </button>
-          )}
-
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
           <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
             backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
@@ -976,9 +938,6 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
           </div>
-          <button type="button" onClick={openSources} aria-label="Browse Song Sources" className={iconButton}>
-            <Globe className="w-3.5 h-3.5 text-app-accent" />
-          </button>
           <button type="button" onClick={closeMobileSearch} aria-label="Cancel search"
             className="min-h-11 px-2.5 text-xs font-semibold text-app-muted hover:text-app-heading transition-colors shrink-0 flex items-center justify-center">
             Cancel
