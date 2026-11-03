@@ -12,6 +12,7 @@ interface Props {
   onFolder: (id: Id, folderId: string | null) => unknown
   onTrash: (ids: Id[]) => void
   onTouchDrag: () => void
+  onDropComplete?: () => void
 }
 type Payload = { kind: 'songs'; ids: Id[] } | { kind: 'setlist'; id: Id }
 const sourceSelector = '[data-explorer-drag-songs], [data-explorer-drag-setlist]'
@@ -32,10 +33,21 @@ export function ExplorerDragDrop(props: Props) {
       highlighted?.setAttribute('data-explorer-drop-active', 'true')
     }
     let hold: ReturnType<typeof setTimeout> | undefined
+    let openDrawer: ReturnType<typeof setTimeout> | undefined
     let touchOrigin: { id: number; x: number; y: number; element: HTMLElement } | null = null
     let ghost: HTMLElement | null = null
     let suppressClickUntil = 0
+    let pointer: { x: number; y: number } | null = null
+    let scrollFrame: number | undefined
+    const stopScrolling = () => {
+      if (scrollFrame !== undefined) window.cancelAnimationFrame(scrollFrame)
+      scrollFrame = undefined
+      pointer = null
+    }
     const reset = () => {
+      stopScrolling()
+      clearTimeout(openDrawer)
+      openDrawer = undefined
       clearTimeout(hold)
       hold = undefined
       touchOrigin = null
@@ -75,38 +87,80 @@ export function ExplorerDragDrop(props: Props) {
       }
       return null
     }
+    const scroll = () => {
+      scrollFrame = undefined
+      if (!payload || !pointer) return
+      const { x, y } = pointer
+      const hit = document.elementFromPoint?.(x, y)
+      if (!hit || x < 0 || x >= window.innerWidth || y < 0 || y >= window.innerHeight) { stopScrolling(); return }
+      let container = hit instanceof window.HTMLElement ? hit : hit.parentElement
+      while (container && !(container.scrollHeight > container.clientHeight && /auto|scroll/.test(window.getComputedStyle(container).overflowY))) {
+        container = container.parentElement
+      }
+      const viewport = !container
+      container ??= (document.scrollingElement ?? document.documentElement) as HTMLElement
+      const rect = container.getBoundingClientRect()
+      const top = viewport ? 0 : Math.max(0, rect.top)
+      const bottom = viewport ? window.innerHeight : Math.min(window.innerHeight, rect.bottom)
+      const height = viewport ? window.innerHeight : container.clientHeight
+      const max = Math.max(0, container.scrollHeight - height)
+      const edge = Math.min(56, (bottom - top) / 2)
+      const distance = y < (top + bottom) / 2 ? y - top : bottom - y
+      const speed = edge > 0 && distance >= 0 && distance < edge
+        ? (y < (top + bottom) / 2 ? -1 : 1) * 16 * (1 - distance / edge) : 0
+      const before = container.scrollTop
+      container.scrollTop = Math.max(0, Math.min(max, before + speed))
+      // Content moves under a stationary finger/mouse; never keep a stale highlighted row.
+      highlight(validTarget(closest(document.elementFromPoint?.(x, y) ?? null, targetSelector)))
+      if (speed && container.scrollTop !== before) scrollFrame = window.requestAnimationFrame(scroll)
+      else stopScrolling()
+    }
+    const updatePointer = (x: number, y: number) => {
+      if (!payload) return
+      pointer = { x, y }
+      if (scrollFrame === undefined) scrollFrame = window.requestAnimationFrame(scroll)
+    }
     const drop = (target: HTMLElement | null) => {
       const accepted = validTarget(target)
       const data = payload
       reset()
       if (!accepted || !data) return
       const handlers = current.current
+      let result: unknown = true
       if (data.kind === 'songs') {
         const ids = data.ids.filter(id => handlers.songs.some(song => !song.isDeleted && String(song.id) === String(id)))
         if (!ids.length) return
         const tag = accepted.dataset.explorerDropTag
         if (tag !== undefined) {
           const missing = ids.filter(id => !songHasTag(handlers.songs.find(song => String(song.id) === String(id))?.tags, tag))
-          if (missing.length) handlers.onTag(missing, tag)
-        } else if (accepted.dataset.explorerDropSetlist !== undefined) handlers.onSetlist(accepted.dataset.explorerDropSetlist, ids)
+          if (missing.length) result = handlers.onTag(missing, tag)
+        } else if (accepted.dataset.explorerDropSetlist !== undefined) result = handlers.onSetlist(accepted.dataset.explorerDropSetlist, ids)
         else handlers.onTrash(ids)
       } else {
         const setlist = handlers.setlists.find(sl => !sl.isDeleted && String(sl.id) === String(data.id))
         const folderId = accepted.dataset.explorerDropFolder || null
-        if (setlist && (setlist.folderId ?? null) !== folderId) handlers.onFolder(setlist.id, folderId)
+        if (!setlist) return
+        if ((setlist.folderId ?? null) !== folderId) result = handlers.onFolder(setlist.id, folderId)
       }
+      if (result !== false) handlers.onDropComplete?.()
     }
     const dragstart = (event: DragEvent) => {
       reset()
       const element = closest(event.target, sourceSelector)
       if (!element || closest(event.target, 'button, input, select, textarea, a')) return
-      if (start(element) && event.dataTransfer) {
+      if (!start(element)) return
+      // Match ExplorerNavigation's md breakpoint. Defer DOM insertion until native dragstart finishes.
+      if (window.innerWidth < 768) openDrawer = setTimeout(() => {
+        if (payload) current.current.onTouchDrag()
+      }, 0)
+      if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = payload?.kind === 'setlist' ? 'move' : 'copyMove'
         // Firefox requires data. Never read external drag payloads on drop.
         event.dataTransfer.setData('text/plain', 'GTAR Explorer')
       }
     }
     const dragover = (event: DragEvent) => {
+      updatePointer(event.clientX, event.clientY)
       const target = validTarget(closest(event.target, targetSelector))
       highlight(target)
       if (target) {
@@ -115,6 +169,7 @@ export function ExplorerDragDrop(props: Props) {
       }
     }
     const dragleave = (event: DragEvent) => {
+      if (!event.relatedTarget) stopScrolling()
       if (!highlighted?.contains(event.relatedTarget as Node | null)) highlight(null)
     }
     const onDrop = (event: DragEvent) => {
@@ -140,6 +195,7 @@ export function ExplorerDragDrop(props: Props) {
         ghost.style.top = `${origin.y}px`
         document.body.append(ghost)
         current.current.onTouchDrag()
+        updatePointer(origin.x, origin.y)
       }, 400)
     }
     const touchmove = (event: TouchEvent) => {
@@ -154,6 +210,7 @@ export function ExplorerDragDrop(props: Props) {
       if (!event.cancelable) { reset(); return }
       event.preventDefault()
       event.stopPropagation() // The held gesture must not also arm the existing swipe action.
+      updatePointer(touch.clientX, touch.clientY)
       ghost.style.left = `${touch.clientX}px`
       ghost.style.top = `${touch.clientY}px`
       highlight(validTarget(closest(document.elementFromPoint(touch.clientX, touch.clientY), targetSelector)))
@@ -186,7 +243,7 @@ export function ExplorerDragDrop(props: Props) {
     document.addEventListener('dragleave', dragleave)
     document.addEventListener('drop', onDrop)
     document.addEventListener('dragend', reset)
-    document.addEventListener('keydown', keydown)
+    window.addEventListener('keydown', keydown, true)
     window.addEventListener('blur', reset)
     return () => {
       reset()
@@ -201,7 +258,7 @@ export function ExplorerDragDrop(props: Props) {
       document.removeEventListener('dragleave', dragleave)
       document.removeEventListener('drop', onDrop)
       document.removeEventListener('dragend', reset)
-      document.removeEventListener('keydown', keydown)
+      window.removeEventListener('keydown', keydown, true)
       window.removeEventListener('blur', reset)
     }
   }, [])

@@ -1650,7 +1650,7 @@ function LibraryApp() {
     {activeView === 'songbook' && <ExplorerDragDrop songs={songs} setlists={setlists} folders={folders}
       onTag={handleBulkAddToTag} onSetlist={handleManagerAddSongs} onFolder={handleSetlistFolderChange}
       onTrash={ids => { setIsSetlistDrawerOpen(false); setTrashDropIds(ids) }}
-      onTouchDrag={() => setIsSetlistDrawerOpen(true)} />}
+      onTouchDrag={() => setIsSetlistDrawerOpen(true)} onDropComplete={() => setIsSetlistDrawerOpen(false)} />}
     {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
