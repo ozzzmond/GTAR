@@ -1841,6 +1841,7 @@ function LibraryApp() {
             onManageSetlist={handleManageSetlist}
             onOpenSetlistManager={openSetlistManager}
             onDeleteSong={handleDeleteSong}
+            onDeleteSetlist={handleManagerDelete}
             setlists={setlists}
             onSelectSetlistSong={(setlistId, songIdx) => {
               handleSelectSetlistSong(setlistId, songIdx)
@@ -2033,7 +2034,7 @@ function LibraryApp() {
           onClose={() => setPublishingSetlistId(null)} />
       )}
       {/* Share Setlist QR Code Modal */}
-      {sharingSetlist && authContext?.session && authContext.accessStatus === 'active' && (
+      {sharingSetlist && (
         <ShareSetlistModal
           setlist={sharingSetlist}
           allSongs={[...songs, ...deletedSongs]}

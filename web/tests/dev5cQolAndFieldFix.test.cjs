@@ -264,7 +264,7 @@ test('DELIVERABLES 6, 7, 8, 9: Source code checks for Manage parity, Metadata fi
 
   // Main page Share Setlist (Deliverable 4)
   // #319: setlist share / export live in the setlist workspace ⋯ menu.
-  assert.ok(songbookSource.includes('onShareAll: isAuthActive'), 'Setlist workspace menu keeps Share Setlist')
+  assert.ok(songbookSource.includes('onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined'), 'Setlist workspace menu keeps local Share Setlist signed out')
   assert.ok(songbookSource.includes('onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs)'), 'Setlist JSON export stays reachable')
 
   // Link-first setlist import (Deliverable 5)

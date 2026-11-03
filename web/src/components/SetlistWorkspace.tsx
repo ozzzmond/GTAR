@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react'
-import { Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Upload, UploadCloud } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Trash2, Upload, UploadCloud } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { DropdownPortal } from './DropdownPortal'
+import { SwipeableActionCard } from './SwipeableActionCard'
 
 /**
  * #290 S1: GTAR1 setlist workspace (collection + single-setlist views), ported from
@@ -26,6 +27,7 @@ export interface SetlistWorkspaceProps {
   onOpenSong?: (libraryIndex: number) => void
   /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
+  onDeleteSetlist?: (setlistId: string | number) => boolean
   onNewSetlist?: () => void
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
   menu?: SetlistWorkspaceMenu
@@ -80,12 +82,14 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onPlaySetlistPosition,
   onOpenSong,
   onManageSetlist,
+  onDeleteSetlist,
   onNewSetlist,
   menu,
 }) => {
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
   const [openSetlistId, setOpenSetlistId] = useState<string | number | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const openSetlist = useMemo(
     () => (openSetlistId === null ? null : setlists.find(sl => String(sl.id) === String(openSetlistId)) || null),
     [openSetlistId, setlists]
@@ -243,6 +247,16 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 <Edit2 className="w-3.5 h-3.5" />
                 <span>Edit in Setlist Manager</span>
               </button>
+              {menu?.onShareSetlist && (
+                <button
+                  type="button"
+                  aria-label="Share Setlist"
+                  onClick={() => menu.onShareSetlist?.(openSetlist)}
+                  className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center cursor-pointer shrink-0"
+                >
+                  <QrCode className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -354,23 +368,27 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 const count = sl.songs?.length || 0
                 const created = formatCreated(sl.createdAt)
                 return (
-                  <div
+                  <SwipeableActionCard
                     key={sl.id}
-                    data-testid={`workspace-setlist-card-${sl.id}`}
-                    draggable
-                    data-explorer-drag-setlist={String(sl.id)}
-                    data-explorer-drop-setlist={String(sl.id)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Open setlist ${sl.name}`}
-                    onClick={() => setOpenSetlistId(sl.id)}
-                    onKeyDown={e => {
-                      if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-                        e.preventDefault()
-                        setOpenSetlistId(sl.id)
-                      }
-                    }}
-                    className="ui-setlist-card group p-3.5 rounded-2xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
+                    id={`setlist-${sl.id}`}
+                    dataTestId={`workspace-setlist-card-${sl.id}`}
+                    dragSetlistId={sl.id}
+                    disabled={confirmDeleteId === sl.id}
+                    ariaLabel={`Open setlist ${sl.name}`}
+                    onClick={() => { if (confirmDeleteId !== sl.id) setOpenSetlistId(sl.id) }}
+                    leftAction={menu?.onShareSetlist ? {
+                      icon: <QrCode className="w-4 h-4" />,
+                      label: 'Share Setlist',
+                      onAction: () => menu.onShareSetlist?.(sl),
+                    } : undefined}
+                    rightAction={onDeleteSetlist ? {
+                      icon: <Trash2 className="w-4 h-4" />,
+                      label: 'Delete',
+                      isDestructive: true,
+                      onAction: () => setConfirmDeleteId(sl.id),
+                    } : undefined}
+                    className="rounded-2xl"
+                    cardClassName="ui-setlist-card group h-full p-3.5 rounded-2xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
@@ -397,7 +415,28 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         Manage →
                       </button>
                     </div>
-                  </div>
+                    {confirmDeleteId === sl.id && (
+                      <div onClick={e => e.stopPropagation()}
+                        className="absolute inset-0 bg-app-surface border border-status-error rounded-2xl p-3 flex items-center justify-between z-20 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-center gap-2 text-xs text-status-error font-semibold">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span>Delete this setlist?</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-bold">
+                          <button type="button" data-testid={`confirm-delete-setlist-${sl.id}`}
+                            onClick={e => { e.stopPropagation(); onDeleteSetlist?.(sl.id); setConfirmDeleteId(null) }}
+                            className="min-h-11 px-3 rounded-lg bg-status-error text-app-base hover:brightness-110 transition-colors cursor-pointer">
+                            Delete
+                          </button>
+                          <button type="button" data-testid={`cancel-delete-setlist-${sl.id}`}
+                            onClick={e => { e.stopPropagation(); setConfirmDeleteId(null) }}
+                            className="min-h-11 px-2.5 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </SwipeableActionCard>
                 )
               })}
             </div>
