@@ -182,6 +182,22 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
   }
 
+  type TagsFilterOption = 'ALL' | 'TAGGED' | 'NO_TAG'
+  const [filterTags, setFilterTags] = useState<TagsFilterOption>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_songbook_filter_tags')
+      if (saved === 'ALL' || saved === 'TAGGED' || saved === 'NO_TAG') return saved
+    }
+    return 'ALL'
+  })
+
+  const handleFilterTagsChange = (val: TagsFilterOption) => {
+    setFilterTags(val)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_songbook_filter_tags', val)
+    }
+  }
+
 
   const currentView: ExplorerTarget = useMemo(() => view ?? { type: 'ALL_SONGS' }, [view])
   const activeTagFilter = currentView.type === 'TAG' ? currentView.tag : null
@@ -564,6 +580,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     return indexedSongs.filter(({ song }) => {
       if (activeTagFilter && !normalizeTags(song.tags).some(tag => tag.toLowerCase() === activeTagFilter.toLowerCase())) return false
 
+      if (filterTags !== 'ALL') {
+        const hasTags = normalizeTags(song.tags).length > 0
+        if (filterTags === 'TAGGED' && !hasTags) return false
+        if (filterTags === 'NO_TAG' && hasTags) return false
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchTitle = song.title?.toLowerCase().includes(q)
@@ -585,7 +607,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       return true
     })
-  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, activeSetlists, setlistMemberIds, activeTagFilter])
+  }, [indexedSongs, searchQuery, filterSetlistId, filterMetadata, filterTags, activeSetlists, setlistMemberIds, activeTagFilter])
 
   // Sort songs
   const sortedIndexedSongs = useMemo(() => {
@@ -1409,6 +1431,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     ))}
                   </select>
                 )}
+                <select
+                  data-testid="filter-tags-select"
+                  aria-label="Filter songs by tags"
+                  value={filterTags}
+                  onChange={(e) => handleFilterTagsChange(e.target.value as TagsFilterOption)}
+                  className="min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                >
+                  <option value="ALL">All Tags</option>
+                  <option value="TAGGED">Tagged</option>
+                  <option value="NO_TAG">No tag</option>
+                </select>
                 <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs">
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
@@ -1663,6 +1696,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 handleSearchChange('')
                 handleFilterMetadataChange('ALL')
                 handleFilterSetlistChange('ALL')
+                handleFilterTagsChange('ALL')
                 if (currentView.type === 'TAG') onSelectView?.({ type: 'ALL_SONGS' })
               }}
               className="ui-button min-h-11 px-3 bg-app-button hover:brightness-110 rounded-xl text-xs text-app-button-text font-semibold border border-app-border cursor-pointer">
