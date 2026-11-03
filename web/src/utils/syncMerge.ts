@@ -5,6 +5,7 @@ import type { CloudThemeSettings } from './backupSettings'
 export interface SyncLibrary {
   songs: ActiveSongState[]
   setlists: WebSetlist[]
+  tagColors?: import('./songTags').TagColors
   folders?: SetlistFolder[]
   allowedUsers?: string[]
   themeSettings?: CloudThemeSettings

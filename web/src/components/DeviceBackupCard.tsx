@@ -1,3 +1,6 @@
+import { stableStringify } from '../utils/contentHash'
+import { useTagLibrary } from '../utils/tagLibraryContext'
+import type { TagColors } from '../utils/songTags'
 import type { SetlistFolder } from '../types/gtar'
 import { appLogger } from '../utils/logger'
 import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
@@ -50,8 +53,8 @@ interface DeviceBackupCardProps {
   setlists?: WebSetlist[]
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
   onFullRestoreSongs?: (songs: Array<Partial<ActiveSongState>>) => void
-  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
+  onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
   storage?: Storage
   /** Test seam for the share sheet, file and download APIs. */
   exportEnv?: ExportEnvironment
@@ -96,8 +99,9 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   // Re-check trigger for settings changes (restore in this tab, or another tab via `storage`).
   const [settingsTick, setSettingsTick] = useState(0)
   // Latest library for work done after render.
-  const libraryRef = useRef({ songs: allSongs, setlists, folders })
-  useEffect(() => { libraryRef.current = { songs: allSongs, setlists, folders } }, [allSongs, setlists, folders])
+  const { colors: tagColors } = useTagLibrary()
+  const libraryRef = useRef({ songs: allSongs, setlists, folders, tagColors })
+  useEffect(() => { libraryRef.current = { songs: allSongs, setlists, folders, tagColors } }, [allSongs, setlists, folders, tagColors])
   const currentFingerprint = () => {
     try { return libraryFingerprint(libraryRef.current.songs, libraryRef.current.setlists, libraryRef.current.folders) } catch { return null }
   }
@@ -160,10 +164,10 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   // #251: every export builds the file once and verifies its bytes before handing it out.
   const prepareBackup = (): VerifiedBackup | null => {
     try {
-      return buildVerifiedBackup(allSongs, setlists, isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION, folders)
+      return buildVerifiedBackup(allSongs, setlists, isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION, folders, tagColors)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      exportRecoveryData({ songs: allSongs, setlists, folders })
+      exportRecoveryData({ songs: allSongs, setlists, folders, tagColors })
       showFeedback('error', `Backup not created: ${msg}. A raw recovery archive was downloaded with every original entry.`)
       return null
     }
@@ -194,7 +198,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       if (backup) {
         const prepared = backup
         const fresh = (() => {
-          try { return currentFingerprint() === prepared.fingerprint && settingsFingerprint(readBackupSettingsV2()) === prepared.settingsFingerprint } catch { return false }
+          try { return currentFingerprint() === prepared.fingerprint && stableStringify(libraryRef.current.tagColors) === prepared.tagColorsFingerprint && settingsFingerprint(readBackupSettingsV2()) === prepared.settingsFingerprint } catch { return false }
         })()
         if (!fresh) { setPreparedBackup(null); backup = null; rebuilt = true }
       }
@@ -280,7 +284,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       // #251: every restore (merge or replace) saves a verified safety snapshot before the library changes.
       if (verifiable || replace) {
         try {
-          await ensureRestoreSafetySnapshot({ songs: allSongs, setlists, folders }, targetStorage)
+          await ensureRestoreSafetySnapshot({ songs: allSongs, setlists, folders, tagColors }, targetStorage)
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err)
           setPendingRestore(null)
@@ -292,21 +296,21 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       if (restoreBlockedRef.current) { setPendingRestore(null); showFeedback('error', RESTORE_BLOCKED_MESSAGE); return }
       if (replace) {
         if (onFullRestore) {
-          await onFullRestore(parsed.songs, parsed.setlists, parsed.folders)
+          await onFullRestore(parsed.songs, parsed.setlists, parsed.folders, parsed.tagColors)
         } else if (onFullRestoreSongs) {
           await onFullRestoreSongs(parsed.songs)
         } else {
           onImportAllSongs(parsed.songs)
         }
       } else if (onSmartMerge) {
-        await onSmartMerge(parsed.songs, parsed.setlists, parsed.folders)
+        await onSmartMerge(parsed.songs, parsed.setlists, parsed.folders, parsed.tagColors)
       } else {
         onImportAllSongs(parsed.songs)
       }
 
       // #251: success is claimed only after the saved library is read back and matches the backup.
       if (verifiable) {
-        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary({ songs: allSongs, setlists, folders }, { songs: parsed.songs, setlists: parsed.setlists, folders: parsed.folders },
+        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary({ songs: allSongs, setlists, folders, tagColors }, { songs: parsed.songs, setlists: parsed.setlists, folders: parsed.folders, tagColors: parsed.tagColors },
           replace ? 'replace' : 'merge', targetStorage)]
         if (problems.length) {
           setPendingRestore(null)
@@ -374,10 +378,10 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
         const preview = previewBackupImport(text)
         if (preview.isValid && preview.importAsNew) {
           if (!onSmartMerge) throw new Error('Import as New requires library merge support.')
-          const imported = confirmImportAsNew(preview, { songs: allSongs, setlists, folders }, message => window.confirm(message))
+          const imported = confirmImportAsNew(preview, { songs: allSongs, setlists, folders, tagColors }, message => window.confirm(message))
           if (imported) {
             if (!imported.isValid) throw new Error(imported.error)
-            await onSmartMerge(imported.songs, imported.setlists, imported.folders)
+            await onSmartMerge(imported.songs, imported.setlists, imported.folders, imported.tagColors)
             showFeedback('success', `Imported as new: ${imported.songs.length} songs, ${imported.setlists.length} setlists`)
           }
           return

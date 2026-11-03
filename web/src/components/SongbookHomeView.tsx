@@ -1,4 +1,5 @@
-import { matchesSongTags, normalizeTags } from '../utils/songTags'
+import { useTagLibrary } from '../utils/tagLibraryContext'
+import { matchesSongTags, normalizeTags, tagChipStyle } from '../utils/songTags'
 import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
@@ -130,6 +131,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onEditSong,
   onOpenSources,
 }) => {
+  const { colors: tagColors, onAddToTag } = useTagLibrary()
+  const [tagPickerOpen, setTagPickerOpen] = useState(false)
+  const [tagName, setTagName] = useState('')
+  const [tagError, setTagError] = useState('')
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null)
@@ -1200,6 +1205,27 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </dialog>
       )}
 
+      {tagPickerOpen && <dialog open aria-label="Add selected songs to tag" data-testid="bulk-add-to-tag-dialog"
+        onCancel={() => setTagPickerOpen(false)}
+        className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl z-50">
+        <form className="p-5 space-y-2" onKeyDown={event => { if (event.key === 'Escape') setTagPickerOpen(false) }} onSubmit={event => {
+          event.preventDefault()
+          const tag = normalizeTags([tagName])[0]
+          if (!tag) { setTagError('Choose or enter a tag.'); return }
+          if (onAddToTag?.(Array.from(selectedSongIds), tag)) { setTagPickerOpen(false); setTagError('') }
+          else setTagError('Tags were not saved. Resolve the storage conflict and retry.')
+        }}>
+          <h2 className="font-bold text-sm">Add {selectedSongIds.size} selected songs to tag</h2>
+          <label className="block text-xs">Existing or new tag<input autoFocus aria-label="Existing or new tag" list="songbook-tag-options"
+            className="min-h-11 w-full min-w-0 rounded-lg border border-app-border bg-app-base px-2 text-app-text"
+            value={tagName} onChange={event => setTagName(event.target.value)} /></label>
+          <datalist id="songbook-tag-options">{[...new Set(songs.flatMap(song => normalizeTags(song.tags)))].sort().map(tag => <option key={tag} value={tag} />)}</datalist>
+          <div className="flex flex-wrap gap-2"><button type="submit" className={cardMenuItem}>Add to tag</button>
+            <button type="button" className={cardMenuItem} onClick={() => setTagPickerOpen(false)}>Cancel</button></div>
+          {tagError && <p role="alert" className="text-xs text-app-muted">{tagError}</p>}
+        </form>
+      </dialog>}
+
       {/* Bulk Add To Setlist Modal */}
       {isBulkAddToSetlistModalOpen && (
         <dialog
@@ -1447,6 +1473,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <UploadCloud className="w-3.5 h-3.5" /><span>Publish to Shared</span>
               </button>
             )}
+            {onAddToTag && <button type="button" data-testid="bulk-add-to-tag" disabled={selectedSongIds.size === 0}
+              onClick={() => { setTagPickerOpen(true); setTagName(''); setTagError('') }}
+              className="ui-button min-h-11 px-3 rounded-xl bg-app-button border border-app-border text-app-button-text font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer">Add to tag</button>}
             <button type="button" data-testid="bulk-add-to-setlist" disabled={selectedSongIds.size === 0} onClick={() => setIsBulkAddToSetlistModalOpen(true)}
               className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 disabled:opacity-50 text-app-on-action font-semibold flex items-center gap-1 shadow-sm transition-colors cursor-pointer">
               <ListPlus className="w-3.5 h-3.5" /><span>Add to Setlist</span>
@@ -1554,7 +1583,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   : 'Publish to Shared Catalog'
               },
               onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs),
-              onExportAllSetlists: () => exportAllDataJson(songs, setlists, folders),
+              onExportAllSetlists: () => exportAllDataJson(songs, setlists, folders, tagColors),
               onNewSetlist: onNewSetlist,
               onManageSetlists: onOpenSetlistManager ?? onOpenSetlists,
             }}
@@ -1768,6 +1797,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       <div className="flex flex-wrap gap-1 mt-2">
                         {tags.slice(0, 3).map((t) => (
                           <button key={t} type="button" data-testid={`song-tag-${originalIdx}-${t}`}
+                            style={tagChipStyle(tagColors, t)}
                             onClick={(e) => { e.stopPropagation(); onSelectView?.({ type: 'TAG', tag: t }) }}
                             className="relative px-1.5 py-0.5 rounded-md bg-app-section/15 text-app-section border border-app-section/40 text-[10px] font-medium hover:border-app-section transition-colors cursor-pointer after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">
                             #{t}

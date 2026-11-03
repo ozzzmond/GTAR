@@ -1,3 +1,4 @@
+import type { TagColors } from './songTags'
 /**
  * #85 slice 2: import, merge and restore handlers moved verbatim from App.tsx. Behavior is unchanged.
  * `importStateRef` keeps the complete library for consecutive transport messages that arrive before
@@ -19,6 +20,8 @@ export interface LibraryImportsInput {
   songs: ActiveSongState[]
   deletedSongs: ActiveSongState[]
   setlists: WebSetlist[]
+  tagColors?: TagColors
+  setTagColors?: Setter<TagColors | undefined>
   folders?: SetlistFolder[]
   setFolders?: Setter<SetlistFolder[]>
   setSongs: Setter<ActiveSongState[]>
@@ -35,34 +38,36 @@ export interface LibraryImportsInput {
 }
 
 export function useLibraryImports({
-  songs, deletedSongs, setlists, folders, setFolders, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
+  songs, deletedSongs, setlists, tagColors, setTagColors, folders, setFolders, setSongs, setDeletedSongs, setSetlists, persistedBaselineRef, setCrossTabConflict,
   setToastMessage, setActiveSongIndex, setActiveSetlistId, setActiveSetlistSongIndex, setQueueMode, setIncomingSharedSetlist,
 }: LibraryImportsInput) {
   // Consecutive transport messages can arrive before React renders the first
   // committed merge. Keep that complete state available to the next reception.
-  const importStateRef = useRef({ songs: [...songs, ...deletedSongs], setlists, folders })
+  const importStateRef = useRef({ songs: [...songs, ...deletedSongs], setlists, folders, tagColors })
   // Pre-existing render-time ref sync (unchanged by #85): consecutive transport messages read it before React renders.
   // eslint-disable-next-line react-hooks/refs
-  importStateRef.current = { songs: [...songs, ...deletedSongs], setlists, folders }
+  importStateRef.current = { songs: [...songs, ...deletedSongs], setlists, folders, tagColors }
 
-  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[]) => {
+  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[], importedTagColors?: TagColors) => {
     const existingSongs = importStateRef.current.songs
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedFolders ? { folders: importedFolders } : {}) }), { mode: 'merge', existingSongs })
+    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedTagColors !== undefined ? { tagColors: importedTagColors } : {}), ...(importedFolders ? { folders: importedFolders } : {}) }), { mode: 'merge', existingSongs })
     if (!parsed.isValid) throw new Error(parsed.error)
     const merged = mergeBackupLibrary(existingSongs, parsed.songs, parsed.setlists)
     const partition = partitionSongs(merged.songs)
     const nextSetlists = mergeImportedSetlists(importStateRef.current.setlists, merged.setlists)
     const nextFolders = importedFolders ? [...new Map([...(importStateRef.current.folders ?? []), ...importedFolders].map(folder => [folder.id, folder])).values()] : importStateRef.current.folders
+    const nextColors = { ...importStateRef.current.tagColors, ...parsed.tagColors }
     // A merge based on stale React state must never replace a newer tab's data.
-    persistLibrary({ folders: nextFolders, songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
+    persistLibrary({ tagColors: nextColors, folders: nextFolders, songs: merged.songs, setlists: nextSetlists }, localStorage, { expectedRaw: persistedBaselineRef.current })
     persistedBaselineRef.current = libraryRevision()
-    importStateRef.current = { songs: merged.songs, setlists: nextSetlists, folders: nextFolders }
+    importStateRef.current = { songs: merged.songs, setlists: nextSetlists, folders: nextFolders, tagColors: nextColors }
     setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
+    setTagColors?.(nextColors)
     setSetlists(nextSetlists)
     if (nextFolders) setFolders?.(nextFolders)
-  }, [setFolders, persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists])
+  }, [setTagColors, setFolders, persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists])
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
     const song = normalizeBackupSong({ ...imported, id: generateUUID(), title: imported.title || 'Imported Song' })
@@ -79,20 +84,21 @@ export function useLibraryImports({
     setDeletedSongs(prev => [...prev, ...partition.deleted])
   }
 
-  const handleFullRestore = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[]) => {
-    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedFolders ? { folders: importedFolders } : {}) }))
+  const handleFullRestore = (importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[], importedTagColors?: TagColors) => {
+    const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedTagColors !== undefined ? { tagColors: importedTagColors } : {}), ...(importedFolders ? { folders: importedFolders } : {}) }))
     if (!parsed.isValid) throw new Error(parsed.error)
     const partition = partitionSongs(parsed.songs)
     // Full restore is explicitly confirmed by the restore dialog; preserve the
     // current stored revision too, which may differ from the dialog's local state.
     const expectedRaw = libraryRevision()
     preserveStoredLibrary(expectedRaw)
-    persistLibrary({ folders: parsed.folders ?? [], songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
+    persistLibrary({ tagColors: parsed.tagColors ?? {}, folders: parsed.folders ?? [], songs: parsed.songs, setlists: parsed.setlists }, localStorage, { expectedRaw })
     persistedBaselineRef.current = libraryRevision()
     setCrossTabConflict(null)
     setSongs(partition.active)
     setDeletedSongs(partition.deleted)
     setSetlists(parsed.setlists)
+    setTagColors?.(parsed.tagColors ?? {})
     setFolders?.(parsed.folders ?? [])
     setActiveSetlistId(null)
     setActiveSongIndex(0)

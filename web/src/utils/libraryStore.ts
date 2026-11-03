@@ -178,7 +178,9 @@ export function libraryStorePersist(library: SyncLibrary, options: { expectedRaw
   // Older/partial callers omit folders; only an explicit array (including []) replaces them.
   const complete = library.folders === undefined && s.current.library?.folders !== undefined
     ? { ...library, folders: s.current.library.folders } : library
-  const plain = JSON.parse(JSON.stringify(complete)) as SyncLibrary
+  const withColors = complete.tagColors === undefined && s.current.library?.tagColors !== undefined
+    ? { ...complete, tagColors: s.current.library.tagColors } : complete
+  const plain = JSON.parse(JSON.stringify(withColors)) as SyncLibrary
   const sameContent = s.current.library !== null && deepEqual(s.current.library, plain)
   if (!options.force && options.expectedRaw !== undefined && options.expectedRaw !== s.head && !sameContent) throw new LibraryStaleWriteError(s.head)
   if (sameContent && s.current.token === s.head) return 'unchanged'

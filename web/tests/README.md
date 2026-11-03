@@ -291,6 +291,7 @@ New or renamed tests await a human choice of primary category.
 - [storageQuotaRecovery.test.cjs](storageQuotaRecovery.test.cjs)
 - [syncCenterLayout.test.cjs](syncCenterLayout.test.cjs)
 - [syncUploadHeadroom.test.cjs](syncUploadHeadroom.test.cjs)
+- [tagControlsColors.test.cjs](tagControlsColors.test.cjs)
 - [testTiers.test.cjs](testTiers.test.cjs)
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
