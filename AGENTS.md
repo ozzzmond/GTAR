@@ -30,13 +30,18 @@
 
 ## Project Structure
 - See gtar_standing_protocol_v1.md for target invariants, verification
-  commands, and reporting rules that apply to every GTAR directive — do not
-  restate those in your responses either; follow them silently and confirm
-  completion only.
+  commands, and reporting rules that apply to GTAR directives (see
+  "Which protocol applies" for which directives it governs). Do not
+  restate those in your responses either; follow them silently and
+  confirm completion only.
 
 ## Which protocol applies
 - Audit-fix directives (findings/bugs to fix, offline/disposable only,
-  zero live commits/pushes/deploys) → gtar_standing_protocol_v1.md.
+  zero live commits/pushes/deploys) → gtar_standing_protocol_v1.md. Its
+  no-commit/no-push rule applies to these directives only.
+- Implementation PR directives (feature/bug fix delivered as a PR) →
+  "Implementation PR flow" below. Branch push, draft PR, and issue updates
+  are authorized here.
 - Manual git updates, version bumps, tagging, and production deployment →
   governed by RELEASE_WORKFLOW_README.md and .github/workflows/release.yml.
   This path is fail-closed; live git commit/push/tag/deploy is permitted
@@ -44,11 +49,30 @@
 - If a task doesn't clearly say which one it is, ask before proceeding —
   do not default to release/deployment permissions.
 
+## Implementation PR flow
+- Agents implement, validate locally, push the branch, and open the PR as
+  DRAFT targeting dev. The PR stays draft so QA can happen and adjustments
+  can still be pushed. Agents never mark ready for review, merge, squash,
+  tag, or deploy; the owner does.
+- Agents do not poll or monitor CI. The owner reports CI status.
+- CI red: act only after the owner reports it. Investigate the actual
+  failure on the current PR head SHA, fix the root cause within scope,
+  push, and report the new head SHA. Never disable or weaken tests, remove
+  required checks, or rerun blindly to get green.
+- CI green: take no action until the owner says so. When the owner
+  confirms green, update the issue for tracking only.
+- QA: after the owner confirms QA passed, the agent updates the issue with
+  final status and closes it. Do not close the issue before the owner
+  confirms QA.
+- Issue updates are concise and evidence-based (status, change, tests, PR,
+  head SHA, blockers, next). No progress chatter.
+
 ## Task setup
 - Always `git fetch origin dev` and branch from `origin/dev`.
 - PRs target `dev` only.
 - Report base SHA and head SHA.
-- Create a GitHub issue first only when the task authorizes it.
+- If the task names an issue, update that issue; never create duplicates.
+  If it names none, ask. Create a new issue only when the task authorizes it.
 
 ## Agent Skills (mattpocock/skills)
 - Source: github.com/mattpocock/skills, vendored byte-for-byte at upstream
