@@ -70,7 +70,7 @@ interface StageViewProps {
   activeSetlistName?: string
   setlists?: WebSetlist[]
   onSelectSetlist?: (setlistId: string | number) => void
-  onOpenSetlistDrawer: () => void
+  onOpenSetlistDrawer?: () => void
   isSetlistDrawerOpen?: boolean
   isStageSettingsModalOpen?: boolean
   isAnyModalOpen?: boolean
@@ -2283,22 +2283,34 @@ export const StageView: React.FC<StageViewProps> = ({
             <SkipBack className="w-4 h-4" />
           </button>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenSetlistDrawer()
-              triggerOverlaysShow()
-            }}
-            className={`px-3 py-2 font-extrabold text-[11px] transition-colors cursor-pointer ${
-              isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
-            }`}
-            aria-label="Open setlist / library"
-          >
-            {isInSetlistMode
-              ? `${activeSetlistSongIndex + 1}\u202f/\u202f${activeSetlistSongs.length}`
-              : `${activeSongIndex + 1}\u202f/\u202f${songs.length}`}
-          </button>
+          {!inPerformanceMode && onOpenSetlistDrawer ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenSetlistDrawer()
+                triggerOverlaysShow()
+              }}
+              className={`px-3 py-2 font-extrabold text-[11px] transition-colors cursor-pointer ${
+                isInSetlistMode ? 'text-app-accent hover:text-app-text' : 'text-app-action hover:text-app-text'
+              }`}
+              aria-label="Open setlist / library"
+            >
+              {isInSetlistMode
+                ? `${activeSetlistSongIndex + 1}\u202f/\u202f${activeSetlistSongs.length}`
+                : `${activeSongIndex + 1}\u202f/\u202f${songs.length}`}
+            </button>
+          ) : (
+            <span
+              className={`px-3 py-2 font-extrabold text-[11px] select-none ${
+                isInSetlistMode ? 'text-app-accent' : 'text-app-action'
+              }`}
+            >
+              {isInSetlistMode
+                ? `${activeSetlistSongIndex + 1}\u202f/\u202f${activeSetlistSongs.length}`
+                : `${activeSongIndex + 1}\u202f/\u202f${songs.length}`}
+            </span>
+          )}
 
           <button
             type="button"

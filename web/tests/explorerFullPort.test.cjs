@@ -239,41 +239,48 @@ test('fullscreen hides the explorer sidebar and toggle, and exiting fullscreen r
     CustomEvent: window.CustomEvent, fetch: async () => { throw new Error('offline') } })
   const song = { id: 'test-fs-song', title: 'Fullscreen Song', artist: 'Artist', key: 'C',
     format: 'CHORD_PRO', transposeOffset: 0, rawContent: '{title: Fullscreen Song}\n{key: C}\n[C]Hello world' }
-  localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song], setlists: [] }))
+  const song2 = { id: 'test-fs-song-2', title: 'Second Song', artist: 'Artist', key: 'D',
+    format: 'CHORD_PRO', transposeOffset: 0, rawContent: '{title: Second Song}\n{key: D}\n[D]Another song' }
+  localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song, song2], setlists: [] }))
 
   try {
     const App = require('../src/App.tsx').default
     await render(App, {})
 
-    // 1. Outside fullscreen (Songbook): sidebar is visible
+    // 1. Outside fullscreen (Songbook): sidebar and header explorer trigger are visible
     assert.ok(document.querySelector('[data-testid="explorer-sidebar"]'), 'sidebar visible in songbook')
     assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null)
+    assert.ok(document.querySelector('[aria-label="Open Music Explorer"]'), 'header explorer trigger visible outside fullscreen')
 
     // Open song to enter Stage view
     const songCard = document.querySelector('[data-testid="song-card-0"]') || document.querySelector('[aria-label="Stage (Alt+4)"]')
     await click(songCard)
 
-    // In Stage view outside fullscreen: sidebar is still visible
+    // In Stage view outside fullscreen: sidebar, header trigger, and setlist drawer trigger are visible
     assert.ok(document.querySelector('[data-testid="explorer-sidebar"]'), 'sidebar visible in stage outside fullscreen')
+    assert.ok(document.querySelector('button[aria-label="Open setlist / library"]'), 'setlist drawer trigger rendered outside fullscreen')
 
     // 2. Enter fullscreen
     const enterFullscreenBtn = document.querySelector('button[aria-label="Enter fullscreen"]')
     assert.ok(enterFullscreenBtn, 'Enter fullscreen button present')
     await click(enterFullscreenBtn)
 
-    // Fullscreen active: sidebar and grip toggle MUST BE HIDDEN
+    // Fullscreen active: sidebar, grip toggle, and ALL setlist drawer triggers MUST BE HIDDEN
     assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar hidden in fullscreen')
     assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null, 'edge grip hidden in fullscreen')
-    assert.equal(document.querySelector('[aria-label="Open Music Explorer"]'), null, 'open explorer toggle hidden in fullscreen')
+    assert.equal(document.querySelector('[aria-label="Open Music Explorer"]'), null, 'open explorer trigger hidden in fullscreen')
+    assert.equal(document.querySelector('button[aria-label="Open setlist / library"]'), null, 'no setlist drawer trigger rendered in fullscreen')
 
     // 3. Exit fullscreen
     const exitFullscreenBtn = document.querySelector('button[aria-label="Exit fullscreen"]')
     assert.ok(exitFullscreenBtn, 'Exit fullscreen button present')
     await click(exitFullscreenBtn)
 
-    // Outside fullscreen: sidebar restored to expanded state
+    // Outside fullscreen: sidebar restored to expanded state, and drawer triggers rendered
     assert.ok(document.querySelector('[data-testid="explorer-sidebar"]'), 'sidebar restored after exit')
     assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null)
+    assert.ok(document.querySelector('button[aria-label="Open setlist / library"]'), 'setlist drawer trigger restored after exit')
+    assert.ok(document.querySelector('[aria-label="Open Music Explorer"]'), 'open explorer trigger restored after exit')
 
     // 4. Test with sidebar previously collapsed
     await click(document.querySelector('[data-testid="explorer-collapse"]'))
@@ -285,12 +292,14 @@ test('fullscreen hides the explorer sidebar and toggle, and exiting fullscreen r
     assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar still hidden in fullscreen')
     assert.equal(document.querySelector('[data-testid="explorer-edge-grip"]'), null, 'edge grip hidden in fullscreen')
     assert.equal(document.querySelector('[aria-label="Open Music Explorer"]'), null)
+    assert.equal(document.querySelector('button[aria-label="Open setlist / library"]'), null, 'no setlist drawer trigger in fullscreen while collapsed')
 
     // Exit fullscreen
     await click(document.querySelector('button[aria-label="Exit fullscreen"]'))
-    // Edge grip restored (previous collapsed state restored)
+    // Edge grip restored (previous collapsed state restored) and trigger restored
     assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar remains collapsed')
     assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'), 'edge grip restored after exit')
+    assert.ok(document.querySelector('button[aria-label="Open setlist / library"]'), 'setlist drawer trigger restored after exit')
   } finally {
     Object.assign(global, previous)
   }

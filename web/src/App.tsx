@@ -1844,10 +1844,11 @@ function LibraryApp() {
               activeSetlistName={activeSetlist?.name}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
-              onOpenSetlistDrawer={() => {
-                if (isStagePerformanceMode) return
-                navigateSafely(() => { setIsSetlistDrawerOpen(true) })
-              }}
+              onOpenSetlistDrawer={
+                isStagePerformanceMode
+                  ? undefined
+                  : () => navigateSafely(() => { setIsSetlistDrawerOpen(true) })
+              }
               isSetlistDrawerOpen={isSetlistDrawerOpen}
               isStageSettingsModalOpen={isStageSettingsModalOpen}
               isAnyModalOpen={
