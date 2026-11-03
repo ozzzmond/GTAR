@@ -131,3 +131,30 @@ test('edge scrolling follows mouse and held touch, refreshes targets and stops o
   touch('touchcancel');tick();assert.equal(scroller.scrollTop,held);assert.equal(frames.size,0)
  }finally{window.requestAnimationFrame=raf;window.cancelAnimationFrame=caf;document.elementFromPoint=hit}
 }))
+test('setlist Trash drop requests confirmation once; invalid, aborted and external drops do nothing',()=>fixture(async({source,target,calls,fire,root,props})=>{
+ await act(async()=>root.render(React.createElement(require('../src/components/ExplorerDragDrop.tsx').ExplorerDragDrop,{...props,onTrashSetlist:id=>calls.push(['request',id])})))
+ source.removeAttribute('data-explorer-drag-songs');source.dataset.explorerDragSetlist='set'
+ target.removeAttribute('data-explorer-drop-tag');target.dataset.explorerDropTrash='true'
+ fire(target,'drop');assert.deepEqual(calls,[])
+ fire(source,'dragstart');fire(target,'dragover');assert.equal(target.dataset.explorerDropActive,'true')
+ fire(source,'dragend');fire(target,'drop');assert.deepEqual(calls,[])
+ fire(source,'dragstart');fire(document.body,'drop');assert.deepEqual(calls,[])
+ fire(source,'dragstart');fire(target,'drop');fire(target,'drop');assert.deepEqual(calls,[['request','set']])
+ assert.equal(target.dataset.explorerDropActive,undefined)
+}))
+test('setlist confirmation focuses Cancel, traps keyboard, cancels with Escape and guards duplicate confirmation',async()=>{
+ Object.assign(global,{HTMLElement:window.HTMLElement})
+ const {SetlistTrashConfirmation}=require('../src/components/SetlistTrashConfirmation.tsx')
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host)
+ let mutations=0,cancellations=0
+ const props={setlist:{id:'set',name:'Selected Set',songs:[]},onCancel:()=>cancellations++,onConfirm:()=>mutations++}
+ try{
+  await act(async()=>root.render(React.createElement(SetlistTrashConfirmation,props)))
+  const cancel=host.querySelector('[data-testid="cancel-trash-setlist"]'),confirm=host.querySelector('[data-testid="confirm-trash-setlist"]')
+  assert.equal(document.activeElement,cancel)
+  window.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Tab',cancelable:true}));assert.equal(document.activeElement,confirm)
+  window.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',cancelable:true}));assert.equal(cancellations,1);assert.equal(mutations,0)
+  cancel.click();assert.equal(cancellations,2);assert.equal(mutations,0)
+  confirm.click();confirm.click();assert.equal(mutations,1)
+ }finally{await act(async()=>root.unmount());host.remove()}
+})

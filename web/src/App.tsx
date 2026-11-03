@@ -1,3 +1,4 @@
+import { SetlistTrashConfirmation } from './components/SetlistTrashConfirmation'
 import { ExplorerDragDrop } from './components/ExplorerDragDrop'
 import { TagLibraryContext } from './utils/tagLibraryContext'
 import { changeTagColorKey, validTagColors, type TagColors } from './utils/songTags'
@@ -312,6 +313,7 @@ function LibraryApp() {
   })
 
   // View state: Songbook Library Home vs Desktop Editor vs Stage View vs Trash Bin
+  const [trashSetlistId, setTrashSetlistId] = useState<string | number | null>(null)
   const [trashDropIds, setTrashDropIds] = useState<Array<string | number> | null>(null)
   const [activeView, setActiveView] = useState<'songbook' | 'editor' | 'stage' | 'trash'>(
     initialStageSession.isValid ? initialStageSession.view : 'songbook'
@@ -1664,8 +1666,13 @@ function LibraryApp() {
     }}>
     {activeView === 'songbook' && <ExplorerDragDrop songs={songs} setlists={setlists} folders={folders}
       onTag={handleBulkAddToTag} onSetlist={handleManagerAddSongs} onFolder={handleSetlistFolderChange}
+      onTrashSetlist={setTrashSetlistId}
       onTrash={ids => { setIsSetlistDrawerOpen(false); setTrashDropIds(ids) }}
       onTouchDrag={() => setIsSetlistDrawerOpen(true)} onDropComplete={() => setIsSetlistDrawerOpen(false)} />}
+    {trashSetlistId !== null && <SetlistTrashConfirmation
+      setlist={setlists.find(sl => !sl.isDeleted && String(sl.id) === String(trashSetlistId))}
+      onCancel={() => setTrashSetlistId(null)}
+      onConfirm={() => { const id = trashSetlistId; setTrashSetlistId(null); handleManagerDelete(id) }} />}
     {recoveryDataOpen && <RecoveryDataPanel
       blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
@@ -1823,7 +1830,7 @@ function LibraryApp() {
         />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
-          <SongbookHomeView folders={folders} trashDropIds={trashDropIds} onDismissTrashDrop={() => setTrashDropIds(null)}
+          <SongbookHomeView onRequestTrashSetlist={setTrashSetlistId} folders={folders} trashDropIds={trashDropIds} onDismissTrashDrop={() => setTrashDropIds(null)}
             songs={songs}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}

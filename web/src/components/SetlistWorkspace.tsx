@@ -27,6 +27,7 @@ export interface SetlistWorkspaceProps {
   onOpenSong?: (libraryIndex: number) => void
   /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
+  onRequestTrashSetlist?: (id: string | number) => void
   onDeleteSetlist?: (setlistId: string | number) => boolean
   onNewSetlist?: () => void
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
@@ -83,6 +84,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onOpenSong,
   onManageSetlist,
   onDeleteSetlist,
+  onRequestTrashSetlist,
   onNewSetlist,
   menu,
 }) => {
@@ -404,13 +406,20 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         {count} {count === 1 ? 'song' : 'songs'}
                       </span>
                     </div>
+                    {onRequestTrashSetlist && <button type="button"
+                      aria-label={`Move setlist ${sl.name} to Trash`}
+                      data-testid={`desktop-delete-setlist-${sl.id}`}
+                      onClick={e => { e.stopPropagation(); onRequestTrashSetlist(sl.id) }}
+                      className="setlist-hover-delete absolute right-3 bottom-3 min-h-11 px-3 rounded-lg bg-app-base text-status-error z-10">
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    </button>}
                     <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                       {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
                       <button
                         type="button"
                         data-testid={`workspace-manage-${sl.id}`}
                         onClick={e => { e.stopPropagation(); onManageSetlist?.(sl) }}
-                        className={`${touch} px-2 rounded-lg text-app-link hover:underline font-semibold cursor-pointer`}
+                        className={`${touch} setlist-manage-action px-2 rounded-lg text-app-link hover:underline font-semibold cursor-pointer`}
                       >
                         Manage →
                       </button>

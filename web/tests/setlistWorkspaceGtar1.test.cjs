@@ -331,3 +331,17 @@ test('S4_FOLDER: folder scopes and Unfiled filter the existing workspace without
   await act(async()=>root.render(React.createElement(SongbookHomeView,baseProps({folders,setlists:filed,view:{type:'UNFILED_SETLISTS'}}))))
   assert.deepEqual($$('[data-testid^="workspace-setlist-card-"]').map(card=>card.dataset.testid),['workspace-setlist-card-sl-2','workspace-setlist-card-sl-3'])
 })
+
+test('desktop Trash action requests selected setlist without opening or deleting it', async () => {
+  const requests = [], mutations = []
+  await mount(baseProps({ onRequestTrashSetlist: id => requests.push(id), onDeleteSetlist: id => mutations.push(id) }))
+  const button = document.querySelector('[data-testid="desktop-delete-setlist-sl-1"]')
+  assert.ok(button)
+  assert.equal(button.getAttribute('aria-label'), 'Move setlist Gig Set A to Trash')
+  button.focus()
+  assert.equal(document.activeElement, button)
+  await act(async () => button.click())
+  assert.deepEqual(requests, ['sl-1'])
+  assert.deepEqual(mutations, [])
+  assert.ok(document.querySelector('[data-testid="workspace-setlist-card-sl-1"]'))
+})

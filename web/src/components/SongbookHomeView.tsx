@@ -69,6 +69,7 @@ interface SongbookHomeViewProps {
   /** #312 S2 (DEV): ⋯ Manage Setlists opens the Setlist Manager instead of the drawer. */
   onOpenSetlistManager?: (setlist: WebSetlist | null) => void
   onDeleteSong: (index: number) => void
+  onRequestTrashSetlist?: (id: string | number) => void
   onDeleteSetlist?: (setlistId: string | number) => boolean
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
@@ -114,6 +115,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onManageSetlist,
   onOpenSetlistManager,
   onDeleteSong,
+  onRequestTrashSetlist,
   onDeleteSetlist,
   setlists = [],
   onSelectSetlistSong,
@@ -1609,7 +1611,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             onChange={handleSetlistImportFile}
             className="hidden"
           />
-          <SetlistWorkspace
+          <SetlistWorkspace onRequestTrashSetlist={onRequestTrashSetlist}
             key={currentView.type === 'FOLDER' ? currentView.folderId : currentView.type}
             folderName={currentView.type === 'FOLDER' ? folders.find(folder => folder.id === currentView.folderId)?.name : undefined}
             scope={currentView.type === 'FOLDER' ? 'ALL_SETLISTS' : currentView.type as SetlistWorkspaceScope}
