@@ -277,8 +277,7 @@ body.theme-custom .mobile-search-overlay {
 }
 
 /* 4. APP CHROME: Action Icons & Toolbar Icons */
-body.theme-custom .toolbar-icon-btn,
-body.theme-custom header .toolbar-icon-btn {
+body.theme-custom .toolbar-icon-btn {
   color: var(--custom-chrome-icon, #94A3B8) !important;
 }
 body.theme-custom .toolbar-icon-btn:hover,
@@ -290,6 +289,20 @@ body.theme-custom .toolbar-icon-btn.active {
 }
 body.theme-custom .toolbar-icon-btn .active-dot {
   background-color: var(--custom-control-accent, #F59E0B) !important;
+}
+body.theme-custom header .toolbar-icon-btn {
+  background-color: var(--custom-card-button-bg, var(--color-app-base)) !important;
+  border-color: var(--custom-card-border, var(--color-app-border)) !important;
+  color: var(--custom-actionColor, var(--color-app-action)) !important;
+}
+body.theme-custom header .toolbar-icon-btn:hover,
+body.theme-custom header .toolbar-icon-btn:focus-visible {
+  border-color: var(--custom-actionColor, var(--color-app-action)) !important;
+  color: var(--custom-actionColor, var(--color-app-action)) !important;
+}
+body.theme-custom header .toolbar-icon-btn.active {
+  border-color: var(--custom-control-accent, var(--color-app-accent)) !important;
+  color: var(--custom-control-accent, var(--color-app-accent)) !important;
 }
 
 /* Explicit card surfaces; selected states have their own paired tokens. */
@@ -653,7 +666,11 @@ body.theme-custom :is(button, input, select, textarea):disabled { opacity: .45; 
 body.theme-custom ::selection { background-color: var(--custom-selectionColor); color: var(--custom-selection-foreground); }
 
 /* Explorer header actions: compact icons, desktop labels, shared 44px targets. */
-header .toolbar-icon-btn { width: auto; min-width: 44px; height: 44px; min-height: 44px; gap: 6px; padding-inline: 10px; }
+header .toolbar-icon-btn { width: auto; min-width: 44px; height: 44px; min-height: 44px; gap: 6px; padding-inline: 8px; border-radius: 12px; border: 1px solid var(--color-app-border); background-color: var(--color-app-base); color: var(--color-app-action); }
+@media (max-width: 639px) {
+  header .toolbar-icon-btn { width: 36px; min-width: 36px; padding-inline: 0; }
+  header .avatar-wrapper { min-width: 36px; }
+}
 header .toolbar-icon-btn svg { margin: 0; }
 header .avatar-wrapper { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 @media (min-width: 1024px) { .header-search { max-width: 38rem; } }

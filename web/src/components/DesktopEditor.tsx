@@ -836,10 +836,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             <button
               type="button"
               onClick={() => requestNavigation(onClose)}
-              className="p-1 sm:p-1.5 rounded-lg bg-app-base border border-app-border text-app-muted hover:text-app-heading hover:border-app-action transition-colors cursor-pointer shrink-0"
+              className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
               aria-label="Return to Stage View"
             >
-              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Back</span>
             </button>
           )}
           <div className="flex items-center gap-2 min-w-0">

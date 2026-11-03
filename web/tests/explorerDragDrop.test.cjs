@@ -53,13 +53,14 @@ test('400ms touch hold lifts; tap, scroll and touch cancellation leave data unch
 }))
 test('Trash drop asks first; cancel preserves songs and confirm uses the existing bulk trash flow',async()=>{
  h.freshStorage();Object.assign(global,{HTMLElement:window.HTMLElement,Node:window.Node});Object.defineProperty(global,'navigator',{configurable:true,value:window.navigator})
- const {ExplorerDragDrop}=require('../src/components/ExplorerDragDrop.tsx'),{SongbookHomeView}=require('../src/components/SongbookHomeView.tsx'),{MusicExplorerNav}=require('../src/components/MusicExplorerNav.tsx')
+ window.matchMedia=window.matchMedia||(()=>({matches:false,addEventListener(){},removeEventListener(){}}))
+ const {ExplorerDragDrop}=require('../src/components/ExplorerDragDrop.tsx'),{SongbookHomeView}=require('../src/components/SongbookHomeView.tsx'),{MusicExplorerNav}=require('../src/components/MusicExplorerNav.tsx'),{Header}=require('../src/components/Header.tsx')
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let removed=[]
  const songs=h.library(2,0).songs.map((s,i)=>({...s,id:`song-${i}`,tags:['Rock']}))
  function Harness(){const [pending,setPending]=React.useState(null);return React.createElement(React.Fragment,null,
   React.createElement(ExplorerDragDrop,{songs,setlists:[],folders:[],onTag(){},onSetlist(){},onFolder(){},onTrash:setPending,onTouchDrag(){}}),
   React.createElement(MusicExplorerNav,{songs,setlists:[],folders:[],currentSelection:{type:'ALL_SONGS'},onSelect(){}}),
-  React.createElement('button',{'data-explorer-drop-trash':'true'},'Trash'),
+  React.createElement(Header,{activeView:'songs',searchQuery:'',onViewChange(){},onSearchQueryChange(){}}),
   React.createElement(SongbookHomeView,{songs,setlists:[],activeSongIndex:0,onSelectSong(){},onNewSong(){},onOpenSetlists(){},onDeleteSong(){throw Error('bulk expected')},onBulkDeleteSongs:ids=>{removed.push(ids)},onSongMembershipChange(){},onCreateSetlistForSong(){},trashDropIds:pending,onDismissTrashDrop:()=>setPending(null)}))}
  const find=id=>host.querySelector(`[data-testid="${id}"]`)
  const fire=(el,type)=>el.dispatchEvent(new window.Event(type,{bubbles:true,cancelable:true}))
@@ -69,6 +70,10 @@ test('Trash drop asks first; cancel preserves songs and confirm uses the existin
   await act(async()=>find('song-card-0').click());await act(async()=>find('song-card-1').click())
   assert.deepEqual(JSON.parse(find('song-card-0').dataset.explorerDragSongs),['song-0','song-1'])
   const trash=host.querySelector('[data-explorer-drop-trash]')
+  assert.ok(trash,'Header must render a drop-trash target')
+  assert.equal(trash.dataset.explorerDropTrash,'true')
+  assert.ok(trash.closest('header'),'Trash drop target must be in the header')
+  assert.match(trash.getAttribute('aria-label')||'',/^Trash/)
   await act(async()=>{fire(find('song-card-0'),'dragstart');fire(trash,'drop')})
   assert.ok(find('bulk-delete-songs-confirm-dialog'));assert.deepEqual(removed,[])
   await act(async()=>find('cancel-bulk-delete-songs').click());assert.deepEqual(removed,[])

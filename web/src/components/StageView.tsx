@@ -22,11 +22,15 @@ import {
   Cast,
   Sliders,
   Gauge,
+  ArrowLeft,
+  FileEdit,
+  Radio,
 } from 'lucide-react'
 import { StageControlDock } from './StageControlDock'
 import { StageOptionsSheet } from './StageOptionsSheet'
 import { STAGE_CONTROLS_AUTO_HIDE_KEY } from '../utils/syncJournal'
 import { formatTransposeOffset } from '../utils/chordTransposer'
+import { navigateBack } from '../utils/viewHistory'
 import {
   type StageNotationMode,
   NOTATION_STORAGE_KEY,
@@ -80,6 +84,7 @@ interface StageViewProps {
   onSelectFontStyle?: (style: 'mono' | 'sans' | 'serif') => void
   isTwoColumn?: boolean
   onToggleTwoColumn?: (enabled: boolean) => void
+  onOpenEditor?: () => void
   onOpenBandSync?: () => void
   onBack?: () => void
   /** Called whenever the stage enters or exits "performance mode" (fullscreen or focus). */
@@ -135,10 +140,11 @@ export const StageView: React.FC<StageViewProps> = ({
   onSelectFontStyle: externalOnSelectFontStyle,
   isTwoColumn: externalIsTwoColumn,
   onToggleTwoColumn: externalOnToggleTwoColumn,
+  onOpenEditor,
   onOpenBandSync,
+  onBack,
   onPerformanceModeChange,
 }) => {
-  void onOpenBandSync
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
   // Stage view configuration & controls (matching Jetpack Compose SongViewerScreen.kt)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
@@ -1917,18 +1923,36 @@ export const StageView: React.FC<StageViewProps> = ({
           inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'opacity-100'
         }`}
       >
-        {/* Left Side: Song Title & Artist */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-extrabold text-app-text tracking-tight leading-tight truncate max-w-[240px] sm:max-w-xs md:max-w-md">
-              {song.title || 'Untitled Song'}
-            </h1>
-            {song.artist && (
-              <p className="text-[11px] sm:text-xs text-app-action font-semibold truncate leading-normal mt-0.5 pb-0.5">
-                {song.artist}
-              </p>
-            )}
-          </div>
+        {/* Left Side: Back, Editor, Band Sync */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => { if (onBack) onBack(); else navigateBack() }}
+            aria-label="Back"
+            data-testid="toolbar-back"
+            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Back</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenEditor}
+            aria-label="Editor (Alt+2)"
+            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+          >
+            <FileEdit className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Editor</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenBandSync}
+            aria-label="Band Sync (Alt+3)"
+            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+          >
+            <Radio className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Band Sync</span>
+          </button>
         </div>
 
         {/* Right Side: Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}

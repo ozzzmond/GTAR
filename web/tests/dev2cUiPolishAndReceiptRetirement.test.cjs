@@ -47,16 +47,6 @@ const { StageView } = require('../src/components/StageView.tsx')
 test('SCOPE_1: StageView header renders artist line with descender clearance and without clipping or overlap', () => {
   const stageSource = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
 
-  // Top app bar left side (non-performance mode)
-  assert.ok(
-    stageSource.includes('text-[11px] sm:text-xs text-app-action font-semibold truncate leading-normal mt-0.5 pb-0.5'),
-    'StageView top bar must use leading-normal and pb-0.5 for artist line'
-  )
-  assert.ok(
-    !stageSource.includes('text-[11px] sm:text-xs text-app-action font-semibold truncate leading-none mt-0.5'),
-    'StageView top bar must not use leading-none that clips descenders'
-  )
-
   // Floating overlay HUD (performance mode)
   assert.ok(
     stageSource.includes('text-[10px] sm:text-xs text-app-action font-semibold truncate leading-normal mt-0.5 pb-0.5'),
@@ -103,7 +93,6 @@ test('SCOPE_1: StageView header renders artist line with descender clearance and
 
   assert.ok(stageHtml.includes('Hillsong Live'), 'StageView must render artist text')
   assert.ok(stageHtml.includes('Mighty To Save'), 'StageView must render song title')
-  assert.ok(stageHtml.includes('font-extrabold text-app-text tracking-tight leading-tight truncate'), 'Song title retains bold emphasis and truncate')
 })
 
 // 3: REPO_RECEIPT_RETIREMENT

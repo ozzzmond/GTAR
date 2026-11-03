@@ -18,10 +18,6 @@ import {
   FolderOpen,
   Wrench,
   History,
-  FileEdit,
-  PlaySquare,
-  Cast,
-  Radio,
   Command,
   Trash2,
   Download,
@@ -29,7 +25,6 @@ import {
   LogOut,
   User,
   Shield,
-  ArrowLeft,
   Menu,
 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -62,7 +57,6 @@ import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
-import { navigateBack } from '../utils/viewHistory'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -195,10 +189,12 @@ function ToolbarIconButton({
         aria-describedby={anchor ? tooltipId : undefined}
         data-testid={testId}
         data-explorer-drop-trash={dropTrash ? 'true' : undefined}
-        className={`toolbar-icon-btn ${isActive ? 'active' : ''} ${className}`}
+        className={`toolbar-icon-btn relative flex min-h-11 min-w-9 sm:min-w-11 w-9 sm:w-auto shrink-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-app-border bg-app-base px-1.5 sm:px-2 text-app-action hover:border-app-action cursor-pointer transition-colors ${
+          isActive ? 'active border-app-accent text-app-accent' : ''
+        } ${className}`}
       >
-        <Icon className="w-4 h-4" />
-        <span className="hidden lg:inline text-xs">{label.replace(/ \(Alt\+\d\)/, '')}</span>
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className="hidden lg:inline text-xs font-semibold">{label.replace(/ \(Alt\+\d\)/, '')}</span>
         <span className="active-dot" />
       </button>
       {anchor && createPortal(
@@ -259,6 +255,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCast,
   isCastActive = false,
 }) => {
+  void onOpenStageTools
+  void onOpenCast
+  void isCastActive
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
@@ -748,33 +747,38 @@ export const Header: React.FC<HeaderProps> = ({
     <>
       <header className="bg-app-header border-b border-app-border sticky top-0 z-40 flex flex-col select-none max-w-full">
       {/* Row 1 (GTAR1 header) — the compact search overlay covers this row only */}
-      <div className="relative px-3 py-2.5">
+      <div className="relative px-2 sm:px-3 py-2 sm:py-2.5">
       <div className="flex items-center justify-between gap-1 sm:gap-4">
         {/* Left: Explorer drawer toggle & GTAR branding (DEV deployment details / PROD version stay visible) */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-3 min-w-0">
           <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
             onClick={onOpenSetlistDrawer}
-            className="md:hidden min-h-11 min-w-11 flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors">
+            className="md:hidden min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0">
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <button type="button" onClick={onNavigateHome} aria-label={isDevEnv ? 'GTAR-Dev home' : 'GTAR home'}
-            className="flex items-center gap-2 text-left group min-h-11 cursor-pointer">
+            className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-11 cursor-pointer shrink-0">
             <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-opacity">
               <img src={isDevEnv ? devLogo : prodLogo} alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
                 className="w-full h-full object-cover select-none" />
             </div>
-            <div className={isDevEnv ? 'hidden sm:block' : 'block'}>
-              <span className="hidden sm:inline text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
+            <div className="hidden sm:block">
+              <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
                 {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
               </span>
               {isDevEnv ? (
                 <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
               ) : (
-                <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono sm:ml-2">
+                <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono ml-2">
                   {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
                 </span>
               )}
             </div>
+            {!isDevEnv && (
+              <span data-testid="header-prod-version-compact" className="sm:hidden text-[9px] leading-tight header-secondary-text text-app-muted font-mono select-none">
+                {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
+              </span>
+            )}
           </button>
           {devDiagnostics(true)}
         </div>
@@ -818,16 +822,44 @@ export const Header: React.FC<HeaderProps> = ({
           {compact && searchEnabled && (
             <button ref={searchTriggerRef} type="button" aria-label="Open search"
               onClick={() => setMobileSearchOpen(true)}
-              className={`ui-button mobile-search-trigger min-h-11 min-w-11 rounded-xl bg-app-surface border transition-colors flex items-center justify-center active:scale-95 ${
-                searchQuery ? 'text-app-accent border-app-accent' : 'border-app-border header-neutral-icon text-app-muted hover:text-app-heading hover:border-app-accent'}`}>
+              className={`ui-button mobile-search-trigger min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors flex items-center justify-center active:scale-95 ${
+                searchQuery ? 'text-app-accent border-app-accent' : ''}`}>
               <Search className="w-4 h-4" />
             </button>
           )}
+
+          {/* Theme */}
+          <ToolbarIconButton
+            icon={Palette}
+            label="Theme (Alt+5)"
+            onClick={onToggleTheme}
+            className="shrink-0"
+          />
+
+          {/* Trash */}
+          <ToolbarIconButton
+            icon={Trash2}
+            dropTrash
+            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+            isActive={activeView === 'trash'}
+            onClick={() => onViewChange('trash')}
+            className="shrink-0"
+          />
 
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
           <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
             backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
             recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
+
+          {/* More */}
+          <ToolbarIconButton
+            buttonRef={moreButtonRef}
+            icon={MoreVertical}
+            label="More"
+            isActive={showOverflowMenu}
+            onClick={() => setShowOverflowMenu((prev) => !prev)}
+            className="shrink-0"
+          />
 
           {deferredInstallPrompt && !isAppInstalled && !compact && (
             <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen" className={iconButton}>
@@ -950,76 +982,6 @@ export const Header: React.FC<HeaderProps> = ({
       )}
       </div>
 
-      {/* =================================================================== */}
-      {/* TIER 2 (Middle Action Bar): Toolbar Action Icons                   */}
-      {/* =================================================================== */}
-      <div className="w-full bg-app-toolbar border-t border-app-border/40 px-2 sm:px-4 py-1">
-        <div className="w-full overflow-x-auto py-1 no-scrollbar" data-testid="main-toolbar-scroll">
-          <div className="main-toolbar-content flex items-center justify-center gap-1 sm:gap-2" data-testid="main-toolbar-group">
-            <ToolbarIconButton
-              icon={ArrowLeft}
-              label="Back"
-              onClick={() => { navigateBack() }}
-              className="shrink-0"
-              testId="toolbar-back"
-            />
-            <ToolbarIconButton
-              icon={PlaySquare}
-              label="Stage Preview (Alt+1)"
-              isActive={activeView === 'stage'}
-              onClick={() => onViewChange('stage')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={FileEdit}
-              label="Editor (Alt+2)"
-              isActive={activeView === 'editor'}
-              onClick={() => onViewChange('editor')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Radio}
-              label="Band Sync (Alt+3)"
-              onClick={onOpenStageTools}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Cast}
-              label="Cast (Alt+4)"
-              isActive={isCastActive}
-              onClick={onOpenCast || (() => {})}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Palette}
-              label="Theme (Alt+5)"
-              onClick={onToggleTheme}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              icon={Trash2}
-              dropTrash
-              label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
-              isActive={activeView === 'trash'}
-              onClick={() => onViewChange('trash')}
-              className="shrink-0"
-            />
-            <ToolbarIconButton
-              buttonRef={moreButtonRef}
-              icon={MoreVertical}
-              label="More"
-              isActive={showOverflowMenu}
-              onClick={() => setShowOverflowMenu((prev) => !prev)}
-              className="shrink-0"
-            />
-
-          </div>
-        </div>
-      </div>
-
-      {/* =================================================================== */}
-      {/* TIER 3 (Bottom Search Bar): Full Width Search Input Container       */}
-      {/* =================================================================== */}
       </header>
 
       {/* 3-Dots Overflow Menu */}

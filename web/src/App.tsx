@@ -1911,6 +1911,7 @@ function LibraryApp() {
                 isSetlistManagerOpen
               }
               onBack={() => setActiveView('songbook')}
+              onOpenEditor={() => navigateSafely(() => setActiveView('editor'))}
               transposeOffset={currentSong.transposeOffset || 0}
               onTransposeChange={handleTransposeChange}
               fontStyle={fontStyle}

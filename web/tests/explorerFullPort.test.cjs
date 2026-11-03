@@ -29,7 +29,7 @@ test('Explorer navigation guards unsaved editor changes in the sidebar and drawe
         localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [song], setlists: [] }))
         try {
           await render(require('../src/App.tsx').default, {})
-          await click(document.querySelector('[aria-label="Editor (Alt+2)"]'))
+          await act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '2', altKey: true, bubbles: true })))
           const editor = document.querySelector('textarea')
           assert.ok(editor, 'existing song opens in the real editor')
           if (width < 768) await click(document.querySelector('[aria-label="Open Music Explorer"]'))
