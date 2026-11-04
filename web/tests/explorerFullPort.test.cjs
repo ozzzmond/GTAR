@@ -159,13 +159,13 @@ test('Explorer sidebar remembers collapse per device; drawer traps focus, closes
   const props = { songs: [], setlists: [], currentSelection: { type: 'ALL_SONGS' }, onSelect: noop,
     onNewSong: noop, onNewSetlist: noop, isOpen: false, onClose: () => closed++ }
   await render(ExplorerNavigation, props)
-  await click(document.querySelector('[aria-label="Collapse Music Explorer"]'))
-  // #319: collapsed = no aside, only the left-edge grip that reopens it.
-  assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null)
+  await click(document.querySelector('[aria-label="Hide Music Explorer"]'))
+  // #359: collapsed = sidebar collapsed with slide transition and edge grip shown.
+  assert.equal(document.querySelector('[data-testid="explorer-sidebar"]').dataset.collapsed, 'true')
   assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'))
   await act(async () => root.render(null))
   await render(ExplorerNavigation, props)
-  assert.ok(document.querySelector('[aria-label="Expand Music Explorer"]'))
+  assert.ok(document.querySelector('[aria-label="Show Music Explorer"]'))
   window.innerWidth = 360
   document.getElementById('opener').focus()
   await render(ExplorerNavigation, { ...props, isOpen: true })
@@ -177,7 +177,7 @@ test('Explorer sidebar remembers collapse per device; drawer traps focus, closes
   assert.equal(document.activeElement.id, 'opener')
   const original = window.Storage.prototype.setItem
   window.Storage.prototype.setItem = () => { throw new Error('unavailable') }
-  try { await click(document.querySelector('[aria-label="Expand Music Explorer"]')) }
+  try { await click(document.querySelector('[aria-label="Show Music Explorer"]')) }
   finally { window.Storage.prototype.setItem = original }
   assert.equal(document.querySelector('[data-testid="explorer-sidebar"]').dataset.collapsed, 'false')
 }))
@@ -190,7 +190,7 @@ test('a desktop Explorer request reveals the permanent sidebar without locking t
   const props = { songs: [], setlists: [], currentSelection: { type: 'ALL_SONGS' }, onSelect: noop,
     onNewSong: noop, onNewSetlist: noop, isOpen: false, onClose: () => closed++ }
   await render(ExplorerNavigation, props)
-  await click(document.querySelector('[aria-label="Collapse Music Explorer"]'))
+  await click(document.querySelector('[aria-label="Hide Music Explorer"]'))
   await render(ExplorerNavigation, { ...props, isOpen: true })
   assert.equal(document.querySelector('[data-testid="explorer-sidebar"]').dataset.collapsed, 'false')
   assert.equal(document.body.style.overflow, '')
@@ -289,7 +289,7 @@ test('fullscreen hides the explorer sidebar and toggle, and exiting fullscreen r
 
     // 4. Test with sidebar previously collapsed
     await click(document.querySelector('[data-testid="explorer-collapse"]'))
-    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null)
+    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]').dataset.collapsed, 'true')
     assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'), 'sidebar is now collapsed')
 
     // Enter fullscreen while collapsed
@@ -302,7 +302,7 @@ test('fullscreen hides the explorer sidebar and toggle, and exiting fullscreen r
     // Exit fullscreen
     await click(document.querySelector('button[aria-label="Exit fullscreen"]'))
     // Edge grip restored (previous collapsed state restored) and trigger restored
-    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]'), null, 'sidebar remains collapsed')
+    assert.equal(document.querySelector('[data-testid="explorer-sidebar"]').dataset.collapsed, 'true', 'sidebar remains collapsed')
     assert.ok(document.querySelector('[data-testid="explorer-edge-grip"]'), 'edge grip restored after exit')
     assert.ok(document.querySelector('button[aria-label="Open setlist / library"]'), 'setlist drawer trigger restored after exit')
   } finally {
