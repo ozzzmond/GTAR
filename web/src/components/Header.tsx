@@ -152,15 +152,15 @@ export const Header: React.FC<HeaderProps> = ({
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
-  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640)
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchTriggerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    const resize = () => setCompact(window.innerWidth < 640)
+    const resize = () => setCompact(window.innerWidth < 768)
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
   }, [])
-  useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus() }, [mobileSearchOpen])
+  useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus({ preventScroll: true }) }, [mobileSearchOpen])
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (shortcutsBlocked || showCloudSyncModal || showDebugLogsModal) return
@@ -169,13 +169,13 @@ export const Header: React.FC<HeaderProps> = ({
         if (target?.closest('dialog, [role=dialog]') || target?.id === 'multi-song-search-input') return
         event.preventDefault()
         if (compact) setMobileSearchOpen(true)
-        searchInputRef.current?.focus()
+        searchInputRef.current?.focus({ preventScroll: true })
       } else if (event.key === 'Escape') {
         onSearchQueryChange('')
         setIsSearchFocused(false)
         setMobileSearchOpen(false)
         searchInputRef.current?.blur()
-        if (compact) searchTriggerRef.current?.focus()
+        if (compact) searchTriggerRef.current?.focus({ preventScroll: true })
       }
     }
     window.addEventListener('keydown', keydown)
@@ -551,9 +551,9 @@ export const Header: React.FC<HeaderProps> = ({
     onSearchQueryChange('')
     dismissResults()
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => searchTriggerRef.current?.focus())
+      window.requestAnimationFrame(() => searchTriggerRef.current?.focus({ preventScroll: true }))
     } else {
-      searchTriggerRef.current?.focus()
+      searchTriggerRef.current?.focus({ preventScroll: true })
     }
   }
   const resultsPanel = (
@@ -619,7 +619,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex shrink-0 items-center gap-1 sm:gap-3 min-w-0">
           <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
             onClick={onOpenSetlistDrawer}
-            className="md:hidden min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0">
+            className="md:hidden min-h-11 min-w-11 w-11 h-11 flex items-center justify-center rounded-xl header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0">
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
@@ -667,7 +667,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="header-search-input min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 shadow-none" />
               {searchQuery && (
                 <button type="button" aria-label="Clear search"
-                  onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus() }}
+                  onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
                   className="min-h-9 min-w-9 mr-0.5 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -688,7 +688,7 @@ export const Header: React.FC<HeaderProps> = ({
           {compact && (
             <button ref={searchTriggerRef} type="button" aria-label="Open search"
               onClick={() => setMobileSearchOpen(true)}
-              className={`ui-button mobile-search-trigger min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors flex items-center justify-center active:scale-95 ${
+              className={`ui-button mobile-search-trigger min-h-11 min-w-11 w-11 h-11 rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors flex items-center justify-center active:scale-95 ${
                 searchQuery ? 'text-app-accent border-app-accent' : ''}`}>
               <Search className="w-4 h-4" />
             </button>
@@ -879,7 +879,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="header-search-input min-h-11 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none focus:ring-0 shadow-none" />
             {searchQuery && (
               <button type="button" aria-label="Clear search"
-                onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus() }}
+                onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
                 className="min-h-9 min-w-9 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                 <X className="w-3.5 h-3.5" />
               </button>

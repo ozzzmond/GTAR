@@ -361,3 +361,96 @@ test('#359: focus restoration on Explorer collapse/expand explicitly specifies {
   assert.match(source, /collapseRef\.current\?\.focus\(\{\s*preventScroll:\s*true\s*\}\)/)
 })
 
+test('#359 PR-C: Header icon-only status button and responsive layout across widths 360, 390, 768, 1024, 1440', async () => ui(async ({ $, render }) => {
+  const { Header } = require('../src/components/Header.tsx')
+  const widths = [360, 390, 768, 1024, 1440]
+
+  for (const width of widths) {
+    window.innerWidth = width
+    await act(async () => window.dispatchEvent(new window.Event('resize')))
+    await render(Header, headerProps([]))
+
+    const hamburger = $('button[aria-label="Open Music Explorer"]')
+    const logo = $('button[aria-label="GTAR home"]')
+    const searchTrigger = $('button[aria-label="Open search"]')
+    const searchInput = document.getElementById('search-input')
+    const cloudBtn = $('[data-testid="header-cloud-sync-button"]')
+    const avatar = $('[data-testid="header-avatar"]')
+    const authDot = document.querySelector('.auth-dot')
+
+    // Always present at all widths
+    assert.ok(logo, `Logo must exist at ${width}px`)
+    assert.ok(cloudBtn, `Cloud status button must exist at ${width}px`)
+    assert.ok(avatar, `Avatar must exist at ${width}px`)
+    assert.ok(authDot, `Avatar auth dot must exist at ${width}px`)
+
+    // Cloud status button is strictly ICON-ONLY at ALL widths (no status label in textContent)
+    assert.equal(cloudBtn.textContent.trim(), '', `Cloud status button must be icon-only at ${width}px`)
+    assert.match(cloudBtn.className, /min-h-11 min-w-11/, `Cloud status button has >=44px target at ${width}px`)
+    assert.ok(cloudBtn.querySelector('svg'), `Cloud status icon rendered at ${width}px`)
+    assert.match(cloudBtn.getAttribute('aria-label'), /^Backup & Restore/, `aria-label preserved at ${width}px`)
+    assert.match(cloudBtn.getAttribute('title'), /^Backup & Restore/, `title/tooltip preserved at ${width}px`)
+
+    if (width < 768) {
+      // Compact (<md) layout: hamburger left, logo, search icon, status icon, avatar
+      assert.ok(hamburger, `Hamburger drawer button must exist at ${width}px`)
+      assert.match(hamburger.className, /md:hidden/, `Hamburger hidden on >=md at ${width}px`)
+      assert.match(hamburger.className, /min-h-11 min-w-11/, `Hamburger touch target >=44px at ${width}px`)
+
+      assert.ok(searchTrigger, `Search icon trigger must be rendered at ${width}px`)
+      assert.match(searchTrigger.className, /min-h-11 min-w-11/, `Search trigger touch target >=44px at ${width}px`)
+      assert.equal(searchInput, null, `Inline search input should not be visible before open at ${width}px`)
+
+      // Compact diagnostics strip remains visible
+      assert.ok($('[data-testid="dev-header-diagnostics-compact"]'), `DEV compact diagnostics present at ${width}px`)
+    } else {
+      // Desktop / tablet (>=md) layout: inline search, no compact trigger
+      assert.ok(searchInput, `Inline search input must be rendered at ${width}px`)
+      assert.equal(searchTrigger, null, `Search icon trigger hidden at ${width}px`)
+      assert.ok($('[data-testid="dev-header-diagnostics"]'), `DEV inline diagnostics present at ${width}px`)
+    }
+  }
+}))
+
+test('#359 PR-C: Cloud status button icon states, tooltips, and aria-labels are distinct and accurate', async () => ui(async ({ $, render }) => {
+  const { SyncStatusPill } = require('../src/components/SyncStatusPill.tsx')
+  const noop = () => {}
+
+  // 1. Signed out
+  await render(SyncStatusPill, { signedIn: false, lastBackup: null, backupChecksum: null, localChecksum: null, onClick: noop })
+  let btn = $('[data-testid="header-cloud-sync-button"]')
+  assert.equal(btn.dataset.status, 'signed-out')
+  assert.ok(btn.querySelector('.lucide-ban'), 'signed-out renders ban icon')
+  assert.match(btn.getAttribute('aria-label'), /Not signed in/)
+  assert.match(btn.getAttribute('title'), /Not signed in/)
+  assert.equal(btn.textContent.trim(), '', 'no text in signed-out state')
+
+  // 2. Synced (backed-up)
+  await render(SyncStatusPill, { signedIn: true, lastBackup: '2026-11-05T00:00:00Z', backupChecksum: 'sha1', localChecksum: 'sha1', now: Date.parse('2026-11-05T01:00:00Z'), onClick: noop })
+  btn = $('[data-testid="header-cloud-sync-button"]')
+  assert.equal(btn.dataset.status, 'backed-up')
+  assert.ok(btn.querySelector('.lucide-check'), 'backed-up renders check icon')
+  assert.match(btn.getAttribute('aria-label'), /Backed up/)
+  assert.match(btn.getAttribute('title'), /Backed up/)
+  assert.equal(btn.textContent.trim(), '', 'no text in backed-up state')
+
+  // 3. Not backed up (modified locally or never backed up)
+  await render(SyncStatusPill, { signedIn: true, lastBackup: '2026-11-05T00:00:00Z', backupChecksum: 'sha1', localChecksum: 'sha2_diff', onClick: noop })
+  btn = $('[data-testid="header-cloud-sync-button"]')
+  assert.equal(btn.dataset.status, 'not-backed-up')
+  assert.ok(btn.querySelector('.lucide-circle-alert'), 'not-backed-up renders alert icon')
+  assert.match(btn.getAttribute('aria-label'), /Not backed up/)
+  assert.match(btn.getAttribute('title'), /Not backed up/)
+  assert.equal(btn.textContent.trim(), '', 'no text in not-backed-up state')
+}))
+
+test('#359 PR-C: All Header.tsx focus() calls specify { preventScroll: true }', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
+  const focusMatches = [...source.matchAll(/\.focus\((.*?)\)/g)]
+  assert.ok(focusMatches.length > 0, 'Header must contain focus calls')
+  for (const match of focusMatches) {
+    assert.match(match[1], /preventScroll:\s*true/, `focus call must include preventScroll: true, got: ${match[0]}`)
+  }
+})
+
+
