@@ -1,8 +1,8 @@
 # GTAR + GTAR1 — Working Plan
 
-STATUS: ACTIVE · OWNER: Joel (ozzzmond) · UPDATED: 2026-11-01
+OWNER: Joel (ozzzmond)
 APPLIES TO: `ozzzmond/GTAR` and `ozzzmond/GTAR1` (same file in both repos; keep them identical).
-SOURCE_OF_TRUTH: GitHub (branches, SHAs, tags, PRs). This file sets the process; it never overrides live repo state. All agent resources (AGENTS.md, skills, plans, glossary, ADRs) live in the repo.
+SOURCE_OF_TRUTH: GitHub (branches, SHAs, tags, PRs, issues). This file sets the process only; it holds no live state and never overrides the repo. Always re-verify GitHub before acting.
 
 ---
 
@@ -10,22 +10,25 @@ SOURCE_OF_TRUTH: GitHub (branches, SHAs, tags, PRs). This file sets the process;
 
 | Role | Who | Does | Does NOT |
 |---|---|---|---|
-| Validator / Foreman | Claude (chat) | Writes task prompts, reviews PR diffs, issues the verdict | Write product code for a PR it validates |
-| Implementor (Tier 2) | Codex, Claude Code, AGY, OpenCode/DeepSeek (backup) | Implements one prompt on one branch, opens one PR to `dev` | Self-approve, merge, tag, deploy |
+| Foreman / Validator | Claude | Writes task briefs and prompts, reviews PR diffs, reads CI, issues the verdict | Write product code for a PR it validates |
+| Implementor (Tier 2) | Codex, Claude Code, AGY, OpenCode, DeepSeek | Implements one brief on one branch, opens one draft PR | Self-approve, merge, tag, deploy |
 | Audit | ChatGPT | Audits on request (Friday review or before promotion) | Send findings straight to implementors |
-| Tier 1 / Owner | Joel (pafs) | Runs local commands, pastes reports, S&M after verdict + green CI, DEV field QA, tags, PROD | — |
+| Tier 1 / Approver | Joel (+ Claude in chat) | Runs local commands, does QA, presses Ready for review, squash-merges, creates tags, approves issue closure | — |
 
-When Claude Code is the implementor, the ChatGPT audit is the independent check on that PR.
+- When Claude Code is the implementor, the ChatGPT audit is the independent check on that PR.
+- Agent fit: Codex = data, logic, storage, bugs, tests. AGY = layout, design, UI first (Claude Code is the layout backup). Small bug / test / CI / lint fixes go to a lighter model. Heavy review goes to the strongest available model. Docs, comments and daily verdicts use a light model.
 
 ## 2. Task flow (one loop, then stop)
 
-1. **Prompt** — Validator writes: goal, scope, acceptance criteria, tests to run, out-of-scope list. Setup and skills come from AGENTS.md.
-2. **Implement** — one agent, one branch from `origin/dev`, one PR into `dev`.
-3. **Report** — implementor reports PR URL, base SHA, head SHA, files, tests, gaps. Owner pastes it to the Validator.
-4. **Review** — Validator reviews the PR diff only → `MERGE` / `FIX` / `HOLD`.
-5. **Merge to `dev`** — only when BOTH gates pass: CI green **and** verdict `MERGE`. Owner does the Squash & Merge. Docs-only and Dependabot patch/minor PRs: CI green is enough.
-6. **DEV QA** — owner checks the deployed DEV build (SHA in the DEV header) on phone and desktop.
-7. **Owner-only** — tags, `dev`→`main`, PROD deploy, D1/PROD data changes.
+1. **Issue** — GitHub issue describes the work.
+2. **Brief** — Foreman writes: repo, goal, files in scope, acceptance criteria, tests to run, out-of-scope list.
+3. **Implement** — one agent, one branch (`feature/…` or `fix/…`), one draft PR into `dev`.
+4. **Evidence** — PR includes test/build results, files changed, known gaps.
+5. **Validate** — Foreman reviews the PR diff only → `MERGE` / `FIX` / `HOLD`.
+6. **Owner QA** — Joel tests on Cloudflare dev (`dev.gtar-web.pages.dev`); preview hash URLs are not DEV mode.
+7. **Merge to `dev`** — Joel squash-merges only when BOTH gates pass: CI green **and** Foreman verdict `MERGE`. Docs-only and Dependabot patch/minor PRs: CI green is enough. Then verify `dev` CI is green.
+8. **Close** — close the issue with a comment, only with owner approval.
+9. **Owner-only** — tags, `dev`→`main`, PROD deploy, D1/PROD data changes.
 
 ## 3. Anti-spiral rules
 
@@ -37,6 +40,7 @@ When Claude Code is the implementor, the ChatGPT audit is the independent check 
 - **Audit findings are triaged by the Foreman** into must-fix / backlog / reject before any agent sees them.
 - **No daily AI audits.** Local mechanical scripts may run any time (no tokens); AI audits only at the Friday review or on request.
 - Any agent finding itself in a third review loop stops and reports.
+- Feature freeze applies whenever stabilization or a release is in progress; new work waits.
 
 ## 4. Project rules
 
@@ -44,41 +48,29 @@ When Claude Code is the implementor, the ChatGPT audit is the independent check 
 - Protect user data: no last-write-wins, auto-merge, destructive cleanup, or blind restores.
 - ChordPro six-field header rules; never guess `original_key`.
 - Keep states separate: implemented ≠ tested ≠ merged ≠ tagged ≠ deployed ≠ field-verified.
+- Never paste secrets or tokens into GitHub.
+- DEV is a playground; PROD must keep working. Few real users, each keeps their own backup. Lean tests, no enterprise-scale suites.
 
-**GTAR only — ACTIVE (live PROD, priority #1)**
-- Holds the **online services** (Google credentials / sign-in, D1, Cloudflare); these should be separated cleanly from the offline core. Plan: `docs/plans/2026-11-01-core-separation.md`.
-- Rename to `GTAR-webapp-Legacy`: on hold until GTAR is stabilized.
-- Web/PWA only; Android frozen legacy unless explicitly requested.
+**GTAR — ACTIVE (live PROD, priority #1)**
+- Holds the online services (Google sign-in, D1, Cloudflare); keep these cleanly separated from the offline core.
+- Web/PWA only; Android is frozen legacy unless explicitly requested.
 - Versioning per GTAR_VERSIONING_V2 / DEV Workflow V2; PROD needs preflight + dry run + explicit approval.
 - Never rerun D1 migrations or change PROD data without explicit approval.
-- Gates run in `web/` (test, build, sync_lint).
+- Gates run from `web/`: `npm test`, `npm run lint`, `lint:sync`, `build`, `node web/scripts/test-catalog.cjs --check`.
+- Layout/design work goes to AGY first.
 
-**GTAR1 only — BACKUP / PARKED** (created as a fallback during the GTAR audit spiral; no new work until GTAR is stable and the owner reactivates it)
+**GTAR1 — BACKUP / PARKED** (fallback repo; no new work until the owner reactivates it)
 - Planned environments: DEV / STAGE / PROD. Personal Cloud Sync excluded.
 - **No Google credentials at all** — no Google sign-in, Client ID, or Google auth, now or later.
-- Local-first: 0 network calls on startup; no Google auth; no cloud sync in runtime.
+- Local-first: 0 network calls on startup; no cloud sync in runtime.
 - Storage namespace `gtar_revamp_local_v1` only; never touch legacy GTAR keys/DBs.
 - Atomic IndexedDB writes; import/export keeps round-trip with GTAR1 and legacy GTAR JSON.
 
-## 5. Current state (verified 2026-10-31, GitHub)
+## 5. Known baseline issues (not PR blockers)
 
-| | GTAR | GTAR1 |
-|---|---|---|
-| `main` | `4fe9504` | `6c716d9` |
-| `dev` | `4fe9504` (same as main) | `da2bdee` (theme Batch 5 fixes, #67) |
-| Latest tags | PROD `v1.1.141`, DEV `v1.0.139-dev.2` (both on `4fe9504`) | none |
-| Extra branches | ~34 (incl. 8 Dependabot) | 11 |
+- Windows only: 7 `deviceSignInFallback` tests fail.
+- Add new entries here as they are measured.
 
-**Flag:** GTAR code still says `1.0.139-dev.2` (`web/package.json`, `web/src/types/gtar.ts`). DEV must be reset to `1.0.141-dev.1` (untagged baseline).
+## 6. Where live state lives
 
-**Known baseline issues:** _(none recorded yet)_
-
-## 6. Next up — GTAR stabilization (in order)
-
-1. **Version reset:** `web/package.json` + `web/src/types/gtar.ts` fallback → `1.0.141-dev.1` (tiny PR, no tag).
-2. **Branch triage (read-only first):** classify ~34 branches as merged / open-with-issue / abandoned → owner decides; no automatic deletion. Batch the Dependabot PRs.
-3. **Backlog triage:** every open issue → must-fix / backlog / close. Only must-fix items get briefs.
-4. **Feature freeze** until steps 1–3 are done.
-5. **Then:** separate GTAR online services (Google credentials, D1, Cloudflare) from the offline core as its own phase — see `docs/plans/2026-11-01-core-separation.md`.
-
-GTAR1: parked. Record known baseline issues in §5 as they are measured.
+Live state (branches, SHAs, tags, open PRs/issues, release scope) is read from GitHub, not stored here. Session handoffs go in `claude/GTAR_context_<date>.md`; standing rules in `claude/GTAR_rules.md`.
