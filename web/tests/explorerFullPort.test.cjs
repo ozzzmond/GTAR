@@ -121,7 +121,7 @@ test('cloud button announces backup time accessibly, shows status badges and ope
   assert.ok(button().querySelector('.lucide-ban'))
 }))
 
-test('compact Header opens Explorer in Stage and expands search with Ctrl/Cmd+K and Escape outside Stage', async () => ui(async ({ render, click }) => {
+test('compact Header opens Explorer in Stage and expands search with Ctrl/Cmd+K and Escape in Stage too', async () => ui(async ({ render, click }) => {
   window.innerWidth = 360
   const { Header } = require('../src/components/Header.tsx')
   const noop = () => {}
@@ -144,8 +144,11 @@ test('compact Header opens Explorer in Stage and expands search with Ctrl/Cmd+K 
   await render(Header, { ...props, activeView: 'stage' })
   await click(document.querySelector('[aria-label="Open Music Explorer"]'))
   assert.equal(opened, 1)
+  assert.ok(document.querySelector('[aria-label="Open search"]'), 'Stage keeps the compact search trigger')
   await act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })))
-  assert.equal(input(), null, 'search shortcut stays blocked in Stage')
+  assert.ok(document.activeElement === input(), 'search shortcut opens and focuses in Stage')
+  await act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  assert.equal(input(), null)
   assert.equal(document.querySelector('[aria-label="Side Panel"]'), null)
 }))
 
