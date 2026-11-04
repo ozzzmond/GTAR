@@ -2117,7 +2117,7 @@ export const StageView: React.FC<StageViewProps> = ({
         >
 
           {inPerformanceMode && (
-            <header data-testid="stage-expanded-header" className="pt-10 pb-4 mb-5 border-b border-app-border flex flex-wrap items-center justify-between gap-3">
+            <div data-testid="stage-expanded-header" className="pt-10 pb-4 mb-5 border-b border-app-border flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="text-xl sm:text-2xl font-bold text-app-heading break-words">{song.title || 'Untitled Song'}</h1>
                 <p className="text-xs sm:text-sm text-app-muted mt-1">
@@ -2128,7 +2128,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 </p>
               </div>
               <span className="text-[10px] font-mono uppercase tracking-wider text-app-action px-2 py-1 rounded bg-app-surface border border-app-border">Stage</span>
-            </header>
+            </div>
           )}
 
           {/* GTAR1 Song View format in Stage Preview (Title, Artist, Metadata Chips) */}

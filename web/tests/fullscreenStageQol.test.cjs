@@ -49,6 +49,16 @@ const {
   DOCK_SIZE,
 } = require('../src/components/StageControlDock.tsx')
 
+test('Stage title keeps its test id without matching custom-theme app header styling', () => {
+  const stageSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  const headerSource = fs.readFileSync(path.resolve(__dirname, '../src/components/Header.tsx'), 'utf8')
+  const titleBlock = stageSource.match(/<([a-z]+)\b[^>]*\bdata-testid="stage-expanded-header"[^>]*>/)
+
+  assert.ok(titleBlock, 'Stage title block keeps data-testid="stage-expanded-header"')
+  assert.match(headerSource, /<header\b[^>]*className="bg-app-header\b/, 'App top bar remains a header')
+  assert.notEqual(titleBlock[1], 'header', 'Stage title must not match body.theme-custom header')
+})
+
 // =========================================================================
 // TEST 1: FULLSCREEN_TITLE_REMAINS_VISIBLE
 // =========================================================================
