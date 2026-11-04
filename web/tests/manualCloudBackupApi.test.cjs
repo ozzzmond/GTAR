@@ -33,6 +33,26 @@ async function fixture() {
 }
 const postBody = (data, rev) => ({ data, expectedVersion: rev.version, expectedChecksum: rev.checksum })
 
+test('settings envelope round trips with CAS; malformed and future settings cannot replace it',async()=>{
+ const {request}=await fixture()
+ const data={...library('settings'),settingsSchemaVersion:2,checksumScheme:'gtar-backup-settings-v2',
+  settings:{appearance:{themeMode:'paper-light',tvFontSize:40},preferences:{songbookSort:'artist'}}}
+ assert.equal((await request('POST',{...postBody(data,emptyRevision),clientChecksum:sync.computeSongbookChecksum(data)})).status,200)
+ const saved=(await (await request('GET')).json()).cloudRecord
+ assert.deepEqual(saved.data,data)
+ for(const changed of [
+  {...data,settingsSchemaVersion:3},
+  {...data,checksumScheme:sync.SONGBOOK_CHECKSUM_SCHEME},
+  {...data,settings:{appearance:{tvFontSize:999},preferences:{}}},
+  {...data,settings:{appearance:{},preferences:{token:'secret'}}},
+ ]) assert.equal((await request('POST',postBody(changed,revision(saved)))).status,400)
+ assert.deepEqual((await (await request('GET')).json()).cloudRecord,saved)
+ const changed=structuredClone(data);changed.settings.appearance.tvFontSize=42
+ assert.equal((await request('POST',{...postBody(changed,revision(saved)),clientChecksum:saved.checksum})).status,400)
+ assert.equal((await request('POST',postBody(changed,revision(saved)))).status,200)
+ assert.equal((await request('POST',postBody(data,revision(saved)))).status,409)
+})
+
 test('manual backup accepts account with per-record cursor and rows', async () => {
  const {db,request}=await fixture()
  await write(db,library('old'),emptyRevision)

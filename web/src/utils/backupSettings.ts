@@ -930,6 +930,8 @@ export interface SettingsLockManager {
   request<T>(name: string, options: { mode: 'exclusive'; ifAvailable: true }, callback: (lock: unknown) => T | Promise<T>): Promise<T>
 }
 export interface SettingsLockOptions {
+  /** Recheck caller identity/revision under the lock, before any recovery or settings mutation. */
+  beforeWrite?: () => void
   /** Defaults to navigator.locks. null = no lock manager (settings are then never changed). */
   locks?: SettingsLockManager | null
 }
@@ -1074,6 +1076,7 @@ export async function restoreBackupSettingsV2(settings: BackupSettingsV2, choice
 
   return withSettingsLock(options, () => {
     // Under the lock: no other tab can create, replace or remove a copy between this check and the write.
+    options?.beforeWrite?.()
     const existing = inspectSettingsRecovery(storage)
     if (existing.state !== 'none') throw new SettingsRestoreError('blocked', blockedMessage(existing))
     const previous: Record<string, string | null> = {}

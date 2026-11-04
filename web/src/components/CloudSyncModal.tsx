@@ -6,11 +6,13 @@ import type { SetlistFolder } from '../types/gtar'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Cloud, CloudDownload, CloudUpload, Info, LogIn, User, X } from 'lucide-react'
 import { useOptionalGoogleAuth } from '../utils/authContext'
-import { estimateSongbookUploadBytes, songbookUploadHeadroom, type CloudSongbookRecord } from '../utils/cloudBackupFormat'
+import { estimateSongbookUploadBytes, songbookUploadHeadroom, type CloudBackupData, type CloudSongbookRecord } from '../utils/cloudBackupFormat'
 import { readPersistedLibrary } from '../utils/syncJournal'
 import type { SyncLibrary } from '../utils/syncMerge'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
-import { CloudBackupChanged, CloudBackupFailure, logCloudBackupFailure, readCloudBackup, restoreCloudBackup, writeCloudBackup } from '../utils/manualCloudBackup'
+import { captureCloudBackup, cloudBackupSettings, CloudBackupChanged, CloudBackupFailure, logCloudBackupFailure, readCloudBackup, restoreCloudBackup, writeCloudBackup } from '../utils/manualCloudBackup'
+import { settingsSignature, type SettingsRestoreChoice } from '../utils/backupSettings'
+import { SESSION_STORAGE_KEY, LEGACY_STORAGE_KEY } from '../utils/googleAuth'
 import type { ExportEnvironment } from '../utils/backupExport'
 import { DeviceBackupCard } from './DeviceBackupCard'
 import { RestorePreview } from './RestorePreview'
@@ -83,19 +85,29 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
   const [message, setMessageText] = useState('')
   const [messageTone, setMessageTone] = useState<'success' | 'error'>('error')
   const setMessage = (text: string, kind: 'success' | 'error' = 'error') => { setMessageText(text); setMessageTone(kind) }
-  const [preview, setPreview] = useState<{ kind: 'backup' | 'restore'; device: SyncLibrary; cloud: CloudSongbookRecord | null } | null>(null)
+  const [preview, setPreview] = useState<{ kind: 'backup' | 'restore'; device: SyncLibrary; upload: CloudBackupData; signature: string; cloud: CloudSongbookRecord | null } | null>(null)
+  const [restoreChoice, setRestoreChoice] = useState<SettingsRestoreChoice>({ appearance: true, preferences: true })
   const persisted = usePersistedLibrary(isOpen)
   const restoreBlockedRef = useRef(restoreBlocked)
   useEffect(() => { restoreBlockedRef.current = restoreBlocked }, [restoreBlocked])
-  const identity = useRef('')
-  useEffect(() => { identity.current = `${userId}:${token}`; return () => { identity.current = '' } }, [userId, token])
   const summaryCallback = useRef(onBackupSummary)
   useEffect(() => { summaryCallback.current = onBackupSummary }, [onBackupSummary])
+  const identity = useRef('')
+  useEffect(() => {
+    identity.current = isOpen && signedIn ? `${userId}:${token}` : ''
+    const changed = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== SESSION_STORAGE_KEY && event.key !== LEGACY_STORAGE_KEY) return
+      identity.current = ''; setCloud(null); setPreview(null); setReady(false); setBusy(false)
+      setMessageText('Account session changed; reopen Backup & Restore.'); summaryCallback.current?.(null, null)
+    }
+    window.addEventListener('storage', changed)
+    return () => { identity.current = ''; window.removeEventListener('storage', changed) }
+  }, [userId, token, signedIn, isOpen])
   useEffect(() => {
     let active = true
     if (!isOpen) return
     const trigger = document.activeElement as HTMLElement | null
-    void Promise.resolve().then(() => { if (active) { setCloud(null); setPreview(null); setReady(false); setReadFailed(false); setMessageText(''); summaryCallback.current?.(null, null) } })
+    void Promise.resolve().then(() => { if (active) { setCloud(null); setPreview(null); setBusy(false); setReady(false); setReadFailed(false); setMessageText(''); summaryCallback.current?.(null, null) } })
     if (signedIn) {
       readCloudBackup({ token, userId, isCurrent: () => active && identity.current === `${userId}:${token}` }).then(record => {
         if (!active) return
@@ -112,7 +124,7 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
     return () => window.removeEventListener('keydown', escape)
   }, [isOpen, locked, onClose])
   if (!isOpen) return null
-  const account = { token, userId, isCurrent: () => identity.current === `${userId}:${token}` }
+  const account = { token, userId, isCurrent: () => Boolean(identity.current) && identity.current === `${userId}:${token}` }
   const run = async (operation: 'backup' | 'restore', action: () => Promise<void>) => {
     if (busy || !signedIn) return
     const captured = identity.current
@@ -139,19 +151,23 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
     const device = readPersistedLibrary()
     if (!device) throw new Error('Device library could not be read')
     if (kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
-    setPreview({kind, device, cloud: record})
+    const signature = settingsSignature()
+    if (signature === null) throw new Error('Device settings could not be read')
+    const upload = captureCloudBackup(device)
+    setRestoreChoice({ appearance: true, preferences: true })
+    setPreview({kind, device, upload, signature, cloud: record})
   })
   const confirm = (mode?: 'replace' | 'merge') => run(preview?.kind ?? 'backup', async () => {
     if (!preview) return
     if (preview.kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     const captured = identity.current
     const device = readPersistedLibrary()
-    if (!device || JSON.stringify(device) !== JSON.stringify(preview.device)) {
-      setPreview(null); throw new Error('Device library changed. Review and confirm again.')
+    if (!device || JSON.stringify(device) !== JSON.stringify(preview.device) || settingsSignature() !== preview.signature) {
+      setPreview(null); throw new Error('Device library or settings changed. Review and confirm again.')
     }
     if (preview.kind === 'backup') {
       try {
-        const record = await writeCloudBackup(account, device, preview.cloud)
+        const record = await writeCloudBackup(account, preview.upload, preview.cloud)
         if (identity.current !== captured) return
         setCloud(record); summaryCallback.current?.(record.updatedAt, record.checksum); setPreview(null); setMessage('Cloud backup saved and checksum verified.', 'success')
       } catch (error) {
@@ -166,17 +182,21 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
     } else {
       const apply = mode === 'replace' ? onFullRestore : onSmartMerge
       if (!apply || !preview.cloud || !mode) throw new Error('Restore unavailable')
-      await restoreCloudBackup(device, preview.cloud.data, mode, library => {
+      const current = await readCloudBackup(account)
+      if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
+      if (!current || current.version !== preview.cloud.version || current.checksum !== preview.cloud.checksum) throw new Error('Cloud backup changed. Review and confirm again.')
+      if (JSON.stringify(readPersistedLibrary()) !== JSON.stringify(device) || settingsSignature() !== preview.signature) throw new Error('Device library or settings changed. Review and confirm again.')
+      await restoreCloudBackup(device, current.data, mode, library => {
         if (restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
         if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
         return apply(library.songs, library.setlists, library.folders, library.tagColors)
-      }, localStorage)
+      }, localStorage, { account, expectedSettingsSignature: preview.signature, choice: restoreChoice })
       if (identity.current !== captured) return
-      setPreview(null); setMessage(restoredMessage(preview.cloud.data), 'success')
+      setPreview(null); setMessage(`${restoredMessage(preview.cloud.data)} Selected, present settings restored and verified. Omitted settings kept.${restoreChoice.preferences ? ' Reopen GTAR to apply every restored preference.' : ''}`, 'success')
     }
   })
   const device = signedIn ? persisted : null
-  const headroom = device ? safe(() => songbookUploadHeadroom(estimateSongbookUploadBytes(device)), null) : null
+  const headroom = device ? safe(() => songbookUploadHeadroom(estimateSongbookUploadBytes(captureCloudBackup(device))), null) : null
   const fileSongs = deviceSongs ?? (persisted?.songs as ActiveSongState[] | undefined) ?? NO_SONGS
   const fileSetlists = deviceSetlists ?? persisted?.setlists ?? NO_SETLISTS
   const user = session?.user
@@ -275,6 +295,16 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
               device={preview.device}
               backup={preview.cloud.data}
               provenance={{ createdAt: preview.cloud.updatedAt }}
+              settings={(() => {
+                const settings = cloudBackupSettings(preview.cloud.data)
+                const appearance = Object.keys(settings.appearance ?? {}).length
+                const preferences = Object.keys(settings.preferences ?? {}).length
+                return appearance || preferences ? { appearance, preferences, choice: restoreChoice, onChoice: setRestoreChoice } : undefined
+              })()}
+              note={<p className="text-[11px] text-app-text">{(() => {
+                const settings = cloudBackupSettings(preview.cloud.data)
+                return `Appearance (theme, Stage and TV text): ${restoreChoice.appearance && Object.keys(settings.appearance ?? {}).length ? 'replace present values' : 'keep device values'}. Preferences: ${restoreChoice.preferences && Object.keys(settings.preferences ?? {}).length ? 'replace present values' : 'keep device values'}. Omitted settings stay unchanged. Folders and tag colours follow the selected library restore mode.`
+              })()}</p>}
               busy={busy}
               blocked={restoreBlocked}
               onMerge={() => { void confirm('merge') }}
@@ -290,7 +320,7 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
                 <p><span className="text-app-muted">This device: </span><span className="text-app-heading font-semibold">{listCounts(preview.device)}</span></p>
                 <p><span className="text-app-muted">Cloud backup: </span><span className="text-app-heading font-semibold">{preview.cloud ? `${formatDate(preview.cloud.updatedAt)} — ${listCounts(preview.cloud.data)}` : 'No cloud backup yet'}</span></p>
               </div>
-              <p className="text-[11px] text-app-text">Back up to <strong>{user?.email}</strong>? This overwrites the cloud backup. The device library stays unchanged.</p>
+              <p className="text-[11px] text-app-text">Back up to <strong>{user?.email}</strong>? This overwrites the cloud backup with the device library, Appearance (theme, Stage and TV text), and Preferences. The device library stays unchanged.</p>
               <button type="button" className={primaryButton} disabled={busy} onClick={() => { void confirm() }}>Confirm backup</button>
               <button type="button" className={outlinedButton} disabled={busy} onClick={() => setPreview(null)}>Cancel</button>
             </div>}
