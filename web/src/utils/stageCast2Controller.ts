@@ -3,6 +3,7 @@ import { cast2LocalEnabled } from './stageCast2Local'
 import { validSession, hasServerApproval, type GoogleSession } from './googleAuth'
 import { stageCast, type StageCastState } from './stageCast'
 import { projectCast2Presentation } from './stageCast2Projection'
+import { SETTINGS_CHANGED, readBackupSettingsV2 } from './backupSettings'
 
 export class StageCast2ControllerManager {
   private client: Cast2Client | null = null
@@ -264,3 +265,12 @@ export class StageCast2ControllerManager {
 }
 
 export const stageCast2Controller = new StageCast2ControllerManager()
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(SETTINGS_CHANGED, () => {
+    try {
+      const size = readBackupSettingsV2().appearance.tvFontSize
+      if (size !== undefined) stageCast2Controller.setTvFontSize(size)
+    } catch { /* Invalid storage must not interrupt presentation. */ }
+  })
+}

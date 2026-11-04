@@ -45,6 +45,80 @@ async function setup(signedIn=true,{device=local,cloudLibrary=remote}={}){
  await act(async()=>{root.render(React.createElement(CloudSyncModal,{isOpen:true,onClose(){},onFullRestore:apply('replace'),onSmartMerge:apply('merge')}));await new Promise(r=>setTimeout(r,5))})
  return {calls,uploads,folderArgs,root,signIns:()=>signIns}
 }
+
+for(const mode of ['replace','merge']) for(const appearance of [true,false]) for(const preferences of [true,false])
+test(`cloud settings preview/cancel/confirm: ${mode}, appearance=${appearance}, preferences=${preferences}`,async()=>{
+ const settings={appearance:{themeMode:'paper-light',stageSettings:{fontSizePx:32},tvFontSize:40},preferences:{songbookSort:'artist'}}
+ const data={...remote,settings,settingsSchemaVersion:2,checksumScheme:'gtar-backup-settings-v2'}
+ const {root}=await setup(true,{cloudLibrary:data})
+ Object.defineProperty(navigator,'locks',{configurable:true,value:{request:async(_n,_o,fn)=>fn({})}})
+ localStorage.setItem('gtar_theme_store','oled-black');localStorage.setItem('gtar_tv_font_size','28');localStorage.setItem('gtar_songbook_sort','title')
+ const before=JSON.stringify({...localStorage})
+ try {
+  await click('Restore from cloud')
+  const preview=document.querySelector('[data-testid="restore-preview"]')
+  assert.match(preview.textContent,/3 appearance and 1 preference settings/)
+  assert.match(preview.textContent,/theme, colours, stage and TV text/)
+  assert.match(preview.textContent,/2026-11-01/)
+  const boxes=[...preview.querySelectorAll('input[type="checkbox"]')]
+  assert.deepEqual(boxes.map(b=>b.checked),[true,true],'full restore defaults include both groups')
+  await click('Cancel');assert.equal(JSON.stringify({...localStorage}),before)
+  await click('Restore from cloud')
+  await act(async()=>{
+   const inputs=document.querySelector('[data-testid="restore-preview"]').querySelectorAll('input[type="checkbox"]')
+   if(!appearance)inputs[0].click()
+   if(!preferences)inputs[1].click()
+  })
+  if(mode==='replace'){await click('Replace device');assert.equal(localStorage.getItem('gtar_tv_font_size'),'28');await click('Confirm replace')}
+  else await click('Merge into device')
+  assert.match(document.body.textContent,/Backup restored: .*verified after saving/)
+  assert.equal(localStorage.getItem('gtar_theme_store'),appearance?'paper-light':'oled-black')
+  assert.equal(localStorage.getItem('gtar_tv_font_size'),appearance?'40':'28')
+  assert.equal(localStorage.getItem('gtar_songbook_sort'),preferences?'artist':'title')
+ }finally{delete navigator.locks;await act(async()=>root.unmount())}
+})
+
+for(const operation of ['backup','restore'])test(`settings-only edits invalidate ${operation} consent`,async()=>{
+ const {root,uploads}=await setup()
+ try {
+  await click(operation==='backup'?'Back up to cloud':'Restore from cloud')
+  const library=JSON.stringify(readPersistedLibrary())
+  localStorage.setItem('gtar_tv_font_size','44')
+  if(operation==='backup')await click('Confirm backup')
+  else {await click('Replace device');await click('Confirm replace')}
+  assert.match(document.body.textContent,/Device library or settings changed/)
+  assert.equal(uploads.length,0);assert.equal(JSON.stringify(readPersistedLibrary()),library)
+  assert.equal(localStorage.getItem('gtar_tv_font_size'),'44')
+  assert.equal(getRestoreSafetySnapshot(localStorage),null)
+ }finally{await act(async()=>root.unmount())}
+})
+
+test('another tab changing account invalidates the settings preview and prevents restore',async()=>{
+ const {root}=await setup()
+ try {
+  await click('Restore from cloud')
+  const bytes=JSON.stringify({...localStorage})
+  await act(async()=>window.dispatchEvent(new window.StorageEvent('storage',{key:'gtar_auth_session',newValue:'changed'})))
+  assert.equal(document.querySelector('[data-testid="restore-preview"]'),null)
+  assert.equal(document.querySelector('[data-testid="cloud-restore-button"]').disabled,true)
+  assert.equal(JSON.stringify({...localStorage}),bytes)
+ }finally{await act(async()=>root.unmount())}
+})
+
+test('cloud revision changed after preview requires fresh consent before device mutation',async()=>{
+ const {root}=await setup()
+ try {
+  await click('Restore from cloud')
+  const bytes=JSON.stringify(readPersistedLibrary())
+  const data={...remote,settingsSchemaVersion:2,checksumScheme:'gtar-backup-settings-v2',settings:{appearance:{tvFontSize:44},preferences:{}}}
+  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:{version:2,checksum:computeSongbookChecksum(data),data}}))
+  await click('Replace device');await click('Confirm replace')
+  assert.match(document.body.textContent,/Cloud backup changed/)
+  assert.equal(JSON.stringify(readPersistedLibrary()),bytes)
+  assert.equal(localStorage.getItem('gtar_tv_font_size'),null)
+  assert.equal(getRestoreSafetySnapshot(localStorage),null)
+ }finally{await act(async()=>root.unmount())}
+})
 test('opening and device edits make no POST; backup confirms account and verifies unchanged device',async()=>{
  const {calls,root}=await setup()
  try{

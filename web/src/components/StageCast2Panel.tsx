@@ -8,6 +8,7 @@ import { stageCast2Controller } from '../utils/stageCast2Controller'
 import { SongLineRenderer } from './SongLineRenderer'
 import { splitSongLinesForColumns } from '../utils/songParser'
 import { createWakeLockController } from '../utils/stagePerformance'
+import { SETTINGS_CHANGED, readBackupSettingsV2 } from '../utils/backupSettings'
 
 void React
 
@@ -67,6 +68,16 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
     return 32
   })
   const [prevRemoteSize, setPrevRemoteSize] = useState<number | undefined>(undefined)
+  useEffect(() => {
+    const reload = () => {
+      try {
+        const size = readBackupSettingsV2().appearance.tvFontSize
+        if (size !== undefined) setFallbackFontSize(size)
+      } catch { /* Keep the current text size when storage is unavailable. */ }
+    }
+    window.addEventListener(SETTINGS_CHANGED, reload)
+    return () => window.removeEventListener(SETTINGS_CHANGED, reload)
+  }, [])
 
   // Receiver-specific client instance with resilient options
   const [receiverClient] = useState(() => {

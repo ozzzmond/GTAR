@@ -4,9 +4,94 @@ const fs = require('node:fs')
 const ts = require('typescript')
 require.extensions['.ts'] = (m, f) => m._compile(ts.transpileModule(fs.readFileSync(f,'utf8').replaceAll('import.meta.env','({DEV:false})'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,f)
 const { readCloudBackup, writeCloudBackup } = require('../src/utils/manualCloudBackup.ts')
+
+test('cloud backup captures the local settings allowlist and verifies settings-only changes', async () => {
+ const {captureCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const {verifySongbookChecksum}=require('../src/utils/cloudBackupFormat.ts')
+ const values=new Map([['gtar_theme_store','paper-light'],['gtar_stage_font_size','32'],['gtar_tv_font_size','40'],['gtar_songbook_sort','artist'],['gtar_google_token','secret']])
+ const storage={getItem:k=>values.get(k)??null}
+ const data=captureCloudBackup({songs:[],setlists:[]},storage)
+ assert.deepEqual(data.settings,{appearance:{themeMode:'paper-light',stageSettings:{fontSizePx:32},tvFontSize:40},preferences:{songbookSort:'artist'}})
+ let record
+ global.fetch=async(_,opts)=>{
+  if(opts.method==='POST'){const body=JSON.parse(opts.body);record={version:1,checksum:body.clientChecksum,data:body.data}}
+  return new Response(JSON.stringify({success:true,cloudRecord:record}))
+ }
+ await writeCloudBackup({token:'t',userId:'A'},data,null)
+ assert.equal(record.data.settingsSchemaVersion,2)
+ assert.equal(record.data.checksumScheme,'gtar-backup-settings-v2')
+ assert.equal(verifySongbookChecksum(record),true)
+ record.data.settings.appearance.tvFontSize=42
+ assert.equal(verifySongbookChecksum(record),false)
+ await assert.rejects(()=>readCloudBackup({token:'t',userId:'A'}),/verification failed/)
+})
 test('signed out makes no cloud requests', async () => {
  global.fetch = () => { throw Error('network forbidden') }
  await assert.rejects(() => readCloudBackup({token:'',userId:''}), /Sign in/)
+})
+
+test('confirmed restore applies supported settings after verified library; legacy omissions preserve them',async()=>{
+ const {restoreCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const {persistLibrary,readPersistedLibrary}=require('../src/utils/syncJournal.ts')
+ const values=new Map([['gtar_theme_store','oled-black'],['gtar_tv_font_size','32']])
+ const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)}
+ persistLibrary({songs:[],setlists:[]},storage)
+ const incoming={songs:[],setlists:[],settingsSchemaVersion:2,checksumScheme:'gtar-backup-settings-v2',settings:{appearance:{themeMode:'paper-light',tvFontSize:40},preferences:{songbookSort:'artist'}}}
+ const locks={request:async(_name,_options,fn)=>fn({})}
+ await restoreCloudBackup(readPersistedLibrary(storage),incoming,'replace',lib=>persistLibrary(lib,storage),storage,{locks})
+ assert.equal(storage.getItem('gtar_theme_store'),'paper-light')
+ assert.equal(storage.getItem('gtar_tv_font_size'),'40')
+ assert.equal(storage.getItem('gtar_songbook_sort'),'artist')
+ await restoreCloudBackup(readPersistedLibrary(storage),{songs:[],setlists:[]},'replace',lib=>persistLibrary(lib,storage),storage,{locks})
+ assert.equal(storage.getItem('gtar_tv_font_size'),'40')
+})
+
+for(const failure of ['malformed','snapshot','apply','verification','stale-settings','account-after-apply','account-under-lock','settings-write','settings-readback','competing-tab'])
+test(`cloud restore failure preserves settings or verifies rollback: ${failure}`,async()=>{
+ const {restoreCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const {persistLibrary,readPersistedLibrary}=require('../src/utils/syncJournal.ts')
+ const {settingsSignature,inspectSettingsRecovery}=require('../src/utils/backupSettings.ts')
+ const values=new Map([['gtar_theme_store','oled-black'],['gtar_tv_font_size','28']]);let applied=false,current=true,broken=false
+ const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>{
+  if(failure==='snapshot' && k.includes('snapshot'))throw Error('snapshot refused')
+  if(k==='gtar_tv_font_size' && v==='40'){
+   if(failure==='settings-write')throw Error('write refused')
+   if(failure==='settings-readback' && !broken){broken=true;return}
+  }
+  values.set(k,v)
+ },removeItem:k=>values.delete(k)}
+ persistLibrary({songs:[],setlists:[]},storage)
+ const before=readPersistedLibrary(storage)
+ const expectedSettingsSignature=settingsSignature(storage)
+ const incoming={songs:[],setlists:[],settingsSchemaVersion:2,checksumScheme:'gtar-backup-settings-v2',settings:{appearance:{themeMode:'paper-light',tvFontSize:40},preferences:{}}}
+ if(failure==='malformed')incoming.settings.appearance.tvFontSize=999
+ if(failure==='verification')incoming.folders=[{id:'f',name:'Folder',parentId:null}]
+ if(failure==='stale-settings')values.set('gtar_tv_font_size','30')
+ const locks={request:async(_n,_o,fn)=>{
+  if(failure==='account-under-lock')current=false
+  if(failure==='competing-tab')values.set('gtar_tv_font_size','30')
+  return fn({})
+ }}
+ const apply=lib=>{
+  applied=true
+  if(failure==='apply')throw Error('library refused')
+  persistLibrary(failure==='verification'?{...lib,folders:[]}:lib,storage)
+  if(failure==='account-after-apply')current=false
+ }
+ await assert.rejects(()=>restoreCloudBackup(before,incoming,'replace',apply,storage,{locks,expectedSettingsSignature,account:{token:'t',userId:'A',isCurrent:()=>current}}),
+  /invalid value|safety snapshot|library refused|could not be verified|settings changed|did not complete/)
+ assert.equal(storage.getItem('gtar_theme_store'),'oled-black')
+ assert.equal(storage.getItem('gtar_tv_font_size'),['stale-settings','competing-tab'].includes(failure)?'30':'28')
+ if(['malformed','snapshot','stale-settings'].includes(failure))assert.equal(applied,false)
+ assert.equal(inspectSettingsRecovery(storage).state,'none')
+})
+
+test('readback cannot claim success when the server drops newly backed-up settings',async()=>{
+ const {captureCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const data=captureCloudBackup({songs:[],setlists:[]},{getItem:k=>k==='gtar_tv_font_size'?'40':null})
+ const legacy={songs:[],setlists:[]}
+ global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:{version:1,checksum:require('../src/utils/cloudBackupFormat.ts').computeSongbookChecksum(legacy),data:legacy}}))
+ await assert.rejects(()=>writeCloudBackup({token:'t',userId:'A'},data,null),/verification failed/)
 })
 test('backup uses confirmed revision and verifies without modifying device', async () => {
  const library = {songs:[],setlists:[]}; const bytes=JSON.stringify(library)

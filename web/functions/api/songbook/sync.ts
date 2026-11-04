@@ -9,12 +9,11 @@ import {
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
-import { computeSongbookChecksum, SONGBOOK_CHECKSUM_SCHEME } from '../../../src/utils/cloudBackupFormat.ts'
+import { computeSongbookChecksum, SONGBOOK_CHECKSUM_SCHEME, SETTINGS_CHECKSUM_SCHEME, validateCloudBackupSettings, type CloudBackupData } from '../../../src/utils/cloudBackupFormat.ts'
 import {
   validateCloudThemeSettings,
   normalizeCloudThemeSettings,
 } from '../../../src/utils/backupSettings.ts'
-import type { SyncLibrary } from '../../../src/utils/syncMerge.ts'
 
 
 export const MAX_SONGBOOK_PAYLOAD_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -94,6 +93,8 @@ function validateSongbookPayload(data: unknown): { isValid: boolean; error?: str
     }
   }
 
+  const settingsErrors = validateCloudBackupSettings(data as CloudBackupData)
+  if (settingsErrors.length) return { isValid: false, error: settingsErrors.join('; ') }
   const recordObj = data as Record<string, unknown>
   if ('themeSettings' in recordObj && recordObj.themeSettings !== undefined) {
     const themeErrors = validateCloudThemeSettings(recordObj.themeSettings)
@@ -207,11 +208,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   try {
-    const rawLibrary = body.data as SyncLibrary & { checksumScheme?: string }
-    if (rawLibrary.checksumScheme !== undefined && rawLibrary.checksumScheme !== SONGBOOK_CHECKSUM_SCHEME) {
+    const rawLibrary = body.data as CloudBackupData
+    if (rawLibrary.checksumScheme !== undefined && rawLibrary.checksumScheme !== SONGBOOK_CHECKSUM_SCHEME && rawLibrary.checksumScheme !== SETTINGS_CHECKSUM_SCHEME) {
       return errorResponse('Unsupported checksum scheme', 400)
     }
-    const libraryData: SyncLibrary =
+    const libraryData: CloudBackupData =
       rawLibrary.themeSettings !== undefined
         ? { ...rawLibrary, themeSettings: normalizeCloudThemeSettings(rawLibrary.themeSettings) }
         : rawLibrary

@@ -69,6 +69,10 @@ test('TV_TYPOGRAPHY: independent TV font zoom controls, boundaries, presets, and
     stageCast2Controller.resetForTesting()
     assert.equal(stageCast2Controller.getTvFontSize(), 32, 'Default TV font size must be 32px')
 
+    localStorage.setItem('gtar_tv_font_size', '44')
+    window.dispatchEvent(new window.Event('gtar-settings-restored'))
+    assert.equal(stageCast2Controller.getTvFontSize(), 44, 'Restored TV size applies without reload')
+
     stageCast2Controller.setTvFontSize(10)
     assert.equal(stageCast2Controller.getTvFontSize(), 20, 'TV font size must be clamped at min 20px')
 
