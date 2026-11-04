@@ -274,7 +274,7 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus() }, [mobileSearchOpen])
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (activeView === 'stage' || shortcutsBlocked || showCloudSyncModal || showDebugLogsModal) return
+      if (shortcutsBlocked || showCloudSyncModal || showDebugLogsModal) return
       const target = event.target instanceof HTMLElement ? event.target : null
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         if (target?.closest('dialog, [role=dialog]') || target?.id === 'multi-song-search-input') return
@@ -291,7 +291,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [activeView, shortcutsBlocked, compact, onSearchQueryChange, showCloudSyncModal, showDebugLogsModal])
+  }, [shortcutsBlocked, compact, onSearchQueryChange, showCloudSyncModal, showDebugLogsModal])
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
   const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
@@ -724,7 +724,6 @@ export const Header: React.FC<HeaderProps> = ({
     />
   )
   const showResults = isSearchFocused && searchQuery.trim().length > 0
-  const searchEnabled = activeView !== 'stage'
   const iconButton = 'ui-button min-h-11 min-w-11 px-2 sm:px-2.5 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer'
   const devDiagnostics = (inline: boolean) => isDevEnv && (
     <div
@@ -784,7 +783,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Center: desktop search (GTAR1 design) */}
-        {searchEnabled && !compact && (
+        {!compact && (
           <form ref={(node) => { searchContainerRef.current = node }} role="search" aria-label="Global song search"
             onSubmit={(event) => event.preventDefault()} className="relative flex flex-1 min-w-0 max-w-[36rem] mx-1 sm:mx-2">
             <div className={`header-search-box relative flex min-w-0 w-full items-center transition-all duration-200 rounded-xl border bg-app-surface ${
@@ -819,7 +818,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right actions */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          {compact && searchEnabled && (
+          {compact && (
             <button ref={searchTriggerRef} type="button" aria-label="Open search"
               onClick={() => setMobileSearchOpen(true)}
               className={`ui-button mobile-search-trigger min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors flex items-center justify-center active:scale-95 ${
@@ -953,7 +952,7 @@ export const Header: React.FC<HeaderProps> = ({
       {devDiagnostics(false)}
 
       {/* Compact full-width search overlay (GTAR1): the field takes over the header with Cancel */}
-      {compact && searchEnabled && mobileSearchOpen && (
+      {compact && mobileSearchOpen && (
         <div ref={(node) => { searchContainerRef.current = node }} role="search" aria-label="Mobile expanded song search"
           className="mobile-search-overlay absolute inset-0 z-50 flex items-center gap-2 px-3 bg-app-header border-b border-app-border animate-scale-in">
           <div className="header-search-box flex-1 relative flex items-center min-w-0 rounded-xl bg-app-surface border border-app-accent ring-2 ring-app-accent/20 px-3">

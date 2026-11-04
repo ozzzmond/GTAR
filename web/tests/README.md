@@ -126,6 +126,7 @@ Performance controls, casting, navigation, continuity, and session persistence.
 <!-- test-catalog:STAGE:start -->
 - [dev3QolNavigationStageControls.test.cjs](dev3QolNavigationStageControls.test.cjs)
 - [fullscreenStageQol.test.cjs](fullscreenStageQol.test.cjs)
+- [issue361StageSearch.test.cjs](issue361StageSearch.test.cjs)
 - [stageCastRouting.test.cjs](stageCastRouting.test.cjs)
 - [stageContinuityInput.test.cjs](stageContinuityInput.test.cjs)
 - [stageLifecycle.test.cjs](stageLifecycle.test.cjs)
