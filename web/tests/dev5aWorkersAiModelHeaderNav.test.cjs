@@ -256,46 +256,23 @@ test('DEV5A_BACK_NOT_HARDCODED: Back handler source references no GTAR view rout
   assert.doesNotMatch(vh, /pushState|location\.(href|assign|replace)/)
 })
 
-test('DEV5A_TOOLBAR_LAYOUT: actions preserved in Header and Stage BOX (#333)', () => {
+test('DEV5A_TOOLBAR_LAYOUT: actions preserved in Header and Stage BOX (#333, #359)', () => {
   const { dom, root } = renderHeader()
   try {
     const labels = [...document.querySelectorAll('.toolbar-icon-btn')].map(b => b.getAttribute('aria-label'))
-    assert.deepEqual(labels, ['Theme', 'Trash', 'More'])
+    assert.deepEqual(labels, [], 'Theme, Trash, More removed from Header toolbar in #359')
+    assert.ok(document.querySelector('button[aria-label="GTAR home"]'), 'GTAR home preserved')
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
   }
 })
 
-test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement dismissal preserve actions', () => {
+test('ISSUE107_TOOLTIP: #359 retired toolbar hover tooltips; header action buttons retain accessible names', () => {
   const { dom, root } = renderHeader()
-  const viewport = new window.EventTarget()
-  Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true })
-  const button = document.querySelector('[aria-label="Theme"]')
-  const tooltip = () => document.querySelector('[role="tooltip"]')
-  const focus = () => act(() => button.focus())
-  const blur = () => act(() => button.blur())
   try {
-    assert.equal(tooltip(), null, 'hidden tooltips are absent, not transparent overflow descendants')
-    focus()
-    assert.equal(tooltip().parentElement, document.body)
-    assert.equal(tooltip().textContent, button.getAttribute('aria-label'))
-    assert.equal(button.getAttribute('aria-describedby'), tooltip().id)
-    act(() => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' })))
-    assert.equal(tooltip(), null)
-    assert.equal(document.activeElement, button, 'Escape preserves keyboard focus')
-    for (const [target, event] of [[window, 'resize'], [viewport, 'resize'], [viewport, 'scroll']]) {
-      blur(); focus(); assert.ok(tooltip())
-      act(() => target.dispatchEvent(new window.Event(event)))
-      assert.equal(tooltip(), null, `${event} dismisses stale anchor`)
-    }
-    blur()
-    act(() => button.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })))
-    assert.ok(tooltip())
-    act(() => button.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true })))
-    assert.equal(tooltip(), null)
-    focus()
-    act(() => button.click())
-    assert.equal(tooltip(), null)
+    assert.equal(document.querySelector('[role="tooltip"]'), null, 'no hover tooltips rendered')
+    const homeBtn = document.querySelector('button[aria-label="GTAR home"]')
+    assert.ok(homeBtn, 'GTAR home button has accessible name')
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
   }

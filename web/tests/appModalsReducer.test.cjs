@@ -48,11 +48,13 @@ test('hook: lazy initial state, independent modals, stable setters across render
 
 test('App declares every modal through the reducer, not separate useState calls', () => {
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
-  for (const name of ['WebsiteUrlModal', 'ImportModal', 'StageSettingsModal', 'StageToolsModal', 'ThemeModal', 'HeaderKeyPicker', 'SetlistDrawer', 'TvPresentationModal']) {
+  for (const name of ['WebsiteUrlModal', 'ImportModal', 'StageToolsModal', 'ThemeModal', 'HeaderKeyPicker', 'SetlistDrawer', 'TvPresentationModal']) {
     assert.match(app, new RegExp(`const \\[is${name}Open, setIs${name}Open\\] = modals\\.`), name)
   }
   // #299: Backup & Restore is the header's center (opened by event), not an App modal.
   assert.doesNotMatch(app, /isBackupRestoreModalOpen/)
   // #304: the JSON Bridge modal is gone.
   assert.doesNotMatch(app, /isJsonModalOpen/)
+  // #359: Stage Settings modal wiring removed (duplicated in Stage Options).
+  assert.doesNotMatch(app, /isStageSettingsModalOpen/)
 })

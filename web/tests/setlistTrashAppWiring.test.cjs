@@ -82,14 +82,14 @@ async function deleteSetlist() {
   await click($$('[role="alertdialog"] button').find(b => b.textContent === 'Delete'))
   await click($('[aria-label="Close Setlist Manager"]'))
 }
-async function openTrash() { await click($('button[aria-label^="Trash"]')) }
+async function openTrash() { await click($('[data-testid="explorer-nav-trash"]') || $('button[aria-label^="Trash"]')) }
 
 test('delete a setlist: real App lists it in Trash with type, name, entry count and header total', async () => {
   await mountApp('http://localhost/')
   await deleteSetlist()
   assert.equal(stored().setlists[0].isDeleted, true)
   assert.equal(header.deletedSongsCount, 1)
-  assert.ok($('[aria-label="Trash (1)"]'))
+  assert.ok($('[aria-label="Trash Bin (1)"]'))
   await openTrash()
   assert.match(document.body.textContent, /Sunday AM/)
   assert.match(document.body.textContent, /Setlist/)

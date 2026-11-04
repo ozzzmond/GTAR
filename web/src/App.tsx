@@ -68,8 +68,7 @@ import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
 import type { SharedSetlistPayload } from './utils/sharedSetlist'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
-import { openBackupCenter } from './utils/backupCenter'
-import { StageSettingsModal, type SongFontStyleOption } from './components/StageSettingsModal'
+import type { SongFontStyleOption } from './components/StageSettingsModal'
 import { StageErrorBoundary } from './components/StageErrorBoundary'
 import {
   ThemeModal,
@@ -86,7 +85,6 @@ import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
-import { exportAllDataJson } from './utils/jsonBackup'
 import { isDevEnv } from './utils/env'
 import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
 
@@ -506,7 +504,6 @@ function LibraryApp() {
   // Stays mounted after first open so the dialog keeps its state across opens, as before.
   const [importDialogMounted, setImportDialogMounted] = useState(false)
   if (isImportModalOpen && !importDialogMounted) setImportDialogMounted(true)
-  const [isStageSettingsModalOpen, setIsStageSettingsModalOpen] = modals.stageSettings
   const [isStageToolsModalOpen, setIsStageToolsModalOpen] = modals.stageTools
   const [isThemeModalOpen, setIsThemeModalOpen] = modals.theme
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = modals.headerKeyPicker
@@ -1663,14 +1660,13 @@ function LibraryApp() {
           onOpenWebsiteUrlSource={() => setIsWebsiteUrlModalOpen(true)}
           onOpenStageTools={() => setIsStageToolsModalOpen(true)}
           onToggleTheme={() => setIsThemeModalOpen(true)}
-          onOpenStageSettings={() => setIsStageSettingsModalOpen(true)}
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}
           onOverlayChange={setIsHeaderOverlayOpen}
           onOpenSetlistDrawer={() => navigateSafely(() => { setIsSetlistDrawerOpen(true) })}
           isExplorerOpen={isSetlistDrawerOpen}
-          shortcutsBlocked={isSetlistDrawerOpen || isSetlistManagerOpen || isImportModalOpen || isStageSettingsModalOpen || isStageToolsModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen}
+          shortcutsBlocked={isSetlistDrawerOpen || isSetlistManagerOpen || isImportModalOpen || isStageToolsModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
           activeSetlistName={activeSetlist?.name}
@@ -1769,6 +1765,9 @@ function LibraryApp() {
           onSelect={handleExplorerSelect}
           onNewSong={() => navigateSafely(handleNewSong)}
           onNewSetlist={() => navigateSafely(handleNewSetlist)}
+          deletedSongsCount={deletedSongs.length + deletedSetlists.length}
+          isTrashActive={activeView === 'trash'}
+          onOpenTrash={() => navigateSafely(() => setActiveView('trash'))}
         />
       <main className="flex-1 min-w-0 flex overflow-hidden">
         {activeView === 'songbook' ? (
@@ -1864,10 +1863,8 @@ function LibraryApp() {
                   : () => navigateSafely(() => { setIsSetlistDrawerOpen(true) })
               }
               isSetlistDrawerOpen={isSetlistDrawerOpen}
-              isStageSettingsModalOpen={isStageSettingsModalOpen}
               isAnyModalOpen={
                 isSetlistDrawerOpen ||
-                isStageSettingsModalOpen ||
                 isStageToolsModalOpen ||
                 isThemeModalOpen ||
                 isWebsiteUrlModalOpen ||
@@ -1926,29 +1923,6 @@ function LibraryApp() {
         existingSongs={[...songs, ...deletedSongs]}
         existingSetlists={setlists}
       /></Suspense>}
-
-      {/* Stage Settings Modal */}
-      <StageSettingsModal
-        isOpen={isStageSettingsModalOpen}
-        onClose={() => setIsStageSettingsModalOpen(false)}
-        fontStyle={fontStyle}
-        onSelectFontStyle={setFontStyle}
-        isTwoColumn={isTwoColumn}
-        onToggleTwoColumn={setIsTwoColumn}
-        onOpenStageTools={() => {
-          setIsStageSettingsModalOpen(false)
-          setIsStageToolsModalOpen(true)
-        }}
-        onToggleTheme={() => {
-          setIsStageSettingsModalOpen(false)
-          setIsThemeModalOpen(true)
-        }}
-        onExportAllData={() => exportAllDataJson([...songs, ...deletedSongs], setlists, folders, tagColors)}
-        onOpenBackupRestoreModal={() => {
-          setIsStageSettingsModalOpen(false)
-          openBackupCenter()
-        }}
-      />
 
       {/* Stage Tools & Band Sync Modal */}
       <BandSyncModal
