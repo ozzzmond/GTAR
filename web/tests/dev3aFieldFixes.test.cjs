@@ -96,7 +96,7 @@ test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin (Basurahan) removed from More menu
   assert.equal(trashNavMatches?.length, 1, "Exactly one onViewChange('trash') call remains in Header")
 
   // Primary toolbar must retain dedicated Trash button
-  assert.ok(headerSource.includes('label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : \'\'} (Alt+6)`}'), 'Dedicated primary Trash button preserved')
+  assert.ok(headerSource.includes('label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : \'\'}`}'), 'Dedicated primary Trash button preserved')
   assert.ok(headerSource.includes("isActive={activeView === 'trash'}"), 'Primary Trash button tracks active view')
 })
 

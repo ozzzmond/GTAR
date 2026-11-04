@@ -255,7 +255,7 @@ test('MANAGER_LAYOUT: header bar, name + Rename, Delete, Play in Stage, picker b
   assert.ok($('[data-testid="setlist-manager-header"]'))
   assert.match($('[data-testid="setlist-manager-name"]').textContent, /Sunday AM/)
   for (const label of ['Rename', 'Delete Setlist', 'Play Setlist in Stage', 'Search Multi-Songs', '+ Add Shortcut']) assert.ok(button(label), label)
-  assert.equal(button('Search Multi-Songs').getAttribute('aria-keyshortcuts'), 'Control+K Alt+S')
+  assert.equal(button('Search Multi-Songs').getAttribute('aria-keyshortcuts'), 'Control+K')
   assert.ok($('[data-testid="setlist-manager-shortcut-select"]'))
   assert.doesNotMatch(dialog.textContent, /Folder/)
   const rows = $$('[data-testid^="setlist-manager-entry-"]').filter(el => /entry-\d+$/.test(el.dataset.testid))
@@ -321,7 +321,7 @@ test('MANAGER_PICKER: picker adds N songs in one call and reports success', asyn
   assert.match($('[data-testid="setlist-manager-status"]').textContent, /Added 2 songs/)
 })
 
-test('MANAGER_SHORTCUT: Ctrl+K / Alt+S open the picker except while typing, blocked (Stage) or another dialog is open', async () => {
+test('MANAGER_SHORTCUT: Ctrl+K opens the picker except while typing, blocked (Stage) or another dialog is open', async () => {
   const { props } = managerProps()
   await mount(SetlistManager, props)
   const picker = () => $('[aria-label="Multi-song search picker"]')
@@ -330,7 +330,9 @@ test('MANAGER_SHORTCUT: Ctrl+K / Alt+S open the picker except while typing, bloc
   await key($('#multi-song-search-input'), { key: 'Escape' })
   assert.equal(picker(), null)
   await key(window, { key: 's', altKey: true })
-  assert.ok(picker(), 'Alt+S opens')
+  assert.equal(picker(), null, 'Alt+S no longer opens the picker')
+  await key(window, { key: 'k', ctrlKey: true })
+  assert.ok(picker(), 'Ctrl+K reopens')
   await click($('[aria-label^="Close search picker"]'))
   await click(button('Rename'))
   await key($('[data-testid="setlist-manager-rename-input"]'), { key: 'k', ctrlKey: true })

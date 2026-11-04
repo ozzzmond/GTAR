@@ -1427,64 +1427,6 @@ function LibraryApp() {
     setIsSetlistDrawerOpen(false)
   }, [setIsSetlistDrawerOpen])
 
-  // Desktop Global Navigation Shortcuts (Alt+1..6, Alt+0/H)
-  useEffect(() => {
-    const isEditable = (el: EventTarget | null): boolean => {
-      if (!el || !(el instanceof HTMLElement)) return false
-      const tagName = el.tagName.toLowerCase()
-      return (
-        tagName === 'input' ||
-        tagName === 'textarea' ||
-        tagName === 'select' ||
-        el.isContentEditable ||
-        el.getAttribute('contenteditable') === 'true'
-      )
-    }
-
-    const handleGlobalNavShortcuts = (e: KeyboardEvent) => {
-      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
-      if (isEditable(e.target)) return
-
-      switch (e.key) {
-        case '1':
-          e.preventDefault()
-          navigateSafely(() => setActiveView('stage'))
-          break
-        case '2':
-          e.preventDefault()
-          navigateSafely(() => setActiveView('editor'))
-          break
-        case '3':
-          e.preventDefault()
-          setIsStageToolsModalOpen(true)
-          break
-        case '4':
-          e.preventDefault()
-          void handleTogglePresentation()
-          break
-        case '5':
-          e.preventDefault()
-          setIsThemeModalOpen(true)
-          break
-        case '6':
-          e.preventDefault()
-          navigateSafely(() => setActiveView('trash'))
-          break
-        case '0':
-        case 'h':
-        case 'H':
-          e.preventDefault()
-          navigateSafely(handleNavigateHome)
-          break
-        default:
-          break
-      }
-    }
-
-    window.addEventListener('keydown', handleGlobalNavShortcuts)
-    return () => window.removeEventListener('keydown', handleGlobalNavShortcuts)
-  }, [handleTogglePresentation, handleNavigateHome, setIsStageToolsModalOpen, setIsThemeModalOpen])
-
   // Update song fields in editor
   const handleUpdateSong = (updated: Partial<ActiveSongState>) => {
     const targetId = updated.id ?? currentSong?.id

@@ -152,14 +152,13 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
     return ok
   }
 
-  // Scoped shortcut: Ctrl+K / Alt+S toggles the picker. Ignored while typing elsewhere, while
+  // Scoped shortcut: Ctrl+K toggles the picker. Ignored while typing elsewhere, while
   // Stage is active (shortcutsBlocked), and while any other dialog is open.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
       const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && key === 'k'
-      const altS = e.altKey && !e.ctrlKey && !e.metaKey && key === 's'
-      if ((!ctrlK && !altS) || !current || shortcutsBlocked || confirmDelete) return
+      if (!ctrlK || !current || shortcutsBlocked || confirmDelete) return
       const target = e.target as HTMLElement | null
       if (isTyping(target) && target?.id !== 'multi-song-search-input') return
       const otherDialog = [...document.querySelectorAll('[aria-modal="true"]')].some(el =>
@@ -300,7 +299,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                   type="button"
                   onClick={() => setIsPickerOpen(open => !open)}
                   aria-expanded={isPickerOpen}
-                  aria-keyshortcuts="Control+K Alt+S"
+                  aria-keyshortcuts="Control+K"
                   className={primaryButton}
                 >
                   <Search className="w-4 h-4" aria-hidden="true" />
