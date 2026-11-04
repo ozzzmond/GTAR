@@ -49,12 +49,15 @@ async function mountHeader(options) {
 }
 
 test('profile menu: "Manage Users", no Backup & Restore entry; header cloud button opens the center', async () => {
-  const { root, popover } = await mountHeader({ dev: false, auth: signedIn })
+  const { root, popover } = await mountHeader({ dev: false, auth: { ...signedIn, accessStatus: 'active' } })
   try {
     assert.ok(buttonTexts(popover).includes('Manage Users'))
     assert.doesNotMatch(popover.textContent, /Whitelist|Backup & Restore/)
     const cloud = document.querySelector('[data-testid="header-cloud-sync-button"]')
-    assert.match(cloud.getAttribute('aria-label'), /^Backup & Restore.*Last cloud backup|^Backup & Restore.*No cloud backup yet/)
+    assert.equal(cloud.dataset.status, 'unknown', 'active account has no verified cloud metadata yet')
+    assert.equal(cloud.getAttribute('aria-label'), 'Backup & Restore \u2014 Backup status unknown. Open to verify cloud backup')
+    assert.equal(cloud.getAttribute('title'), cloud.getAttribute('aria-label'))
+    assert.equal(cloud.textContent, '', 'status remains accessible in the icon-only layout')
     assert.equal(center.isOpen, false)
     await act(async () => cloud.click())
     assert.equal(center.isOpen, true)

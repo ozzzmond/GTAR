@@ -2,8 +2,8 @@ import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { openRecoveryData } from '../utils/recoveryReview'
 import { SyncStatusPill } from './SyncStatusPill'
-import { computeSongbookChecksum } from '../utils/cloudBackupFormat'
-import { readPersistedLibrary } from '../utils/syncJournal'
+import { useCloudBackupBadge } from '../utils/cloudBackupBadge'
+import { cloudBackupStatus } from '../utils/syncStatus'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { SearchResults } from './SearchResults'
@@ -206,26 +206,6 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener(OPEN_BACKUP_CENTER_EVENT, open)
     return () => window.removeEventListener(OPEN_BACKUP_CENTER_EVENT, open)
   }, [])
-  const [backupDates, setBackupDates] = useState<Record<string, string | null>>(() => {
-    try {
-      const value = JSON.parse(localStorage.getItem('gtar_manual_cloud_backup_dates') || '{}')
-      return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-    } catch { return {} }
-  })
-  const [backupChecksums, setBackupChecksums] = useState<Record<string, string | null>>(() => {
-    try { return JSON.parse(localStorage.getItem('gtar_manual_cloud_backup_checksums') || '{}') || {} } catch { return {} }
-  })
-  const [libraryVersion, setLibraryVersion] = useState(0)
-  useEffect(() => {
-    const refresh = () => setLibraryVersion(v => v + 1)
-    window.addEventListener('gtar-library-persisted', refresh)
-    window.addEventListener('storage', refresh)
-    return () => { window.removeEventListener('gtar-library-persisted', refresh); window.removeEventListener('storage', refresh) }
-  }, [])
-  const localChecksum = useMemo(() => {
-    try { const library = readPersistedLibrary(); return library ? computeSongbookChecksum(library) : null } catch { return null }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Persistence events re-read the committed library, including trash.
-  }, [libraryVersion])
   const [backupClock, setBackupClock] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setBackupClock(Date.now()), 60000)
@@ -252,6 +232,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Retrieve user role & auth state from AuthGate context
   let isSuperAdmin = false
+  let backupAccessActive = false
   let currentSession: GoogleSession | null = null
   let handleSignOut: (() => void) | undefined
   let handleSignIn: (() => Promise<void>) | undefined
@@ -259,23 +240,18 @@ export const Header: React.FC<HeaderProps> = ({
     const auth = useGoogleAuth()
     isSuperAdmin = auth.isSuperAdmin
     currentSession = auth.session
+    backupAccessActive = auth.accessStatus === 'active'
     handleSignOut = auth.signOut
     handleSignIn = auth.signIn
   } catch {
     // Header rendered outside AuthGate (e.g. isolated test or preview)
   }
 
-  const backupUserId = String(currentSession?.user?.id || '')
-  const cachedBackupDate = backupDates[backupUserId]
-  const lastCloudBackup = typeof cachedBackupDate === 'string' && Number.isFinite(Date.parse(cachedBackupDate)) ? cachedBackupDate : null
-  const setLastCloudBackup = (date: string | null, checksum?: string | null) => {
-    const checksums = { ...backupChecksums, [backupUserId]: checksum ?? null }
-    setBackupChecksums(checksums)
-    try { localStorage.setItem('gtar_manual_cloud_backup_checksums', JSON.stringify(checksums)) } catch { /* Optional device status. */ }
-    const next = { ...backupDates, [backupUserId]: date }
-    setBackupDates(next)
-    try { localStorage.setItem('gtar_manual_cloud_backup_dates', JSON.stringify(next)) } catch { /* Summary caching is optional. */ }
-  }
+  const backupToken = currentSession?.sessionToken || currentSession?.idToken || currentSession?.token || ''
+  const backupSignedIn = Boolean(backupAccessActive && backupToken && currentSession?.user?.id)
+  const backupSessionKey = backupSignedIn ? `${currentSession?.user?.id}:${backupToken}` : ''
+  const { record: cloudBackup, matches: backupMatches, onBackupSummary } = useCloudBackupBadge(backupSessionKey, showCloudSyncModal)
+  const backupStatus = cloudBackupStatus(backupSignedIn, cloudBackup, backupMatches)
 
   // #299 / #264: developer tools, DEV builds only (never rendered in PROD).
   const advancedItem = 'relative w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-accent/50 ui-primary-text text-app-heading hover:text-app-action text-xs font-bold flex items-center gap-2 border border-app-border transition-all cursor-pointer mb-2'
@@ -695,8 +671,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
-          <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
-            backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
+          <SyncStatusPill status={backupStatus} lastBackup={cloudBackup?.updatedAt ?? null} now={backupClock}
             recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
 
           {deferredInstallPrompt && !isAppInstalled && !compact && (
@@ -996,7 +971,7 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={showCloudSyncModal}
         onClose={() => setShowCloudSyncModal(false)}
         onSyncApplied={onCloudSyncApplied}
-        onBackupSummary={setLastCloudBackup}
+        onBackupSummary={onBackupSummary}
         restoreBlocked={autoSyncBlocked}
         deviceSongs={backupSongs}
         deviceSetlists={backupSongs ? setlists : undefined}

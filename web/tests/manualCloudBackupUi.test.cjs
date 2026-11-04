@@ -340,3 +340,148 @@ test('integrity failure never enables restore or posts; one sanitized modal ERRO
   assert.equal(appLogger.getLogs().filter(e=>e.tag==='CloudBackupFailure').length,2)
  } finally {await act(async()=>root.unmount())}
 })
+
+// #368: exercise parity through the real Header -> verified modal response -> badge.
+async function badgeSetup({legacy=false}={}) {
+ const initial=await setup(true,{device:local});await act(async()=>initial.root.unmount())
+ window.matchMedia=()=>({matches:false})
+ const {captureCloudBackup}=require('../src/utils/manualCloudBackup.ts')
+ const data=legacy?readPersistedLibrary():captureCloudBackup(readPersistedLibrary())
+ const record={userId:'B',version:1,updatedAt:'2026-11-05T00:00:00Z',data,checksum:computeSongbookChecksum(data)}
+ global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:record}))
+ const {Header}=require('../src/components/Header.tsx')
+ const root=createRoot(document.getElementById('root'));const noop=()=>{}
+ const props={activeView:'songbook',song:local.songs[0],searchQuery:'',onViewChange:noop,onSearchQueryChange:noop,
+  onOpenWebsiteUrlSource:noop,onOpenStageTools:noop,onToggleTheme:noop,onOpenStageSettings:noop,onOpenImportModal:noop}
+ const render=async()=>act(async()=>root.render(React.createElement(Header,props)))
+ const badge=()=>document.querySelector('[data-testid="header-cloud-sync-button"]')
+ const open=async()=>act(async()=>{badge().click();await new Promise(r=>setTimeout(r,5))})
+ const close=async()=>act(async()=>document.querySelector('[data-testid="cloud-sync-close-button"]').click())
+ await render()
+ return {root,render,badge,open,close,record}
+}
+
+test('#368 verified matching settings-v2 backup reports Backed up through Header',async()=>{
+ const h=await badgeSetup()
+ try {
+  await h.open()
+  assert.equal(h.badge().dataset.status,'backed-up')
+  assert.match(h.badge().getAttribute('aria-label'),/Backed up/)
+  assert.equal(h.badge().getAttribute('title'),h.badge().getAttribute('aria-label'))
+  assert.equal(h.badge().textContent,'','icon-only layout retained')
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+
+test('#368 signed-out, unknown cached metadata and verified missing backup stay distinct',async()=>{
+ const h=await badgeSetup()
+ try {
+  localStorage.setItem('gtar_manual_cloud_backup_dates',JSON.stringify({B:h.record.updatedAt}))
+  localStorage.setItem('gtar_manual_cloud_backup_checksums',JSON.stringify({B:h.record.checksum}))
+  await h.render()
+  assert.equal(h.badge().dataset.status,'unknown','cached presence cannot confirm parity')
+  assert.match(h.badge().title,/Backup status unknown/)
+  assert.doesNotMatch(h.badge().title,/No cloud backup yet/)
+  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:null}))
+  await h.open()
+  assert.equal(h.badge().dataset.status,'no-backup')
+  assert.match(h.badge().title,/No cloud backup/)
+  await h.close()
+  auth.useOptionalGoogleAuth=()=>({session:null,accessStatus:'active'})
+  await h.render()
+  assert.equal(h.badge().dataset.status,'signed-out')
+  assert.match(h.badge().title,/Not signed in/)
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+test('#368 persisted song, setlist, trash, folder and tag-colour changes invalidate settings-v2 parity',async()=>{
+ const h=await badgeSetup()
+ try {
+  await h.open();await h.close()
+  const original=readPersistedLibrary()
+  const mutations=[
+   {...original,songs:[{...original.songs[0],rawContent:'changed'}]},
+   {...original,setlists:[{id:'new-set',name:'New set',songs:[]}]},
+   {...original,songs:[{...original.songs[0],isDeleted:true}]},
+   {...original,folders:[{id:'folder',name:'Folder',parentId:null}]},
+   {...original,tagColors:{worship:'#123456'}},
+  ]
+  for(const changed of mutations){
+   await act(async()=>persistLibrary(changed,localStorage))
+   assert.equal(h.badge().dataset.status,'not-backed-up')
+   await act(async()=>persistLibrary(original,localStorage))
+   assert.equal(h.badge().dataset.status,'backed-up')
+  }
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+test('#368 settings-only changes refresh on notification and Backup center close without a storage event',async()=>{
+ const h=await badgeSetup()
+ const {SETTINGS_CHANGED}=require('../src/utils/backupSettings.ts')
+ try {
+  await h.open();await h.close()
+  await act(async()=>{localStorage.setItem('gtar_tv_font_size','44');window.dispatchEvent(new window.Event(SETTINGS_CHANGED))})
+  assert.equal(h.badge().dataset.status,'not-backed-up')
+  await act(async()=>{localStorage.removeItem('gtar_tv_font_size');window.dispatchEvent(new window.Event(SETTINGS_CHANGED))})
+  assert.equal(h.badge().dataset.status,'backed-up')
+  await h.open()
+  localStorage.setItem('gtar_songbook_sort','artist')
+  await h.close()
+  assert.equal(h.badge().dataset.status,'not-backed-up','close re-reads old same-tab settings writers')
+  await act(async()=>{localStorage.removeItem('gtar_songbook_sort');window.dispatchEvent(new window.StorageEvent('storage',{key:'gtar_songbook_sort'}))})
+  assert.equal(h.badge().dataset.status,'backed-up')
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+test('#368 verified legacy checksum remains compatible and detects library changes',async()=>{
+ const h=await badgeSetup({legacy:true})
+ try {
+  await h.open();await h.close()
+  assert.equal(h.badge().dataset.status,'backed-up')
+  await act(async()=>persistLibrary({...local,songs:[{...local.songs[0],title:'Changed title'}]},localStorage))
+  assert.equal(h.badge().dataset.status,'not-backed-up')
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+test('#368 A -> B -> A and logout reject delayed proof from every former session',async()=>{
+ const h=await badgeSetup();let account='A';const pending=[]
+ auth.useOptionalGoogleAuth=()=>({session:account?{token:account,user:{id:account,email:`${account}@example.com`}}:null,accessStatus:'active'})
+ global.fetch=async()=>new Promise(resolve=>pending.push(resolve))
+ const response=id=>new Response(JSON.stringify({success:true,cloudRecord:{...h.record,userId:id}}))
+ try {
+  await h.render();await h.open()
+  account='B';await h.render()
+  account='A';await h.render()
+  assert.equal(pending.length,3)
+  await act(async()=>{pending[0](response('A'));pending[1](response('B'));await new Promise(r=>setTimeout(r,5))})
+  assert.equal(h.badge().dataset.status,'unknown','old A cannot become current after A -> B -> A')
+  await act(async()=>{pending[2](response('A'));await new Promise(r=>setTimeout(r,5))})
+  assert.equal(h.badge().dataset.status,'backed-up')
+  await h.close();await h.open()
+  account='';await h.render()
+  await act(async()=>{pending[3](response('A'));await new Promise(r=>setTimeout(r,5))})
+  assert.equal(h.badge().dataset.status,'signed-out')
+  account='A';await h.render()
+  assert.equal(h.badge().dataset.status,'unknown','returning account needs new verification')
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+test('#368 failed revalidation and cache/session invalidation never leave confirmed parity',async()=>{
+ const h=await badgeSetup()
+ try {
+  await h.open();await h.close()
+  assert.equal(h.badge().dataset.status,'backed-up')
+  await act(async()=>window.dispatchEvent(new window.StorageEvent('storage',{key:'gtar_manual_cloud_backup_checksums'})))
+  assert.equal(h.badge().dataset.status,'unknown')
+  await h.open();await h.close()
+  assert.equal(h.badge().dataset.status,'backed-up')
+  global.fetch=async()=>new Response(JSON.stringify({success:false}),{status:500})
+  await h.open()
+  assert.equal(h.badge().dataset.status,'unknown')
+  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:h.record}))
+  await click('Retry cloud read')
+  assert.equal(h.badge().dataset.status,'backed-up')
+  await act(async()=>window.dispatchEvent(new window.StorageEvent('storage',{key:'gtar_auth_session'})))
+  assert.equal(h.badge().dataset.status,'unknown')
+ } finally {await act(async()=>h.root.unmount())}
+})

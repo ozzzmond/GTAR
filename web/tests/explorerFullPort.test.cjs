@@ -101,7 +101,7 @@ test('windowed song grid uses workspace tracks instead of viewport breakpoints',
 test('cloud button announces backup time accessibly, shows status badges and opens Backup & Restore', async () => ui(async ({ render, click }) => {
   const { SyncStatusPill } = require('../src/components/SyncStatusPill.tsx')
   let opened = 0
-  const props = { signedIn: true, lastBackup: '2026-11-02T00:00:00Z', backupChecksum: 'saved', localChecksum: 'saved',
+  const props = { status: { state: 'backed-up', label: 'Backed up' }, lastBackup: '2026-11-02T00:00:00Z',
     now: Date.parse('2026-11-02T08:00:00Z'), onClick: () => opened++, recoveryAttention: true }
   await render(SyncStatusPill, props)
   const button = () => document.querySelector('[data-testid="header-cloud-sync-button"]')
@@ -111,12 +111,12 @@ test('cloud button announces backup time accessibly, shows status badges and ope
   assert.doesNotMatch(button().textContent, /ago|Last cloud/)
   assert.ok(button().querySelector('[data-testid="cloud-recovery-dot"]'))
   await click(button()); assert.equal(opened, 1)
-  await render(SyncStatusPill, { ...props, localChecksum: 'changed' })
+  await render(SyncStatusPill, { ...props, status: { state: 'not-backed-up', label: 'Not backed up' } })
   assert.equal(button().dataset.status, 'not-backed-up')
   assert.ok(button().querySelector('.lucide-circle-alert'))
-  await render(SyncStatusPill, { ...props, lastBackup: null, backupChecksum: null })
-  assert.equal(button().dataset.status, 'not-backed-up')
-  await render(SyncStatusPill, { ...props, signedIn: false })
+  await render(SyncStatusPill, { ...props, status: { state: 'unknown', label: 'Backup status unknown' }, lastBackup: null })
+  assert.equal(button().dataset.status, 'unknown')
+  await render(SyncStatusPill, { ...props, status: { state: 'signed-out', label: 'Not signed in' } })
   assert.equal(button().dataset.status, 'signed-out')
   assert.ok(button().querySelector('.lucide-ban'))
 }))
@@ -217,7 +217,7 @@ test('Header reads existing backup metadata, tracks local edits without requests
   const button = () => document.querySelector('[data-testid="header-cloud-sync-button"]')
   try {
     await renderAccount('A')
-    assert.equal(button().dataset.status, 'not-backed-up')
+    assert.equal(button().dataset.status, 'unknown')
     assert.deepEqual(requests, [], 'header status itself never reads the network')
     await click(button())
     assert.deepEqual(requests, [['/api/songbook/sync', 'GET']], 'only the existing dialog fetch runs')
@@ -227,7 +227,7 @@ test('Header reads existing backup metadata, tracks local edits without requests
     assert.equal(button().dataset.status, 'not-backed-up')
     assert.equal(requests.length, 1, 'local edits do not fetch or auto-backup')
     await renderAccount('B')
-    assert.equal(button().dataset.status, 'not-backed-up', 'another account cannot inherit the backup')
+    assert.equal(button().dataset.status, 'unknown', 'another account cannot inherit the backup')
     await renderAccount(null)
     assert.equal(button().dataset.status, 'signed-out')
     assert.equal(requests.length, 1)

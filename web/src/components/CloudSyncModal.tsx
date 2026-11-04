@@ -25,7 +25,7 @@ interface CloudSyncModalProps {
   onClose: () => void
   restoreBlocked?: boolean
   onSyncApplied?: (library: SyncLibrary) => void
-  onBackupSummary?: (date: string | null, checksum?: string | null) => void
+  onBackupSummary?: (record: CloudSongbookRecord | null | undefined) => void
   onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
   /** App library (songs including trash) for the file card; read from device storage when omitted. */
@@ -98,7 +98,7 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
     const changed = (event: StorageEvent) => {
       if (event.key !== null && event.key !== SESSION_STORAGE_KEY && event.key !== LEGACY_STORAGE_KEY) return
       identity.current = ''; setCloud(null); setPreview(null); setReady(false); setBusy(false)
-      setMessageText('Account session changed; reopen Backup & Restore.'); summaryCallback.current?.(null, null)
+      setMessageText('Account session changed; reopen Backup & Restore.'); summaryCallback.current?.(undefined)
     }
     window.addEventListener('storage', changed)
     return () => { identity.current = ''; window.removeEventListener('storage', changed) }
@@ -107,14 +107,14 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
     let active = true
     if (!isOpen) return
     const trigger = document.activeElement as HTMLElement | null
-    void Promise.resolve().then(() => { if (active) { setCloud(null); setPreview(null); setBusy(false); setReady(false); setReadFailed(false); setMessageText(''); summaryCallback.current?.(null, null) } })
+    void Promise.resolve().then(() => { if (active) { setCloud(null); setPreview(null); setBusy(false); setReady(false); setReadFailed(false); setMessageText(''); summaryCallback.current?.(undefined) } })
     if (signedIn) {
       readCloudBackup({ token, userId, isCurrent: () => active && identity.current === `${userId}:${token}` }).then(record => {
         if (!active) return
-        setCloud(record); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
-      }).catch(error => { if (active) { setCloud(null); setReady(true); setReadFailed(true); setMessageText(error instanceof Error ? error.message : 'Could not read cloud backup. Retry.'); setMessageTone('error') } })
+        setCloud(record); setReady(true); summaryCallback.current?.(record)
+      }).catch(error => { if (active) { setCloud(null); setReady(true); setReadFailed(true); setMessageText(error instanceof Error ? error.message : 'Could not read cloud backup. Retry.'); setMessageTone('error'); summaryCallback.current?.(undefined) } })
     }
-    return () => { active = false; trigger?.focus?.() }
+    return () => { active = false; trigger?.focus?.({ preventScroll: true }) }
   }, [isOpen, signedIn, token, userId, readAttempt])
   const locked = busy || fileBusy
   useEffect(() => {
@@ -134,7 +134,7 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
       if (identity.current === captured) {
         setPreview(null)
         if (error instanceof CloudBackupFailure && !(error instanceof CloudBackupChanged)) {
-          setCloud(null); setReadFailed(true); setReady(true); summaryCallback.current?.(null, null)
+          setCloud(null); setReadFailed(true); setReady(true); summaryCallback.current?.(undefined)
         }
         setMessage(error instanceof Error ? error.message : 'Cloud operation failed. Retry.')
       }
@@ -146,7 +146,7 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
     const captured = identity.current
     const record = await readCloudBackup(account)
     if (identity.current !== captured) throw new Error('Account changed; open the dialog again.')
-    setCloud(record); setReadFailed(false); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
+    setCloud(record); setReadFailed(false); setReady(true); summaryCallback.current?.(record)
     if (kind === 'restore' && !record) throw new Error('No cloud backup yet')
     const device = readPersistedLibrary()
     if (!device) throw new Error('Device library could not be read')
@@ -169,13 +169,13 @@ const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
       try {
         const record = await writeCloudBackup(account, preview.upload, preview.cloud)
         if (identity.current !== captured) return
-        setCloud(record); summaryCallback.current?.(record.updatedAt, record.checksum); setPreview(null); setMessage('Cloud backup saved and checksum verified.', 'success')
+        setCloud(record); summaryCallback.current?.(record); setPreview(null); setMessage('Cloud backup saved and checksum verified.', 'success')
       } catch (error) {
         if (identity.current !== captured) throw error
         setPreview(null)
         if (error instanceof CloudBackupChanged) {
           const record = await readCloudBackup(account)
-          if (identity.current === captured) { setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null) }
+          if (identity.current === captured) { setCloud(record); summaryCallback.current?.(record) }
         }
         throw error
       }
