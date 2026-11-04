@@ -11,6 +11,7 @@ interface Props {
   onSetlist: (setlistId: Id, ids: Id[]) => unknown
   onFolder: (id: Id, folderId: string | null) => unknown
   onTrash: (ids: Id[]) => void
+  onTrashSetlist?: (id: Id) => void
   onTouchDrag: () => void
   onDropComplete?: () => void
 }
@@ -81,6 +82,10 @@ export function ExplorerDragDrop(props: Props) {
         if (element.dataset.explorerDropTag !== undefined) return element
         if (element.dataset.explorerDropTrash !== undefined) return element
         if (setlists.some(sl => !sl.isDeleted && String(sl.id) === element.dataset.explorerDropSetlist)) return element
+      } else if (element.dataset.explorerDropTrash !== undefined && current.current.onTrashSetlist) {
+        const id = payload.id
+        if (!setlists.some(sl => !sl.isDeleted && String(sl.id) === String(id))) return null
+        return element
       } else if (element.dataset.explorerDropFolder !== undefined) {
         const folderId = element.dataset.explorerDropFolder
         if (!folderId || folders.some(folder => folder.id === folderId)) return element
@@ -140,7 +145,8 @@ export function ExplorerDragDrop(props: Props) {
         const setlist = handlers.setlists.find(sl => !sl.isDeleted && String(sl.id) === String(data.id))
         const folderId = accepted.dataset.explorerDropFolder || null
         if (!setlist) return
-        if ((setlist.folderId ?? null) !== folderId) result = handlers.onFolder(setlist.id, folderId)
+        if (accepted.dataset.explorerDropTrash !== undefined) handlers.onTrashSetlist?.(setlist.id)
+        else if ((setlist.folderId ?? null) !== folderId) result = handlers.onFolder(setlist.id, folderId)
       }
       if (result !== false) handlers.onDropComplete?.()
     }

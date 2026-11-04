@@ -27,6 +27,7 @@ export interface SetlistWorkspaceProps {
   onOpenSong?: (libraryIndex: number) => void
   /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
+  onRequestTrashSetlist?: (id: string | number) => void
   onDeleteSetlist?: (setlistId: string | number) => boolean
   onNewSetlist?: () => void
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
@@ -83,6 +84,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onOpenSong,
   onManageSetlist,
   onDeleteSetlist,
+  onRequestTrashSetlist,
   onNewSetlist,
   menu,
 }) => {
@@ -91,9 +93,12 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const openSetlist = useMemo(
-    () => (openSetlistId === null ? null : setlists.find(sl => String(sl.id) === String(openSetlistId)) || null),
+    () => (openSetlistId === null ? null : setlists.find(sl => !sl.isDeleted && String(sl.id) === String(openSetlistId)) || null),
     [openSetlistId, setlists]
   )
+  if (openSetlistId !== null && !openSetlist) {
+    setOpenSetlistId(null)
+  }
   const songIndex = useMemo(() => songIdIndex(songs), [songs])
 
   // Missing or trashed songs stay visible for context but cannot be played or opened.
@@ -250,11 +255,26 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               {menu?.onShareSetlist && (
                 <button
                   type="button"
+                  data-testid="workspace-share-setlist"
                   aria-label="Share Setlist"
                   onClick={() => menu.onShareSetlist?.(openSetlist)}
                   className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center cursor-pointer shrink-0"
                 >
                   <QrCode className="w-4 h-4" aria-hidden="true" />
+                </button>
+              )}
+              {(onRequestTrashSetlist || onDeleteSetlist) && (
+                <button
+                  type="button"
+                  data-testid="workspace-delete-setlist"
+                  aria-label={`Move setlist ${openSetlist.name} to Trash`}
+                  onClick={() => {
+                    if (onRequestTrashSetlist) onRequestTrashSetlist(openSetlist.id)
+                    else onDeleteSetlist?.(openSetlist.id)
+                  }}
+                  className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-status-error hover:brightness-110 hover:bg-status-error/10 hover:border-status-error/40 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -406,14 +426,27 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     </div>
                     <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                       {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
-                      <button
-                        type="button"
-                        data-testid={`workspace-manage-${sl.id}`}
-                        onClick={e => { e.stopPropagation(); onManageSetlist?.(sl) }}
-                        className={`${touch} px-2 rounded-lg text-app-link hover:underline font-semibold cursor-pointer`}
-                      >
-                        Manage →
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          data-testid={`workspace-manage-${sl.id}`}
+                          onClick={e => { e.stopPropagation(); onManageSetlist?.(sl) }}
+                          className={`${touch} setlist-manage-action px-2 rounded-lg text-app-link hover:underline font-semibold cursor-pointer flex items-center`}
+                        >
+                          Manage →
+                        </button>
+                        {onRequestTrashSetlist && (
+                          <button
+                            type="button"
+                            aria-label={`Move setlist ${sl.name} to Trash`}
+                            data-testid={`desktop-delete-setlist-${sl.id}`}
+                            onClick={e => { e.stopPropagation(); onRequestTrashSetlist(sl.id) }}
+                            className={`${touch} setlist-hover-delete px-2 rounded-lg text-status-error hover:bg-status-error/10 transition-colors flex items-center justify-center cursor-pointer`}
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {confirmDeleteId === sl.id && (
                       <div onClick={e => e.stopPropagation()}
