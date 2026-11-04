@@ -10,7 +10,7 @@ import { estimateSongbookUploadBytes, songbookUploadHeadroom, type CloudSongbook
 import { readPersistedLibrary } from '../utils/syncJournal'
 import type { SyncLibrary } from '../utils/syncMerge'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
-import { CloudBackupChanged, readCloudBackup, restoreCloudBackup, writeCloudBackup } from '../utils/manualCloudBackup'
+import { CloudBackupChanged, CloudBackupFailure, logCloudBackupFailure, readCloudBackup, restoreCloudBackup, writeCloudBackup } from '../utils/manualCloudBackup'
 import type { ExportEnvironment } from '../utils/backupExport'
 import { DeviceBackupCard } from './DeviceBackupCard'
 import { RestorePreview } from './RestorePreview'
@@ -57,7 +57,16 @@ function usePersistedLibrary(enabled: boolean) {
   return useMemo(() => enabled ? safe(() => readPersistedLibrary(), null) : null, [enabled, revision])
 }
 
-export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
+// A session owns its cloud metadata and pending operations. Remount on identity change,
+// including A -> B -> A, so an old operation can never become current again.
+export const CloudSyncModal: React.FC<CloudSyncModalProps> = (props) => {
+  const auth = useOptionalGoogleAuth()
+  const session = auth?.session
+  const key = `${session?.user?.id || ''}:${session?.sessionToken || session?.idToken || session?.token || ''}:${auth?.accessStatus || ''}`
+  return <CloudSyncModalSession key={key} {...props} />
+}
+
+const CloudSyncModalSession: React.FC<CloudSyncModalProps> = ({
   isOpen, onClose, onBackupSummary, onFullRestore, onSmartMerge, restoreBlocked = false, deviceSongs, deviceSetlists, folders, onImportAllSongs, exportEnv,
 }) => {
   const auth = useOptionalGoogleAuth()
@@ -67,6 +76,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const signedIn = Boolean(token && userId && auth?.accessStatus === 'active')
   const [cloud, setCloud] = useState<CloudSongbookRecord | null>(null)
   const [ready, setReady] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
+  const [readAttempt, setReadAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
   const [fileBusy, setFileBusy] = useState(false)
   const [message, setMessageText] = useState('')
@@ -84,15 +95,15 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     let active = true
     if (!isOpen) return
     const trigger = document.activeElement as HTMLElement | null
-    void Promise.resolve().then(() => { if (active) { setPreview(null); setReady(false); setMessageText('') } })
+    void Promise.resolve().then(() => { if (active) { setCloud(null); setPreview(null); setReady(false); setReadFailed(false); setMessageText(''); summaryCallback.current?.(null, null) } })
     if (signedIn) {
-      readCloudBackup({ token, userId }).then(record => {
+      readCloudBackup({ token, userId, isCurrent: () => active && identity.current === `${userId}:${token}` }).then(record => {
         if (!active) return
         setCloud(record); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
-      }).catch(error => { if (active) { setMessageText(String(error.message)); setMessageTone('error') } })
+      }).catch(error => { if (active) { setCloud(null); setReady(true); setReadFailed(true); setMessageText(error instanceof Error ? error.message : 'Could not read cloud backup. Retry.'); setMessageTone('error') } })
     }
     return () => { active = false; trigger?.focus?.() }
-  }, [isOpen, signedIn, token, userId])
+  }, [isOpen, signedIn, token, userId, readAttempt])
   const locked = busy || fileBusy
   useEffect(() => {
     if (!isOpen) return
@@ -102,25 +113,35 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   }, [isOpen, locked, onClose])
   if (!isOpen) return null
   const account = { token, userId, isCurrent: () => identity.current === `${userId}:${token}` }
-  const run = async (action: () => Promise<void>) => {
+  const run = async (operation: 'backup' | 'restore', action: () => Promise<void>) => {
     if (busy || !signedIn) return
+    const captured = identity.current
     setBusy(true); setMessage('')
-    try { await action() } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
-    finally { setBusy(false) }
+    try { await action() } catch (error) {
+      logCloudBackupFailure(operation, error)
+      if (identity.current === captured) {
+        setPreview(null)
+        if (error instanceof CloudBackupFailure && !(error instanceof CloudBackupChanged)) {
+          setCloud(null); setReadFailed(true); setReady(true); summaryCallback.current?.(null, null)
+        }
+        setMessage(error instanceof Error ? error.message : 'Cloud operation failed. Retry.')
+      }
+    }
+    finally { if (identity.current === captured) setBusy(false) }
   }
-  const prepare = (kind: 'backup' | 'restore') => run(async () => {
+  const prepare = (kind: 'backup' | 'restore') => run(kind, async () => {
     if (kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     const captured = identity.current
     const record = await readCloudBackup(account)
     if (identity.current !== captured) throw new Error('Account changed; open the dialog again.')
-    setCloud(record); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
+    setCloud(record); setReadFailed(false); setReady(true); summaryCallback.current?.(record?.updatedAt ?? null, record?.checksum ?? null)
     if (kind === 'restore' && !record) throw new Error('No cloud backup yet')
     const device = readPersistedLibrary()
     if (!device) throw new Error('Device library could not be read')
     if (kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     setPreview({kind, device, cloud: record})
   })
-  const confirm = (mode?: 'replace' | 'merge') => run(async () => {
+  const confirm = (mode?: 'replace' | 'merge') => run(preview?.kind ?? 'backup', async () => {
     if (!preview) return
     if (preview.kind === 'restore' && restoreBlockedRef.current) throw new Error(RESTORE_BLOCKED_MESSAGE)
     const captured = identity.current
@@ -134,6 +155,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         if (identity.current !== captured) return
         setCloud(record); summaryCallback.current?.(record.updatedAt, record.checksum); setPreview(null); setMessage('Cloud backup saved and checksum verified.', 'success')
       } catch (error) {
+        if (identity.current !== captured) throw error
         setPreview(null)
         if (error instanceof CloudBackupChanged) {
           const record = await readCloudBackup(account)
@@ -149,6 +171,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         if (identity.current !== captured) throw new Error('Account changed; restore aborted.')
         return apply(library.songs, library.setlists, library.folders, library.tagColors)
       }, localStorage)
+      if (identity.current !== captured) return
       setPreview(null); setMessage(restoredMessage(preview.cloud.data), 'success')
     }
   })
@@ -217,19 +240,19 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </button> : <>
             {headroom && headroom.level !== 'ok' && <p data-testid="cloud-sync-headroom-warning" role="status" className={headroom.level === 'over' ? tone.error : tone.warning}>
               {headroom.level === 'over'
-                ? `Songbook is ${sizeMb(headroom.bytes)} MB, over the ${sizeMb(headroom.limitBytes)} MB cloud backup limit. This device keeps every song; save a backup file first.`
-                : `Songbook uses ${Math.round(headroom.ratio * 100)}% of the ${sizeMb(headroom.limitBytes)} MB cloud backup limit.`}
+                ? `Estimated upload is ${sizeMb(headroom.bytes)} MB, over the ${sizeMb(headroom.limitBytes)} MB cloud backup limit. This device keeps every song; save a backup file first.`
+                : `Estimated upload uses ${Math.round(headroom.ratio * 100)}% of the ${sizeMb(headroom.limitBytes)} MB cloud backup limit.`}
             </p>}
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-app-border/60 text-[11px] font-mono">
-              {statusRow('Last cloud backup', !ready ? 'Reading cloud backup…' : cloud ? formatDate(cloud.updatedAt) : 'No cloud backup yet')}
+              {statusRow('Last cloud backup', !ready ? 'Reading cloud backup…' : readFailed ? 'Cloud backup could not be verified' : cloud ? formatDate(cloud.updatedAt) : 'No cloud backup yet')}
               {statusRow('Checksum', ready && cloud ? <span className="block truncate" title={cloud.checksum}>{cloud.checksum}</span> : '—', false, 'text-app-action text-[10px]')}
               {statusRow('Contents', ready && cloud ? listCounts(cloud.data) : '—', true)}
               {headroom && <div className="col-span-2 space-y-1">
-                <span className="text-app-muted block">Backup size</span>
+                <span className="text-app-muted block">Estimated upload size</span>
                 <span data-testid="cloud-sync-headroom" className={headroom.level === 'ok' ? 'text-app-heading font-semibold' : headroom.level === 'over' ? 'text-status-error font-semibold' : 'text-status-warning font-semibold'}>
                   {sizeMb(headroom.bytes)} MB of {limitMb(headroom.limitBytes)} MB cloud limit
                 </span>
-                <div role="meter" aria-label="Backup size" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(headroom.ratio * 100))}
+                <div role="meter" aria-label="Estimated upload size" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(headroom.ratio * 100))}
                   className="h-1.5 rounded-full bg-app-border/60 overflow-hidden">
                   <div className={`h-full rounded-full ${headroom.level === 'ok' ? 'bg-app-action' : headroom.level === 'over' ? 'bg-status-error' : 'bg-status-warning'}`}
                     style={{ width: `${Math.min(100, Math.max(1, headroom.ratio * 100))}%` }} />
@@ -237,6 +260,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               </div>}
             </div>
 
+            {readFailed && <button type="button" className={outlinedButton} disabled={busy} onClick={() => { setReady(false); setReadFailed(false); setReadAttempt(value => value + 1) }}>Retry cloud read</button>}
             {restoreBlocked && <p role="status" className={tone.warning}>{RESTORE_BLOCKED_MESSAGE}</p>}
 
             {!preview ? <div className="space-y-2 pt-1">

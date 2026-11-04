@@ -49,8 +49,7 @@ test('opening and device edits make no POST; backup confirms account and verifie
  const {calls,root}=await setup()
  try{
   assert.deepEqual(calls,['GET'])
-  persistLibrary({...local,songs:[...local.songs,song('33333333-3333-4333-8333-333333333333')]},localStorage)
-  window.dispatchEvent(new window.Event('storage'));window.dispatchEvent(new window.Event('focus'))
+  await act(async()=>{persistLibrary({...local,songs:[...local.songs,song('33333333-3333-4333-8333-333333333333')]},localStorage);window.dispatchEvent(new window.Event('storage'));window.dispatchEvent(new window.Event('focus'))})
   assert.deepEqual(calls,['GET'])
   await click('Back up to cloud');assert.match(document.body.textContent,/b@example.com/);assert.match(document.body.textContent,/overwrites/)
   // Only the debug-log key (logger STORAGE_KEY) may change; every other key stays byte-identical.
@@ -81,7 +80,7 @@ test('409 refreshes summary and requires a second confirmation; never merges',as
  const {calls,root}=await setup();await click('Back up to cloud')
  const bytes=localStorage.getItem('gtar_library_v2');let posts=0
  const changed={version:7,checksum:computeSongbookChecksum(remote),updatedAt:'2026-11-02T12:00:00Z',data:remote}
- global.fetch=async(_,opts)=>{calls.push(opts.method);if(opts.method==='POST'){posts++;return new Response('{}',{status:409})}return new Response(JSON.stringify({success:true,cloudRecord:changed}))}
+ global.fetch=async(_,opts)=>{calls.push(opts.method);if(opts.method==='POST'){posts++;return new Response(JSON.stringify({code:'SONGBOOK_REVISION_CONFLICT'}),{status:409})}return new Response(JSON.stringify({success:true,cloudRecord:changed}))}
  await click('Confirm backup');assert.equal(posts,1);assert.match(document.body.textContent,/confirm again/)
  assert.ok(![...document.querySelectorAll('button')].some(b=>b.textContent==='Confirm backup'))
  assert.equal(localStorage.getItem('gtar_library_v2'),bytes)
@@ -196,4 +195,74 @@ test('cloud upload payload carries device folders and setlist folder placement',
   assert.deepEqual(uploads[0].data.folders,nestedFolders)
   assert.equal(uploads[0].data.setlists[0].folderId,'child-folder')
  }finally{await act(async()=>root.unmount())}
+})
+
+test('failed initial read exits loading, disables restore and permits a safe retry',async()=>{
+ const {root}=await setup()
+ try {
+  global.fetch=async()=>new Response(JSON.stringify({success:false,error:'private server message'}),{status:500})
+  await act(async()=>{root.render(React.createElement(CloudSyncModal,{isOpen:false,onClose(){}}))})
+  await act(async()=>{root.render(React.createElement(CloudSyncModal,{isOpen:true,onClose(){}}));await new Promise(r=>setTimeout(r,5))})
+  assert.doesNotMatch(document.body.textContent,/Reading cloud backup/)
+  assert.equal(document.querySelector('[data-testid="cloud-restore-button"]').disabled,true)
+  assert.doesNotMatch(document.body.textContent,/private server message/)
+  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:null}))
+  await click('Retry cloud read')
+  assert.match(document.body.textContent,/No cloud backup yet/)
+  assert.equal(document.querySelector('[data-testid="cloud-backup-button"]').disabled,false)
+ } finally {await act(async()=>root.unmount())}
+})
+
+test('account switch discards pending A read, clears metadata and leaves device data unchanged',async()=>{
+ const {root}=await setup();const deviceBefore=JSON.stringify(readPersistedLibrary());let finishA
+ let current='A'
+ auth.useOptionalGoogleAuth=()=>({session:{token:current,user:{id:current,email:`${current}@example.com`}},accessStatus:'active'})
+ global.fetch=async(_,options)=>{
+  if(options.headers.Authorization==='Bearer A')return new Promise(resolve=>{finishA=resolve})
+  return new Response(JSON.stringify({success:true,cloudRecord:null}))
+ }
+ const props={isOpen:true,onClose(){}}
+ try {
+  await act(async()=>{root.render(React.createElement(CloudSyncModal,props));await new Promise(r=>setTimeout(r,5))})
+  current='B'
+  await act(async()=>{root.render(React.createElement(CloudSyncModal,props));await new Promise(r=>setTimeout(r,5))})
+  assert.match(document.body.textContent,/No cloud backup yet/)
+  await act(async()=>{finishA(new Response(JSON.stringify({success:true,cloudRecord:{version:1,updatedAt:'1999-01-01',checksum:computeSongbookChecksum(remote),data:remote}})));await new Promise(r=>setTimeout(r,5))})
+  assert.doesNotMatch(document.body.textContent,/1999|Reading cloud backup|account changed/)
+  assert.equal(document.querySelector('[data-testid="cloud-backup-button"]').disabled,false)
+  assert.equal(document.querySelector('[data-testid="cloud-restore-button"]').disabled,true)
+  assert.equal(JSON.stringify(readPersistedLibrary()),deviceBefore)
+ } finally {await act(async()=>root.unmount())}
+})
+test('switching account during POST releases busy state and ignores the old result',async()=>{
+ const {root}=await setup();let finishPost,posts=0;const deviceBefore=JSON.stringify(readPersistedLibrary())
+ try {
+  await click('Back up to cloud')
+  global.fetch=async(_,options)=>{if(options.method==='POST'){posts++;return new Promise(resolve=>{finishPost=resolve})}return new Response(JSON.stringify({success:true,cloudRecord:null}))}
+  await click('Confirm backup')
+  assert.equal(posts,1)
+  auth.useOptionalGoogleAuth=()=>({session:{token:'new-session',user:{id:'C',email:'c@example.com'}},accessStatus:'active'})
+  await act(async()=>{root.render(React.createElement(CloudSyncModal,{isOpen:true,onClose(){}}));await new Promise(r=>setTimeout(r,5))})
+  await act(async()=>{finishPost(new Response(JSON.stringify({success:true})));await new Promise(r=>setTimeout(r,5))})
+  assert.doesNotMatch(document.body.textContent,/Cloud backup saved|account changed|Reading cloud backup/)
+  assert.equal(document.querySelector('[data-testid="cloud-backup-button"]').disabled,false)
+  assert.equal(document.querySelector('[data-testid="cloud-sync-close-button"]').disabled,false)
+  assert.equal(JSON.stringify(readPersistedLibrary()),deviceBefore)
+ } finally {await act(async()=>root.unmount())}
+})
+
+test('integrity failure never enables restore or posts; one sanitized modal ERROR then retry',async()=>{
+ const {root,calls}=await setup();const {appLogger}=require('../src/utils/logger.ts');appLogger.clearLogs()
+ try {
+  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:{version:1,checksum:'ck_0000000000000000',data:remote}}))
+  await click('Restore from cloud')
+  assert.equal(document.querySelector('[data-testid="cloud-restore-button"]').disabled,true)
+  assert.match(document.body.textContent,/checksum verification failed/)
+  assert.doesNotMatch(document.body.textContent,/Reading cloud backup/)
+  assert.equal(appLogger.getLogs().filter(e=>e.tag==='CloudBackupFailure').length,1)
+  assert.ok(calls.every(method=>method==='GET'))
+  await click('Retry cloud read')
+  assert.equal(document.querySelector('[data-testid="cloud-restore-button"]').disabled,true)
+  assert.equal(appLogger.getLogs().filter(e=>e.tag==='CloudBackupFailure').length,2)
+ } finally {await act(async()=>root.unmount())}
 })

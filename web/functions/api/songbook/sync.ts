@@ -9,7 +9,7 @@ import {
   type AuthEnv,
   JSON_HEADERS,
 } from '../../lib/authCore.ts'
-import { computeSongbookChecksum } from '../../../src/utils/cloudBackupFormat.ts'
+import { computeSongbookChecksum, SONGBOOK_CHECKSUM_SCHEME } from '../../../src/utils/cloudBackupFormat.ts'
 import {
   validateCloudThemeSettings,
   normalizeCloudThemeSettings,
@@ -207,7 +207,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   try {
-    const rawLibrary = body.data as SyncLibrary
+    const rawLibrary = body.data as SyncLibrary & { checksumScheme?: string }
+    if (rawLibrary.checksumScheme !== undefined && rawLibrary.checksumScheme !== SONGBOOK_CHECKSUM_SCHEME) {
+      return errorResponse('Unsupported checksum scheme', 400)
+    }
     const libraryData: SyncLibrary =
       rawLibrary.themeSettings !== undefined
         ? { ...rawLibrary, themeSettings: normalizeCloudThemeSettings(rawLibrary.themeSettings) }
