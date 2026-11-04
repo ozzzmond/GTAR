@@ -9,7 +9,17 @@ export interface CloudSongbookRecord {
   version: number
   checksum: string
   updatedAt: string
-  data: SyncLibrary
+  data: SyncLibrary & { checksumScheme?: string }
+}
+
+export const SONGBOOK_CHECKSUM_SCHEME = 'gtar-normalized-tags-v1'
+
+/** No migration or mutation: check the original payload using only documented algorithms. */
+export function verifySongbookChecksum(record: CloudSongbookRecord): boolean {
+  const scheme = record.data.checksumScheme
+  if (scheme !== undefined && scheme !== SONGBOOK_CHECKSUM_SCHEME) return false
+  if (computeSongbookChecksum(record.data) === record.checksum) return true
+  return scheme === undefined && checksumWithTags(record.data, true) === record.checksum
 }
 
 /**
@@ -19,6 +29,13 @@ export interface CloudSongbookRecord {
  * Preserves exact legacy checksum semantics when themeSettings is absent.
  */
 export function computeSongbookChecksum(library: SyncLibrary): string {
+  return checksumWithTags(library, false)
+}
+
+// 4fe95049326468a7e275417e1f62cff4ef807708 (before 56cbae2): strings kept
+// verbatim, arrays copied and sorted. All other canonical fields are unchanged.
+// Retain historical localeCompare ordering; do not guess the writer's locale.
+function checksumWithTags(library: SyncLibrary, legacyTags: boolean): string {
   const songs = [...library.songs]
     .map((s) => ({
       id: String(s.id || ''),
@@ -35,7 +52,7 @@ export function computeSongbookChecksum(library: SyncLibrary): string {
       transposeOffset: Number(s.transposeOffset || 0),
       rawContent: (s.rawContent || '').replace(/\r\n/g, '\n'),
       isDeleted: Boolean(s.isDeleted),
-      tags: songTags(s),
+      tags: legacyTags ? (Array.isArray(s.tags) ? [...s.tags].sort() : (s.tags || '')) : songTags(s),
       isFavorite: Boolean(s.isFavorite),
       createdAt: s.createdAt ?? null,
       lastOpenedAt: s.lastOpenedAt ?? null,
@@ -97,7 +114,7 @@ export interface SongbookHeadroom { bytes: number; limitBytes: number; ratio: nu
 /** Exact request body for a songbook upload; used for both the request and its size estimate. */
 export function songbookUploadBody(action: 'upload' | 'resolve', data: SyncLibrary, clientChecksum: string,
   expectedVersion: number, expectedChecksum: string | null): string {
-  return JSON.stringify({ action, data, clientChecksum, expectedVersion, expectedChecksum })
+  return JSON.stringify({ action, data: { ...data, checksumScheme: SONGBOOK_CHECKSUM_SCHEME }, clientChecksum, expectedVersion, expectedChecksum })
 }
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).byteLength
 

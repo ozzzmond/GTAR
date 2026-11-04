@@ -45,3 +45,22 @@ test('manual backup accepts account with per-record cursor and rows', async () =
  assert.deepEqual(cloud.data,library('manual backup'))
  assert.equal(cloud.checksum,sync.computeSongbookChecksum(library('manual backup')))
 })
+
+test('explicit scheme survives a cloud round trip; unknown scheme cannot overwrite the revision',async()=>{
+ const {db,request}=await fixture()
+ const data={...library('scheme'),checksumScheme:sync.SONGBOOK_CHECKSUM_SCHEME}
+ assert.equal((await request('POST',postBody(data,emptyRevision))).status,200)
+ const record=(await (await request('GET')).json()).cloudRecord
+ assert.deepEqual(record.data,data)
+ assert.equal((await request('POST',postBody({...data,checksumScheme:'unknown'},revision(record)))).status,400)
+ assert.deepEqual((await (await request('GET')).json()).cloudRecord,record)
+})
+test('authenticated A cannot read or overwrite B; no-backup read leaves B intact',async()=>{
+ const {db,request}=await fixture()
+ await write(db,library('B-private'),emptyRevision,'user-b')
+ const record=(await (await request('GET')).json()).cloudRecord;assert.equal(record,null)
+ assert.equal((await request('POST',postBody(library('A'),emptyRevision))).status,200)
+ const {findUserSongbook}=require('../functions/lib/authCore.ts')
+ const b=await findUserSongbook(db,'user-b')
+ assert.equal(JSON.parse(b.data_json).songs[0].rawContent,'B-private')
+})

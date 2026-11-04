@@ -20,7 +20,7 @@ test('backup uses confirmed revision and verifies without modifying device', asy
  assert.equal(JSON.stringify(library),bytes)
 })
 test('stale backup does not retry or merge', async()=>{
- let calls=0; global.fetch=async()=>{calls++;return new Response('{}',{status:409})}
+ let calls=0; global.fetch=async()=>{calls++;return new Response(JSON.stringify({code:'SONGBOOK_REVISION_CONFLICT'}),{status:409})}
  await assert.rejects(()=>writeCloudBackup({token:'t',userId:'B'},{songs:[],setlists:[]},null),/changed/)
  assert.equal(calls,1)
 })
@@ -71,4 +71,68 @@ test('cloud restore verification rejects folders dropped by the apply callback',
  persistLibrary(before,storage)
  const incoming={songs:[],setlists:[],folders:[{id:'root',name:'Root',parentId:null},{id:'child',name:'Child',parentId:'root'}]}
  await assert.rejects(()=>restoreCloudBackup(readPersistedLibrary(storage),incoming,'replace',library=>persistLibrary({...library,folders:[]},storage),storage),/Restore could not be verified/)
+})
+
+const historical=require('./fixtures/cloudBackupLegacy.json')
+for(const fixture of historical.fixtures)test(`historical cloud read: ${fixture.name}, unchanged payload and checksum`,async()=>{
+ const record=structuredClone(fixture.record),before=JSON.stringify(record);let calls=0
+ global.fetch=async()=>{calls++;return new Response(JSON.stringify({success:true,cloudRecord:record}))}
+ const accepted=await readCloudBackup({token:'t',userId:'B'})
+ assert.equal(JSON.stringify(accepted),before);assert.equal(calls,1)
+})
+
+const {SONGBOOK_CHECKSUM_SCHEME,computeSongbookChecksum}=require('../src/utils/cloudBackupFormat.ts')
+test('explicit current scheme round trip; legacy-only matches cannot claim the current scheme',async()=>{
+ const data={songs:[{id:'a',title:'A',rawContent:'[C]ok',tags:['#Praise','praise']}],setlists:[],checksumScheme:SONGBOOK_CHECKSUM_SCHEME}
+ const record={version:2,checksum:computeSongbookChecksum(data),data}
+ global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:record}))
+ assert.deepEqual(await readCloudBackup({token:'t',userId:'B'}),record)
+ record.data={...historical.fixtures[0].record.data,checksumScheme:SONGBOOK_CHECKSUM_SCHEME};record.checksum=historical.fixtures[0].record.checksum
+ await assert.rejects(()=>readCloudBackup({token:'t',userId:'B'}),/verification failed/)
+})
+test('unknown schemes and tampered content fail closed without sensitive diagnostic data',async()=>{
+ const {appLogger}=require('../src/utils/logger.ts');appLogger.resume()
+ for(const kind of ['scheme','legacy-content','current-content']) {
+  appLogger.clearLogs()
+  const record=structuredClone(historical.fixtures[0].record)
+  if(kind==='scheme')record.data.checksumScheme='private@example.com-secret-token'
+  else if(kind==='current-content')record.checksum=computeSongbookChecksum(record.data)
+  if(kind!=='scheme')record.data.songs[0].rawContent='tampered-secret-payload'
+  global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:record}))
+  await assert.rejects(()=>readCloudBackup({token:'secret-token',userId:'secret-account'}),/checksum/)
+  const logs=appLogger.getLogs().filter(e=>e.tag==='CloudBackupFailure');assert.equal(logs.length,1);assert.equal(logs[0].level,'ERROR')
+  const detail=JSON.parse(logs[0].message);assert.equal(detail.operation,'read');assert.equal(detail.stage,'verify');assert.equal(detail.httpStatus,200);assert.ok(detail.version);assert.ok(detail.build)
+  assert.doesNotMatch(JSON.stringify(logs),/private@example|secret-token|secret-account|tampered-secret|ck_/)
+ }
+})
+test('owner 409 is refused without CAS retry and logs one sanitized HTTP error',async()=>{
+ const {appLogger}=require('../src/utils/logger.ts');appLogger.resume();appLogger.clearLogs();let calls=0
+ global.fetch=async()=>{calls++;return new Response(JSON.stringify({code:'LIBRARY_OWNER_MISMATCH',error:'secret-account secret-token private@example.com'}),{status:409})}
+ await assert.rejects(()=>writeCloudBackup({token:'secret-token',userId:'secret-account'},{songs:[],setlists:[]},null),/refused/)
+ assert.equal(calls,1)
+ const logs=appLogger.getLogs().filter(e=>e.tag==='CloudBackupFailure');assert.equal(logs.length,1);assert.equal(JSON.parse(logs[0].message).httpStatus,409)
+ assert.doesNotMatch(JSON.stringify(logs),/secret-account|secret-token|private@example/)
+})
+test('no backup and mismatched or stale account reads never return another account data',async()=>{
+ global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:null}))
+ assert.equal(await readCloudBackup({token:'t',userId:'B'}),null)
+ global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:{...historical.fixtures[0].record,userId:'A'}}))
+ await assert.rejects(()=>readCloudBackup({token:'t',userId:'B'}),/account did not match/)
+ let current=true,finish
+ global.fetch=()=>new Promise(resolve=>{finish=resolve})
+ const pending=readCloudBackup({token:'t',userId:'A',isCurrent:()=>current});current=false
+ finish(new Response(JSON.stringify({success:true,cloudRecord:historical.fixtures[0].record})))
+ await assert.rejects(()=>pending,/account changed/)
+})
+test('locale ordering keeps ASCII historical fixtures valid under en-US and sv-SE',async()=>{
+ const original=String.prototype.localeCompare
+ try {
+  for(const locale of ['en-US','sv-SE']) {
+   String.prototype.localeCompare=function(other){return original.call(this,other,locale)}
+   for(const fixture of historical.fixtures) {
+    global.fetch=async()=>new Response(JSON.stringify({success:true,cloudRecord:fixture.record}))
+    assert.deepEqual(await readCloudBackup({token:'t',userId:'B'}),fixture.record)
+   }
+  }
+ } finally {String.prototype.localeCompare=original}
 })
