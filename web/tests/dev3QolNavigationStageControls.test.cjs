@@ -45,8 +45,8 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Theme -> Trash -> Backed up -> M
 
   // Verify Stage Box ordering
   const backIdx = stageSource.indexOf('aria-label="Back"')
-  const editorIdx = stageSource.indexOf('aria-label="Editor (Alt+2)"')
-  const bandSyncIdx = stageSource.indexOf('aria-label="Band Sync (Alt+3)"')
+  const editorIdx = stageSource.indexOf('aria-label="Editor"')
+  const bandSyncIdx = stageSource.indexOf('aria-label="Band Sync"')
 
   assert.ok(backIdx !== -1, 'Back action must exist in StageView')
   assert.ok(editorIdx !== -1, 'Editor action must exist in StageView')
@@ -54,7 +54,7 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Theme -> Trash -> Backed up -> M
   assert.ok(backIdx < editorIdx, 'Back must precede Editor')
   assert.ok(editorIdx < bandSyncIdx, 'Editor must precede Band Sync')
 
-  // Home navigation preserved via the logo entry (#224: hover tooltip removed; Alt+0 still works)
+  // Home navigation preserved via the logo entry (#224: hover tooltip removed)
   assert.ok(headerSource.includes('onClick={onNavigateHome}'), 'Logo home entry preserved')
   assert.ok(!headerSource.includes('title="Return to Songbook Library Home (Alt+0)"'), '#224: no hover tooltip')
 })
@@ -157,25 +157,17 @@ test('DEV3_SECTION_NAVIGATION_ABSOLUTE_BOTTOM: Up from absolute bottom navigates
 })
 
 // =============================================================================
-// 9. DESKTOP GLOBAL KEYBOARD NAVIGATION SHORTCUTS
+// 9. DESKTOP GLOBAL KEYBOARD NAVIGATION SHORTCUTS (removed by owner ruling)
 // =============================================================================
-test('DEV3_KEYBOARD_SHORTCUTS: Alt+1..6 and Alt+0/H navigation shortcuts registered with editable-field exclusion', () => {
+test('DEV3_KEYBOARD_SHORTCUTS_REMOVED: no global Alt+ navigation shortcuts remain in App', () => {
   const appSource = readSource(path.join(webDir, 'src/App.tsx'))
 
-  assert.ok(appSource.includes('handleGlobalNavShortcuts'), 'Global navigation shortcuts listener registered')
-  assert.ok(appSource.includes("case '1':"), 'Alt+1 navigates to stage')
-  assert.ok(appSource.includes("case '2':"), 'Alt+2 navigates to editor')
-  assert.ok(appSource.includes("case '3':"), 'Alt+3 opens Band Sync tools')
-  assert.ok(appSource.includes("case '4':"), 'Alt+4 toggles Cast presentation')
-  assert.ok(appSource.includes("case '5':"), 'Alt+5 opens Theme modal')
-  assert.ok(appSource.includes("case '6':"), 'Alt+6 navigates to Trash')
-  assert.ok(appSource.includes("case '0':"), 'Alt+0 navigates Home')
-
-  // Editable element guard
-  assert.ok(appSource.includes('isEditable'), 'Shortcuts check isEditable helper')
-  assert.ok(appSource.includes("tagName === 'input'"), 'Guards input elements')
-  assert.ok(appSource.includes("tagName === 'textarea'"), 'Guards textarea elements')
-  assert.ok(appSource.includes('el.isContentEditable'), 'Guards contentEditable elements')
+  assert.ok(!appSource.includes('handleGlobalNavShortcuts'), 'Global navigation shortcuts listener removed')
+  assert.ok(!appSource.includes('Global Navigation Shortcuts'), 'Shortcut comment removed')
+  for (const key of ['0', '1', '2', '3', '4', '5', '6']) {
+    assert.ok(!appSource.includes(`case '${key}':`), `Alt+${key} shortcut case removed`)
+  }
+  assert.ok(!appSource.includes("case 'h':"), 'Alt+H shortcut case removed')
 })
 
 // =============================================================================

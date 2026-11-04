@@ -1938,7 +1938,7 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             onClick={onOpenEditor}
-            aria-label="Editor (Alt+2)"
+            aria-label="Editor"
             className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
             <FileEdit className="w-4 h-4 shrink-0" />
@@ -1947,7 +1947,7 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             onClick={onOpenBandSync}
-            aria-label="Band Sync (Alt+3)"
+            aria-label="Band Sync"
             className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
             <Radio className="w-4 h-4 shrink-0" />
