@@ -194,7 +194,7 @@ function ToolbarIconButton({
         } ${className}`}
       >
         <Icon className="w-4 h-4 shrink-0" />
-        <span className="hidden lg:inline text-xs font-semibold">{label.replace(/ \(Alt\+\d\)/, '')}</span>
+        <span className="hidden lg:inline text-xs font-semibold">{label}</span>
         <span className="active-dot" />
       </button>
       {anchor && createPortal(
@@ -831,7 +831,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Theme */}
           <ToolbarIconButton
             icon={Palette}
-            label="Theme (Alt+5)"
+            label="Theme"
             onClick={onToggleTheme}
             className="shrink-0"
           />
@@ -840,7 +840,7 @@ export const Header: React.FC<HeaderProps> = ({
           <ToolbarIconButton
             icon={Trash2}
             dropTrash
-            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''} (Alt+6)`}
+            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
             isActive={activeView === 'trash'}
             onClick={() => onViewChange('trash')}
             className="shrink-0"

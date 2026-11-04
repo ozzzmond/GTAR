@@ -89,7 +89,7 @@ test('delete a setlist: real App lists it in Trash with type, name, entry count 
   await deleteSetlist()
   assert.equal(stored().setlists[0].isDeleted, true)
   assert.equal(header.deletedSongsCount, 1)
-  assert.ok($('[aria-label="Trash (1) (Alt+6)"]'))
+  assert.ok($('[aria-label="Trash (1)"]'))
   await openTrash()
   assert.match(document.body.textContent, /Sunday AM/)
   assert.match(document.body.textContent, /Setlist/)

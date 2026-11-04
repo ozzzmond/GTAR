@@ -260,7 +260,7 @@ test('DEV5A_TOOLBAR_LAYOUT: actions preserved in Header and Stage BOX (#333)', (
   const { dom, root } = renderHeader()
   try {
     const labels = [...document.querySelectorAll('.toolbar-icon-btn')].map(b => b.getAttribute('aria-label'))
-    assert.deepEqual(labels, ['Theme (Alt+5)', 'Trash (Alt+6)', 'More'])
+    assert.deepEqual(labels, ['Theme', 'Trash', 'More'])
   } finally {
     act(() => root.unmount()); dom.window.close(); delete global.window; delete global.document
   }
@@ -270,7 +270,7 @@ test('ISSUE107_TOOLTIP: body portal, focus/hover lifecycle, Escape and movement 
   const { dom, root } = renderHeader()
   const viewport = new window.EventTarget()
   Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true })
-  const button = document.querySelector('[aria-label="Theme (Alt+5)"]')
+  const button = document.querySelector('[aria-label="Theme"]')
   const tooltip = () => document.querySelector('[role="tooltip"]')
   const focus = () => act(() => button.focus())
   const blur = () => act(() => button.blur())

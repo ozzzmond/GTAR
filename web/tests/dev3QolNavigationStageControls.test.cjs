@@ -25,7 +25,7 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Theme -> Trash -> Backed up -> M
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
   const stageSource = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
 
-  const themeIdx = headerSource.indexOf('label="Theme (Alt+5)"')
+  const themeIdx = headerSource.indexOf('label="Theme"')
   const trashIdx = headerSource.indexOf('label={`Trash')
   const backupIdx = headerSource.indexOf('<SyncStatusPill')
   const moreIdx = headerSource.indexOf('label="More"')

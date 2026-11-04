@@ -223,8 +223,8 @@ test('TOOLBAR ALIGNMENT: 8 primary controls, 44px targets, canonical order, CSS 
   assert.equal(toolbarButtons.length, 3)
   const labels = [...toolbarButtons].map(btn => btn.getAttribute('aria-label'))
   assert.deepEqual(labels, [
-    'Theme (Alt+5)',
-    'Trash (Alt+6)',
+    'Theme',
+    'Trash',
     'More',
   ])
   for (const btn of toolbarButtons) {
