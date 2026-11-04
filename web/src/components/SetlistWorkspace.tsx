@@ -93,16 +93,13 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const openSetlist = useMemo(
-    () => (openSetlistId === null ? null : setlists.find(sl => String(sl.id) === String(openSetlistId)) || null),
+    () => (openSetlistId === null ? null : setlists.find(sl => !sl.isDeleted && String(sl.id) === String(openSetlistId)) || null),
     [openSetlistId, setlists]
   )
+  if (openSetlistId !== null && !openSetlist) {
+    setOpenSetlistId(null)
+  }
   const songIndex = useMemo(() => songIdIndex(songs), [songs])
-
-  React.useEffect(() => {
-    if (openSetlistId !== null && !setlists.some(sl => !sl.isDeleted && String(sl.id) === String(openSetlistId))) {
-      setOpenSetlistId(null)
-    }
-  }, [openSetlistId, setlists])
 
   // Missing or trashed songs stay visible for context but cannot be played or opened.
   const entries = useMemo<EntryView[]>(() => {
