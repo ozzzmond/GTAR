@@ -115,25 +115,27 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
     <nav
       aria-label="Music Explorer"
       data-testid="music-explorer-nav"
-      className="flex select-none flex-col px-3 py-3 text-xs text-app-text"
+      className="flex select-none flex-col px-3 py-2 text-xs text-app-text"
     >
-      {/* Header action (collapse / close) */}
-      {headerAction && (
-        <div className="mb-3 flex items-center justify-end">
-          {headerAction}
-        </div>
-      )}
-
       {/* Songbook */}
       <section className="mb-5">
-        {sectionHeading(
-          'Songbook',
-          songbookExpanded,
-          () => setSongbookExpanded((value) => !value),
-          <span className="text-[10px] uppercase tracking-wider text-app-muted">
-            {songs.length} {songs.length === 1 ? 'master song' : 'master songs'}
-          </span>
-        )}
+        <div className="mb-1 flex items-center justify-between px-1">
+          <button
+            type="button"
+            aria-expanded={songbookExpanded}
+            onClick={() => setSongbookExpanded((value) => !value)}
+            className="ui-section-text flex min-h-11 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
+          >
+            {songbookExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            <span>Songbook</span>
+          </button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-app-muted">
+              {songs.length} {songs.length === 1 ? 'master song' : 'master songs'}
+            </span>
+            {headerAction}
+          </div>
+        </div>
         {songbookExpanded && (
           <div className="space-y-0.5 pl-1">
             <button

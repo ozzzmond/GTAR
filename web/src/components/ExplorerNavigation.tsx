@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { GripVertical, PanelLeftClose, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { MusicExplorerNav, type MusicExplorerNavProps } from './MusicExplorerNav'
 import { EXPLORER_MAX_WIDTH, EXPLORER_MIN_WIDTH, clampExplorerWidth } from '../utils/explorerSidebar'
 
@@ -38,8 +38,8 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
     remember(COLLAPSED_KEY, String(next))
   }
   useEffect(() => {
-    if (restoreFocus.current === 'grip') gripRef.current?.focus()
-    else if (restoreFocus.current === 'collapse') collapseRef.current?.focus()
+    if (restoreFocus.current === 'grip') gripRef.current?.focus({ preventScroll: true })
+    else if (restoreFocus.current === 'collapse') collapseRef.current?.focus({ preventScroll: true })
     restoreFocus.current = null
   }, [collapsed])
   const commitWidth = (value: number) => {
@@ -115,37 +115,41 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
     onNewSetlist: () => { nav.onNewSetlist?.(); onClose() },
   }
   const collapseButton = (
-    <button ref={collapseRef} type="button" data-testid="explorer-collapse" aria-label="Collapse Music Explorer" aria-expanded="true"
+    <button ref={collapseRef} type="button" data-testid="explorer-collapse" aria-label="Hide Music Explorer" aria-expanded="true"
       aria-controls="explorer-sidebar" onClick={() => setCollapsedPersisted(true)}
-      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface hover:text-app-heading">
-      <PanelLeftClose className="h-4 w-4" />
+      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface hover:text-app-heading transition-colors cursor-pointer">
+      <ChevronLeft className="h-4 w-4" />
     </button>
   )
   if (isHidden) return null
   return <>
-    {collapsed ? (
-      <button ref={gripRef} type="button" data-testid="explorer-edge-grip" aria-label="Expand Music Explorer" aria-expanded="false"
+    {collapsed && (
+      <button ref={gripRef} type="button" data-testid="explorer-edge-grip" aria-label="Show Music Explorer" aria-expanded="false"
         aria-controls="explorer-sidebar" onClick={() => setCollapsedPersisted(false)}
-        className="group relative z-20 hidden md:flex shrink-0 w-3 self-stretch items-start justify-start overflow-visible border-r border-app-border bg-app-toolbar cursor-pointer">
+        className="group relative z-20 hidden md:flex shrink-0 w-3 self-stretch items-start justify-start overflow-visible border-r border-app-border bg-app-toolbar cursor-pointer transition-opacity duration-200 ease-out motion-reduce:transition-none">
         {/* 44px target: the hit area overhangs the 12px edge strip. */}
-        <span className="mt-3 flex h-11 w-11 shrink-0 items-center justify-start">
-          <span className="flex h-11 w-5 items-center justify-center rounded-r-lg border border-l-0 border-app-border bg-app-surface text-app-muted shadow-md group-hover:text-app-heading group-focus-visible:ring-2 group-focus-visible:ring-app-action">
-            <GripVertical className="h-3.5 w-3.5" />
+        <span className="flex min-h-11 min-w-11 shrink-0 items-center justify-start">
+          <span className="flex h-11 w-6 items-center justify-center rounded-r-lg border border-l-0 border-app-border bg-app-surface text-app-muted shadow-md group-hover:text-app-heading group-focus-visible:ring-2 group-focus-visible:ring-app-action">
+            <ChevronRight className="h-4 w-4" />
           </span>
         </span>
       </button>
-    ) : (
-      <aside ref={asideRef} id="explorer-sidebar" data-testid="explorer-sidebar" data-collapsed="false" aria-label="Music Explorer sidebar"
-        style={width ? { width } : undefined}
-        className={`relative hidden md:block shrink-0 bg-app-toolbar border-r border-app-border ${width ? '' : 'w-64 lg:w-72'}`}>
-        <div className="h-full overflow-y-auto"><MusicExplorerNav {...nav} headerAction={collapseButton} /></div>
+    )}
+    <aside ref={asideRef} id="explorer-sidebar" data-testid="explorer-sidebar" data-collapsed={collapsed ? 'true' : 'false'}
+      aria-label="Music Explorer sidebar" aria-hidden={collapsed}
+      style={width && !collapsed ? { width } : undefined}
+      className={`relative hidden md:block shrink-0 bg-app-toolbar border-r border-app-border transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none overflow-hidden ${
+        collapsed ? 'w-0 border-r-0 opacity-0 pointer-events-none' : (width ? '' : 'w-64 lg:w-72')
+      }`}>
+      <div style={{ width: width ?? 288 }} className="h-full overflow-y-auto"><MusicExplorerNav {...nav} headerAction={collapseButton} /></div>
+      {!collapsed && (
         <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize Music Explorer"
           aria-valuemin={EXPLORER_MIN_WIDTH} aria-valuemax={EXPLORER_MAX_WIDTH}
           aria-valuenow={width ?? 288}
           data-testid="explorer-resize-handle" onPointerDown={startResize} onKeyDown={resizeByKey}
           className="absolute inset-y-0 -right-1.5 z-10 w-3 cursor-col-resize touch-none outline-none hover:bg-app-action/30 focus-visible:bg-app-action/50" />
-      </aside>
-    )}
+      )}
+    </aside>
     {isOpen && <div role="dialog" aria-modal="true" aria-label="Music Explorer drawer"
       className="md:hidden fixed inset-0 z-50 flex" data-testid="music-explorer-drawer">
       <button type="button" tabIndex={-1} aria-label="Dismiss Music Explorer" onClick={onClose}

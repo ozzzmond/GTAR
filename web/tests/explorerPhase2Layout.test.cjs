@@ -67,9 +67,9 @@ test('sidebar: drag edge resizes by keyboard with min/max clamp, width and colla
 
   // Collapse leaves only the left-edge grip; the grip reopens the sidebar and focus moves back.
   await click($('[data-testid="explorer-collapse"]'))
-  assert.equal($('[data-testid="explorer-sidebar"]'), null)
+  assert.equal($('[data-testid="explorer-sidebar"]').dataset.collapsed, 'true')
   const grip = $('[data-testid="explorer-edge-grip"]')
-  assert.equal(grip.getAttribute('aria-label'), 'Expand Music Explorer')
+  assert.equal(grip.getAttribute('aria-label'), 'Show Music Explorer')
   assert.equal(document.activeElement, grip, 'focus follows to the grip')
   assert.equal(localStorage.getItem('gtar_explorer_collapsed'), 'true')
   await act(async () => root.render(null))
@@ -78,8 +78,9 @@ test('sidebar: drag edge resizes by keyboard with min/max clamp, width and colla
   const setItem = window.Storage.prototype.setItem
   window.Storage.prototype.setItem = () => { throw new Error('blocked') }
   try { await click($('[data-testid="explorer-edge-grip"]')) } finally { window.Storage.prototype.setItem = setItem }
-  assert.ok($('[data-testid="explorer-sidebar"]'), 'blocked storage never blocks the toggle')
+  assert.equal($('[data-testid="explorer-sidebar"]').dataset.collapsed, 'false', 'blocked storage never blocks the toggle')
   assert.equal(document.activeElement, $('[data-testid="explorer-collapse"]'))
+  assert.equal($('[data-testid="explorer-collapse"]').getAttribute('aria-label'), 'Hide Music Explorer')
   assert.equal($('[data-testid="explorer-nav-browse-sources"]'), null, 'Browse Sources left the Explorer')
 }))
 
@@ -194,3 +195,139 @@ test('App wiring: Explorer selection drives the view; no tab state; header gets 
   assert.match(app, /onOpenSection=\{/)
   assert.doesNotMatch(app, /onOpenSources=\{\(\) => navigateSafely\(\(\) => setIsWebsiteUrlModalOpen\(true\)\)\} \/>/, 'Explorer has no Sources entry')
 })
+
+test('#359: desktop Songbook 2nd row (songbook-filter-bar) stays visible when Explorer is collapsed, toggle uses Chevrons and >=44px touch target, and slide motion respects reduced-motion', async () => ui(async ({ $, click, render }) => {
+  const { ExplorerNavigation } = require('../src/components/ExplorerNavigation.tsx')
+  const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
+  const songs = [{ id: 's1', title: 'Song 1', artist: 'Artist 1', tags: ['worship'], rawContent: '' }]
+  const setlists = [{ id: 'sl1', name: 'Sunday Service', songs: [] }]
+  let currentSelection = { type: 'ALL_SONGS' }
+
+  const Harness = () => {
+    return React.createElement('div', { className: 'flex flex-1 min-h-0' },
+      React.createElement(ExplorerNavigation, {
+        songs,
+        setlists,
+        currentSelection,
+        onSelect: (target) => { currentSelection = target },
+        isOpen: false,
+        onClose: noop,
+      }),
+      React.createElement('main', { className: 'flex-1 min-w-0 flex overflow-hidden' },
+        React.createElement(SongbookHomeView, {
+          songs,
+          setlists,
+          view: currentSelection,
+          onSelectView: (target) => { currentSelection = target },
+          searchQuery: '',
+          onSearchQueryChange: noop,
+          activeSongIndex: 0,
+          onSelectSong: noop,
+          onSongMembershipChange: noop,
+          onCreateSetlistForSong: noop,
+          onNewSong: noop,
+          onNewSetlist: noop,
+          onOpenSetlists: noop,
+          onOpenSongbook: noop,
+          onManageSetlist: noop,
+          onOpenSetlistManager: noop,
+          onDeleteSong: noop,
+          onDeleteSetlist: noop,
+          onSelectSetlistSong: noop,
+          onImportSingleSetlist: noop,
+          onOpenImportSongs: noop,
+          onBulkDeleteSongs: noop,
+          onBulkAddSongsToSetlist: noop,
+        })
+      )
+    )
+  }
+
+  // Track focus calls to verify preventScroll: true (#359)
+  const focusCalls = []
+  const originalFocus = window.HTMLElement.prototype.focus
+  window.HTMLElement.prototype.focus = function (options) {
+    focusCalls.push({ element: this, options })
+    return originalFocus ? originalFocus.call(this, options) : undefined
+  }
+
+  try {
+    await render(Harness, {})
+
+    // 1. Initial expanded state: Explorer open, collapse button clear with >=44px target and aria
+    const sidebar = $('[data-testid="explorer-sidebar"]')
+    assert.ok(sidebar, 'sidebar initially mounted')
+    assert.equal(sidebar.dataset.collapsed, 'false')
+    assert.match(sidebar.className, /transition-\[width,opacity\] duration-200 ease-out motion-reduce:transition-none/)
+
+    const collapseBtn = $('[data-testid="explorer-collapse"]')
+    assert.ok(collapseBtn, 'collapse toggle exists in sidebar header')
+    assert.equal(collapseBtn.getAttribute('aria-label'), 'Hide Music Explorer')
+    assert.equal(collapseBtn.getAttribute('aria-expanded'), 'true')
+    assert.match(collapseBtn.className, /min-h-11 min-w-11/, '>=44px touch target')
+    assert.ok(collapseBtn.querySelector('svg'), 'chevron icon present')
+
+    // Songbook 2nd row (filter bar) is visible with all controls
+    const filterBar = $('[data-testid="songbook-filter-bar"]')
+    assert.ok(filterBar, 'Songbook 2nd row visible when Explorer is open')
+    assert.match(filterBar.textContent, /Songbook[\s\S]*All Songs/, 'breadcrumb Songbook > All Songs')
+    assert.ok($('[data-testid="filter-metadata-select"]'), 'Metadata filter')
+    assert.ok($('[data-testid="filter-setlist-select"]'), 'Setlists filter')
+    assert.ok($('[data-testid="filter-tags-select"]'), 'Tags filter')
+    assert.ok($('[data-testid="sort-title"]'), 'Title sort')
+    assert.ok($('[data-testid="toggle-song-selection-mode"]'), 'Select button')
+    assert.ok($('[data-testid="songs-library-menu-btn"]'), '... menu button')
+
+    // 2. Collapse Music Explorer
+    await click(collapseBtn)
+
+    // Sidebar transitions to collapsed (w-0, opacity-0, aria-hidden, data-collapsed="true")
+    assert.equal(sidebar.dataset.collapsed, 'true')
+    assert.equal(sidebar.getAttribute('aria-hidden'), 'true')
+    assert.match(sidebar.className, /w-0 border-r-0 opacity-0 pointer-events-none/)
+
+    // Show Music Explorer toggle is rendered on the left border
+    const edgeGrip = $('[data-testid="explorer-edge-grip"]')
+    assert.ok(edgeGrip, 'Show Music Explorer toggle exists when collapsed')
+    assert.equal(edgeGrip.getAttribute('aria-label'), 'Show Music Explorer')
+    assert.equal(edgeGrip.getAttribute('aria-expanded'), 'false')
+    assert.match(edgeGrip.querySelector('span').className, /min-h-11 min-w-11/, '>=44px touch target on edge toggle')
+    assert.ok(edgeGrip.querySelector('svg'), 'chevron right icon present')
+
+    // Regression check (#359): focus restored to edge grip with preventScroll: true
+    const gripFocus = focusCalls.find(c => c.element === edgeGrip)
+    assert.ok(gripFocus, 'focus restored to edge grip on collapse')
+    assert.equal(gripFocus.options?.preventScroll, true, 'edge grip focus passed { preventScroll: true }')
+
+    // Songbook 2nd row (filter bar) REMAINS VISIBLE when Explorer is hidden
+    const filterBarAfterCollapse = $('[data-testid="songbook-filter-bar"]')
+    assert.ok(filterBarAfterCollapse, 'Songbook 2nd row stays visible when Explorer is collapsed')
+    assert.match(filterBarAfterCollapse.textContent, /Songbook[\s\S]*All Songs/)
+    assert.ok($('[data-testid="filter-metadata-select"]'))
+    assert.ok($('[data-testid="filter-setlist-select"]'))
+    assert.ok($('[data-testid="filter-tags-select"]'))
+    assert.ok($('[data-testid="sort-title"]'))
+    assert.ok($('[data-testid="toggle-song-selection-mode"]'))
+    assert.ok($('[data-testid="songs-library-menu-btn"]'))
+
+    // 3. Re-expand Music Explorer via edge toggle
+    await click(edgeGrip)
+    assert.equal(sidebar.dataset.collapsed, 'false')
+    assert.equal($('[data-testid="explorer-edge-grip"]'), null)
+    assert.ok($('[data-testid="songbook-filter-bar"]'), 'filter bar stays visible after re-expanding')
+
+    // Regression check (#359): focus restored to collapse button with preventScroll: true
+    const collapseFocus = focusCalls.find(c => c.element === $('[data-testid="explorer-collapse"]'))
+    assert.ok(collapseFocus, 'focus restored to collapse button on expand')
+    assert.equal(collapseFocus.options?.preventScroll, true, 'collapse button focus passed { preventScroll: true }')
+  } finally {
+    window.HTMLElement.prototype.focus = originalFocus
+  }
+}))
+
+test('#359: focus restoration on Explorer collapse/expand explicitly specifies { preventScroll: true }', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/components/ExplorerNavigation.tsx'), 'utf8')
+  assert.match(source, /gripRef\.current\?\.focus\(\{\s*preventScroll:\s*true\s*\}\)/)
+  assert.match(source, /collapseRef\.current\?\.focus\(\{\s*preventScroll:\s*true\s*\}\)/)
+})
+
