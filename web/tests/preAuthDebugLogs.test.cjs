@@ -270,11 +270,8 @@ test('Header simplifies Cloud Sync to canonical header button and removes duplic
   const statusSource = fs.readFileSync(require.resolve('../src/utils/syncStatus.ts'), 'utf8')
   assert.match(statusSource, /Last cloud backup:/)
 
-  // Verify Cloud Songbook Sync is NOT in overflow menu
-  const overflowMenuIdx = headerSource.indexOf('showOverflowMenu &&')
-  assert.ok(overflowMenuIdx > -1, 'Overflow menu must exist')
-  const overflowMenuChunk = headerSource.slice(overflowMenuIdx, overflowMenuIdx + 2000)
-  assert.doesNotMatch(overflowMenuChunk, /Cloud Songbook Sync/)
+  // #359: Verify overflow menu retired and Cloud Songbook Sync is not in avatar popover
+  assert.doesNotMatch(headerSource, /showOverflowMenu &&/, 'Overflow menu retired in #359')
 
   // Verify Cloud Songbook Sync is NOT in avatar popover
   const avatarPopoverIdx = headerSource.indexOf('showAvatarPopover &&')

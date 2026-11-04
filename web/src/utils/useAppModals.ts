@@ -6,7 +6,7 @@
 import { useMemo, useReducer, type Dispatch, type SetStateAction } from 'react'
 
 export const APP_MODALS = [
-  'websiteUrl', 'import', 'stageSettings', 'stageTools', 'theme', 'headerKeyPicker',
+  'websiteUrl', 'import', 'stageTools', 'theme', 'headerKeyPicker',
   'setlistDrawer', 'tvPresentation',
 ] as const
 export type AppModal = typeof APP_MODALS[number]

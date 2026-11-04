@@ -113,6 +113,7 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
     onSelect: (target: Parameters<MusicExplorerNavProps['onSelect']>[0]) => { nav.onSelect(target); onClose() },
     onNewSong: () => { nav.onNewSong?.(); onClose() },
     onNewSetlist: () => { nav.onNewSetlist?.(); onClose() },
+    onOpenTrash: () => { nav.onOpenTrash?.(); onClose() },
   }
   const collapseButton = (
     <button ref={collapseRef} type="button" data-testid="explorer-collapse" aria-label="Hide Music Explorer" aria-expanded="true"
@@ -137,6 +138,7 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
     )}
     <aside ref={asideRef} id="explorer-sidebar" data-testid="explorer-sidebar" data-collapsed={collapsed ? 'true' : 'false'}
       aria-label="Music Explorer sidebar" aria-hidden={collapsed}
+      inert={collapsed ? true : undefined}
       style={width && !collapsed ? { width } : undefined}
       className={`relative hidden md:block shrink-0 bg-app-toolbar border-r border-app-border transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none overflow-hidden ${
         collapsed ? 'w-0 border-r-0 opacity-0 pointer-events-none' : (width ? '' : 'w-64 lg:w-72')

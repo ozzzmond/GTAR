@@ -144,9 +144,9 @@ test('#304: the Recovery data dot shows only while some copies cannot be opened'
   } finally { localStorage.clear() }
 })
 
-test('#304: header overflow menu says "Import Songs..."', () => {
+test('#304/#359: Import Songs removed from header overflow (#359) and reachable in Songbook', () => {
   const header = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
-  assert.ok(header.includes('>Import Songs...</span>'))
+  assert.ok(!header.includes('Import Songs'))
   assert.ok(!header.includes('Import Songs &amp; Setlists'))
 })
 

@@ -93,26 +93,54 @@ function headerProps(calls, extra = {}) {
     activeSection: 'songs', deletedSongsCount: 2, ...extra }
 }
 
-test('header: GTAR1 row with actions (Theme, Trash, More, cloud status) in UPPERBOX (#333)', async () => ui(async ({ $, click, render }) => {
+test('header: actions relocated per #359 (Theme/Trash/More removed, Theme/Sources/Trash/Install in Profile)', async () => ui(async ({ $, click, render }) => {
   const { Header } = require('../src/components/Header.tsx')
   const calls = []
   await render(Header, headerProps(calls))
   assert.ok($('[data-testid="dev-header-diagnostics"]'), 'DEV deployment details stay next to the logo')
   assert.ok($('[data-testid="dev-header-diagnostics-compact"]'), 'compact DEV strip for phones')
   assert.ok($('[data-testid="header-cloud-sync-button"]'), 'cloud status button kept')
-  assert.ok($('[aria-label="Theme"]'), 'Theme in header')
-  assert.ok($('[aria-label="Trash (2)"]'), 'Trash in header')
-  assert.ok($('[aria-label="More"]'), 'More in header')
+
+  // Theme, Trash, More removed from header bar (#359)
+  assert.equal($('[aria-label="Theme"]'), null, 'no header Theme button (#359)')
+  assert.equal($('[aria-label="Trash (2)"]'), null, 'no header Trash button (#359)')
+  assert.equal($('[aria-label="More"]'), null, 'no header More button (#359)')
   assert.equal($('[data-testid="header-new-song"]'), null, 'no header New Song button (#332)')
   assert.equal($('[data-testid="header-sources"]'), null, 'no header Sources button (#332)')
   assert.equal($('nav[aria-label="Main navigation"]'), null, 'no header Songbook/Setlists switcher (#332)')
-  await click($('[aria-label="Theme"]'))
-  await click($('[aria-label="Trash (2)"]'))
-  await click($('[aria-label="More"]'))
-  assert.match(document.body.textContent, /Stage Settings[\s\S]*Web Sources[\s\S]*Import Songs\.\.\./, 'More keeps its pre-#319 items')
+
+  // Branding (#359)
+  assert.ok($('button[aria-label="GTAR home"]'), 'GTAR home aria-label')
+  assert.equal($('img[alt="GTAR Logo"]')?.getAttribute('alt'), 'GTAR Logo')
+
+  // Avatar popover contains relocated items (#359)
   await click($('[data-testid="header-avatar"]'))
-  assert.equal($('[data-testid="header-theme-settings-btn"]'), null, 'Theme stays in header, not the profile menu')
-  assert.deepEqual(calls, ['theme', 'view:trash'])
+  assert.ok($('[data-testid="profile-theme-button"]'), 'Theme in Profile popover')
+  assert.ok($('[data-testid="profile-web-sources"]'), 'Web Sources in Profile popover')
+  assert.ok($('[data-testid="profile-trash-button"]'), 'Trash in Profile popover')
+
+  // Theme item triggers onToggleTheme
+  await click($('[data-testid="profile-theme-button"]'))
+  assert.deepEqual(calls, ['theme'])
+
+  // Web Sources item triggers onOpenWebsiteUrlSource
+  await click($('[data-testid="header-avatar"]'))
+  await click($('[data-testid="profile-web-sources"]'))
+  assert.deepEqual(calls, ['theme', 'sources'])
+
+  // Trash item triggers onViewChange('trash')
+  await click($('[data-testid="header-avatar"]'))
+  await click($('[data-testid="profile-trash-button"]'))
+  assert.deepEqual(calls, ['theme', 'sources', 'view:trash'])
+
+  // Esc closes avatar popover
+  await click($('[data-testid="header-avatar"]'))
+  assert.ok($('[data-testid="profile-theme-button"]'))
+  await act(async () => {
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  assert.equal($('[data-testid="profile-theme-button"]'), null, 'Esc closes avatar popover')
+
   for (const button of document.querySelectorAll('header button')) {
     assert.doesNotMatch(button.className, /\[#|(bg|text|border)-(red|blue|green|amber|sky|slate|gray)-\d/, 'theme tokens only')
   }
@@ -281,9 +309,10 @@ test('#359: desktop Songbook 2nd row (songbook-filter-bar) stays visible when Ex
     // 2. Collapse Music Explorer
     await click(collapseBtn)
 
-    // Sidebar transitions to collapsed (w-0, opacity-0, aria-hidden, data-collapsed="true")
+    // Sidebar transitions to collapsed (w-0, opacity-0, aria-hidden, data-collapsed="true", inert)
     assert.equal(sidebar.dataset.collapsed, 'true')
     assert.equal(sidebar.getAttribute('aria-hidden'), 'true')
+    assert.ok(sidebar.hasAttribute('inert'), 'collapsed sidebar is inert to prevent tab-focus on hidden children (#359)')
     assert.match(sidebar.className, /w-0 border-r-0 opacity-0 pointer-events-none/)
 
     // Show Music Explorer toggle is rendered on the left border
@@ -313,6 +342,7 @@ test('#359: desktop Songbook 2nd row (songbook-filter-bar) stays visible when Ex
     // 3. Re-expand Music Explorer via edge toggle
     await click(edgeGrip)
     assert.equal(sidebar.dataset.collapsed, 'false')
+    assert.equal(sidebar.hasAttribute('inert'), false, 'expanded sidebar is not inert')
     assert.equal($('[data-testid="explorer-edge-grip"]'), null)
     assert.ok($('[data-testid="songbook-filter-bar"]'), 'filter bar stays visible after re-expanding')
 

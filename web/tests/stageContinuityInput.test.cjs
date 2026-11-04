@@ -90,7 +90,6 @@ test('App source contracts: StageErrorBoundary wraps StageView and passes overla
   assert.ok(code.includes("import { StageErrorBoundary } from './components/StageErrorBoundary'"), 'App.tsx must import StageErrorBoundary')
   assert.ok(code.includes('<StageErrorBoundary onExitToSongbook='), 'App.tsx must wrap StageView in StageErrorBoundary')
   assert.ok(code.includes('isSetlistDrawerOpen={isSetlistDrawerOpen}'), 'App.tsx must pass isSetlistDrawerOpen to StageView')
-  assert.ok(code.includes('isStageSettingsModalOpen={isStageSettingsModalOpen}'), 'App.tsx must pass isStageSettingsModalOpen to StageView')
   assert.ok(code.includes('isAnyModalOpen='), 'App.tsx must pass isAnyModalOpen to StageView')
 })
 

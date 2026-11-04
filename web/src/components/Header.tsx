@@ -5,17 +5,13 @@ import { SyncStatusPill } from './SyncStatusPill'
 import { computeSongbookChecksum } from '../utils/cloudBackupFormat'
 import { readPersistedLibrary } from '../utils/syncJournal'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
-import React, { useState, useRef, useEffect, useMemo, useId } from 'react'
-import { createPortal } from 'react-dom'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { SearchResults } from './SearchResults'
 import {
   Search,
   X,
   Globe,
   Palette,
-  MoreVertical,
-  Settings,
-  FolderOpen,
   Wrench,
   History,
   Command,
@@ -82,7 +78,7 @@ interface HeaderProps {
   onOpenWebsiteUrlSource: () => void
   onOpenStageTools: () => void
   onToggleTheme: () => void
-  onOpenStageSettings: () => void
+  onOpenStageSettings?: () => void
   onOpenImportModal: () => void
   /** Library (songs including trash) for the Backup & Restore center's file card. */
   backupSongs?: ActiveSongState[]
@@ -115,112 +111,6 @@ interface HeaderProps {
   onOpenSection?: (section: 'songs' | 'setlists') => void
 }
 
-/**
- * ToolbarIconButton — icon-only button with tooltip and cyan active dot
- */
-function ToolbarIconButton({
-  icon: Icon,
-  label,
-  isActive = false,
-  onClick,
-  className = '',
-  buttonRef,
-  testId,
-  dropTrash,
-}: {
-  icon: React.FC<{ className?: string }>
-  label: string
-  isActive?: boolean
-  onClick: () => void
-  className?: string
-  buttonRef?: React.Ref<HTMLButtonElement>
-  testId?: string
-  dropTrash?: boolean
-}) {
-  const tooltipId = useId()
-  const [anchor, setAnchor] = useState<DOMRect | null>(null)
-  const interaction = useRef({ hovered: false, focused: false })
-
-  useEffect(() => {
-    if (!anchor) return
-    const dismiss = () => setAnchor(null)
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss()
-    }
-    // Any viewport/ancestor movement invalidates the fixed anchor, including
-    // horizontal toolbar scrolling and the mobile visual viewport.
-    window.addEventListener('scroll', dismiss, true)
-    window.addEventListener('resize', dismiss)
-    window.addEventListener('keydown', onKeyDown)
-    window.visualViewport?.addEventListener('resize', dismiss)
-    window.visualViewport?.addEventListener('scroll', dismiss)
-    return () => {
-      window.removeEventListener('scroll', dismiss, true)
-      window.removeEventListener('resize', dismiss)
-      window.removeEventListener('keydown', onKeyDown)
-      window.visualViewport?.removeEventListener('resize', dismiss)
-      window.visualViewport?.removeEventListener('scroll', dismiss)
-    }
-  }, [anchor])
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => { setAnchor(null); onClick() }}
-        onMouseEnter={(event) => {
-          interaction.current.hovered = true
-          setAnchor(event.currentTarget.getBoundingClientRect())
-        }}
-        onMouseLeave={() => {
-          interaction.current.hovered = false
-          if (!interaction.current.focused) setAnchor(null)
-        }}
-        onFocus={(event) => {
-          interaction.current.focused = true
-          setAnchor(event.currentTarget.getBoundingClientRect())
-        }}
-        onBlur={() => {
-          interaction.current.focused = false
-          if (!interaction.current.hovered) setAnchor(null)
-        }}
-        aria-label={label}
-        aria-describedby={anchor ? tooltipId : undefined}
-        data-testid={testId}
-        data-explorer-drop-trash={dropTrash ? 'true' : undefined}
-        className={`toolbar-icon-btn relative flex min-h-11 min-w-9 sm:min-w-11 w-9 sm:w-auto shrink-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-app-border bg-app-base px-1.5 sm:px-2 text-app-action hover:border-app-action cursor-pointer transition-colors ${
-          isActive ? 'active border-app-accent text-app-accent' : ''
-        } ${className}`}
-      >
-        <Icon className="w-4 h-4 shrink-0" />
-        <span className="hidden lg:inline text-xs font-semibold">{label}</span>
-        <span className="active-dot" />
-      </button>
-      {anchor && createPortal(
-        <span
-          id={tooltipId}
-          role="tooltip"
-          className="toolbar-tooltip"
-          ref={(node) => {
-            if (!node) return
-            const viewport = window.visualViewport
-            const left = viewport?.offsetLeft ?? 0
-            const top = viewport?.offsetTop ?? 0
-            const width = viewport?.width ?? window.innerWidth
-            const height = viewport?.height ?? window.innerHeight
-            node.style.maxWidth = `${Math.max(0, width - 16)}px`
-            const bounds = node.getBoundingClientRect()
-            node.style.left = `${Math.max(left + 8, Math.min(anchor.left + anchor.width / 2 - bounds.width / 2, left + width - bounds.width - 8))}px`
-            node.style.top = `${Math.max(top + 8, Math.min(anchor.bottom + 6, top + height - bounds.height - 8))}px`
-          }}
-        >{label}</span>,
-        document.body,
-      )}
-    </>
-  )
-}
-
 export const Header: React.FC<HeaderProps> = ({
   activeView,
   onViewChange,
@@ -234,7 +124,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenWebsiteUrlSource,
   onOpenStageTools,
   onToggleTheme,
-  onOpenStageSettings,
   onOpenImportModal,
   backupSongs,
   onImportAllSongs,
@@ -255,10 +144,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCast,
   isCastActive = false,
 }) => {
+  void activeView
   void onOpenStageTools
   void onOpenCast
   void isCastActive
-  const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
@@ -390,6 +279,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // #299 / #264: developer tools, DEV builds only (never rendered in PROD).
   const advancedItem = 'relative w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-accent/50 ui-primary-text text-app-heading hover:text-app-action text-xs font-bold flex items-center gap-2 border border-app-border transition-all cursor-pointer mb-2'
+  const popoverItem = 'w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-2.5 border border-app-border transition-colors cursor-pointer mb-2'
   const advancedTools = isDevEnv ? (
     <div data-testid="advanced-tools">
       <button type="button" data-testid="advanced-tools-button" aria-expanded={showAdvancedTools}
@@ -499,42 +389,22 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }
 
-  const overflowMenuRef = useRef<HTMLDivElement>(null)
-  const moreButtonRef = useRef<HTMLButtonElement>(null)
-  const [moreMenuCoords, setMoreMenuCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
   const searchContainerRef = useRef<HTMLElement>(null)
   const avatarPopoverRef = useRef<HTMLDivElement>(null)
+  const avatarButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (showOverflowMenu && moreButtonRef.current) {
-      const updatePosition = () => {
-        if (!moreButtonRef.current) return
-        const rect = moreButtonRef.current.getBoundingClientRect()
-        const menuWidth = 224
-        const margin = 8
-        const top = rect.bottom + 6
-
-        let left = rect.right - menuWidth
-        const maxLeft = window.innerWidth - menuWidth - margin
-        if (left > maxLeft) {
-          left = maxLeft
-        }
-        if (left < margin) {
-          left = margin
-        }
-
-        setMoreMenuCoords({ top, left })
-      }
-
-      updatePosition()
-      window.addEventListener('resize', updatePosition)
-      window.addEventListener('scroll', updatePosition, true)
-      return () => {
-        window.removeEventListener('resize', updatePosition)
-        window.removeEventListener('scroll', updatePosition, true)
+    if (!showAvatarPopover) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowAvatarPopover(false)
+        avatarButtonRef.current?.focus({ preventScroll: true })
       }
     }
-  }, [showOverflowMenu])
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showAvatarPopover])
 
 
 
@@ -657,16 +527,13 @@ export const Header: React.FC<HeaderProps> = ({
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (overflowMenuRef.current && !overflowMenuRef.current.contains(e.target as Node)) {
-        if (moreButtonRef.current && moreButtonRef.current.contains(e.target as Node)) {
-          return
-        }
-        setShowOverflowMenu(false)
-      }
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
         setIsSearchFocused(false)
       }
       if (avatarPopoverRef.current && !avatarPopoverRef.current.contains(e.target as Node)) {
+        if (avatarButtonRef.current && avatarButtonRef.current.contains(e.target as Node)) {
+          return
+        }
         setShowAvatarPopover(false)
       }
     }
@@ -755,15 +622,15 @@ export const Header: React.FC<HeaderProps> = ({
             className="md:hidden min-h-11 min-w-9 w-9 sm:min-w-11 sm:w-auto flex items-center justify-center rounded-lg header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0">
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <button type="button" onClick={onNavigateHome} aria-label={isDevEnv ? 'GTAR-Dev home' : 'GTAR home'}
+          <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
             className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-11 cursor-pointer shrink-0">
             <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-opacity">
-              <img src={isDevEnv ? devLogo : prodLogo} alt={isDevEnv ? 'GTAR Dev Logo' : 'GTAR Logo'}
+              <img src={isDevEnv ? devLogo : prodLogo} alt="GTAR Logo"
                 className="w-full h-full object-cover select-none" />
             </div>
             <div className="hidden sm:block">
               <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
-                {isDevEnv ? 'GTAR-Dev' : 'GTAR'}
+                GTAR
               </span>
               {isDevEnv ? (
                 <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
@@ -827,38 +694,10 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Theme */}
-          <ToolbarIconButton
-            icon={Palette}
-            label="Theme"
-            onClick={onToggleTheme}
-            className="shrink-0"
-          />
-
-          {/* Trash */}
-          <ToolbarIconButton
-            icon={Trash2}
-            dropTrash
-            label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
-            isActive={activeView === 'trash'}
-            onClick={() => onViewChange('trash')}
-            className="shrink-0"
-          />
-
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
           <SyncStatusPill signedIn={Boolean(currentSession)} lastBackup={lastCloudBackup}
             backupChecksum={backupChecksums[backupUserId] ?? null} localChecksum={localChecksum} now={backupClock}
             recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
-
-          {/* More */}
-          <ToolbarIconButton
-            buttonRef={moreButtonRef}
-            icon={MoreVertical}
-            label="More"
-            isActive={showOverflowMenu}
-            onClick={() => setShowOverflowMenu((prev) => !prev)}
-            className="shrink-0"
-          />
 
           {deferredInstallPrompt && !isAppInstalled && !compact && (
             <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen" className={iconButton}>
@@ -868,7 +707,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Avatar with Auth Status Dot */}
           <div ref={avatarPopoverRef} className="avatar-wrapper">
-            <button type="button" aria-label={currentSession ? 'Account menu' : 'Sign in and account menu'} aria-haspopup="menu"
+            <button ref={avatarButtonRef} type="button" aria-label={currentSession ? 'Account menu' : 'Sign in and account menu'} aria-haspopup="menu"
               aria-expanded={showAvatarPopover} data-testid="header-avatar"
               onClick={() => setShowAvatarPopover(!showAvatarPopover)}
               className="relative w-9 h-9 min-h-9 rounded-full flex items-center justify-center cursor-pointer before:absolute before:-inset-1 before:content-['']">
@@ -887,7 +726,7 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             {showAvatarPopover && (
-              <div className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
+              <div role="menu" aria-label="Account and application menu" className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
                 {currentSession ? (
                   <>
                     <div className="flex items-center gap-3 mb-3">
@@ -917,21 +756,9 @@ export const Header: React.FC<HeaderProps> = ({
                         <span>Manage Users</span>
                       </button>
                     )}
-
-                    {recoveryDataRow}
-                    {advancedTools}
-
-                    <div className="h-[1px] bg-app-border/60 mb-2" />
-
-                    <button type="button"
-                      onClick={() => { setShowAvatarPopover(false); handleSignOut?.() }}
-                      className="w-full min-h-11 px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer">
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Sign Out</span>
-                    </button>
                   </>
                 ) : (
-                  <div className="text-center py-2 space-y-3">
+                  <div className="text-center py-2 space-y-3 mb-2">
                     <p className="text-xs ui-muted-text text-app-muted">
                       Sign in to use cloud backup and the Shared Catalog.
                     </p>
@@ -941,8 +768,94 @@ export const Header: React.FC<HeaderProps> = ({
                       <User className="w-3.5 h-3.5" />
                       <span>Sign In with Google</span>
                     </button>
-                    <div className="text-left">{recoveryDataRow}{advancedTools}</div>
                   </div>
+                )}
+
+                <div className="h-[1px] bg-app-border/60 my-2" />
+
+                {/* Relocated App Actions: Theme, Web Sources, Trash (mobile), Install App (PWA) */}
+                <button
+                  type="button"
+                  data-testid="profile-theme-button"
+                  onClick={() => { setShowAvatarPopover(false); onToggleTheme() }}
+                  className={popoverItem}
+                >
+                  <Palette className="w-4 h-4 text-app-action shrink-0" />
+                  <span>Theme</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="profile-web-sources"
+                  onClick={() => { setShowAvatarPopover(false); onOpenWebsiteUrlSource() }}
+                  className={popoverItem}
+                >
+                  <Globe className="w-4 h-4 text-app-action shrink-0" />
+                  <span>Web Sources</span>
+                </button>
+
+                {/* Mobile/compact Trash */}
+                <button
+                  type="button"
+                  data-testid="profile-trash-button"
+                  aria-label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
+                  onClick={() => { setShowAvatarPopover(false); onViewChange('trash') }}
+                  className={`md:hidden ${popoverItem} justify-between`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Trash2 className="w-4 h-4 text-app-action shrink-0" />
+                    <span>Trash</span>
+                  </div>
+                  {deletedSongsCount > 0 && (
+                    <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none bg-app-surface border border-app-border text-app-muted font-mono">
+                      {deletedSongsCount}
+                    </span>
+                  )}
+                </button>
+
+                {!isAppInstalled && (
+                  <button
+                    type="button"
+                    data-testid="profile-install-app"
+                    onClick={() => { setShowAvatarPopover(false); handleTriggerInstall() }}
+                    className={popoverItem}
+                  >
+                    <Download className="w-4 h-4 text-app-action shrink-0" />
+                    <span>Install App (PWA)</span>
+                  </button>
+                )}
+
+                {/* Diagnostics and Developer Tools */}
+                {isDevApp && !isDevEnv && (
+                  <button
+                    type="button"
+                    data-testid="profile-debug-logs"
+                    onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }}
+                    className={`${advancedItem} justify-between`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />
+                      <span className="font-semibold">Debug Logs</span>
+                    </div>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-status-error/15 text-status-error border border-status-error/30">
+                      DIAG
+                    </span>
+                  </button>
+                )}
+
+                {recoveryDataRow}
+                {advancedTools}
+
+                {currentSession && (
+                  <>
+                    <div className="h-[1px] bg-app-border/60 my-2" />
+                    <button type="button"
+                      onClick={() => { setShowAvatarPopover(false); handleSignOut?.() }}
+                      className="w-full min-h-11 px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer">
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -982,106 +895,6 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       </header>
-
-      {/* 3-Dots Overflow Menu */}
-      {showOverflowMenu && (
-        <div
-          ref={overflowMenuRef}
-          style={{
-            position: 'fixed',
-            top: `${moreMenuCoords.top}px`,
-            left: `${moreMenuCoords.left}px`,
-          }}
-          className="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-app-border bg-app-surface shadow-2xl py-2 z-50 animate-scale-in"
-        >
-          {/* 0. Install App (PWA) */}
-          {!isAppInstalled && (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOverflowMenu(false)
-                  handleTriggerInstall()
-                }}
-                className="w-full text-left px-4 py-2.5 text-xs text-app-action hover:bg-app-base transition-colors flex items-center gap-3 cursor-pointer"
-              >
-                <Download className="w-4 h-4 text-app-action" />
-                <span className="font-semibold">Install App (PWA)</span>
-              </button>
-              <div className="h-[1px] bg-app-border/60 my-1" />
-            </>
-          )}
-
-          {/* 1. Stage Settings */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenStageSettings()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <Settings className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Stage Settings</span>
-          </button>
-
-          <div className="h-[1px] bg-app-border/60 my-1" />
-
-          {/* 2. Web Sources */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenWebsiteUrlSource()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <Globe className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Web Sources</span>
-          </button>
-
-          <div className="h-[1px] bg-app-border/60 my-1" />
-
-          {/* 2. Import... */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowOverflowMenu(false)
-              onOpenImportModal()
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <FolderOpen className="w-4 h-4 text-app-action" />
-            <span className="font-semibold">Import Songs...</span>
-          </button>
-
-
-
-          {/* 5. Debug Logs: PROD super-admins / debug builds only. On DEV the profile menu's
-              Advanced Tools replace this menu item (#191, #299). */}
-          {isDevApp && !isDevEnv && (
-            <>
-              <div className="h-[1px] bg-app-border/60 my-1" />
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOverflowMenu(false)
-                  setShowDebugLogsModal(true)
-                }}
-                className="w-full text-left px-4 py-2.5 text-xs ui-primary-text text-app-heading hover:bg-app-base hover:text-app-action transition-colors flex items-center justify-between gap-3 cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <Terminal className="w-4 h-4 text-app-action" />
-                  <span className="font-semibold">Debug Logs</span>
-                </div>
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600/25 text-status-error border border-red-500/30">
-                  {isDevEnv ? 'DEV' : 'DIAG'}
-                </span>
-              </button>
-            </>
-          )}
-        </div>
-      )}
 
       {/* Real Chord Preview & Direct Import Modal */}
       <ChordPreviewModal

@@ -816,8 +816,9 @@ test('STEP_8.3: Header layout renders DEV branding without redundant version, di
     })
   )
 
-  // Left column contains GTAR-Dev branding and DEV badge, but NO redundant hardcoded version text
-  assert.ok(devHeaderHtml.includes('GTAR-Dev'), 'Header must contain GTAR-Dev title')
+  // Left column contains GTAR branding (#359) and DEV badge, but NO redundant hardcoded version text
+  assert.ok(devHeaderHtml.includes('GTAR'), 'Header must contain GTAR title')
+  assert.ok(!devHeaderHtml.includes('GTAR-Dev'), 'Header must not contain redundant GTAR-Dev title (#359)')
   assert.ok(devHeaderHtml.includes('>DEV<'), 'Header must contain DEV badge')
   assert.ok(!devHeaderHtml.includes('header-secondary-text'), 'DEV Header must not contain secondary version label beside DEV badge')
 

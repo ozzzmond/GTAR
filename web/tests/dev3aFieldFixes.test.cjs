@@ -85,19 +85,18 @@ test('DEV3A_STAGE_DOCK_VISUAL_SIZING: Floating stage dock visibly enlarged with 
 // =============================================================================
 // 3. REMOVE DUPLICATE TRASH ACTION FROM MORE MENU
 // =============================================================================
-test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin (Basurahan) removed from More menu; primary toolbar retained', () => {
+test('DEV3A_REMOVE_DUPLICATE_TRASH: Trash Bin removed from Header toolbar (#359) and relocated to Explorer & Profile popover', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
 
   // More menu section must NOT contain Trash Bin (Basurahan)
   assert.ok(!headerSource.includes('Trash Bin (Basurahan)'), 'Trash Bin (Basurahan) copy removed from More menu')
 
-  // Count occurrences of onViewChange('trash') - must only be in primary toolbar
-  const trashNavMatches = headerSource.match(/onViewChange\('trash'\)/g)
-  assert.equal(trashNavMatches?.length, 1, "Exactly one onViewChange('trash') call remains in Header")
+  // #359: Header toolbar no longer has ToolbarIconButton
+  assert.ok(!headerSource.includes('ToolbarIconButton'), 'ToolbarIconButton retired in #359')
 
-  // Primary toolbar must retain dedicated Trash button
-  assert.ok(headerSource.includes('label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : \'\'}`}'), 'Dedicated primary Trash button preserved')
-  assert.ok(headerSource.includes("isActive={activeView === 'trash'}"), 'Primary Trash button tracks active view')
+  // #359: Mobile/compact Trash lives inside the Profile popover
+  assert.ok(headerSource.includes('data-testid="profile-trash-button"'), 'Profile popover renders mobile Trash button')
+  assert.ok(headerSource.includes("onViewChange('trash')"), "Profile popover navigates to trash")
 })
 
 // =============================================================================

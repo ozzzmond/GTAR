@@ -219,21 +219,9 @@ test('TOOLBAR ALIGNMENT: 8 primary controls, 44px targets, canonical order, CSS 
   const sheet = document.createElement('style')
   sheet.textContent = css.match(/^\.toolbar-icon-btn\s*\{[^}]*\}/m)[0] + css.match(/^header \.toolbar-icon-btn\s*\{[^}]*\}/m)[0]
   document.head.appendChild(sheet)
+  // #359: Header toolbar no longer renders Theme, Trash, More toolbar-icon-btn controls
   const toolbarButtons = document.querySelectorAll('.toolbar-icon-btn')
-  assert.equal(toolbarButtons.length, 3)
-  const labels = [...toolbarButtons].map(btn => btn.getAttribute('aria-label'))
-  assert.deepEqual(labels, [
-    'Theme',
-    'Trash',
-    'More',
-  ])
-  for (const btn of toolbarButtons) {
-    assert.ok(btn.classList.contains('shrink-0'))
-    const footprint = window.getComputedStyle(btn)
-    assert.equal(footprint.minWidth, '44px'); assert.equal(footprint.height, '44px')
-    assert.equal(footprint.display, 'inline-flex')
-    assert.equal(footprint.alignItems, 'center'); assert.equal(footprint.justifyContent, 'center')
-  }
+  assert.equal(toolbarButtons.length, 0, 'Theme, Trash, More removed from Header toolbar in #359')
 })
 
 test('FACTORY PALETTE: All presets provide 38 valid semantic tokens; revamps follow design guidelines', () => {

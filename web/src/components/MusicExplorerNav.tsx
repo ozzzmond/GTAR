@@ -1,7 +1,7 @@
 import { TagRow } from './TagRow'
 import { useTagLibrary } from '../utils/tagLibraryContext'
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Tag } from 'lucide-react'
+import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Tag, Trash2 } from 'lucide-react'
 import { ExplorerFolderTree } from './ExplorerFolderTree'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { normalizeTags, tagChipStyle } from '../utils/songTags'
@@ -28,6 +28,10 @@ export interface MusicExplorerNavProps {
   onNewSetlist?: () => void
   /** #319: Explorer header slot (sidebar collapse control); Browse Sources was removed from the Explorer. */
   headerAction?: React.ReactNode
+  /** #359: Trash count and navigation */
+  deletedSongsCount?: number
+  isTrashActive?: boolean
+  onOpenTrash?: () => void
 }
 
 interface TagCount {
@@ -49,6 +53,9 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
   currentSelection,
   onSelect,
   headerAction,
+  deletedSongsCount = 0,
+  isTrashActive = false,
+  onOpenTrash,
 }) => {
   const { colors } = useTagLibrary()
   const [songbookExpanded, setSongbookExpanded] = useState(true)
@@ -245,6 +252,26 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
               onSelect={folderId => select({ type: 'FOLDER', folderId })} onSave={onSaveFolder} onDelete={onDeleteFolder} />
           </div>
         )}
+        {/* #359: Trash Bin at end of Setlists & Folders section */}
+        <div className="mt-2 pl-1">
+          <button
+            type="button"
+            data-testid="explorer-nav-trash"
+            data-explorer-drop-trash="true"
+            aria-label={`Trash Bin${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
+            aria-current={isTrashActive ? 'page' : undefined}
+            onClick={() => onOpenTrash?.()}
+            className={`${itemBase} ${isTrashActive ? itemActive : itemIdle}`}
+          >
+            <Trash2 className="h-4 w-4 shrink-0 text-current" />
+            <span>Trash Bin</span>
+            {deletedSongsCount > 0 && (
+              <span className={`${pill} ${isTrashActive ? 'bg-app-action/80 text-app-on-action' : pillIdle}`}>
+                {deletedSongsCount}
+              </span>
+            )}
+          </button>
+        </div>
       </section>
     </nav>
   )

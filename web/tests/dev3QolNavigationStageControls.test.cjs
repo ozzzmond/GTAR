@@ -19,29 +19,28 @@ const webDir = path.resolve(__dirname, '..')
 const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
 
 // =============================================================================
-// 2. HEADER UPPERBOX & STAGE VIEW ORDER (#333)
+// 2. HEADER UPPERBOX & STAGE VIEW ORDER (#333, #359)
 // =============================================================================
-test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Theme -> Trash -> Backed up -> More -> profile; Stage follows Back -> Editor -> Band Sync', () => {
+test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Backed up -> profile (Theme/Trash/More relocated per #359); Stage follows Back -> Editor -> Band Sync', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
   const stageSource = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
 
-  const themeIdx = headerSource.indexOf('label="Theme"')
-  const trashIdx = headerSource.indexOf('label={`Trash')
   const backupIdx = headerSource.indexOf('<SyncStatusPill')
-  const moreIdx = headerSource.indexOf('label="More"')
   const avatarIdx = headerSource.indexOf('data-testid="header-avatar"')
 
-  assert.ok(themeIdx !== -1, 'Theme action must exist in Header')
-  assert.ok(trashIdx !== -1, 'Trash action must exist in Header')
   assert.ok(backupIdx !== -1, 'Backed up action must exist in Header')
-  assert.ok(moreIdx !== -1, 'More action must exist in Header')
   assert.ok(avatarIdx !== -1, 'Profile avatar must exist in Header')
+  assert.ok(backupIdx < avatarIdx, 'Backed up must precede profile')
 
-  // Verify strict ordering in Header
-  assert.ok(themeIdx < trashIdx, 'Theme must precede Trash')
-  assert.ok(trashIdx < backupIdx, 'Trash must precede Backed up')
-  assert.ok(backupIdx < moreIdx, 'Backed up must precede More')
-  assert.ok(moreIdx < avatarIdx, 'More must precede profile')
+  // #359: Theme, Trash, More removed from top header toolbar
+  assert.equal(headerSource.indexOf('ToolbarIconButton'), -1, 'ToolbarIconButton removed from header toolbar')
+  assert.equal(headerSource.indexOf('label="Theme"'), -1, 'Theme removed from header toolbar')
+  assert.equal(headerSource.indexOf('label="More"'), -1, 'More removed from header toolbar')
+
+  // #359: Relocated actions in Profile popover
+  assert.ok(headerSource.includes('data-testid="profile-theme-button"'), 'Theme in Profile popover')
+  assert.ok(headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources in Profile popover')
+  assert.ok(headerSource.includes('data-testid="profile-trash-button"'), 'Trash in Profile popover (<md)')
 
   // Verify Stage Box ordering
   const backIdx = stageSource.indexOf('aria-label="Back"')
@@ -60,25 +59,21 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Theme -> Trash -> Backed up -> M
 })
 
 // =============================================================================
-// 3. WEB SOURCES RELOCATION & MORE MENU ANCHORING
+// 3. WEB SOURCES RELOCATION & PROFILE POPOVER (#359)
 // =============================================================================
-test('DEV3_WEB_SOURCES_RELOCATION_AND_MORE_MENU: Web Sources relocated to More menu; More menu uses dynamic viewport-anchored positioning', () => {
+test('DEV3_WEB_SOURCES_RELOCATION_AND_PROFILE_POPOVER: Web Sources relocated to Profile popover; More menu retired per #359', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
 
-  // Web Sources removed from primary header buttons
+  // Web Sources not in primary header toolbar (#332)
   assert.ok(!headerSource.includes('label="Web Sources"'), 'Web Sources not in primary header')
 
-  // Web Sources added inside More menu
-  const moreMenuSection = headerSource.substring(headerSource.indexOf('3-Dots Overflow Menu'))
-  assert.ok(moreMenuSection.includes('Web Sources'), 'Web Sources present inside 3-dots overflow menu')
-  assert.ok(moreMenuSection.includes('onOpenWebsiteUrlSource()'), 'Web Sources triggers onOpenWebsiteUrlSource in More menu')
+  // More menu retired (#359)
+  assert.ok(!headerSource.includes('3-Dots Overflow Menu'), 'More menu retired')
+  assert.ok(!headerSource.includes('moreButtonRef'), 'moreButtonRef retired')
 
-  // More menu positioning is dynamic and anchored via moreButtonRef
-  assert.ok(headerSource.includes('moreButtonRef = useRef<HTMLButtonElement>(null)'), 'Header defines moreButtonRef')
-  assert.ok(headerSource.includes('moreMenuCoords'), 'Header computes dynamic moreMenuCoords')
-  assert.ok(headerSource.includes('buttonRef={moreButtonRef}'), 'More button receives buttonRef')
-  assert.ok(headerSource.includes('top: `${moreMenuCoords.top}px`'), 'More menu anchored with dynamic top coordinate')
-  assert.ok(headerSource.includes('left: `${moreMenuCoords.left}px`'), 'More menu anchored with dynamic left coordinate')
+  // Web Sources relocated to Profile popover (#359)
+  assert.ok(headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources present inside Profile popover')
+  assert.ok(headerSource.includes('onOpenWebsiteUrlSource()'), 'Web Sources triggers onOpenWebsiteUrlSource in Profile popover')
 })
 
 // =============================================================================

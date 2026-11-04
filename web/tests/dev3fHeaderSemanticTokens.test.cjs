@@ -101,9 +101,9 @@ test('Real header roles resolve independently from body, with neutral icons scop
     env.isDevEnv = true
     await act(async () => root.render(React.createElement(Header, props)))
 
-    // DEV V2 header: GTAR-Dev title, DEV badge, and tag/deployment diagnostics banner without removed version element
+    // DEV V2 header: GTAR title, DEV badge, and tag/deployment diagnostics banner without removed version element (#359)
     const devTitle = document.querySelector('.header-primary-text')
-    assert.equal(devTitle.textContent.trim(), 'GTAR-Dev')
+    assert.equal(devTitle.textContent.trim(), 'GTAR')
     assert.ok(!devTitle.classList.contains('ui-primary-text'))
     const devBadge = [...document.querySelectorAll('span')].find(el => el.textContent === 'DEV')
     assert.ok(devBadge, 'DEV badge must be rendered in DEV mode')
