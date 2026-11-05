@@ -441,3 +441,71 @@ test('MANAGER_FOCUS: background is inert while open; focus returns to the trigge
   assert.equal(appRoot.hasAttribute('aria-hidden'), false)
   assert.equal(document.activeElement, trigger, 'focus back on the trigger')
 })
+
+test('MANAGER_PUBLISH: button visibility and permissions — unauthorized users cannot see button, eligible users can publish', async () => {
+  const { props, calls } = managerProps()
+
+  // 1. Omitted onPublishSetlist: button not rendered
+  await mount(SetlistManager, props)
+  assert.equal($('[data-testid="setlist-manager-publish-btn"]'), null, 'no publish button when onPublishSetlist is omitted')
+
+  // 2. Unauthorized: canPublish explicitly false -> button not rendered
+  await rerender(SetlistManager, { ...props, onPublishSetlist: sl => calls.push(['publish', sl.id]), canPublish: false })
+  assert.equal($('[data-testid="setlist-manager-publish-btn"]'), null, 'unauthorized user cannot see publish button')
+
+  // 3. Authorized eligible user: canPublish: true -> renders "Publish to Shared"
+  await rerender(SetlistManager, { ...props, onPublishSetlist: sl => calls.push(['publish', sl.id]), canPublish: true })
+  const btn = $('[data-testid="setlist-manager-publish-btn"]')
+  assert.ok(btn, 'publish button rendered for eligible user')
+  assert.match(btn.textContent, /Publish to Shared/)
+  assert.equal(btn.tagName, 'BUTTON')
+  assert.equal(btn.getAttribute('type'), 'button')
+  assert.ok(btn.className.includes('min-h-11'), 'meets 44px min touch target')
+  assert.ok(btn.querySelector('svg'), 'renders UploadCloud icon')
+
+  // 4. Click triggers onPublishSetlist with current setlist
+  await click(btn)
+  assert.deepEqual(calls.filter(c => c[0] === 'publish'), [['publish', 'sl-1']])
+})
+
+test('MANAGER_PUBLISH: state transitions and labels — shows Update or Unpublish for published setlist and custom label', async () => {
+  const { props, calls } = managerProps()
+
+  // Custom publishLabel for published/updated state
+  await mount(SetlistManager, {
+    ...props,
+    onPublishSetlist: sl => calls.push(['publish', sl.id]),
+    canPublish: true,
+    publishLabel: sl => `Update or Unpublish ${sl.name}`,
+  })
+
+  const btn = $('[data-testid="setlist-manager-publish-btn"]')
+  assert.ok(btn)
+  assert.equal(btn.textContent.trim(), 'Update or Unpublish Sunday AM')
+  await click(btn)
+  assert.deepEqual(calls.filter(c => c[0] === 'publish'), [['publish', 'sl-1']])
+})
+
+test('MANAGER_PUBLISH: layout, responsive wrapping, and keyboard accessibility', async () => {
+  const { props } = managerProps({
+    folders: [{ id: 'f1', name: 'Worship' }],
+    onSetlistFolderChange: () => true,
+    canPublish: true,
+    onPublishSetlist: () => {},
+  })
+  await mount(SetlistManager, props)
+
+  const publishBtn = $('[data-testid="setlist-manager-publish-btn"]')
+  assert.ok(publishBtn, 'publish button rendered beside folder dropdown')
+  const folderSelect = $('select[aria-label="Setlist folder"]')
+  assert.ok(folderSelect, 'folder dropdown rendered')
+
+  // They share a flex container with wrapping
+  const container = publishBtn.parentElement
+  assert.ok(container.contains(folderSelect), 'publish button and folder dropdown in same container')
+  assert.ok(container.className.includes('flex-wrap'), 'container supports responsive flex-wrap')
+
+  // Keyboard navigation & focusable
+  publishBtn.focus()
+  assert.equal(document.activeElement, publishBtn, 'publish button is keyboard focusable')
+})
