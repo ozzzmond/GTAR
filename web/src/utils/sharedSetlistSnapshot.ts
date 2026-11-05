@@ -77,7 +77,8 @@ export function snapshotFromSongbook(data: unknown, setlistId: unknown) {
   if (setlist.isDeleted || !Array.isArray(setlist.songs)) fail('Deleted or invalid source setlist')
   const entries = setlist.songs.map(ref => {
     if (!isJsonObject(ref)) fail()
-    exactKeys(ref, ['id', 'title', 'artist'])
+    // Local occurrence identity/order are valid refs, never public chart fields.
+    exactKeys(ref, ['id', 'entryId', 'position', 'title', 'artist'])
     const candidates = data.songs as unknown[]
     const found = candidates.filter(song => {
       if (!isJsonObject(song)) fail()

@@ -13,6 +13,9 @@ const { act } = React
 const { createRoot } = require('react-dom/client')
 const api = require('../src/utils/sharedSetlistPublishing.ts')
 const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts')
+const { validateSnapshot, normalizeSnapshot } = require('../src/utils/sharedSetlistSnapshot.ts')
+const { setSongMembership, bindLegacySetlists } = require('../src/utils/setlistSongs.ts')
+const { useSetlistPublicationStatuses } = require('../src/utils/useSetlistPublicationStatuses.ts')
 const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const { SESSION_STORAGE_KEY } = require('../src/utils/googleAuth.ts')
@@ -992,6 +995,70 @@ function clientServer() {
   const base = responder
   responder = (url, options) => url.startsWith('/api/catalog/setlists?') ? response({ setlists: [], capabilities: { client_snapshots: true } }) : base(url, options)
 }
+
+function normalizedPersonalSetlist() {
+  library.songs = Array.from({ length: 5 }, (_, i) => ({ ...library.songs[i % 2], id: `song-${i}`, title: `Song ${i}` }))
+  const created = library.songs.reduce((setlist, song) => setSongMembership(setlist, song, true),
+    { id: 'set-a', name: '11012026', folderId: 'folder-a', songs: [] })
+  library.setlists = bindLegacySetlists([created], library.songs)
+  library.folders = [{ id: 'folder-a', name: 'Services', parentId: null }]
+  persist()
+}
+
+function PublicationStatusHarness() {
+  const statuses = useSetlistPublicationStatuses({ setlists: library.setlists, songs: library.songs, accountId: 'account-a',
+    setlistCapability: { enabled: true, rows: [{ id, revision: 1, name: '11012026', occurrences: 5 }], message: '' } })
+  return React.createElement('div', null, statuses.get('set-a'))
+}
+
+test('#379 normalized personal setlist reviews, confirms and publishes a private-field-free client snapshot with confirmed status', async t => {
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(global, 'navigator')
+  Object.defineProperty(global, 'navigator', { configurable: true, value: dom.window.navigator })
+  t.after(() => { if (navigatorDescriptor) Object.defineProperty(global, 'navigator', navigatorDescriptor); else delete global.navigator })
+  clientServer()
+  normalizedPersonalSetlist()
+  assert.deepEqual(Object.keys(library.setlists[0].songs[0]).sort(), ['artist', 'entryId', 'id', 'position', 'title'])
+  const preview = await prepare()
+  assert.equal(preview.mode, 'client')
+  assert.equal(preview.snapshot.entries.length, 5)
+  assert.equal(preview.snapshot.name, '11012026')
+  for (const entry of preview.snapshot.entries) for (const field of ['id', 'entryId', 'position', 'folderId']) assert.equal(field in entry, false)
+  await modal(); await click(button('Review Setlist'))
+  assert.match(document.body.textContent, /5 songs · Saved on this device/)
+  await click([...document.querySelectorAll('input[type=checkbox]')].at(-1))
+  await click(button('Share Setlist'))
+  assert.match(document.body.textContent, new RegExp(`Published: ${id} · revision 1`))
+  const writes = calls.filter(c => c.method === 'POST')
+  assert.equal(writes.length, 1)
+  assert.deepEqual(JSON.parse(writes[0].body).snapshot, preview.snapshot)
+  assert.equal(calls.some(c => c.url === '/api/songbook/sync'), false)
+  await act(async () => root.unmount()); root = null
+  await mount(React.createElement(PublicationStatusHarness))
+  assert.equal(document.body.textContent, 'CONFIRMED_PUBLISHED')
+})
+
+test('#379 normalized refs preserve legacy snapshot bytes and canonical digests; unknown keys and public private fields stay rejected', async () => {
+  normalizedPersonalSetlist()
+  const legacy = structuredClone(library)
+  legacy.setlists[0].songs = legacy.setlists[0].songs.map(({ id, title, artist }) => ({ id, title, artist }))
+  const previous = snapshotFromSongbook(legacy, 'set-a')
+  cloud = structuredClone(library)
+  const preview = await prepare()
+  assert.equal(preview.mode, 'songbook')
+  assert.equal(JSON.stringify(preview.snapshot), JSON.stringify(previous))
+  assert.equal(api.computeSnapshotDigest(preview.snapshot), api.computeSnapshotDigest(previous))
+  for (const field of ['capo', 'transposeOffset', 'unknown']) {
+    const invalid = structuredClone(library)
+    invalid.setlists[0].songs[0][field] = 'unexpected'
+    assert.throws(() => snapshotFromSongbook(invalid, 'set-a'), /Invalid setlist snapshot/)
+  }
+  for (const field of ['id', 'entryId', 'position']) {
+    const invalid = structuredClone(previous)
+    invalid.entries[0][field] = library.setlists[0].songs[0][field]
+    assert.throws(() => validateSnapshot(invalid), /Invalid setlist snapshot/)
+    assert.throws(() => normalizeSnapshot(invalid), /Invalid setlist snapshot/)
+  }
+})
 test('#253 client mode: preview from the saved device library without Cloud Sync; unsaved edits still block', async () => {
   clientServer()
   cloud = { songs: [], setlists: [] } // a stale/absent personal cloud copy is irrelevant
