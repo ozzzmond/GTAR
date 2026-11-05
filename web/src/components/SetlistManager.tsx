@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, ListMusic, Play, Search, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ListMusic, Play, Search, Trash2, UploadCloud, X } from 'lucide-react'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { trapTab } from '../utils/focusTrap'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
 import { dangerButton, primaryButton, secondaryButton, sectionCard, sectionLabel } from './backupCenterUi'
+import { useOptionalGoogleAuth } from '../utils/authContext'
+import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
+import { useSharedSetlists } from '../utils/useSharedSetlists'
+import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
 
 /**
  * #312 S2: GTAR1 Setlist Manager, ported from GTAR1 @ da2bdee src/components/SetlistManager.tsx.
@@ -33,6 +37,12 @@ export interface SetlistManagerProps {
   shortcutsBlocked?: boolean
   /** Element that opened the manager; focus returns to it on close. */
   returnFocusTo?: HTMLElement | null
+  /** Shared Catalog publishing callback. */
+  onPublishSetlist?: (setlist: WebSetlist) => void
+  /** Explicit permission override (defaults to checking session role and capability). */
+  canPublish?: boolean
+  /** Custom publication label generator (e.g. for update/unpublish). */
+  publishLabel?: (setlist: WebSetlist) => string
 }
 
 const iconButton = 'w-11 h-11 shrink-0 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed'
@@ -61,11 +71,35 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   onPlaySetlist,
   shortcutsBlocked = false,
   returnFocusTo = null,
+  onPublishSetlist,
+  canPublish,
+  publishLabel,
 }) => {
   const current = useMemo(
     () => setlists.find(sl => String(sl.id) === String(selectedSetlistId)) || setlists[0] || null,
     [setlists, selectedSetlistId]
   )
+  // #379: Shared Catalog publishing
+  const auth = useOptionalGoogleAuth()
+  const storedAuth = getStoredSessionStatus()
+  const effectiveSession = auth?.session ?? (!storedAuth.isExpired && hasServerApproval(storedAuth.session) ? storedAuth.session : null)
+  const userRole = effectiveSession?.role || effectiveSession?.user?.role
+  const isApproved = (auth ? auth.accessStatus === 'active' && !!auth.session : Boolean(effectiveSession))
+  const isRoleEligible = (userRole === 'admin' || userRole === 'member') && isApproved
+  const isAllowedToPublish = canPublish !== undefined ? canPublish : isRoleEligible
+  const setlistCapability = useSharedSetlists(isAllowedToPublish)
+  const isPublishingPermitted = isAllowedToPublish && (canPublish !== undefined || setlistCapability.enabled)
+  const setlistStatusMap = useSetlistPublicationStatuses({
+    setlists,
+    songs,
+    accountId: effectiveSession?.user?.id,
+    setlistCapability,
+  })
+
+  const currentPublicationStatus = current ? setlistStatusMap.get(current.id) : undefined
+  const isCurrentPublished = currentPublicationStatus === 'CONFIRMED_PUBLISHED' || currentPublicationStatus === 'LOCAL_CHANGES_NOT_PUBLISHED'
+  const defaultPublishLabel = isCurrentPublished ? 'Update or Unpublish' : 'Publish to Shared'
+  const currentPublishLabel = current && publishLabel ? publishLabel(current) : defaultPublishLabel
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [shortcutSongId, setShortcutSongId] = useState('')
@@ -227,11 +261,35 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
           </button>
         </div>
 
-        {current && onSetlistFolderChange && <label className="px-4 pt-3 text-xs text-app-muted">Folder
-          <select aria-label="Setlist folder" value={current.folderId ?? ''} className={`${field} ml-2 max-w-full`} onChange={event => report(onSetlistFolderChange(current.id, event.target.value || null), 'Folder saved')}>
-            <option value="">Unfiled</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-          </select>
-        </label>}
+        {current && (onSetlistFolderChange || (onPublishSetlist && isPublishingPermitted)) && (
+          <div className="px-4 pt-3 flex flex-wrap items-center gap-2.5">
+            {onSetlistFolderChange && (
+              <label className="text-xs text-app-muted flex items-center">Folder
+                <select
+                  aria-label="Setlist folder"
+                  value={current.folderId ?? ''}
+                  className={`${field} ml-2 max-w-full`}
+                  onChange={event => report(onSetlistFolderChange(current.id, event.target.value || null), 'Folder saved')}
+                >
+                  <option value="">Unfiled</option>
+                  {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                </select>
+              </label>
+            )}
+            {onPublishSetlist && isPublishingPermitted && (
+              <button
+                type="button"
+                data-testid="setlist-manager-publish-btn"
+                onClick={() => onPublishSetlist(current)}
+                className={inlineButton}
+                aria-label={currentPublishLabel}
+              >
+                <UploadCloud className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>{currentPublishLabel}</span>
+              </button>
+            )}
+          </div>
+        )}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
           {!current ? (
             <div data-testid="setlist-manager-no-setlists" className={`${sectionCard} text-center text-xs text-app-muted py-10`}>

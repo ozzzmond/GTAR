@@ -46,6 +46,9 @@ async function mountApp(url, { keepStorage = false, realHome = false, auth = nul
   global.fetch = async (url, options) => {
     requests.push([url, options])
     if (url === '/api/setlist/share') return new Response(JSON.stringify({ token: 'offline-test' }), { status: 200 })
+    if (String(url).startsWith('/api/catalog/setlists')) {
+      return new Response(JSON.stringify({ setlists: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
     throw new Error('offline')
   }
   if (saved) for (const [k, v] of Object.entries(saved)) localStorage.setItem(k, v)
@@ -243,4 +246,30 @@ test('manage remains available without the legacy drawer outside local developme
   assert.equal(typeof home.onOpenSetlistManager, 'function')
   await act(async () => home.onManageSetlist(home.setlists[0]))
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'))
+})
+
+test('#379: App wires onPublishSetlist to SetlistManager and opens PublishSetlistModal for eligible session', async () => {
+  const memberSession = {
+    version: 1,
+    user: { id: 'user-member-1', email: 'member@example.com', role: 'member', access_status: 'active' },
+    role: 'member',
+    access_status: 'active',
+    sessionToken: 'token-abc',
+    localExpiresAt: Date.now() + 3600000,
+    expiresAt: Date.now() + 3600000,
+    authenticatedAt: Date.now(),
+    lastVerifiedAt: Date.now(),
+  }
+  await mountApp('http://localhost/', { auth: { session: memberSession } })
+  await act(async () => home.onOpenSetlistManager(home.setlists[0]))
+  assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'), 'Setlist Manager is open')
+
+  const publishBtn = $('[data-testid="setlist-manager-publish-btn"]')
+  assert.ok(publishBtn, 'Publish button is rendered in Setlist Manager for eligible member')
+
+  await click(publishBtn)
+  // Publishing modal opens, personal setlist remains untouched
+  assert.ok($('dialog[aria-labelledby="publish-setlist-title"]'), 'PublishSetlistModal opened')
+  assert.equal(stored().setlists[0].name, 'Sunday AM', 'personal setlist unaffected')
+  assert.equal(stored().setlists[0].isDeleted, undefined, 'personal setlist not deleted')
 })

@@ -1658,6 +1658,7 @@ function LibraryApp() {
         handleSelectSetlistSong(setlistId, position)
         setActiveView('stage')
       })}
+      onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
       shortcutsBlocked={activeView === 'stage' || isStagePerformanceMode}
       returnFocusTo={setlistManagerOpener} />}
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
