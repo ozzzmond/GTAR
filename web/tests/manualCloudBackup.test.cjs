@@ -11,15 +11,15 @@ test('cloud backup captures the local settings allowlist and verifies settings-o
  const values=new Map([['gtar_theme_store','paper-light'],['gtar_stage_font_size','32'],['gtar_tv_font_size','40'],['gtar_songbook_sort','artist'],['gtar_google_token','secret']])
  const storage={getItem:k=>values.get(k)??null}
  const data=captureCloudBackup({songs:[],setlists:[]},storage)
- assert.deepEqual(data.settings,{appearance:{themeMode:'paper-light',stageSettings:{fontSizePx:32},tvFontSize:40},preferences:{songbookSort:'artist'}})
+ assert.deepEqual(data.settings,{appearance:{themeModeAssignments:{light:'paper-light',dark:'solarized-dark'},stageSettings:{fontSizePx:32},tvFontSize:40},preferences:{songbookSort:'artist'}})
  let record
  global.fetch=async(_,opts)=>{
   if(opts.method==='POST'){const body=JSON.parse(opts.body);record={version:1,checksum:body.clientChecksum,data:body.data}}
   return new Response(JSON.stringify({success:true,cloudRecord:record}))
  }
  await writeCloudBackup({token:'t',userId:'A'},data,null)
- assert.equal(record.data.settingsSchemaVersion,2)
- assert.equal(record.data.checksumScheme,'gtar-backup-settings-v2')
+ assert.equal(record.data.settingsSchemaVersion,3)
+ assert.equal(record.data.checksumScheme,'gtar-backup-settings-v3')
  assert.equal(verifySongbookChecksum(record),true)
  record.data.settings.appearance.tvFontSize=42
  assert.equal(verifySongbookChecksum(record),false)

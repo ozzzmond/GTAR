@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { SETTINGS_CHANGED, readCloudThemeSettings, settingsSignature } from './backupSettings'
-import { SETTINGS_CHECKSUM_SCHEME, computeSongbookChecksum, verifySongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
+import { DEFAULT_THEME_MODE_ASSIGNMENTS, SETTINGS_CHANGED, loadThemeModeAssignments, readBackupSettingsV2, readCloudThemeSettings, settingsSignature } from './backupSettings'
+import { SETTINGS_CHECKSUM_SCHEME, SMART_SETTINGS_CHECKSUM_SCHEME, computeSongbookChecksum, verifySongbookChecksum, type CloudSongbookRecord } from './cloudBackupFormat'
 import { stableStringify } from './contentHash'
 import { SESSION_STORAGE_KEY, LEGACY_STORAGE_KEY } from './googleAuth'
 import { captureCloudBackup } from './manualCloudBackup'
@@ -11,8 +11,14 @@ function matchesCloud(record: CloudSongbookRecord): boolean | null {
   try {
     const library = readPersistedLibrary()
     if (!library) return null
-    if (record.data.checksumScheme === SETTINGS_CHECKSUM_SCHEME) {
+    if (record.data.checksumScheme === SMART_SETTINGS_CHECKSUM_SCHEME) {
       return computeSongbookChecksum(captureCloudBackup(library)) === record.checksum
+    }
+    if (record.data.checksumScheme === SETTINGS_CHECKSUM_SCHEME) {
+      const settings = readBackupSettingsV2()
+      delete settings.appearance.themeModeAssignments
+      return stableStringify(loadThemeModeAssignments()) === stableStringify(DEFAULT_THEME_MODE_ASSIGNMENTS) &&
+        computeSongbookChecksum({ ...library, settings, settingsSchemaVersion: 2, checksumScheme: SETTINGS_CHECKSUM_SCHEME }) === record.checksum
     }
     // Historical checksums omit folders/tag colours. Compare those separately;
     // retain the verifier's documented unversioned tag compatibility.

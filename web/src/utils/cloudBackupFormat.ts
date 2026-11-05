@@ -2,7 +2,7 @@ import { normalizeTags } from './songTags'
 import { canonicalCatalogLineage } from './catalogSetlistLineage'
 import type { ActiveSongState } from '../types/gtar'
 import type { SyncLibrary } from './syncMerge'
-import { normalizeCloudThemeSettings, validateBackupSettingsV2, validateCloudThemeSettings, type BackupSettingsV2 } from './backupSettings'
+import { normalizeCloudThemeSettings, validThemeModeAssignments, validateBackupSettingsV2, validateCloudThemeSettings, type BackupSettingsV2 } from './backupSettings'
 import { stableStringify } from './contentHash'
 
 export type CloudBackupData = SyncLibrary & { settingsSchemaVersion?: number; settings?: BackupSettingsV2; checksumScheme?: string }
@@ -17,14 +17,22 @@ export interface CloudSongbookRecord {
 
 export const SONGBOOK_CHECKSUM_SCHEME = 'gtar-normalized-tags-v1'
 export const SETTINGS_CHECKSUM_SCHEME = 'gtar-backup-settings-v2'
+export const SMART_SETTINGS_CHECKSUM_SCHEME = 'gtar-backup-settings-v3'
 
 /** Old checksum meanings stay unchanged. Settings require the versioned, fully covered envelope. */
 export function validateCloudBackupSettings(data: CloudBackupData): string[] {
-  const versioned = data.settings !== undefined || data.settingsSchemaVersion !== undefined || data.checksumScheme === SETTINGS_CHECKSUM_SCHEME
+  const smart = data.checksumScheme === SMART_SETTINGS_CHECKSUM_SCHEME
+  const versioned = data.settings !== undefined || data.settingsSchemaVersion !== undefined || data.checksumScheme === SETTINGS_CHECKSUM_SCHEME || smart
   if (!versioned) return []
   const errors = validateBackupSettingsV2(data.settings)
-  if (data.settingsSchemaVersion !== 2) errors.push('Unsupported cloud settings schema version')
-  if (data.checksumScheme !== SETTINGS_CHECKSUM_SCHEME) errors.push('Cloud settings require the settings checksum scheme')
+  const appearance = data.settings?.appearance
+  const hasAppearance = appearance !== null && typeof appearance === 'object'
+  if (data.settingsSchemaVersion !== (smart ? 3 : 2)) errors.push('Unsupported cloud settings schema version')
+  if (!smart && data.checksumScheme !== SETTINGS_CHECKSUM_SCHEME) errors.push('Cloud settings require the settings checksum scheme')
+  if (smart) {
+    if (!validThemeModeAssignments(data.settings?.appearance?.themeModeAssignments)) errors.push('Cloud settings require distinct valid Light/Dark assignments')
+    if (hasAppearance && 'themeMode' in appearance) errors.push('Active themeMode is not a saved v3 setting')
+  } else if (hasAppearance && 'themeModeAssignments' in appearance) errors.push('Theme assignments require settings-v3')
   if (data.themeSettings !== undefined) errors.push('Cloud backup cannot contain both settings formats')
   return errors
 }
@@ -32,7 +40,7 @@ export function validateCloudBackupSettings(data: CloudBackupData): string[] {
 /** No migration or mutation: check the original payload using only documented algorithms. */
 export function verifySongbookChecksum(record: CloudSongbookRecord): boolean {
   const scheme = record.data.checksumScheme
-  if (scheme !== undefined && scheme !== SONGBOOK_CHECKSUM_SCHEME && scheme !== SETTINGS_CHECKSUM_SCHEME) return false
+  if (scheme !== undefined && scheme !== SONGBOOK_CHECKSUM_SCHEME && scheme !== SETTINGS_CHECKSUM_SCHEME && scheme !== SMART_SETTINGS_CHECKSUM_SCHEME) return false
   if (validateCloudBackupSettings(record.data).length) return false
   if (record.data.themeSettings !== undefined && validateCloudThemeSettings(record.data.themeSettings).length) return false
   if (computeSongbookChecksum(record.data) === record.checksum) return true
@@ -46,6 +54,12 @@ export function verifySongbookChecksum(record: CloudSongbookRecord): boolean {
  * Preserves exact legacy checksum semantics when themeSettings is absent.
  */
 export function computeSongbookChecksum(library: CloudBackupData): string {
+  // New envelope: all saved fields are covered; active themeMode is forbidden by validation.
+  // Domain separation prevents a v2 digest from being relabelled as v3.
+  if (library.checksumScheme === SMART_SETTINGS_CHECKSUM_SCHEME) {
+    return digest(stableStringify({ checksumScheme: library.checksumScheme, songs: library.songs, setlists: library.setlists,
+      folders: library.folders, tagColors: library.tagColors, settingsSchemaVersion: library.settingsSchemaVersion, settings: library.settings }))
+  }
   if (library.settings !== undefined || library.checksumScheme === SETTINGS_CHECKSUM_SCHEME) {
     return digest(stableStringify({ songs: library.songs, setlists: library.setlists, folders: library.folders,
       tagColors: library.tagColors, settingsSchemaVersion: library.settingsSchemaVersion, settings: library.settings }))
@@ -138,7 +152,7 @@ export interface SongbookHeadroom { bytes: number; limitBytes: number; ratio: nu
 /** Exact request body for a songbook upload; used for both the request and its size estimate. */
 export function songbookUploadBody(action: 'upload' | 'resolve', data: CloudBackupData, clientChecksum: string,
   expectedVersion: number, expectedChecksum: string | null): string {
-  return JSON.stringify({ action, data: { ...data, checksumScheme: data.settings !== undefined ? SETTINGS_CHECKSUM_SCHEME : SONGBOOK_CHECKSUM_SCHEME }, clientChecksum, expectedVersion, expectedChecksum })
+  return JSON.stringify({ action, data: { ...data, checksumScheme: data.checksumScheme ?? (data.settings !== undefined ? SETTINGS_CHECKSUM_SCHEME : SONGBOOK_CHECKSUM_SCHEME) }, clientChecksum, expectedVersion, expectedChecksum })
 }
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).byteLength
 

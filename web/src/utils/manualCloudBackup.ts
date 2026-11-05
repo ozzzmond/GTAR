@@ -5,15 +5,18 @@ import { ensureRestoreSafetySnapshot, libraryWritesSaved, verifyRestoredLibrary 
 import { parseBackupJson } from './jsonBackup'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION, GTAR_DEV_PROVENANCE } from '../types/gtar'
 import { isDevEnv } from './env'
-import { computeSongbookChecksum, verifySongbookChecksum, songbookUploadBody, SONGBOOK_CHECKSUM_SCHEME, SETTINGS_CHECKSUM_SCHEME, validateCloudBackupSettings, type CloudBackupData, type CloudSongbookRecord } from './cloudBackupFormat'
-import { readBackupSettingsV2, restoreBackupSettingsV2, settingsFromLegacy, normalizeCloudThemeSettings, settingsSignature, inspectSettingsRecovery, type SettingsLockOptions, type SettingsRestoreChoice } from './backupSettings'
+import { computeSongbookChecksum, verifySongbookChecksum, songbookUploadBody, SONGBOOK_CHECKSUM_SCHEME, SETTINGS_CHECKSUM_SCHEME, SMART_SETTINGS_CHECKSUM_SCHEME, validateCloudBackupSettings, type CloudBackupData, type CloudSongbookRecord } from './cloudBackupFormat'
+import { DEFAULT_THEME_MODE_ASSIGNMENTS, loadThemeModeAssignments, readBackupSettingsV2, restoreBackupSettingsV2, settingsFromLegacy, normalizeCloudThemeSettings, settingsSignature, inspectSettingsRecovery, type SettingsLockOptions, type SettingsRestoreChoice } from './backupSettings'
 import type { SyncLibrary } from './syncMerge'
 import { readPersistedLibrary } from './syncJournal'
 export interface BackupAccount { token: string; userId: string; isCurrent?: () => boolean }
 export function captureCloudBackup(library: SyncLibrary, storage: Pick<Storage, 'getItem'> = localStorage): CloudBackupData {
+  const settings = readBackupSettingsV2(storage)
+  delete settings.appearance.themeMode
+  settings.appearance.themeModeAssignments = loadThemeModeAssignments(storage)
   return { songs: library.songs, setlists: library.setlists, ...(library.folders !== undefined ? { folders: library.folders } : {}),
     ...(library.tagColors !== undefined ? { tagColors: library.tagColors } : {}),
-    settingsSchemaVersion: 2, settings: readBackupSettingsV2(storage), checksumScheme: SETTINGS_CHECKSUM_SCHEME }
+    settingsSchemaVersion: 3, settings, checksumScheme: SMART_SETTINGS_CHECKSUM_SCHEME }
 }
 function headers(account: BackupAccount) {
   if (!account.token || !account.userId || account.isCurrent?.() === false) throw new CloudBackupFailure('SIGN_IN_REQUIRED', 'session', 'Sign in to back up to cloud')
@@ -42,7 +45,7 @@ export function logCloudBackupFailure(operation: CloudOperation, error: unknown)
     code: failure?.code ?? (error instanceof CloudBackupChanged ? 'REVISION_CONFLICT' : 'OPERATION_FAILED'),
     ...(failure?.status !== undefined ? { httpStatus: failure.status } : {}),
     version: isDevEnv ? GTAR_DEV_VERSION : GTAR_APP_VERSION, build: GTAR_DEV_PROVENANCE.commitSha,
-    scheme: failure?.scheme === SETTINGS_CHECKSUM_SCHEME ? SETTINGS_CHECKSUM_SCHEME : failure?.scheme === SONGBOOK_CHECKSUM_SCHEME ? SONGBOOK_CHECKSUM_SCHEME : failure?.scheme === undefined ? 'unversioned' : 'unknown' }))
+    scheme: failure?.scheme === SMART_SETTINGS_CHECKSUM_SCHEME ? SMART_SETTINGS_CHECKSUM_SCHEME : failure?.scheme === SETTINGS_CHECKSUM_SCHEME ? SETTINGS_CHECKSUM_SCHEME : failure?.scheme === SONGBOOK_CHECKSUM_SCHEME ? SONGBOOK_CHECKSUM_SCHEME : failure?.scheme === undefined ? 'unversioned' : 'unknown' }))
 }
 function requireCurrent(account: BackupAccount) {
   if (account.isCurrent?.() === false) throw new CloudBackupFailure('ACCOUNT_CHANGED', 'session', 'Sign in again; account changed.')
@@ -60,7 +63,7 @@ async function fetchCloudBackup(account: BackupAccount): Promise<CloudSongbookRe
   if (!record || !record.data || !Array.isArray(record.data.songs) || !Array.isArray(record.data.setlists)) throw new CloudBackupFailure('INVALID_PAYLOAD', 'verify', 'Cloud backup is invalid. Restore is unavailable.', response.status)
   if (record.userId !== undefined && record.userId !== account.userId) throw new CloudBackupFailure('ACCOUNT_MISMATCH', 'verify', 'Cloud backup account did not match. Sign in again.', response.status)
   const scheme = record.data.checksumScheme
-  if (scheme !== undefined && scheme !== SONGBOOK_CHECKSUM_SCHEME && scheme !== SETTINGS_CHECKSUM_SCHEME) throw new CloudBackupFailure('UNKNOWN_CHECKSUM_SCHEME', 'verify', 'Unsupported cloud backup checksum scheme. Update GTAR before restoring.', response.status, scheme)
+  if (scheme !== undefined && scheme !== SONGBOOK_CHECKSUM_SCHEME && scheme !== SETTINGS_CHECKSUM_SCHEME && scheme !== SMART_SETTINGS_CHECKSUM_SCHEME) throw new CloudBackupFailure('UNKNOWN_CHECKSUM_SCHEME', 'verify', 'Unsupported cloud backup checksum scheme. Update GTAR before restoring.', response.status, scheme)
   let valid = false
   try { valid = verifySongbookChecksum(record) && (record.data.tagColors === undefined || validTagColors(record.data.tagColors)) } catch { /* Malformed payload fails closed. */ }
   if (!valid) throw new CloudBackupFailure('CHECKSUM_VERIFICATION_FAILED', 'verify', 'Cloud backup checksum verification failed. Restore is unavailable. Retry or use a verified backup file.', response.status, scheme)
@@ -102,9 +105,13 @@ export async function writeCloudBackup(account: BackupAccount, library: CloudBac
 export function cloudBackupSettings(incoming: CloudBackupData) {
   const errors = validateCloudBackupSettings(incoming)
   if (errors.length) throw new Error(errors.join('; '))
-  if (incoming.settings !== undefined) return incoming.settings
-  return incoming.themeSettings === undefined ? { appearance: {}, preferences: {} }
+  const settings = incoming.settings ?? (incoming.themeSettings === undefined ? { appearance: {}, preferences: {} }
     : settingsFromLegacy(normalizeCloudThemeSettings(incoming.themeSettings))
+  )
+  // Defaults apply only during a confirmed legacy appearance restore, never during verification.
+  return Object.keys(settings.appearance ?? {}).length && !settings.appearance.themeModeAssignments
+    ? { ...settings, appearance: { ...settings.appearance, themeModeAssignments: { ...DEFAULT_THEME_MODE_ASSIGNMENTS } } }
+    : settings
 }
 export interface CloudRestoreOptions extends SettingsLockOptions {
   account?: BackupAccount

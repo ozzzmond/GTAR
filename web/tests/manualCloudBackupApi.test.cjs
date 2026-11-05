@@ -33,6 +33,32 @@ async function fixture() {
 }
 const postBody = (data, rev) => ({ data, expectedVersion: rev.version, expectedChecksum: rev.checksum })
 
+test('#372 smart settings-v3 API roundtrip preserves roles and rejects downgrade, tamper and malformed writes',async()=>{
+ const {request}=await fixture()
+ const data={...library('smart'),settingsSchemaVersion:3,checksumScheme:sync.SMART_SETTINGS_CHECKSUM_SCHEME,
+  settings:{appearance:{themeModeAssignments:{light:'custom',dark:'azure-stage'},customThemeColors:{bgHex:'#123456',textHex:'#ffffff',chordHex:'#abcdef',sectionHex:'#654321'}},preferences:{}}}
+ const body=JSON.parse(sync.songbookUploadBody('upload',data,sync.computeSongbookChecksum(data),0,null))
+ assert.equal((await request('POST',body)).status,200)
+ const saved=(await (await request('GET')).json()).cloudRecord
+ assert.deepEqual(saved.data,data);assert.equal(sync.verifySongbookChecksum(saved),true)
+ for(const mutation of [
+  d=>{d.settings.appearance.themeModeAssignments.dark='custom'},
+  d=>{delete d.settings.appearance.themeModeAssignments},
+  d=>{d.settings.appearance.themeModeAssignments.light='missing'},
+  d=>{d.settings.appearance.themeMode='paper-light'},
+  d=>{d.checksumScheme=sync.SETTINGS_CHECKSUM_SCHEME;d.settingsSchemaVersion=2},
+  d=>{d.settingsSchemaVersion=2},
+  d=>{d.settings.appearance=null},
+ ]) {
+  const changed=structuredClone(data);mutation(changed)
+  assert.equal((await request('POST',{...postBody(changed,revision(saved)),clientChecksum:sync.computeSongbookChecksum(changed)})).status,400)
+ }
+ const changed=structuredClone(data);changed.settings.appearance.customThemeColors.bgHex='#ffffff'
+ assert.equal((await request('POST',{...postBody(changed,revision(saved)),clientChecksum:saved.checksum})).status,400)
+ assert.deepEqual((await (await request('GET')).json()).cloudRecord,saved)
+ assert.equal((await request('POST',postBody(data,emptyRevision))).status,409)
+})
+
 test('settings envelope round trips with CAS; malformed and future settings cannot replace it',async()=>{
  const {request}=await fixture()
  const data={...library('settings'),settingsSchemaVersion:2,checksumScheme:'gtar-backup-settings-v2',
