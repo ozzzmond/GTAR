@@ -36,6 +36,7 @@ import {
   NOTATION_STORAGE_KEY,
 } from '../utils/nashvilleNotation'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
+import { formatTempoLabel } from '../utils/chordProMetadata'
 import { metronome } from '../utils/metronome'
 import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
@@ -2123,7 +2124,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 <p className="text-xs sm:text-sm text-app-muted mt-1">
                   {song.artist || 'Unknown Artist'}
                   {effectivePerformanceKey ? ` • Key: ${effectivePerformanceKey}` : ''}
-                  {song.bpm ? ` • ${song.bpm.replace(/\s*bpm$/i, '')} BPM` : ''}
+                  {song.bpm ? ` • ${formatTempoLabel(song.bpm) ?? ''}` : ''}
                   {song.time ? ` • ${song.time}` : ''}
                 </p>
               </div>
@@ -2156,7 +2157,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 )}
                 {Boolean(song.bpm || parsedSong.bpm) && (
                   <span className="bg-app-surface px-2.5 py-1 rounded-full border border-app-border text-app-muted">
-                    Tempo: <strong className="text-app-text">{String(song.bpm || parsedSong.bpm).replace(/\s*bpm$/i, '')} BPM</strong>
+                    Tempo: <strong className="text-app-text">{formatTempoLabel(song.bpm || parsedSong.bpm)}</strong>
                   </span>
                 )}
                 {Boolean(song.time || parsedSong.time) && (

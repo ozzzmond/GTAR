@@ -453,4 +453,13 @@ test('#359 PR-C: All Header.tsx focus() calls specify { preventScroll: true }', 
   }
 })
 
+// #388: the Explorer nav was pinned to 288px inside the 256px md aside, so the right-aligned
+// collapse control was clipped and its centre landed under the z-10 resize handle.
+test('#388: Explorer nav fills the aside and the collapse control stacks above the resize handle', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/components/ExplorerNavigation.tsx'), 'utf8')
+  assert.doesNotMatch(source, /style=\{\{\s*width:\s*width \?\? 288\s*\}\}/, 'nav is not pinned wider than the md aside')
+  assert.match(source, /className="h-full w-full overflow-y-auto"/, 'scroll container follows the aside width')
+  assert.match(source, /className="relative z-20 flex min-h-11 min-w-11[^"]*"/, 'collapse control stacks above the z-10 resize handle')
+})
+
 

@@ -8,6 +8,7 @@ import {
   isPresentationConnectionAvailableEvent,
 } from '../utils/stageCast'
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
+import { formatTempoLabel } from '../utils/chordProMetadata'
 import { SongLineRenderer } from './SongLineRenderer'
 import { applyThemeRuntime } from './ThemeModal'
 import type { ActiveSongState } from '../types/gtar'
@@ -285,7 +286,7 @@ export const StagePresentationView: React.FC = () => {
                 KEY: {effectiveKey}
               </span>
             )}
-            {song.bpm && <span className="text-app-muted">{song.bpm.replace(/\s*bpm$/i, '')} BPM</span>}
+            {song.bpm && <span className="text-app-muted">{formatTempoLabel(song.bpm)}</span>}
             {song.time && <span className="text-app-muted">{song.time}</span>}
           </div>
         </div>

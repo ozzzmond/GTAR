@@ -178,7 +178,7 @@ test('DEV5C_CORRECTION_10: main Songbook and side-panel Metadata status use iden
   const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
 
   // Both SongbookHomeView and SetlistDrawer import and use getSongMetadataStatus
-  assert.ok(songbookSource.includes("import { getSongMetadataStatus } from '../utils/chordProMetadata'"))
+  assert.match(songbookSource, /import \{[^}]*getSongMetadataStatus[^}]*\} from '\.\.\/utils\/chordProMetadata'/)
   assert.ok(songbookSource.includes('getSongMetadataStatus(song).status'))
 
   // DesktopEditor handles meta.title in handleApplyMetadataOnly

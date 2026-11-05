@@ -85,6 +85,17 @@ export function formatCanonicalTempo(tempo: string | number | undefined | null):
   return `${num} BPM`;
 }
 
+/**
+ * Display label for a stored tempo value. The data may already carry the unit
+ * (`{tempo: 73 BPM}` parses to "73 BPM"), so strip any trailing unit first and
+ * render it exactly once: "73" and "73 BPM" both become "73 BPM".
+ */
+export function formatTempoLabel(tempo: string | number | undefined | null): string | undefined {
+  if (tempo === undefined || tempo === null) return undefined;
+  const stripped = String(tempo).trim().replace(/\s*bpm$/i, '').trim();
+  return stripped ? `${stripped} BPM` : undefined;
+}
+
 export function syncCanonicalDirectives(
   currentContent: string,
   updates: CanonicalMetadata

@@ -118,7 +118,7 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
   const collapseButton = (
     <button ref={collapseRef} type="button" data-testid="explorer-collapse" aria-label="Hide Music Explorer" aria-expanded="true"
       aria-controls="explorer-sidebar" onClick={() => setCollapsedPersisted(true)}
-      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface hover:text-app-heading transition-colors cursor-pointer">
+      className="relative z-20 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface hover:text-app-heading transition-colors cursor-pointer">
       <ChevronLeft className="h-4 w-4" />
     </button>
   )
@@ -143,7 +143,7 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
       className={`relative hidden md:block shrink-0 bg-app-toolbar border-r border-app-border transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none overflow-hidden ${
         collapsed ? 'w-0 border-r-0 opacity-0 pointer-events-none' : (width ? '' : 'w-64 lg:w-72')
       }`}>
-      <div style={{ width: width ?? 288 }} className="h-full overflow-y-auto"><MusicExplorerNav {...nav} headerAction={collapseButton} /></div>
+      <div className="h-full w-full overflow-y-auto"><MusicExplorerNav {...nav} headerAction={collapseButton} /></div>
       {!collapsed && (
         <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize Music Explorer"
           aria-valuemin={EXPLORER_MIN_WIDTH} aria-valuemax={EXPLORER_MAX_WIDTH}
