@@ -52,7 +52,7 @@ export function buildPrintHtml(songs: ActiveSongState[], mode: ExportKeyMode): s
   const pages = songs.map(song => {
     const { key, offset } = exportKeyOf(song, mode)
     const parsed = parseGtarSong(song.rawContent, offset)
-    const meta = [key && `Key ${key}`, song.bpm && song.bpm !== '120' ? song.bpm : '', song.time, song.capo && !/no capo/i.test(song.capo) ? `Capo ${song.capo}` : '']
+    const meta = [key && `Key ${key}`, song.bpm && song.bpm !== '120' ? song.bpm : '', song.time]
       .filter(Boolean).map(v => escapeHtml(String(v))).join(' · ')
     return `<section class="song"><h1>${escapeHtml(song.title || parsed.title)}</h1>` +
       (song.artist ? `<h2>${escapeHtml(song.artist)}</h2>` : '') + (meta ? `<p class="meta">${meta}</p>` : '') +

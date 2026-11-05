@@ -44,6 +44,12 @@ test('PDF page: chords above lyrics, sections, one song per page, escaped text, 
   assert.match(html, /Key G/)
 })
 
+test('PDF preview omits Capo metadata while keeping other metadata (#386)', () => {
+  const html = exp.buildPrintHtml([song('a', { capo: 'Capo 2', bpm: '90', time: '3/4' })], 'saved')
+  assert.doesNotMatch(html, /capo/i)
+  assert.match(html, /<p class="meta">Key G · 90 · 3\/4<\/p>/, 'Other metadata still renders')
+})
+
 test('PDF page: transposed key uses each song\'s current offset; saved key leaves chords as stored', () => {
   const s = song('a', { transposeOffset: 2 })
   const saved = exp.buildPrintHtml([s], 'saved')
