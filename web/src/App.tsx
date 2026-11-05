@@ -41,7 +41,13 @@ import { useAppModals } from './utils/useAppModals'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
-import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
+import {
+  SETTINGS_KEYS,
+  SETTINGS_CHANGED,
+  readBackupSettings,
+  loadThemeModeAssignments,
+  isLightTheme,
+} from './utils/backupSettings'
 import { createSingleSetlistPayload } from './utils/jsonBackup'
 import { setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
@@ -74,6 +80,8 @@ import {
   ThemeModal,
   type ThemeMode,
   type CustomThemeColors,
+  type ThemeModeAssignments,
+  type ThemeModeRole,
   applyThemeRuntime,
   hydrateThemeSettings,
 } from './components/ThemeModal'
@@ -368,6 +376,9 @@ function LibraryApp() {
   // Only standalone Custom Palette lives here; factory overrides use their own slots.
   const [customThemeColors, setCustomThemeColors] = useState<CustomThemeColors>(() => hydrateThemeSettings().standalone)
 
+  // Light/Dark theme mode assignments
+  const [themeAssignments, setThemeAssignments] = useState<ThemeModeAssignments>(() => loadThemeModeAssignments())
+
   const [activeSetlistId, setActiveSetlistId] = useState<string | number | null>(() => {
     if (initialStageSession.isValid && initialStageSession.activeSetlistId) {
       return initialStageSession.activeSetlistId
@@ -413,6 +424,7 @@ function LibraryApp() {
       applyThemeRuntime(hydrated.mode, hydrated.standalone)
       setStageTheme(hydrated.mode)
       setCustomThemeColors(hydrated.standalone)
+      setThemeAssignments(loadThemeModeAssignments())
       if (settings.stageSettings?.fontStyle !== undefined) setFontStyle(settings.stageSettings.fontStyle)
       if (settings.stageSettings?.isTwoColumn !== undefined) setIsTwoColumn(settings.stageSettings.isTwoColumn)
     }
@@ -464,6 +476,21 @@ function LibraryApp() {
 
     const appliedPalette = applyThemeRuntime(stageTheme, customThemeColors)
     stageCast.setThemeSnapshot(stageTheme, appliedPalette)
+  }, [stageTheme, customThemeColors])
+
+  const handleToggleThemeMode = useCallback(() => {
+    const assignments = loadThemeModeAssignments()
+    setThemeAssignments(assignments)
+    let targetRole: ThemeModeRole
+    if (stageTheme === assignments.light) {
+      targetRole = 'dark'
+    } else if (stageTheme === assignments.dark) {
+      targetRole = 'light'
+    } else {
+      targetRole = isLightTheme(stageTheme, customThemeColors) ? 'dark' : 'light'
+    }
+    const nextTheme = targetRole === 'light' ? assignments.light : assignments.dark
+    setStageTheme(nextTheme)
   }, [stageTheme, customThemeColors])
 
   // Active Setlist context
@@ -1660,6 +1687,10 @@ function LibraryApp() {
           onOpenWebsiteUrlSource={() => setIsWebsiteUrlModalOpen(true)}
           onOpenStageTools={() => setIsStageToolsModalOpen(true)}
           onToggleTheme={() => setIsThemeModalOpen(true)}
+          currentTheme={stageTheme}
+          themeModeAssignments={themeAssignments}
+          onToggleThemeMode={handleToggleThemeMode}
+          customColors={customThemeColors}
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}
@@ -1897,8 +1928,10 @@ function LibraryApp() {
         onClose={() => setIsThemeModalOpen(false)}
         currentTheme={stageTheme}
         customColors={customThemeColors}
+        themeAssignments={themeAssignments}
         onApplyTheme={(theme, colors) => {
           setStageTheme(theme)
+          setThemeAssignments(loadThemeModeAssignments())
           if (theme === 'custom' && colors) {
             setCustomThemeColors(colors)
           }

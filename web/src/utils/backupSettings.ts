@@ -10,6 +10,8 @@ export const SETTINGS_KEYS = {
   scrollSpeed: 'gtar_stage_scroll_speed',
 } as const
 
+export const THEME_MODE_ASSIGNMENTS_KEY = 'gtar_theme_mode_assignments' as const
+
 export const SETTINGS_CHANGED = 'gtar-settings-restored'
 export const STANDALONE_PALETTE_KEY = 'gtar_standalone_custom_theme_colors'
 export const CLOUD_THEME_SETTINGS_VERSION = 1 as const
@@ -26,6 +28,143 @@ export const THEME_MODES = [
 ] as const
 export const FONT_STYLES = ['mono', 'sans', 'serif'] as const
 export type ThemeMode = typeof THEME_MODES[number]
+export type ThemeModeRole = 'light' | 'dark'
+
+export interface ThemeModeAssignments {
+  light: ThemeMode
+  dark: ThemeMode
+}
+
+export const DEFAULT_THEME_MODE_ASSIGNMENTS: ThemeModeAssignments = {
+  light: 'paper-light',
+  dark: 'solarized-dark',
+}
+
+export function normalizeThemeModeAssignments(raw: unknown): ThemeModeAssignments {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ...DEFAULT_THEME_MODE_ASSIGNMENTS }
+  }
+  const obj = raw as Record<string, unknown>
+  let light = typeof obj.light === 'string' && (THEME_MODES as readonly string[]).includes(obj.light)
+    ? (obj.light as ThemeMode)
+    : DEFAULT_THEME_MODE_ASSIGNMENTS.light
+  let dark = typeof obj.dark === 'string' && (THEME_MODES as readonly string[]).includes(obj.dark)
+    ? (obj.dark as ThemeMode)
+    : DEFAULT_THEME_MODE_ASSIGNMENTS.dark
+
+  if (light === dark) {
+    if (dark === DEFAULT_THEME_MODE_ASSIGNMENTS.light) {
+      dark = DEFAULT_THEME_MODE_ASSIGNMENTS.dark
+    } else {
+      light = DEFAULT_THEME_MODE_ASSIGNMENTS.light
+    }
+    if (light === dark) {
+      return { ...DEFAULT_THEME_MODE_ASSIGNMENTS }
+    }
+  }
+  return { light, dark }
+}
+
+export function loadThemeModeAssignments(storage: Pick<Storage, 'getItem'> = localStorage): ThemeModeAssignments {
+  try {
+    const raw = storage.getItem(THEME_MODE_ASSIGNMENTS_KEY)
+    if (raw === null) return { ...DEFAULT_THEME_MODE_ASSIGNMENTS }
+    return normalizeThemeModeAssignments(JSON.parse(raw))
+  } catch {
+    return { ...DEFAULT_THEME_MODE_ASSIGNMENTS }
+  }
+}
+
+export function saveThemeModeAssignments(
+  assignments: ThemeModeAssignments,
+  storage: Pick<Storage, 'setItem'> = localStorage
+): ThemeModeAssignments {
+  const normalized = normalizeThemeModeAssignments(assignments)
+  try {
+    storage.setItem(THEME_MODE_ASSIGNMENTS_KEY, JSON.stringify(normalized))
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      const Evt = typeof window.Event === 'function' ? window.Event : Event
+      window.dispatchEvent(new Evt(SETTINGS_CHANGED))
+    }
+  } catch { /* Storage unavailable */ }
+  return normalized
+}
+
+export function assignThemeToMode(
+  current: ThemeModeAssignments,
+  theme: ThemeMode,
+  role: ThemeModeRole | 'none'
+): ThemeModeAssignments {
+  const normalized = normalizeThemeModeAssignments(current)
+  if (role === 'light') {
+    if (normalized.light === theme) return normalized
+    let nextDark = normalized.dark
+    if (nextDark === theme) {
+      nextDark = theme === DEFAULT_THEME_MODE_ASSIGNMENTS.dark ? 'oled-black' : DEFAULT_THEME_MODE_ASSIGNMENTS.dark
+    }
+    return normalizeThemeModeAssignments({ light: theme, dark: nextDark })
+  }
+  if (role === 'dark') {
+    if (normalized.dark === theme) return normalized
+    let nextLight = normalized.light
+    if (nextLight === theme) {
+      nextLight = theme === DEFAULT_THEME_MODE_ASSIGNMENTS.light ? 'e-ink-paper' : DEFAULT_THEME_MODE_ASSIGNMENTS.light
+    }
+    return normalizeThemeModeAssignments({ light: nextLight, dark: theme })
+  }
+  // role === 'none'
+  if (normalized.light === theme) {
+    const fallbackLight = theme === DEFAULT_THEME_MODE_ASSIGNMENTS.light
+      ? (normalized.dark === 'paper-light' ? 'e-ink-paper' : 'paper-light')
+      : DEFAULT_THEME_MODE_ASSIGNMENTS.light
+    return normalizeThemeModeAssignments({ light: fallbackLight, dark: normalized.dark })
+  }
+  if (normalized.dark === theme) {
+    const fallbackDark = theme === DEFAULT_THEME_MODE_ASSIGNMENTS.dark
+      ? (normalized.light === 'solarized-dark' ? 'oled-black' : 'solarized-dark')
+      : DEFAULT_THEME_MODE_ASSIGNMENTS.dark
+    return normalizeThemeModeAssignments({ light: normalized.light, dark: fallbackDark })
+  }
+  return normalized
+}
+
+export function getThemeAssignedRole(
+  theme: ThemeMode,
+  assignments: ThemeModeAssignments
+): ThemeModeRole | null {
+  if (assignments.light === theme) return 'light'
+  if (assignments.dark === theme) return 'dark'
+  return null
+}
+
+export function isLightTheme(
+  theme: ThemeMode,
+  customColors?: CustomThemeColors | null,
+  overrides?: FactoryThemeOverrides
+): boolean {
+  let bg: string
+  if (theme === 'custom') {
+    bg = customColors?.bgHex || '#121820'
+  } else if (overrides?.[theme]?.bgHex) {
+    bg = overrides[theme]!.bgHex
+  } else {
+    const presetBgs: Record<string, string> = {
+      'solarized-dark': '#002B36',
+      'amber-stage': '#181206',
+      'oled-black': '#000000',
+      'paper-light': '#f4ecd8',
+      'crimson-stage': '#120d0f',
+      'azure-stage': '#0a1324',
+      'e-ink-paper': '#ededed',
+    }
+    bg = presetBgs[theme] || '#121820'
+  }
+  const hex = bg.replace('#', '')
+  const r = parseInt(hex.substring(0, 2), 16) || 0
+  const g = parseInt(hex.substring(2, 4), 16) || 0
+  const b = parseInt(hex.substring(4, 6), 16) || 0
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150
+}
 export type SongFontStyleOption = typeof FONT_STYLES[number]
 export interface CustomThemeIdentity { factoryId: Exclude<ThemeMode, 'custom'>; displayName: string }
 export const CUSTOM_THEME_NAME_MAX_LENGTH = 80

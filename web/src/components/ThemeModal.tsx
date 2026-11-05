@@ -1,5 +1,18 @@
 import { normalizeFontSettings, applyFontSettings } from '../utils/customFonts'
-import { SETTINGS_KEYS, SETTINGS_CHANGED, validateBackupSettings, THEME_MODES, type FactoryThemeOverrides } from '../utils/backupSettings'
+import {
+  SETTINGS_KEYS,
+  SETTINGS_CHANGED,
+  validateBackupSettings,
+  THEME_MODES,
+  type FactoryThemeOverrides,
+  type ThemeModeRole,
+  type ThemeModeAssignments,
+  normalizeThemeModeAssignments,
+  loadThemeModeAssignments,
+  saveThemeModeAssignments,
+  assignThemeToMode,
+  getThemeAssignedRole,
+} from '../utils/backupSettings'
 import React, { useState, useEffect } from 'react'
 import {
   X,
@@ -17,7 +30,7 @@ export { CustomPaletteEditor }
 export { presetToCustomPalette }
 
 import type { ThemeMode, CustomThemeColors } from '../utils/backupSettings'
-export type { ThemeMode, CustomThemeColors } from '../utils/backupSettings'
+export type { ThemeMode, CustomThemeColors, ThemeModeRole, ThemeModeAssignments }
 
 export interface ThemeOption {
   id: ThemeMode
@@ -290,7 +303,8 @@ interface ThemeModalProps {
   onClose: () => void
   currentTheme: ThemeMode
   customColors?: CustomThemeColors
-  onApplyTheme?: (theme: ThemeMode, customColors?: CustomThemeColors) => void
+  themeAssignments?: ThemeModeAssignments
+  onApplyTheme?: (theme: ThemeMode, customColors?: CustomThemeColors, assignments?: ThemeModeAssignments) => void
   onSelectTheme?: (theme: ThemeMode) => void
 }
 
@@ -630,6 +644,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   onClose,
   currentTheme,
   customColors,
+  themeAssignments,
   onApplyTheme,
   onSelectTheme,
 }) => {
@@ -640,6 +655,9 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   })
   const [standaloneColors, setStandaloneColors] = useState<CustomThemeColors>(() => loadStandalonePalette(customColors))
   const [overrides, setOverrides] = useState<FactoryThemeOverrides>({})
+  const [stagedAssignments, setStagedAssignments] = useState<ThemeModeAssignments>(() => {
+    return themeAssignments ? normalizeThemeModeAssignments(themeAssignments) : loadThemeModeAssignments()
+  })
   const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
 
@@ -654,6 +672,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open storage synchronization preserves standalone and factory draft separation.
       setStandaloneColors(loadStandalonePalette(customColors))
       setOverrides(saved)
+      setStagedAssignments(themeAssignments ? normalizeThemeModeAssignments(themeAssignments) : loadThemeModeAssignments())
       setPendingRestore(null)
       setStagedTheme(currentTheme === 'custom' && customColors?.identity ? customColors.identity.factoryId : currentTheme)
       setStagedCustomColors(normalizeCustomThemeColors(customColors))
@@ -666,6 +685,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
         const nextStandalone = loadStandalonePalette(customColors)
         setStandaloneColors(nextStandalone)
         setOverrides(nextSaved)
+        setStagedAssignments(loadThemeModeAssignments())
         setStagedTheme(nextMode)
         setStagedCustomColors(nextMode === 'custom' ? nextStandalone : (nextSaved[nextMode] || nextStandalone))
       }
@@ -674,7 +694,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
         return () => window.removeEventListener(SETTINGS_CHANGED, handleSettingsChanged)
       }
     }
-  }, [isOpen, currentTheme, customColors])
+  }, [isOpen, currentTheme, customColors, themeAssignments])
 
   if (!isOpen) return null
 
@@ -683,9 +703,20 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     setStagedTheme('custom')
     setStagedCustomColors(standaloneColors)
   }
+
+  const handleAssignRole = (themeId: ThemeMode, role: ThemeModeRole | 'none') => {
+    setStagedAssignments(prev => assignThemeToMode(prev, themeId, role))
+  }
+
   // The editor draft may carry identity; committed standalone storage never does.
-  const commitTheme = (mode: ThemeMode, standalone: CustomThemeColors, nextOverrides: FactoryThemeOverrides) => {
+  const commitTheme = (
+    mode: ThemeMode,
+    standalone: CustomThemeColors,
+    nextOverrides: FactoryThemeOverrides,
+    nextAssignments: ThemeModeAssignments = stagedAssignments
+  ) => {
     try {
+      saveThemeModeAssignments(nextAssignments)
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(standalone))
       localStorage.setItem(SETTINGS_KEYS.themeMode, mode)
@@ -700,7 +731,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     onClose()
   }
 
-  const handleSaveAndApply = () => commitTheme(stagedTheme, standaloneColors, overrides)
+  const handleSaveAndApply = () => commitTheme(stagedTheme, standaloneColors, overrides, stagedAssignments)
 
   const handleCustomPaletteSaveAndApply = (colors: CustomThemeColors) => {
     // Slot association belongs to the launch context, never imported palette metadata.
@@ -709,11 +740,11 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       const palette = normalizeCustomThemeColors({ ...colors, identity: {
         factoryId, displayName: colors.identity?.displayName || stagedCustomColors.identity!.displayName,
       } })
-      commitTheme(factoryId, standaloneColors, { ...overrides, [factoryId]: palette })
+      commitTheme(factoryId, standaloneColors, { ...overrides, [factoryId]: palette }, stagedAssignments)
     } else {
       const standalone = { ...colors }
       delete standalone.identity
-      commitTheme('custom', normalizeCustomThemeColors(standalone), overrides)
+      commitTheme('custom', normalizeCustomThemeColors(standalone), overrides, stagedAssignments)
     }
     setIsCustomPaletteEditorOpen(false)
   }
@@ -812,6 +843,63 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   </div>
 
                   {override && <button type="button" data-testid={`restore-factory-${theme.id}`} className="ui-action-text text-xs underline text-app-action" onClick={e => { e.stopPropagation(); setPendingRestore(theme.id) }}>Restore Factory Theme</button>}
+                  {/* Mode assignment */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                    <span className="text-[11px] font-semibold ui-secondary-text text-app-muted">Used As:</span>
+                    <div role="radiogroup" aria-label={`Mode assignment for ${override?.identity?.displayName || theme.name}`} className="inline-flex rounded-lg p-0.5 bg-app-surface border border-app-border text-[11px]">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={getThemeAssignedRole(theme.id, stagedAssignments) === 'light'}
+                        data-testid={`mode-assign-${theme.id}-light`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAssignRole(theme.id, 'light')
+                        }}
+                        className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                          getThemeAssignedRole(theme.id, stagedAssignments) === 'light'
+                            ? 'bg-app-action text-app-on-action shadow-xs font-bold'
+                            : 'text-app-text hover:text-app-heading'
+                        }`}
+                      >
+                        Light Mode
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={getThemeAssignedRole(theme.id, stagedAssignments) === 'dark'}
+                        data-testid={`mode-assign-${theme.id}-dark`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAssignRole(theme.id, 'dark')
+                        }}
+                        className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                          getThemeAssignedRole(theme.id, stagedAssignments) === 'dark'
+                            ? 'bg-app-action text-app-on-action shadow-xs font-bold'
+                            : 'text-app-text hover:text-app-heading'
+                        }`}
+                      >
+                        Dark Mode
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={getThemeAssignedRole(theme.id, stagedAssignments) === null}
+                        data-testid={`mode-assign-${theme.id}-none`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAssignRole(theme.id, 'none')
+                        }}
+                        className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                          getThemeAssignedRole(theme.id, stagedAssignments) === null
+                            ? 'bg-app-base text-app-muted border border-app-border/60 shadow-xs'
+                            : 'text-app-muted hover:text-app-text'
+                        }`}
+                      >
+                        Not Assigned
+                      </button>
+                    </div>
+                  </div>
                   {/* Built-in Preset Customization Action */}
                   <div className="pt-2 border-t border-app-border/40 flex items-center justify-between gap-2">
                     <span className="text-[10px] ui-muted-text text-app-muted">
@@ -908,6 +996,64 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   >
                     {isStandaloneSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                   </div>
+                </div>
+              </div>
+
+              {/* Mode assignment */}
+              <div className="flex flex-wrap items-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                <span className="text-[11px] font-semibold ui-secondary-text text-app-muted">Used As:</span>
+                <div role="radiogroup" aria-label="Mode assignment for Custom Palette" className="inline-flex rounded-lg p-0.5 bg-app-surface border border-app-border text-[11px]">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={getThemeAssignedRole('custom', stagedAssignments) === 'light'}
+                    data-testid="mode-assign-custom-light"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAssignRole('custom', 'light')
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                      getThemeAssignedRole('custom', stagedAssignments) === 'light'
+                        ? 'bg-app-action text-app-on-action shadow-xs font-bold'
+                        : 'text-app-text hover:text-app-heading'
+                    }`}
+                  >
+                    Light Mode
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={getThemeAssignedRole('custom', stagedAssignments) === 'dark'}
+                    data-testid="mode-assign-custom-dark"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAssignRole('custom', 'dark')
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                      getThemeAssignedRole('custom', stagedAssignments) === 'dark'
+                        ? 'bg-app-action text-app-on-action shadow-xs font-bold'
+                        : 'text-app-text hover:text-app-heading'
+                    }`}
+                  >
+                    Dark Mode
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={getThemeAssignedRole('custom', stagedAssignments) === null}
+                    data-testid="mode-assign-custom-none"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAssignRole('custom', 'none')
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                      getThemeAssignedRole('custom', stagedAssignments) === null
+                        ? 'bg-app-base text-app-muted border border-app-border/60 shadow-xs'
+                        : 'text-app-muted hover:text-app-text'
+                    }`}
+                  >
+                    Not Assigned
+                  </button>
                 </div>
               </div>
 
