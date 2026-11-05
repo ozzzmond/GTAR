@@ -218,12 +218,12 @@ test('#384 preview uses the app modal frame and readable metadata without intern
   const metaRows = document.querySelectorAll('[data-testid="preview-song-metadata"]')
   assert.equal(metaRows.length, 2, 'Only the two repeated songs with details show a metadata row')
   const meta = metaRows[0].textContent.replace(/\s+/g, ' ')
-  for (const readable of ['Key C', 'Original key D', 'Capo 2', '90 BPM', '3/4', '2020', 'Transpose -3']) {
+  for (const readable of ['Key C', 'Original key D', '90 BPM', '3/4', '2020', 'Transpose -3']) {
     assert.ok(meta.includes(readable), `Metadata shows "${readable}"`)
   }
   assert.ok(![...document.querySelectorAll('[data-testid="preview-song-list"] > li')][1].querySelector('[data-testid="preview-song-metadata"]'), 'Empty metadata shows no row')
   assert.doesNotMatch(document.body.textContent, /originalKey|transposeOffset|confirmedChartKey|format:|key:/)
-  assert.doesNotMatch(meta, /No Capo|undefined|null/)
+  assert.doesNotMatch(meta, /Capo|undefined|null/, '#386 preview omits Capo metadata')
 
   assert.equal(document.querySelectorAll('[data-testid="preview-primary-action"]').length, 1, 'One primary action')
   assert.equal(document.querySelector('[data-testid="preview-primary-action"]').textContent, 'Import personal copy')

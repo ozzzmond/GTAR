@@ -27,19 +27,12 @@ function bpmValue(value: unknown) {
   if (!raw) return ''
   return /^\d+$/.test(raw) ? `${raw} BPM` : raw
 }
-/** Default-equivalent capo values are not worth a chip. */
-function capoValue(value: unknown) {
-  const raw = metaText(value)
-  if (!raw || /^(no capo|0|none)$/i.test(raw)) return ''
-  return /^capo\b/i.test(raw) ? raw : `Capo ${raw}`
-}
 /** Human-readable chips only: no internal field names, no empty or default values. */
 function songMeta(song: Record<string, unknown>) {
   const chips: Array<[string, string]> = []
   const add = (label: string, value: string) => { if (value) chips.push([label, value]) }
   add('Key', metaText(song.key))
   add('Original key', metaText(song.originalKey))
-  add('Capo', capoValue(song.capo))
   add('BPM', bpmValue(song.bpm))
   add('Time', metaText(song.time))
   add('Year', metaText(song.year))
