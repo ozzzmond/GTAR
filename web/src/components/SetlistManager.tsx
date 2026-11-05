@@ -84,11 +84,12 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   const storedAuth = getStoredSessionStatus()
   const effectiveSession = auth?.session ?? (!storedAuth.isExpired && hasServerApproval(storedAuth.session) ? storedAuth.session : null)
   const userRole = effectiveSession?.role || effectiveSession?.user?.role
-  const isApproved = (auth ? auth.accessStatus === 'active' && !!auth.session : Boolean(effectiveSession))
+  const resolvedAccessStatus = auth?.accessStatus ?? effectiveSession?.access_status ?? effectiveSession?.user?.access_status
+  const isApproved = resolvedAccessStatus === 'active' && !!effectiveSession
   const isRoleEligible = (userRole === 'admin' || userRole === 'member') && isApproved
   const isAllowedToPublish = canPublish !== undefined ? canPublish : isRoleEligible
   const setlistCapability = useSharedSetlists(isAllowedToPublish)
-  const isPublishingPermitted = isAllowedToPublish && (canPublish !== undefined || setlistCapability.enabled)
+  const isPublishingPermitted = isAllowedToPublish && (canPublish !== undefined ? canPublish : (setlistCapability.enabled || setlistCapability.message === 'Checking Shared Setlists availability…'))
   const setlistStatusMap = useSetlistPublicationStatuses({
     setlists,
     songs,

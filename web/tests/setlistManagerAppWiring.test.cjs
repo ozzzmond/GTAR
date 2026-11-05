@@ -37,6 +37,12 @@ async function mountApp(url, { keepStorage = false, realHome = false, auth = nul
   const saved = previous ? Object.fromEntries(Object.keys(previous).map(k => [k, previous.getItem(k)])) : null
   if (root) { await act(async () => root.unmount()); root = null }
   dom = new JSDOM('<!doctype html><div id="root"></div>', { url })
+  if (!dom.window.HTMLDialogElement.prototype.showModal) {
+    dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  }
+  if (!dom.window.HTMLDialogElement.prototype.close) {
+    dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
+  }
   Object.assign(global, {
     window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement,
     localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage,
@@ -251,7 +257,7 @@ test('manage remains available without the legacy drawer outside local developme
 test('#379: App wires onPublishSetlist to SetlistManager and opens PublishSetlistModal for eligible session', async () => {
   const memberSession = {
     version: 1,
-    user: { id: 'user-member-1', email: 'member@example.com', role: 'member', access_status: 'active' },
+    user: { id: 'user-member-1', sub: 'user-member-1', email: 'member@example.com', role: 'member', access_status: 'active', email_verified: true },
     role: 'member',
     access_status: 'active',
     sessionToken: 'token-abc',
@@ -260,7 +266,7 @@ test('#379: App wires onPublishSetlist to SetlistManager and opens PublishSetlis
     authenticatedAt: Date.now(),
     lastVerifiedAt: Date.now(),
   }
-  await mountApp('http://localhost/', { auth: { session: memberSession } })
+  await mountApp('http://localhost/', { auth: { session: memberSession, accessStatus: 'active', role: 'member' } })
   await act(async () => home.onOpenSetlistManager(home.setlists[0]))
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'), 'Setlist Manager is open')
 
