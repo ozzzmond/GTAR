@@ -43,6 +43,7 @@ export const CANONICAL_STORAGE_PREFIXES = [
   'gtar_active_setlist_id',
   'gtar_theme_store',
   'gtar_theme_mode',
+  'gtar_theme_mode_assignments',
   'gtar_custom_theme_colors',
   'gtar_factory_theme_overrides',
   'gtar_standalone_custom_theme_colors',

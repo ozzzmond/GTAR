@@ -299,6 +299,7 @@ New or renamed tests await a human choice of primary category.
 - [syncUploadHeadroom.test.cjs](syncUploadHeadroom.test.cjs)
 - [tagControlsColors.test.cjs](tagControlsColors.test.cjs)
 - [testTiers.test.cjs](testTiers.test.cjs)
+- [themeModeAssignment369.test.cjs](themeModeAssignment369.test.cjs)
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
 - [userManagementRootProtection.test.cjs](userManagementRootProtection.test.cjs)

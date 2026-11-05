@@ -22,7 +22,18 @@ import {
   User,
   Shield,
   Menu,
+  Sun,
+  Moon,
 } from 'lucide-react'
+import {
+  SETTINGS_KEYS,
+  type ThemeMode,
+  type ThemeModeAssignments,
+  DEFAULT_THEME_MODE_ASSIGNMENTS,
+  loadThemeModeAssignments,
+  getThemeAssignedRole,
+  isLightTheme,
+} from '../utils/backupSettings'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import {
   GTAR_APP_VERSION,
@@ -109,6 +120,9 @@ interface HeaderProps {
   onNewSong?: () => void
   activeSection?: 'songs' | 'setlists' | null
   onOpenSection?: (section: 'songs' | 'setlists') => void
+  currentTheme?: ThemeMode
+  themeModeAssignments?: ThemeModeAssignments
+  onToggleThemeMode?: () => void
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -143,6 +157,9 @@ export const Header: React.FC<HeaderProps> = ({
   autoSyncBlocked = false,
   onOpenCast,
   isCastActive = false,
+  currentTheme,
+  themeModeAssignments,
+  onToggleThemeMode,
 }) => {
   void activeView
   void onOpenStageTools
@@ -150,6 +167,16 @@ export const Header: React.FC<HeaderProps> = ({
   void isCastActive
   const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
+
+  const effectiveTheme: ThemeMode = currentTheme ||
+    (typeof localStorage !== 'undefined' ? (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null) : null) ||
+    'solarized-dark'
+  const effectiveAssignments: ThemeModeAssignments = themeModeAssignments ||
+    (typeof localStorage !== 'undefined' ? loadThemeModeAssignments() : DEFAULT_THEME_MODE_ASSIGNMENTS)
+  const activeRole = getThemeAssignedRole(effectiveTheme, effectiveAssignments)
+  const isCurrentLight = isLightTheme(effectiveTheme)
+  const isTargetLight = activeRole === 'dark' || (activeRole === null && !isCurrentLight)
+  const modeSwitchLabel = isTargetLight ? 'Switch to light mode' : 'Switch to dark mode'
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
@@ -669,6 +696,22 @@ export const Header: React.FC<HeaderProps> = ({
               <Search className="w-4 h-4" />
             </button>
           )}
+
+          {/* Light/Dark mode switch, placed immediately beside the first header action */}
+          <button
+            type="button"
+            data-testid="header-theme-mode-toggle"
+            data-mode={activeRole ?? 'unassigned'}
+            aria-label={modeSwitchLabel}
+            onClick={onToggleThemeMode}
+            className="relative flex min-h-11 min-w-11 w-11 h-11 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action cursor-pointer transition-colors active:scale-95"
+          >
+            {isTargetLight ? (
+              <Moon className="w-5 h-5 text-app-action shrink-0" aria-hidden="true" />
+            ) : (
+              <Sun className="w-5 h-5 text-app-action shrink-0" aria-hidden="true" />
+            )}
+          </button>
 
           {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
           <SyncStatusPill status={backupStatus} lastBackup={cloudBackup?.updatedAt ?? null} now={backupClock}
