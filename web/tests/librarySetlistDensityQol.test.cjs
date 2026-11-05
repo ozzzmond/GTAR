@@ -41,7 +41,27 @@ test('SONG_CARD_TITLE+ARTIST_VISIBLE: Song library card clearly renders primary 
   assert.ok(html.includes('data-testid="song-card-0"'), 'Song card has data-testid')
 })
 
-test('SONG_CARD_KEY+BPM_NOT_RENDERED_AS_CARD_BADGES: Key and BPM are not rendered as badges on the song card', () => {
+test('SONG_CARD_BPM_UNIT_RENDERED_ONCE: stored "73 BPM" renders the unit once', () => {
+  const html = renderToString(React.createElement(SongbookHomeView, {
+    songs: [
+      { id: 102, title: 'Tempo Song', artist: 'Band', key: 'G', bpm: '73 BPM', rawContent: '' }
+    ],
+    setlists: [],
+    searchQuery: '',
+    activeSongIndex: 0,
+    onSelectSong: () => {},
+    onSongMembershipChange: () => {},
+    onCreateSetlistForSong: () => {},
+    onNewSong: () => {},
+    onOpenSetlists: () => {},
+    onDeleteSong: () => {},
+  }))
+  // formatTempoLabel renders "73 BPM" as one text node, so the markup contains it verbatim.
+  assert.ok(html.includes('73 BPM'), 'card shows the tempo label')
+  assert.equal(html.includes('73 BPM BPM'), false, 'unit is not duplicated')
+})
+
+test('SONG_CARD_KEY+BPM_LABEL: Key is not a badge and BPM renders once as plain text', () => {
   const songs = [
     { id: 101, title: 'Comfortably Numb', artist: 'Pink Floyd', key: 'Bm', bpm: '127', rawContent: '' }
   ]
@@ -59,9 +79,10 @@ test('SONG_CARD_KEY+BPM_NOT_RENDERED_AS_CARD_BADGES: Key and BPM are not rendere
     onDeleteSong: () => {},
   }))
 
-  // The song card must NOT contain KEY badge or BPM badge
+  // #388: the card renders the key chip and one plain-text tempo label (unit once).
   assert.equal(html.includes('KEY: Bm'), false, 'Song card must not render KEY: badge')
-  assert.equal(html.includes('127 BPM'), false, 'Song card must not render BPM badge')
+  assert.ok(html.includes('127 BPM'), 'Song card renders the tempo label')
+  assert.equal(html.includes('127 BPM BPM'), false, 'Tempo unit is not duplicated')
   assert.equal(html.includes('OPEN STAGE'), false, 'Song card must not render OPEN STAGE footer text')
 })
 

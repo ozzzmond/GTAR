@@ -17,7 +17,7 @@ import {
   Play,
   Trash2,
   AlertTriangle,
-  Layers,
+  ListMusic,
   ChevronRight,
   CheckSquare,
   Square,
@@ -36,7 +36,7 @@ import {
   Tag,
 } from 'lucide-react'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
-import { getSongMetadataStatus } from '../utils/chordProMetadata'
+import { getSongMetadataStatus, formatTempoLabel } from '../utils/chordProMetadata'
 import { extractShareToken, type SharedSetlistPayload } from '../utils/sharedSetlist'
 import { Link, Globe, UploadCloud, CloudCheck, CloudDownload } from 'lucide-react'
 import { SongStatusBadge } from './SongStatusBadge'
@@ -1871,7 +1871,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       {song.key && (
                         <span className="px-1.5 py-0.5 rounded bg-app-base border border-app-border text-app-accent font-mono font-bold text-[11px]">{song.key}</span>
                       )}
-                      {song.bpm && <span className="text-[10px] text-app-muted font-mono">{song.bpm} BPM</span>}
+                      {song.bpm && <span className="text-[10px] text-app-muted font-mono">{formatTempoLabel(song.bpm)}</span>}
                       <SongStatusBadge
                         testId={`song-metadata-status-${originalIdx}`}
                         ariaLabel={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
@@ -1974,7 +1974,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         <>
                           <button
                             type="button"
-                            aria-label={`Used in ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
+                            aria-label={`In ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
+                            title={`In ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
                             aria-haspopup="dialog"
                             aria-expanded={membershipPopoverSongId === (song.id ?? originalIdx)}
                             aria-controls={membershipPopoverSongId === (song.id ?? originalIdx) ? `membership-popover-${originalIdx}` : undefined}
@@ -1988,7 +1989,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             }}
                             className="relative inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-app-accent/15 text-app-accent hover:bg-app-accent/25 border border-app-accent/30 text-[10px] font-mono font-bold shrink-0 transition-colors cursor-pointer after:absolute after:-inset-3 after:content-['']"
                           >
-                            <Layers className="ui-section-icon w-2.5 h-2.5" />
+                            <ListMusic className="ui-section-icon w-2.5 h-2.5" />
                             <span data-testid={`song-setlist-count-${originalIdx}`}>{songSetlists.length}</span>
                           </button>
                           <DropdownPortal

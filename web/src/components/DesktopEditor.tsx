@@ -29,7 +29,7 @@ import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey, keysArePitchEquivalent } from '../utils/musicalKey'
-import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
+import { parseChordProDirectives, syncCanonicalDirectives, formatTempoLabel, type CanonicalMetadata } from '../utils/chordProMetadata'
 import { declaredKey, resolveSongKeys, transposeContext, wrapKeyOffset } from '../utils/songKeySemantics'
 import { transposeCanonicalSong } from '../utils/chartKeyAlignment'
 import { lookupSongMetadata, type SongMetadataResult } from '../utils/songMetadataClient'
@@ -1181,7 +1181,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <div className="grid grid-cols-3 gap-2 px-1 text-[11px] font-mono">
                   <div className="flex flex-col bg-app-base p-2 rounded-lg border border-app-border">
                     <span className="text-[9px] text-app-muted uppercase">Tempo</span>
-                    <span className="font-bold text-app-text">{lookupResult.tempo ? `${lookupResult.tempo} BPM` : '—'}</span>
+                    <span className="font-bold text-app-text">{formatTempoLabel(lookupResult.tempo) || '—'}</span>
                   </div>
                   <div className="flex flex-col bg-app-base p-2 rounded-lg border border-app-border">
                     <span className="text-[9px] text-app-muted uppercase">Time</span>

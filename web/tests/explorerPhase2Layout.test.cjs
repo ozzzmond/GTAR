@@ -320,7 +320,8 @@ test('#359: desktop Songbook 2nd row (songbook-filter-bar) stays visible when Ex
     assert.ok(edgeGrip, 'Show Music Explorer toggle exists when collapsed')
     assert.equal(edgeGrip.getAttribute('aria-label'), 'Show Music Explorer')
     assert.equal(edgeGrip.getAttribute('aria-expanded'), 'false')
-    assert.match(edgeGrip.querySelector('span').className, /min-h-11 min-w-11/, '>=44px touch target on edge toggle')
+    assert.match(edgeGrip.className, /w-6 /, 'expand control keeps its own 24px strip inside the layout')
+    assert.match(edgeGrip.querySelector('span').className, /h-11 w-6/, '24x44 target (WCAG 2.2 AA) without an overhang under main')
     assert.ok(edgeGrip.querySelector('svg'), 'chevron right icon present')
 
     // Regression check (#359): focus restored to edge grip with preventScroll: true
@@ -451,6 +452,31 @@ test('#359 PR-C: All Header.tsx focus() calls specify { preventScroll: true }', 
   for (const match of focusMatches) {
     assert.match(match[1], /preventScroll:\s*true/, `focus call must include preventScroll: true, got: ${match[0]}`)
   }
+})
+
+// #388 follow-up: the collapsed grip used to be a 12px strip with a 44px overhanging hit
+// area. Main's z-20 stage top bar painted over the 12px overhang, so half the visible tab was
+// clipped and the tab centre hit the stage bar. The strip now owns its full 24px width.
+test('#388 follow-up: collapsed grip owns its width and the Explorer header cannot collide', () => {
+  const explorer = fs.readFileSync(path.join(__dirname, '../src/components/ExplorerNavigation.tsx'), 'utf8')
+  const gripStart = explorer.indexOf('data-testid="explorer-edge-grip"')
+  assert.ok(gripStart > -1, 'edge grip exists')
+  const grip = explorer.slice(gripStart, explorer.indexOf('</button>', gripStart))
+  assert.match(grip, /className="group relative z-20 hidden md:flex w-6 /, 'grip reserves a 24px column')
+  assert.doesNotMatch(grip, /min-w-11/, 'no hit area overhangs into main')
+
+  const nav = fs.readFileSync(path.join(__dirname, '../src/components/MusicExplorerNav.tsx'), 'utf8')
+  assert.match(nav, /flex min-w-0 items-center gap-1\.5/, 'songbook header right group can shrink')
+  assert.match(nav, /min-w-0 truncate text-\[10px\] uppercase[\s\S]*?master song/, 'master-song count truncates instead of overlapping')
+})
+
+// #388: the Explorer nav was pinned to 288px inside the 256px md aside, so the right-aligned
+// collapse control was clipped and its centre landed under the z-10 resize handle.
+test('#388: Explorer nav fills the aside and the collapse control stacks above the resize handle', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/components/ExplorerNavigation.tsx'), 'utf8')
+  assert.doesNotMatch(source, /style=\{\{\s*width:\s*width \?\? 288\s*\}\}/, 'nav is not pinned wider than the md aside')
+  assert.match(source, /className="h-full w-full overflow-y-auto"/, 'scroll container follows the aside width')
+  assert.match(source, /className="relative z-20 flex min-h-11 min-w-11[^"]*"/, 'collapse control stacks above the z-10 resize handle')
 })
 
 

@@ -23,9 +23,11 @@ test('RECOVERY_DOT_CONTRACT: App.tsx alerts only a damaged library; Header and C
 test('PROVE_MEMBERSHIP: Compact count badge, no setlist name on main card, and popover navigates via stable ID', () => {
   const songbookHome = fs.readFileSync(path.join(webDir, 'src/components/SongbookHomeView.tsx'), 'utf8')
 
-  // Badge displays count only with Layers icon and no setlist name on main card
+  // Badge displays count only with a list/setlist icon and no setlist name on main card
   assert.ok(songbookHome.includes('song-setlist-indicator-'), 'Must have compact count badge testid')
-  assert.ok(songbookHome.includes('aria-label={`Used in ${songSetlists.length}'), 'Must have accessible membership label')
+  assert.ok(songbookHome.includes('aria-label={`In ${songSetlists.length}'), 'Must have accessible membership label')
+  assert.ok(songbookHome.includes('title={`In ${songSetlists.length}'), 'Must have membership tooltip')
+  assert.ok(songbookHome.includes('<ListMusic'), 'Must use the clearer list/setlist glyph')
   
   // Popover / list content
   assert.ok(songbookHome.includes('membership-popover-'), 'Must render popover container with testid')

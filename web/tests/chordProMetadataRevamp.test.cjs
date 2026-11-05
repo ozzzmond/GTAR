@@ -23,7 +23,7 @@ for (const ext of ['.ts', '.tsx']) {
 }
 require.extensions['.png'] = module => { module.exports = '/logo.png' }
 
-const { parseChordProDirectives, syncCanonicalDirectives, formatCanonicalTempo } = require('../src/utils/chordProMetadata.ts')
+const { parseChordProDirectives, syncCanonicalDirectives, formatCanonicalTempo, formatTempoLabel } = require('../src/utils/chordProMetadata.ts')
 const { normalizeMusicalKey, keysArePitchEquivalent } = require('../src/utils/musicalKey.ts')
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 const { transposeChordToken } = require('../src/utils/chordTransposer.ts')
@@ -52,6 +52,18 @@ test('CHORDPRO_SIX_CANONICAL_DIRECTIVES: parseChordProDirectives parses title, a
   assert.equal(parsed.metadata.time, '3/4')
   assert.equal(parsed.metadata.year, '1779')
   assert.ok(parsed.directives.some(d => d.name === 'custom_tag'))
+})
+
+test('TEMPO_LABEL_UNIT_RENDERED_ONCE: stored tempo values render the unit exactly once', () => {
+  assert.equal(formatTempoLabel('73'), '73 BPM')
+  assert.equal(formatTempoLabel(73), '73 BPM')
+  assert.equal(formatTempoLabel('73 BPM'), '73 BPM')
+  assert.equal(formatTempoLabel('73 bpm'), '73 BPM')
+  assert.equal(formatTempoLabel(' 73   BPM '), '73 BPM')
+  assert.equal(formatTempoLabel(''), undefined)
+  assert.equal(formatTempoLabel('   '), undefined)
+  assert.equal(formatTempoLabel(undefined), undefined)
+  assert.equal(formatTempoLabel(null), undefined)
 })
 
 test('TEMPO_FORMATTING: supports 120 and 120 BPM cleanly', () => {

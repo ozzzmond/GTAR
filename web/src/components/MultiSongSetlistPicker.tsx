@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, Check, Music, Plus, Search, X } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { parseSearchPhrases, songMatchesPhrase } from '../utils/setlistPickerSearch'
+import { formatTempoLabel } from '../utils/chordProMetadata'
 import { trapTab } from '../utils/focusTrap'
 
 /**
@@ -282,7 +283,7 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
                     <div className="text-[11px] text-app-muted flex items-center gap-2 mt-0.5 min-w-0">
                       <span className="truncate">{song.artist || 'Unknown Artist'}</span>
                       {song.key && <span className="font-mono text-app-accent shrink-0 font-semibold">Key: {song.key}</span>}
-                      {song.bpm && String(song.bpm).trim() && <span className="shrink-0">{String(song.bpm).replace(/\s*bpm$/i, '')} BPM</span>}
+                      {song.bpm && String(song.bpm).trim() && <span className="shrink-0">{formatTempoLabel(song.bpm)}</span>}
                     </div>
                   </div>
                   {isSelected && <Check className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />}
