@@ -186,7 +186,7 @@ test('Header mode toggle displays accurate mode state, label, and invokes switch
     onToggleThemeMode: () => toggles.push(true),
   }
 
-  // A. Current theme is Solarized Dark (assigned Dark Mode)
+  // A. Current theme is Solarized Dark (assigned Dark Mode) -> Destination preview is Light Mode (Sun icon + Light theme styling)
   await render(React.createElement(headerModule.Header, {
     ...baseHeaderProps,
     currentTheme: 'solarized-dark',
@@ -196,12 +196,16 @@ test('Header mode toggle displays accurate mode state, label, and invokes switch
   assert.ok(toggleBtnDark, 'Theme mode toggle button exists in header')
   assert.equal(toggleBtnDark.getAttribute('data-mode'), 'dark')
   assert.equal(toggleBtnDark.getAttribute('aria-label'), 'Switch to light mode')
-  assert.ok(toggleBtnDark.querySelector('.lucide-moon'), 'Displays Moon icon in dark mode')
+  assert.ok(toggleBtnDark.querySelector('.lucide-sun'), 'Displays Sun icon previewing destination Light mode')
+  assert.ok(
+    ['rgb(244, 236, 216)', '#f4ecd8'].includes(toggleBtnDark.style.backgroundColor),
+    `Switch button styled with assigned Light theme background: ${toggleBtnDark.style.backgroundColor}`
+  )
 
   await click('[data-testid="header-theme-mode-toggle"]')
   assert.equal(toggles.length, 1)
 
-  // B. Current theme is Paper Cream Light (assigned Light Mode)
+  // B. Current theme is Paper Cream Light (assigned Light Mode) -> Destination preview is Dark Mode (Moon icon + Dark theme styling)
   await render(React.createElement(headerModule.Header, {
     ...baseHeaderProps,
     currentTheme: 'paper-light',
@@ -210,9 +214,13 @@ test('Header mode toggle displays accurate mode state, label, and invokes switch
   const toggleBtnLight = document.querySelector('[data-testid="header-theme-mode-toggle"]')
   assert.equal(toggleBtnLight.getAttribute('data-mode'), 'light')
   assert.equal(toggleBtnLight.getAttribute('aria-label'), 'Switch to dark mode')
-  assert.ok(toggleBtnLight.querySelector('.lucide-sun'), 'Displays Sun icon in light mode')
+  assert.ok(toggleBtnLight.querySelector('.lucide-moon'), 'Displays Moon icon previewing destination Dark mode')
+  assert.ok(
+    ['rgb(0, 43, 54)', '#002b36', '#002B36'].includes(toggleBtnLight.style.backgroundColor),
+    `Switch button styled with assigned Dark theme background: ${toggleBtnLight.style.backgroundColor}`
+  )
 
-  // C. Current theme is unassigned (e.g. Crimson Stage, dark visually)
+  // C. Current theme is unassigned (e.g. Crimson Stage, dark visually) -> Destination preview is Light Mode
   await render(React.createElement(headerModule.Header, {
     ...baseHeaderProps,
     currentTheme: 'crimson-stage',
@@ -221,6 +229,46 @@ test('Header mode toggle displays accurate mode state, label, and invokes switch
   const toggleBtnUnassigned = document.querySelector('[data-testid="header-theme-mode-toggle"]')
   assert.equal(toggleBtnUnassigned.getAttribute('data-mode'), 'unassigned', 'Does not falsely claim unassigned theme is dark')
   assert.equal(toggleBtnUnassigned.getAttribute('aria-label'), 'Switch to light mode')
+  assert.ok(toggleBtnUnassigned.querySelector('.lucide-sun'), 'Displays Sun icon for unassigned dark theme')
+  assert.ok(
+    ['rgb(244, 236, 216)', '#f4ecd8'].includes(toggleBtnUnassigned.style.backgroundColor),
+    'Switch button styled with assigned Light theme background'
+  )
+
+  // D. Customized destination theme updates preview styling
+  const customDark = theme.normalizeCustomThemeColors({
+    ...theme.presetToCustomPalette(theme.THEME_OPTIONS[0]),
+    bgHex: '#120d0f',
+    actionColor: '#f43f5e',
+    cardBorder: '#2d0f17',
+    identity: { factoryId: 'solarized-dark', displayName: 'Solarized Dark Custom' },
+  })
+  localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify({ 'solarized-dark': customDark }))
+
+  await render(React.createElement(headerModule.Header, {
+    ...baseHeaderProps,
+    currentTheme: 'paper-light',
+  }))
+
+  const toggleCustomPreview = document.querySelector('[data-testid="header-theme-mode-toggle"]')
+  assert.ok(
+    ['rgb(18, 13, 15)', '#120d0f'].includes(toggleCustomPreview.style.backgroundColor),
+    `Customized destination theme background previewed: ${toggleCustomPreview.style.backgroundColor}`
+  )
+
+  // E. Reassignment to another theme updates destination preview
+  const reassigned = { light: 'e-ink-paper', dark: 'solarized-dark' }
+  await render(React.createElement(headerModule.Header, {
+    ...baseHeaderProps,
+    currentTheme: 'solarized-dark',
+    themeModeAssignments: reassigned,
+  }))
+
+  const toggleReassigned = document.querySelector('[data-testid="header-theme-mode-toggle"]')
+  assert.ok(
+    ['rgb(237, 237, 237)', '#ededed'].includes(toggleReassigned.style.backgroundColor),
+    `Reassigned destination theme background previewed: ${toggleReassigned.style.backgroundColor}`
+  )
 }))
 
 // 6. Persistence & reload across components

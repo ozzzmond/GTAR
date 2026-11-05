@@ -1686,6 +1686,7 @@ function LibraryApp() {
           currentTheme={stageTheme}
           themeModeAssignments={themeAssignments}
           onToggleThemeMode={handleToggleThemeMode}
+          customColors={customThemeColors}
           onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}

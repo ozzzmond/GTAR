@@ -27,8 +27,11 @@ import {
 } from 'lucide-react'
 import {
   SETTINGS_KEYS,
+  SETTINGS_CHANGED,
   type ThemeMode,
   type ThemeModeAssignments,
+  type CustomThemeColors,
+  DEFAULT_CUSTOM_COLORS,
   DEFAULT_THEME_MODE_ASSIGNMENTS,
   loadThemeModeAssignments,
   getThemeAssignedRole,
@@ -58,6 +61,7 @@ import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
 import { CloudSyncModal } from './CloudSyncModal'
+import { resolveThemePalette } from './ThemeModal'
 import devLogo from '../assets/dev-logo.png'
 import prodLogo from '../assets/prod-logo.png'
 import { isDevEnv } from '../utils/env'
@@ -68,6 +72,34 @@ import type { SyncLibrary } from '../utils/syncMerge'
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
+}
+
+function getLuminance(hex: string): number {
+  const clean = hex.replace('#', '')
+  if (clean.length !== 6) return 0
+  const channels = [0, 2, 4].map((offset) => {
+    const val = parseInt(clean.substring(offset, offset + 2), 16) / 255
+    return val <= 0.04045 ? val / 12.92 : ((val + 0.055) / 1.055) ** 2.4
+  })
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+}
+
+function getContrastRatio(hex1: string, hex2: string): number {
+  const l1 = getLuminance(hex1)
+  const l2 = getLuminance(hex2)
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+}
+
+function resolveAccessibleIconColor(bgHex: string, candidateHex?: string, fallbackTextHex?: string): string {
+  if (candidateHex && getContrastRatio(candidateHex, bgHex) >= 3.0) {
+    return candidateHex
+  }
+  if (fallbackTextHex && getContrastRatio(fallbackTextHex, bgHex) >= 3.0) {
+    return fallbackTextHex
+  }
+  const contrastWhite = getContrastRatio('#FFFFFF', bgHex)
+  const contrastBlack = getContrastRatio('#000000', bgHex)
+  return contrastWhite >= contrastBlack ? '#FFFFFF' : '#000000'
 }
 
 interface HeaderProps {
@@ -123,6 +155,7 @@ interface HeaderProps {
   currentTheme?: ThemeMode
   themeModeAssignments?: ThemeModeAssignments
   onToggleThemeMode?: () => void
+  customColors?: CustomThemeColors
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -160,6 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentTheme,
   themeModeAssignments,
   onToggleThemeMode,
+  customColors,
 }) => {
   void activeView
   void onOpenStageTools
@@ -174,9 +208,58 @@ export const Header: React.FC<HeaderProps> = ({
   const effectiveAssignments: ThemeModeAssignments = themeModeAssignments ||
     (typeof localStorage !== 'undefined' ? loadThemeModeAssignments() : DEFAULT_THEME_MODE_ASSIGNMENTS)
   const activeRole = getThemeAssignedRole(effectiveTheme, effectiveAssignments)
-  const isCurrentLight = isLightTheme(effectiveTheme)
-  const isTargetLight = activeRole === 'dark' || (activeRole === null && !isCurrentLight)
-  const modeSwitchLabel = isTargetLight ? 'Switch to light mode' : 'Switch to dark mode'
+  const isCurrentLight = activeRole === 'light' || (activeRole === null && isLightTheme(effectiveTheme, customColors))
+  const targetRole = isCurrentLight ? 'dark' : 'light'
+  const modeSwitchLabel = targetRole === 'dark' ? 'Switch to dark mode' : 'Switch to light mode'
+  const destTheme: ThemeMode = targetRole === 'light' ? effectiveAssignments.light : effectiveAssignments.dark
+
+  const [isModeHovered, setIsModeHovered] = useState(false)
+  const [isModeFocused, setIsModeFocused] = useState(false)
+  const [settingsSeq, setSettingsSeq] = useState(0)
+
+  useEffect(() => {
+    const onSettings = () => setSettingsSeq((s) => s + 1)
+    window.addEventListener(SETTINGS_CHANGED, onSettings)
+    return () => window.removeEventListener(SETTINGS_CHANGED, onSettings)
+  }, [])
+
+  const effectiveCustomColors = useMemo(() => {
+    if (customColors) return customColors
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEYS.customThemeColors) || 'null')
+        if (saved && typeof saved === 'object') return saved
+      } catch { /* ignore */ }
+    }
+    return DEFAULT_CUSTOM_COLORS
+  }, [customColors, settingsSeq])
+
+  const destColors = useMemo(() => {
+    try {
+      if (typeof resolveThemePalette === 'function') {
+        const resolved = resolveThemePalette(destTheme, effectiveCustomColors)
+        if (resolved && typeof resolved === 'object' && resolved.bgHex) {
+          return resolved
+        }
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_CUSTOM_COLORS
+  }, [destTheme, effectiveCustomColors, settingsSeq])
+
+  const safeDest = destColors || DEFAULT_CUSTOM_COLORS
+  const destBg = safeDest.bgHex || (targetRole === 'light' ? '#f4ecd8' : '#002B36')
+  const destBorder = safeDest.cardBorder || safeDest.searchBorder || (targetRole === 'light' ? '#ded3ba' : '#073642')
+  const destAction = safeDest.actionColor || safeDest.uiLinkText || (targetRole === 'light' ? '#268bd2' : '#2AA198')
+  const destIconColor = useMemo(() => {
+    return resolveAccessibleIconColor(destBg, destAction, safeDest.textHex)
+  }, [destBg, destAction, safeDest.textHex])
+
+  const modeButtonStyle: React.CSSProperties = {
+    backgroundColor: destBg,
+    borderColor: isModeHovered || isModeFocused ? destAction : destBorder,
+    color: destIconColor,
+    boxShadow: isModeFocused ? `0 0 0 2px ${destAction}` : undefined,
+  }
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
@@ -704,12 +787,17 @@ export const Header: React.FC<HeaderProps> = ({
             data-mode={activeRole ?? 'unassigned'}
             aria-label={modeSwitchLabel}
             onClick={onToggleThemeMode}
-            className="relative flex min-h-11 min-w-11 w-11 h-11 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action cursor-pointer transition-colors active:scale-95"
+            onMouseEnter={() => setIsModeHovered(true)}
+            onMouseLeave={() => setIsModeHovered(false)}
+            onFocus={() => setIsModeFocused(true)}
+            onBlur={() => setIsModeFocused(false)}
+            style={modeButtonStyle}
+            className="relative flex min-h-11 min-w-11 w-11 h-11 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-colors active:scale-95"
           >
-            {isTargetLight ? (
-              <Moon className="w-5 h-5 text-app-action shrink-0" aria-hidden="true" />
+            {targetRole === 'dark' ? (
+              <Moon className="w-5 h-5 shrink-0" aria-hidden="true" style={{ color: destIconColor }} />
             ) : (
-              <Sun className="w-5 h-5 text-app-action shrink-0" aria-hidden="true" />
+              <Sun className="w-5 h-5 shrink-0" aria-hidden="true" style={{ color: destIconColor }} />
             )}
           </button>
 
