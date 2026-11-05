@@ -716,11 +716,11 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     nextAssignments: ThemeModeAssignments = stagedAssignments
   ) => {
     try {
-      saveThemeModeAssignments(nextAssignments)
       localStorage.setItem(SETTINGS_KEYS.factoryThemeOverrides, JSON.stringify(nextOverrides))
       localStorage.setItem(SETTINGS_KEYS.customThemeColors, JSON.stringify(standalone))
       localStorage.setItem(SETTINGS_KEYS.themeMode, mode)
       applyThemeRuntime(mode, standalone, nextOverrides)
+      saveThemeModeAssignments(nextAssignments)
     } catch (e) {
       console.error('Failed to commit theme to localStorage', e)
       return

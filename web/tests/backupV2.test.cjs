@@ -49,6 +49,7 @@ const palette = (bg = '#123456') => ({ bgHex: bg, textHex: '#ffffff', chordHex: 
 function fullSettingsStorage(storage = new MemoryStorage()) {
   const raw = {
     [bs.SETTINGS_KEYS.themeMode]: 'azure-stage',
+    [bs.THEME_MODE_ASSIGNMENTS_KEY]: JSON.stringify({ light: 'paper-light', dark: 'azure-stage' }),
     [bs.SETTINGS_KEYS.customThemeColors]: JSON.stringify(palette()),
     [bs.SETTINGS_KEYS.factoryThemeOverrides]: JSON.stringify({ 'paper-light': { ...palette('#445566'), identity: { factoryId: 'paper-light', displayName: 'Mine' } } }),
     [bs.SETTINGS_KEYS.fontStyle]: 'serif',
@@ -102,9 +103,10 @@ test('#356 cloud round trip restores every local JSON v2 setting key and exclude
     const target = new MemoryStorage()
     persistLibrary({ songs: [], setlists: [] }, target)
     await restoreCloudBackup(readPersistedLibrary(target), verified.data, 'replace', lib => persistLibrary(lib, target), target)
-    for (const [key, value] of Object.entries(raw)) assert.equal(target.getItem(key), value, key)
+    for (const [key, value] of Object.entries(raw)) assert.equal(target.getItem(key), key === bs.SETTINGS_KEYS.themeMode ? null : value, key)
     for (const key of Object.keys(EXCLUDED)) assert.equal(target.getItem(key), null, key)
-    assert.deepEqual(bs.readBackupSettingsV2(target), bs.readBackupSettingsV2(source))
+    const expected = bs.readBackupSettingsV2(source); delete expected.appearance.themeMode
+    assert.deepEqual(bs.readBackupSettingsV2(target), expected)
   } finally { global.fetch = previousFetch }
 })
 
@@ -387,7 +389,7 @@ for (const mode of ['replace', 'merge']) {
         })))
         assert.equal(document.querySelector('[data-testid="restore-settings-choice"]'), null, 'settings choice lives in the restore preview')
         await pick(dom, mode, payload, async () => {
-          assert.match(document.body.textContent, /This backup has 10 appearance and 6 preference settings/)
+          assert.match(document.body.textContent, /This backup has 11 appearance and 6 preference settings/)
           assert.equal(checkbox('Appearance').checked, true, 'appearance restores by default')
           assert.equal(checkbox('Preferences').checked, false, 'preferences stay on the device by default')
           if (checkbox('Appearance').checked !== appearance) await act(async () => checkbox('Appearance').click())

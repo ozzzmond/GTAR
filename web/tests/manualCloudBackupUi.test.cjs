@@ -57,7 +57,7 @@ test(`cloud settings preview/cancel/confirm: ${mode}, appearance=${appearance}, 
  try {
   await click('Restore from cloud')
   const preview=document.querySelector('[data-testid="restore-preview"]')
-  assert.match(preview.textContent,/3 appearance and 1 preference settings/)
+  assert.match(preview.textContent,/4 appearance and 1 preference settings/)
   assert.match(preview.textContent,/theme, colours, stage and TV text/)
   assert.match(preview.textContent,/2026-11-01/)
   const boxes=[...preview.querySelectorAll('input[type="checkbox"]')]
@@ -360,6 +360,61 @@ async function badgeSetup({legacy=false}={}) {
  await render()
  return {root,render,badge,open,close,record}
 }
+
+test('#372 verified backup survives Light -> Dark -> Light without configuration edits',async()=>{
+ const h=await badgeSetup()
+ const {SETTINGS_CHANGED}=require('../src/utils/backupSettings.ts')
+ try {
+  await h.open();await h.close()
+  for(const mode of ['paper-light','solarized-dark','paper-light']) {
+   await act(async()=>{localStorage.setItem('gtar_theme_store',mode);window.dispatchEvent(new window.Event(SETTINGS_CHANGED))})
+   assert.equal(h.badge().dataset.status,'backed-up',mode)
+  }
+  await h.open();await h.close()
+  assert.equal(h.badge().dataset.status,'backed-up','re-read cloud after switching')
+ } finally {await act(async()=>h.root.unmount())}
+})
+
+test('#372 saved assignments and palette edits refresh parity in this tab and after remount',async()=>{
+ const h=await badgeSetup()
+ const bs=require('../src/utils/backupSettings.ts')
+ try {
+  await h.open();await h.close()
+  for(const assignments of [{light:'custom',dark:'solarized-dark'},{light:'paper-light',dark:'oled-black'}]) {
+   await act(async()=>bs.saveThemeModeAssignments(assignments))
+   assert.equal(h.badge().dataset.status,'not-backed-up')
+   await act(async()=>bs.saveThemeModeAssignments(bs.DEFAULT_THEME_MODE_ASSIGNMENTS))
+   assert.equal(h.badge().dataset.status,'backed-up')
+  }
+  const palette={bgHex:'#123456',textHex:'#ffffff',chordHex:'#abcdef',sectionHex:'#654321'}
+  for(const [key,value] of [
+   [bs.SETTINGS_KEYS.customThemeColors,palette],
+   [bs.STANDALONE_PALETTE_KEY,palette],
+   [bs.SETTINGS_KEYS.factoryThemeOverrides,{'paper-light':{...palette,identity:{factoryId:'paper-light',displayName:'Mine'}}}],
+  ]) {
+   await act(async()=>{localStorage.setItem(key,JSON.stringify(value));window.dispatchEvent(new window.Event(bs.SETTINGS_CHANGED))})
+   assert.equal(h.badge().dataset.status,'not-backed-up',key)
+   await act(async()=>{localStorage.removeItem(key);window.dispatchEvent(new window.StorageEvent('storage',{key}))})
+   assert.equal(h.badge().dataset.status,'backed-up',key)
+  }
+  // A new mount has no cached proof; fresh verification gives the same result.
+  await act(async()=>h.root.unmount())
+  const {Header}=require('../src/components/Header.tsx')
+  const root=createRoot(document.getElementById('root'))
+  try {
+   const noop=()=>{}
+   await act(async()=>root.render(React.createElement(Header,{activeView:'songbook',song:local.songs[0],searchQuery:'',onViewChange:noop,onSearchQueryChange:noop,onOpenWebsiteUrlSource:noop,onOpenStageTools:noop,onToggleTheme:noop,onOpenStageSettings:noop,onOpenImportModal:noop})))
+   assert.equal(h.badge().dataset.status,'unknown')
+   await h.open();await h.close()
+   assert.equal(h.badge().dataset.status,'backed-up')
+   const before=document.body.className
+   const mode=localStorage.getItem(bs.SETTINGS_KEYS.themeMode)
+   require('../src/utils/manualCloudBackup.ts').captureCloudBackup(readPersistedLibrary())
+   assert.equal(document.body.className,before)
+   assert.equal(localStorage.getItem(bs.SETTINGS_KEYS.themeMode),mode)
+  } finally {await act(async()=>root.unmount())}
+ } finally {await act(async()=>h.root.unmount())}
+})
 
 test('#368 verified matching settings-v2 backup reports Backed up through Header',async()=>{
  const h=await badgeSetup()

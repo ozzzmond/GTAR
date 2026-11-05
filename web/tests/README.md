@@ -280,6 +280,7 @@ New or renamed tests await a human choice of primary category.
 - [sharedCatalogRecoveryUx.test.cjs](sharedCatalogRecoveryUx.test.cjs)
 - [sharedCatalogSignIn.test.cjs](sharedCatalogSignIn.test.cjs)
 - [sharedSetlistMemberPublishing.test.cjs](sharedSetlistMemberPublishing.test.cjs)
+- [smartThemeBackup372.test.cjs](smartThemeBackup372.test.cjs)
 - [songExport.test.cjs](songExport.test.cjs)
 - [songbookTagFilter.test.cjs](songbookTagFilter.test.cjs)
 - [songsLibraryMenu.test.cjs](songsLibraryMenu.test.cjs)

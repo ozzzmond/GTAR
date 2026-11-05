@@ -35,6 +35,13 @@ export interface ThemeModeAssignments {
   dark: ThemeMode
 }
 
+export function validThemeModeAssignments(value: unknown): value is ThemeModeAssignments {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const obj = value as Record<string, unknown>
+  return Object.keys(obj).length === 2 &&
+    THEME_MODES.includes(obj.light as ThemeMode) && THEME_MODES.includes(obj.dark as ThemeMode) && obj.light !== obj.dark
+}
+
 export const DEFAULT_THEME_MODE_ASSIGNMENTS: ThemeModeAssignments = {
   light: 'paper-light',
   dark: 'solarized-dark',
@@ -823,6 +830,8 @@ const parseJson = (raw: string): unknown => { try { return JSON.parse(raw) } cat
 
 /** v2-only appearance fields (the v1 fields are handled by validateBackupSettings/SETTINGS_KEYS). */
 export const APPEARANCE_EXTRA_SETTINGS = {
+  themeModeAssignments: { key: THEME_MODE_ASSIGNMENTS_KEY, read: raw => { const v = parseJson(raw); return validThemeModeAssignments(v) ? v : undefined },
+    write: value => JSON.stringify(value), validate: validThemeModeAssignments },
   standaloneCustomThemeColors: { key: STANDALONE_PALETTE_KEY, read: raw => { const v = parseJson(raw); return isPalette(v) ? v : undefined },
     write: value => JSON.stringify(value), validate: isPalette },
   chordScale: { key: 'gtar_stage_chord_scale', read: raw => { const v = parseFloat(raw); return STAGE_CHORD_SCALES.includes(v) ? v : undefined },
@@ -848,6 +857,7 @@ export const PREFERENCE_SETTINGS = {
 export type AppearanceExtraField = keyof typeof APPEARANCE_EXTRA_SETTINGS
 export type PreferenceField = keyof typeof PREFERENCE_SETTINGS
 export interface AppearanceSettings extends BackupSettings {
+  themeModeAssignments?: ThemeModeAssignments
   standaloneCustomThemeColors?: CustomThemeColors
   chordScale?: number
   fontWeight?: 'regular' | 'medium' | 'bold'
