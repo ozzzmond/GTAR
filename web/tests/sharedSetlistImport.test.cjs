@@ -200,6 +200,69 @@ test('UI cancel never imports and failed persistence never offers Open Setlist',
   assert.match(document.body.textContent, /conflicts/)
 })
 
+test('#384 preview uses the app modal frame and readable metadata without internal field names', async () => {
+  await mount(React.createElement(CatalogImportContext.Provider, { value: host() }, React.createElement(CatalogSetlistPreview, { id, revision: 1, onClose() {} })))
+  await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+
+  const dialogEl = document.querySelector('dialog')
+  assert.equal(dialogEl.getAttribute('aria-label'), 'Published setlist preview')
+  assert.match(dialogEl.className, /rounded-2xl/)
+  assert.match(dialogEl.className, /border-app-border/)
+  assert.match(dialogEl.className, /bg-app-surface/)
+  assert.match(dialogEl.className, /max-w-lg/)
+  assert.match(dialogEl.className, /sm:max-w-2xl/)
+  assert.match(dialogEl.className, /backdrop:bg-black/)
+  assert.ok(dialogEl.querySelector('h2'), 'Header title exists')
+  assert.equal(dialogEl.querySelector('button[aria-label="Close preview"]').getAttribute('type'), 'button')
+
+  const metaRows = document.querySelectorAll('[data-testid="preview-song-metadata"]')
+  assert.equal(metaRows.length, 2, 'Only the two repeated songs with details show a metadata row')
+  const meta = metaRows[0].textContent.replace(/\s+/g, ' ')
+  for (const readable of ['Key C', 'Original key D', 'Capo 2', '90 BPM', '3/4', '2020', 'Transpose -3']) {
+    assert.ok(meta.includes(readable), `Metadata shows "${readable}"`)
+  }
+  assert.ok(![...document.querySelectorAll('[data-testid="preview-song-list"] > li')][1].querySelector('[data-testid="preview-song-metadata"]'), 'Empty metadata shows no row')
+  assert.doesNotMatch(document.body.textContent, /originalKey|transposeOffset|confirmedChartKey|format:|key:/)
+  assert.doesNotMatch(meta, /No Capo|undefined|null/)
+
+  assert.equal(document.querySelectorAll('[data-testid="preview-primary-action"]').length, 1, 'One primary action')
+  assert.equal(document.querySelector('[data-testid="preview-primary-action"]').textContent, 'Import personal copy')
+  assert.equal(document.querySelector('[data-testid="preview-secondary-close"]').textContent, 'Close')
+  assert.equal(document.querySelector('details').open, false, 'Chart stays closed until opened')
+})
+
+test('#384 preview keeps Open Existing as the single primary action beside the duplicate option', async () => {
+  const preview = await prepare(), h = host()
+  await api.importCatalogSetlist(preview, h, { kind: 'new' })
+  await mount(React.createElement(CatalogImportContext.Provider, { value: h }, React.createElement(CatalogSetlistPreview, { id, revision: 1, onClose() {} })))
+  await act(async () => { await new Promise(r => setTimeout(r, 40)) })
+
+  const primary = document.querySelectorAll('[data-testid="preview-primary-action"]')
+  assert.equal(primary.length, 1)
+  assert.equal(primary[0].textContent, 'Open Existing: Sunday')
+  assert.equal(document.querySelector('[data-testid="preview-secondary-close"]').textContent, 'Close')
+  assert.ok(button('Create deliberate duplicate'), 'Duplicate stays discoverable as a secondary action')
+})
+
+test('#384 preview closes on Escape and returns focus to the opener', async () => {
+  const container = document.createElement('div')
+  const opener = document.createElement('button')
+  opener.textContent = 'Open preview'
+  document.body.append(opener, container)
+  opener.focus()
+  let closed = 0
+  const isolated = createRoot(container)
+  await act(async () => {
+    isolated.render(React.createElement(CatalogImportContext.Provider, { value: host() }, React.createElement(CatalogSetlistPreview, { id, revision: 1, onClose: () => { closed += 1 } })))
+  })
+  const dialogEl = container.querySelector('dialog')
+  assert.equal(dialogEl.open, true)
+  await act(async () => { dialogEl.dispatchEvent(new dom.window.Event('cancel', { bubbles: true, cancelable: true })) })
+  assert.equal(closed, 1, 'Escape requests close')
+  await act(async () => { isolated.unmount() })
+  assert.equal(document.activeElement, opener, 'Focus returns to the opener')
+})
+
 test('Open rejects stale chart state even when personal setlist identity still matches', async () => {
   const preview = await prepare(), h = host()
   const destination = await api.importCatalogSetlist(preview, h, { kind: 'new' })
