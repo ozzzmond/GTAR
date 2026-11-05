@@ -15,7 +15,7 @@ const src = path.join(__dirname, '../src')
 const saved = { console: { error: console.error, warn: console.warn, log: console.log, info: console.info, debug: console.debug } }
 afterEach(() => {
   Object.assign(console, saved.console)
-  delete globalThis.__GTAR_PROD_VERSION__; delete globalThis.__GTAR_DEV_VERSION__; delete globalThis.__GTAR_DEV_PROVENANCE__
+  delete globalThis.__GTAR_PREVIEW_IDENTITY__; delete globalThis.__GTAR_PROD_VERSION__; delete globalThis.__GTAR_DEV_VERSION__; delete globalThis.__GTAR_DEV_PROVENANCE__
   for (const key of Object.keys(require.cache)) if (key.startsWith(src)) delete require.cache[key]
 })
 
@@ -59,4 +59,12 @@ test('never the legacy 1.1.108 fallback, even without build identity', () => {
   const dev = appStart({ dev: true, defines: {} })
   assert.doesNotMatch(dev, /1\.1\.108|\(unknown\)/)
   assert.match(dev, /^App started\. Version: \d+\.\d+\.\d+-dev\.\d+; Environment: development$/)
+})
+
+
+test('PREVIEW: build SHA without enabling DEV environment', () => {
+  const message = appStart({ dev: false, defines: {
+    __GTAR_PREVIEW_IDENTITY__: { tagStatus: 'UNTAGGED', commitSha: 'abcdef0', branch: 'fix/example' },
+  } })
+  assert.equal(message, 'App started. Version: PREVIEW · UNTAGGED · SHA: abcdef0; Environment: production')
 })

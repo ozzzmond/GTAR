@@ -267,6 +267,7 @@ New or renamed tests await a human choice of primary category.
 - [multiTagFoundation.test.cjs](multiTagFoundation.test.cjs)
 - [musicExplorerDrawer.test.cjs](musicExplorerDrawer.test.cjs)
 - [onsongImport.test.cjs](onsongImport.test.cjs)
+- [previewBuildIdentity.test.cjs](previewBuildIdentity.test.cjs)
 - [qaBackupFixtureScale.test.cjs](qaBackupFixtureScale.test.cjs)
 - [recoveryArchivesIdb.test.cjs](recoveryArchivesIdb.test.cjs)
 - [recoveryDataPanel.test.cjs](recoveryDataPanel.test.cjs)

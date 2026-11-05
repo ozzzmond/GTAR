@@ -4,12 +4,22 @@ import type { CatalogSetlistLineage } from '../utils/catalogSetlistLineage'
  */
 
 declare const __GTAR_PROD_VERSION__: string | null
-// Legacy fallback for local/preview builds; Pages main requires exact tag-derived identity.
+// Unversioned metadata for local/preview backups; Pages main requires exact tag-derived identity.
 export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string'
-  ? __GTAR_PROD_VERSION__ : '1.1.108';
+  ? __GTAR_PROD_VERSION__ : '0.0.0-unversioned';
 declare const __GTAR_DEV_VERSION__: string | null
 export const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string'
   ? __GTAR_DEV_VERSION__ : '1.0.143-dev.1';
+
+export interface PreviewBuildIdentity {
+  tagStatus: 'UNTAGGED'
+  commitSha: string
+  branch: string
+}
+
+declare const __GTAR_PREVIEW_IDENTITY__: PreviewBuildIdentity | null | undefined
+export const GTAR_PREVIEW_IDENTITY: PreviewBuildIdentity | null = typeof __GTAR_PREVIEW_IDENTITY__ === 'object' && __GTAR_PREVIEW_IDENTITY__ !== null
+  ? __GTAR_PREVIEW_IDENTITY__ : null
 
 export interface DevBuildProvenance {
   tagStatus: 'TAGGED' | 'UNTAGGED' | 'UNVERIFIED'

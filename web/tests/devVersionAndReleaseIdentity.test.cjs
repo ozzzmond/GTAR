@@ -866,7 +866,7 @@ test('STEP_8.5: Production header behavior unchanged and diagnostics excluded', 
   const { formatHeaderVersion } = require('../src/utils/headerFormatters.ts')
 
   // formatHeaderVersion in PROD mode:
-  assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', '1.1.108'), 'v1.1.108')
-  assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', 'v1.1.108'), 'v1.1.108')
+  assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', '1.0.140'), 'v1.0.140')
+  assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', 'v1.0.140'), 'v1.0.140')
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', '1.1.133'), 'v1.1.133')
 })

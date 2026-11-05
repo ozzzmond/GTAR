@@ -1,4 +1,4 @@
-import type { DevBuildProvenance } from '../types/gtar'
+import type { DevBuildProvenance, PreviewBuildIdentity } from '../types/gtar'
 
 export function formatDevDiagLine1(prov: DevBuildProvenance, devVersion: string): string {
   const version = `v${devVersion.replace(/^v/, '')}`
@@ -19,4 +19,9 @@ export function formatHeaderVersion(isDev: boolean, devVer: string, prodVer: str
   return isDev
     ? (devVer.startsWith('untagged') ? devVer : `v${devVer.replace(/^v/, '')}`)
     : `v${prodVer.replace(/^v/, '')}`
+}
+
+/** Keep the visible label short on phones. */
+export function formatPreviewIdentity(identity: PreviewBuildIdentity): string {
+  return `PREVIEW · ${identity.tagStatus} · SHA: ${identity.commitSha}`
 }
