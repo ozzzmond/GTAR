@@ -417,7 +417,7 @@ test('#359 PR-C: Cloud status button icon states, tooltips, and aria-labels are 
   const noop = () => {}
 
   // 1. Signed out
-  await render(SyncStatusPill, { signedIn: false, lastBackup: null, backupChecksum: null, localChecksum: null, onClick: noop })
+  await render(SyncStatusPill, { status: { state: 'signed-out', label: 'Not signed in' }, lastBackup: null, onClick: noop })
   let btn = $('[data-testid="header-cloud-sync-button"]')
   assert.equal(btn.dataset.status, 'signed-out')
   assert.ok(btn.querySelector('.lucide-ban'), 'signed-out renders ban icon')
@@ -426,7 +426,7 @@ test('#359 PR-C: Cloud status button icon states, tooltips, and aria-labels are 
   assert.equal(btn.textContent.trim(), '', 'no text in signed-out state')
 
   // 2. Synced (backed-up)
-  await render(SyncStatusPill, { signedIn: true, lastBackup: '2026-11-05T00:00:00Z', backupChecksum: 'sha1', localChecksum: 'sha1', now: Date.parse('2026-11-05T01:00:00Z'), onClick: noop })
+  await render(SyncStatusPill, { status: { state: 'backed-up', label: 'Backed up' }, lastBackup: '2026-11-05T00:00:00Z', now: Date.parse('2026-11-05T01:00:00Z'), onClick: noop })
   btn = $('[data-testid="header-cloud-sync-button"]')
   assert.equal(btn.dataset.status, 'backed-up')
   assert.ok(btn.querySelector('.lucide-check'), 'backed-up renders check icon')
@@ -434,8 +434,8 @@ test('#359 PR-C: Cloud status button icon states, tooltips, and aria-labels are 
   assert.match(btn.getAttribute('title'), /Backed up/)
   assert.equal(btn.textContent.trim(), '', 'no text in backed-up state')
 
-  // 3. Not backed up (modified locally or never backed up)
-  await render(SyncStatusPill, { signedIn: true, lastBackup: '2026-11-05T00:00:00Z', backupChecksum: 'sha1', localChecksum: 'sha2_diff', onClick: noop })
+  // 3. Not backed up (modified locally)
+  await render(SyncStatusPill, { status: { state: 'not-backed-up', label: 'Not backed up' }, lastBackup: '2026-11-05T00:00:00Z', onClick: noop })
   btn = $('[data-testid="header-cloud-sync-button"]')
   assert.equal(btn.dataset.status, 'not-backed-up')
   assert.ok(btn.querySelector('.lucide-circle-alert'), 'not-backed-up renders alert icon')

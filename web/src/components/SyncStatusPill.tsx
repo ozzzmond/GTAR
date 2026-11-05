@@ -1,15 +1,14 @@
 import React from 'react'
 import { Ban, Check, CircleAlert, Cloud } from 'lucide-react'
-import { cloudBackupStatus, cloudBackupTime } from '../utils/syncStatus'
+import { cloudBackupTime, type cloudBackupStatus } from '../utils/syncStatus'
 import { recoveryDotClass } from '../utils/recoveryAttention'
 
-export function SyncStatusPill({ signedIn, lastBackup, backupChecksum, localChecksum, now, onClick, recoveryAttention = false }: {
-  signedIn: boolean; lastBackup: string | null; backupChecksum: string | null; localChecksum: string | null
+export function SyncStatusPill({ status, lastBackup, now, onClick, recoveryAttention = false }: {
+  status: ReturnType<typeof cloudBackupStatus>; lastBackup: string | null
   now?: number; onClick: () => void; recoveryAttention?: boolean
 }): React.ReactElement {
-  const status = cloudBackupStatus(signedIn, lastBackup, backupChecksum, localChecksum)
   const Badge = status.state === 'backed-up' ? Check : status.state === 'signed-out' ? Ban : CircleAlert
-  const description = `Backup & Restore — ${status.label}. ${cloudBackupTime(lastBackup, now)}`
+  const description = `Backup & Restore — ${status.label}. ${status.state === 'unknown' ? 'Open to verify cloud backup' : status.state === 'signed-out' ? 'Sign in to check cloud backup' : cloudBackupTime(lastBackup, now)}`
   return <button type="button" data-testid="header-cloud-sync-button" data-status={status.state} onClick={onClick}
     aria-label={description} title={description}
     className="relative flex min-h-11 min-w-11 w-11 h-11 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action cursor-pointer">
