@@ -127,9 +127,9 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
     {collapsed && (
       <button ref={gripRef} type="button" data-testid="explorer-edge-grip" aria-label="Show Music Explorer" aria-expanded="false"
         aria-controls="explorer-sidebar" onClick={() => setCollapsedPersisted(false)}
-        className="group relative z-20 hidden md:flex shrink-0 w-3 self-stretch items-start justify-start overflow-visible border-r border-app-border bg-app-toolbar cursor-pointer transition-opacity duration-200 ease-out motion-reduce:transition-none">
-        {/* 44px target: the hit area overhangs the 12px edge strip. */}
-        <span className="flex min-h-11 min-w-11 shrink-0 items-center justify-start">
+        className="group relative z-20 hidden md:flex w-6 shrink-0 self-stretch items-start justify-start overflow-visible border-r border-app-border bg-app-toolbar cursor-pointer transition-opacity duration-200 ease-out motion-reduce:transition-none">
+        {/* 24x44 target stays inside the strip: an overhanging hit area would paint under main's z-20 top bar. */}
+        <span className="flex h-11 w-6 shrink-0 items-center justify-start">
           <span className="flex h-11 w-6 items-center justify-center rounded-r-lg border border-l-0 border-app-border bg-app-surface text-app-muted shadow-md group-hover:text-app-heading group-focus-visible:ring-2 group-focus-visible:ring-app-action">
             <ChevronRight className="h-4 w-4" />
           </span>

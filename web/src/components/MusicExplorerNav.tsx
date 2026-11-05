@@ -131,13 +131,13 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
             type="button"
             aria-expanded={songbookExpanded}
             onClick={() => setSongbookExpanded((value) => !value)}
-            className="ui-section-text flex min-h-11 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
+            className="ui-section-text flex min-h-11 shrink-0 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
           >
             {songbookExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             <span>Songbook</span>
           </button>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-app-muted">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate text-[10px] uppercase tracking-wider text-app-muted">
               {songs.length} {songs.length === 1 ? 'master song' : 'master songs'}
             </span>
             {headerAction}
