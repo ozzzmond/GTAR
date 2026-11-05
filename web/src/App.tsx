@@ -41,7 +41,13 @@ import { useAppModals } from './utils/useAppModals'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
 import { normalizeSongbookIds } from './utils/songbookFoundation'
-import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings } from './utils/backupSettings'
+import {
+  SETTINGS_KEYS,
+  SETTINGS_CHANGED,
+  readBackupSettings,
+  loadThemeModeAssignments,
+  isLightTheme,
+} from './utils/backupSettings'
 import { createSingleSetlistPayload } from './utils/jsonBackup'
 import { setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
@@ -76,8 +82,6 @@ import {
   type CustomThemeColors,
   type ThemeModeAssignments,
   type ThemeModeRole,
-  loadThemeModeAssignments,
-  isLightTheme,
   applyThemeRuntime,
   hydrateThemeSettings,
 } from './components/ThemeModal'

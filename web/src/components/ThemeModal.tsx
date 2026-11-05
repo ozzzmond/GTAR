@@ -7,13 +7,11 @@ import {
   type FactoryThemeOverrides,
   type ThemeModeRole,
   type ThemeModeAssignments,
-  DEFAULT_THEME_MODE_ASSIGNMENTS,
   normalizeThemeModeAssignments,
   loadThemeModeAssignments,
   saveThemeModeAssignments,
   assignThemeToMode,
   getThemeAssignedRole,
-  isLightTheme,
 } from '../utils/backupSettings'
 import React, { useState, useEffect } from 'react'
 import {
@@ -33,15 +31,6 @@ export { presetToCustomPalette }
 
 import type { ThemeMode, CustomThemeColors } from '../utils/backupSettings'
 export type { ThemeMode, CustomThemeColors, ThemeModeRole, ThemeModeAssignments }
-export {
-  DEFAULT_THEME_MODE_ASSIGNMENTS,
-  normalizeThemeModeAssignments,
-  loadThemeModeAssignments,
-  saveThemeModeAssignments,
-  assignThemeToMode,
-  getThemeAssignedRole,
-  isLightTheme,
-}
 
 export interface ThemeOption {
   id: ThemeMode

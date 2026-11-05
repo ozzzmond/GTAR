@@ -224,6 +224,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [])
 
   const effectiveCustomColors = useMemo(() => {
+    void settingsSeq
     if (customColors) return customColors
     if (typeof localStorage !== 'undefined') {
       try {
@@ -235,6 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [customColors, settingsSeq])
 
   const destColors = useMemo(() => {
+    void settingsSeq
     try {
       if (typeof resolveThemePalette === 'function') {
         const resolved = resolveThemePalette(destTheme, effectiveCustomColors)
