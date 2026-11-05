@@ -56,10 +56,9 @@ test('SONG_CARD_BPM_UNIT_RENDERED_ONCE: stored "73 BPM" renders the unit once', 
     onOpenSetlists: () => {},
     onDeleteSong: () => {},
   }))
-  // React SSR separates adjacent text nodes with comment markers; compare visible text.
-  const text = html.replace(/<!--[\s\S]*?-->/g, '')
-  assert.ok(text.includes('73 BPM'), 'card shows the tempo label')
-  assert.equal(text.includes('73 BPM BPM'), false, 'unit is not duplicated')
+  // formatTempoLabel renders "73 BPM" as one text node, so the markup contains it verbatim.
+  assert.ok(html.includes('73 BPM'), 'card shows the tempo label')
+  assert.equal(html.includes('73 BPM BPM'), false, 'unit is not duplicated')
 })
 
 test('SONG_CARD_KEY+BPM_LABEL: Key is not a badge and BPM renders once as plain text', () => {
