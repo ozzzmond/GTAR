@@ -40,10 +40,10 @@ function appStart({ dev, defines }) {
 
 test('DEV: GTAR_DEV_VERSION plus the commit SHA', () => {
   const message = appStart({ dev: true, defines: {
-    __GTAR_PROD_VERSION__: null, __GTAR_DEV_VERSION__: '1.0.141-dev.1',
+    __GTAR_PROD_VERSION__: null, __GTAR_DEV_VERSION__: '1.0.141-dev.2',
     __GTAR_DEV_PROVENANCE__: { tagStatus: 'UNTAGGED', tagName: null, commitSha: '8b8c2dd', deploymentId: null },
   } })
-  assert.equal(message, 'App started. Version: 1.0.141-dev.1 (8b8c2dd); Environment: development')
+  assert.equal(message, 'App started. Version: 1.0.141-dev.2 (8b8c2dd); Environment: development')
 })
 
 test('PROD: GTAR_APP_VERSION from the release identity', () => {
