@@ -684,11 +684,11 @@ export const Header: React.FC<HeaderProps> = ({
     <div
       data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
       className={inline
-        ? 'hidden sm:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0'
+        ? 'hidden sm:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0 max-w-[35vw]'
         : 'sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none truncate'}
     >
       <span data-testid={inline ? 'dev-header-diag-line1' : undefined} className={inline ? 'truncate whitespace-nowrap' : ''}>
-        {formatDevDiagLine1(GTAR_DEV_PROVENANCE)}
+        {formatDevDiagLine1(GTAR_DEV_PROVENANCE, GTAR_DEV_VERSION)}
       </span>
       {!inline && ' · '}
       <span data-testid={inline ? 'dev-header-diag-line2' : undefined} className={inline ? 'truncate whitespace-nowrap' : ''}>

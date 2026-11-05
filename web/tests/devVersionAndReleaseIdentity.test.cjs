@@ -732,12 +732,15 @@ test('STEP_6.23: Header formatting helpers format diagnostics and versions accur
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', 'v1.1.133'), 'v1.1.133')
 
   // Line 1: TAGGED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: null }), 'TAGGED: v1.0.130-dev.4a · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: null }, '1.0.143-dev.1'), 'v1.0.143-dev.1 · TAGGED: v1.0.130-dev.4a · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.143-dev.1', commitSha: 'd69d1cb', deploymentId: null }, '1.0.143-dev.1'), 'v1.0.143-dev.1 · TAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, 'v1.0.143-dev.1'), 'v1.0.143-dev.1 · TAGGED · SHA: d69d1cb')
   // Line 1: UNTAGGED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }), 'UNTAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.143-dev.1'), 'v1.0.143-dev.1 · UNTAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'abcdef0', deploymentId: null }, 'v1.0.143-dev.1'), 'v1.0.143-dev.1 · UNTAGGED · SHA: abcdef0')
   // Line 1: UNVERIFIED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }), 'UNVERIFIED · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'unknown', deploymentId: null }), 'UNVERIFIED · SHA: unknown')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.143-dev.1'), 'v1.0.143-dev.1 · UNVERIFIED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'unknown', deploymentId: null }, '1.0.143-dev.1'), 'v1.0.143-dev.1 · UNVERIFIED · SHA: unknown')
 
   // Line 2: DEPLOYMENT
   assert.equal(formatDevDiagLine2({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: '55d0cc6b' }), 'DEPLOYMENT: 55d0cc6b')
@@ -826,6 +829,10 @@ test('STEP_8.3: Header layout renders DEV branding without redundant version, di
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diagnostics"'), 'Diagnostics block must be rendered in DEV mode')
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diag-line1"'), 'Diagnostic Line 1 must be rendered')
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diag-line2"'), 'Diagnostic Line 2 must be rendered')
+  const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
+  assert.ok(devHeaderHtml.includes(`>${GTAR_DEV_VERSION.startsWith('v') ? GTAR_DEV_VERSION : `v${GTAR_DEV_VERSION}`} · UNVERIFIED · SHA: unknown</span>`), 'Header passes the stable DEV version to diagnostic line 1')
+  const inlineDiagnostics = devHeaderHtml.match(/data-testid="dev-header-diagnostics"[^>]*?\sclass="([^"]*)"/)
+  assert.ok(inlineDiagnostics[1].includes('max-w-[35vw]'), 'Desktop diagnostics have a bounded width for truncation')
 
   // Responsive requirement: DEV diagnostics stay visible on small/mobile screens.
   // #320 splits the diagnostics into the inline block beside the branding (>=sm,
@@ -838,6 +845,7 @@ test('STEP_8.3: Header layout renders DEV branding without redundant version, di
   const compactDiagnosticsClass = compactDiagnostics[1]
   assert.ok(compactDiagnosticsClass.includes('sm:hidden'), 'Compact diagnostics must be the <sm presentation')
   assert.ok(!/(^|\s)hidden(\s|$)/.test(compactDiagnosticsClass), 'Diagnostics must remain visible on mobile and NOT be hidden on small screens')
+  assert.ok(compactDiagnosticsClass.includes('truncate'), 'Compact diagnostics truncate within the phone width')
   assert.ok(devHeaderHtml.includes('truncate'), 'Diagnostics lines must truncate to prevent overflow')
 })
 
