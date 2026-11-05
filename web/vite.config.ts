@@ -7,7 +7,8 @@ import url from 'node:url'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-const { resolveReleaseIdentity, resolveDevIdentity } = createRequire(import.meta.url)('../.github/release_identity.cjs')
+import { execFileSync } from 'node:child_process'
+const { resolveReleaseIdentity, resolveDevIdentity, getCommittedDevVersion } = createRequire(import.meta.url)('../.github/release_identity.cjs')
 
 import {
   parseSearchResults,
@@ -238,7 +239,19 @@ export default defineConfig(({ mode }) => {
   const appEnv = isDebug ? 'debug' : 'production'
   const repoRoot = path.resolve(import.meta.dirname, '..')
   const releaseIdentity = resolveReleaseIdentity(repoRoot, { ...process.env, GTAR_BUILD_MODE: mode })
-  const devIdentity = resolveDevIdentity(repoRoot, { ...process.env, GTAR_BUILD_MODE: mode })
+  // Preview identity is presentation-only: do not enable DEV behavior or verify tags over the network.
+  const previewBranch = process.env.CF_PAGES_BRANCH
+  const isPreview = Boolean(process.env.CF_PAGES && previewBranch && previewBranch !== 'main' && previewBranch !== 'dev')
+  const previewIdentity = isPreview ? {
+    tagStatus: 'UNTAGGED',
+    commitSha: (/^[0-9a-f]{40}$/i.test(process.env.CF_PAGES_COMMIT_SHA || '')
+      ? process.env.CF_PAGES_COMMIT_SHA!
+      : execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()).slice(0, 7),
+    branch: previewBranch,
+  } : null
+  const devIdentity = resolveDevIdentity(repoRoot, isPreview
+    ? { GTAR_BUILD_MODE: mode }
+    : { ...process.env, GTAR_BUILD_MODE: mode })
   const isProd = process.env.CF_PAGES_BRANCH === 'main' || Boolean(releaseIdentity)
   const isStageCast2Dev = !isProd && (isDev || Boolean(devIdentity) || process.env.CF_PAGES_BRANCH === 'dev' || process.env.VITE_STAGE_CAST2 === 'true')
 
@@ -289,8 +302,9 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),
       __GTAR_STAGE_CAST2_ENABLED__: JSON.stringify(isStageCast2Dev),
       __GTAR_PROD_VERSION__: JSON.stringify(releaseIdentity?.version ?? null),
+      __GTAR_PREVIEW_IDENTITY__: JSON.stringify(previewIdentity),
       __GTAR_DEV_VERSION__: JSON.stringify(
-        devIdentity?.tag ? devIdentity.tag.replace(/^v/, '') : (devIdentity?.version ?? '1.0.130-dev.4a')
+        devIdentity?.tag ? devIdentity.tag.replace(/^v/, '') : (devIdentity?.version ?? getCommittedDevVersion(repoRoot))
       ),
       __GTAR_DEV_PROVENANCE__: JSON.stringify(isDev && devIdentity ? {
         tagStatus: devIdentity.tagStatus || 'UNVERIFIED',

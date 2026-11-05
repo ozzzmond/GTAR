@@ -40,11 +40,11 @@ test('canonical_5173_strict_port: Vite config and batch runners enforce port 517
   )
 })
 
-test('PROD_VERSION_FALLBACK: tag-derived production version retains its fallback', () => {
+test('PROD_VERSION_FALLBACK: tag-derived production version uses explicit unversioned fallback', () => {
   const gtarTypesContent = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
   assert.ok(
-    gtarTypesContent.includes("? __GTAR_PROD_VERSION__ : '1.1.108'"),
-    'gtar.ts must preserve PROD version as 1.1.108'
+    gtarTypesContent.includes("? __GTAR_PROD_VERSION__ : '0.0.0-unversioned'"),
+    'gtar.ts must use explicit unversioned metadata without release identity'
   )
 })
 

@@ -40,6 +40,7 @@ import {
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import {
   GTAR_APP_VERSION,
+  GTAR_PREVIEW_IDENTITY,
   GTAR_DEV_VERSION,
   GTAR_DEV_PROVENANCE,
 } from '../types/gtar'
@@ -48,6 +49,7 @@ import {
   formatDevDiagLine1,
   formatDevDiagLine2,
   formatHeaderVersion,
+  formatPreviewIdentity,
 } from '../utils/headerFormatters'
 import { sharedCatalogService } from '../utils/sharedCatalogService'
 import { cloneSharedCatalogSongToPersonal } from '../utils/sharedCatalogImport'
@@ -720,7 +722,11 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
                 GTAR
               </span>
-              {isDevEnv ? (
+              {GTAR_PREVIEW_IDENTITY ? (
+                <span data-testid="header-preview-identity" className="text-[10px] header-secondary-text text-app-muted font-mono ml-2">
+                  {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
+                </span>
+              ) : isDevEnv ? (
                 <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
               ) : (
                 <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono ml-2">
@@ -728,9 +734,9 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               )}
             </div>
-            {!isDevEnv && (
+            {(!isDevEnv || GTAR_PREVIEW_IDENTITY) && (
               <span data-testid="header-prod-version-compact" className="sm:hidden text-[9px] leading-tight header-secondary-text text-app-muted font-mono select-none">
-                {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
+                {GTAR_PREVIEW_IDENTITY ? formatPreviewIdentity(GTAR_PREVIEW_IDENTITY) : formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
               </span>
             )}
           </button>

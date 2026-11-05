@@ -18,7 +18,7 @@ test('UI_COPY_CLEANUP: SongbookHomeView removes redundant Stage View instruction
   assert.ok(homeViewContent.includes('sortedIndexedSongs.length'), 'SongbookHomeView must retain song count')
 })
 
-test('PROD_VERSION_FALLBACK: tag-derived production version retains its fallback', () => {
+test('PROD_VERSION_FALLBACK: tag-derived production version uses explicit unversioned fallback', () => {
   const gtarTypes = fs.readFileSync(path.join(webDir, 'src/types/gtar.ts'), 'utf8')
-  assert.ok(gtarTypes.includes("? __GTAR_PROD_VERSION__ : '1.1.108';"), 'gtar.ts must preserve GTAR_APP_VERSION as 1.1.108')
+  assert.ok(gtarTypes.includes("? __GTAR_PROD_VERSION__ : '0.0.0-unversioned';"), 'gtar.ts must use explicit unversioned metadata without release identity')
 })

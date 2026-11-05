@@ -1,5 +1,6 @@
-import { GTAR_DEV_PROVENANCE, GTAR_DEV_VERSION } from '../types/gtar'
+import { GTAR_DEV_PROVENANCE, GTAR_DEV_VERSION, GTAR_PREVIEW_IDENTITY } from '../types/gtar'
 import { isDevEnv } from './env'
+import { formatPreviewIdentity } from './headerFormatters'
 import { applyLogRetention, debugLogBackend, LOG_MAX_ENTRIES, type DebugLogBackend } from './debugLogStore'
 /**
  * Web Logging Engine for GTAR
@@ -8,7 +9,7 @@ import { applyLogRetention, debugLogBackend, LOG_MAX_ENTRIES, type DebugLogBacke
  * 20-entry localStorage copy only as a fallback when IndexedDB is unavailable.
  */
 
-// Build-time PROD identity without the legacy '1.1.108' fallback of GTAR_APP_VERSION.
+// Build-time PROD identity; unversioned builds do not claim a release version.
 declare const __GTAR_PROD_VERSION__: string | null | undefined
 const PROD_BUILD_VERSION: string | null = typeof __GTAR_PROD_VERSION__ === 'string' ? __GTAR_PROD_VERSION__ : null
 
@@ -285,7 +286,7 @@ class WebLoggerEngine {
       })
     })
 
-    this.info('AppStart', `App started. Version: ${appStartVersion(isDevEnv, GTAR_DEV_VERSION, GTAR_DEV_PROVENANCE.commitSha, PROD_BUILD_VERSION)}; Environment: ${isDevEnv ? 'development' : 'production'}`)
+    this.info('AppStart', `App started. Version: ${GTAR_PREVIEW_IDENTITY ? formatPreviewIdentity(GTAR_PREVIEW_IDENTITY) : appStartVersion(isDevEnv, GTAR_DEV_VERSION, GTAR_DEV_PROVENANCE.commitSha, PROD_BUILD_VERSION)}; Environment: ${isDevEnv ? 'development' : 'production'}`)
   }
 
   private captureConsoleEntry(level: LogLevel, args: unknown[]) {
