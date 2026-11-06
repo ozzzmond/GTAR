@@ -9,7 +9,7 @@ import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
 import { SetlistWorkspace, type SetlistWorkspaceScope } from './SetlistWorkspace'
 import type { ExplorerTarget } from './MusicExplorerNav'
-import React, { useState, useMemo, useRef, useCallback } from 'react'
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { useListWindow } from '../utils/listWindow'
 import {
   ListPlus,
@@ -433,6 +433,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   // Membership popover state
   const [membershipPopoverSongId, setMembershipPopoverSongId] = useState<string | number | null>(null)
   const [membershipPopoverAnchor, setMembershipPopoverAnchor] = useState<HTMLElement | null>(null)
+  const [membershipPopoverTrigger, setMembershipPopoverTrigger] = useState<'click' | 'hover' | null>(null)
+  const membershipLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearMembershipLeaveTimer = useCallback(() => {
+    if (membershipLeaveTimerRef.current) {
+      clearTimeout(membershipLeaveTimerRef.current)
+      membershipLeaveTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearMembershipLeaveTimer()
+    }
+  }, [clearMembershipLeaveTimer])
 
   const toggleSongSelection = (id: string | number) => {
     setSelectedSongIds(prev => {
@@ -476,11 +491,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const closeAllMenus = useCallback(() => {
+    clearMembershipLeaveTimer()
     setActiveMenuSongIdx(null)
     setSongMenuAnchor(null)
     setMembershipPopoverSongId(null)
     setMembershipPopoverAnchor(null)
-  }, [])
+    setMembershipPopoverTrigger(null)
+  }, [clearMembershipLeaveTimer])
 
   const handleSetlistImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1975,17 +1992,62 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           <button
                             type="button"
                             aria-label={`In ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
-                            title={`In ${songSetlists.length} ${songSetlists.length === 1 ? 'setlist' : 'setlists'}`}
                             aria-haspopup="dialog"
                             aria-expanded={membershipPopoverSongId === (song.id ?? originalIdx)}
                             aria-controls={membershipPopoverSongId === (song.id ?? originalIdx) ? `membership-popover-${originalIdx}` : undefined}
                             data-testid={`song-setlist-indicator-${originalIdx}`}
                             onClick={(e) => {
                               e.stopPropagation()
+                              clearMembershipLeaveTimer()
                               const isThisOpen = membershipPopoverSongId === (song.id ?? originalIdx)
-                              closeAllMenus()
-                              setMembershipPopoverSongId(isThisOpen ? null : (song.id ?? originalIdx))
-                              setMembershipPopoverAnchor(isThisOpen ? null : e.currentTarget)
+                              if (isThisOpen && membershipPopoverTrigger === 'click') {
+                                setMembershipPopoverSongId(null)
+                                setMembershipPopoverAnchor(null)
+                                setMembershipPopoverTrigger(null)
+                              } else {
+                                closeAllMenus()
+                                setMembershipPopoverSongId(song.id ?? originalIdx)
+                                setMembershipPopoverAnchor(e.currentTarget)
+                                setMembershipPopoverTrigger('click')
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              clearMembershipLeaveTimer()
+                              if (membershipPopoverSongId !== (song.id ?? originalIdx)) {
+                                closeAllMenus()
+                                setMembershipPopoverSongId(song.id ?? originalIdx)
+                                setMembershipPopoverAnchor(e.currentTarget)
+                                setMembershipPopoverTrigger('hover')
+                              }
+                            }}
+                            onMouseOver={(e) => {
+                              clearMembershipLeaveTimer()
+                              if (membershipPopoverSongId !== (song.id ?? originalIdx)) {
+                                closeAllMenus()
+                                setMembershipPopoverSongId(song.id ?? originalIdx)
+                                setMembershipPopoverAnchor(e.currentTarget)
+                                setMembershipPopoverTrigger('hover')
+                              }
+                            }}
+                            onMouseLeave={() => {
+                              if (membershipPopoverTrigger === 'hover') {
+                                clearMembershipLeaveTimer()
+                                membershipLeaveTimerRef.current = setTimeout(() => {
+                                  setMembershipPopoverSongId(null)
+                                  setMembershipPopoverAnchor(null)
+                                  setMembershipPopoverTrigger(null)
+                                }, 180)
+                              }
+                            }}
+                            onMouseOut={() => {
+                              if (membershipPopoverTrigger === 'hover') {
+                                clearMembershipLeaveTimer()
+                                membershipLeaveTimerRef.current = setTimeout(() => {
+                                  setMembershipPopoverSongId(null)
+                                  setMembershipPopoverAnchor(null)
+                                  setMembershipPopoverTrigger(null)
+                                }, 180)
+                              }
                             }}
                             className="relative inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-app-accent/15 text-app-accent hover:bg-app-accent/25 border border-app-accent/30 text-[10px] font-mono font-bold shrink-0 transition-colors cursor-pointer after:absolute after:-inset-3 after:content-['']"
                           >
@@ -1996,8 +2058,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             anchorEl={membershipPopoverSongId === (song.id ?? originalIdx) ? membershipPopoverAnchor : null}
                             open={membershipPopoverSongId === (song.id ?? originalIdx)}
                             onClose={() => {
+                              clearMembershipLeaveTimer()
                               setMembershipPopoverSongId(null)
                               setMembershipPopoverAnchor(null)
+                              setMembershipPopoverTrigger(null)
                             }}
                             align="left"
                           >
@@ -2006,6 +2070,19 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               role="dialog"
                               aria-label={`Setlists containing ${song.title || 'Untitled Song'}`}
                               data-testid={`membership-popover-${originalIdx}`}
+                              onMouseEnter={() => {
+                                clearMembershipLeaveTimer()
+                              }}
+                              onMouseLeave={() => {
+                                if (membershipPopoverTrigger === 'hover') {
+                                  clearMembershipLeaveTimer()
+                                  membershipLeaveTimerRef.current = setTimeout(() => {
+                                    setMembershipPopoverSongId(null)
+                                    setMembershipPopoverAnchor(null)
+                                    setMembershipPopoverTrigger(null)
+                                  }, 180)
+                                }
+                              }}
                               onClick={(e) => e.stopPropagation()}
                               className="w-48 bg-app-base border border-app-border rounded-xl shadow-xl py-1.5 px-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100 z-50"
                             >
@@ -2017,12 +2094,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                   <button
                                     key={sl.id}
                                     type="button"
-                                    autoFocus={index === 0}
+                                    autoFocus={membershipPopoverTrigger === 'click' && index === 0}
                                     data-testid={`jump-setlist-${sl.id}`}
                                     onClick={(e) => {
                                       e.stopPropagation()
+                                      clearMembershipLeaveTimer()
                                       setMembershipPopoverSongId(null)
                                       setMembershipPopoverAnchor(null)
+                                      setMembershipPopoverTrigger(null)
                                       if (onManageSetlist) {
                                         onManageSetlist(sl)
                                       } else {

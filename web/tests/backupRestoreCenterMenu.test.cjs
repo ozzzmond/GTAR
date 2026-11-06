@@ -56,7 +56,7 @@ test('profile menu: "Manage Users", no Backup & Restore entry; header cloud butt
     const cloud = document.querySelector('[data-testid="header-cloud-sync-button"]')
     assert.equal(cloud.dataset.status, 'unknown', 'active account has no verified cloud metadata yet')
     assert.equal(cloud.getAttribute('aria-label'), 'Backup & Restore \u2014 Backup status unknown. Open to verify cloud backup')
-    assert.equal(cloud.getAttribute('title'), cloud.getAttribute('aria-label'))
+    assert.equal(cloud.getAttribute('title'), null, 'native title tooltip removed in favor of GTAR popover')
     assert.equal(cloud.textContent, '', 'status remains accessible in the icon-only layout')
     assert.equal(center.isOpen, false)
     await act(async () => cloud.click())
