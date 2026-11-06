@@ -1,7 +1,10 @@
-const { test } = require('node:test')
+const { test, after } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const ts = require('typescript')
+const gisTimer = require('./helpers/gisScriptTimer.cjs')
+gisTimer.install()
+after(gisTimer.release)
 
 for (const extension of ['.ts', '.tsx']) {
   require.extensions[extension] = (module, filename) =>
