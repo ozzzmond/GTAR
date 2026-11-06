@@ -24,7 +24,7 @@ function getCommittedDevVersion(root) {
       }
     }
   } catch {}
-  return '1.0.130-dev.4a'
+  return '1.0.145-dev.2'
 }
 
 function resolveDeploymentId(env, headSha, shortSha, tagName) {
