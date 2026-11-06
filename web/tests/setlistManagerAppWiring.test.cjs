@@ -5,10 +5,18 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
-for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(
-  fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-  }).outputText, filename)
+const transpiledSource = new Map()
+for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => {
+  let output = transpiledSource.get(filename)
+  if (output === undefined) {
+    output = ts.transpileModule(
+      fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+      }).outputText
+    transpiledSource.set(filename, output)
+  }
+  module._compile(output, filename)
+}
 require.extensions['.png'] = module => { module.exports = '/logo.png' }
 const { JSDOM } = require('jsdom')
 // react-dom detects input-event support from the global document when it loads.
