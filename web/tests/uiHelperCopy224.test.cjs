@@ -25,8 +25,8 @@ test('TV pairing controls: status, labels and errors kept; steps behind a native
   assert.match(panel, /<details data-testid="cast2-how-to-pair"[\s\S]*<summary[^>]*>How to pair<\/summary>/)
 })
 
-// #224 slice 2: no hover tooltips (title on HTML elements) except on truncated text, where it shows the full value.
-test('no title tooltips except truncated text and the owner-approved cloud status + setlist chip (#311, #388)', () => {
+// #224 slice 2 + GTAR_NATIVE_TOOLTIP_TO_POPOVER: no title tooltips except truncated text.
+test('no title tooltips except truncated text', () => {
   const ts = require('typescript')
   const dir = path.join(__dirname, '..', 'src')
   const found = []
@@ -38,10 +38,7 @@ test('no title tooltips except truncated text and the owner-approved cloud statu
         const attrs = node.attributes.properties.filter(ts.isJsxAttribute)
         const title = attrs.find(a => a.name.getText(sf) === 'title')
         const cls = attrs.find(a => a.name.getText(sf) === 'className')
-        const cloudStatus = attrs.some(a => a.name.getText(sf) === 'data-testid' && a.initializer?.text === 'header-cloud-sync-button')
-        // #388: owner asked for an "In N setlists" tooltip on the card membership chip.
-        const setlistChip = attrs.some(a => a.name.getText(sf) === 'data-testid' && /song-setlist-indicator/.test(a.initializer?.getText(sf) || ''))
-        if (title && !cloudStatus && !setlistChip && !/truncate/.test(cls ? cls.getText(sf) : '')) found.push(`${rel}:${sf.getLineAndCharacterOfPosition(title.getStart(sf)).line + 1}`)
+        if (title && !/truncate/.test(cls ? cls.getText(sf) : '')) found.push(`${rel}:${sf.getLineAndCharacterOfPosition(title.getStart(sf)).line + 1}`)
       }
       ts.forEachChild(node, visit)
     }

@@ -92,11 +92,20 @@ for (const width of [320, 1280]) test(`dev.8f membership badge interaction at ${
     const single = find('song-setlist-indicator-0')
     assert.equal(single.tagName, 'BUTTON', 'native Enter/Space activation')
     assert.equal(single.getAttribute('aria-label'), 'In 1 setlist')
-    assert.equal(single.getAttribute('title'), 'In 1 setlist')
+    assert.equal(single.getAttribute('title'), null, 'native title tooltip removed')
     assert.ok(single.querySelector('svg'), 'setlist chip keeps an icon glyph')
     assert.equal(single.textContent, '1', 'card stays count only')
     assert.equal(find('song-setlist-count-1').textContent, '3')
-    assert.equal(find('song-setlist-indicator-1').getAttribute('title'), 'In 3 setlists')
+    assert.equal(find('song-setlist-indicator-1').getAttribute('title'), null, 'native title tooltip removed')
+
+    // Hover opens the GTAR-styled popover without clicking
+    await act(async () => single.dispatchEvent(new window.Event('mouseover', { bubbles: true })))
+    assert.ok(find('membership-popover-0'), 'hover opens setlist popover')
+    await act(async () => {
+      single.dispatchEvent(new window.Event('mouseout', { bubbles: true }))
+      await new Promise(r => setTimeout(r, 220))
+    })
+    assert.equal(find('membership-popover-0'), null, 'mouseleave closes setlist popover')
     await click(find('song-menu-1'))
     await click(single)
     assert.equal(document.querySelectorAll('[data-dropdown-portal]').length, 1, 'badge replaces existing menu')

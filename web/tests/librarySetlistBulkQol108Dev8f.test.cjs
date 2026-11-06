@@ -26,7 +26,7 @@ test('PROVE_MEMBERSHIP: Compact count badge, no setlist name on main card, and p
   // Badge displays count only with a list/setlist icon and no setlist name on main card
   assert.ok(songbookHome.includes('song-setlist-indicator-'), 'Must have compact count badge testid')
   assert.ok(songbookHome.includes('aria-label={`In ${songSetlists.length}'), 'Must have accessible membership label')
-  assert.ok(songbookHome.includes('title={`In ${songSetlists.length}'), 'Must have membership tooltip')
+  assert.ok(!songbookHome.includes('title={`In ${songSetlists.length}'), 'Must not have duplicate native browser tooltip')
   assert.ok(songbookHome.includes('<ListMusic'), 'Must use the clearer list/setlist glyph')
   
   // Popover / list content
