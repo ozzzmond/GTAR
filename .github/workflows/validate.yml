@@ -37,20 +37,14 @@ jobs:
         env:
           GTAR_TEST_SHARD: ${{ matrix.shard }}/8
           GTAR_TEST_CONCURRENCY: '2'
-  web:
-    needs: fast
-    if: ${{ always() }}
+  # Static checks and the controller suite do not depend on Web test shards.
+  # Running them alongside the shard matrix keeps them off the PR critical path.
+  static:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web
     steps:
-      - name: Require every fast shard
-        working-directory: .
-        run: test "$FAST_RESULT" = "$EXPECTED_RESULT"
-        env:
-          FAST_RESULT: ${{ needs.fast.result }}
-          EXPECTED_RESULT: ${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref }}
@@ -70,3 +64,17 @@ jobs:
       - run: npm run lint:sync
       - run: npm run lint
       - run: npm run build
+  web:
+    needs: [fast, static]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every fast shard
+        run: test "$FAST_RESULT" = "$EXPECTED_RESULT"
+        env:
+          FAST_RESULT: ${{ needs.fast.result }}
+          EXPECTED_RESULT: ${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}
+      - name: Require static checks
+        run: test "$STATIC_RESULT" = success
+        env:
+          STATIC_RESULT: ${{ needs.static.result }}
