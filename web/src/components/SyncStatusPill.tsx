@@ -13,7 +13,7 @@ export function SyncStatusPill({ status, lastBackup, now, onClick, recoveryAtten
 }): React.ReactElement {
   const [isOpen, setIsOpen] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null)
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchHandledRef = useRef(false)
 
@@ -92,7 +92,7 @@ export function SyncStatusPill({ status, lastBackup, now, onClick, recoveryAtten
   return (
     <>
       <button
-        ref={buttonRef}
+        ref={setAnchorEl}
         type="button"
         data-testid="header-cloud-sync-button"
         data-status={status.state}
@@ -118,7 +118,7 @@ export function SyncStatusPill({ status, lastBackup, now, onClick, recoveryAtten
       </button>
 
       <DropdownPortal
-        anchorEl={popoverVisible ? buttonRef.current : null}
+        anchorEl={popoverVisible ? anchorEl : null}
         open={popoverVisible}
         onClose={handleClose}
         align="right"
