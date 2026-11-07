@@ -23,11 +23,46 @@ import {
   importCustomPaletteJson,
 } from '../utils/customPaletteJson'
 
+export function formatLocalPaletteTimestamp(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const YYYY = date.getFullYear()
+  const MM = pad(date.getMonth() + 1)
+  const DD = pad(date.getDate())
+  const HH = pad(date.getHours())
+  const mm = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+  return `${YYYY}${MM}${DD}-${HH}${mm}${ss}`
+}
+
+export function paletteExportFileName(themeName?: string, date = new Date()): string {
+  const safe = (themeName || 'custom')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'custom'
+  return `gtar-palette-${safe}-${formatLocalPaletteTimestamp(date)}.json`
+}
+
+function triggerJsonDownload(content: string, fileName: string) {
+  const blob = new Blob([content], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export interface CustomPaletteEditorProps {
   isOpen: boolean
   onClose: () => void
   customColors?: CustomThemeColors
-  onSaveAndApply: (colors: CustomThemeColors) => void
+  onSaveAndApply?: (colors: CustomThemeColors) => void
+  onSave?: (colors: CustomThemeColors) => void
+  onCancel?: () => void
+  onApply?: (colors: CustomThemeColors) => void
 }
 
 export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
@@ -35,6 +70,9 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
   onClose,
   customColors,
   onSaveAndApply,
+  onSave,
+  onCancel,
+  onApply,
 }) => {
   const [stagedColors, setStagedColors] = useState<CustomThemeColors>(() =>
     normalizeCustomThemeColors(customColors)
@@ -44,6 +82,33 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
   const [jsonText, setJsonText] = useState('')
   const [jsonStatus, setJsonStatus] = useState<{ message: string; isError: boolean } | null>(null)
   const [copiedNotification, setCopiedNotification] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const importTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      if (importTimerRef.current) clearTimeout(importTimerRef.current)
+    }
+  }, [])
+
+  const showBottomToast = (msg: string) => {
+    setToastMessage(msg)
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        const Evt = (typeof (window as unknown as { CustomEvent?: typeof CustomEvent }).CustomEvent === 'function')
+          ? (window as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent
+          : CustomEvent
+        window.dispatchEvent(new Evt('gtar:toast', { detail: msg }))
+      } catch { /* ignore test/jsdom environment mismatch */ }
+    }
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(curr => curr === msg ? null : curr)
+    }, 3000)
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -53,6 +118,7 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
       setJsonModalMode(null)
       setJsonStatus(null)
       setCopiedNotification(false)
+      setToastMessage(null)
     }
   }, [isOpen, customColors])
 
@@ -62,11 +128,49 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
 
   if (!isOpen) return null
 
-  const handleSaveAndApply = () => {
-    const errors = [...validateFontSettings(stagedColors.fonts || {}), ...(stagedColors.identity ? validateCustomThemeIdentity(stagedColors.identity) : [])]
-    if (errors.length) { setJsonStatus({ message: errors.join('; '), isError: true }); return }
-    onSaveAndApply(normalizeCustomThemeColors(stagedColors))
+  const handleSave = () => {
+    const errors = [
+      ...validateFontSettings(stagedColors.fonts || {}),
+      ...(stagedColors.identity ? validateCustomThemeIdentity(stagedColors.identity) : [])
+    ]
+    if (errors.length) {
+      setJsonStatus({ message: errors.join('; '), isError: true })
+      return
+    }
+    const normalized = normalizeCustomThemeColors(stagedColors)
+    if (onSave) {
+      onSave(normalized)
+    } else if (onSaveAndApply) {
+      onSaveAndApply(normalized)
+    }
+    showBottomToast('Color theme saved and applied')
     onClose()
+  }
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel()
+    } else {
+      onClose()
+    }
+  }
+
+  const handleApply = () => {
+    const errors = [
+      ...validateFontSettings(stagedColors.fonts || {}),
+      ...(stagedColors.identity ? validateCustomThemeIdentity(stagedColors.identity) : [])
+    ]
+    if (errors.length) {
+      setJsonStatus({ message: errors.join('; '), isError: true })
+      return
+    }
+    const normalized = normalizeCustomThemeColors(stagedColors)
+    if (onApply) {
+      onApply(normalized)
+    } else if (onSaveAndApply) {
+      onSaveAndApply(normalized)
+    }
+    showBottomToast('Color theme applied (preview)')
   }
 
   const handleResetDefaults = () => {
@@ -94,6 +198,14 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
     setJsonModalMode('import')
   }
 
+  const handleExportToFile = () => {
+    const payload = exportCustomPaletteJson(stagedColors)
+    const json = JSON.stringify(payload, null, 2)
+    const filename = paletteExportFileName(stagedColors.identity?.displayName)
+    triggerJsonDownload(json, filename)
+    setJsonModalMode(null)
+  }
+
   const handleCopyJson = async () => {
     try {
       if (navigator?.clipboard?.writeText) {
@@ -108,19 +220,51 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
     }
   }
 
-  const handleApplyImport = () => {
-    const result = importCustomPaletteJson(jsonText)
+  const applyImportedData = (text: string) => {
+    const result = importCustomPaletteJson(text)
     if (!result.success) {
       setJsonStatus({ message: result.error, isError: true })
-      return
+      return false
     }
-    // Apply imported values to the editor preview only (stagedColors), not persistent yet
-    setStagedColors({ ...result.colors, identity: stagedColors.identity ? { ...stagedColors.identity } : undefined })
+    // Palette v2 Import & Preview: imported identity.displayName updates Custom theme name field and live preview
+    const importedName = result.colors.identity?.displayName
+    let nextIdentity = stagedColors.identity ? { ...stagedColors.identity } : result.colors.identity ? { ...result.colors.identity } : undefined
+    if (nextIdentity && importedName !== undefined && importedName !== '') {
+      nextIdentity.displayName = importedName
+    }
+
+    setStagedColors({
+      ...result.colors,
+      identity: nextIdentity,
+    })
     setJsonStatus({ message: 'Palette successfully imported into editor preview!', isError: false })
     setTimeout(() => {
       setJsonModalMode(null)
       setJsonStatus(null)
     }, 800)
+    return true
+  }
+
+  const handleApplyImport = () => {
+    applyImportedData(jsonText)
+  }
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      setJsonText(text)
+      const ok = applyImportedData(text)
+      if (!ok) {
+        setJsonModalMode('import')
+      }
+    } catch {
+      setJsonStatus({ message: 'Failed to read file', isError: true })
+      setJsonModalMode('import')
+    } finally {
+      if (e.target) e.target.value = ''
+    }
   }
 
   const currentGroupDef = PALETTE_GROUPS.find((g) => g.id === activeGroup) || PALETTE_GROUPS[0]
@@ -636,23 +780,63 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
         <div className="px-4 sm:px-6 py-3 border-t border-app-border bg-app-base/80 flex items-center justify-end gap-2.5 shrink-0">
           <button
             type="button"
+            data-testid="save-palette-btn"
+            onClick={handleSave}
+            className="px-4 sm:px-5 py-2 rounded-xl bg-app-action hover:bg-app-action/90 text-app-on-action font-bold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+          >
+            <Check className="w-4 h-4 stroke-[3]" />
+            <span>Save</span>
+          </button>
+          <button
+            type="button"
+            data-testid="save-apply-palette-btn"
+            onClick={handleSave}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          <button
+            type="button"
             data-testid="cancel-palette-editor-btn"
-            onClick={onClose}
+            onClick={handleCancel}
             className="px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface ui-primary-text text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors"
           >
             Cancel
           </button>
           <button
             type="button"
-            data-testid="save-apply-palette-btn"
-            onClick={handleSaveAndApply}
-            className="px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+            data-testid="apply-palette-btn"
+            onClick={handleApply}
+            className="px-4 sm:px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
           >
-            <Check className="w-4 h-4 stroke-[3]" />
-            Save & Apply
+            <Sliders className="w-4 h-4" />
+            <span>Apply</span>
           </button>
         </div>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        data-testid="palette-file-input"
+        className="hidden"
+        onChange={handleFileImport}
+      />
+
+      {/* Non-blocking Bottom Toast */}
+      {toastMessage && (
+        <div
+          role="status"
+          data-testid="palette-toast"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-70 animate-in fade-in slide-in-from-bottom-3 duration-200"
+        >
+          <div className="px-4 py-2.5 rounded-xl bg-app-base border border-app-action text-app-heading text-xs font-bold shadow-2xl flex items-center gap-2 max-w-md text-center">
+            <span className="w-2 h-2 rounded-full shrink-0 bg-[#10B981] animate-pulse" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* JSON Import/Export Sub-Modal */}
       {jsonModalMode && (
@@ -683,8 +867,8 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
 
             <p className="text-[11px] ui-muted-text text-app-muted">
               {jsonModalMode === 'export'
-                ? 'Copy this JSON to backup or share your custom palette colors.'
-                : 'Paste custom palette JSON. Imported colors will apply to preview until saved.'}
+                ? 'Copy this JSON or export directly to a file to backup or share your custom palette.'
+                : 'Paste custom palette JSON or import from a file. Imported colors and theme name will apply to preview until saved.'}
             </p>
 
             <textarea
@@ -723,31 +907,51 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
               </button>
 
               {jsonModalMode === 'export' ? (
-                <button
-                  type="button"
-                  data-testid="copy-json-btn"
-                  onClick={handleCopyJson}
-                  className="px-4 py-1.5 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
-                >
-                  {copiedNotification ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 stroke-[3]" /> Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" /> Copy JSON
-                    </>
-                  )}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    data-testid="export-file-palette-btn"
+                    onClick={handleExportToFile}
+                    className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-surface border border-app-border text-app-heading font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5 text-app-accent" /> Export to File
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="copy-json-btn"
+                    onClick={handleCopyJson}
+                    className="px-4 py-1.5 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    {copiedNotification ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3]" /> Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" /> Copy JSON
+                      </>
+                    )}
+                  </button>
+                </>
               ) : (
-                <button
-                  type="button"
-                  data-testid="apply-import-json-btn"
-                  onClick={handleApplyImport}
-                  className="px-4 py-1.5 rounded-xl bg-app-action hover:bg-app-action/90 text-app-on-action font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
-                >
-                  <Upload className="w-3.5 h-3.5 stroke-[3]" /> Import & Preview
-                </button>
+                <>
+                  <button
+                    type="button"
+                    data-testid="import-file-palette-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3.5 py-1.5 rounded-xl bg-app-base hover:bg-app-surface border border-app-border text-app-heading font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-app-action" /> Import from File
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="apply-import-json-btn"
+                    onClick={handleApplyImport}
+                    className="px-4 py-1.5 rounded-xl bg-app-action hover:bg-app-action/90 text-app-on-action font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <Upload className="w-3.5 h-3.5 stroke-[3]" /> Import & Preview
+                  </button>
+                </>
               )}
             </div>
           </div>

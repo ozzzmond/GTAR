@@ -24,6 +24,7 @@ import {
   Menu,
   Sun,
   Moon,
+  Music,
 } from 'lucide-react'
 import {
   SETTINGS_KEYS,
@@ -64,8 +65,9 @@ import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
 import { CloudSyncModal } from './CloudSyncModal'
 import { resolveThemePalette } from './ThemeModal'
-import devLogo from '../assets/dev-logo.png'
-import prodLogo from '../assets/prod-logo.png'
+import { primaryButton, secondaryButton, sectionCard, sectionLabel } from './backupCenterUi'
+import devMascot from '../assets/bebegirl1-transparent.png'
+import prodMascot from '../assets/bebeboy-transparent.png'
 import { isDevEnv } from '../utils/env'
 import { useGoogleAuth } from './AuthGate'
 import type { GoogleSession } from '../utils/googleAuth'
@@ -681,7 +683,7 @@ export const Header: React.FC<HeaderProps> = ({
     />
   )
   const showResults = isSearchFocused && searchQuery.trim().length > 0
-  const iconButton = 'ui-button min-h-11 min-w-11 px-2 sm:px-2.5 rounded-xl bg-app-button hover:brightness-110 border border-app-border text-app-button-text text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer'
+  const iconButton = 'ui-button min-h-11 min-w-11 w-11 h-11 rounded-xl bg-app-base hover:bg-app-surface border border-app-border text-app-action transition-colors flex items-center justify-center cursor-pointer shrink-0'
   const devDiagnostics = (inline: boolean) => isDevEnv && (
     <div
       data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
@@ -714,9 +716,9 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
             className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-11 cursor-pointer shrink-0">
-            <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-opacity">
-              <img src={isDevEnv ? devLogo : prodLogo} alt="GTAR Logo"
-                className="w-full h-full object-cover select-none" />
+            <div className="w-9 h-9 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
+              <img src={isDevEnv ? devMascot : prodMascot} alt="GTAR Logo"
+                className="w-full h-full object-contain p-0.5 select-none" />
             </div>
             <div className="hidden sm:block">
               <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
@@ -728,15 +730,11 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               ) : isDevEnv ? (
                 <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
-              ) : (
-                <span data-testid="header-prod-version" className="text-[10px] header-secondary-text text-app-muted font-mono ml-2">
-                  {formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
-                </span>
-              )}
+              ) : null}
             </div>
-            {(!isDevEnv || GTAR_PREVIEW_IDENTITY) && (
+            {GTAR_PREVIEW_IDENTITY && (
               <span data-testid="header-prod-version-compact" className="sm:hidden text-[9px] leading-tight header-secondary-text text-app-muted font-mono select-none">
-                {GTAR_PREVIEW_IDENTITY ? formatPreviewIdentity(GTAR_PREVIEW_IDENTITY) : formatHeaderVersion(false, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
+                {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
               </span>
             )}
           </button>
@@ -784,7 +782,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => setMobileSearchOpen(true)}
               className={`ui-button mobile-search-trigger min-h-11 min-w-11 w-11 h-11 rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors flex items-center justify-center active:scale-95 ${
                 searchQuery ? 'text-app-accent border-app-accent' : ''}`}>
-              <Search className="w-4 h-4" />
+              <Search className="w-5 h-5" />
             </button>
           )}
 
@@ -815,7 +813,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {deferredInstallPrompt && !isAppInstalled && !compact && (
             <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen" className={iconButton}>
-              <Download className="w-4 h-4 header-neutral-icon text-app-action" />
+              <Download className="w-5 h-5 header-neutral-icon text-app-action" />
             </button>
           )}
 
@@ -971,6 +969,10 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   </>
                 )}
+
+                <div data-testid="profile-app-version" className="header-secondary-text pt-2 text-center text-[10px] font-mono text-app-muted select-none border-t border-app-border/40 mt-2">
+                  {formatHeaderVersion(isDevEnv, GTAR_DEV_VERSION, GTAR_APP_VERSION)}
+                </div>
               </div>
             )}
           </div>
@@ -1028,63 +1030,84 @@ export const Header: React.FC<HeaderProps> = ({
           open
           data-testid="header-catalog-preview-modal"
           onCancel={() => setPreviewCatalogSong(null)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-xl max-h-[90vh] rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-0 m-auto w-[calc(100vw-1rem)] max-w-lg sm:max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] overflow-hidden rounded-2xl border border-app-border bg-app-surface p-0 text-app-heading shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-xs z-50 flex flex-col animate-fade-in"
         >
-          <div className="p-4 sm:p-5 border-b border-app-border/60 flex items-center justify-between">
-            <div className="min-w-0 pr-3">
-              <h2 className="text-base font-bold text-app-heading truncate">{previewCatalogSong.title}</h2>
+          <div className="flex shrink-0 items-center gap-3 border-b border-app-border/80 bg-app-base/60 px-4 py-3 sm:px-5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-app-action/40 bg-app-action/20 text-app-action" aria-hidden="true">
+              <Music className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-app-muted">Published song preview</p>
+              <h2 className="break-words text-sm font-extrabold text-app-heading sm:text-base truncate">{previewCatalogSong.title}</h2>
               <p className="text-xs text-app-muted truncate mt-0.5">{previewCatalogSong.artist || 'Unknown Artist'}</p>
             </div>
             <button
               type="button"
               data-testid="close-header-catalog-preview"
               onClick={() => setPreviewCatalogSong(null)}
-              className="p-1 rounded-lg hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer"
+              className="flex h-11 w-11 shrink-0 -mr-2 items-center justify-center rounded-xl text-app-muted transition-colors hover:bg-app-base hover:text-app-heading cursor-pointer"
               aria-label="Close Preview"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 
-          <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-            <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Key: {previewCatalogSong.key || 'N/A'}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                data-testid="preview-revision-badge"
+                className="rounded-full border border-app-border bg-app-base px-2.5 py-0.5 font-mono text-[11px] font-bold text-app-muted"
+              >
+                r{previewCatalogSong.current_revision}
               </span>
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Revision: r{previewCatalogSong.current_revision}
-              </span>
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Format: {previewCatalogSong.format}
-              </span>
+              {previewCatalogSong.key && (
+                <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
+                  <span className="shrink-0">Key</span> <span className="break-words font-bold text-app-heading">{previewCatalogSong.key}</span>
+                </span>
+              )}
+              {previewCatalogSong.original_key && (
+                <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
+                  <span className="shrink-0">Original key</span> <span className="break-words font-bold text-app-heading">{previewCatalogSong.original_key}</span>
+                </span>
+              )}
+              {previewCatalogSong.bpm && (
+                <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
+                  <span className="shrink-0">BPM</span> <span className="break-words font-bold text-app-heading">{/^\d+$/.test(previewCatalogSong.bpm) ? `${previewCatalogSong.bpm} BPM` : previewCatalogSong.bpm}</span>
+                </span>
+              )}
             </div>
 
-            <div className="rounded-xl border border-app-border bg-app-base p-3 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto select-text leading-relaxed">
-              {previewCatalogSong.raw_content}
-            </div>
+            <section className={sectionCard} aria-label="Song chart">
+              <h3 className={sectionLabel}>Chart</h3>
+              <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-app-border bg-app-base p-3 font-mono text-sm text-app-text select-text leading-relaxed max-h-72 overflow-y-auto">
+                {previewCatalogSong.raw_content}
+              </pre>
+            </section>
           </div>
 
-          <div className="p-4 border-t border-app-border/60 flex justify-end gap-2 font-mono text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setPreviewCatalogSong(null)}
-              className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              data-testid="header-catalog-preview-import-btn"
-              disabled={importingCatalogId === previewCatalogSong.id || importedCatalogIds.has(previewCatalogSong.id)}
-              onClick={(e) => {
-                handleImportCatalogSong(e, previewCatalogSong)
-                setPreviewCatalogSong(null)
-              }}
-              className="px-4 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{importedCatalogIds.has(previewCatalogSong.id) ? 'Already in My Songs' : 'Import to My Songs'}</span>
-            </button>
+          <div className="shrink-0 border-t border-app-border bg-app-base/60 px-4 py-3 sm:px-5">
+            <div className="flex flex-col gap-2 sm:flex-row-reverse sm:items-center">
+              <button
+                type="button"
+                data-testid="header-catalog-preview-import-btn"
+                disabled={importingCatalogId === previewCatalogSong.id || importedCatalogIds.has(previewCatalogSong.id)}
+                onClick={(e) => {
+                  handleImportCatalogSong(e, previewCatalogSong)
+                  setPreviewCatalogSong(null)
+                }}
+                className={`${primaryButton.replace('w-full ', '')} w-full sm:w-auto inline-flex items-center justify-center gap-1.5`}
+              >
+                <Download className="h-4 w-4" />
+                <span>{importedCatalogIds.has(previewCatalogSong.id) ? 'Already in My Songs' : 'Import to My Songs'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewCatalogSong(null)}
+                className={`${secondaryButton.replace('flex items-center', 'inline-flex items-center')} w-full sm:w-auto`}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </dialog>
       )}

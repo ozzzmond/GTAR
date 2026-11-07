@@ -13,7 +13,7 @@ import {
   assignThemeToMode,
   getThemeAssignedRole,
 } from '../utils/backupSettings'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   X,
   Check,
@@ -660,6 +660,11 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   })
   const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
+  const initialThemeRef = useRef<{ mode: ThemeMode; standalone: CustomThemeColors; overrides: FactoryThemeOverrides }>({
+    mode: currentTheme,
+    standalone: loadStandalonePalette(customColors),
+    overrides: {},
+  })
 
   // Synchronize internal staged state whenever modal opens or synchronized settings arrive
   useEffect(() => {
@@ -669,8 +674,14 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       if (currentTheme === 'custom' && customColors?.identity) {
         saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
       }
+      const loadedStandalone = loadStandalonePalette(customColors)
+      initialThemeRef.current = {
+        mode: currentTheme,
+        standalone: loadedStandalone,
+        overrides: { ...saved },
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open storage synchronization preserves standalone and factory draft separation.
-      setStandaloneColors(loadStandalonePalette(customColors))
+      setStandaloneColors(loadedStandalone)
       setOverrides(saved)
       setStagedAssignments(themeAssignments ? normalizeThemeModeAssignments(themeAssignments) : loadThemeModeAssignments())
       setPendingRestore(null)
@@ -747,6 +758,36 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       commitTheme('custom', normalizeCustomThemeColors(standalone), overrides, stagedAssignments)
     }
     setIsCustomPaletteEditorOpen(false)
+  }
+
+  const handleCustomPaletteCancel = () => {
+    // Discard uncommitted changes, restore previously saved active theme, then return to main page
+    applyThemeRuntime(
+      initialThemeRef.current.mode,
+      initialThemeRef.current.standalone,
+      initialThemeRef.current.overrides
+    )
+    setIsCustomPaletteEditorOpen(false)
+    onClose()
+  }
+
+  const handleCustomPaletteApply = (colors: CustomThemeColors) => {
+    // Apply live theme preview without permanent persistence; remain inside Custom Palette Editor
+    const factoryId = stagedCustomColors.identity?.factoryId
+    if (factoryId) {
+      const palette = normalizeCustomThemeColors({
+        ...colors,
+        identity: {
+          factoryId,
+          displayName: colors.identity?.displayName || stagedCustomColors.identity!.displayName,
+        },
+      })
+      applyThemeRuntime(factoryId, standaloneColors, { ...overrides, [factoryId]: palette })
+    } else {
+      const standalone = { ...colors }
+      delete standalone.identity
+      applyThemeRuntime('custom', normalizeCustomThemeColors(standalone), overrides)
+    }
   }
 
   return (
@@ -1106,6 +1147,9 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
         onClose={() => setIsCustomPaletteEditorOpen(false)}
         customColors={stagedCustomColors}
         onSaveAndApply={handleCustomPaletteSaveAndApply}
+        onSave={handleCustomPaletteSaveAndApply}
+        onCancel={handleCustomPaletteCancel}
+        onApply={handleCustomPaletteApply}
       />
     </>
   )
