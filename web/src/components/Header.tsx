@@ -684,6 +684,9 @@ export const Header: React.FC<HeaderProps> = ({
   )
   const showResults = isSearchFocused && searchQuery.trim().length > 0
   const iconButton = 'ui-button min-h-11 min-w-11 w-11 h-11 rounded-xl bg-app-base hover:bg-app-surface border border-app-border text-app-action transition-colors flex items-center justify-center cursor-pointer shrink-0'
+  const isProductionRelease = GTAR_APP_VERSION !== '0.0.0-unversioned' && !GTAR_PREVIEW_IDENTITY && !isDevEnv
+  const mascotSrc = isProductionRelease ? prodMascot : devMascot
+
   const devDiagnostics = (inline: boolean) => isDevEnv && (
     <div
       data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
@@ -715,12 +718,12 @@ export const Header: React.FC<HeaderProps> = ({
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
-            className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-11 cursor-pointer shrink-0">
+            className="flex items-center gap-2 text-left group min-h-11 cursor-pointer shrink-0">
             <div className="w-9 h-9 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
-              <img src={isDevEnv ? devMascot : prodMascot} alt="GTAR Logo"
-                className="w-full h-full object-contain p-0.5 select-none" />
+              <img src={mascotSrc} alt="GTAR Logo"
+                className="w-full h-full object-contain p-0 select-none scale-110" />
             </div>
-            <div className="hidden sm:block">
+            <div className="flex items-center">
               <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
                 GTAR
               </span>
@@ -818,17 +821,17 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Avatar with Auth Status Dot */}
-          <div ref={avatarPopoverRef} className="avatar-wrapper">
+          <div ref={avatarPopoverRef} className="avatar-wrapper flex items-center justify-center min-h-11 min-w-11 w-11 h-11 shrink-0">
             <button ref={avatarButtonRef} type="button" aria-label={currentSession ? 'Account menu' : 'Sign in and account menu'} aria-haspopup="menu"
               aria-expanded={showAvatarPopover} data-testid="header-avatar"
               onClick={() => setShowAvatarPopover(!showAvatarPopover)}
-              className="relative w-9 h-9 min-h-9 rounded-full flex items-center justify-center cursor-pointer before:absolute before:-inset-1 before:content-['']">
+              className="relative min-h-11 min-w-11 w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer">
               {currentSession?.user.picture ? (
                 <img src={currentSession.user.picture} alt="" referrerPolicy="no-referrer"
                   className="w-9 h-9 rounded-full border-2 border-app-border hover:border-app-action transition-colors" />
               ) : (
                 <span className="w-9 h-9 rounded-full bg-app-surface border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
-                  <User className="w-4 h-4 header-neutral-icon" />
+                  <User className="w-5 h-5 header-neutral-icon" />
                 </span>
               )}
             </button>

@@ -807,10 +807,9 @@ export const CustomPaletteEditor: React.FC<CustomPaletteEditorProps> = ({
             type="button"
             data-testid="apply-palette-btn"
             onClick={handleApply}
-            className="px-4 sm:px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+            className="px-4 sm:px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center justify-center"
           >
-            <Sliders className="w-4 h-4" />
-            <span>Apply</span>
+            Apply
           </button>
         </div>
       </div>

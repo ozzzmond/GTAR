@@ -169,6 +169,8 @@ test('06_CUSTOM_PALETTE_EDITOR: Save, Cancel, and Apply distinct semantics and t
     assert.ok(saveBtn, 'Save button must be present')
     assert.ok(cancelBtn, 'Cancel button must be present')
     assert.ok(applyBtn, 'Apply button must be present')
+    // QA_03: Apply button has no decorative icon
+    assert.equal(applyBtn.querySelector('svg'), null, 'Apply button must not have decorative icon')
 
     // Click Apply: triggers onApply and shows toast, stays in editor
     await act(async () => { applyBtn.click() })
@@ -184,6 +186,91 @@ test('06_CUSTOM_PALETTE_EDITOR: Save, Cancel, and Apply distinct semantics and t
     // Click Save
     await act(async () => { saveBtn.click() })
     assert.equal(saved, true)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+    delete global.window
+    delete global.document
+    delete global.localStorage
+    delete global.IS_REACT_ACT_ENVIRONMENT
+  }
+})
+
+test('QA_03_THEME_MODAL: Save, Cancel, and Apply semantics in Stage Color Theme modal', async () => {
+  const theme = require('../src/components/ThemeModal.tsx')
+
+  const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { url: 'https://gtar.test' })
+  dom.window.matchMedia = dom.window.matchMedia || (() => ({
+    matches: false,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }))
+  global.window = dom.window
+  global.document = dom.window.document
+  global.localStorage = dom.window.localStorage
+  global.IS_REACT_ACT_ENVIRONMENT = true
+  const { createRoot } = require('react-dom/client')
+  const { act } = require('react')
+
+  let root = createRoot(document.getElementById('root'))
+  try {
+    let appliedMode = null
+    let closed = false
+
+    await act(async () => {
+      root.render(React.createElement(theme.ThemeModal, {
+        isOpen: true,
+        currentTheme: 'solarized-dark',
+        customColors: theme.DEFAULT_CUSTOM_COLORS,
+        onClose: () => { closed = true },
+        onApplyTheme: (mode) => { appliedMode = mode },
+      }))
+    })
+
+    const saveBtn = document.querySelector('[data-testid="theme-save-btn"]')
+    const cancelBtn = document.querySelector('[data-testid="theme-cancel-btn"]')
+    const applyBtn = document.querySelector('[data-testid="theme-apply-btn"]')
+
+    assert.ok(saveBtn, 'Theme modal Save button must exist')
+    assert.ok(cancelBtn, 'Theme modal Cancel button must exist')
+    assert.ok(applyBtn, 'Theme modal Apply button must exist')
+    assert.equal(applyBtn.querySelector('svg'), null, 'Theme modal Apply button must not have decorative icon')
+
+    // Select a different theme slot
+    const slot = document.querySelector('[data-testid="theme-slot-paper-light"]')
+    assert.ok(slot, 'Theme slot paper-light must exist')
+    await act(async () => { slot.click() })
+
+    // Click Apply: updates runtime, modal stays open (closed === false), does not commit to localStorage
+    await act(async () => { applyBtn.click() })
+    assert.equal(closed, false, 'Modal must remain open after Apply')
+    assert.notEqual(localStorage.getItem('gtar_theme_store'), 'paper-light', 'Apply must not persist to localStorage')
+
+    // Click Cancel: closes modal and restores previous runtime
+    await act(async () => { cancelBtn.click() })
+    assert.equal(closed, true, 'Cancel must close modal')
+
+    // Reopen and test Save
+    closed = false
+    await act(async () => {
+      root.render(React.createElement(theme.ThemeModal, {
+        isOpen: true,
+        currentTheme: 'solarized-dark',
+        customColors: theme.DEFAULT_CUSTOM_COLORS,
+        onClose: () => { closed = true },
+        onApplyTheme: (mode) => { appliedMode = mode },
+      }))
+    })
+
+    const slot2 = document.querySelector('[data-testid="theme-slot-paper-light"]')
+    await act(async () => { slot2.click() })
+    const saveBtn2 = document.querySelector('[data-testid="theme-save-btn"]')
+    await act(async () => { saveBtn2.click() })
+    assert.equal(closed, true, 'Save must close modal')
+    assert.equal(localStorage.getItem('gtar_theme_store'), 'paper-light', 'Save must persist theme to localStorage')
   } finally {
     await act(async () => root.unmount())
     dom.window.close()
@@ -241,12 +328,20 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
     assert.ok(logoContainer.classList.contains('border-app-border'), 'Container must have border-app-border')
     assert.ok(logoContainer.classList.contains('bg-app-base'), 'Container must have bg-app-base')
 
+    const logoImg = logoContainer.querySelector('img')
+    assert.ok(logoImg, 'Mascot image must exist')
+    assert.ok(logoImg.classList.contains('scale-110'), 'Mascot must have scale-110 for proportional container fill')
+    assert.ok(logoImg.classList.contains('p-0'), 'Mascot must have p-0 to avoid unnecessary padding')
+
+    // 02: Normalized action icon in avatar
+    const avatar = document.querySelector('[data-testid="header-avatar"]')
+    assert.ok(avatar, 'Avatar button must exist')
+    assert.ok(avatar.querySelector('svg.w-5.h-5'), 'Avatar placeholder icon must be normalized to w-5 h-5')
+
     // 03: Visible application version is removed from header
     assert.equal(document.querySelector('[data-testid="header-prod-version"]'), null)
 
     // 03: Profile menu contains version
-    const avatar = document.querySelector('[data-testid="header-avatar"]')
-    assert.ok(avatar, 'Avatar button must exist')
     await act(async () => { avatar.click() })
 
     const profileVersion = document.querySelector('[data-testid="profile-app-version"]')
