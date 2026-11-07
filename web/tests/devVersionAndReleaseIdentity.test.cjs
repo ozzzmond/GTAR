@@ -745,15 +745,15 @@ test('STEP_6.23: Header formatting helpers format diagnostics and versions accur
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', 'v1.1.133'), 'v1.1.133')
 
   // Line 1: TAGGED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'v1.0.145-dev.2 · TAGGED: v1.0.130-dev.4a · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.145-dev.2', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'v1.0.145-dev.2 · TAGGED · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, 'v1.0.145-dev.2'), 'v1.0.145-dev.2 · TAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'TAGGED: v1.0.130-dev.4a · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.145-dev.2', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'TAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, 'v1.0.145-dev.2'), 'TAGGED · SHA: d69d1cb')
   // Line 1: UNTAGGED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'v1.0.145-dev.2 · UNTAGGED · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'abcdef0', deploymentId: null }, 'v1.0.145-dev.2'), 'v1.0.145-dev.2 · UNTAGGED · SHA: abcdef0')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'abcdef0', deploymentId: null }, 'v1.0.145-dev.2'), 'SHA: abcdef0')
   // Line 1: UNVERIFIED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'v1.0.145-dev.2 · UNVERIFIED · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'unknown', deploymentId: null }, '1.0.145-dev.2'), 'v1.0.145-dev.2 · UNVERIFIED · SHA: unknown')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'UNVERIFIED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'unknown', deploymentId: null }, '1.0.145-dev.2'), 'UNVERIFIED · SHA: unknown')
 
   // Line 2: DEPLOYMENT
   assert.equal(formatDevDiagLine2({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: '55d0cc6b' }), 'DEPLOYMENT: 55d0cc6b')
@@ -842,8 +842,7 @@ test('STEP_8.3: Header layout renders DEV branding without redundant version, di
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diagnostics"'), 'Diagnostics block must be rendered in DEV mode')
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diag-line1"'), 'Diagnostic Line 1 must be rendered')
   assert.ok(devHeaderHtml.includes('data-testid="dev-header-diag-line2"'), 'Diagnostic Line 2 must be rendered')
-  const { GTAR_DEV_VERSION } = require('../src/types/gtar.ts')
-  assert.ok(devHeaderHtml.includes(`>${GTAR_DEV_VERSION.startsWith('v') ? GTAR_DEV_VERSION : `v${GTAR_DEV_VERSION}`} · UNVERIFIED · SHA: unknown</span>`), 'Header passes the stable DEV version to diagnostic line 1')
+  assert.ok(devHeaderHtml.includes('>UNVERIFIED · SHA: unknown</span>'), 'Header passes UNVERIFIED · SHA to diagnostic line 1')
   const inlineDiagnostics = devHeaderHtml.match(/data-testid="dev-header-diagnostics"[^>]*?\sclass="([^"]*)"/)
   assert.ok(inlineDiagnostics[1].includes('max-w-[35vw]'), 'Desktop diagnostics have a bounded width for truncation')
 

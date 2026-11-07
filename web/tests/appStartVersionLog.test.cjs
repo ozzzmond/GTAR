@@ -66,5 +66,5 @@ test('PREVIEW: build SHA without enabling DEV environment', () => {
   const message = appStart({ dev: false, defines: {
     __GTAR_PREVIEW_IDENTITY__: { tagStatus: 'UNTAGGED', commitSha: 'abcdef0', branch: 'fix/example' },
   } })
-  assert.equal(message, 'App started. Version: PREVIEW · UNTAGGED · SHA: abcdef0; Environment: production')
+  assert.equal(message, 'App started. Version: PREVIEW · SHA: abcdef0; Environment: production')
 })

@@ -1,13 +1,18 @@
 import type { DevBuildProvenance, PreviewBuildIdentity } from '../types/gtar'
 
-export function formatDevDiagLine1(prov: DevBuildProvenance, devVersion: string): string {
-  const version = `v${devVersion.replace(/^v/, '')}`
-  const status = prov.tagStatus || 'UNVERIFIED'
+export function formatDevDiagLine1(prov: DevBuildProvenance, _devVersion?: string): string {
   const sha = prov.commitSha || 'unknown'
-  if (status === 'TAGGED' && prov.tagName && prov.tagName !== version) {
-    return `${version} · TAGGED: ${prov.tagName} · SHA: ${sha}`
+  const status = prov.tagStatus || 'UNVERIFIED'
+  if (status === 'TAGGED') {
+    if (prov.tagName && prov.tagName !== `v${(_devVersion || '').replace(/^v/, '')}`) {
+      return `TAGGED: ${prov.tagName} · SHA: ${sha}`
+    }
+    return `TAGGED · SHA: ${sha}`
   }
-  return `${version} · ${status} · SHA: ${sha}`
+  if (status === 'UNTAGGED') {
+    return `SHA: ${sha}`
+  }
+  return `${status} · SHA: ${sha}`
 }
 
 export function formatDevDiagLine2(prov: DevBuildProvenance): string {
@@ -23,5 +28,13 @@ export function formatHeaderVersion(isDev: boolean, devVer: string, prodVer: str
 
 /** Keep the visible label short on phones. */
 export function formatPreviewIdentity(identity: PreviewBuildIdentity): string {
-  return `PREVIEW · ${identity.tagStatus} · SHA: ${identity.commitSha}`
+  const sha = identity.commitSha || 'unknown'
+  const status = identity.tagStatus
+  if (status === 'UNTAGGED') {
+    return `PREVIEW · SHA: ${sha}`
+  }
+  if (status === 'TAGGED') {
+    return `PREVIEW · TAGGED · SHA: ${sha}`
+  }
+  return `PREVIEW · ${status} · SHA: ${sha}`
 }

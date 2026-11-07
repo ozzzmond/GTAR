@@ -333,10 +333,25 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
     assert.ok(logoImg.classList.contains('scale-110'), 'Mascot must have scale-110 for proportional container fill')
     assert.ok(logoImg.classList.contains('p-0'), 'Mascot must have p-0 to avoid unnecessary padding')
 
-    // 02: Normalized action icon in avatar
+    // 02: Normalized action icon in avatar and container dimensions matching mascot
     const avatar = document.querySelector('[data-testid="header-avatar"]')
     assert.ok(avatar, 'Avatar button must exist')
+    assert.ok(avatar.classList.contains('w-9') && avatar.classList.contains('h-9') && avatar.classList.contains('rounded-xl'), 'Avatar container normalized to w-9 h-9 rounded-xl')
     assert.ok(avatar.querySelector('svg.w-5.h-5'), 'Avatar placeholder icon must be normalized to w-5 h-5')
+
+    const themeToggle = document.querySelector('[data-testid="header-theme-mode-toggle"]')
+    assert.ok(themeToggle, 'Theme mode toggle must exist')
+    assert.ok(themeToggle.classList.contains('w-9') && themeToggle.classList.contains('h-9') && themeToggle.classList.contains('rounded-xl'), 'Theme toggle normalized to w-9 h-9 rounded-xl')
+
+    const cloudBtn = document.querySelector('[data-testid="header-cloud-sync-button"]')
+    assert.ok(cloudBtn, 'Cloud sync button must exist')
+    assert.ok(cloudBtn.classList.contains('w-9') && cloudBtn.classList.contains('h-9') && cloudBtn.classList.contains('rounded-xl'), 'Cloud sync button normalized to w-9 h-9 rounded-xl')
+
+    // Diagnostics in DEV mode: no version, no UNTAGGED
+    const diagLine1 = document.querySelector('[data-testid="dev-header-diag-line1"]')
+    assert.ok(diagLine1, 'Diagnostic line 1 must exist')
+    assert.doesNotMatch(diagLine1.textContent, /^v\d+\.\d+\.\d+/, 'Diagnostic line 1 must not contain visible version')
+    assert.doesNotMatch(diagLine1.textContent, /\bUNTAGGED\b/, 'Diagnostic line 1 must not contain UNTAGGED')
 
     // 03: Visible application version is removed from header
     assert.equal(document.querySelector('[data-testid="header-prod-version"]'), null)

@@ -108,11 +108,11 @@ export function SyncStatusPill({ status, lastBackup, now, onClick, recoveryAtten
         aria-haspopup="dialog"
         aria-expanded={popoverVisible}
         aria-controls={popoverVisible ? 'cloud-backup-popover' : undefined}
-        className="relative flex min-h-11 min-w-11 w-11 h-11 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action cursor-pointer"
+        className="relative flex w-9 h-9 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action cursor-pointer before:absolute before:-inset-1 before:content-['']"
       >
         <span className="relative inline-flex h-5 w-5 items-center justify-center shrink-0" aria-hidden="true">
           <Cloud className="h-5 w-5 text-app-action" />
-          <Badge className={`absolute -right-1 bottom-0 h-3.5 w-3.5 rounded-full bg-app-base ${status.state === 'backed-up' ? 'text-app-action' : 'text-status-error'}`} />
+          <Badge className={`absolute -right-1 bottom-0 h-3 w-3 rounded-full bg-app-base ${status.state === 'backed-up' ? 'text-app-action' : 'text-status-error'}`} />
         </span>
         {recoveryAttention && <span data-testid="cloud-recovery-dot" aria-hidden="true" className={recoveryDotClass} />}
       </button>
