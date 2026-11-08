@@ -691,7 +691,7 @@ export const Header: React.FC<HeaderProps> = ({
       data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
       className={inline
         ? 'hidden sm:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0 max-w-[35vw]'
-        : 'sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none truncate'}
+        : 'sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none truncate w-full'}
     >
       <span data-testid={inline ? 'dev-header-diag-line1' : undefined} className={inline ? 'truncate whitespace-nowrap' : ''}>
         {formatDevDiagLine1(GTAR_DEV_PROVENANCE, GTAR_DEV_VERSION)}
@@ -726,21 +726,21 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-base font-extrabold header-primary-text text-app-heading tracking-tight group-hover:text-app-link transition-colors">
                 GTAR
               </span>
-              {GTAR_PREVIEW_IDENTITY ? (
-                <span data-testid="header-preview-identity" className="text-[10px] header-secondary-text text-app-muted font-mono ml-2">
-                  {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
-                </span>
-              ) : isDevEnv ? (
+              {(isDevEnv || GTAR_PREVIEW_IDENTITY) && (
                 <span className="ml-2 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-accent/25 text-app-accent border border-app-accent/40">DEV</span>
-              ) : null}
+              )}
             </div>
-            {GTAR_PREVIEW_IDENTITY && (
-              <span data-testid="header-prod-version-compact" className="sm:hidden text-[9px] leading-tight header-secondary-text text-app-muted font-mono select-none">
-                {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
-              </span>
-            )}
           </button>
           {devDiagnostics(true)}
+          {GTAR_PREVIEW_IDENTITY && (
+            <div
+              className="hidden sm:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0 max-w-[35vw]"
+            >
+              <span data-testid="header-preview-identity" className="truncate whitespace-nowrap">
+                {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Center: desktop search (GTAR1 design) */}
@@ -981,7 +981,16 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
-      {devDiagnostics(false)}
+      {isDevEnv ? (
+        devDiagnostics(false)
+      ) : GTAR_PREVIEW_IDENTITY ? (
+        <div
+          data-testid="header-prod-version-compact"
+          className="sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-secondary-text text-app-muted tracking-tight select-none truncate w-full"
+        >
+          {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
+        </div>
+      ) : null}
 
       {/* Compact full-width search overlay (GTAR1): the field takes over the header with Cancel */}
       {compact && mobileSearchOpen && (

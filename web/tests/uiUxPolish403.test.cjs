@@ -347,11 +347,15 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
     assert.ok(cloudBtn, 'Cloud sync button must exist')
     assert.ok(cloudBtn.classList.contains('w-9') && cloudBtn.classList.contains('h-9') && cloudBtn.classList.contains('rounded-xl'), 'Cloud sync button normalized to w-9 h-9 rounded-xl')
 
-    // Diagnostics in DEV mode: no version, no UNTAGGED
+    // Diagnostics in DEV mode: no version, no UNTAGGED, centered compact line
     const diagLine1 = document.querySelector('[data-testid="dev-header-diag-line1"]')
     assert.ok(diagLine1, 'Diagnostic line 1 must exist')
     assert.doesNotMatch(diagLine1.textContent, /^v\d+\.\d+\.\d+/, 'Diagnostic line 1 must not contain visible version')
     assert.doesNotMatch(diagLine1.textContent, /\bUNTAGGED\b/, 'Diagnostic line 1 must not contain UNTAGGED')
+
+    const compactDiag = document.querySelector('[data-testid="dev-header-diagnostics-compact"]')
+    assert.ok(compactDiag, 'Compact diagnostics line must exist')
+    assert.ok(compactDiag.classList.contains('text-center') && compactDiag.classList.contains('w-full'), 'Compact diagnostics must be centered on an independent full-width line')
 
     // 03: Visible application version is removed from header
     assert.equal(document.querySelector('[data-testid="header-prod-version"]'), null)
