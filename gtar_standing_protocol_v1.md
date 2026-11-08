@@ -1,12 +1,15 @@
 # GTAR — Standing Protocol
 
-This protocol governs GTAR investigation, audit, bug-fix, maintenance, and implementation directives unless a directive explicitly states a one-off deviation.
+Flow selection is defined only in [AGENTS.md](AGENTS.md#which-protocol-applies).
+The scope and common invariants below apply to every GTAR directive. Audit-fix
+Git restrictions and verification apply only to the audit-fix flow. Audit-trail
+and reporting rules at the end apply to every flow.
 
 ## Scope
 
 Work on the GTAR repository must remain limited to the files, behavior, and acceptance criteria identified by the active directive.
 
-## Standing invariants
+## Common standing invariants
 
 - No scope creep. Do not modify unrelated files, perform unrelated refactors, or clean up pre-existing project debt unless explicitly requested.
 - Preserve existing behavior outside the stated task.
@@ -19,12 +22,17 @@ Work on the GTAR repository must remain limited to the files, behavior, and acce
 - Preserve unrelated working-tree changes.
 - Audit and investigation work is read-only unless the directive explicitly authorizes fixes.
 - Fix directives authorize only the minimum file modifications necessary for the stated task.
-- Never commit, push, tag, merge, deploy, release, reset, restore, stash, delete unrelated work, or otherwise mutate Git history/remotes under this protocol.
-- Production/main deployment and release operations require the separate GTAR deployment/release workflow and explicit user authorization.
 
-## Verification
+## Audit-fix Git restrictions
 
-After modifications, run the applicable GTAR verification checks:
+Only in the audit-fix flow: never commit, push, tag, merge, deploy, release,
+reset, restore, stash, delete unrelated work, or otherwise mutate Git history/remotes.
+Release authorization is governed by AGENTS.md and RELEASE_WORKFLOW_README.md.
+
+## Audit-fix verification
+
+After audit-fix modifications, run the applicable GTAR verification checks
+(unless the directive specifies different checks):
 
 ```powershell
 npm test --prefix web
@@ -33,10 +41,7 @@ npm run --prefix web build
 python -B -m unittest discover -s tests -v
 ```
 
-Verification output is evaluated in-memory:
-- On PASS: report verification as compact metrics in the chat response (e.g., `web=PASS (124/124)|lint_sync=PASS|build=PASS|python=PASS (14/14)`).
-- On FAIL/ERROR: retain decision-critical diagnostics (failing test names, assertion messages, stack trace excerpts) directly in the chat response.
-- Do not persist raw full-run stdout/stderr dumps to repository outputs/ or local log directories. Raw I/O is transient by default.
+Apply the shared output/reporting rules below to verification results.
 
 For read-only audit, investigation, or classification directives,
 do not run build, test, lint, or other verification suites unless
@@ -67,27 +72,15 @@ GitHub is GTAR's canonical audit architecture:
 Local receipt files are non-canonical and not required. Directives must NOT write receipts, runtime logs, or diagnostic dumps to `E:\Logs\` or repository `outputs/` or `web/outputs/`.
 
 Policy & Storage Invariants:
-- GitHub-native records are the sole canonical source of truth for execution and change history.
 - Raw runtime execution output (stdout/stderr from tests, builds, lint runs, CI logs) is transient by default: evaluate in-memory; do not dump raw logs into repository outputs/ or local log directories.
 - Repository `outputs/` and `web/outputs/` are ignored transient residue and must never contain tracked files or canonical logs.
 - Historical local receipts and logs are disposable; no migration or archival is required.
 - Do not add new workflow artifacts unless explicitly specified (e.g. keeping web-preview.yml web/dist artifact for offline inspection).
 
-Completed directives produce compact final chat reports adhering to the Caveman_Micro+Perspective dense key-value schema (proven facts only, dense key-value pairs, zero narration/decorative fluff).
-
-The final chat report contains, as applicable:
-- task/directive identifier (`TASK`)
-- completion status: PASS / HOLD / FAIL / BLOCKED (`STATUS`)
-- actions performed / changes (`CHANGE`, `FILES`)
-- verification results (`TESTS`, `PROOF`, `METRICS`)
-- unresolved items or deviations (`BLOCKERS`)
-- operator handoff / recommended next action (`READY`, `PERSPECTIVE`, `NEXT`)
-
-Chat responses MUST remain compact:
-- completion status
-- PASS / HOLD / FAIL / BLOCKED when applicable
-- summary of changes and verification
-- critical blockers or deviations only
+Completed directives use Caveman_Micro+Perspective: proven facts only, compact
+key-value fields. On PASS, report compact verification metrics; on FAIL/ERROR,
+retain decision-critical diagnostics (failing tests, assertions or relevant stack
+excerpts) in chat. Never paste full logs, test output or diffs.
 
 ### Dense reporting schema (standard for final chat reports)
 

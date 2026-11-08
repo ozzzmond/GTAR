@@ -27,13 +27,7 @@ or promote to production. No stage environment is included. The separate product
 PR validation runs the full Web/PWA test suite (including disposable-repository
 metadata integration tests and repository boundary checks), sync lint, and build.
 
-## Agent handoff standard
-
-TASK|MODE|SCOPE/PROJECT/REPO/BRANCH|GOAL|PROVE/ACCEPT|EXECUTION_POLICY|REPORT_POLICY|EFFICIENCY_POLICY|TOKEN_POLICY|INTERACTION_POLICY|CHAT_OUTPUT_POLICY|FINAL_OUTPUT_STANDARD.
-
-INTERACTION_POLICY:NO_LIVE_REASONING|NO_INTERMEDIATE_ANALYSIS|NO_HYPOTHESIS_DUMP|NO_PARTIAL_FINDINGS|NO_SELF_TALK|NO_EXPLANATORY_STREAM|ASK_ONLY_IF_BLOCKED_OR_REQUIRED_FOR_CORRECTNESS|SILENT_EXECUTION_UNTIL_FINAL.
-FINAL_OUTPUT_STANDARD:COLON_DELIMITED_DENSE+CAVEMAN_MICRO+PERSPECTIVE.
-Canonical final fields: STATUS/TASK|CHANGE|PROOF|TESTS|FILES|READY|BLOCKERS|PERSPECTIVE|RECEIPT|NEXT. One compact receipt; PASS concise, FAIL/BLOCKED expands only for decision-critical diagnostics. Preserve this vendor-neutral standard across Manager, Codex, Claude, GPT, Gemini, OpenCode, and E14/local workers.
+Agent flow and handoff standard: [AGENTS.md](AGENTS.md#agent-handoff-standard)
 
 ## Executable Web/PWA production controller
 
@@ -60,36 +54,9 @@ baseline, absent PROD tag, baseline ancestry, main ancestry, and unchanged
 controller/main since dispatch. Legacy app-v/web-v tags do not establish baseline.
 Baseline identity accepts a legacy tagged PROD package or the new exact-source
 DEV/tag-derived identity contract. The only legacy discrepancy exception is the
-exact pinned one-time reconciliation below; all other discrepancies still block.
+exact pinned one-time reconciliation in [release history](docs/release-history.md#historical-reviewed-baseline-after-abandoned-v11122); all other discrepancies still block.
 The checkpoint must contain the reviewed release identity helper/parser bytes and
 Vite/runtime integration. Next DEV is an advisory output only.
-
-### Historical reviewed baseline after abandoned v1.1.122
-
-GitHub discovery for this rebaseline found both dev and main at
-`c254195e6dfc946138336551e4ce8a87520baf7f`, with identical root tree
-`59ca0769cee12f5d73f03e067c5b54be9a848de0`. Canonical DEV
-`v1.0.108-dev.14` and historical PROD `v1.1.122` point to that commit.
-The DEV application is the source baseline; no application tree transplant or
-legacy application deletion is necessary because main already has that tree.
-Android is absent. Environment bindings and Cloudflare configuration remain unchanged.
-
-The failed/unverified `v1.1.122` deployment is abandoned. Never rerun run 52,
-recover that deployment, move its tag, or relabel it as verified production.
-The controller accepts this exact immutable tag/SHA/tree and its committed DEV
-metadata only as a historical ancestry anchor. It does not require deployment
-proof for that anchor or equality with its obsolete build helper. Moved tags,
-wrong trees/source metadata, missing ancestry, and old-identity reuse block.
-The exception retires when a higher canonical PROD tag becomes the baseline.
-Historical v1.1.62 reconciliation code remains for its existing tests; it cannot
-activate while the highest canonical PROD tag is v1.1.122.
-
-This historical reconciliation explains the pinned ancestry exception; it is not
-an instruction to reuse the abandoned identity or repeat the old controller
-rollout. Future candidates must preserve main ancestry, match exact dev tip and
-committed metadata, carry the reviewed runtime contract, and calculate a new PROD
-tag above the baseline. Human approval, fresh state checks, atomic non-force
-promotion, and verification of the new exact-SHA deployment remain mandatory.
 
 Configure GitHub **Settings → Environments → gtar-production** before execution:
 required human reviewer **ozzzmond** (GitHub User ID `17817198`), **Prevent
@@ -273,11 +240,10 @@ Prepare changes through a dedicated PR against `dev`. Before merge, keep
 and the authCore release stamp equal to the intended DEV tag without `v`.
 Run the repository checks before a human creates the tag at the accepted merge
 SHA. Preview validation retains exact tag/HEAD and package-version checks.
+Bump version metadata on `dev`, merge, then tag that merge SHA; the tag must match `web/package.json`.
 
-`v1.0.123-dev.6a` is immutable historical evidence: its tag points to the accepted
-cleanup SHA, but its committed stamps remained `1.0.123-dev.6`, so tag-preview
-metadata validation rejected it. Do not move or recreate that tag or weaken the
-validator. The next hygiene checkpoint uses `1.0.123-dev.6b` consistently.
+Historical checkpoint notes: [release history](docs/release-history.md).
+
 Lettered checkpoints can produce DEV preview artifacts but cannot be promoted.
 
 Production requires a later clean numeric DEV checkpoint satisfying all controller
