@@ -41,6 +41,15 @@ audit-fix Git restrictions and verification section apply only to audit-fix work
   DRAFT targeting dev. The PR stays draft so QA can happen and adjustments
   can still be pushed. Agents never mark ready for review, merge, squash,
   tag, or deploy; the owner does.
+- Pre-push validation gate: for changes touching Web/PWA (`web/`), agents must
+  run targeted tests first (following the test tiers below), then execute both
+  `npm run --prefix web lint` (full ESLint across the web workspace) and
+  `npm run --prefix web lint:sync` (zero-warning sync-path check). Full ESLint
+  and `lint:sync` are distinct gates; passing one does not imply passing the
+  other. Reproducible lint failures must be resolved before declaring CI-ready
+  or pushing. If a gate cannot run due to an environment blocker (e.g., missing
+  tooling or packages), report the blocker accurately—never claim PASS for an
+  unexecuted or failing required gate.
 - Agents do not poll or monitor CI. The owner reports CI status.
 - CI red X: investigate only when the owner reports it and asks. Check the
   actual failure on the current PR head SHA, fix the root cause within scope,
