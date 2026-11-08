@@ -11,7 +11,6 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useOptionalGoogleAuth } from '../utils/authContext'
-import { CatalogReportsQueue } from './CatalogReportsQueue'
 
 interface AdminUser {
   id: string
@@ -45,10 +44,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [actionId, setActionId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
-  // #253: moderation queue for catalog reports.
-  const [view, setView] = useState<'accounts' | 'reports'>('accounts')
-  const [openReports, setOpenReports] = useState<number | null>(null)
-  const [reportsRefresh, setReportsRefresh] = useState(0)
 
   const auth = useOptionalGoogleAuth()
   const sessionToken = auth?.session?.sessionToken || auth?.session?.idToken
@@ -230,17 +225,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
         {/* Content Body */}
         <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh]">
-          <div role="tablist" aria-label="Admin sections" className="flex items-center gap-1.5 text-xs">
-            <button type="button" role="tab" aria-selected={view === 'accounts'} onClick={() => setView('accounts')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${view === 'accounts' ? 'bg-app-action text-app-on-action' : 'bg-app-base text-app-muted hover:text-app-heading'}`}>
-              Accounts
-            </button>
-            <button type="button" role="tab" aria-selected={view === 'reports'} data-testid="admin-reports-tab" onClick={() => setView('reports')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${view === 'reports' ? 'bg-app-action text-app-on-action' : 'bg-app-base text-app-muted hover:text-app-heading'}`}>
-              Content reports{openReports ? ` (${openReports})` : ''}
-            </button>
-          </div>
-          {view === 'reports' ? <CatalogReportsQueue onOpenCount={setOpenReports} refreshToken={reportsRefresh} /> : <>
           {/* Status Filter Tabs */}
           <div className="space-y-2 border-b border-app-border/60 pb-3">
             <div data-testid="account-filters" className="flex flex-wrap items-center gap-2 text-xs">
@@ -434,15 +418,14 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               })}
             </div>
           )}
-          </>}
         </div>
 
         {/* Footer Actions */}
         <div className="px-5 py-3 border-t border-app-border bg-app-base flex items-center justify-between">
           <button
             type="button"
-            onClick={() => { if (view === 'reports') setReportsRefresh(n => n + 1); else void loadUsers() }}
-            disabled={view === 'accounts' && loading}
+            onClick={() => void loadUsers()}
+            disabled={loading}
             className="text-[11px] text-app-muted hover:text-app-heading flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
           >
             <RotateCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />

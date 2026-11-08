@@ -22,7 +22,6 @@ import {
   type GoogleSession,
   type AccessStatus,
 } from '../utils/googleAuth'
-import { sharedCatalogService } from '../utils/sharedCatalogService'
 import devLogo from '../assets/dev-logo.png'
 import prodLogo from '../assets/prod-logo.png'
 import { isDevEnv } from '../utils/env'
@@ -109,14 +108,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
     setGisRendered(false)
     const cur = sessionRef.current
     const token = cur?.sessionToken || cur?.idToken
-    const oldAccountId = cur?.user?.id || (cur?.user?.email ? cur.user.email.trim().toLowerCase() : null) || sharedCatalogService.getAccount()
     saveGoogleSession(null)
-    if (oldAccountId) {
-      sharedCatalogService.clearAccountCache(oldAccountId).catch((err) => {
-        console.warn('[AuthGate] Failed to clear account catalog cache on signOut:', err)
-      })
-    }
-    sharedCatalogService.setAccount(null)
     setSession(null)
     setBypass(false)
     setChecking(false)
@@ -156,15 +148,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
       const token = current.sessionToken || current.idToken
       if (!token || !isServerBackedSession(current)) {
         if (generation === epoch.current) {
-          const invalidAccountId =
-            current.user?.id ||
-            (current.user?.email ? current.user.email.trim().toLowerCase() : null) ||
-            sharedCatalogService.getAccount()
           saveGoogleSession(null)
-          if (invalidAccountId) {
-            sharedCatalogService.clearAccountCache(invalidAccountId).catch(() => {})
-          }
-          sharedCatalogService.setAccount(null)
           setSession(null)
           setBypass(false)
           setError('Your session requires server verification. Please sign in again.')
@@ -180,15 +164,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
           (serverUser.google_sub && current.user?.sub && serverUser.google_sub.trim() !== current.user.sub.trim()) ||
           (serverUser.email && current.user?.email && serverUser.email.trim().toLowerCase() !== current.user.email.trim().toLowerCase())
         ) {
-          const mismatchedAccountId =
-            current.user?.id ||
-            (current.user?.email ? current.user.email.trim().toLowerCase() : null) ||
-            sharedCatalogService.getAccount()
           saveGoogleSession(null)
-          if (mismatchedAccountId) {
-            sharedCatalogService.clearAccountCache(mismatchedAccountId).catch(() => {})
-          }
-          sharedCatalogService.setAccount(null)
           setSession(null)
           setBypass(false)
           setError('Session identity mismatch. Please sign in again.')
@@ -218,11 +194,6 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
         }
 
         if (current.access_status === 'active' && (serverUser.access_status === 'denied' || serverUser.access_status === 'pending')) {
-          const revokedAccountId = serverUser.id || current.user?.id || (current.user?.email ? current.user.email.trim().toLowerCase() : null)
-          if (revokedAccountId) {
-            sharedCatalogService.clearAccountCache(revokedAccountId).catch(() => {})
-          }
-          sharedCatalogService.setAccount(null)
           setBypass(false)
         }
 
@@ -241,15 +212,7 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
           return
         }
         if (isDefinitiveAuthError(err)) {
-          const revokedAccountId =
-            current.user?.id ||
-            (current.user?.email ? current.user.email.trim().toLowerCase() : null) ||
-            sharedCatalogService.getAccount()
           saveGoogleSession(null)
-          if (revokedAccountId) {
-            sharedCatalogService.clearAccountCache(revokedAccountId).catch(() => {})
-          }
-          sharedCatalogService.setAccount(null)
           setSession(null)
           setBypass(false)
           setError(msg || 'Your session is no longer valid. Please sign in again.')
@@ -305,7 +268,6 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
         }
       } else {
         saveGoogleSession(null)
-        sharedCatalogService.setAccount(null)
         setSession(null)
         setBypass(false)
         setStatusMessage('')
@@ -316,7 +278,6 @@ export function AuthGate({ children, deviceOwned = false }: { children: ReactNod
       const msg = err instanceof Error ? err.message : 'Unable to check status. Network unavailable.'
       if (isDefinitiveAuthError(err)) {
         saveGoogleSession(null)
-        sharedCatalogService.setAccount(null)
         setSession(null)
         setBypass(false)
         setStatusMessage('')

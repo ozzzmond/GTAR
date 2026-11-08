@@ -72,7 +72,7 @@ test('profile menu: "Manage Users", no Backup & Restore entry; header cloud butt
 test('signed out: profile menu explains what sign-in is for', async () => {
   const { root, popover } = await mountHeader({ dev: false, auth: { session: null, isSuperAdmin: false } })
   try {
-    assert.match(popover.textContent, /Sign in to use cloud backup and the Shared Catalog\./)
+    assert.match(popover.textContent, /Sign in to use cloud backup\./)
     assert.doesNotMatch(popover.textContent, /approved Google account/)
   } finally { await act(async () => root.unmount()) }
 })

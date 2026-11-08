@@ -1,7 +1,5 @@
 import { useTagLibrary } from '../utils/tagLibraryContext'
 import { matchesSongTags, normalizeTags, tagChipStyle } from '../utils/songTags'
-import { useSetlistPublicationStatuses } from '../utils/useSetlistPublicationStatuses'
-import { useSharedSetlists } from '../utils/useSharedSetlists'
 import { SongSetlistDialog } from './SongSetlistDialog'
 import { DuplicateReviewDialog } from './DuplicateReviewDialog'
 import { ExportSongsDialog } from './ExportSongsDialog'
@@ -34,21 +32,14 @@ import {
   CheckCircle2,
   AlertCircle,
   Tag,
+  Link,
 } from 'lucide-react'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus, formatTempoLabel } from '../utils/chordProMetadata'
 import { extractShareToken, type SharedSetlistPayload } from '../utils/sharedSetlist'
-import { Link, Globe, UploadCloud, CloudCheck, CloudDownload } from 'lucide-react'
 import { SongStatusBadge } from './SongStatusBadge'
-import { resolvePublishedProvenance, resolveImportedProvenance, type CatalogSongMetadataLookup } from '../utils/sharedCatalogProvenance'
-import type { SharedCatalogSongItem } from '../types/sharedCatalog'
-import { sharedCatalogService } from '../utils/sharedCatalogService'
 import { SwipeableActionCard } from './SwipeableActionCard'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
-import { SharedCatalogBrowser } from './SharedCatalogBrowser'
-import { findCatalogDuplicates } from '../utils/catalogDuplicateAdvisory'
-import { publishSharedCatalogSong } from '../utils/sharedCatalogClient'
-import { CatalogApiError } from '../types/sharedCatalog'
 import { useOptionalGoogleAuth } from '../utils/authContext'
 import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
 
@@ -78,18 +69,13 @@ interface SongbookHomeViewProps {
   onSearchQueryChange?: (query: string) => void
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
   onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
-  onPublishSetlist?: (setlist: WebSetlist) => void
   onShareSetlist?: (setlist: WebSetlist) => void
   onImportSharedSetlist?: (shared: SharedSetlistPayload) => void
-  onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | void
   /** #149: Songs Library ⋯ menu → the existing song import dialog. */
   onOpenImportSongs?: () => void
   /** #149 S2: duplicate check → Move to Trash, after re-pointing setlist refs. */
   onTrashDuplicates?: (trash: string[], repoint: Record<string, string>) => boolean
   onUpdateSong?: (updated: Partial<ActiveSongState>) => boolean | void
-  confirmedCatalogIds?: Set<string>
-  freshCatalogIds?: Set<string>
-  catalogMetadata?: Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>
   /** #319: the Music Explorer selection drives one view (GTAR1 SongbookHomeView). */
   view?: ExplorerTarget
   onSelectView?: (target: ExplorerTarget) => void
@@ -125,15 +111,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onBulkDeleteSongs,
   onBulkAddSongsToSetlist,
   onShareSetlist,
-  onPublishSetlist,
   onImportSharedSetlist,
-  onImportSharedCatalogSong,
   onOpenImportSongs,
   onTrashDuplicates,
-  onUpdateSong,
-  confirmedCatalogIds: propConfirmedCatalogIds,
-  freshCatalogIds: propFreshCatalogIds,
-  catalogMetadata: propCatalogMetadata,
   view,
   onSelectView,
   onEditSong,
@@ -209,203 +189,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const isSongsContext = currentView.type === 'ALL_SONGS' || currentView.type === 'TAG'
   const breadcrumbItems: Array<{ label: string; target?: ExplorerTarget }> = currentView.type === 'TAG'
     ? [{ label: 'Songbook', target: { type: 'ALL_SONGS' } }, { label: 'Tags' }, { label: `#${currentView.tag}` }]
-    : currentView.type === 'SHARED_CATALOG'
-      ? [{ label: 'Songbook', target: { type: 'ALL_SONGS' } }, { label: 'Shared Catalog' }]
-      : [{ label: 'Songbook', target: { type: 'ALL_SONGS' } }, { label: 'All Songs' }]
+    : [{ label: 'Songbook', target: { type: 'ALL_SONGS' } }, { label: 'All Songs' }]
 
-  // Auth context for publishing permissions
   const auth = useOptionalGoogleAuth()
-  const userRole = auth?.session?.role || auth?.session?.user.role
-  const isUserApproved = auth?.accessStatus === 'active' && !!auth.session
-  const canPublishSetlist = (userRole === 'admin' || userRole === 'member') && isUserApproved
-  const setlistCapability = useSharedSetlists(canPublishSetlist)
-  const setlistStatusMap = useSetlistPublicationStatuses({
-    setlists,
-    songs,
-    accountId: auth?.session?.user?.id || getStoredSessionStatus().session?.user?.id,
-    setlistCapability,
-  })
   const storedAuthStatus = getStoredSessionStatus()
   const isAuthActive = auth
     ? auth.accessStatus === 'active' && !!auth.session
     : !storedAuthStatus.isExpired && hasServerApproval(storedAuthStatus.session)
-
-  const onUpdateSongRef = useRef(onUpdateSong)
-  React.useEffect(() => {
-    onUpdateSongRef.current = onUpdateSong
-  }, [onUpdateSong])
-
-  // Confirmed published catalog song IDs (server authoritative)
-  const [localConfirmedCatalogIds, setLocalConfirmedCatalogIds] = useState<Set<string>>(() => new Set())
-  const confirmedCatalogIds = useMemo(() => {
-    const set = new Set(localConfirmedCatalogIds)
-    if (propConfirmedCatalogIds) {
-      for (const id of propConfirmedCatalogIds) set.add(id)
-    }
-    return set
-  }, [propConfirmedCatalogIds, localConfirmedCatalogIds])
-  const [localCatalogMetadata, setLocalCatalogMetadata] = useState<Map<string, CatalogSongMetadataLookup | SharedCatalogSongItem>>(() => sharedCatalogService.getCatalogMetadataMap())
-  React.useEffect(() => {
-    const handleUpdate = () => setLocalCatalogMetadata(sharedCatalogService.getCatalogMetadataMap())
-    window.addEventListener('gtar-shared-catalog-cache-updated', handleUpdate)
-    window.addEventListener('storage', handleUpdate)
-    return () => {
-      window.removeEventListener('gtar-shared-catalog-cache-updated', handleUpdate)
-      window.removeEventListener('storage', handleUpdate)
-    }
-  }, [])
-  const catalogMetadataMap = useMemo(() => {
-    const map = new Map(localCatalogMetadata)
-    if (propCatalogMetadata) {
-      for (const [k, v] of propCatalogMetadata.entries()) {
-        map.set(k, v)
-      }
-    }
-    return map
-  }, [localCatalogMetadata, propCatalogMetadata])
-
-  const freshCatalogIds = useMemo(() => {
-    const serviceFresh = sharedCatalogService.getFreshConfirmedCatalogIds()
-    const set = new Set(serviceFresh)
-    if (propFreshCatalogIds) {
-      for (const id of propFreshCatalogIds) set.add(id)
-    }
-    return set
-  }, [propFreshCatalogIds])
-
-
-  // Sync active account and refresh confirmed publication IDs
-  React.useEffect(() => {
-    const accountId = auth?.session?.user?.id || auth?.session?.user?.email || null
-    sharedCatalogService.setAccount(accountId)
-    let active = true
-    if (!isAuthActive) return
-    sharedCatalogService.getConfirmedActiveCatalogIds().then((ids) => {
-      if (active) setLocalConfirmedCatalogIds(ids)
-    }).catch((err) => {
-      void err
-    })
-    return () => {
-      active = false
-    }
-  }, [auth?.session?.user?.id, auth?.session?.user?.email, isAuthActive])
-
-  // Publishing state for eligible personal songs
-  const [publishingSong, setPublishingSong] = useState<ActiveSongState | null>(null)
-  const [publishChangeSummary, setPublishChangeSummary] = useState('')
-  const [isSubmittingPublish, setIsSubmittingPublish] = useState(false)
-  const [publishError, setPublishError] = useState<string | null>(null)
-  const [publishSuccessNotice, setPublishSuccessNotice] = useState<string | null>(null)
-  const [publishRecoveryCatalogId, setPublishRecoveryCatalogId] = useState<string | null>(null)
-
-  const handleOpenPublishModal = (song: ActiveSongState) => {
-    setPublishingSong(song)
-    setPublishChangeSummary('')
-    setPublishError(null)
-    setPublishRecoveryCatalogId(null)
-  }
-
-  const handleRetrySaveLink = () => {
-    if (!publishingSong || !publishRecoveryCatalogId) return
-    const saveOutcome = onUpdateSongRef.current ? onUpdateSongRef.current({ id: publishingSong.id, publishedCatalogSongId: publishRecoveryCatalogId }) : false
-    if (saveOutcome === true) {
-      setLocalConfirmedCatalogIds(prev => new Set(prev).add(publishRecoveryCatalogId))
-      sharedCatalogService.markCatalogIdLiveConfirmed(publishRecoveryCatalogId)
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('gtar-shared-catalog-cache-updated'))
-      }
-      setPublishSuccessNotice(`Published "${publishingSong.title}" to Shared Catalog!`)
-      setPublishingSong(null)
-      setPublishRecoveryCatalogId(null)
-      setPublishError(null)
-      setTimeout(() => setPublishSuccessNotice(null), 4000)
-    } else {
-      setPublishError(
-        `Published to Shared Catalog (Catalog ID: ${publishRecoveryCatalogId}), but saving association to local songbook failed. Retry Save Link or copy Catalog ID.`
-      )
-    }
-  }
-
-  // #253 non-blocking duplicate advisory against the cached Shared Catalog.
-  const [focusCatalogSongId, setFocusCatalogSongId] = useState<string | null>(null)
-  const publishDuplicates = useMemo(
-    () => publishingSong ? findCatalogDuplicates(publishingSong, catalogMetadataMap.values()) : [],
-    [publishingSong, catalogMetadataMap],
-  )
-
-  const handleConfirmPublish = async () => {
-    if (!publishingSong) return
-    if (!isAuthActive) {
-      setPublishError('Active authenticated membership is required to publish songs to the Shared Catalog.')
-      return
-    }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setPublishError('Publishing is unavailable while offline. Please reconnect to the internet.')
-      return
-    }
-
-    setIsSubmittingPublish(true)
-    setPublishError(null)
-
-    try {
-      const res = await publishSharedCatalogSong({
-        title: publishingSong.title,
-        artist: publishingSong.artist || null,
-        key: publishingSong.key || null,
-        original_key: publishingSong.originalKey || null,
-        capo: publishingSong.capo || null,
-        bpm: publishingSong.bpm || null,
-        time_signature: publishingSong.time || null,
-        year: publishingSong.year || null,
-        raw_content: publishingSong.rawContent,
-        format: publishingSong.format || 'CHORD_PRO',
-        change_summary: publishChangeSummary.trim() || undefined,
-      })
-
-      const catalogId = res.song?.id
-      if (!catalogId) {
-        throw new Error('Authoritative server catalog ID was not returned by publication API.')
-      }
-
-      // Authoritative remote publication succeeded. Verify personal song save.
-      const saveOutcome = onUpdateSongRef.current ? onUpdateSongRef.current({ id: publishingSong.id, publishedCatalogSongId: catalogId }) : false
-      if (saveOutcome === true) {
-        setLocalConfirmedCatalogIds(prev => new Set(prev).add(catalogId))
-        await sharedCatalogService.markPublishedSong(res.song)
-        setPublishSuccessNotice(
-          res.deduplicated
-            ? `Song "${publishingSong.title}" is already published in Shared Catalog`
-            : `Published "${publishingSong.title}" to Shared Catalog!`
-        )
-        setPublishingSong(null)
-        setPublishRecoveryCatalogId(null)
-        setTimeout(() => setPublishSuccessNotice(null), 4000)
-      } else {
-        // Remote published but personal link persistence failed/inconclusive.
-        // Preserve recovery info and DO NOT show full success notice.
-        setPublishRecoveryCatalogId(catalogId)
-        setLocalConfirmedCatalogIds(prev => new Set(prev).add(catalogId))
-        await sharedCatalogService.markPublishedSong(res.song)
-        setPublishError(
-          `Published to Shared Catalog (Catalog ID: ${catalogId}), but saving association to local songbook failed. Click "Retry Save Link" to link locally without re-publishing.`
-        )
-      }
-    } catch (err: unknown) {
-      if (err instanceof CatalogApiError) {
-        if (err.status === 401) {
-          setPublishError('Authentication required. Please sign in to publish songs.')
-        } else if (err.status === 403) {
-          setPublishError('Permission denied: Only active members can publish to the Shared Catalog.')
-        } else {
-          setPublishError(err.message || 'Failed to publish song.')
-        }
-      } else {
-        setPublishError(err instanceof Error ? err.message : 'Network error publishing song.')
-      }
-    } finally {
-      setIsSubmittingPublish(false)
-    }
-  }
 
   // Song multi-selection state
   const [isSongSelectionMode, setIsSongSelectionMode] = useState(false)
@@ -726,159 +516,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     setSelectedSongIds(new Set())
   }
 
-  const handleBulkPublishSongs = async () => {
-    if (selectedSongIds.size === 0 || isSubmittingPublish) return
-
-    setPublishError(null)
-    setPublishSuccessNotice(null)
-
-    if (!isAuthActive) {
-      setPublishError('Authentication required: Active approved account needed to publish to the Shared Catalog.')
-      return
-    }
-
-    const selectedEntries = indexedSongs.filter(({ song, originalIdx }) =>
-      selectedSongIds.has(song.id ?? originalIdx)
-    )
-    if (selectedEntries.length === 0) return
-
-    setIsSubmittingPublish(true)
-
-    const failedIds = new Set<string | number>()
-    const newlyConfirmedCatalogIds: string[] = []
-    let publishedCount = 0
-    let skippedDuplicateCount = 0
-    let lastPublishedTitle = ''
-    let lastErrorMsg = ''
-
-    try {
-      for (const { song, originalIdx } of selectedEntries) {
-        const selectionKey = song.id ?? originalIdx
-
-        // Prevent accidental duplicate publication
-        if (song.publishedCatalogSongId && confirmedCatalogIds.has(song.publishedCatalogSongId)) {
-          skippedDuplicateCount++
-          continue
-        }
-
-        const title = (song.title || '').trim()
-        const content = (
-          song.rawContent ||
-          (song as unknown as { rawText?: string }).rawText ||
-          ''
-        ).trim()
-        if (!title || !content) {
-          failedIds.add(selectionKey)
-          lastErrorMsg = `Invalid song "${title || 'Untitled'}": Title and chord chart content are required.`
-          continue
-        }
-
-        try {
-          const res = await publishSharedCatalogSong({
-            title,
-            artist: song.artist || null,
-            key: song.key || null,
-            original_key: song.originalKey || null,
-            capo: song.capo || null,
-            bpm: song.bpm || null,
-            time_signature: song.time || null,
-            year: song.year || null,
-            raw_content: content,
-            format: song.format || 'CHORD_PRO',
-          })
-
-          const catalogId = res.song?.id
-          if (!catalogId) {
-            throw new Error('Authoritative server catalog ID was not returned by publication API.')
-          }
-          await sharedCatalogService.markPublishedSong(res.song)
-          newlyConfirmedCatalogIds.push(catalogId)
-
-          let persistedOk = false
-          if (song.id !== undefined && onUpdateSongRef.current) {
-            try {
-              const maybeResult = await onUpdateSongRef.current({
-                id: song.id,
-                publishedCatalogSongId: catalogId,
-              })
-              persistedOk = maybeResult !== false
-            } catch {
-              persistedOk = false
-            }
-          }
-
-          if (persistedOk) {
-            if (res.deduplicated) {
-              skippedDuplicateCount++
-            } else {
-              publishedCount++
-              lastPublishedTitle = title
-            }
-          } else {
-            failedIds.add(selectionKey)
-            lastErrorMsg = `Published "${title}" (ID: ${catalogId}), but saving link to local songbook failed.`
-          }
-        } catch (err: unknown) {
-          failedIds.add(selectionKey)
-          if (err instanceof CatalogApiError) {
-            if (err.status === 401) {
-              lastErrorMsg = 'Authentication required. Please sign in to publish songs.'
-            } else if (err.status === 403) {
-              lastErrorMsg = 'Permission denied: Only active members can publish to the Shared Catalog.'
-            } else {
-              lastErrorMsg = err.message || `Failed to publish "${title}".`
-            }
-          } else {
-            lastErrorMsg = err instanceof Error ? err.message : `Network error publishing "${title}".`
-          }
-        }
-      }
-
-      if (newlyConfirmedCatalogIds.length > 0) {
-        setLocalConfirmedCatalogIds((prev) => {
-          const next = new Set(prev)
-          for (const cid of newlyConfirmedCatalogIds) next.add(cid)
-          return next
-        })
-      }
-
-      if (failedIds.size === 0 && publishedCount > 0) {
-        const dupSuffix =
-          skippedDuplicateCount > 0 ? ` (${skippedDuplicateCount} already published skipped)` : ''
-        const msg =
-          publishedCount === 1 && skippedDuplicateCount === 0
-            ? `Published "${lastPublishedTitle}" to Shared Catalog`
-            : `Published ${publishedCount} ${publishedCount === 1 ? 'song' : 'songs'} to Shared Catalog${dupSuffix}`
-        setPublishSuccessNotice(msg)
-        setSelectedSongIds(new Set())
-        setIsSongSelectionMode(false)
-        setTimeout(() => setPublishSuccessNotice(null), 4000)
-      } else if (failedIds.size === 0 && publishedCount === 0 && skippedDuplicateCount > 0) {
-        setPublishError(
-          skippedDuplicateCount === 1
-            ? 'Selected song is already published to the Shared Catalog.'
-            : `All ${skippedDuplicateCount} selected songs are already published to the Shared Catalog.`
-        )
-      } else if (publishedCount > 0 && failedIds.size > 0) {
-        const dupPart =
-          skippedDuplicateCount > 0 ? `, ${skippedDuplicateCount} already published skipped` : ''
-        setPublishError(
-          `Partial publish: ${publishedCount} published, ${failedIds.size} failed${dupPart}. ${lastErrorMsg}`
-        )
-        setSelectedSongIds(failedIds)
-      } else if (failedIds.size > 0) {
-        setPublishError(
-          failedIds.size === 1 && lastErrorMsg
-            ? lastErrorMsg
-            : `Failed to publish ${failedIds.size} selected ${failedIds.size === 1 ? 'song' : 'songs'}. ${lastErrorMsg}`.trim()
-        )
-        setSelectedSongIds(failedIds)
-      }
-    } finally {
-      setIsSubmittingPublish(false)
-    }
-  }
-
   const handleMainShareSetlist = () => {
     if (activeSetlists.length === 0) return
     if (activeSetlists.length === 1) {
@@ -1040,7 +677,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </button>
             </div>
 
-            {!isAuthActive && <p className="text-xs text-app-muted">{auth?.accessStatus === 'denied' ? 'Access denied' : auth?.accessStatus === 'pending' && auth.role !== 'NONE' ? 'Your account is pending approval.' : 'Sign in to use the Shared Catalog'}</p>}
+            {!isAuthActive && <p className="text-xs text-app-muted">{auth?.accessStatus === 'denied' ? 'Access denied' : auth?.accessStatus === 'pending' && auth.role !== 'NONE' ? 'Your account is pending approval.' : 'Sign in to view shared setlist'}</p>}
             {/* Primary Action: Paste GTAR Share Link */}
             <div className="space-y-2 mb-5">
               <label htmlFor="paste-share-link-input" className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
@@ -1117,137 +754,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               >
                 Cancel
               </button>
-            </div>
-          </div>
-        </dialog>
-      )}
-
-      {/* Publish Song to Shared Catalog Modal Dialog */}
-      {publishingSong && (
-        <dialog
-          open
-          data-testid="publish-song-dialog"
-          onCancel={() => setPublishingSong(null)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
-        >
-          <div className="p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <h2 className="text-sm font-bold flex items-center gap-2 text-app-heading">
-                <UploadCloud className="w-4 h-4 text-app-action" />
-                <span>Publish to Shared Catalog</span>
-              </h2>
-              <button
-                type="button"
-                onClick={() => setPublishingSong(null)}
-                className="p-1 rounded-lg hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 mb-4">
-              <div className="p-3 rounded-xl bg-app-base border border-app-border">
-                <div className="text-xs font-bold text-app-heading">{publishingSong.title}</div>
-                <div className="text-[11px] text-app-muted mt-0.5">{publishingSong.artist || 'Unknown Artist'}</div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-status-info/10 border border-status-info/20 text-xs text-app-text space-y-1">
-                <p className="font-semibold text-status-info flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>Visible to all active GTAR members</span>
-                </p>
-                <p className="text-[11px] text-app-muted leading-relaxed">
-                  Team members can view it and save their own copy. Yours stays unchanged.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="publish-change-summary-input" className="text-[11px] font-mono font-bold text-app-muted block mb-1">
-                  Revision Note (Optional)
-                </label>
-                <input
-                  id="publish-change-summary-input"
-                  data-testid="publish-change-summary-input"
-                  type="text"
-                  placeholder="e.g. Initial chart release"
-                  value={publishChangeSummary}
-                  onChange={(e) => setPublishChangeSummary(e.target.value)}
-                  maxLength={150}
-                  className="w-full rounded-lg border border-app-border bg-app-base p-2 text-xs font-mono text-app-heading focus:border-app-action focus:outline-none"
-                />
-              </div>
-
-              {publishDuplicates.length > 0 && !publishRecoveryCatalogId && (
-                <div data-testid="publish-duplicate-advisory" role="status" className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-xs space-y-2">
-                  <p className="font-semibold text-status-warning">Similar songs are already in the Shared Catalog</p>
-                  <ul className="space-y-1.5">
-                    {publishDuplicates.map(dup => (
-                      <li key={dup.id} className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 break-words text-app-text">
-                          “{dup.title}”{dup.artist ? ` by ${dup.artist}` : ''}
-                          <span className="text-app-muted"> · {dup.match === 'chart' ? 'same chart' : 'same lyrics'}</span>
-                        </span>
-                        <button
-                          type="button"
-                          data-testid={`open-existing-${dup.id}`}
-                          onClick={() => {
-                            setPublishingSong(null)
-                            setPublishRecoveryCatalogId(null)
-                            setFocusCatalogSongId(dup.id)
-                            onSelectView?.({ type: 'SHARED_CATALOG' })
-                          }}
-                          className="shrink-0 min-h-9 px-2.5 py-1 rounded-lg border border-app-border bg-app-surface text-app-heading hover:border-app-action font-mono font-bold cursor-pointer"
-                        >
-                          Open existing
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[11px] text-app-muted">You can still publish your version. Nothing is merged.</p>
-                </div>
-              )}
-
-              {publishError && (
-                <p data-testid="publish-error-text" className="text-[11px] text-status-error font-mono font-medium">
-                  {publishError}
-                </p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 font-mono text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => {
-                  setPublishingSong(null)
-                  setPublishRecoveryCatalogId(null)
-                }}
-                className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              {publishRecoveryCatalogId ? (
-                <button
-                  type="button"
-                  data-testid="retry-save-link-btn"
-                  onClick={handleRetrySaveLink}
-                  className="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-500 flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Retry Save Link</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="confirm-publish-submit-btn"
-                  disabled={isSubmittingPublish}
-                  onClick={handleConfirmPublish}
-                  className="px-4 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
-                >
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>{isSubmittingPublish ? 'Publishing...' : publishDuplicates.length > 0 ? 'Publish anyway' : 'Publish Song'}</span>
-                </button>
-              )}
             </div>
           </div>
         </dialog>
@@ -1543,13 +1049,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               className="min-h-11 text-app-action hover:underline disabled:opacity-40 cursor-pointer">Select None</button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isAuthActive && (
-              <button type="button" data-testid="bulk-publish-to-shared" disabled={selectedSongIds.size === 0 || isSubmittingPublish}
-                aria-disabled={selectedSongIds.size === 0 || isSubmittingPublish} onClick={handleBulkPublishSongs}
-                className="ui-button min-h-11 px-3 rounded-xl bg-app-button border border-app-border text-app-button-text font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer">
-                <UploadCloud className="w-3.5 h-3.5" /><span>Publish to Shared</span>
-              </button>
-            )}
             {onAddToTag && <button type="button" data-testid="bulk-add-to-tag" disabled={selectedSongIds.size === 0}
               onClick={() => { setTagPickerOpen(true); setTagName(''); setTagError('') }}
               className="ui-button min-h-11 px-3 rounded-xl bg-app-button border border-app-border text-app-button-text font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer">Add to tag</button>}
@@ -1568,58 +1067,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       )}
 
       <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
-      {/* Publish Success Toast */}
-      {publishSuccessNotice && (
-        <div role="status" aria-live="polite" data-testid="songbook-publish-toast"
-          className="mb-4 p-3 bg-app-surface border border-app-border rounded-xl text-xs font-bold text-app-heading flex items-center gap-2 shadow-lg animate-in fade-in duration-150">
-          <CheckCircle2 className="w-4 h-4 text-status-success shrink-0" />
-          <span className="flex-1">{publishSuccessNotice}</span>
-        </div>
-      )}
-
-      {/* Bulk Publish Error Banner */}
-      {publishError && !publishingSong && (
-        <div role="alert" aria-live="assertive" data-testid="songbook-publish-error"
-          className="mb-4 p-3 bg-app-surface border border-status-error/50 rounded-xl text-xs font-bold text-status-error flex items-center justify-between gap-2 shadow-lg animate-in fade-in duration-150">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <AlertTriangle className="w-4 h-4 text-status-error shrink-0" />
-            <span className="flex-1 break-words">{publishError}</span>
-          </div>
-          <button type="button" data-testid="dismiss-publish-error" aria-label="Dismiss publish error" onClick={() => setPublishError(null)}
-            className="min-h-11 min-w-11 flex items-center justify-center rounded hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer shrink-0">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {currentView.type === 'SHARED_CATALOG' ? (
-        <SharedCatalogBrowser
-          personalSongs={songs}
-          focusSongId={focusCatalogSongId}
-          onImportSong={(song) => {
-            if (onImportSharedCatalogSong) {
-              return onImportSharedCatalogSong(song)
-            }
-            return true
-          }}
-          onSongImported={(title) => {
-            setPublishSuccessNotice(`Imported "${title}" to My Songs`)
-            setTimeout(() => setPublishSuccessNotice(null), 3500)
-          }}
-          onSongUnpublished={(unpublishedId) => {
-            setLocalConfirmedCatalogIds((prev) => {
-              const next = new Set(prev)
-              next.delete(unpublishedId)
-              return next
-            })
-            for (const s of songs) {
-              if (s.publishedCatalogSongId === unpublishedId && onUpdateSong) {
-                onUpdateSong({ id: s.id, publishedCatalogSongId: undefined })
-              }
-            }
-          }}
-        />
-      ) : isSetlistContext ? (
+      {isSetlistContext ? (
         <>
           <input
             ref={setlistFileInputRef}
@@ -1654,13 +1102,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
               onShareSetlist,
               onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
-              onPublishSetlist: onPublishSetlist && canPublishSetlist && setlistCapability.enabled ? onPublishSetlist : undefined,
-              publishLabel: (sl) => {
-                const status = setlistStatusMap.get(sl.id)
-                return status === 'CONFIRMED_PUBLISHED' || status === 'LOCAL_CHANGES_NOT_PUBLISHED'
-                  ? 'Update or Unpublish in Shared Catalog'
-                  : 'Publish to Shared Catalog'
-              },
               onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs),
               onExportAllSetlists: () => exportAllDataJson(songs, setlists, folders, tagColors),
               onNewSetlist: onNewSetlist,
@@ -1845,14 +1286,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                 <ListPlus className="w-3.5 h-3.5 text-app-section" />
                                 <span>Add to Setlist</span>
                               </button>
-                              {isAuthActive && (
-                                <button type="button" data-testid={`menu-publish-song-${originalIdx}`} aria-label={`Publish ${song.title} to Shared Catalog`}
-                                  onClick={(e) => { e.stopPropagation(); setActiveMenuSongIdx(null); handleOpenPublishModal(song) }}
-                                  className={cardMenuItem}>
-                                  <UploadCloud className="w-3.5 h-3.5 text-app-action" />
-                                  <span>Publish to Shared</span>
-                                </button>
-                              )}
                               <div className="border-t border-app-border my-1" />
                               <button type="button" data-testid={`menu-delete-song-${originalIdx}`} aria-label={`Delete ${song.title}`}
                                 onClick={(e) => { e.stopPropagation(); setActiveMenuSongIdx(null); setConfirmDeleteIdx(originalIdx) }}
@@ -1919,74 +1352,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           </div>
                         }
                       />
-                      {Boolean(song.sharedSourceSongId) && (() => {
-                        const catalogItem = catalogMetadataMap.get(song.sharedSourceSongId!)
-                        const importedProv = resolveImportedProvenance(song.sharedSourceSongId!, {
-                          catalogItem,
-                          persistedPublisherId: song.sharedSourcePublisherId,
-                          persistedPublisherName: song.sharedSourcePublisherName,
-                          currentAccountId: auth?.session?.user?.id || auth?.session?.user?.email,
-                        })
-                        return (
-                          <SongStatusBadge
-                            testId={`song-imported-status-${originalIdx}`}
-                            ariaLabel="Imported from Shared Catalog"
-                            className="p-0.5 rounded flex items-center justify-center shrink-0 text-status-info"
-                            icon={<CloudDownload className="w-3.5 h-3.5" />}
-                            popoverContent={
-                              <div className="space-y-1">
-                                <div className="font-semibold text-app-heading flex items-center gap-1.5">
-                                  <CloudDownload className="w-3.5 h-3.5 text-status-info shrink-0" />
-                                  <span>Imported from Shared Catalog</span>
-                                </div>
-                                <div className="text-[11px] text-app-text">
-                                  {importedProv.publisherText ? (
-                                    <>
-                                      Publisher: <span className="font-medium text-app-heading">{importedProv.publisherText}</span>
-                                    </>
-                                  ) : (
-                                    <span className="text-app-muted italic">Source unavailable</span>
-                                  )}
-                                </div>
-                                <div className="text-[10px] text-app-muted font-medium">Independent personal copy</div>
-                              </div>
-                            }
-                          />
-                        )
-                      })()}
-                      {Boolean(song.publishedCatalogSongId && confirmedCatalogIds.has(song.publishedCatalogSongId)) && (() => {
-                        const isFresh = freshCatalogIds.has(song.publishedCatalogSongId!)
-                        const catalogItem = catalogMetadataMap.get(song.publishedCatalogSongId!)
-                        const publishedProv = resolvePublishedProvenance(song.publishedCatalogSongId!, {
-                          currentAccountId: auth?.session?.user?.id || auth?.session?.user?.email,
-                          catalogItem,
-                          isFresh,
-                          activeUserEmail: auth?.session?.user?.email,
-                        })
-                        const label = isFresh ? 'Published to Shared Catalog (Server Confirmed)' : 'Published to Shared Catalog (Cached)'
-                        return (
-                          <SongStatusBadge
-                            testId={`song-published-status-${originalIdx}`}
-                            ariaLabel={label}
-                            className={isFresh ? 'p-0.5 rounded flex items-center justify-center shrink-0 text-status-success' : 'p-0.5 rounded flex items-center justify-center shrink-0 text-status-warning opacity-90 hover:opacity-100'}
-                            icon={<CloudCheck className="w-3.5 h-3.5" />}
-                            popoverContent={
-                              <div className="space-y-1">
-                                <div className="font-semibold text-app-heading flex items-center gap-1.5">
-                                  <CloudCheck className={isFresh ? 'w-3.5 h-3.5 text-status-success shrink-0' : 'w-3.5 h-3.5 text-status-warning shrink-0'} />
-                                  <span>Published to Shared Catalog</span>
-                                </div>
-                                <div className="text-[11px] text-app-text">
-                                  Publisher: <span className="font-medium text-app-heading">{publishedProv.publisherText}</span>
-                                </div>
-                                <div className="text-[11px] flex items-center gap-1 text-app-text">
-                                  Status: <span className={isFresh ? 'font-medium text-status-success' : 'font-medium text-status-warning'}>{publishedProv.statusText}</span>
-                                </div>
-                              </div>
-                            }
-                          />
-                        )
-                      })()}
                       {songSetlists.length > 0 && (
                         <>
                           <button

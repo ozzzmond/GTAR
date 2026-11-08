@@ -69,22 +69,14 @@ test('STEP_2 & STEP_5: Header canonical sidepanel hamburger and global search so
     'Canonical hamburger must have descriptive aria-label'
   )
 
-  // STEP_2: Header code structure verifies global search has Local Songs, Shared Catalog, and Online sections
+  // STEP_2: Header code structure verifies global search has Local Songs and Online sections
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
-  // #319: GTAR1 search dropdown — one count line and grouped simple rows (Songs, Setlists, Shared Catalog, Online).
+  // #319: GTAR1 search dropdown — one count line and grouped simple rows (Songs, Setlists, Online).
   const resultsSource = fs.readFileSync(path.join(webDir, 'src/components/SearchResults.tsx'), 'utf8')
-  for (const group of ['>Songs<', '>Setlists<', 'Shared Catalog{', 'Online{']) {
+  for (const group of ['>Songs<', '>Setlists<', 'Online{']) {
     assert.ok(resultsSource.includes(group), `search dropdown renders the ${group} group`)
   }
   assert.ok(resultsSource.includes('local {localTotal === 1'), 'search dropdown renders a count line')
-  assert.ok(
-    headerSource.includes('data-testid="header-catalog-preview-modal"'),
-    'Header must provide catalog preview modal'
-  )
-  assert.ok(
-    headerSource.includes('cloneSharedCatalogSongToPersonal'),
-    'Header search preview must use authorized personal clone creation helper'
-  )
 })
 
 test('STEP_3: TrashView navigation cleanliness', () => {
