@@ -39,7 +39,7 @@ test('05_BACKUP_FILENAME: formats as gtar-{env}-backup-{YYYYMMDD}-{HHmmss}.json 
 })
 
 test('06_CUSTOM_PALETTE_EDITOR: paletteExportFileName formats as gtar-palette-{safe-theme-name}-{YYYYMMDD}-{HHmmss}.json', async () => {
-  const { paletteExportFileName, formatLocalPaletteTimestamp } = require('../src/components/CustomPaletteEditor.tsx')
+  const { paletteExportFileName, formatLocalPaletteTimestamp } = require('../src/utils/customPaletteJson.ts')
   const date = new Date(2026, 10, 7, 14, 25, 30)
 
   assert.equal(formatLocalPaletteTimestamp(date), '20261107-142530')

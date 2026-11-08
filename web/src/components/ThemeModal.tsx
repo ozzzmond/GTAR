@@ -668,8 +668,9 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    const toastTimer = toastTimerRef
     return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      if (toastTimer.current) clearTimeout(toastTimer.current)
     }
   }, [])
 
