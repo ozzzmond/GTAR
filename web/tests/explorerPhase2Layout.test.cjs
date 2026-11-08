@@ -174,23 +174,22 @@ test('header compact: search takes over the row with Sources and Cancel; GTAR1 r
   assert.equal(document.getElementById('search-input'), null)
 }, 360))
 
-test('SearchResults: catalog and online rows open the preview (one primary action), groups cap at 8', async () => ui(async ({ $, click, render }) => {
+test('SearchResults: online rows open the preview (one primary action), groups cap at 8', async () => ui(async ({ $, click, render }) => {
   const { SearchResults } = require('../src/components/SearchResults.tsx')
   const seen = []
   const songs = Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, title: `Song ${i}`, artist: 'A', rawContent: '', originalIdx: i }))
-  await render(SearchResults, { songs, setlists: [], catalog: [{ id: 'c1', title: 'Shared Tune', artist: 'B', key: 'G' }],
+  await render(SearchResults, { songs, setlists: [],
     online: [{ id: 'o1', songName: 'Web Tune', artistName: 'C' }], onSelectSong: noop, onSelectSetlist: noop,
-    onPreviewCatalog: item => seen.push(item.id), onPreviewOnline: item => seen.push(item.id), onOpenImport: noop, onOpenSources: noop })
+    onPreviewOnline: item => seen.push(item.id), onOpenImport: noop, onOpenSources: noop })
   assert.equal([...document.querySelectorAll('button')].filter(b => /^Song \d/.test(b.textContent)).length, 8)
   assert.match(document.body.textContent, /Showing up to 8 of each/)
-  await click($('[aria-label="Preview Shared Tune from Shared Catalog"]'))
   await click($('[aria-label="Preview Web Tune online chords"]'))
-  assert.deepEqual(seen, ['c1', 'o1'])
+  assert.deepEqual(seen, ['o1'])
   assert.match(document.body.textContent, /Browse external song sources/)
   assert.doesNotMatch(document.body.textContent, /Import$|Importing/)
 }))
 
-test('Songbook view: breadcrumb per Explorer target, card Edit Chart, Shared Catalog target, full-width canvas', async () => ui(async ({ $, click, render }) => {
+test('Songbook view: breadcrumb per Explorer target, card Edit Chart, full-width canvas', async () => ui(async ({ $, click, render }) => {
   const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
   const calls = []
   const props = { songs: [{ id: 'a', title: 'Amazing Grace', artist: 'Newton', tags: ['hymn'], rawContent: '' }], setlists: [], activeSongIndex: 0,
@@ -210,9 +209,6 @@ test('Songbook view: breadcrumb per Explorer target, card Edit Chart, Shared Cat
   await click($('[data-testid="song-tag-0-hymn"]'))
   await click([...document.querySelectorAll('nav[aria-label="Breadcrumb"] button')].find(b => b.textContent === 'Songbook'))
   assert.deepEqual(calls, ['edit:0', { type: 'TAG', tag: 'hymn' }, { type: 'ALL_SONGS' }])
-  await render(SongbookHomeView, { ...props, view: { type: 'SHARED_CATALOG' } })
-  assert.deepEqual(crumbs(), ['Songbook', 'Shared Catalog'])
-  assert.equal($('[data-testid="song-grid"]'), null, 'Shared Catalog target replaces the song grid')
 }))
 
 test('App wiring: Explorer selection drives the view; no tab state; header gets New Song and the section switcher', () => {

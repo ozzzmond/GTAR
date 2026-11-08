@@ -1,7 +1,7 @@
 import { TagRow } from './TagRow'
 import { useTagLibrary } from '../utils/tagLibraryContext'
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Globe, Layers, ListMusic, Music, Tag, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Layers, ListMusic, Music, Tag, Trash2 } from 'lucide-react'
 import { ExplorerFolderTree } from './ExplorerFolderTree'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { normalizeTags, tagChipStyle } from '../utils/songTags'
@@ -13,7 +13,6 @@ export type ExplorerTarget =
   | { type: 'ALL_SETLISTS' }
   | { type: 'UNFILED_SETLISTS' }
   | { type: 'FOLDER'; folderId: string }
-  | { type: 'SHARED_CATALOG' }
 
 export interface MusicExplorerNavProps {
   folders?: SetlistFolder[]
@@ -155,17 +154,6 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
               <Music className="h-4 w-4 shrink-0 text-current" />
               <span>All Songs</span>
               <span className={pillClass({ type: 'ALL_SONGS' })}>{songs.length}</span>
-            </button>
-
-            <button
-              type="button"
-              data-testid="explorer-nav-shared-catalog"
-              aria-current={isSelected({ type: 'SHARED_CATALOG' }) ? 'page' : undefined}
-              onClick={() => select({ type: 'SHARED_CATALOG' })}
-              className={selectClass({ type: 'SHARED_CATALOG' })}
-            >
-              <Globe className="h-4 w-4 shrink-0 text-current" />
-              <span>Shared Catalog</span>
             </button>
             <div role="group" aria-label="Tags">
               <button

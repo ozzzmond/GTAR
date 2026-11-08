@@ -35,7 +35,7 @@ async function mount(extra = {}, drag = null) {
     const [sharing, setSharing] = React.useState(null)
     return React.createElement(AuthContext.Provider, { value: auth },
       drag && React.createElement(ExplorerDragDrop, { songs, setlists: lists, folders: [{ id: 'folder', name: 'Folder', parentId: null }], onTag() {}, onSetlist() {}, onTrash() {}, ...drag }),
-      React.createElement(SongbookHomeView, { songs, setlists: lists, confirmedCatalogIds: new Set(), activeSongIndex: 0, onSelectSong() {}, onNewSong() {}, onOpenSetlists() {}, onDeleteSong() {}, onSongMembershipChange() {}, onCreateSetlistForSong() {}, view: { type: 'ALL_SETLISTS' }, onShareSetlist: setSharing, ...extra }),
+      React.createElement(SongbookHomeView, { songs, setlists: lists, activeSongIndex: 0, onSelectSong() {}, onNewSong() {}, onOpenSetlists() {}, onDeleteSong() {}, onSongMembershipChange() {}, onCreateSetlistForSong() {}, view: { type: 'ALL_SETLISTS' }, onShareSetlist: setSharing, ...extra }),
       sharing && React.createElement(ShareSetlistModal, { setlist: sharing, allSongs: songs, onClose: () => setSharing(null) }))
   }
   await act(async () => root.render(React.createElement(Harness)))

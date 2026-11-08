@@ -67,9 +67,8 @@ test('EXPLORER_DRAWER_1: hamburger drawer content is the Music Explorer hierarch
     assert.ok(allSongs)
     assert.match(allSongs.textContent, /All Songs/)
     assert.match(allSongs.textContent, /3/, 'All Songs count comes from the live library')
-    // #319: Browse Sources left the Explorer; Shared Catalog is an Explorer entry.
+    // #319: Browse Sources left the Explorer.
     assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-browse-sources"]'), null)
-    assert.ok(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-shared-catalog"]'))
     // Setlists entries
     assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]').textContent, /All Setlists/)
     assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]').textContent, /2/, 'deleted setlist excluded')
@@ -99,13 +98,11 @@ test('EXPLORER_DRAWER_3: selection routes through the supplied handler and quick
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-worship"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-setlists"]'))
     await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-unfiled-setlists"]'))
-    await click(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-shared-catalog"]'))
     assert.deepEqual(calls.select, [
       { type: 'ALL_SONGS' },
       { type: 'TAG', tag: 'worship' },
       { type: 'ALL_SETLISTS' },
       { type: 'UNFILED_SETLISTS' },
-      { type: 'SHARED_CATALOG' },
     ])
     assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-song"]'), null)
     assert.equal(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-new-set"]'), null)

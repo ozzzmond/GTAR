@@ -39,10 +39,6 @@
       "tier": "scale"
     },
     {
-      "file": "sharedSetlistCatalog.test.cjs",
-      "tier": "workerd"
-    },
-    {
       "file": "stageCast2Runtime.test.cjs",
       "tier": "workerd"
     }

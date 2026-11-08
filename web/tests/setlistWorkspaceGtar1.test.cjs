@@ -281,34 +281,24 @@ test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setli
   assert.deepEqual(opened, ['manage'])
 })
 
-test('S1_MENU: single-setlist ⋯ menu shares, imports, publishes and manages through existing handlers', async () => {
+test('S1_MENU: single-setlist ⋯ menu shares, imports, exports and manages through existing handlers', async () => {
   const calls = []
   const auth = signIn('member', 'active')
   await mountAuthed(baseProps({
     view: { type: 'ALL_SETLISTS' },
     onShareSetlist: sl => calls.push(['share', sl.id]),
-    onPublishSetlist: sl => calls.push(['publish', sl.id]),
     onOpenSetlists: () => calls.push(['manage']),
   }), auth)
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await openMenu()
-  assert.deepEqual(menuItems(), ['workspace-menu-share', 'workspace-menu-import', 'workspace-menu-publish',
+  assert.deepEqual(menuItems(), ['workspace-menu-share', 'workspace-menu-import',
     'workspace-menu-export-json', 'workspace-menu-manage'])
-  assert.match($('[data-testid="workspace-menu-publish"]').textContent, /Publish to Shared Catalog/)
   await click($('[data-testid="workspace-menu-share"]'))
-  await openMenu(); await click($('[data-testid="workspace-menu-publish"]'))
   await openMenu(); await click($('[data-testid="workspace-menu-manage"]'))
-  assert.deepEqual(calls, [['share', 'sl-1'], ['publish', 'sl-1'], ['manage']])
+  assert.deepEqual(calls, [['share', 'sl-1'], ['manage']])
   await openMenu(); await click($('[data-testid="workspace-menu-import"]'))
   assert.ok($('[data-testid="setlist-import-dialog"]'))
   for (const item of $$('[data-testid="workspace-scope-menu"] [role^="menuitem"]')) assert.match(item.className, /min-h-9|min-h-11/)
-})
-
-test('S1_MENU: Publish/Unpublish stays hidden without publishing permission (existing gate)', async () => {
-  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onPublishSetlist() {}, onShareSetlist() {} }))
-  await click($('[data-testid="workspace-setlist-card-sl-1"]'))
-  await openMenu()
-  assert.equal($('[data-testid="workspace-menu-publish"]'), null)
 })
 
 test('S1_WIRING: the Explorer selection drives the Songbook view; setlist targets render the workspace in every env (#319)', () => {

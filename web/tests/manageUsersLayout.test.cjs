@@ -21,7 +21,6 @@ test('Manage Users: title, chips wrap without horizontal scroll, Copy Active on 
       window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, IS_REACT_ACT_ENVIRONMENT: true,
       fetch: async url => {
         calls.push(String(url))
-        if (String(url).includes('catalog-reports')) return new Response(JSON.stringify({ success: true, reports: [] }), { headers: { 'Content-Type': 'application/json' } })
         return new Response(JSON.stringify({ success: true, users: [user('a', 'active'), user('p', 'pending'), user('d', 'denied')] }), { headers: { 'Content-Type': 'application/json' } })
       },
     })
@@ -53,18 +52,6 @@ test('Manage Users: title, chips wrap without horizontal scroll, Copy Active on 
     const refreshes = () => [...doc.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Refresh')
     assert.equal(refreshes().length, 1)
 
-    await act(async () => doc.querySelector('[data-testid="admin-reports-tab"]').click())
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
-    const reports = doc.querySelector('[data-testid="catalog-reports-filters"]')
-    assert.deepEqual([...reports.querySelectorAll('button')].map(b => b.textContent), ['Open', 'Actioned', 'Dismissed', 'All'])
-    for (const cls of ['flex', 'flex-wrap', 'gap-2']) assert.ok(reports.className.split(' ').includes(cls), cls)
-    assert.doesNotMatch(reports.className, /overflow-x/)
-    assert.equal(refreshes().length, 1, 'no duplicate Refresh next to the report chips')
-    const before = calls.filter(url => url.includes('catalog-reports')).length
-    await act(async () => refreshes()[0].click())
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
-    assert.ok(before >= 1, 'reports were loaded')
-    assert.equal(calls.filter(url => url.includes('catalog-reports')).length, before + 1, 'footer Refresh reloads the reports')
     await act(async () => root.unmount())
   } finally {
     dom.window.close()

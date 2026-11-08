@@ -1,6 +1,9 @@
 # Shared Catalog V2 (#253)
 
-Status: DEV PR only. Migration `0010_catalog_v2.sql` is prepared for review and is not applied to any remote D1.
+> [!NOTE]
+> **REMOVED (#413)**: The built-in Shared Catalog feature and its client UI, entry points, client services, and Pages Functions endpoints have been removed from GTAR Core in #413. This document is retained for historical architectural reference only.
+
+Status: REMOVED from GTAR Core in #413. Migration `0010_catalog_v2.sql` is retained in inventory for release controller tracking.
 
 ## What changes
 

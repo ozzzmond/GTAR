@@ -24,7 +24,6 @@ import {
   Menu,
   Sun,
   Moon,
-  Music,
 } from 'lucide-react'
 import {
   SETTINGS_KEYS,
@@ -52,9 +51,6 @@ import {
   formatHeaderVersion,
   formatPreviewIdentity,
 } from '../utils/headerFormatters'
-import { sharedCatalogService } from '../utils/sharedCatalogService'
-import { cloneSharedCatalogSongToPersonal } from '../utils/sharedCatalogImport'
-import type { SharedCatalogSongItem } from '../types/sharedCatalog'
 import {
   searchOnlineChords,
   type OnlineChordResult,
@@ -65,7 +61,6 @@ import { DebugLogsModal } from './DebugLogsModal'
 import { UserManagementModal } from './UserManagementModal'
 import { CloudSyncModal } from './CloudSyncModal'
 import { resolveThemePalette } from './ThemeModal'
-import { primaryButton, secondaryButton, sectionCard, sectionLabel } from './backupCenterUi'
 import devMascot from '../assets/bebegirl1-transparent.png'
 import prodMascot from '../assets/bebeboy-transparent.png'
 import { isDevEnv } from '../utils/env'
@@ -144,7 +139,6 @@ interface HeaderProps {
   onSelectSetlist?: (setlistId: string | number) => void
   onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
-  onImportSharedCatalogSong?: (song: ActiveSongState) => boolean | Promise<boolean>
   onCloudRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   onCloudMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
@@ -187,7 +181,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSetlistSong,
   onSelectSetlist,
   onDirectImportOnlineSong,
-  onImportSharedCatalogSong,
   onCloudSyncApplied,
   onCloudRestore,
   onCloudMerge,
@@ -327,12 +320,6 @@ export const Header: React.FC<HeaderProps> = ({
     const timer = setInterval(() => setBackupClock(Date.now()), 60000)
     return () => clearInterval(timer)
   }, [])
-  // Shared Catalog search state
-  const [catalogResults, setCatalogResults] = useState<SharedCatalogSongItem[]>([])
-  const [isSearchingCatalog, setIsSearchingCatalog] = useState(false)
-  const [previewCatalogSong, setPreviewCatalogSong] = useState<SharedCatalogSongItem | null>(null)
-  const [importingCatalogId, setImportingCatalogId] = useState<string | null>(null)
-  const [importedCatalogIds, setImportedCatalogIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false)
@@ -558,61 +545,6 @@ export const Header: React.FC<HeaderProps> = ({
     return () => clearTimeout(timeout)
   }, [searchQuery])
 
-  // Shared Catalog Search (debounced 350ms, authenticated/cached via sharedCatalogService)
-  useEffect(() => {
-    const trimmed = searchQuery.trim().toLowerCase()
-    if (!trimmed || trimmed.length < 2) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Invalid search queries synchronously clear prior remote results and request state.
-      setCatalogResults([])
-      setIsSearchingCatalog(false)
-      return
-    }
-
-    setIsSearchingCatalog(true)
-    const controller = new AbortController()
-    const timeout = setTimeout(() => {
-      sharedCatalogService
-        .getCatalogSongs({ limit: 50, signal: controller.signal })
-        .then((res) => {
-          const songs = res.songs || []
-          const filtered = songs.filter((s) => {
-            const matchTitle = (s.title || '').toLowerCase().includes(trimmed)
-            const matchArtist = (s.artist || '').toLowerCase().includes(trimmed)
-            return matchTitle || matchArtist
-          })
-          setCatalogResults(filtered)
-          setIsSearchingCatalog(false)
-        })
-        .catch(() => {
-          setCatalogResults([])
-          setIsSearchingCatalog(false)
-        })
-    }, 350)
-
-    return () => {
-      clearTimeout(timeout)
-      controller.abort()
-    }
-  }, [searchQuery])
-
-  // Import Shared Catalog song to personal library
-  const handleImportCatalogSong = (e: React.MouseEvent, song: SharedCatalogSongItem) => {
-    e.stopPropagation()
-    if (importingCatalogId === song.id) return
-    setImportingCatalogId(song.id)
-    try {
-      const personalClone = cloneSharedCatalogSongToPersonal(song)
-      if (onImportSharedCatalogSong) {
-        onImportSharedCatalogSong(personalClone)
-      }
-      setImportedCatalogIds((prev) => new Set(prev).add(song.id))
-    } catch (err) {
-      console.error('Failed to import shared catalog song:', err)
-    } finally {
-      setTimeout(() => setImportingCatalogId(null), 1200)
-    }
-  }
-
   // Derive auth status indicator color
   const userDotClass = currentSession ? 'synced' : 'error'
 
@@ -652,9 +584,7 @@ export const Header: React.FC<HeaderProps> = ({
     <SearchResults
       songs={matchingSearchSongs}
       setlists={matchingSearchSetlists}
-      catalog={catalogResults}
       online={onlineResults}
-      isSearchingCatalog={isSearchingCatalog}
       isSearchingOnline={isSearchingOnline}
       isOffline={isOffline}
       onlineError={onlineError}
@@ -672,7 +602,6 @@ export const Header: React.FC<HeaderProps> = ({
           onSelectSetlist?.(sl.id)
         }
       }}
-      onPreviewCatalog={(song) => { dismissResults(); setPreviewCatalogSong(song) }}
       onPreviewOnline={(result) => { dismissResults(); setPreviewResult(result) }}
       onOpenImport={() => { dismissResults(); onOpenImportModal() }}
       onOpenSources={() => {
@@ -875,7 +804,7 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : (
                   <div className="text-center py-2 space-y-3 mb-2">
                     <p className="text-xs ui-muted-text text-app-muted">
-                      Sign in to use cloud backup and the Shared Catalog.
+                      Sign in to use cloud backup.
                     </p>
                     <button type="button"
                       onClick={() => { setShowAvatarPopover(false); void handleSignIn?.() }}
@@ -1035,94 +964,6 @@ export const Header: React.FC<HeaderProps> = ({
           }
         }}
       />
-
-      {/* Shared Catalog Song Preview Modal */}
-      {previewCatalogSong && (
-        <dialog
-          open
-          data-testid="header-catalog-preview-modal"
-          onCancel={() => setPreviewCatalogSong(null)}
-          className="fixed inset-0 m-auto w-[calc(100vw-1rem)] max-w-lg sm:max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] overflow-hidden rounded-2xl border border-app-border bg-app-surface p-0 text-app-heading shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-xs z-50 flex flex-col animate-fade-in"
-        >
-          <div className="flex shrink-0 items-center gap-3 border-b border-app-border/80 bg-app-base/60 px-4 py-3 sm:px-5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-app-action/40 bg-app-action/20 text-app-action" aria-hidden="true">
-              <Music className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-app-muted">Published song preview</p>
-              <h2 className="break-words text-sm font-extrabold text-app-heading sm:text-base truncate">{previewCatalogSong.title}</h2>
-              <p className="text-xs text-app-muted truncate mt-0.5">{previewCatalogSong.artist || 'Unknown Artist'}</p>
-            </div>
-            <button
-              type="button"
-              data-testid="close-header-catalog-preview"
-              onClick={() => setPreviewCatalogSong(null)}
-              className="flex h-11 w-11 shrink-0 -mr-2 items-center justify-center rounded-xl text-app-muted transition-colors hover:bg-app-base hover:text-app-heading cursor-pointer"
-              aria-label="Close Preview"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                data-testid="preview-revision-badge"
-                className="rounded-full border border-app-border bg-app-base px-2.5 py-0.5 font-mono text-[11px] font-bold text-app-muted"
-              >
-                r{previewCatalogSong.current_revision}
-              </span>
-              {previewCatalogSong.key && (
-                <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
-                  <span className="shrink-0">Key</span> <span className="break-words font-bold text-app-heading">{previewCatalogSong.key}</span>
-                </span>
-              )}
-              {previewCatalogSong.original_key && (
-                <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
-                  <span className="shrink-0">Original key</span> <span className="break-words font-bold text-app-heading">{previewCatalogSong.original_key}</span>
-                </span>
-              )}
-              {previewCatalogSong.bpm && (
-                <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
-                  <span className="shrink-0">BPM</span> <span className="break-words font-bold text-app-heading">{/^\d+$/.test(previewCatalogSong.bpm) ? `${previewCatalogSong.bpm} BPM` : previewCatalogSong.bpm}</span>
-                </span>
-              )}
-            </div>
-
-            <section className={sectionCard} aria-label="Song chart">
-              <h3 className={sectionLabel}>Chart</h3>
-              <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-app-border bg-app-base p-3 font-mono text-sm text-app-text select-text leading-relaxed max-h-72 overflow-y-auto">
-                {previewCatalogSong.raw_content}
-              </pre>
-            </section>
-          </div>
-
-          <div className="shrink-0 border-t border-app-border bg-app-base/60 px-4 py-3 sm:px-5">
-            <div className="flex flex-col gap-2 sm:flex-row-reverse sm:items-center">
-              <button
-                type="button"
-                data-testid="header-catalog-preview-import-btn"
-                disabled={importingCatalogId === previewCatalogSong.id || importedCatalogIds.has(previewCatalogSong.id)}
-                onClick={(e) => {
-                  handleImportCatalogSong(e, previewCatalogSong)
-                  setPreviewCatalogSong(null)
-                }}
-                className={`${primaryButton.replace('w-full ', '')} w-full sm:w-auto inline-flex items-center justify-center gap-1.5`}
-              >
-                <Download className="h-4 w-4" />
-                <span>{importedCatalogIds.has(previewCatalogSong.id) ? 'Already in My Songs' : 'Import to My Songs'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreviewCatalogSong(null)}
-                className={`${secondaryButton.replace('flex items-center', 'inline-flex items-center')} w-full sm:w-auto`}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </dialog>
-      )}
 
       {/* In-Browser Debug Logs Modal */}
       <DebugLogsModal

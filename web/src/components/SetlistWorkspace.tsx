@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Trash2, Upload, UploadCloud } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Trash2, Upload } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
@@ -43,14 +43,11 @@ export interface SetlistWorkspaceMenu {
   /** Single-setlist QR share. */
   onShareSetlist?: (setlist: WebSetlist) => void
   onImport?: () => void
-  /** Present only when the existing publishing gate allows it. */
-  onPublishSetlist?: (setlist: WebSetlist) => void
   /** #319: per-setlist JSON export (previously on the removed Song Setlists cards). */
   onExportSetlist?: (setlist: WebSetlist) => void
   /** #320: full setlists JSON export / backup. */
   onExportAllSetlists?: () => void
   onNewSetlist?: () => void
-  publishLabel?: (setlist: WebSetlist) => string
   /** Receives the open setlist (null in the collection view). */
   onManageSetlists?: (openSetlist: WebSetlist | null) => void
 }
@@ -528,18 +525,6 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
         <button type="button" role="menuitem" data-testid="workspace-menu-import" onClick={run(menu.onImport)} className={menuItem}>
           <Upload className={menuIcon} />
           <span>Import setlist…</span>
-        </button>
-      )}
-      {openSetlist && menu.onPublishSetlist && (
-        <button
-          type="button"
-          role="menuitem"
-          data-testid="workspace-menu-publish"
-          onClick={run(() => menu.onPublishSetlist!(openSetlist))}
-          className={menuItem}
-        >
-          <UploadCloud className={menuIcon} />
-          <span>{menu.publishLabel?.(openSetlist) || 'Publish to Shared Catalog'}</span>
         </button>
       )}
       {openSetlist && menu.onExportSetlist && (

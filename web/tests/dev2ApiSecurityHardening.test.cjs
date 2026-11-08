@@ -20,8 +20,6 @@ const ugSearch = require('../functions/api/ug-search.ts')
 const ugTab = require('../functions/api/ug-tab.ts')
 const songbookSync = require('../functions/api/songbook/sync.ts')
 const songbookMetadata = require('../functions/api/songbook/metadata.ts')
-const catalogCore = require('../functions/lib/catalogCore.ts')
-const catalogSongId = require('../functions/api/catalog/songs/[id].ts')
 
 const TEST_SECRET = 'dev2-test-auth-secret-minimum-32-characters-long'
 
@@ -268,49 +266,7 @@ test('REQUEST_SIZE_BOUNDING: Streaming and byte-level limits enforced across end
   authCore.authenticateUserRequest = async () => ({ user: { id: 'usr_test', role: 'member', access_status: 'active' } })
 
   try {
-    // 1. Catalog song write bounded reader (MAX_PAYLOAD_BYTES = 256KB)
-    assert.equal(catalogCore.MAX_PAYLOAD_BYTES, 256 * 1024)
-
-    // Over-limit via content-length header
-    const overLimitReq1 = new Request('https://gtar.local/api/catalog/songs', {
-      method: 'POST',
-      headers: { 'content-length': String(256 * 1024 + 1), 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'A' }),
-    })
-    const readRes1 = await catalogCore.readJsonBody(overLimitReq1)
-    assert.equal(readRes1.status, 413)
-
-    // Over-limit streamed bytes without content-length
-    const largeChunk = new Uint8Array(256 * 1024 + 10)
-    largeChunk.fill(32) // space characters
-    const overLimitReq2 = new Request('https://gtar.local/api/catalog/songs', {
-      method: 'POST',
-      body: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode('{"title":"'))
-          controller.enqueue(largeChunk)
-          controller.enqueue(new TextEncoder().encode('"}'))
-          controller.close()
-        },
-      }),
-      duplex: 'half',
-    })
-    const readRes2 = await catalogCore.readJsonBody(overLimitReq2)
-    assert.equal(readRes2.status, 413)
-
-    // Empty body
-    const emptyReq = new Request('https://gtar.local/api/catalog/songs', { method: 'POST', body: '   ' })
-    const readRes3 = await catalogCore.readJsonBody(emptyReq)
-    assert.equal(readRes3.status, 400)
-    assert.match(readRes3.error, /empty/i)
-
-    // Malformed JSON
-    const malformedReq = new Request('https://gtar.local/api/catalog/songs', { method: 'POST', body: '{invalid-json' })
-    const readRes4 = await catalogCore.readJsonBody(malformedReq)
-    assert.equal(readRes4.status, 400)
-    assert.match(readRes4.error, /Malformed/i)
-
-    // 2. Songbook sync size boundary (MAX_SONGBOOK_PAYLOAD_BYTES = 2MB)
+    // 1. Songbook sync size boundary (MAX_SONGBOOK_PAYLOAD_BYTES = 2MB)
     assert.equal(songbookSync.MAX_SONGBOOK_PAYLOAD_BYTES, 2 * 1024 * 1024)
     const overLimitSync = new Request('https://gtar.local/api/songbook/sync', {
       method: 'POST',
@@ -320,7 +276,7 @@ test('REQUEST_SIZE_BOUNDING: Streaming and byte-level limits enforced across end
     const syncRes = await songbookSync.onRequestPost({ request: overLimitSync, env: { DB: {} } })
     assert.equal(syncRes.status, 413)
 
-    // 3. Songbook metadata size boundary (MAX_METADATA_PAYLOAD_BYTES = 64KB)
+    // 2. Songbook metadata size boundary (MAX_METADATA_PAYLOAD_BYTES = 64KB)
     assert.equal(songbookMetadata.MAX_METADATA_PAYLOAD_BYTES, 64 * 1024)
     const overLimitMeta = new Request('https://gtar.local/api/songbook/metadata', {
       method: 'POST',

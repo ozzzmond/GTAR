@@ -8,8 +8,6 @@ import { normalizeTags, songHasTag, renameTagInList, removeTagFromList } from '.
 import { RecoveryDataPanel } from './components/RecoveryDataPanel'
 import { SetlistManager } from './components/SetlistManager'
 import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
-import { CatalogImportContext } from './utils/catalogImportContext'
-import { PublishSetlistModal } from './components/PublishSetlistModal'
 import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
@@ -36,7 +34,6 @@ import { prepareRecoveryArchives, recoveryArchiveBackend, recoveryArchivesInInde
 import { appLogger } from './utils/logger'
 import { useLibraryPersistence } from './utils/useLibraryPersistence'
 import { useLibraryImports } from './utils/useLibraryImports'
-import { useSetlistPublication } from './utils/useSetlistPublication'
 import { useAppModals } from './utils/useAppModals'
 import { deduplicateLibrary } from './utils/syncMerge'
 import { generateUUID } from './utils/uuid'
@@ -546,12 +543,6 @@ function LibraryApp() {
   const [isStageToolsModalOpen, setIsStageToolsModalOpen] = modals.stageTools
   const [isThemeModalOpen, setIsThemeModalOpen] = modals.theme
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = modals.headerKeyPicker
-  // #85 slice 3: Shared Setlists publication state, catalog badges and the catalog import context.
-  const {
-    confirmedCatalogIds, freshCatalogIds, publishingSetlistId, setPublishingSetlistId, publicationStateRef, catalogImportHost,
-  } = useSetlistPublication({
-    getConflictDraft, crossTabConflict, editorRecoveryDraftRef, persistedBaselineRef, setSongs, setDeletedSongs, setSetlists,
-  })
 
   const [isSetlistDrawerOpen, setIsSetlistDrawerOpen] = modals.setlistDrawer
   const [explorerSelection, setExplorerSelection] = useState<ExplorerTarget>({ type: 'ALL_SONGS' })
@@ -1638,10 +1629,6 @@ function LibraryApp() {
 
   return (
     <TagLibraryContext.Provider value={{ colors: tagColors, onColorChange: handleTagColor, onAddToTag: handleBulkAddToTag }}>
-    <CatalogImportContext.Provider value={{
-      ...catalogImportHost,
-      open: id => navigateSafely(() => { handleSelectSetlist(id); setActiveView('stage') }),
-    }}>
     {activeView === 'songbook' && <ExplorerDragDrop songs={songs} setlists={setlists} folders={folders}
       onTag={handleBulkAddToTag} onSetlist={handleManagerAddSongs} onFolder={handleSetlistFolderChange}
       onTrashSetlist={setTrashSetlistId}
@@ -1652,7 +1639,7 @@ function LibraryApp() {
       onCancel={() => setTrashSetlistId(null)}
       onConfirm={() => { const id = trashSetlistId; setTrashSetlistId(null); handleManagerDelete(id) }} />}
     {recoveryDataOpen && <RecoveryDataPanel
-      blocked={() => publicationStateRef.current.blocked() || !same(JSON.parse(JSON.stringify(publicationStateRef.current.getLocal())), readPersistedLibrary())}
+      blocked={() => Boolean(crossTabConflict) || Boolean(editorRecoveryDraftRef.current?.()) || !same(JSON.parse(JSON.stringify(getConflictDraft())), readPersistedLibrary())}
       onClose={() => setRecoveryDataOpen(false)} />}
     {isSetlistManagerOpen && <SetlistManager folders={folders} onSetlistFolderChange={handleSetlistFolderChange}
       setlists={setlists.filter(sl => !sl.isDeleted)}
@@ -1670,7 +1657,6 @@ function LibraryApp() {
         handleSelectSetlistSong(setlistId, position)
         setActiveView('stage')
       })}
-      onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
       shortcutsBlocked={activeView === 'stage' || isStagePerformanceMode}
       returnFocusTo={setlistManagerOpener} />}
     <div className="min-h-screen flex flex-col bg-app-base text-app-text">
@@ -1722,7 +1708,6 @@ function LibraryApp() {
           onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
           onPushSetlistToBandSync={handlePushSetlistToMembers}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
-          onImportSharedCatalogSong={handleSaveSongFromEditor}
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
           onNewSong={() => navigateSafely(handleNewSong)}
@@ -1842,15 +1827,11 @@ function LibraryApp() {
             onImportSingleSetlist={handleImportSingleSetlist}
             onBulkDeleteSongs={handleBulkDeleteSongs}
             onBulkAddSongsToSetlist={handleBulkAddSongsToSetlist}
-            onPublishSetlist={(sl) => setPublishingSetlistId(sl.id)}
             onShareSetlist={(sl) => setSharingSetlist(sl)}
             onImportSharedSetlist={(shared) => setIncomingSharedSetlist(shared)}
-            onImportSharedCatalogSong={handleSaveSongFromEditor}
             onOpenImportSongs={() => navigateSafely(() => setIsImportModalOpen(true))}
             onTrashDuplicates={handleTrashDuplicates}
             onUpdateSong={handleUpdateSong}
-            confirmedCatalogIds={confirmedCatalogIds}
-            freshCatalogIds={freshCatalogIds}
             view={explorerSelection}
             onSelectView={handleExplorerSelect}
             onEditSong={(songIdx) => navigateSafely(() => {
@@ -1996,12 +1977,6 @@ function LibraryApp() {
         onClose={() => setIsTvPresentationModalOpen(false)}
       />
 
-      {publishingSetlistId !== null && authContext?.session && authContext.accessStatus === 'active' && (
-        <PublishSetlistModal sourceId={publishingSetlistId}
-          getLocal={() => publicationStateRef.current.getLocal()}
-          blocked={() => publicationStateRef.current.blocked()}
-          onClose={() => setPublishingSetlistId(null)} />
-      )}
       {/* Share Setlist QR Code Modal */}
       {sharingSetlist && (
         <ShareSetlistModal
@@ -2039,7 +2014,6 @@ function LibraryApp() {
         </div>
       )}
     </div>
-    </CatalogImportContext.Provider>
     </TagLibraryContext.Provider>
   )
 }

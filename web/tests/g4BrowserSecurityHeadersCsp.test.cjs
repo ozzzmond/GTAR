@@ -21,8 +21,6 @@ const sessionApi = require('../functions/api/auth/session.ts')
 const syncApi = require('../functions/api/songbook/sync.ts')
 const metadataApi = require('../functions/api/songbook/metadata.ts')
 const shareApi = require('../functions/api/setlist/share.ts')
-const songsApi = require('../functions/api/catalog/songs.ts')
-const songIdApi = require('../functions/api/catalog/songs/[id].ts')
 const ugSearchApi = require('../functions/api/ug-search.ts')
 const ugTabApi = require('../functions/api/ug-tab.ts')
 const middleware = require('../functions/_middleware.ts')
@@ -91,9 +89,6 @@ function createMockDb(users = [], shares = new Map(), songbooks = new Map()) {
               return null
             },
             async all() {
-              if (sql.includes('FROM catalog_songs')) {
-                return { results: [], success: true }
-              }
               return { results: [], success: true }
             },
             async run() {
@@ -255,10 +250,6 @@ test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 409,
   const optRes2 = await shareApi.onRequestOptions()
   assert.equal(optRes2.status, 204)
   assertSecurityHeaders(optRes2, '204 share options')
-
-  const optRes3 = await songIdApi.onRequestOptions()
-  assert.equal(optRes3.status, 204)
-  assertSecurityHeaders(optRes3, '204 songId options')
 
   // 400: Bad Request / Malformed JSON
   const badReqRes = await sessionApi.onRequestPost({

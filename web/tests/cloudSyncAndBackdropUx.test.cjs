@@ -32,7 +32,6 @@ const { createRoot } = require('react-dom/client')
 
 const { CloudSyncModal } = require('../src/components/CloudSyncModal.tsx')
 const { ShareSetlistModal } = require('../src/components/ShareSetlistModal.tsx')
-const { CatalogSetlistPreview } = require('../src/components/CatalogSetlistPreview.tsx')
 const { AuthContext } = require('../src/utils/authContext.ts')
 
 let dom, root, container
@@ -160,56 +159,6 @@ test('IN_FLIGHT_OPERATION_PROTECTION for ShareSetlistModal', () => {
     fileContent.includes('disabled={loading || revoking}'),
     'ShareSetlistModal close buttons disabled during loading or revoking'
   )
-})
-
-test('BACKDROP_DISMISSAL & IN_FLIGHT_PROTECTION for CatalogSetlistPreview', () => {
-  let closed = false
-
-  act(() => {
-    root.render(
-      React.createElement(CatalogSetlistPreview, {
-        id: 'pub_1',
-        revision: 1,
-        onClose: () => { closed = true },
-      })
-    )
-  })
-
-  const dialog = container.querySelector('dialog')
-  assert.ok(dialog, 'CatalogSetlistPreview renders native dialog')
-
-  // Mock getBoundingClientRect: dialog box is between (100, 100) and (400, 500)
-  dialog.getBoundingClientRect = () => ({
-    left: 100,
-    top: 100,
-    right: 400,
-    bottom: 500,
-    width: 300,
-    height: 400,
-  })
-
-  // Click INSIDE the dialog rect (clientX = 200, clientY = 200) -> NO dismiss
-  act(() => {
-    const insideClick = new dom.window.MouseEvent('click', { bubbles: true })
-    Object.defineProperty(insideClick, 'clientX', { value: 200 })
-    Object.defineProperty(insideClick, 'clientY', { value: 200 })
-    dialog.dispatchEvent(insideClick)
-  })
-  assert.equal(closed, false, 'Inside dialog click does not dismiss CatalogSetlistPreview')
-
-  // Click on BACKDROP outside dialog rect (clientX = 50, clientY = 50) -> DISMISS
-  act(() => {
-    const backdropClick = new dom.window.MouseEvent('click', { bubbles: true })
-    Object.defineProperty(backdropClick, 'clientX', { value: 50 })
-    Object.defineProperty(backdropClick, 'clientY', { value: 50 })
-    dialog.dispatchEvent(backdropClick)
-  })
-  assert.equal(closed, true, 'Backdrop click outside dialog rect dismisses CatalogSetlistPreview')
-
-  // Verify busyRef in-flight guard
-  const fileContent = fs.readFileSync(path.join(__dirname, '../src/components/CatalogSetlistPreview.tsx'), 'utf8')
-  assert.ok(fileContent.includes('if (busyRef.current) return'), 'CatalogSetlistPreview checks busyRef.current on backdrop click')
-  assert.ok(fileContent.includes('if (!busyRef.current) onClose()'), 'CatalogSetlistPreview checks busyRef.current onCancel')
 })
 
 test('DESTRUCTIVE_CONFIRMATION_PROTECTION: guarded dialogs retain protection', () => {
