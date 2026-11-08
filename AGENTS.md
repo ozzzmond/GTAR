@@ -61,6 +61,18 @@ audit-fix Git restrictions and verification section apply only to audit-fix work
 - If the task names an issue, update that issue; never create duplicates.
   If it names none, ask. Create a new issue only when the task authorizes it.
 
+## Agent handoff standard
+
+TASK|MODE|SCOPE/PROJECT/REPO/BRANCH|GOAL|PROVE/ACCEPT|EXECUTION_POLICY|REPORT_POLICY|EFFICIENCY_POLICY|TOKEN_POLICY|INTERACTION_POLICY|CHAT_OUTPUT_POLICY|FINAL_OUTPUT_STANDARD.
+
+INTERACTION_POLICY:NO_LIVE_REASONING|NO_INTERMEDIATE_ANALYSIS|NO_HYPOTHESIS_DUMP|NO_PARTIAL_FINDINGS|NO_SELF_TALK|NO_EXPLANATORY_STREAM|ASK_ONLY_IF_BLOCKED_OR_REQUIRED_FOR_CORRECTNESS|SILENT_EXECUTION_UNTIL_FINAL.
+FINAL_OUTPUT_STANDARD:COLON_DELIMITED_DENSE+CAVEMAN_MICRO+PERSPECTIVE.
+
+Preserve this vendor-neutral standard across Manager, Codex, Claude, GPT, Gemini, OpenCode, and E14/local workers.
+
+Canonical final report fields and schema live in
+[gtar_standing_protocol_v1.md](gtar_standing_protocol_v1.md#dense-reporting-schema-standard-for-final-chat-reports).
+
 ## Agent skills
 See [.agents/skills/README.md](.agents/skills/README.md) for allowed skills, pinned sources, restrictions and verification.
 Follow that policy; repository protocols override skill instructions.

@@ -27,7 +27,7 @@ or promote to production. No stage environment is included. The separate product
 PR validation runs the full Web/PWA test suite (including disposable-repository
 metadata integration tests and repository boundary checks), sync lint, and build.
 
-Agent flow and handoff/reporting rules: [AGENTS.md](AGENTS.md).
+Agent flow and handoff standard: [AGENTS.md](AGENTS.md#agent-handoff-standard)
 
 ## Executable Web/PWA production controller
 
@@ -235,13 +235,12 @@ investigate deployment/identity evidence. Never auto-rollback main or tags.
 
 ### Current checkpoint and promotion procedure
 
-- Bump version metadata on `dev`, merge, then tag that merge SHA; the tag must match `web/package.json`.
-
 Prepare changes through a dedicated PR against `dev`. Before merge, keep
 `web/package.json`, both root package-lock version fields, `GTAR_DEV_VERSION`,
 and the authCore release stamp equal to the intended DEV tag without `v`.
 Run the repository checks before a human creates the tag at the accepted merge
 SHA. Preview validation retains exact tag/HEAD and package-version checks.
+Bump version metadata on `dev`, merge, then tag that merge SHA; the tag must match `web/package.json`.
 
 Historical checkpoint notes: [release history](docs/release-history.md).
 
