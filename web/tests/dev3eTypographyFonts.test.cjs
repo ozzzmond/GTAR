@@ -108,7 +108,7 @@ test('Editor stages UI/heading/Stage fonts and colors, Cancel discards, Save com
   await click('[data-testid="category-tab-typography"]')
   assert.equal(document.querySelector('[aria-label="ui font source"]').value, 'google')
   await select('ui font source', 'builtin')
-  const save = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Save & Apply')
+  const save = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Save' || button.textContent.trim() === 'Save & Apply')
   await act(async () => save.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
   assert.equal(saved[0].fonts.ui.source, 'builtin')
   await click('[data-testid="reset-palette-defaults-btn"]')

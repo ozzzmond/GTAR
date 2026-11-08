@@ -122,6 +122,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
     env.isDevEnv = false
     await act(async () => root.render(React.createElement(Header, props)))
     assert.equal(document.querySelector('[data-testid="dev-header-diagnostics"]'), null, 'DEV diagnostics must be excluded in production header')
+    await act(async () => document.querySelector('[data-testid="header-avatar"]').click())
 
     // jsdom does not resolve CSS custom properties. Resolve only the exact production
     // role declarations using the variables emitted by the real theme application.
@@ -202,7 +203,7 @@ test('Chrome preview demonstrates both header contrasts alongside body; staging 
     assert.equal(document.querySelector('[data-testid="header-primary-preview"]').style.color, rgb(target.headerPrimaryText))
     await click('[data-testid="color-control-headerSecondaryText"] button[aria-label="#111827"]')
     await click('[data-testid="color-control-headerIconColor"] button[aria-label="#93A1A1"]')
-    const save = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Save & Apply')
+    const save = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Save' || button.textContent.trim() === 'Save & Apply')
     await act(async () => save.click())
     assert.equal(saved[0].headerSecondaryText, '#111827'); assert.equal(saved[0].headerIconColor, '#93A1A1')
     assert.equal(saved[0].uiPrimaryText, target.uiPrimaryText)

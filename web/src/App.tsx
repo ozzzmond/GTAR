@@ -433,6 +433,18 @@ function LibraryApp() {
   }, [])
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleToastEvent = (e: Event) => {
+      const msg = (e as CustomEvent<string>).detail
+      if (typeof msg === 'string' && msg) {
+        setToastMessage(msg)
+        setTimeout(() => setToastMessage(current => current === msg ? null : current), 3500)
+      }
+    }
+    window.addEventListener('gtar:toast', handleToastEvent)
+    return () => window.removeEventListener('gtar:toast', handleToastEvent)
+  }, [])
   // #85 slice 1: baseline, cross-tab guard, unload guard and persistence live in one hook.
   const {
     persistedBaselineRef, crossTabConflict, setCrossTabConflict, conflictRecoverySaved, setConflictRecoverySaved,

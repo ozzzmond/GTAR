@@ -42,13 +42,15 @@ test('Cloudflare feature preview header shows build SHA on desktop and mobile wi
       onToggleTheme() {}, onOpenStageSettings() {}, onOpenImportModal() {}, onOpenBackupRestoreModal() {},
     }))
     const headerDom = new JSDOM(html)
-    assert.equal(headerDom.window.document.querySelector('[data-testid="header-preview-identity"]')?.textContent, "PREVIEW \u00b7 UNTAGGED \u00b7 SHA: abcdef0")
-    assert.equal(headerDom.window.document.querySelector('[data-testid="header-prod-version-compact"]')?.textContent, "PREVIEW \u00b7 UNTAGGED \u00b7 SHA: abcdef0")
+    assert.equal(headerDom.window.document.querySelector('[data-testid="header-preview-identity"]')?.textContent, "PREVIEW \u00b7 SHA: abcdef0")
+    assert.equal(headerDom.window.document.querySelector('[data-testid="header-prod-version-compact"]')?.textContent, "PREVIEW \u00b7 SHA: abcdef0")
+    assert.ok(headerDom.window.document.querySelector('[data-testid="header-preview-identity"]')?.closest('.border-l'), 'Desktop preview diagnostics must include vertical divider')
     headerDom.window.close()
-    assert.doesNotMatch(html, /v1\.1\.108|dev-header-diagnostics|>DEV</)
+    assert.match(html, />DEV</, 'Cloudflare Preview header must display DEV badge beside GTAR')
+    assert.doesNotMatch(html, /v1\.1\.108|dev-header-diagnostics/)
     assert.equal(require('../src/utils/env.ts').isDevEnv, false)
     const { formatPreviewIdentity } = require('../src/utils/headerFormatters.ts')
-    assert.equal(formatPreviewIdentity(globalThis.__GTAR_PREVIEW_IDENTITY__), 'PREVIEW · UNTAGGED · SHA: abcdef0')
+    assert.equal(formatPreviewIdentity(globalThis.__GTAR_PREVIEW_IDENTITY__), 'PREVIEW · SHA: abcdef0')
   } finally {
     process.env = saved
     dom.window.close()

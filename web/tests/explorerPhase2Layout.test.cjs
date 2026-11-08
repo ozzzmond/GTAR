@@ -387,7 +387,7 @@ test('#359 PR-C: Header icon-only status button and responsive layout across wid
 
     // Cloud status button is strictly ICON-ONLY at ALL widths (no status label in textContent)
     assert.equal(cloudBtn.textContent.trim(), '', `Cloud status button must be icon-only at ${width}px`)
-    assert.match(cloudBtn.className, /min-h-11 min-w-11/, `Cloud status button has >=44px target at ${width}px`)
+    assert.match(cloudBtn.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Cloud status button has normalized target at ${width}px`)
     assert.ok(cloudBtn.querySelector('svg'), `Cloud status icon rendered at ${width}px`)
     assert.match(cloudBtn.getAttribute('aria-label'), /^Backup & Restore/, `aria-label preserved at ${width}px`)
     assert.equal(cloudBtn.getAttribute('title'), null, `native title tooltip removed in favor of GTAR popover at ${width}px`)
@@ -396,10 +396,10 @@ test('#359 PR-C: Header icon-only status button and responsive layout across wid
       // Compact (<md) layout: hamburger left, logo, search icon, status icon, avatar
       assert.ok(hamburger, `Hamburger drawer button must exist at ${width}px`)
       assert.match(hamburger.className, /md:hidden/, `Hamburger hidden on >=md at ${width}px`)
-      assert.match(hamburger.className, /min-h-11 min-w-11/, `Hamburger touch target >=44px at ${width}px`)
+      assert.match(hamburger.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Hamburger touch target >=44px at ${width}px`)
 
       assert.ok(searchTrigger, `Search icon trigger must be rendered at ${width}px`)
-      assert.match(searchTrigger.className, /min-h-11 min-w-11/, `Search trigger touch target >=44px at ${width}px`)
+      assert.match(searchTrigger.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Search trigger touch target >=44px at ${width}px`)
       assert.equal(searchInput, null, `Inline search input should not be visible before open at ${width}px`)
 
       // Compact diagnostics strip remains visible

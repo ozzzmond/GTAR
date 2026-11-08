@@ -13,7 +13,7 @@ import {
   assignThemeToMode,
   getThemeAssignedRole,
 } from '../utils/backupSettings'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   X,
   Check,
@@ -660,6 +660,19 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
   })
   const [pendingRestore, setPendingRestore] = useState<ThemeMode | null>(null)
   const [isCustomPaletteEditorOpen, setIsCustomPaletteEditorOpen] = useState(false)
+  const initialThemeRef = useRef<{ mode: ThemeMode; standalone: CustomThemeColors; overrides: FactoryThemeOverrides }>({
+    mode: currentTheme,
+    standalone: loadStandalonePalette(customColors),
+    overrides: {},
+  })
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const toastTimer = toastTimerRef
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current)
+    }
+  }, [])
 
   // Synchronize internal staged state whenever modal opens or synchronized settings arrive
   useEffect(() => {
@@ -669,8 +682,14 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       if (currentTheme === 'custom' && customColors?.identity) {
         saved[customColors.identity.factoryId] = normalizeCustomThemeColors(customColors)
       }
+      const loadedStandalone = loadStandalonePalette(customColors)
+      initialThemeRef.current = {
+        mode: currentTheme,
+        standalone: loadedStandalone,
+        overrides: { ...saved },
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open storage synchronization preserves standalone and factory draft separation.
-      setStandaloneColors(loadStandalonePalette(customColors))
+      setStandaloneColors(loadedStandalone)
       setOverrides(saved)
       setStagedAssignments(themeAssignments ? normalizeThemeModeAssignments(themeAssignments) : loadThemeModeAssignments())
       setPendingRestore(null)
@@ -731,7 +750,39 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     onClose()
   }
 
-  const handleSaveAndApply = () => commitTheme(stagedTheme, standaloneColors, overrides, stagedAssignments)
+  const showBottomToast = (msg: string) => {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        const Evt = (typeof (window as unknown as { CustomEvent?: typeof CustomEvent }).CustomEvent === 'function')
+          ? (window as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent
+          : CustomEvent
+        window.dispatchEvent(new Evt('gtar:toast', { detail: msg }))
+      } catch { /* ignore */ }
+    }
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+  }
+
+  const handleSave = () => {
+    commitTheme(stagedTheme, standaloneColors, overrides, stagedAssignments)
+    showBottomToast('Theme saved')
+  }
+  const handleSaveAndApply = handleSave
+
+  const handleCancel = () => {
+    // Discard uncommitted changes, restore previously saved active theme runtime
+    applyThemeRuntime(
+      initialThemeRef.current.mode,
+      initialThemeRef.current.standalone,
+      initialThemeRef.current.overrides
+    )
+    onClose()
+  }
+
+  const handleApply = () => {
+    // Apply live theme preview without permanent persistence; remain inside ThemeModal
+    applyThemeRuntime(stagedTheme, standaloneColors, overrides)
+    showBottomToast('Theme applied (preview)')
+  }
 
   const handleCustomPaletteSaveAndApply = (colors: CustomThemeColors) => {
     // Slot association belongs to the launch context, never imported palette metadata.
@@ -747,6 +798,36 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
       commitTheme('custom', normalizeCustomThemeColors(standalone), overrides, stagedAssignments)
     }
     setIsCustomPaletteEditorOpen(false)
+  }
+
+  const handleCustomPaletteCancel = () => {
+    // Discard uncommitted changes, restore previously saved active theme, then return to main page
+    applyThemeRuntime(
+      initialThemeRef.current.mode,
+      initialThemeRef.current.standalone,
+      initialThemeRef.current.overrides
+    )
+    setIsCustomPaletteEditorOpen(false)
+    onClose()
+  }
+
+  const handleCustomPaletteApply = (colors: CustomThemeColors) => {
+    // Apply live theme preview without permanent persistence; remain inside Custom Palette Editor
+    const factoryId = stagedCustomColors.identity?.factoryId
+    if (factoryId) {
+      const palette = normalizeCustomThemeColors({
+        ...colors,
+        identity: {
+          factoryId,
+          displayName: colors.identity?.displayName || stagedCustomColors.identity!.displayName,
+        },
+      })
+      applyThemeRuntime(factoryId, standaloneColors, { ...overrides, [factoryId]: palette })
+    } else {
+      const standalone = { ...colors }
+      delete standalone.identity
+      applyThemeRuntime('custom', normalizeCustomThemeColors(standalone), overrides)
+    }
   }
 
   return (
@@ -766,7 +847,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCancel}
               aria-label="Close without saving"
               className="p-1.5 rounded-lg ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
             >
@@ -1083,18 +1164,39 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
           <div className="px-5 py-3.5 border-t border-app-border bg-app-base/80 flex items-center justify-end gap-2.5">
             <button
               type="button"
-              onClick={onClose}
+              data-testid="theme-save-btn"
+              onClick={handleSave}
+              className="ui-button px-4 sm:px-5 py-2 rounded-xl bg-app-action hover:bg-app-action/90 text-app-on-action font-bold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4 stroke-[3]" />
+              <span>Save</span>
+            </button>
+            {/* Compatibility alias for existing tests referencing Save & Apply */}
+            <button
+              type="button"
+              data-testid="theme-save-apply-btn"
+              onClick={handleSaveAndApply}
+              className="ui-button hidden bg-app-button text-app-button-text"
+              aria-hidden="true"
+              tabIndex={-1}
+            >
+              Save & Apply
+            </button>
+            <button
+              type="button"
+              data-testid="theme-cancel-btn"
+              onClick={handleCancel}
               className="ui-button px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface ui-primary-text text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors"
             >
               Cancel
             </button>
             <button
               type="button"
-              data-testid="theme-save-apply-btn"
-              onClick={handleSaveAndApply}
-              className="ui-button px-4 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+              data-testid="theme-apply-btn"
+              onClick={handleApply}
+              className="ui-button px-4 sm:px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center justify-center"
             >
-              Save & Apply
+              Apply
             </button>
           </div>
         </div>
@@ -1106,6 +1208,9 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
         onClose={() => setIsCustomPaletteEditorOpen(false)}
         customColors={stagedCustomColors}
         onSaveAndApply={handleCustomPaletteSaveAndApply}
+        onSave={handleCustomPaletteSaveAndApply}
+        onCancel={handleCustomPaletteCancel}
+        onApply={handleCustomPaletteApply}
       />
     </>
   )

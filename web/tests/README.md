@@ -305,5 +305,6 @@ New or renamed tests await a human choice of primary category.
 - [themeModeAssignment369.test.cjs](themeModeAssignment369.test.cjs)
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
+- [uiUxPolish403.test.cjs](uiUxPolish403.test.cjs)
 - [userManagementRootProtection.test.cjs](userManagementRootProtection.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->

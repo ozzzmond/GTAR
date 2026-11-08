@@ -1,5 +1,6 @@
 import { SharedSetlistCatalogPanel } from './SharedSetlistCatalogPanel'
 import { ReportContentButton } from './ReportContentButton'
+import { primaryButton, secondaryButton, sectionCard, sectionLabel } from './backupCenterUi'
 import { useSharedSetlists } from '../utils/useSharedSetlists'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -689,105 +690,135 @@ const ActiveSharedCatalogBrowser: React.FC<SharedCatalogBrowserProps> = ({
       )}
 
       {/* Song Detail / Preview Modal */}
-      {previewSong && (
-        <dialog
-          open
-          data-testid="catalog-preview-modal"
-          onCancel={() => setPreviewSong(null)}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-xl max-h-[90vh] rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 flex flex-col overflow-hidden"
-        >
-          <div className="p-4 sm:p-5 flex items-center justify-between border-b border-app-border/60">
-            <div className="min-w-0 pr-3">
-              <h2 className="text-base font-bold text-app-heading truncate">{previewSong.title}</h2>
-              <p className="text-xs text-app-muted truncate mt-0.5">{previewSong.artist || 'Unknown Artist'}</p>
-            </div>
-            <button
-              type="button"
-              data-testid="close-catalog-preview"
-              onClick={() => setPreviewSong(null)}
-              className="p-1 rounded-lg hover:bg-app-base text-app-muted hover:text-app-heading cursor-pointer"
-              aria-label="Close Preview"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+      {previewSong && (() => {
+        const metaText = (value: unknown) => {
+          if (typeof value === 'string') return value.trim()
+          return typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
+        }
+        const bpmVal = (value: unknown) => {
+          const raw = metaText(value)
+          if (!raw) return ''
+          return /^\d+$/.test(raw) ? `${raw} BPM` : raw
+        }
+        const songChips: Array<[string, string]> = []
+        const addChip = (label: string, val: string) => { if (val) songChips.push([label, val]) }
+        addChip('Key', metaText(previewSong.key))
+        addChip('Original key', metaText(previewSong.original_key))
+        addChip('BPM', bpmVal(previewSong.bpm))
+        addChip('Time', metaText(previewSong.time_signature))
+        addChip('Capo', metaText(previewSong.capo))
+        addChip('Year', metaText(previewSong.year))
 
-          <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-            {/* Metadata Badges */}
-            <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Key: {previewSong.key || 'N/A'}
-              </span>
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Revision: r{previewSong.current_revision}
-              </span>
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Format: {previewSong.format}
-              </span>
-              <span className="px-2 py-0.5 rounded bg-app-base border border-app-border text-app-muted">
-                Publisher: {previewSong.publisher_user_id}
-              </span>
-            </div>
-
-            {/* Content Preview */}
-            <div className="rounded-xl border border-app-border bg-app-base p-3 font-mono text-xs whitespace-pre-wrap max-h-64 overflow-y-auto select-text leading-relaxed">
-              {previewSong.raw_content}
-            </div>
-
-            {/* Revision History */}
-            {isLoadingDetails ? (
-              <div className="py-2 text-xs font-mono text-app-muted flex items-center gap-2">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-app-action" />
-                <span>Loading revision history...</span>
+        return (
+          <dialog
+            open
+            data-testid="catalog-preview-modal"
+            onCancel={() => setPreviewSong(null)}
+            className="fixed inset-0 m-auto w-[calc(100vw-1rem)] max-w-lg sm:max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] overflow-hidden rounded-2xl border border-app-border bg-app-surface p-0 text-app-heading shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-xs z-50 flex flex-col animate-fade-in"
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-app-border/80 bg-app-base/60 px-4 py-3 sm:px-5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-app-action/40 bg-app-action/20 text-app-action" aria-hidden="true">
+                <Music className="h-4 w-4" />
               </div>
-            ) : revisions.length > 0 ? (
-              <div className="space-y-1.5 pt-2 border-t border-app-border/40">
-                <div className="text-xs font-bold font-mono text-app-heading flex items-center gap-1.5">
-                  <History className="w-3.5 h-3.5 text-app-accent" />
-                  <span>Revision History ({revisions.length})</span>
-                </div>
-                <div className="space-y-1 text-[11px] font-mono text-app-muted max-h-32 overflow-y-auto">
-                  {revisions.map((rev) => (
-                    <div key={rev.id} className="p-1.5 rounded bg-app-base/60 flex items-center justify-between">
-                      <span>
-                        r{rev.revision}: {rev.change_summary || 'No summary'}
-                      </span>
-                      <span className="text-[10px] opacity-70">
-                        {new Date(rev.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-app-muted">Published song preview</p>
+                <h2 className="break-words text-sm font-extrabold text-app-heading sm:text-base truncate">{previewSong.title}</h2>
+                <p className="text-xs text-app-muted truncate mt-0.5">{previewSong.artist || 'Unknown Artist'}</p>
               </div>
-            ) : null}
-
-            {/* #253 reactive moderation: report only; nothing is hidden automatically. */}
-            <div className="pt-2 border-t border-app-border/40 flex justify-start">
-              <ReportContentButton key={previewSong.id} kind="song" id={previewSong.id} revision={previewSong.current_revision} label={previewSong.title} />
+              <button
+                type="button"
+                data-testid="close-catalog-preview"
+                onClick={() => setPreviewSong(null)}
+                className="flex h-11 w-11 shrink-0 -mr-2 items-center justify-center rounded-xl text-app-muted transition-colors hover:bg-app-base hover:text-app-heading cursor-pointer"
+                aria-label="Close preview"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
             </div>
-          </div>
 
-          <div className="p-4 border-t border-app-border/60 flex justify-end gap-2 font-mono text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setPreviewSong(null)}
-              className="px-3.5 py-2 rounded-lg bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              data-testid="preview-import-btn"
-              disabled={importingSongIds.has(previewSong.id)}
-              onClick={() => handleImport(previewSong)}
-              className="px-4 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Import to My Songs</span>
-            </button>
-          </div>
-        </dialog>
-      )}
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+              {/* Revision badge & Musician-Friendly Metadata Chips */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  data-testid="preview-revision-badge"
+                  className="rounded-full border border-app-border bg-app-base px-2.5 py-0.5 font-mono text-[11px] font-bold text-app-muted"
+                >
+                  r{previewSong.current_revision}
+                </span>
+                {songChips.map(([label, value]) => (
+                  <span key={label} className="inline-flex max-w-full items-center gap-1 rounded-full border border-app-border bg-app-base px-2.5 py-0.5 text-[11px] leading-5 text-app-muted">
+                    <span className="shrink-0">{label}</span>{' '}
+                    <span className="break-words font-bold text-app-heading">{value}</span>
+                  </span>
+                ))}
+              </div>
+
+              {/* Content Preview */}
+              <section className={sectionCard} aria-label="Song chart">
+                <h3 className={sectionLabel}>Chart</h3>
+                <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-app-border bg-app-base p-3 font-mono text-sm text-app-text select-text leading-relaxed max-h-72 overflow-y-auto">
+                  {previewSong.raw_content}
+                </pre>
+              </section>
+
+              {/* Revision History */}
+              {isLoadingDetails ? (
+                <div className="py-2 text-xs font-mono text-app-muted flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-app-action" />
+                  <span>Loading revision history...</span>
+                </div>
+              ) : revisions.length > 0 ? (
+                <section className={sectionCard} aria-label="Revision history">
+                  <div className="flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-app-accent" />
+                    <h3 className={sectionLabel}>Revision history ({revisions.length})</h3>
+                  </div>
+                  <div className="space-y-1.5 text-[11px] font-mono text-app-muted max-h-36 overflow-y-auto">
+                    {revisions.map((rev) => (
+                      <div key={rev.id} className="p-2 rounded-lg bg-app-base/60 border border-app-border/40 flex items-center justify-between">
+                        <span className="truncate mr-2">
+                          r{rev.revision}: {rev.change_summary || 'No summary'}
+                        </span>
+                        <span className="text-[10px] opacity-70 shrink-0">
+                          {new Date(rev.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {/* #253 reactive moderation: report only; nothing is hidden automatically. */}
+              <div className="flex justify-end border-t border-app-border/40 pt-2">
+                <ReportContentButton key={previewSong.id} kind="song" id={previewSong.id} revision={previewSong.current_revision} label={previewSong.title} />
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-app-border bg-app-base/60 px-4 py-3 sm:px-5">
+              <div className="flex flex-col gap-2 sm:flex-row-reverse sm:items-center">
+                <button
+                  type="button"
+                  data-testid="preview-import-btn"
+                  disabled={importingSongIds.has(previewSong.id)}
+                  onClick={() => handleImport(previewSong)}
+                  className={`${primaryButton.replace('w-full ', '')} w-full sm:w-auto inline-flex items-center justify-center gap-1.5`}
+                >
+                  <Download className="h-4 w-4" />
+                  <span>{importingSongIds.has(previewSong.id) ? 'Importing…' : 'Import to My Songs'}</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="preview-secondary-close"
+                  onClick={() => setPreviewSong(null)}
+                  className={`${secondaryButton.replace('flex items-center', 'inline-flex items-center')} w-full sm:w-auto`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </dialog>
+        )
+      })()}
 
       {/* Edit Shared Song Modal */}
       {editingSong && (

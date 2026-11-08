@@ -511,3 +511,23 @@ export function presetToCustomPalette(preset: {
   }
 }
 
+export function formatLocalPaletteTimestamp(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const YYYY = date.getFullYear()
+  const MM = pad(date.getMonth() + 1)
+  const DD = pad(date.getDate())
+  const HH = pad(date.getHours())
+  const mm = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+  return `${YYYY}${MM}${DD}-${HH}${mm}${ss}`
+}
+
+export function paletteExportFileName(themeName?: string, date = new Date()): string {
+  const safe = (themeName || 'custom')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'custom'
+  return `gtar-palette-${safe}-${formatLocalPaletteTimestamp(date)}.json`
+}
+

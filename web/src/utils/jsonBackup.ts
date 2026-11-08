@@ -179,7 +179,35 @@ export function verifyBackupJson(json: string, payload: FullBackupPayload): Back
   return counts
 }
 
-export const backupFileName = (date = new Date()) => `gtar-stage-backup-${date.toISOString().slice(0, 10)}.json`
+export function formatBackupLocalTimestamp(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const YYYY = date.getFullYear()
+  const MM = pad(date.getMonth() + 1)
+  const DD = pad(date.getDate())
+  const HH = pad(date.getHours())
+  const mm = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+  return `${YYYY}${MM}${DD}-${HH}${mm}${ss}`
+}
+
+function detectBackupEnv(envOverride?: 'dev' | 'prod'): 'dev' | 'prod' {
+  if (envOverride) return envOverride
+  if (typeof window !== 'undefined' && window.location) {
+    const host = window.location.hostname
+    if (host.includes('dev.gtar-web.pages.dev') || host === 'localhost' || host === '127.0.0.1') {
+      return 'dev'
+    }
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.VITE_APP_ENV === 'debug' || process.env.NODE_ENV === 'development' || process.env.CF_PAGES_BRANCH === 'dev') {
+      return 'dev'
+    }
+  }
+  return 'prod'
+}
+
+export const backupFileName = (date = new Date(), env?: 'dev' | 'prod') =>
+  `gtar-${detectBackupEnv(env)}-backup-${formatBackupLocalTimestamp(date)}.json`
 
 /** Builds the full backup and verifies its bytes before anything is shown, shared or downloaded. */
 export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetlist[], version = GTAR_APP_VERSION, folders?: SetlistFolder[], tagColors?: TagColors): VerifiedBackup {

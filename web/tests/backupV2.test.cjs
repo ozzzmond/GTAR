@@ -477,7 +477,7 @@ test('menu export (download) is verified and recorded; Cloud V1 library keys are
   global.URL = Object.assign(function () {}, priorUrl, urls)
   try {
     const name = jb.exportAllDataJson([current], [])
-    assert.match(name, /^gtar-stage-backup-\d{4}-\d{2}-\d{2}\.json$/)
+    assert.match(name, /^gtar-(dev|prod)-backup-\d{8}-\d{6}\.json$/)
     assert.equal(status.readBackupStatus(storage).delivery, 'download')
     assert.equal(storage.getItem(LIBRARY_KEY), before)
   } finally { global.URL = priorUrl; delete global.window; delete global.document }
