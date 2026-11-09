@@ -97,7 +97,8 @@ test('8e/#181/#304 old recovery archive: no banner, no header dot, no export but
   assert.equal(document.querySelector('[data-testid="header-recovery-dot"]'),null,'#304: no header dot (the old-recovery export left the center)')
   assert.equal(require('../src/utils/syncJournal.ts').recoveryData()['gtar_sync_recovery:plain'],archive,'raw archive stays exportable')
   await act(async()=>persistLibrary({songs:[song,lost],setlists:[]}))
-  await act(async()=>document.querySelector('[data-testid="header-cloud-sync-button"]').click())
+  await act(async()=>document.querySelector('[data-testid="header-settings"]').click())
+  await act(async()=>document.querySelector('[data-testid="settings-backup-restore-button"]').click())
   assert.equal(document.querySelector('[data-testid="export-old-recovery-button"]'),null,'#304: no old-recovery export in the center')
   assert.equal(blob,undefined,'nothing exported');assert.equal(localStorage.getItem('gtar_sync_recovery:plain'),archive)
  } finally {await act(async()=>root.unmount());URL.createObjectURL=create;URL.revokeObjectURL=revoke}

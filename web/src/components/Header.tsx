@@ -1,9 +1,6 @@
 import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { openRecoveryData } from '../utils/recoveryReview'
-import { SyncStatusPill } from './SyncStatusPill'
-import { useCloudBackupBadge } from '../utils/cloudBackupBadge'
-import { cloudBackupStatus } from '../utils/syncStatus'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { SearchResults } from './SearchResults'
@@ -18,12 +15,13 @@ import {
   Trash2,
   Download,
   Terminal,
-  LogOut,
-  User,
-  Shield,
   Menu,
   Sun,
   Moon,
+  Settings,
+  FolderArchive,
+  Info,
+  Layers,
 } from 'lucide-react'
 import {
   SETTINGS_KEYS,
@@ -58,14 +56,12 @@ import {
 } from '../utils/onlineSearch'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
-import { UserManagementModal } from './UserManagementModal'
+import { AboutModal } from './AboutModal'
 import { CloudSyncModal } from './CloudSyncModal'
 import { resolveThemePalette } from './ThemeModal'
 import devMascot from '../assets/bebegirl1-transparent.png'
 import prodMascot from '../assets/bebeboy-transparent.png'
 import { isDevEnv } from '../utils/env'
-import { useGoogleAuth } from './AuthGate'
-import type { GoogleSession } from '../utils/googleAuth'
 import type { SyncLibrary } from '../utils/syncMerge'
 
 interface BeforeInstallPromptEvent extends Event {
@@ -196,8 +192,11 @@ export const Header: React.FC<HeaderProps> = ({
   void onOpenStageTools
   void onOpenCast
   void isCastActive
-  const [showCloudSyncModal, setShowCloudSyncModal] = useState(false)
+  const [showBackupRestoreModal, setShowBackupRestoreModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
+  const [showAboutModal, setShowAboutModal] = useState(false)
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false)
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
 
   const effectiveTheme: ThemeMode = currentTheme ||
     (typeof localStorage !== 'undefined' ? (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null) : null) ||
@@ -272,7 +271,7 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus({ preventScroll: true }) }, [mobileSearchOpen])
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (shortcutsBlocked || showCloudSyncModal || showDebugLogsModal) return
+      if (shortcutsBlocked || showBackupRestoreModal || showDebugLogsModal || showAboutModal) return
       const target = event.target instanceof HTMLElement ? event.target : null
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         if (target?.closest('dialog, [role=dialog]') || target?.id === 'multi-song-search-input') return
@@ -289,36 +288,28 @@ export const Header: React.FC<HeaderProps> = ({
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [shortcutsBlocked, compact, onSearchQueryChange, showCloudSyncModal, showDebugLogsModal])
+  }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal])
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
   const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
   const [previewResult, setPreviewResult] = useState<OnlineChordResult | null>(null)
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isAppInstalled, setIsAppInstalled] = useState(false)
-  const [showUserManagementModal, setShowUserManagementModal] = useState(false)
-  const [showAvatarPopover, setShowAvatarPopover] = useState(false)
-  const [pendingCount, setPendingCount] = useState<number>(0)
   const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   )
 
-  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
-  // #303: the center (with its restore preview) and the debug-log dialog block Stage keyboard/pedal shortcuts.
-  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal
+  // Header dialog overlay blocks Stage keyboard/pedal shortcuts
+  const showCloudSyncModal = showBackupRestoreModal
+  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal || showAboutModal
   const overlayCallback = useRef(onOverlayChange)
   useEffect(() => { overlayCallback.current = onOverlayChange }, [onOverlayChange])
   useEffect(() => { overlayCallback.current?.(headerOverlayOpen) }, [headerOverlayOpen])
   useEffect(() => () => overlayCallback.current?.(false), [])
   useEffect(() => {
-    const open = () => setShowCloudSyncModal(true)
+    const open = () => setShowBackupRestoreModal(true)
     window.addEventListener(OPEN_BACKUP_CENTER_EVENT, open)
     return () => window.removeEventListener(OPEN_BACKUP_CENTER_EVENT, open)
-  }, [])
-  const [backupClock, setBackupClock] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setBackupClock(Date.now()), 60000)
-    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -333,96 +324,70 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [])
 
-  // Retrieve user role & auth state from AuthGate context
-  let isSuperAdmin = false
-  let backupAccessActive = false
-  let currentSession: GoogleSession | null = null
-  let handleSignOut: (() => void) | undefined
-  let handleSignIn: (() => Promise<void>) | undefined
-  try {
-    const auth = useGoogleAuth()
-    isSuperAdmin = auth.isSuperAdmin
-    currentSession = auth.session
-    backupAccessActive = auth.accessStatus === 'active'
-    handleSignOut = auth.signOut
-    handleSignIn = auth.signIn
-  } catch {
-    // Header rendered outside AuthGate (e.g. isolated test or preview)
-  }
+  const popoverItem = 'w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-surface text-app-heading ui-primary-text text-xs font-semibold flex items-center gap-2.5 border border-app-border transition-colors cursor-pointer mb-2'
 
-  const backupToken = currentSession?.sessionToken || currentSession?.idToken || currentSession?.token || ''
-  const backupSignedIn = Boolean(backupAccessActive && backupToken && currentSession?.user?.id)
-  const backupSessionKey = backupSignedIn ? `${currentSession?.user?.id}:${backupToken}` : ''
-  const { record: cloudBackup, matches: backupMatches, onBackupSummary } = useCloudBackupBadge(backupSessionKey, showCloudSyncModal)
-  const backupStatus = cloudBackupStatus(backupSignedIn, cloudBackup, backupMatches)
-
-  // #299 / #264: developer tools, DEV builds only (never rendered in PROD).
-  const advancedItem = 'relative w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-accent/50 ui-primary-text text-app-heading hover:text-app-action text-xs font-bold flex items-center gap-2 border border-app-border transition-all cursor-pointer mb-2'
-  const popoverItem = 'w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-2.5 border border-app-border transition-colors cursor-pointer mb-2'
-  const advancedTools = isDevEnv ? (
-    <div data-testid="advanced-tools">
-      <button type="button" data-testid="advanced-tools-button" aria-expanded={showAdvancedTools}
-        onClick={() => setShowAdvancedTools(open => !open)} className={`${advancedItem} justify-between`}>
-        <span className="flex items-center gap-2"><Wrench className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Advanced Tools</span>
-        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-status-error/15 text-status-error border border-status-error/30">DEV</span>
-      </button>
-      {showAdvancedTools && <div className="pl-2 border-l-2 border-app-border/60 mb-2">
-        <button type="button" data-testid="advanced-debug-logs" onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }} className={advancedItem}>
-          <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Debug logs options
-        </button>
-      </div>}
-    </div>
-  ) : null
-  // #304: "Recovery data" — DEV, and admins (role === 'admin') in PROD; never other users.
-  const showRecoveryData = isDevEnv || isSuperAdmin
+  // Recovery Data: accessible in Settings
+  const isSuperAdmin = false
+  const showRecoveryData = isDevEnv || isSuperAdmin || true
   const recoveryAttention = useRecoveryAttention(showRecoveryData)
-  const recoveryDataRow = showRecoveryData ? (
-    <button type="button" data-testid="profile-recovery-data" onClick={() => { setShowAvatarPopover(false); openRecoveryData() }} className={advancedItem}
-      aria-label={recoveryAttention ? 'Recovery data, some copies can\'t be opened' : undefined}>
-      <History className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />Recovery data
-      {recoveryAttention && <span data-testid="profile-recovery-data-dot" aria-hidden="true" className={recoveryDotClass} />}
+  const recoveryDataRow = (
+    <button
+      type="button"
+      data-testid="settings-recovery-data"
+      onClick={() => { setShowSettingsMenu(false); openRecoveryData() }}
+      className={`${popoverItem} justify-between`}
+      aria-label={recoveryAttention ? "Recovery data, some copies can't be opened" : undefined}
+    >
+      <div className="flex items-center gap-2.5">
+        <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+        <span>Recovery Data</span>
+      </div>
+      {recoveryAttention && <span data-testid="settings-recovery-data-dot" aria-hidden="true" className={recoveryDotClass} />}
     </button>
-  ) : null
+  )
 
-  const isDevApp = isDevEnv || isSuperAdmin || import.meta.env.VITE_ENABLE_DEV_LOGS === 'true'
+  // Advanced Tools: future home for optional Web Sources, ProPresenter, and modular integrations
+  const advancedTools = (
+    <div data-testid="advanced-tools" className="w-full">
+      <button
+        type="button"
+        data-testid="advanced-tools-button"
+        aria-expanded={showAdvancedTools}
+        onClick={() => setShowAdvancedTools(open => !open)}
+        className={`${popoverItem} justify-between`}
+      >
+        <span className="flex items-center gap-2.5">
+          <Wrench className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+          <span>Advanced Tools</span>
+        </span>
+        <span className="text-app-muted text-[10px]">{showAdvancedTools ? '▲' : '▼'}</span>
+      </button>
+      {showAdvancedTools && (
+        <div className="pl-3 border-l-2 border-app-border/60 my-1 space-y-1">
+          <button
+            type="button"
+            data-testid="profile-web-sources"
+            onClick={() => { setShowSettingsMenu(false); onOpenWebsiteUrlSource() }}
+            className={popoverItem}
+          >
+            <Globe className="w-4 h-4 text-app-action shrink-0" />
+            <span>Web Sources</span>
+          </button>
+          <div
+            data-testid="settings-propresenter-stub"
+            className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-base/40 text-app-muted text-xs flex items-center justify-between border border-app-border/40 opacity-70 mb-2 cursor-not-allowed"
+          >
+            <span className="flex items-center gap-2.5">
+              <Layers className="w-4 h-4 text-app-muted shrink-0" aria-hidden="true" />
+              <span>ProPresenter</span>
+            </span>
+            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-surface text-app-muted ui-secondary-text border border-app-border">Modular</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 
-  useEffect(() => {
-    if (!isSuperAdmin) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Revoked admin access must immediately clear the external pending count.
-      setPendingCount(0)
-      return
-    }
-    const token = currentSession?.sessionToken || currentSession?.idToken || currentSession?.token
-    if (!token) return
-
-    let active = true
-    const fetchPendingCount = async () => {
-      try {
-        const res = await fetch('/api/admin/pending-count', {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(5000),
-        })
-        if (res.ok) {
-          const data = (await res.json()) as { count?: number }
-          if (active && typeof data.count === 'number') {
-            setPendingCount(data.count)
-          }
-        }
-      } catch {
-        // Network or offline: ignore
-      }
-    }
-
-    void fetchPendingCount()
-    const handleUpdate = () => { void fetchPendingCount() }
-    window.addEventListener('gtar:auth_updated', handleUpdate)
-    window.addEventListener('focus', handleUpdate)
-    return () => {
-      active = false
-      window.removeEventListener('gtar:auth_updated', handleUpdate)
-      window.removeEventListener('focus', handleUpdate)
-    }
-  }, [isSuperAdmin, currentSession])
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
@@ -439,7 +404,7 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     window.addEventListener('appinstalled', handleAppInstalled)
 
-    if (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialize from the browser display mode after installing the prompt listener.
       setIsAppInstalled(true)
     }
@@ -469,23 +434,21 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   const searchContainerRef = useRef<HTMLElement>(null)
-  const avatarPopoverRef = useRef<HTMLDivElement>(null)
-  const avatarButtonRef = useRef<HTMLButtonElement>(null)
+  const settingsMenuContainerRef = useRef<HTMLDivElement>(null)
+  const settingsButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (!showAvatarPopover) return
+    if (!showSettingsMenu) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        setShowAvatarPopover(false)
-        avatarButtonRef.current?.focus({ preventScroll: true })
+        setShowSettingsMenu(false)
+        settingsButtonRef.current?.focus({ preventScroll: true })
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showAvatarPopover])
-
-
+  }, [showSettingsMenu])
 
   // Filter matching songs for real-time search dropdown overlay
   const matchingSearchSongs = useMemo(() => {
@@ -545,20 +508,17 @@ export const Header: React.FC<HeaderProps> = ({
     return () => clearTimeout(timeout)
   }, [searchQuery])
 
-  // Derive auth status indicator color
-  const userDotClass = currentSession ? 'synced' : 'error'
-
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
         setIsSearchFocused(false)
       }
-      if (avatarPopoverRef.current && !avatarPopoverRef.current.contains(e.target as Node)) {
-        if (avatarButtonRef.current && avatarButtonRef.current.contains(e.target as Node)) {
+      if (settingsMenuContainerRef.current && !settingsMenuContainerRef.current.contains(e.target as Node)) {
+        if (settingsButtonRef.current && settingsButtonRef.current.contains(e.target as Node)) {
           return
         }
-        setShowAvatarPopover(false)
+        setShowSettingsMenu(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -738,10 +698,6 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* Cloud status / Backup & Restore (GTAR1 "Backup" slot), with the recovery dot */}
-          <SyncStatusPill status={backupStatus} lastBackup={cloudBackup?.updatedAt ?? null} now={backupClock}
-            recoveryAttention={recoveryAttention} onClick={() => setShowCloudSyncModal(true)} />
-
           {deferredInstallPrompt && !isAppInstalled && !compact && (
             <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen"
               className="relative flex w-9 h-9 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors cursor-pointer before:absolute before:-inset-1 before:content-['']">
@@ -749,93 +705,80 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Avatar with Auth Status Dot */}
-          <div ref={avatarPopoverRef} className="avatar-wrapper flex items-center justify-center shrink-0">
-            <button ref={avatarButtonRef} type="button" aria-label={currentSession ? 'Account menu' : 'Sign in and account menu'} aria-haspopup="menu"
-              aria-expanded={showAvatarPopover} data-testid="header-avatar"
-              onClick={() => setShowAvatarPopover(!showAvatarPopover)}
-              className="relative w-9 h-9 shrink-0 rounded-xl flex items-center justify-center cursor-pointer before:absolute before:-inset-1 before:content-['']">
-              {currentSession?.user.picture ? (
-                <img src={currentSession.user.picture} alt="" referrerPolicy="no-referrer"
-                  className="w-9 h-9 rounded-xl border-2 border-app-border hover:border-app-action transition-colors object-cover" />
-              ) : (
-                <span className="w-9 h-9 rounded-xl bg-app-surface border-2 border-app-border hover:border-app-action flex items-center justify-center text-app-muted transition-colors">
-                  <User className="w-5 h-5 header-neutral-icon" />
-                </span>
-              )}
+          {/* Settings Gear Button & Dropdown */}
+          <div ref={settingsMenuContainerRef} className="avatar-wrapper flex items-center justify-center shrink-0">
+            <button
+              ref={settingsButtonRef}
+              type="button"
+              aria-label="Settings"
+              aria-haspopup="menu"
+              aria-expanded={showSettingsMenu}
+              data-testid="header-settings"
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+              className="relative w-9 h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
+            >
+              <Settings className="w-5 h-5 text-app-action header-neutral-icon" aria-hidden="true" />
             </button>
-            <span className={`auth-dot ${userDotClass}`} />
-            {isSuperAdmin && pendingCount > 0 && (
-              <span className="pending-badge">{pendingCount > 99 ? '99+' : pendingCount}</span>
-            )}
 
-            {showAvatarPopover && (
-              <div role="menu" aria-label="Account and application menu" className="avatar-popover animate-scale-in" onClick={(e) => e.stopPropagation()}>
-                {currentSession ? (
-                  <>
-                    <div className="flex items-center gap-3 mb-3">
-                      {currentSession.user.picture && (
-                        <img src={currentSession.user.picture} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded-full" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold ui-primary-text text-app-heading truncate">
-                            {(currentSession.user as { name?: string }).name || 'User'}
-                          </span>
-                          {isSuperAdmin ? (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-accent/25 text-app-accent border border-app-accent/30 shrink-0">ADMIN</span>
-                          ) : (
-                            <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-app-action/20 text-app-action border border-app-action/30 shrink-0">USER</span>
-                          )}
-                        </div>
-                        <div className="text-[10px] ui-secondary-text text-app-muted truncate">{currentSession.user.email}</div>
-                      </div>
-                    </div>
+            {showSettingsMenu && (
+              <div
+                role="menu"
+                aria-label="Settings"
+                className="avatar-popover animate-scale-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-1 py-1.5 mb-2 border-b border-app-border/60 flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-app-accent" aria-hidden="true" />
+                  <span className="text-xs font-bold text-app-heading">Settings</span>
+                </div>
 
-                    {isSuperAdmin && (
-                      <button type="button"
-                        onClick={() => { setShowAvatarPopover(false); setShowUserManagementModal(true) }}
-                        className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-base/80 text-app-action text-xs font-bold flex items-center justify-center gap-2 border border-app-action/30 transition-all cursor-pointer mb-2">
-                        <Shield className="w-3.5 h-3.5" />
-                        <span>Manage Users</span>
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-center py-2 space-y-3 mb-2">
-                    <p className="text-xs ui-muted-text text-app-muted">
-                      Sign in to use cloud backup.
-                    </p>
-                    <button type="button"
-                      onClick={() => { setShowAvatarPopover(false); void handleSignIn?.() }}
-                      className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer">
-                      <User className="w-3.5 h-3.5" />
-                      <span>Sign In with Google</span>
-                    </button>
-                  </div>
-                )}
-
-                <div className="h-[1px] bg-app-border/60 my-2" />
-
-                {/* Relocated App Actions: Theme, Web Sources, Trash (mobile), Install App (PWA) */}
+                {/* 1. Theme */}
                 <button
                   type="button"
-                  data-testid="profile-theme-button"
-                  onClick={() => { setShowAvatarPopover(false); onToggleTheme() }}
+                  data-testid="settings-theme-button"
+                  onClick={() => { setShowSettingsMenu(false); onToggleTheme() }}
                   className={popoverItem}
                 >
-                  <Palette className="w-4 h-4 text-app-action shrink-0" />
+                  <Palette className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
                   <span>Theme</span>
                 </button>
 
+                {/* 2. Backup / Restore */}
                 <button
                   type="button"
-                  data-testid="profile-web-sources"
-                  onClick={() => { setShowAvatarPopover(false); onOpenWebsiteUrlSource() }}
+                  data-testid="settings-backup-restore-button"
+                  onClick={() => { setShowSettingsMenu(false); setShowBackupRestoreModal(true) }}
                   className={popoverItem}
                 >
-                  <Globe className="w-4 h-4 text-app-action shrink-0" />
-                  <span>Web Sources</span>
+                  <FolderArchive className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+                  <span>Backup &amp; Restore</span>
+                </button>
+
+                {/* 3. Debug Logs (with Recovery Data management at bottom of section) */}
+                <button
+                  type="button"
+                  data-testid="settings-debug-logs"
+                  onClick={() => { setShowSettingsMenu(false); setShowDebugLogsModal(true) }}
+                  className={popoverItem}
+                >
+                  <Terminal className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+                  <span>Debug Logs</span>
+                </button>
+
+                {recoveryDataRow}
+
+                {/* 4. Advanced Tools */}
+                {advancedTools}
+
+                {/* 5. About GTAR */}
+                <button
+                  type="button"
+                  data-testid="settings-about-button"
+                  onClick={() => { setShowSettingsMenu(false); setShowAboutModal(true) }}
+                  className={popoverItem}
+                >
+                  <Info className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+                  <span>About GTAR</span>
                 </button>
 
                 {/* Mobile/compact Trash */}
@@ -843,7 +786,7 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   data-testid="profile-trash-button"
                   aria-label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
-                  onClick={() => { setShowAvatarPopover(false); onViewChange('trash') }}
+                  onClick={() => { setShowSettingsMenu(false); onViewChange('trash') }}
                   className={`md:hidden ${popoverItem} justify-between`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -861,45 +804,12 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     data-testid="profile-install-app"
-                    onClick={() => { setShowAvatarPopover(false); handleTriggerInstall() }}
+                    onClick={() => { setShowSettingsMenu(false); handleTriggerInstall() }}
                     className={popoverItem}
                   >
                     <Download className="w-4 h-4 text-app-action shrink-0" />
                     <span>Install App (PWA)</span>
                   </button>
-                )}
-
-                {/* Diagnostics and Developer Tools */}
-                {isDevApp && !isDevEnv && (
-                  <button
-                    type="button"
-                    data-testid="profile-debug-logs"
-                    onClick={() => { setShowAvatarPopover(false); setShowDebugLogsModal(true) }}
-                    className={`${advancedItem} justify-between`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Terminal className="w-3.5 h-3.5 text-app-accent" aria-hidden="true" />
-                      <span className="font-semibold">Debug Logs</span>
-                    </div>
-                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-status-error/15 text-status-error border border-status-error/30">
-                      DIAG
-                    </span>
-                  </button>
-                )}
-
-                {recoveryDataRow}
-                {advancedTools}
-
-                {currentSession && (
-                  <>
-                    <div className="h-[1px] bg-app-border/60 my-2" />
-                    <button type="button"
-                      onClick={() => { setShowAvatarPopover(false); handleSignOut?.() }}
-                      className="w-full min-h-11 px-3 py-2 rounded-xl hover:bg-app-base text-status-error text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer">
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Sign Out</span>
-                    </button>
-                  </>
                 )}
 
                 <div data-testid="profile-app-version" className="header-secondary-text pt-2 text-center text-[10px] font-mono text-app-muted select-none border-t border-app-border/40 mt-2">
@@ -971,22 +881,18 @@ export const Header: React.FC<HeaderProps> = ({
         onClose={() => setShowDebugLogsModal(false)}
       />
 
-      {/* Super Admin User Whitelist Management Modal */}
-      <UserManagementModal
-        isOpen={showUserManagementModal}
-        onClose={() => setShowUserManagementModal(false)}
-        onUpdateUsers={() => {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('gtar:auth_updated'))
-          }
-        }}
+      {/* About GTAR Modal */}
+      <AboutModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
       />
-      {/* Cloud Songbook Sync Modal */}
-      <CloudSyncModal folders={folders}
-        isOpen={showCloudSyncModal}
-        onClose={() => setShowCloudSyncModal(false)}
+
+      {/* Backup & Restore Modal */}
+      <CloudSyncModal
+        folders={folders}
+        isOpen={showBackupRestoreModal}
+        onClose={() => setShowBackupRestoreModal(false)}
         onSyncApplied={onCloudSyncApplied}
-        onBackupSummary={onBackupSummary}
         restoreBlocked={autoSyncBlocked}
         deviceSongs={backupSongs}
         deviceSetlists={backupSongs ? setlists : undefined}

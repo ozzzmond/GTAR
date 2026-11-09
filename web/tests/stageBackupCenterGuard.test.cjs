@@ -57,7 +57,8 @@ test('Stage shortcuts pause while the Backup & Restore center is open and work a
   const root = createRoot(document.getElementById('root'))
   try {
     await act(async () => root.render(React.createElement(Harness, { onSelect: i => selected.push(i) })))
-    await act(async () => document.querySelector('[data-testid="header-cloud-sync-button"]').click())
+    await act(async () => document.querySelector('[data-testid="header-settings"]').click())
+    await act(async () => document.querySelector('[data-testid="settings-backup-restore-button"]').click())
     assert.ok(document.querySelector('[data-testid="cloud-sync-modal-card"]'), 'center open over Stage')
     for (const key of KEYS) assert.equal(press(key), false, `${JSON.stringify(key)} ignored while the center is open`)
     assert.deepEqual(selected, [], 'no song change behind the dialog')

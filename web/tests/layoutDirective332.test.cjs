@@ -80,8 +80,8 @@ test('SCOPE 1: Header removes Songbook/Setlists toggle, New Song, and Sources; k
   // Kept elements
   assert.ok($('form[role="search"]'), 'Desktop search container is kept')
   assert.ok(document.getElementById('search-input'), 'Search input is kept')
-  assert.ok($('[data-testid="header-cloud-sync-button"]'), 'Backed up (cloud) status is kept')
-  assert.ok($('[data-testid="header-avatar"]'), 'Profile avatar is kept')
+  assert.equal($('[data-testid="header-cloud-sync-button"]'), null, 'Cloud sync button retired per #434')
+  assert.ok($('[data-testid="header-settings"]'), 'Settings gear button is kept per #434')
   assert.ok($('button[aria-label="Open Music Explorer"]'), 'Music explorer button is kept for mobile navigation')
 }))
 

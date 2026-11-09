@@ -197,40 +197,26 @@ test('a desktop Explorer request reveals the permanent sidebar without locking t
   assert.equal(closed, 1)
 }))
 
-test('Header reads existing backup metadata, tracks local edits without requests, and isolates account status', async () => ui(async ({ root, click }) => {
+test('Header removes obsolete cloud button and avoids background network requests (#431, #434)', async () => ui(async ({ root }) => {
   const { Header } = require('../src/components/Header.tsx')
   const { AuthContext } = require('../src/utils/authContext.ts')
   const { persistLibrary } = require('../src/utils/syncJournal.ts')
-  const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
   const library = { songs: [{ id: '11111111-1111-4111-8111-111111111111', title: 'One', rawContent: '[C]One' }], setlists: [] }
   persistLibrary(library)
-  const record = { data: library, checksum: computeSongbookChecksum(library), version: 1, updatedAt: '2026-11-02T00:00:00Z' }
   const originalFetch = global.fetch
   const requests = []
-  global.fetch = async (url, options) => { requests.push([url, options.method]); return new Response(JSON.stringify({ success: true, cloudRecord: record })) }
+  global.fetch = async (url, options) => { requests.push([url, options?.method]); return new Response(JSON.stringify({ success: true })) }
   const noop = () => {}
   const props = { activeView: 'songbook', song: library.songs[0], searchQuery: '', onViewChange: noop,
     onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop,
     onOpenStageSettings: noop, onOpenImportModal: noop }
   const renderAccount = async id => act(async () => root.render(React.createElement(AuthContext.Provider,
     { value: { session: id ? { token: 'test', user: { id } } : null, role: 'USER', accessStatus: 'active' } }, React.createElement(Header, props))))
-  const button = () => document.querySelector('[data-testid="header-cloud-sync-button"]')
   try {
     await renderAccount('A')
-    assert.equal(button().dataset.status, 'unknown')
-    assert.deepEqual(requests, [], 'header status itself never reads the network')
-    await click(button())
-    assert.deepEqual(requests, [['/api/songbook/sync', 'GET']], 'only the existing dialog fetch runs')
-    await click(document.querySelector('[data-testid="cloud-sync-close-button"]'))
-    assert.equal(button().dataset.status, 'backed-up')
-    await act(async () => persistLibrary({ ...library, songs: [{ ...library.songs[0], title: 'Changed' }] }))
-    assert.equal(button().dataset.status, 'not-backed-up')
-    assert.equal(requests.length, 1, 'local edits do not fetch or auto-backup')
-    await renderAccount('B')
-    assert.equal(button().dataset.status, 'unknown', 'another account cannot inherit the backup')
-    await renderAccount(null)
-    assert.equal(button().dataset.status, 'signed-out')
-    assert.equal(requests.length, 1)
+    assert.equal(document.querySelector('[data-testid="header-cloud-sync-button"]'), null, 'cloud button removed from header')
+    assert.ok(document.querySelector('[data-testid="header-settings"]'), 'settings button present')
+    assert.deepEqual(requests, [], 'header itself never makes background network requests')
   } finally { global.fetch = originalFetch }
 }))
 

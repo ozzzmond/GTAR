@@ -122,7 +122,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
     env.isDevEnv = false
     await act(async () => root.render(React.createElement(Header, props)))
     assert.equal(document.querySelector('[data-testid="dev-header-diagnostics"]'), null, 'DEV diagnostics must be excluded in production header')
-    await act(async () => document.querySelector('[data-testid="header-avatar"]').click())
+    await act(async () => (document.querySelector('[data-testid="header-settings"]') || document.querySelector('[data-testid="header-avatar"]')).click())
 
     // jsdom does not resolve CSS custom properties. Resolve only the exact production
     // role declarations using the variables emitted by the real theme application.
@@ -160,13 +160,9 @@ test('Real header roles resolve independently from body, with neutral icons scop
     const installEvent = new window.Event('beforeinstallprompt'); installEvent.prompt = noop
     await act(async () => window.dispatchEvent(installEvent))
     assert.equal(document.querySelectorAll('.header-neutral-icon').length, neutralBefore + 1)
-    for (const state of ['IN_SYNC', 'ERROR', 'CONFLICT', 'SYNCING']) {
-      await act(async () => window.dispatchEvent(new window.CustomEvent('gtar:cloud_sync_state', { detail: { status: state, isProcessing: false } })))
-      const sync = document.querySelector('[data-testid="header-cloud-sync-button"]')
-      assert.equal(sync.querySelectorAll('.header-neutral-icon').length, 0)
-      assert.ok(sync.querySelector('svg').getAttribute('class').includes('text-app-action'))
-    }
-    assert.ok(!document.querySelector('.auth-dot').classList.contains('header-neutral-icon'))
+    // Cloud sync button and auth dot are retired per #434
+    assert.equal(document.querySelector('[data-testid="header-cloud-sync-button"]'), null)
+    assert.equal(document.querySelector('.auth-dot'), null)
     document.body.className = 'theme-paper-light'
     assert.notEqual(color('.header-primary-text'), rgb(target.headerPrimaryText))
   } finally {
