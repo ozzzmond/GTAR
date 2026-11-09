@@ -1463,12 +1463,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <div className="text-xs text-app-muted mt-0.5">
                   {localArtist || 'Unknown Artist'}
                   {` • Original Key: ${keyContext.originalConflict ? 'Conflicting' : keyContext.originalKey || 'Unknown'}`}
-                  {` • Chart Key: ${
-                    transposeOffset !== 0
-                      ? `${keyContext.performanceKey} (${transposeOffset > 0 ? `+${transposeOffset}` : transposeOffset})`
-                      : (keyContext.chartKey || keyContext.originalKey || 'Unknown')
-                  }${keyContext.chartEstimated && transposeOffset === 0 ? ' (estimated)' : ''}`}
-                  <span className="sr-only">{` • Chart Key: ${keyContext.chartKey || 'Unknown'} • Performance Key: ${keyContext.performanceKey || 'Unknown'}`}</span>
+                  {` • Chart Key: ${keyContext.chartKey || 'Unknown'}${keyContext.chartEstimated ? ' (estimated)' : ''}`}
+                  {transposeOffset !== 0 && <span aria-hidden="true">{` • Performance Key: ${keyContext.performanceKey || 'Unknown'} (${transposeOffset > 0 ? `+${transposeOffset}` : transposeOffset})`}</span>}
+                  <span className="sr-only">{` • Performance Key: ${keyContext.performanceKey || 'Unknown'}`}</span>
                   {keyConflict && <span role="alert"> Resolve conflicting or invalid key metadata before saving.</span>}
                   {localTime ? ` • ${localTime}` : ''}
                 </div>

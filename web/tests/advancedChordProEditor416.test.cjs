@@ -267,8 +267,11 @@ test('UX_SECTION_ACTIONS: Select whole section selects exact character range', a
   const introSection = document.querySelector('[data-testid="chordpro-section-sec-1"]')
   assert.ok(introSection.className.includes('ring-app-action'), 'Selected section should have ring highlight')
 
-  // Check primary textarea has selection set
-  const primaryTextarea = document.querySelector('textarea')
+  // Native editing commands must target the visible selected section.
+  const primaryTextarea = document.querySelector('[data-testid="section-textarea-sec-1"]')
+  assert.ok(document.activeElement === primaryTextarea, 'Visible section must own focus')
+  assert.equal(primaryTextarea.selectionStart, 0)
+  assert.equal(primaryTextarea.selectionEnd, primaryTextarea.value.length)
   const selectedText = primaryTextarea.value.substring(
     primaryTextarea.selectionStart,
     primaryTextarea.selectionEnd
@@ -381,17 +384,18 @@ test('MODE_TOGGLE: Switches between Sections view and Raw text view', async () =
 })
 
 // Helper to trigger React-tracked value change on inputs and textareas
-const change = async (el, value) => {
+const change = async (el, value, caret = value.length) => {
   await act(async () => {
     Object.getOwnPropertyDescriptor(
       el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
       'value'
     ).set.call(el, value)
+    el.setSelectionRange(caret, caret)
     el.dispatchEvent(new window.Event('input', { bubbles: true }))
   })
 }
 
-test('FIX_1:KEY_DISPLAY_AND_SEMANTICS: Stage preview displays Original Key and Chart Key only without visible Performance Key', async () => {
+test('F1: Stage preview distinguishes CHART_KEY from PERFORMANCE_KEY', async () => {
   const SONG_WITH_ORIGINAL = {
     ...SAMPLE_SONG,
     key: 'G',
@@ -432,7 +436,11 @@ test('FIX_1:KEY_DISPLAY_AND_SEMANTICS: Stage preview displays Original Key and C
 
   const transposedText = document.body.textContent
   assert.match(transposedText, /Original Key:\s*G/)
-  assert.match(transposedText, /Chart Key:\s*A\s*\(\+2\)/)
+  assert.match(transposedText, /Chart Key:\s*G/)
+  assert.doesNotMatch(transposedText, /Chart Key:\s*A/)
+  assert.match(transposedText, /Performance Key:\s*A\s*\(\+2\)/)
+  assert.match(document.querySelector('span.sr-only').textContent, /Performance Key:\s*A/)
+  assert.equal(document.querySelector('[data-testid="editor-raw-textarea"]').value, SONG_WITH_ORIGINAL.rawContent)
 })
 
 test('FIX_2:RESIZABLE_EDITOR_PREVIEW: Resizable divider supports keyboard and reset', async () => {
@@ -720,4 +728,42 @@ test('UNDO_REDO_AND_MODE_SWITCH: Preserves section edits across history and mode
 
   const sectionTextareaAgain = document.querySelector('[data-testid="section-textarea-sec-2"]')
   assert.ok(sectionTextareaAgain.value.includes('New line added'))
+})
+
+
+test('F2: recognized heading remaps caret into the reconstructed section', async () => {
+  await act(async () => root.render(React.createElement(DesktopEditor, {
+    song: SAMPLE_SONG, transposeOffset: 0, onUpdateSong: () => true,
+  })))
+  const textarea = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  textarea.focus()
+  const original = textarea.value
+  const edited = original + 'Chorus\n'
+  await change(textarea, edited, edited.length - 1)
+  const active = document.activeElement
+  assert.equal(active.getAttribute('data-testid'), 'section-textarea-sec-3')
+  assert.equal(active.value, 'Chorus\n')
+  assert.equal(active.selectionStart, 'Chorus'.length)
+  assert.equal(active.selectionEnd, 'Chorus'.length)
+  await change(active, active.value + '[G]New chorus lyric\n')
+  assert.equal(document.querySelector('[data-testid="editor-raw-textarea"]').value,
+    SAMPLE_SONG.rawContent.replace(original, edited + '[G]New chorus lyric\n'))
+})
+
+test('F3: Select expands a folded section and focuses its full editable range', async () => {
+  await act(async () => root.render(React.createElement(DesktopEditor, {
+    song: SAMPLE_SONG, transposeOffset: 0, onUpdateSong: () => true,
+  })))
+  const original = document.querySelector('[data-testid="section-textarea-sec-2"]').value
+  await act(async () => document.querySelector('[data-testid="fold-btn-sec-2"]').click())
+  await act(async () => document.querySelector('[data-testid="select-section-sec-2"]').click())
+  const active = document.activeElement
+  assert.equal(active.getAttribute('data-testid'), 'section-textarea-sec-2')
+  assert.equal(active.selectionStart, 0)
+  assert.equal(active.selectionEnd, original.length)
+  assert.equal(document.querySelector('[data-testid="editor-raw-textarea"]').value, SAMPLE_SONG.rawContent)
+  // Model typing over the native selection; surrounding sections/directives stay exact.
+  await change(active, '[Verse 1]\nReplacement\n\n')
+  assert.equal(document.querySelector('[data-testid="editor-raw-textarea"]').value,
+    SAMPLE_SONG.rawContent.replace(original, '[Verse 1]\nReplacement\n\n'))
 })
