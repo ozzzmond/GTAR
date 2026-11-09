@@ -27,6 +27,8 @@ export class TextHistory {
   private future: TextEdit[] = []
   private limit: number
   constructor(limit = 100) { this.limit = limit }
+  canUndo(): boolean { return this.past.length > 0 }
+  canRedo(): boolean { return this.future.length > 0 }
   record(previous: TextEdit, next: TextEdit) {
     if (previous.text === next.text) return
     this.past.push(previous)

@@ -24,7 +24,10 @@ import {
   Sparkles,
   Loader2,
   Layers,
+  Undo2,
+  Redo2,
 } from 'lucide-react'
+import { EditorToolbarButton } from './EditorToolbarButton'
 import { ChordProCodeEditor } from './ChordProCodeEditor'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
@@ -129,6 +132,21 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   })
   const [persisted, setPersisted] = useState(() => fields(song))
   const history = useRef(new TextHistory())
+  const [historyCanUndo, setHistoryCanUndo] = useState(false)
+  const [historyCanRedo, setHistoryCanRedo] = useState(false)
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('gtar_editor_split_ratio')
+      if (saved) {
+        const num = parseFloat(saved)
+        if (!isNaN(num) && num >= 20 && num <= 80) return num
+      }
+    } catch {
+      // ignore
+    }
+    return 50
+  })
+  const splitContainerRef = useRef<HTMLDivElement>(null)
   const selection = useRef({ start: 0, end: 0 })
   const pendingCaretRestoration = useRef<{
     songId?: string | number
@@ -389,6 +407,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const previous: ChartTextEdit = { text: localRawContent, ...selection.current,
       chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset } }
     history.current.record(previous, { text: alignedContent, ...selection.current })
+    setHistoryCanUndo(history.current.canUndo())
+    setHistoryCanRedo(history.current.canRedo())
     setLocalRawContent(alignedContent)
 
     autosave({
@@ -425,6 +445,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setSaveFailed(false)
     setIsSaving(false)
     history.current = new TextHistory()
+    setHistoryCanUndo(false)
+    setHistoryCanRedo(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Same-ID updates must not erase the unsaved draft or undo history.
   }, [song.id])
 
@@ -459,6 +481,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setSaveFailed(false)
       setIsSaving(false)
       history.current = new TextHistory()
+      setHistoryCanUndo(false)
+      setHistoryCanRedo(false)
       showToast('New blank song started')
       onNewSong?.()
     })
@@ -590,7 +614,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     }
     const chartState = { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset }
     const previousEdit: ChartTextEdit = { text: localRawContent, ...selection.current, chartState }
-    if (remember) history.current.record(previousEdit, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
+    if (remember) {
+      history.current.record(previousEdit, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
+      setHistoryCanUndo(history.current.canUndo())
+      setHistoryCanRedo(history.current.canRedo())
+    }
     setLocalRawContent(cleaned)
     const nextDirectives = parseChordProDirectives(cleaned)
     const previousDirectives = parseChordProDirectives(localRawContent)
@@ -770,6 +798,132 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     handleRawContentChange(updated)
   }
 
+  const handleUndo = () => {
+    const textarea = textareaRef.current
+    const current: ChartTextEdit = {
+      text: localRawContent,
+      start: textarea?.selectionStart ?? selection.current.start,
+      end: textarea?.selectionEnd ?? selection.current.end,
+      chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset },
+    }
+    const next = history.current.undo(current)
+    if (next) {
+      handleRawContentChange(next.text, false, (next as ChartTextEdit).chartState)
+      requestAnimationFrame(() => {
+        if (textarea) {
+          textarea.setSelectionRange(next.start, next.end)
+          selection.current = { start: next.start, end: next.end }
+        }
+      })
+    }
+    setHistoryCanUndo(history.current.canUndo())
+    setHistoryCanRedo(history.current.canRedo())
+  }
+
+  const handleRedo = () => {
+    const textarea = textareaRef.current
+    const current: ChartTextEdit = {
+      text: localRawContent,
+      start: textarea?.selectionStart ?? selection.current.start,
+      end: textarea?.selectionEnd ?? selection.current.end,
+      chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset },
+    }
+    const next = history.current.redo(current)
+    if (next) {
+      handleRawContentChange(next.text, false, (next as ChartTextEdit).chartState)
+      requestAnimationFrame(() => {
+        if (textarea) {
+          textarea.setSelectionRange(next.start, next.end)
+          selection.current = { start: next.start, end: next.end }
+        }
+      })
+    }
+    setHistoryCanUndo(history.current.canUndo())
+    setHistoryCanRedo(history.current.canRedo())
+  }
+
+  const handlePointerDownResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const handle = e.currentTarget
+    const container = splitContainerRef.current
+    if (!container) return
+
+    handle.setPointerCapture?.(e.pointerId)
+    const isHorizontal = window.innerWidth >= 768
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const rect = container.getBoundingClientRect()
+      let ratio: number
+      if (isHorizontal) {
+        const offsetX = ev.clientX - rect.left
+        ratio = (offsetX / rect.width) * 100
+      } else {
+        const offsetY = ev.clientY - rect.top
+        ratio = (offsetY / rect.height) * 100
+      }
+      const clamped = Math.min(80, Math.max(20, ratio))
+      setSplitRatio(clamped)
+    }
+
+    const onPointerUp = (ev: PointerEvent) => {
+      handle.removeEventListener('pointermove', onPointerMove)
+      handle.removeEventListener('pointerup', onPointerUp)
+      const rect = container.getBoundingClientRect()
+      let ratio: number
+      if (isHorizontal) {
+        ratio = ((ev.clientX - rect.left) / rect.width) * 100
+      } else {
+        ratio = ((ev.clientY - rect.top) / rect.height) * 100
+      }
+      const clamped = Math.min(80, Math.max(20, Math.round(ratio)))
+      setSplitRatio(clamped)
+      try {
+        localStorage.setItem('gtar_editor_split_ratio', String(clamped))
+      } catch {
+        // ignore
+      }
+    }
+
+    handle.addEventListener('pointermove', onPointerMove)
+    handle.addEventListener('pointerup', onPointerUp)
+  }
+
+  const handleResizeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let next = splitRatio
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      next = Math.max(20, splitRatio - 5)
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      next = Math.min(80, splitRatio + 5)
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      next = 20
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      next = 80
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      next = 50
+    }
+    setSplitRatio(next)
+    try {
+      localStorage.setItem('gtar_editor_split_ratio', String(next))
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleResetSplit = () => {
+    setSplitRatio(50)
+    try {
+      localStorage.setItem('gtar_editor_split_ratio', '50')
+    } catch {
+      // ignore
+    }
+  }
+
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return
     const textarea = e.currentTarget
@@ -788,8 +942,12 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       return
     } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
       e.preventDefault()
-      next = e.key.toLowerCase() === 'y' || e.shiftKey ? history.current.redo(current) : history.current.undo(current)
-      if (next) handleRawContentChange(next.text, false, (next as ChartTextEdit).chartState)
+      if (e.key.toLowerCase() === 'y' || e.shiftKey) {
+        handleRedo()
+      } else {
+        handleUndo()
+      }
+      return
     } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       next = indentText(current.text, current.start, current.end, e.shiftKey)
@@ -942,45 +1100,80 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       <div className="md:hidden">{songInputs}</div>
 
       {/* 3. MAIN SPLIT PANE: Raw ChordPro Editor (Left) & Live Stage Preview (Right) */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div ref={splitContainerRef} className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         {/* LEFT PANE: Raw ChordPro Editor */}
-        <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-app-border bg-app-base h-1/2 md:h-full overflow-hidden">
+        <div
+          style={{
+            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${splitRatio}%` : undefined,
+            height: typeof window !== 'undefined' && window.innerWidth < 768 ? `${splitRatio}%` : undefined,
+          }}
+          className="flex flex-col border-b md:border-b-0 md:border-r border-app-border bg-app-base h-1/2 md:h-full overflow-hidden"
+        >
           <div className="hidden md:block">{songInputs}</div>
 
           {/* Action Editing Toolbar */}
           <div className="px-3 py-2 bg-app-surface border-b border-app-border flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
             <div className="flex flex-wrap items-center gap-1 bg-app-base p-1 rounded-lg border border-app-border">
               {/* [] Bracket Wrap/Insert Action */}
-              <button
-                type="button"
+              <EditorToolbarButton
+                label="Brackets"
+                aria-label="Wrap selection or insert brackets []"
+                shortcut="[]"
+                description="Wrap selection in brackets or insert []"
                 onPointerDown={captureEditorSelection}
                 onClick={handleInsertBrackets}
                 className="flex items-center gap-1 px-2 py-1 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                aria-label="Wrap selection or insert brackets []"
               >
                 <SquareCode className="w-3.5 h-3.5" />
                 <span>[]</span>
-              </button>
+              </EditorToolbarButton>
 
-              <button type="button" aria-label="Insert section"
-                aria-expanded={insertOpen} aria-haspopup="menu" onPointerDown={captureEditorSelection} onClick={event => { captureEditorSelection(); setInsertAnchor(event.currentTarget); setInsertOpen(open => !open) }}
-                className="p-1.5 rounded bg-app-surface text-app-section cursor-pointer">
+              <button
+                type="button"
+                aria-label="Insert section"
+                aria-expanded={insertOpen}
+                aria-haspopup="menu"
+                onPointerDown={captureEditorSelection}
+                onClick={(event) => {
+                  captureEditorSelection()
+                  setInsertAnchor(event.currentTarget)
+                  setInsertOpen((open) => !open)
+                }}
+                className="p-1.5 rounded bg-app-surface text-app-section cursor-pointer"
+              >
                 <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
               <DropdownPortal anchorEl={insertAnchor} open={insertOpen} onClose={() => setInsertOpen(false)} align="left">
-                <div role="menu" aria-label="Insert section" className="min-w-32 rounded-lg border border-app-border bg-app-surface p-1 shadow-xl"
-                  onKeyDown={event => {
+                <div
+                  role="menu"
+                  aria-label="Insert section"
+                  className="min-w-32 rounded-lg border border-app-border bg-app-surface p-1 shadow-xl"
+                  onKeyDown={(event) => {
                     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
                     event.preventDefault()
                     const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
                     const index = items.indexOf(document.activeElement as HTMLButtonElement)
-                    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
-                      : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+                    const next =
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                        ? items.length - 1
+                        : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
                     items[next]?.focus()
-                  }}>
+                  }}
+                >
                   {QUICK_SECTIONS.map((tag, index) => (
-                    <button key={tag} role="menuitem" autoFocus={index === 0} type="button" className="block w-full text-left px-3 py-2 rounded hover:bg-app-base text-app-heading"
-                      onClick={() => { insertTextAtCursor(tag); setInsertOpen(false) }}>
+                    <button
+                      key={tag}
+                      role="menuitem"
+                      autoFocus={index === 0}
+                      type="button"
+                      className="block w-full text-left px-3 py-2 rounded hover:bg-app-base text-app-heading"
+                      onClick={() => {
+                        insertTextAtCursor(tag)
+                        setInsertOpen(false)
+                      }}
+                    >
                       {tag.slice(1, -1)}
                     </button>
                   ))}
@@ -988,60 +1181,100 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </DropdownPortal>
 
               {/* New Blank Song Action with Unsaved Changes Protection */}
-              <button
-                type="button"
+              <EditorToolbarButton
+                label="New Song"
+                aria-label="New Song"
+                description="Start a new blank canonical song"
                 data-testid="editor-new-song-button"
                 onClick={handleNewSong}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-accent/20 text-app-accent hover:text-app-accent transition-colors cursor-pointer"
-                aria-label="New Song"
               >
                 <FilePlus className="w-3.5 h-3.5" />
-              </button>
+              </EditorToolbarButton>
+
+              <div className="w-[1px] h-4 bg-app-border mx-0.5" />
+
+              {/* Undo Button */}
+              <EditorToolbarButton
+                label="Undo"
+                aria-label="Undo"
+                shortcut="Ctrl+Z"
+                description="Undo last text edit"
+                data-testid="editor-undo-button"
+                disabled={!historyCanUndo}
+                onClick={handleUndo}
+                className="p-1.5 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </EditorToolbarButton>
+
+              {/* Redo Button */}
+              <EditorToolbarButton
+                label="Redo"
+                aria-label="Redo"
+                shortcut="Ctrl+Y"
+                description="Redo reverted text edit"
+                data-testid="editor-redo-button"
+                disabled={!historyCanRedo}
+                onClick={handleRedo}
+                className="p-1.5 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </EditorToolbarButton>
 
               <div className="w-[1px] h-4 bg-app-border mx-0.5" />
 
               {/* Icon-Only Clipboard & Edit Controls with Accessible Labels */}
-              <button
-                type="button"
+              <EditorToolbarButton
+                label="Paste"
+                aria-label="Paste"
+                shortcut="Ctrl+V"
+                description="Paste and standardize ChordPro text"
                 onClick={handlePasteClipboard}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-action/20 text-app-action hover:text-app-action transition-colors cursor-pointer"
-                aria-label="Paste"
               >
                 <ClipboardPaste className="w-3.5 h-3.5" />
-              </button>
+              </EditorToolbarButton>
 
-              <button
-                type="button"
+              <EditorToolbarButton
+                label="Copy"
+                aria-label="Copy"
+                shortcut="Ctrl+C"
+                description="Copy entire raw ChordPro text to clipboard"
                 onClick={handleCopyAll}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer"
-                aria-label="Copy"
               >
                 {copyFeedback ? <Check className="w-3.5 h-3.5 text-status-success" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
+              </EditorToolbarButton>
 
-              <button
-                type="button"
+              <EditorToolbarButton
+                label="Select All"
+                aria-label="Select All"
+                shortcut="Ctrl+A"
+                description="Select entire song text in editor"
                 onClick={handleSelectAll}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer font-mono text-[10px] font-bold"
-                aria-label="Select All"
               >
                 <span>ALL</span>
-              </button>
+              </EditorToolbarButton>
 
-              <button
-                type="button"
+              <EditorToolbarButton
+                label="Clear"
+                aria-label="Clear"
+                description="Clear all chords and lyrics after confirmation"
                 onClick={handleClear}
                 className="p-1.5 rounded bg-app-surface hover:bg-red-500/20 text-status-error hover:text-status-error transition-colors cursor-pointer"
-                aria-label="Clear"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
+              </EditorToolbarButton>
+
+              <EditorToolbarButton
+                label="Lookup Metadata"
+                aria-label="Lookup Metadata"
+                description="Query AI metadata suggestion for this song"
                 data-testid="editor-lookup-metadata-button"
                 onClick={handleLookupMetadata}
                 disabled={isLookingUpMetadata || !localTitle.trim()}
-                aria-label="Lookup Metadata"
                 className="px-2 py-1 rounded bg-app-surface border border-app-border hover:border-app-action text-app-action hover:text-app-heading flex items-center gap-1 font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-[11px]"
               >
                 {isLookingUpMetadata ? (
@@ -1050,26 +1283,39 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
                 <span className="hidden sm:inline">Lookup Metadata</span>
-              </button>
-              <button type="button" onClick={() => setIsMetadataModalOpen(true)} aria-label="Song Details & Metadata"
-                className="p-1.5 rounded bg-app-surface text-app-action hover:bg-app-action/20 cursor-pointer">
+              </EditorToolbarButton>
+
+              <EditorToolbarButton
+                label="Song Details & Metadata"
+                description="Open song details, key alignment, and tags modal"
+                onClick={() => setIsMetadataModalOpen(true)}
+                className="p-1.5 rounded bg-app-surface text-app-action hover:bg-app-action/20 cursor-pointer"
+              >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-              </button>
+              </EditorToolbarButton>
+
               {/* View Mode Toggle: Code Editor (Foldable Sections) vs Raw Text */}
-              <button
-                type="button"
+              <EditorToolbarButton
+                label={editorMode === 'code' ? 'Sections View' : 'Raw Text View'}
+                description={
+                  editorMode === 'code'
+                    ? 'Switch to classic full Raw Text editor'
+                    : 'Switch to Code Editor with collapsible musical sections'
+                }
                 data-testid="editor-mode-toggle"
                 onClick={() => setEditorMode((m) => (m === 'code' ? 'raw' : 'code'))}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer flex items-center gap-1 font-mono text-[10px] font-bold"
-                aria-label={editorMode === 'code' ? 'Switch to Raw Text View' : 'Switch to Code Editor View'}
               >
                 <Layers className="w-3.5 h-3.5 text-app-action" />
                 <span className="hidden sm:inline">{editorMode === 'code' ? 'Sections' : 'Raw'}</span>
-              </button>
+              </EditorToolbarButton>
+
               {/* Compact Save Action Button */}
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
+                <EditorToolbarButton
+                  label={isSaving ? 'Saving...' : 'Save changes'}
+                  shortcut="Ctrl+S"
+                  description="Save changes to songbook"
                   onClick={handleSave}
                   disabled={isSaving}
                   className={`p-1.5 sm:p-2 rounded-lg ${
@@ -1077,10 +1323,13 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                       ? 'bg-status-error/20 text-status-error border border-status-error/40 hover:bg-status-error/30'
                       : 'bg-app-button hover:bg-app-button text-app-button-text'
                   } shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-60`}
-                  aria-label={isSaving ? 'Saving...' : 'Save changes'}
                 >
-                  <Save className={`w-4 h-4 ${saveStatus === 'FAILED' ? 'text-status-error' : 'text-app-button-text'} stroke-[2.5] ${isSaving ? 'animate-spin' : ''}`} />
-                </button>
+                  <Save
+                    className={`w-4 h-4 ${
+                      saveStatus === 'FAILED' ? 'text-status-error' : 'text-app-button-text'
+                    } stroke-[2.5] ${isSaving ? 'animate-spin' : ''}`}
+                  />
+                </EditorToolbarButton>
               </div>
             </div>
           </div>
@@ -1136,8 +1385,59 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           </div>
         </div>
 
+        {/* Resizable Divider (Desktop) */}
+        <div
+          role="separator"
+          tabIndex={0}
+          data-testid="editor-preview-divider"
+          aria-orientation="vertical"
+          aria-label="Resize editor and preview panels"
+          aria-valuenow={Math.round(splitRatio)}
+          aria-valuemin={20}
+          aria-valuemax={80}
+          onPointerDown={handlePointerDownResize}
+          onKeyDown={handleResizeKeyDown}
+          onDoubleClick={handleResetSplit}
+          className="hidden md:flex w-2.5 bg-app-base hover:bg-app-action/30 active:bg-app-action/50 cursor-col-resize select-none items-center justify-center border-x border-app-border transition-colors shrink-0 group focus:outline-none focus:bg-app-action/40"
+        >
+          <div className="w-0.5 h-6 rounded bg-app-muted/50 group-hover:bg-app-action transition-colors" />
+        </div>
+
+        {/* Resizable Divider (Mobile / Compact) */}
+        <div
+          role="separator"
+          tabIndex={0}
+          data-testid="editor-preview-divider-mobile"
+          aria-orientation="horizontal"
+          aria-label="Resize editor and preview panels"
+          aria-valuenow={Math.round(splitRatio)}
+          aria-valuemin={20}
+          aria-valuemax={80}
+          onPointerDown={handlePointerDownResize}
+          onKeyDown={handleResizeKeyDown}
+          onDoubleClick={handleResetSplit}
+          className="flex md:hidden h-4 bg-app-surface border-y border-app-border cursor-row-resize select-none items-center justify-between px-3 text-[10px] text-app-muted shrink-0 group focus:outline-none focus:bg-app-action/20"
+        >
+          <span className="font-mono text-[9px] opacity-70">Editor {Math.round(splitRatio)}%</span>
+          <div className="w-8 h-1 rounded bg-app-muted/50 group-hover:bg-app-action" />
+          <button
+            type="button"
+            onClick={handleResetSplit}
+            className="text-[9px] font-mono text-app-action hover:underline cursor-pointer"
+            aria-label="Reset split to 50/50"
+          >
+            50/50
+          </button>
+        </div>
+
         {/* RIGHT PANE: Live Real-time Stage Preview Sync */}
-        <div className="flex-1 flex flex-col bg-app-base h-1/2 md:h-full overflow-hidden">
+        <div
+          style={{
+            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - splitRatio}%` : undefined,
+            height: typeof window !== 'undefined' && window.innerWidth < 768 ? `${100 - splitRatio}%` : undefined,
+          }}
+          className="flex-1 flex flex-col bg-app-base h-1/2 md:h-full overflow-hidden"
+        >
           <div className="flex-1 p-4 sm:p-6 md:pt-2.5 overflow-y-auto bg-app-base select-text">
             <div className="border-b border-app-border pb-3 mb-4 flex items-center justify-between">
               <div>
@@ -1147,7 +1447,12 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 <div className="text-xs text-app-muted mt-0.5">
                   {localArtist || 'Unknown Artist'}
                   {` • Original Key: ${keyContext.originalConflict ? 'Conflicting' : keyContext.originalKey || 'Unknown'}`}
-                  {` • Chart Key: ${keyContext.chartKey || 'Unknown'}${keyContext.chartEstimated ? ' (estimated)' : ''} • Performance Key: ${keyContext.performanceKey || 'Unknown'}`}
+                  {` • Chart Key: ${
+                    transposeOffset !== 0
+                      ? `${keyContext.performanceKey} (${transposeOffset > 0 ? `+${transposeOffset}` : transposeOffset})`
+                      : (keyContext.chartKey || keyContext.originalKey || 'Unknown')
+                  }${keyContext.chartEstimated && transposeOffset === 0 ? ' (estimated)' : ''}`}
+                  <span className="sr-only">{` • Chart Key: ${keyContext.chartKey || 'Unknown'} • Performance Key: ${keyContext.performanceKey || 'Unknown'}`}</span>
                   {keyConflict && <span role="alert"> Resolve conflicting or invalid key metadata before saving.</span>}
                   {localTime ? ` • ${localTime}` : ''}
                 </div>
@@ -1338,7 +1643,12 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
       {/* Song Metadata & Details Modal */}
       {isMetadataModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Song Details & Metadata"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in"
+        >
           <div className="bg-app-surface border border-app-border rounded-2xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-app-border pb-3">
@@ -1360,31 +1670,61 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </div>
             </div>
 
-            <div className="mb-3 text-xs text-app-muted">
-              {(keyContext.chartEstimated || declaredKey(localRawContent).present || confirmedChartKey) && <>
-              <p>Confirm the key of the authored chords to enable Original Key zero. Confirmation preserves current playback; selecting zero changes playback.</p>
-              <input aria-label="Confirm authored Chart Key" value={chartConfirmation}
-                onChange={e => setChartConfirmation(e.target.value)} placeholder="e.g. E or F#m"
-                className="bg-app-base p-2 rounded border border-app-border" />
-              <button type="button" data-testid="confirm-chart-key" disabled={!normalizeMusicalKey(chartConfirmation)}
-                onClick={() => {
-                  const key = normalizeMusicalKey(chartConfirmation)
-                  if (!key) return
-                  const declaration = declaredKey(localRawContent)
-                  if (declaration.present && (declaration.conflict || !keysArePitchEquivalent(declaration.key, key))) {
-                    showToast('Correct or remove the conflicting raw key directive before confirmation.')
-                    return
-                  }
-                  setConfirmedChartKey(key)
-                  setLocalKey(key)
-                  autosave({ key, confirmedChartKey: key, rawContent: localRawContent })
-                }} className="p-2 text-app-action">Confirm Chart Key</button>
-              </>}
-              {keyContext.originalRelative && <button type="button" data-testid="transpose-chart-to-original"
-                onClick={() => handleConfirmTransposeToOriginalKey(localOriginalKey)} className="p-2 text-app-action">
-                Transpose chord text to Original Key (preserve playback)
-              </button>}
-            </div>
+            {/* Authored Chart Key Confirmation & Alignment */}
+            {(keyContext.chartEstimated || declaredKey(localRawContent).present || confirmedChartKey) && (
+              <div className="rounded-xl border border-app-border bg-app-base/60 p-3 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-app-heading">
+                  <span>Authored Chart Key Confirmation</span>
+                  {confirmedChartKey && (
+                    <span className="font-mono text-[10px] text-app-action bg-app-action/10 px-1.5 py-0.5 rounded border border-app-action/20">
+                      Confirmed: {confirmedChartKey}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-app-muted leading-relaxed">
+                  Confirm the key of the authored chords to enable Original Key zero. Confirmation preserves current playback; selecting zero changes playback.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    aria-label="Confirm authored Chart Key"
+                    value={chartConfirmation}
+                    onChange={(e) => setChartConfirmation(e.target.value)}
+                    placeholder="e.g. E or F#m"
+                    className="flex-1 bg-app-base px-2.5 py-1.5 rounded-lg border border-app-border text-app-heading font-mono text-xs focus:outline-none focus:border-app-action"
+                  />
+                  <button
+                    type="button"
+                    data-testid="confirm-chart-key"
+                    disabled={!normalizeMusicalKey(chartConfirmation)}
+                    onClick={() => {
+                      const key = normalizeMusicalKey(chartConfirmation)
+                      if (!key) return
+                      const declaration = declaredKey(localRawContent)
+                      if (declaration.present && (declaration.conflict || !keysArePitchEquivalent(declaration.key, key))) {
+                        showToast('Correct or remove the conflicting raw key directive before confirmation.')
+                        return
+                      }
+                      setConfirmedChartKey(key)
+                      setLocalKey(key)
+                      autosave({ key, confirmedChartKey: key, rawContent: localRawContent })
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-app-surface border border-app-border hover:border-app-action text-app-action font-semibold text-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Confirm Chart Key
+                  </button>
+                </div>
+                {keyContext.originalRelative && (
+                  <button
+                    type="button"
+                    data-testid="transpose-chart-to-original"
+                    onClick={() => handleConfirmTransposeToOriginalKey(localOriginalKey)}
+                    className="w-full px-3 py-2 rounded-lg bg-app-surface border border-app-border hover:border-app-action text-app-action font-semibold text-xs text-center transition-colors cursor-pointer"
+                  >
+                    Transpose chord text to Original Key (preserve playback)
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Canonical Metadata Inputs */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -1418,22 +1758,33 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 </div>
               </div>
 
-              <label className="flex flex-col gap-1 text-[11px] font-mono text-app-muted">
-                Original Key
-                <input aria-label="Original Key" value={localOriginalKey} placeholder="Unknown"
-                  onChange={e => {
-                    const value = e.target.value
-                    setLocalOriginalKey(value)
-                    const normalized = normalizeMusicalKey(value)
-                    if (normalized !== null) {
-                      setLocalOriginalKey(normalized)
-                      const rawContent = syncCanonicalDirectives(localRawContent, { originalKey: normalized })
-                      setLocalRawContent(rawContent)
-                      autosave({ originalKey: normalized, rawContent })
-                    }
-                  }}
-                  className="bg-app-base p-2 rounded-lg border border-app-border text-app-text" />
-              </label>
+              {/* Original Key */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-app-muted flex items-center gap-1">
+                  <Music className="w-3 h-3 text-app-action" />
+                  <span>Original Key</span>
+                </label>
+                <div className="flex items-center bg-app-base px-2 py-1.5 rounded-lg border border-app-border focus-within:border-app-action transition-colors">
+                  <input
+                    type="text"
+                    aria-label="Original Key"
+                    value={localOriginalKey}
+                    placeholder="Unknown"
+                    onChange={(e) => {
+                      const value = e.target.value
+                      setLocalOriginalKey(value)
+                      const normalized = normalizeMusicalKey(value)
+                      if (normalized !== null) {
+                        setLocalOriginalKey(normalized)
+                        const rawContent = syncCanonicalDirectives(localRawContent, { originalKey: normalized })
+                        setLocalRawContent(rawContent)
+                        autosave({ originalKey: normalized, rawContent })
+                      }
+                    }}
+                    className="w-full bg-transparent text-app-action font-bold font-mono focus:outline-none text-center text-xs"
+                  />
+                </div>
+              </div>
 
               {/* Tempo / BPM */}
               <div className="flex flex-col gap-1">

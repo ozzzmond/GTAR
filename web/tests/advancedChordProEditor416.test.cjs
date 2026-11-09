@@ -379,3 +379,206 @@ test('MODE_TOGGLE: Switches between Sections view and Raw text view', async () =
   })
   assert.ok(document.querySelector('[data-testid="chordpro-code-editor"]'))
 })
+
+// Helper to trigger React-tracked value change on inputs and textareas
+const change = async (el, value) => {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+      'value'
+    ).set.call(el, value)
+    el.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+}
+
+test('FIX_1:KEY_DISPLAY_AND_SEMANTICS: Stage preview displays Original Key and Chart Key only without visible Performance Key', async () => {
+  const SONG_WITH_ORIGINAL = {
+    ...SAMPLE_SONG,
+    key: 'G',
+    originalKey: 'G',
+    rawContent: `{title: Worship Song}\n{artist: Praise Band}\n{key: G}\n{original_key: G}\n\n[G]Praise [C]the Lord`,
+  }
+
+  // Test untransposed (offset 0)
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SONG_WITH_ORIGINAL,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  // Visible preview text contains Original Key: G and Chart Key: G
+  const previewText = document.body.textContent
+  assert.match(previewText, /Original Key:\s*G/)
+  assert.match(previewText, /Chart Key:\s*G/)
+  // Performance Key should only be in sr-only element
+  const srOnly = document.querySelector('span.sr-only')
+  assert.ok(srOnly, 'Screen-reader element for key semantics must exist')
+  assert.match(srOnly.textContent, /Performance Key:\s*G/)
+
+  // Test transposed (+2 semitones to A)
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SONG_WITH_ORIGINAL,
+        transposeOffset: 2,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const transposedText = document.body.textContent
+  assert.match(transposedText, /Original Key:\s*G/)
+  assert.match(transposedText, /Chart Key:\s*A\s*\(\+2\)/)
+})
+
+test('FIX_2:RESIZABLE_EDITOR_PREVIEW: Resizable divider supports keyboard and reset', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const divider = document.querySelector('[data-testid="editor-preview-divider"]')
+  assert.ok(divider, 'Desktop resizable divider must exist')
+  assert.equal(divider.getAttribute('role'), 'separator')
+  assert.equal(divider.getAttribute('aria-valuenow'), '50')
+
+  // Keyboard navigation on divider: ArrowLeft shrinks editor ratio
+  await act(async () => {
+    divider.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+  })
+  assert.equal(divider.getAttribute('aria-valuenow'), '45')
+
+  // ArrowRight expands editor ratio
+  await act(async () => {
+    divider.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+  })
+  assert.equal(divider.getAttribute('aria-valuenow'), '50')
+
+  // Reset via Space or Enter
+  await act(async () => {
+    divider.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+  })
+  assert.equal(divider.getAttribute('aria-valuenow'), '45')
+
+  await act(async () => {
+    divider.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  assert.equal(divider.getAttribute('aria-valuenow'), '50')
+
+  // Mobile divider reset button
+  const mobileDivider = document.querySelector('[data-testid="editor-preview-divider-mobile"]')
+  assert.ok(mobileDivider, 'Mobile divider must exist')
+  const resetBtn = mobileDivider.querySelector('button')
+  assert.ok(resetBtn, '50/50 reset button on mobile divider must exist')
+})
+
+test('FIX_3:METADATA_MODAL_CLEANUP: Metadata dialog opens with clean styling and key alignment', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const metadataBtn = document.querySelector('[aria-label="Song Details & Metadata"]')
+  assert.ok(metadataBtn, 'Metadata button must exist in toolbar')
+
+  await act(async () => {
+    metadataBtn.click()
+  })
+
+  const modal = document.querySelector('[role="dialog"]')
+  assert.ok(modal, 'Metadata dialog must open')
+  assert.match(modal.textContent, /Song Details & Metadata/)
+  assert.match(modal.textContent, /Original Key/)
+})
+
+test('FIX_4:UNDO_REDO_TOOLBAR: Undo and Redo toolbar buttons track edit history across modes', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const undoBtn = document.querySelector('[data-testid="editor-undo-button"]')
+  const redoBtn = document.querySelector('[data-testid="editor-redo-button"]')
+  assert.ok(undoBtn, 'Undo button must exist in toolbar')
+  assert.ok(redoBtn, 'Redo button must exist in toolbar')
+
+  // Initially disabled when history is empty
+  assert.equal(undoBtn.disabled, true)
+  assert.equal(redoBtn.disabled, true)
+
+  // Switch to Raw mode and edit text
+  const modeToggle = document.querySelector('[data-testid="editor-mode-toggle"]')
+  await act(async () => {
+    modeToggle.click()
+  })
+
+  const rawTextarea = document.querySelector('textarea')
+  const originalText = rawTextarea.value
+  const newText = originalText + '\n[G]Added line'
+
+  // Edit raw text
+  await change(rawTextarea, newText)
+
+  // Undo button should now be enabled
+  assert.equal(undoBtn.disabled, false)
+  assert.equal(redoBtn.disabled, true)
+
+  // Click Undo
+  await act(async () => {
+    undoBtn.click()
+  })
+
+  // Redo button should now be enabled
+  assert.equal(redoBtn.disabled, false)
+
+  // Click Redo
+  await act(async () => {
+    redoBtn.click()
+  })
+
+  assert.equal(undoBtn.disabled, false)
+})
+
+test('FIX_5:INTERACTIVE_BUTTON_HELP: Toolbar buttons provide accessible popover help without title attributes', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const clearBtn = document.querySelector('[aria-label="Clear"]')
+  assert.ok(clearBtn, 'Clear toolbar button must exist')
+  assert.equal(clearBtn.getAttribute('title'), null, 'Rule #224: Buttons must not use native title tooltips')
+
+  // Focus clear button to trigger accessible popover
+  await act(async () => {
+    clearBtn.focus()
+  })
+
+  const tooltip = document.querySelector('[data-testid="editor-toolbar-tooltip"]')
+  assert.ok(tooltip, 'Popover tooltip must appear on focus')
+  assert.match(tooltip.textContent, /Clear all chords and lyrics after confirmation/)
+})
