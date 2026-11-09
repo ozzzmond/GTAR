@@ -1,5 +1,5 @@
 // #304 item 8: "Recovery data" — older copies of the songbook kept on this device, in plain language.
-import React, { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { History, X } from 'lucide-react'
 import { RecoveryDataCard } from './RecoveryDataCard'
 
