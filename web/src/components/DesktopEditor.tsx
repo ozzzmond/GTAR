@@ -21,8 +21,6 @@ import {
   Check,
   MoreHorizontal,
   FilePlus,
-  Sparkles,
-  Loader2,
   Layers,
   Undo2,
   Redo2,
@@ -34,10 +32,9 @@ import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
 import { normalizeMusicalKey, canonicalSongKey, keysArePitchEquivalent } from '../utils/musicalKey'
-import { parseChordProDirectives, syncCanonicalDirectives, formatTempoLabel, type CanonicalMetadata } from '../utils/chordProMetadata'
+import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
 import { declaredKey, resolveSongKeys, transposeContext, wrapKeyOffset } from '../utils/songKeySemantics'
 import { transposeCanonicalSong } from '../utils/chartKeyAlignment'
-import { lookupSongMetadata, type SongMetadataResult } from '../utils/songMetadataClient'
 import { generateUUID } from '../utils/uuid'
 import type { ActiveSongState } from '../types/gtar'
 
@@ -288,95 +285,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     return () => window.removeEventListener('beforeunload', guard)
   }, [isSaved])
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
-  const [isLookingUpMetadata, setIsLookingUpMetadata] = useState(false)
-  const [lookupResult, setLookupResult] = useState<SongMetadataResult | null>(null)
-  const [lookupMessage, setLookupMessage] = useState<string | null>(null)
-  const [isLookupPreviewOpen, setIsLookupPreviewOpen] = useState(false)
-
-  const handleLookupMetadata = async () => {
-    // Derive inputs strictly from canonical structured metadata
-    const parsedDirectives = parseChordProDirectives(localRawContent).metadata
-    const queryTitle = (localTitle || parsedDirectives.title || '').trim()
-    const queryArtist = (localArtist || parsedDirectives.artist || '').trim()
-    const queryKey = (localKey || parsedDirectives.key || '').trim()
-    const queryTempo = (localBpm || (parsedDirectives.tempo ? String(parsedDirectives.tempo) : '')).trim()
-    const queryTime = (localTime || parsedDirectives.time || '').trim()
-    const queryYear = (localYear || (parsedDirectives.year ? String(parsedDirectives.year) : '')).trim()
-
-    if (!queryTitle) {
-      showToast('Enter a song title first')
-      return
-    }
-    setIsLookingUpMetadata(true)
-    setLookupMessage(null)
-    setLookupResult(null)
-    setIsLookupPreviewOpen(true)
-    try {
-      const res = await lookupSongMetadata({
-        title: queryTitle,
-        artist: queryArtist || undefined,
-        currentKey: queryKey || undefined,
-        tempo: queryTempo || undefined,
-        timeSignature: queryTime || undefined,
-        year: queryYear || undefined,
-      })
-      if (res.status === 'ok' && res.metadata) {
-        setLookupResult(res.metadata)
-      } else if (res.status === 'ambiguous' && res.metadata) {
-        setLookupResult(res.metadata)
-        setLookupMessage('Metadata suggestion found; Original Key not verified')
-      } else if (res.status === 'not_found') {
-        setLookupMessage('No confident metadata suggestion found')
-      } else {
-        setLookupMessage(res.error || 'No confident metadata suggestion found')
-      }
-    } catch {
-      setLookupMessage('Metadata service unavailable')
-    } finally {
-      setIsLookingUpMetadata(false)
-    }
-  }
-
-  const handleApplyMetadataOnly = (meta: SongMetadataResult) => {
-    // Updates canonical metadata fields only; never alters {key} and never transposes chord symbols
-    const updates: Partial<ActiveSongState> = {}
-
-    if (meta.title && meta.title.trim()) {
-      setLocalTitle(meta.title.trim())
-      updates.title = meta.title.trim()
-    }
-    if (meta.artist && meta.artist.trim()) {
-      setLocalArtist(meta.artist.trim())
-      updates.artist = meta.artist.trim()
-    }
-    if (meta.tempo) {
-      const formatted = String(meta.tempo).trim()
-      setLocalBpm(formatted)
-      updates.bpm = formatted
-    }
-    if (meta.timeSignature && meta.timeSignature.trim()) {
-      setLocalTime(meta.timeSignature.trim())
-      updates.time = meta.timeSignature.trim()
-    }
-    if (meta.year) {
-      const y = String(meta.year).trim()
-      setLocalYear(y)
-      updates.year = y
-    }
-    if (meta.originalKey) {
-      const validatedOrigKey = normalizeMusicalKey(meta.originalKey)
-      if (validatedOrigKey) {
-        setLocalOriginalKey(validatedOrigKey)
-        updates.originalKey = validatedOrigKey
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      autosave(updates)
-      showToast('Song metadata updated')
-    }
-    setIsLookupPreviewOpen(false)
-  }
 
   const handleConfirmTransposeToOriginalKey = (targetOriginalKey: string | null | undefined) => {
     const validated = normalizeMusicalKey(targetOriginalKey)
@@ -1310,23 +1218,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </EditorToolbarButton>
 
               <EditorToolbarButton
-                label="Lookup Metadata"
-                aria-label="Lookup Metadata"
-                description="Query AI metadata suggestion for this song"
-                data-testid="editor-lookup-metadata-button"
-                onClick={handleLookupMetadata}
-                disabled={isLookingUpMetadata || !localTitle.trim()}
-                className="px-2 py-1 rounded bg-app-surface border border-app-border hover:border-app-action text-app-action hover:text-app-heading flex items-center gap-1 font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-[11px]"
-              >
-                {isLookingUpMetadata ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" />
-                )}
-                <span className="hidden sm:inline">Lookup Metadata</span>
-              </EditorToolbarButton>
-
-              <EditorToolbarButton
                 label="Song Details & Metadata"
                 description="Open song details, key alignment, and tags modal"
                 onClick={() => setIsMetadataModalOpen(true)}
@@ -1518,158 +1409,6 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       </div>
 
       {/* Song Metadata & Details Modal */}
-      {/* Metadata Lookup Suggestion Preview Modal */}
-      {isLookupPreviewOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Metadata Lookup Preview"
-          data-testid="metadata-lookup-preview-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in"
-        >
-          <div className="bg-app-surface border border-app-border rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col gap-4 text-xs select-none">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-app-border pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-app-base border border-app-action/40 flex items-center justify-center text-app-action">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm text-app-heading">Metadata Suggestion Preview</h2>
-                  <p className="text-[10px] text-app-muted">Review metadata suggestion before applying</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLookupPreviewOpen(false)
-                }}
-                className="p-1 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Content State */}
-            {isLookingUpMetadata ? (
-              <div className="py-8 flex flex-col items-center justify-center gap-2 text-app-muted">
-                <Loader2 className="w-6 h-6 animate-spin text-app-action" />
-                <span className="text-xs">Querying metadata suggestion...</span>
-              </div>
-            ) : lookupResult ? (
-              <div className="flex flex-col gap-3">
-                {/* Requested vs Suggested Comparison Card */}
-                <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-app-base border border-app-border">
-                  <div className="flex flex-col gap-1 border-r border-app-border/60 pr-2">
-                    <span className="text-[10px] uppercase font-bold text-app-muted tracking-wider">Requested</span>
-                    <div className="text-[11px] font-medium text-app-heading truncate">
-                      {localTitle || 'Untitled'}
-                    </div>
-                    <div className="text-[10px] text-app-muted truncate">
-                      {localArtist || '(unspecified artist)'}
-                    </div>
-                    <div className="text-[10px] text-app-muted mt-1 font-mono">
-                      Current Key: <span className="font-bold text-app-text">{localKey || 'None'}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1 pl-2">
-                    <span className="text-[10px] uppercase font-bold text-app-action tracking-wider">Suggested</span>
-                    <div className="text-[11px] font-bold text-app-heading truncate">
-                      {lookupResult.title}
-                    </div>
-                    <div className="text-[10px] text-app-text truncate">
-                      {lookupResult.artist || '—'}
-                    </div>
-                    <div className="text-[10px] text-app-action mt-1 font-mono">
-                      Orig Key: <span className="font-bold">{lookupResult.originalKey || 'Not verified'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Additional Suggested Fields Table */}
-                <div className="grid grid-cols-3 gap-2 px-1 text-[11px] font-mono">
-                  <div className="flex flex-col bg-app-base p-2 rounded-lg border border-app-border">
-                    <span className="text-[9px] text-app-muted uppercase">Tempo</span>
-                    <span className="font-bold text-app-text">{formatTempoLabel(lookupResult.tempo) || '—'}</span>
-                  </div>
-                  <div className="flex flex-col bg-app-base p-2 rounded-lg border border-app-border">
-                    <span className="text-[9px] text-app-muted uppercase">Time</span>
-                    <span className="font-bold text-app-text">{lookupResult.timeSignature || '—'}</span>
-                  </div>
-                  <div className="flex flex-col bg-app-base p-2 rounded-lg border border-app-border">
-                    <span className="text-[9px] text-app-muted uppercase">Year</span>
-                    <span className="font-bold text-app-text">{lookupResult.year || '—'}</span>
-                  </div>
-                </div>
-
-                {/* Source & Confidence */}
-                <div className="flex items-center justify-between text-[10px] text-app-muted px-1 font-mono">
-                  <span>Source: {lookupResult.source}</span>
-                  <span className="px-1.5 py-0.5 rounded bg-app-base border border-app-border">
-                    Confidence: {lookupResult.confidence}
-                  </span>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-app-border">
-                  <button
-                    type="button"
-                    onClick={() => setIsLookupPreviewOpen(false)}
-                    className="px-3 py-1.5 rounded-lg bg-app-base hover:bg-app-surface border border-app-border text-app-muted hover:text-app-heading transition-colors cursor-pointer text-xs"
-                  >
-                    Cancel
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      data-testid="apply-metadata-button"
-                      onClick={() => handleApplyMetadataOnly(lookupResult)}
-                      className="px-3 py-1.5 rounded-lg bg-app-action hover:bg-app-action/80 text-app-on-action font-bold transition-colors cursor-pointer text-xs"
-                    >
-                      Apply Metadata
-                    </button>
-
-                    {lookupResult.originalKey && (
-                      normalizeMusicalKey(localKey) === normalizeMusicalKey(lookupResult.originalKey) ? (
-                        <span className="text-[10px] text-app-accent font-semibold px-2 py-1">
-                          Already Aligned ({lookupResult.originalKey})
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleConfirmTransposeToOriginalKey(lookupResult.originalKey)
-                            setIsLookupPreviewOpen(false)
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-app-surface hover:bg-app-base border border-app-action text-app-action hover:text-app-heading font-medium text-xs transition-colors cursor-pointer"
-                        >
-                          Transpose to Original Key ({lookupResult.originalKey})
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="py-6 flex flex-col items-center justify-center gap-3">
-                <p className="text-xs text-app-muted italic text-center">
-                  {lookupMessage || 'No confident metadata suggestion found.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsLookupPreviewOpen(false)}
-                  className="px-3 py-1.5 rounded-lg bg-app-base hover:bg-app-surface border border-app-border text-app-heading transition-colors cursor-pointer text-xs"
-                >
-                  Close
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {keyDeletion && (
         <div role="dialog" aria-modal="true" aria-label="Removed Chart Key" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
           <div className="bg-app-surface border border-app-border rounded-2xl max-w-md p-5 text-app-heading">

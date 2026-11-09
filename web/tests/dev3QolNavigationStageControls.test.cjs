@@ -19,28 +19,25 @@ const webDir = path.resolve(__dirname, '..')
 const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
 
 // =============================================================================
-// 2. HEADER UPPERBOX & STAGE VIEW ORDER (#333, #359)
+// 2. HEADER UPPERBOX & STAGE VIEW ORDER (#333, #359, #434)
 // =============================================================================
-test('DEV3_HEADER_TOOLBAR_ORDER: Header follows Backed up -> profile (Theme/Trash/More relocated per #359); Stage follows Back -> Editor -> Band Sync', () => {
+test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear present per #434; Stage follows Back -> Editor -> Band Sync', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
   const stageSource = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
 
-  const backupIdx = headerSource.indexOf('<SyncStatusPill')
-  const avatarIdx = headerSource.indexOf('data-testid="header-avatar"')
-
-  assert.ok(backupIdx !== -1, 'Backed up action must exist in Header')
-  assert.ok(avatarIdx !== -1, 'Profile avatar must exist in Header')
-  assert.ok(backupIdx < avatarIdx, 'Backed up must precede profile')
+  // #434: Header cloud button retired, settings gear replaces profile avatar
+  assert.equal(headerSource.indexOf('<SyncStatusPill'), -1, 'SyncStatusPill removed from Header')
+  assert.ok(headerSource.includes('data-testid="header-settings"'), 'Settings gear button must exist in Header')
 
   // #359: Theme, Trash, More removed from top header toolbar
   assert.equal(headerSource.indexOf('ToolbarIconButton'), -1, 'ToolbarIconButton removed from header toolbar')
   assert.equal(headerSource.indexOf('label="Theme"'), -1, 'Theme removed from header toolbar')
   assert.equal(headerSource.indexOf('label="More"'), -1, 'More removed from header toolbar')
 
-  // #359: Relocated actions in Profile popover
-  assert.ok(headerSource.includes('data-testid="profile-theme-button"'), 'Theme in Profile popover')
-  assert.ok(headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources in Profile popover')
-  assert.ok(headerSource.includes('data-testid="profile-trash-button"'), 'Trash in Profile popover (<md)')
+  // Relocated actions in Settings popover (#434)
+  assert.ok(headerSource.includes('data-testid="settings-theme-button"'), 'Theme in Settings popover')
+  assert.ok(headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources in Settings popover')
+  assert.ok(headerSource.includes('data-testid="profile-trash-button"'), 'Trash in Settings popover (<md)')
 
   // Verify Stage Box ordering
   const backIdx = stageSource.indexOf('aria-label="Back"')

@@ -592,8 +592,8 @@ test('TARGETED: PENDING_STATUS_CHECK returns pending state and transitions to ac
   assert.equal(data2.user.access_status, 'active')
 })
 
-// 9. TARGETED: PROFILE_PENDING_BADGE & 10. TARGETED: GREEN_STATUS_DOT_PRESERVED
-test('TARGETED: PROFILE_PENDING_BADGE and GREEN_STATUS_DOT_PRESERVED', async () => {
+// 9. TARGETED: HEADER_SETTINGS_GEAR_PRESERVED & ACCOUNT_BADGES_RETIRED (#431, #434)
+test('TARGETED: HEADER_SETTINGS_GEAR_PRESERVED and obsolete account badges retired (#431, #434)', async () => {
   const { Header } = require('../src/components/Header.tsx')
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar-web.pages.dev/' })
 
@@ -620,28 +620,6 @@ test('TARGETED: PROFILE_PENDING_BADGE and GREEN_STATUS_DOT_PRESERVED', async () 
   const prevSession = global.sessionStorage
   const prevAct = global.IS_REACT_ACT_ENVIRONMENT
   const prevFetch = global.fetch
-
-  // Mock server returning pendingCount = 3
-  global.fetch = async (url) => {
-    if (String(url).includes('/api/admin/pending-count')) {
-      return new Response(JSON.stringify({ success: true, count: 3 }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-    return new Response(JSON.stringify({ success: true }), { status: 200 })
-  }
-
-  dom.window.matchMedia = dom.window.matchMedia || function() {
-    return {
-      matches: false,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    }
-  }
 
   try {
     Object.assign(global, {
@@ -677,22 +655,14 @@ test('TARGETED: PROFILE_PENDING_BADGE and GREEN_STATUS_DOT_PRESERVED', async () 
       )
     })
 
-    // Allow pending-count fetch effect to run and update state
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50))
-    })
-
     const bodyHtml = dom.window.document.body.innerHTML
 
-    // 1. Verify avatar-wrapper exists
-    assert.match(bodyHtml, /avatar-wrapper/)
+    // 1. Verify Settings gear entry point exists
+    assert.ok(dom.window.document.querySelector('[data-testid="header-settings"]'), 'Settings gear button must exist')
 
-    // 2. Verify green status dot auth-dot synced is preserved at lower-right
-    assert.match(bodyHtml, /auth-dot synced/)
-
-    // 3. Verify pending notification badge with count=3 is rendered
-    assert.match(bodyHtml, /pending-badge/)
-    assert.match(dom.window.document.querySelector('.pending-badge')?.textContent || '', /3/)
+    // 2. Verify obsolete auth-dot and pending-badge are retired from Header (#431, #434)
+    assert.equal(dom.window.document.querySelector('.auth-dot'), null, 'auth-dot retired from header')
+    assert.equal(dom.window.document.querySelector('.pending-badge'), null, 'pending-badge retired from header')
 
     await act(async () => root.unmount())
   } finally {

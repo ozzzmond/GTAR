@@ -257,40 +257,29 @@ test('pre-auth errors (popup blocked, offline) are recorded in appLogger', () =>
 })
 
 // =========================================================================
-// 6. HEADER CLOUD SYNC CANONICAL ENTRY & DEBUG LOGS VISIBILITY
+// 6. HEADER SETTINGS ENTRY & BACKUP & RESTORE / DEBUG LOGS VISIBILITY (#434)
 // =========================================================================
-test('Header simplifies Cloud Sync to canonical header button and removes duplicate menu entries', () => {
+test('Header simplifies Cloud Sync to canonical Settings menu and removes duplicate menu entries', () => {
   const headerSource = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
 
-  // Canonical primary Cloud Sync button beside avatar exists
-  assert.match(headerSource, /<SyncStatusPill/)
-  const pillSource = fs.readFileSync(require.resolve('../src/components/SyncStatusPill.tsx'), 'utf8')
-  assert.match(pillSource, /Backup & Restore/)
-  assert.match(pillSource, /aria-label=\{description\}/)
-  const statusSource = fs.readFileSync(require.resolve('../src/utils/syncStatus.ts'), 'utf8')
-  assert.match(statusSource, /Last cloud backup:/)
+  // Header cloud sync button retired; Settings gear present per #434
+  assert.doesNotMatch(headerSource, /<SyncStatusPill/)
+  assert.match(headerSource, /data-testid="header-settings"/)
+  assert.match(headerSource, /data-testid="settings-backup-restore-button"/)
+  assert.match(headerSource, /data-testid="settings-debug-logs"/)
 
-  // #359: Verify overflow menu retired and Cloud Songbook Sync is not in avatar popover
+  // #359: Verify overflow menu retired
   assert.doesNotMatch(headerSource, /showOverflowMenu &&/, 'Overflow menu retired in #359')
 
-  // Verify Cloud Songbook Sync is NOT in avatar popover
-  const avatarPopoverIdx = headerSource.indexOf('showAvatarPopover &&')
-  assert.ok(avatarPopoverIdx > -1, 'Avatar popover must exist')
-  const avatarPopoverChunk = headerSource.slice(avatarPopoverIdx, avatarPopoverIdx + 2500)
-  assert.doesNotMatch(avatarPopoverChunk, /Cloud Songbook Sync/)
-
-  // #299: one entry point; the avatar popover no longer has Backup & Restore (JSON)
-  assert.doesNotMatch(headerSource, /Backup &amp; Restore \(JSON\)/)
+  // Settings menu exists per #434
+  assert.match(headerSource, /showSettingsMenu &&/, 'Settings menu must exist')
 })
 
-test('Header Debug Logs access is enabled in dev environment or when dev logs enabled', () => {
+test('Header Debug Logs access is enabled in Settings menu per #434', () => {
   const headerSource = fs.readFileSync(require.resolve('../src/components/Header.tsx'), 'utf8')
 
-  // isDevApp condition includes isDevEnv, isSuperAdmin, or VITE_ENABLE_DEV_LOGS
-  assert.match(headerSource, /const isDevApp = isDevEnv \|\| isSuperAdmin \|\| import\.meta\.env\.VITE_ENABLE_DEV_LOGS === 'true'/)
-
-  // Debug Logs item in overflow menu renders trigger
-  assert.match(headerSource, /<span className="font-semibold">Debug Logs<\/span>/)
+  // Debug Logs item in Settings menu renders trigger
+  assert.match(headerSource, /data-testid="settings-debug-logs"/)
   assert.match(headerSource, /setShowDebugLogsModal\(true\)/)
 })
 

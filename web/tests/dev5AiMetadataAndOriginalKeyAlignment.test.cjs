@@ -168,19 +168,16 @@ test('CHORDPRO_ORIGINAL_KEY_SYNCHRONIZATION: syncCanonicalDirectives updates {or
 })
 
 // 6. UI WORKFLOW INTEGRATION IN DESKTOP EDITOR
-test('DESKTOP_EDITOR_UI_INTEGRATION: DesktopEditor exposes metadata lookup and explicit transposition action', () => {
+test('DESKTOP_EDITOR_UI_INTEGRATION: DesktopEditor retires lookup action while preserving explicit transposition action', () => {
   const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
 
-  // DesktopEditor has Lookup Metadata button
-  assert.ok(editorSource.includes('Lookup Metadata'), 'DesktopEditor must render Lookup Metadata action')
-  assert.ok(editorSource.includes('handleLookupMetadata'), 'DesktopEditor must define handleLookupMetadata')
+  // DesktopEditor has retired Lookup Metadata action and handler
+  assert.ok(!editorSource.includes('Lookup Metadata'), 'DesktopEditor must not render Lookup Metadata action')
+  assert.ok(!editorSource.includes('handleLookupMetadata'), 'DesktopEditor must not define handleLookupMetadata')
 
   // DesktopEditor has explicit confirmation action before transposition
-  assert.ok(editorSource.includes('Transpose to Original Key'), 'DesktopEditor must offer Transpose to Original Key action')
+  assert.ok(editorSource.includes('Transpose chord text to Original Key'), 'DesktopEditor must offer Transpose chord text to Original Key action')
   assert.ok(editorSource.includes('handleConfirmTransposeToOriginalKey'), 'DesktopEditor must define handleConfirmTransposeToOriginalKey')
-
-  // DesktopEditor has already aligned indication for same-key
-  assert.ok(editorSource.includes('Already Aligned'), 'DesktopEditor must indicate Already Aligned when keys match')
 
   // Invariant: DesktopEditor must NOT use deprecated auto-alignment hooks
   assert.doesNotMatch(editorSource, /alignChartKey/, 'DesktopEditor must not invoke alignChartKey')

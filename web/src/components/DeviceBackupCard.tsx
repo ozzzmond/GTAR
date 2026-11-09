@@ -515,17 +515,17 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
           </button>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={handleDownloadBackup} className={secondaryButton}>
-              <Download className="max-sm:hidden w-3.5 h-3.5 text-app-link" aria-hidden="true" />
+              <Download className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
               <span>Download .json</span>
             </button>
             <button type="button" onClick={handleCopyBackup} className={secondaryButton}>
-              <Copy className="max-sm:hidden w-3.5 h-3.5 text-app-link" aria-hidden="true" />
+              <Copy className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
               <span>Copy JSON</span>
             </button>
           </div>
           <button type="button" data-testid="restore-file-button" disabled={isRestoring || restoreBlocked}
             onClick={() => restoreFileInputRef.current?.click()} className={outlinedButton}>
-            <Upload className="w-3.5 h-3.5 text-app-link" aria-hidden="true" />
+            <Upload className="w-3.5 h-3.5 text-app-action" aria-hidden="true" />
             <span>Restore from file</span>
           </button>
         </div>

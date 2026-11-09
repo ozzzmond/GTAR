@@ -24,20 +24,20 @@ for (const ext of ['.ts', '.tsx']) {
 
 const webDir = path.resolve(__dirname, '..')
 
-// 1. LOOKUP ENTRY POINT PLACEMENT & MODAL CLEANUP
-test('ENTRY_POINT_PLACEMENT: Primary Lookup Metadata action is on main editor toolbar and removed from Song Details modal', () => {
+// 1. LOOKUP ENTRY POINT RETIREMENT & MANUAL DETAILS PRESERVATION
+test('ENTRY_POINT_PLACEMENT: Primary Lookup Metadata action is retired from editor toolbar while manual Song Details modal is preserved', () => {
   const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
 
-  // Main Action Editing Toolbar contains the lookup button
-  assert.ok(editorSource.includes('data-testid="editor-lookup-metadata-button"'), 'DesktopEditor must have primary lookup button on main toolbar')
-  assert.ok(editorSource.includes('aria-label="Lookup Metadata"'), 'Toolbar lookup button has an accessible name (#224: no hover tooltip)')
+  // Lookup button removed from editor toolbar per PR #435 QA follow-up
+  assert.ok(!editorSource.includes('data-testid="editor-lookup-metadata-button"'), 'DesktopEditor must not have lookup button on main toolbar')
+  assert.ok(!editorSource.includes('aria-label="Lookup Metadata"'), 'Toolbar lookup button accessible name removed')
 
-  // Check the Song Details & Metadata modal header does NOT have the duplicate button
+  // Check the Song Details & Metadata modal markup is preserved for manual editing
   const modalSectionMatch = editorSource.match(/\{isMetadataModalOpen && \([\s\S]*?Song Details & Metadata[\s\S]*?Canonical Metadata Inputs/)
   assert.ok(modalSectionMatch, 'Must find Song Details modal markup')
   const modalMarkup = modalSectionMatch[0]
-  assert.ok(!modalMarkup.includes('handleLookupMetadata'), 'Song Details modal header must NOT contain redundant handleLookupMetadata action')
-  assert.ok(!modalMarkup.includes('<span>Lookup Metadata</span>'), 'Song Details modal must NOT contain duplicate Lookup Metadata text')
+  assert.ok(!modalMarkup.includes('handleLookupMetadata'), 'Song Details modal must NOT contain handleLookupMetadata action')
+  assert.ok(!modalMarkup.includes('<span>Lookup Metadata</span>'), 'Song Details modal must NOT contain Lookup Metadata text')
 })
 
 // 2. CANONICAL CHORDPRO METADATA EXTRACTION & INPUTS
@@ -115,21 +115,17 @@ test('PROMPT_SEMANTICS: Prompt explicitly distinguishes current chart key from o
   assert.ok(prompt.user.includes('No Transposition / No Chords: Do not alter chord charts. Do not transpose anything'), 'Prompt re-asserts no transposition')
 })
 
-// 4. METADATA PREVIEW UX & SEPARATION OF APPLY METADATA VS TRANSPOSE TO ORIGINAL KEY
-test('PREVIEW_UX_AND_TRANSPOSE_SEPARATION: Suggestion Preview provides Requested vs Suggested, Apply Metadata updates metadata without transposing chords', () => {
+// 4. METADATA PREVIEW RETIREMENT & DIRECTIVE SYNCHRONIZATION PRESERVATION
+test('PREVIEW_UX_RETIREMENT_AND_DIRECTIVES: Suggestion Preview modal removed from editor while directive sync and transpose are preserved', () => {
   const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
   const { syncCanonicalDirectives } = require(path.join(webDir, 'src/utils/chordProMetadata.ts'))
   const { transposeCanonicalSong } = require(path.join(webDir, 'src/utils/chartKeyAlignment.ts'))
 
-  // DesktopEditor has Preview Modal
-  assert.ok(editorSource.includes('data-testid="metadata-lookup-preview-modal"'), 'Must have preview modal')
-  assert.ok(editorSource.includes('Metadata Suggestion Preview'), 'Must have suggestion preview title')
-  assert.ok(editorSource.includes('Requested'), 'Must show Requested section')
-  assert.ok(editorSource.includes('Suggested'), 'Must show Suggested section')
-  assert.ok(editorSource.includes('Cancel'), 'Must have Cancel button')
-  assert.ok(editorSource.includes('data-testid="apply-metadata-button"'), 'Must have Apply Metadata button')
+  // DesktopEditor has Preview Modal removed
+  assert.ok(!editorSource.includes('data-testid="metadata-lookup-preview-modal"'), 'Preview modal removed from editor')
+  assert.ok(!editorSource.includes('Metadata Suggestion Preview'), 'Suggestion preview title removed from editor')
 
-  // Verify Apply Metadata only mutates metadata directives
+  // Verify directive synchronization and transposition remain intact
   const initialChart = `{title: Go}
 {artist: Hillsong United}
 {key: G}
@@ -139,7 +135,7 @@ test('PREVIEW_UX_AND_TRANSPOSE_SEPARATION: Suggestion Preview provides Requested
 
 [G]Giving it all away`
 
-  // Scenario: AI suggests originalKey "Bb", tempo 130, year 2011
+  // Scenario: Canonical directives updated with originalKey "Bb", tempo 130, year 2011
   const updatedDirectivesChart = syncCanonicalDirectives(initialChart, {
     originalKey: 'Bb',
     artist: 'Hillsong United',
@@ -147,10 +143,10 @@ test('PREVIEW_UX_AND_TRANSPOSE_SEPARATION: Suggestion Preview provides Requested
   })
 
   // Invariant 1: Key directive remains G
-  assert.ok(updatedDirectivesChart.includes('{key: G}'), 'Chart key must remain G after Apply Metadata')
+  assert.ok(updatedDirectivesChart.includes('{key: G}'), 'Chart key must remain G after sync')
   assert.ok(updatedDirectivesChart.includes('{original_key: Bb}'), 'Chart gets {original_key: Bb}')
-  // Invariant 2: Chord symbols remain completely unchanged during Apply Metadata
-  assert.ok(updatedDirectivesChart.includes('[G]Giving it all away'), 'Chord symbols must NOT transpose during Apply Metadata')
+  // Invariant 2: Chord symbols remain completely unchanged during sync
+  assert.ok(updatedDirectivesChart.includes('[G]Giving it all away'), 'Chord symbols must NOT transpose during directive sync')
 
   // Invariant 3: Transpose to Original Key is separate explicit user action
   const transposedChart = transposeCanonicalSong(updatedDirectivesChart, 'G', 'Bb')
@@ -159,10 +155,9 @@ test('PREVIEW_UX_AND_TRANSPOSE_SEPARATION: Suggestion Preview provides Requested
   assert.ok(transposedChart.rawContent.includes('[Bb]Giving it all away'), 'Chords are transposed only upon explicit transpose action')
 })
 
-// 5. FAILURE & AMBIGUITY WORDING
-test('FAILURE_UX_WORDING: Displays accurate suggestion-based failure wording without claiming external factual DB search', () => {
+// 5. FAILURE & AMBIGUITY WORDING IN BACKEND API
+test('FAILURE_UX_WORDING: Backend API displays accurate suggestion-based failure wording without claiming external factual DB search', () => {
   const { validateAndReconcileAiOutput } = require(path.join(webDir, 'functions/api/songbook/metadata.ts'))
-  const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
 
   // not_found from model returns "No confident metadata suggestion found"
   const notFoundRes = validateAndReconcileAiOutput({
@@ -170,7 +165,4 @@ test('FAILURE_UX_WORDING: Displays accurate suggestion-based failure wording wit
   }, 'Obscure Unknown Track')
   assert.equal(notFoundRes.status, 'not_found')
   assert.ok(notFoundRes.error.includes('No confident metadata suggestion found'))
-
-  // DesktopEditor includes the updated user-facing failure string
-  assert.ok(editorSource.includes('No confident metadata suggestion found'), 'Editor displays "No confident metadata suggestion found"')
 })

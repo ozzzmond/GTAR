@@ -181,11 +181,7 @@ test('DEV5C_CORRECTION_10: main Songbook and side-panel Metadata status use iden
   assert.match(songbookSource, /import \{[^}]*getSongMetadataStatus[^}]*\} from '\.\.\/utils\/chordProMetadata'/)
   assert.ok(songbookSource.includes('getSongMetadataStatus(song).status'))
 
-  // DesktopEditor handles meta.title in handleApplyMetadataOnly
-  assert.ok(editorSource.includes('setLocalTitle(meta.title.trim())'))
-  assert.ok(editorSource.includes('updates.title = meta.title.trim()'))
-
-  // DesktopEditor suggestion UI labels reference key as Orig Key or Original Key, not current chart Key
-  assert.ok(editorSource.includes('Orig Key:'))
-  assert.ok(editorSource.includes('Current Key:'))
+  // DesktopEditor preserves manual metadata dialog and directive sync
+  assert.ok(editorSource.includes('syncCanonicalDirectives'))
+  assert.ok(editorSource.includes('normalizeMusicalKey'))
 })

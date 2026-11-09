@@ -8,8 +8,10 @@ import {
   Check,
   Filter,
   Share2,
+  History,
 } from 'lucide-react'
 import { appLogger, type LogEntry, type LogLevel } from '../utils/logger'
+import { RecoveryDataCard } from './RecoveryDataCard'
 
 interface DebugLogsModalProps {
   isOpen: boolean
@@ -250,6 +252,18 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               )
             })
           )}
+        </div>
+
+        {/* Recovery Data Management Section */}
+        <div data-testid="debug-logs-recovery-section" className="border-t border-app-border bg-app-surface/90 p-4 sm:p-5 overflow-y-auto max-h-[40vh] space-y-3">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+            <h3 className="font-extrabold text-xs sm:text-sm tracking-wide text-app-heading">Recovery Data</h3>
+          </div>
+          <p className="text-[11px] text-app-muted">
+            Older copies of your songbook that GTAR kept on this device. Your current songbook is not affected.
+          </p>
+          <RecoveryDataCard />
         </div>
       </div>
     </div>

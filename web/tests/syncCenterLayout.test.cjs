@@ -34,8 +34,8 @@ async function mount(signedIn, before = () => {}) {
 
 const buttons = el => [...el.querySelectorAll('button')].map(b => b.textContent)
 
-test('signed in: header bar, device card, Cloud (Google) card with account and last backup, footer', async () => {
-  const { root, record } = await mount(true)
+test('Backup & Restore modal: header bar, device card, footer; retired cloud controls absent (#431, #434)', async () => {
+  const { root } = await mount(true)
   try {
     const header = q('cloud-sync-modal-header')
     assert.ok(header); assert.match(header.textContent, /^Backup & Restore$/); assert.ok(header.querySelector('button[aria-label="Close"]'))
@@ -47,43 +47,25 @@ test('signed in: header bar, device card, Cloud (Google) card with account and l
     assert.ok(q('save-backup-file-button').className.includes('bg-app-action') && q('save-backup-file-button').className.includes('w-full'))
     assert.ok(q('restore-file-button').className.includes('border-app-border'))
     assert.match(device.textContent, /On this device1 songs · 0 setlists · 0 in trash/)
-    // #304: no backup reminder control and no device-only "last backup" line.
-    for (const id of ['backup-reminder', 'backup-status']) assert.equal(q(id), null, id)
-    assert.doesNotMatch(document.body.textContent, /Remind me to back up|No backup made from this device yet/)
-    const card = q('cloud-backup-card')
-    assert.match(card.textContent, /^Cloud \(Google\)/i)
-    const account = q('cloud-sync-account-card')
-    assert.ok(card.contains(account))
-    assert.match(account.textContent, /Bee/); assert.match(account.textContent, /b@example.com/); assert.match(account.textContent, /Signed in/)
-    for (const label of ['Last cloud backup', 'Contents', 'Checksum', 'Estimated upload size']) assert.match(card.textContent, new RegExp(label))
-    assert.doesNotMatch(card.textContent, /Cloud size/)
-    assert.match(q('cloud-sync-headroom').textContent, /^\d+\.\d\d MB of 2 MB cloud limit$/)
-    assert.equal(card.querySelector('[role="meter"]').getAttribute('aria-label'), 'Estimated upload size')
-    assert.match(card.textContent, /1 songs · 0 setlists · 0 in trash/)
-    assert.ok(card.textContent.includes(record.checksum))
-    assert.ok(!card.textContent.includes(record.updatedAt), 'no raw ISO date')
-    assert.ok(card.querySelector('[role="meter"]'))
-    assert.doesNotMatch(document.body.textContent, /Idle|In Sync|Conflict/)
-    assert.ok(q('cloud-backup-button').className.includes('bg-app-action'))
-    assert.ok(q('cloud-restore-button').className.includes('border-app-border'))
-    // Removed from the everyday UI (#299): This device view, Review local recovery, debug-log switch.
-    for (const id of ['sync-center-debug-switch', 'sync-center-diagnostics', 'sync-center-device-button', 'sync-center-device-view', 'cloud-sync-recovery-button']) assert.equal(q(id), null, id)
-    assert.doesNotMatch(document.body.textContent, /Review local recovery|Diagnostics and debug logs|Chart storage/)
+
+    // Cloud controls retired per #431 and #434
+    assert.equal(q('cloud-backup-card'), null, 'cloud backup card retired')
+    assert.equal(q('cloud-sync-account-card'), null, 'cloud account card retired')
+    assert.equal(q('cloud-backup-button'), null, 'cloud backup button retired')
+    assert.equal(q('cloud-restore-button'), null, 'cloud restore button retired')
+    assert.doesNotMatch(document.body.textContent, /Sign in to use cloud backup|Auth Required/)
+
     assert.deepEqual(buttons(q('cloud-sync-modal-footer')), ['Close'])
   } finally { await act(async () => root.unmount()) }
 })
 
-test('signed out: device card works, cloud card asks to sign in, no cloud request', async () => {
+test('offline / signed out: device card works, no cloud backup controls rendered, zero cloud network requests', async () => {
   const { root, calls } = await mount(false)
   try {
     assert.ok(q('device-backup-card'))
     assert.ok(q('save-backup-file-button') && q('restore-file-button'))
-    assert.match(q('cloud-sync-account-card').textContent, /Guest \/ Offline.*Auth Required/)
-    const signIn = [...document.querySelectorAll('button')].find(b => b.textContent === 'Sign in to use cloud backup')
-    assert.ok(signIn.className.includes('w-full') && signIn.className.includes('bg-app-action'))
-    assert.ok(q('cloud-backup-card').contains(signIn))
-    assert.equal(q('cloud-backup-card').querySelector('[role="meter"]'), null)
-    assert.equal(q('cloud-backup-button'), null)
+    assert.equal(q('cloud-backup-card'), null)
+    assert.equal(q('cloud-sync-account-card'), null)
     assert.ok(q('cloud-sync-modal-header') && q('cloud-sync-modal-footer'))
     assert.deepEqual(calls, [])
   } finally { await act(async () => root.unmount()) }

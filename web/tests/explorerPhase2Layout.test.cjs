@@ -99,7 +99,7 @@ test('header: actions relocated per #359 (Theme/Trash/More removed, Theme/Source
   await render(Header, headerProps(calls))
   assert.ok($('[data-testid="dev-header-diagnostics"]'), 'DEV deployment details stay next to the logo')
   assert.ok($('[data-testid="dev-header-diagnostics-compact"]'), 'compact DEV strip for phones')
-  assert.ok($('[data-testid="header-cloud-sync-button"]'), 'cloud status button kept')
+  assert.equal($('[data-testid="header-cloud-sync-button"]'), null, 'cloud status button retired per #434')
 
   // Theme, Trash, More removed from header bar (#359)
   assert.equal($('[aria-label="Theme"]'), null, 'no header Theme button (#359)')
@@ -113,33 +113,34 @@ test('header: actions relocated per #359 (Theme/Trash/More removed, Theme/Source
   assert.ok($('button[aria-label="GTAR home"]'), 'GTAR home aria-label')
   assert.equal($('img[alt="GTAR Logo"]')?.getAttribute('alt'), 'GTAR Logo')
 
-  // Avatar popover contains relocated items (#359)
-  await click($('[data-testid="header-avatar"]'))
-  assert.ok($('[data-testid="profile-theme-button"]'), 'Theme in Profile popover')
-  assert.ok($('[data-testid="profile-web-sources"]'), 'Web Sources in Profile popover')
-  assert.ok($('[data-testid="profile-trash-button"]'), 'Trash in Profile popover')
+  // Settings popover contains relocated items (#359, #434)
+  await click($('[data-testid="header-settings"]'))
+  assert.ok($('[data-testid="settings-theme-button"]'), 'Theme in Settings popover')
+  await click($('[data-testid="advanced-tools-button"]'))
+  assert.ok($('[data-testid="profile-web-sources"]'), 'Web Sources in Settings popover')
+  assert.ok($('[data-testid="profile-trash-button"]'), 'Trash in Settings popover')
 
   // Theme item triggers onToggleTheme
-  await click($('[data-testid="profile-theme-button"]'))
+  await click($('[data-testid="settings-theme-button"]'))
   assert.deepEqual(calls, ['theme'])
 
   // Web Sources item triggers onOpenWebsiteUrlSource
-  await click($('[data-testid="header-avatar"]'))
+  await click($('[data-testid="header-settings"]'))
   await click($('[data-testid="profile-web-sources"]'))
   assert.deepEqual(calls, ['theme', 'sources'])
 
   // Trash item triggers onViewChange('trash')
-  await click($('[data-testid="header-avatar"]'))
+  await click($('[data-testid="header-settings"]'))
   await click($('[data-testid="profile-trash-button"]'))
   assert.deepEqual(calls, ['theme', 'sources', 'view:trash'])
 
-  // Esc closes avatar popover
-  await click($('[data-testid="header-avatar"]'))
-  assert.ok($('[data-testid="profile-theme-button"]'))
+  // Esc closes Settings popover
+  await click($('[data-testid="header-settings"]'))
+  assert.ok($('[data-testid="settings-theme-button"]'))
   await act(async () => {
     window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   })
-  assert.equal($('[data-testid="profile-theme-button"]'), null, 'Esc closes avatar popover')
+  assert.equal($('[data-testid="settings-theme-button"]'), null, 'Esc closes Settings popover')
 
   for (const button of document.querySelectorAll('header button')) {
     assert.doesNotMatch(button.className, /\[#|(bg|text|border)-(red|blue|green|amber|sky|slate|gray)-\d/, 'theme tokens only')
@@ -372,21 +373,17 @@ test('#359 PR-C: Header icon-only status button and responsive layout across wid
     const searchTrigger = $('button[aria-label="Open search"]')
     const searchInput = document.getElementById('search-input')
     const cloudBtn = $('[data-testid="header-cloud-sync-button"]')
-    const avatar = $('[data-testid="header-avatar"]')
+    const settings = $('[data-testid="header-settings"]')
     const authDot = document.querySelector('.auth-dot')
 
     // Always present at all widths
     assert.ok(logo, `Logo must exist at ${width}px`)
-    assert.ok(cloudBtn, `Cloud status button must exist at ${width}px`)
-    assert.ok(avatar, `Avatar must exist at ${width}px`)
-    assert.ok(authDot, `Avatar auth dot must exist at ${width}px`)
-
-    // Cloud status button is strictly ICON-ONLY at ALL widths (no status label in textContent)
-    assert.equal(cloudBtn.textContent.trim(), '', `Cloud status button must be icon-only at ${width}px`)
-    assert.match(cloudBtn.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Cloud status button has normalized target at ${width}px`)
-    assert.ok(cloudBtn.querySelector('svg'), `Cloud status icon rendered at ${width}px`)
-    assert.match(cloudBtn.getAttribute('aria-label'), /^Backup & Restore/, `aria-label preserved at ${width}px`)
-    assert.equal(cloudBtn.getAttribute('title'), null, `native title tooltip removed in favor of GTAR popover at ${width}px`)
+    assert.equal(cloudBtn, null, `Cloud status button retired at ${width}px`)
+    assert.ok(settings, `Settings gear must exist at ${width}px`)
+    assert.equal(authDot, null, `Auth dot retired at ${width}px`)
+    assert.match(settings.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Settings button has normalized target at ${width}px`)
+    assert.ok(settings.querySelector('svg'), `Settings icon rendered at ${width}px`)
+    assert.match(settings.getAttribute('aria-label'), /^Settings/, `aria-label preserved at ${width}px`)
 
     if (width < 768) {
       // Compact (<md) layout: hamburger left, logo, search icon, status icon, avatar

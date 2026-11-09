@@ -333,19 +333,18 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
     assert.ok(logoImg.classList.contains('scale-110'), 'Mascot must have scale-110 for proportional container fill')
     assert.ok(logoImg.classList.contains('p-0'), 'Mascot must have p-0 to avoid unnecessary padding')
 
-    // 02: Normalized action icon in avatar and container dimensions matching mascot
-    const avatar = document.querySelector('[data-testid="header-avatar"]')
-    assert.ok(avatar, 'Avatar button must exist')
-    assert.ok(avatar.classList.contains('w-9') && avatar.classList.contains('h-9') && avatar.classList.contains('rounded-xl'), 'Avatar container normalized to w-9 h-9 rounded-xl')
-    assert.ok(avatar.querySelector('svg.w-5.h-5'), 'Avatar placeholder icon must be normalized to w-5 h-5')
+    // 02: Normalized action icon in settings gear and container dimensions matching mascot (#434)
+    const settings = document.querySelector('[data-testid="header-settings"]')
+    assert.ok(settings, 'Settings button must exist')
+    assert.ok(settings.classList.contains('w-9') && settings.classList.contains('h-9') && settings.classList.contains('rounded-xl'), 'Settings container normalized to w-9 h-9 rounded-xl')
+    assert.ok(settings.querySelector('svg.w-5.h-5'), 'Settings icon must be normalized to w-5 h-5')
 
     const themeToggle = document.querySelector('[data-testid="header-theme-mode-toggle"]')
     assert.ok(themeToggle, 'Theme mode toggle must exist')
     assert.ok(themeToggle.classList.contains('w-9') && themeToggle.classList.contains('h-9') && themeToggle.classList.contains('rounded-xl'), 'Theme toggle normalized to w-9 h-9 rounded-xl')
 
-    const cloudBtn = document.querySelector('[data-testid="header-cloud-sync-button"]')
-    assert.ok(cloudBtn, 'Cloud sync button must exist')
-    assert.ok(cloudBtn.classList.contains('w-9') && cloudBtn.classList.contains('h-9') && cloudBtn.classList.contains('rounded-xl'), 'Cloud sync button normalized to w-9 h-9 rounded-xl')
+    // Cloud sync button retired from header (#434)
+    assert.equal(document.querySelector('[data-testid="header-cloud-sync-button"]'), null, 'Cloud sync button retired from header')
 
     // Diagnostics in DEV mode: no version, no UNTAGGED, centered compact line
     const diagLine1 = document.querySelector('[data-testid="dev-header-diag-line1"]')
@@ -360,8 +359,8 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
     // 03: Visible application version is removed from header
     assert.equal(document.querySelector('[data-testid="header-prod-version"]'), null)
 
-    // 03: Profile menu contains version
-    await act(async () => { avatar.click() })
+    // 03: Settings menu contains version
+    await act(async () => { settings.click() })
 
     const profileVersion = document.querySelector('[data-testid="profile-app-version"]')
     assert.ok(profileVersion, 'profile-app-version must be present at bottom of profile menu')
