@@ -346,7 +346,7 @@ test('6. NON_OWNER_REJECTION: Regular member cannot revoke another member share'
   assert.equal(row.is_revoked, 0, 'Share remains unrevoked')
 })
 
-test('7. ANONYMOUS_REJECTION: Unauthenticated calls to create, retrieve, and revoke return 401', async () => {
+test('7. ANONYMOUS_PUBLICATION: Creation allowed; legacy reads and unauthorized revoke protected', async () => {
   shareApi._resetRateLimitsForTesting()
   const { db } = createTestSqliteDb()
   const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
@@ -360,7 +360,7 @@ test('7. ANONYMOUS_REJECTION: Unauthenticated calls to create, retrieve, and rev
     }),
     env,
   })
-  assert.equal(postRes.status, 401)
+  assert.equal(postRes.status, 200)
 
   // Anonymous GET
   const getRes = await shareApi.onRequestGet({
@@ -378,7 +378,7 @@ test('7. ANONYMOUS_REJECTION: Unauthenticated calls to create, retrieve, and rev
     }),
     env,
   })
-  assert.equal(revokeRes.status, 401)
+  assert.equal(revokeRes.status, 403)
 })
 
 test('8. REVOKED_LINK_RETRIEVAL_REJECTION: Revoked share cannot be retrieved through normal GET', async () => {

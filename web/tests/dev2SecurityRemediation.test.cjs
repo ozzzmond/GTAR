@@ -280,7 +280,7 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
   const body2 = await res2.json()
   assert.equal(body2.error, 'DATABASE_UNAVAILABLE')
 
-  // 3. Anonymous caller rejected with 401 without revealing DB status
+  // 3. Anonymous publication fails closed when D1 is unavailable
   const anonReq = new Request('https://gtar.local/api/setlist/share', {
     method: 'POST',
     headers: {
@@ -290,11 +290,12 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
     body: JSON.stringify(validPayload),
   })
 
+  const anonNoDbReq = anonReq.clone()
   const anonRes = await onRequestPost({ request: anonReq, env: { DB: mockDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
-  assert.equal(anonRes.status, 401, 'Anonymous share request must be rejected with 401')
+  assert.equal(anonRes.status, 200, 'Explicit anonymous snapshot can be published')
 
-  const anonNoDbRes = await onRequestPost({ request: anonReq, env: { AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
-  assert.equal(anonNoDbRes.status, 401, 'Anonymous caller must never see protected D1 details')
+  const anonNoDbRes = await onRequestPost({ request: anonNoDbReq, env: { AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
+  assert.equal(anonNoDbRes.status, 503, 'Anonymous publication requires the existing D1 service')
 
   // 4. With active authenticated user and DB available, valid payload succeeds with 16-hex token
   const validReq2 = new Request('https://gtar.local/api/setlist/share', {

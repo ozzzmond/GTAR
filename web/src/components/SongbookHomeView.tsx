@@ -36,12 +36,12 @@ import {
 } from 'lucide-react'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus, formatTempoLabel } from '../utils/chordProMetadata'
-import { extractShareToken, type SharedSetlistPayload } from '../utils/sharedSetlist'
+import { extractShareToken, validateSharedSetlistPayload, type SharedSetlistPayload } from '../utils/sharedSetlist'
 import { SongStatusBadge } from './SongStatusBadge'
 import { SwipeableActionCard } from './SwipeableActionCard'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { useOptionalGoogleAuth } from '../utils/authContext'
-import { getStoredSessionStatus, hasServerApproval } from '../utils/googleAuth'
+import { getStoredSessionStatus } from '../utils/googleAuth'
 
 interface SongbookHomeViewProps {
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
@@ -192,11 +192,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     : [{ label: 'Songbook', target: { type: 'ALL_SONGS' } }, { label: 'All Songs' }]
 
   const auth = useOptionalGoogleAuth()
-  const storedAuthStatus = getStoredSessionStatus()
-  const isAuthActive = auth
-    ? auth.accessStatus === 'active' && !!auth.session
-    : !storedAuthStatus.isExpired && hasServerApproval(storedAuthStatus.session)
-
   // Song multi-selection state
   const [isSongSelectionMode, setIsSongSelectionMode] = useState(false)
   const [selectedSongIds, setSelectedSongIds] = useState<Set<string | number>>(() => new Set())
@@ -526,7 +521,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   const handleResolvePastedShareLink = async () => {
-    if (!isAuthActive) return
     setImportLinkError(null)
     const extracted = extractShareToken(pastedShareLink)
     if (!extracted.isValid) {
@@ -538,16 +532,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     try {
       const { session, isExpired } = getStoredSessionStatus()
       const authToken = auth?.session?.sessionToken || auth?.session?.idToken || auth?.session?.token || session?.sessionToken || session?.idToken || session?.token
-      if (!authToken || isExpired) {
+      const publicShare = extracted.token.length === 64
+      if (!publicShare && (!authToken || isExpired)) {
         throw new Error('Authentication required to view shared setlist.')
       }
 
       const headers: Record<string, string> = {
         Accept: 'application/json',
-        Authorization: `Bearer ${authToken}`,
+        ...(!publicShare ? { Authorization: `Bearer ${authToken}` } : {}),
       }
 
-      const res = await fetch(`/api/setlist/share?token=${encodeURIComponent(extracted.token)}`, { headers })
+      const res = await fetch(`/api/setlist/share?token=${encodeURIComponent(extracted.token)}`, { headers, signal: AbortSignal.timeout(15000) })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
         if (res.status === 401) {
@@ -557,7 +552,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           throw new Error('Active account approval required to view shared setlist.')
         }
         if (res.status === 410) {
-          throw new Error('This shared setlist link has expired.')
+          throw new Error(errData?.error === 'SHARED_SETLIST_REVOKED' ? 'This shared setlist link has been revoked.' : 'This shared setlist link has expired.')
         }
         if (res.status === 404) {
           throw new Error('Shared setlist not found.')
@@ -565,11 +560,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         throw new Error(errData?.error || 'Shared setlist not found or expired.')
       }
       const data = await res.json()
-      if (data?.setlist) {
+      const validated = validateSharedSetlistPayload(data?.setlist)
+      if (validated.isValid) {
         setIsImportModalOpen(false)
         setPastedShareLink('')
         setImportLinkError(null)
-        onImportSharedSetlist?.(data.setlist)
+        onImportSharedSetlist?.(validated.setlist)
       } else {
         throw new Error('Invalid shared setlist payload received.')
       }
@@ -677,7 +673,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               </button>
             </div>
 
-            {!isAuthActive && <p className="text-xs text-app-muted">{auth?.accessStatus === 'denied' ? 'Access denied' : auth?.accessStatus === 'pending' && auth.role !== 'NONE' ? 'Your account is pending approval.' : 'Sign in to view shared setlist'}</p>}
             {/* Primary Action: Paste GTAR Share Link */}
             <div className="space-y-2 mb-5">
               <label htmlFor="paste-share-link-input" className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
@@ -685,13 +680,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <span>Paste GTAR Share Link</span>
               </label>
               <p className="text-[11px] ui-muted-text text-app-muted">
-                Enter a share link or 16-character token created from GTAR:
+                Enter a share link or token created from GTAR:
               </p>
               <div className="flex items-center gap-2">
                 <input
                   id="paste-share-link-input"
                   data-testid="paste-share-link-input"
-                  disabled={!isAuthActive}
                   type="text"
                   placeholder="e.g. https://.../?share=0123456789abcdef"
                   value={pastedShareLink}
@@ -704,7 +698,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <button
                   type="button"
                   data-testid="load-share-link-btn"
-                  disabled={!isAuthActive || !pastedShareLink.trim() || isResolvingLink}
+                  disabled={!pastedShareLink.trim() || isResolvingLink}
                   onClick={handleResolvePastedShareLink}
                   className="px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
                 >

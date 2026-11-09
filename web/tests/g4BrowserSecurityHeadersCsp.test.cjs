@@ -263,10 +263,10 @@ test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 409,
   assert.equal(badReqRes.status, 400)
   assertSecurityHeaders(badReqRes, '400 bad request')
 
-  // 401: Unauthorized (no token)
+  // 401: Unauthorized (invalid bearer; anonymous publishing is supported)
   const unauthReq = new Request('http://localhost/api/setlist/share', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer invalid' },
     body: JSON.stringify({ setlistName: 'Show', songs: [] }),
   })
   const unauthRes = await shareApi.onRequestPost({ request: unauthReq, env })

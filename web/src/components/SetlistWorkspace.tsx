@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, QrCode, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, Share2, Trash2, Upload } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
@@ -189,7 +189,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     onClick={menu.onShareAll}
                     className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                   >
-                    <QrCode className="w-4 h-4" />
+                    <Share2 className="w-4 h-4" />
                   </button>
                 )}
             <button
@@ -257,7 +257,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   onClick={() => menu.onShareSetlist?.(openSetlist)}
                   className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center cursor-pointer shrink-0"
                 >
-                  <QrCode className="w-4 h-4" aria-hidden="true" />
+                  <Share2 className="w-4 h-4" aria-hidden="true" />
                 </button>
               )}
               {(onRequestTrashSetlist || onDeleteSetlist) && (
@@ -394,7 +394,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     ariaLabel={`Open setlist ${sl.name}`}
                     onClick={() => { if (confirmDeleteId !== sl.id) setOpenSetlistId(sl.id) }}
                     leftAction={menu?.onShareSetlist ? {
-                      icon: <QrCode className="w-4 h-4" />,
+                      icon: <Share2 className="w-4 h-4" />,
                       label: 'Share Setlist',
                       onAction: () => menu.onShareSetlist?.(sl),
                     } : undefined}
@@ -517,7 +517,7 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
       )}
       {share && (
         <button type="button" role="menuitem" data-testid="workspace-menu-share" onClick={run(share)} className={menuItem}>
-          <QrCode className="w-3.5 h-3.5 text-app-accent shrink-0" />
+          <Share2 className="w-3.5 h-3.5 text-app-accent shrink-0" />
           <span>{openSetlist ? 'Share setlist (QR)' : 'Share a setlist (QR)'}</span>
         </button>
       )}

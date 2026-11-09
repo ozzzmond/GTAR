@@ -77,9 +77,9 @@ function createMockD1(initialShares = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. ANONYMOUS REQUESTS ARE DENIED (POST and GET)
+// 1. ANONYMOUS PUBLICATION; LEGACY READS REQUIRE AUTHORIZATION
 // ---------------------------------------------------------------------------
-test('ANONYMOUS_ACCESS_DENIED: Direct API calls without authentication return 401', async () => {
+test('ANONYMOUS_SNAPSHOT: Creation allowed; historical shares retain authentication', async () => {
   const { db } = createMockD1()
   const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
 
@@ -94,9 +94,9 @@ test('ANONYMOUS_ACCESS_DENIED: Direct API calls without authentication return 40
     }),
   })
   const postRes = await shareApi.onRequestPost({ request: postReq, env })
-  assert.equal(postRes.status, 401, 'Anonymous POST must return HTTP 401')
+  assert.equal(postRes.status, 200, 'Explicit anonymous snapshot can be published')
   const postData = await postRes.json()
-  assert.match(postData.error, /Authorization/i)
+  assert.match(postData.token, /^[a-f0-9]{64}$/)
 
   // Anonymous GET
   const getReq = new Request('https://gtar.pages.dev/api/setlist/share?token=0123456789abcdef', {
@@ -491,16 +491,16 @@ test('CLIENT_QR_FLOW: Token extraction, URL preservation, and safe import previe
 // ---------------------------------------------------------------------------
 // 7. UNAUTHORIZED POST REJECTED WITHOUT BODY READING / PARSING
 // ---------------------------------------------------------------------------
-test('UNAUTHORIZED_POST_REJECTED_WITHOUT_BODY_PARSING: Anonymous and unauthorized POSTs rejected before body is consumed or DB checked', async () => {
+test('UNAUTHORIZED_POST_REJECTED_WITHOUT_BODY_PARSING: Invalid bearer POSTs rejected before body is consumed', async () => {
   const { users, db } = createMockD1()
   const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
 
   let bodyReadAttempted = false
 
-  // 1. Anonymous POST with body reader spy
+  // 1. Invalid bearer POST with body reader spy
   const anonPoisonReq = new Request('https://gtar.pages.dev/api/setlist/share', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer invalid' },
     body: JSON.stringify({ name: 'Secret Set' }),
   })
   anonPoisonReq.json = async () => {
@@ -515,8 +515,8 @@ test('UNAUTHORIZED_POST_REJECTED_WITHOUT_BODY_PARSING: Anonymous and unauthorize
   }
 
   const anonRes = await shareApi.onRequestPost({ request: anonPoisonReq, env })
-  assert.equal(anonRes.status, 401, 'Anonymous POST must return 401 before body read')
-  assert.equal(bodyReadAttempted, false, 'Body stream must not be touched for anonymous caller')
+  assert.equal(anonRes.status, 401, 'Invalid bearer POST must return 401 before body read')
+  assert.equal(bodyReadAttempted, false, 'Body stream must not be touched for invalid bearer')
 
   // 2. Pending account with body reader spy
   const pendingUser = {
@@ -553,16 +553,16 @@ test('UNAUTHORIZED_POST_REJECTED_WITHOUT_BODY_PARSING: Anonymous and unauthorize
   assert.equal(pendingRes.status, 403, 'Pending account must receive 403 before body read')
   assert.equal(pendingReadAttempted, false, 'Body stream must not be touched for pending account')
 
-  // 3. Anonymous caller when DB is completely missing must return 401 without revealing DB status
+  // 3. Invalid bearer cannot use the anonymous publication path when DB is missing
   const anonNoDbReq = new Request('https://gtar.pages.dev/api/setlist/share', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer invalid' },
     body: JSON.stringify({ name: 'Secret Set' }),
   })
   const anonNoDbRes = await shareApi.onRequestPost({ request: anonNoDbReq, env: { AUTH_SECRET: TEST_SECRET } })
-  assert.equal(anonNoDbRes.status, 401, 'Anonymous request with missing DB must return 401, never 503 DATABASE_UNAVAILABLE')
+  assert.equal(anonNoDbRes.status, 503, 'Unavailable database fails closed')
   const anonNoDbData = await anonNoDbRes.json()
-  assert.match(anonNoDbData.error, /Authorization/i)
+  assert.equal(anonNoDbData.error, 'DATABASE_UNAVAILABLE')
 })
 
 // ---------------------------------------------------------------------------

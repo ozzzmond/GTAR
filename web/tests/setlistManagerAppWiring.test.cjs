@@ -40,7 +40,7 @@ afterEach(async () => { if (root) { await act(async () => root.unmount()); root 
 function freshModules() {
   for (const key of Object.keys(require.cache)) if (key.startsWith(srcDir)) delete require.cache[key]
 }
-async function mountApp(url, { keepStorage = false, realHome = false, auth = null, requests = [] } = {}) {
+async function mountApp(url, { keepStorage = false, realHome = false, auth = null, requests = [], sharedPayload = null, shareStatus = 200 } = {}) {
   const previous = keepStorage ? dom.window.localStorage : null
   const saved = previous ? Object.fromEntries(Object.keys(previous).map(k => [k, previous.getItem(k)])) : null
   if (root) { await act(async () => root.unmount()); root = null }
@@ -59,7 +59,8 @@ async function mountApp(url, { keepStorage = false, realHome = false, auth = nul
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   global.fetch = async (url, options) => {
     requests.push([url, options])
-    if (url === '/api/setlist/share') return new Response(JSON.stringify({ token: 'offline-test' }), { status: 200 })
+    if (String(url).startsWith('/api/setlist/share?')) return new Response(JSON.stringify(sharedPayload ? { setlist: sharedPayload } : { error: 'SHARED_SETLIST_EXPIRED' }), { status: shareStatus })
+    if (url === '/api/setlist/share') return new Response(JSON.stringify({ token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) }), { status: 200 })
     throw new Error('offline')
   }
   if (saved) for (const [k, v] of Object.entries(saved)) localStorage.setItem(k, v)
@@ -118,20 +119,19 @@ test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-
   assert.equal(home.setlists.find(sl => sl.id === 'sl-1').isDeleted, true, 'soft-delete survives reload')
 })
 
-test('#346 real signed-out App opens local share from header, menu and swipe without a share request', async () => {
+test('#346 real signed-out App creates anonymous shares from header, menu and swipe', async () => {
   const requests = []
   await mountApp('http://localhost/', { realHome: true, requests })
   await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
   const assertLocalShare = () => {
     const modal = $('[data-testid="share-setlist-modal-card"]')
     assert.ok(modal)
-    assert.match(modal.textContent, /Sign in to create a QR code \/ share link\./)
     assert.ok(button('Export JSON'))
-    assert.equal(modal.querySelector('img'), null)
-    assert.equal(modal.querySelector('input'), null)
-    assert.equal(button('Copy'), undefined)
-    assert.equal(button('Revoke Share Link'), undefined)
-    assert.equal(requests.filter(([url]) => url === '/api/setlist/share').length, 0)
+    assert.ok(modal.querySelector('img'))
+    assert.match(modal.querySelector('input').value, /share=a{64}$/)
+    assert.ok(button('Copy'))
+    assert.ok(button('Revoke Share Link'))
+    assert.ok(requests.filter(([url]) => url === '/api/setlist/share').length > 0)
   }
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
@@ -162,7 +162,7 @@ test('#346 real signed-out App opens local share from header, menu and swipe wit
   assertLocalShare()
 })
 
-for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus} App gates the QR section while keeping local export`, async () => {
+for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus} App shares without credentials while keeping local export`, async () => {
   const requests = [], now = Date.now()
   const session = { version: 1, user: { id: 'owner', sub: 'owner', email: 'owner@example.test', access_status: accessStatus },
     sessionToken: 'offline-token', access_status: accessStatus, authenticatedAt: now, lastVerifiedAt: now, localExpiresAt: now + 3600000, expiresAt: now + 3600000 }
@@ -174,18 +174,14 @@ for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus
   assert.ok(modal)
   assert.ok(button('Export JSON'))
   const shares = requests.filter(([url]) => url === '/api/setlist/share')
-  if (accessStatus === 'active') {
+  {
     assert.equal(shares.length, 1)
     assert.equal(JSON.parse(shares[0][1].body).name, 'Sunday AM')
     assert.ok(modal.querySelector('img[alt="QR Code for Setlist Sharing"]'))
-    assert.match(modal.querySelector('input').value, /\?share=offline-test$/)
+    assert.match(modal.querySelector('input').value, /\?share=a{64}$/)
     assert.ok(button('Copy'))
     assert.ok(button('Revoke Share Link'))
-  } else {
-    assert.equal(shares.length, 0)
-    assert.equal(modal.querySelector('img'), null)
-    assert.equal(modal.querySelector('input'), null)
-    assert.match(modal.textContent, /Sign in to create a QR code \/ share link\./)
+
   }
 })
 
@@ -259,3 +255,48 @@ test('manage remains available without the legacy drawer outside local developme
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'))
 })
 
+
+
+test('#433 fresh signed-out recipient opens URL snapshot without changing local songs until explicit import', async () => {
+  const requests = []
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: 'Other device', songs: [{ title: 'Remote song', rawContent: '{key: C}\n[C]Remote words' }] }
+  await mountApp(`http://localhost/?share=${'a'.repeat(64)}`, { sharedPayload, requests })
+  const read = requests.find(([url]) => String(url).startsWith('/api/setlist/share?'))
+  assert.ok(read)
+  assert.equal(read[1].headers.Authorization, undefined)
+  assert.match(document.body.textContent, /Other device/)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+  await click(button('Import'))
+  assert.ok(stored().songs.some(song => song.rawContent.includes('Remote words')))
+  assert.ok(stored().setlists.some(setlist => setlist.name === 'Other device'))
+})
+
+for (const status of [410, 503]) test(`#433 signed-out recipient sees ${status} feedback`, async () => {
+  await mountApp(`http://localhost/?share=${'a'.repeat(64)}`, { shareStatus: status })
+  assert.match(document.body.textContent, status === 410 ? /expired/ : /SHARED_SETLIST_EXPIRED/)
+  assert.equal(window.location.search.includes('share='), status !== 410)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+})
+
+
+test('#433 pasted share URL loads signed out and validates before showing recipient preview', async () => {
+  const requests = []
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: 'Pasted snapshot', songs: [{ title: 'Pasted song', rawContent: '[C]Pasted words' }] }
+  await mountApp('http://localhost/', { realHome: true, sharedPayload, requests })
+  await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="workspace-menu-import"]'))
+  const input = $('[data-testid="paste-share-link-input"]')
+  assert.equal(input.disabled, false)
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'http://localhost/?share=' + 'a'.repeat(64))
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+  await click($('[data-testid="load-share-link-btn"]'))
+  assert.match(document.body.textContent, /Pasted snapshot/)
+  const read = requests.find(([url]) => String(url).startsWith('/api/setlist/share?'))
+  assert.ok(read)
+  assert.equal(read[1].headers.Authorization, undefined)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+})

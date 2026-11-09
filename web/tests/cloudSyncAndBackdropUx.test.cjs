@@ -98,14 +98,14 @@ function mockAuth(userRole = 'admin') {
 
 
 
-test('BACKDROP_CLICK_DISMISS & ESCAPE_DISMISS for ShareSetlistModal', () => {
+test('BACKDROP_CLICK_DISMISS & ESCAPE_DISMISS for ShareSetlistModal', async () => {
   let closed = false
   const triggerBtn = document.getElementById('trigger-btn')
   triggerBtn.focus()
 
   const dummySetlist = { id: 'sl_1', name: 'Sunday Service', songs: [] }
 
-  act(() => {
+  await act(async () => {
     root.render(
       React.createElement(ShareSetlistModal, {
         setlist: dummySetlist,

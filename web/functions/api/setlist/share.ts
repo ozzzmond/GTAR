@@ -12,11 +12,11 @@ const userShareTimestamps = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_SHARES_PER_WINDOW = 30;
 
-export function checkUserRateLimit(userId: string): boolean {
+export function checkUserRateLimit(userId: string, limit = MAX_SHARES_PER_WINDOW): boolean {
   const now = Date.now();
   const timestamps = userShareTimestamps.get(userId) || [];
   const validTimestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  if (validTimestamps.length >= MAX_SHARES_PER_WINDOW) {
+  if (validTimestamps.length >= limit) {
     userShareTimestamps.set(userId, validTimestamps);
     return false;
   }
@@ -173,17 +173,37 @@ export async function authenticateShareCaller(
   return { user: auth.user };
 }
 
+// New anonymous shares are explicitly marked in their immutable snapshot. Legacy
+// shares retain account authorization, including legacy rows without a creator.
+const PUBLIC_SHARE_MODE = 'anonymous-v1';
+async function digestCapability(secret: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+function randomCapability(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+}
+async function anonymousLimit(env: Env, operation: 'create' | 'read' | 'revoke'): Promise<Response | null> {
+  const rejection = await enforceAbuseLimit(env, `share-anonymous-${operation}`);
+  if (rejection) return rejection;
+  // Conservative per-isolate global fallback also applies when the optional
+  // distributed limiter is disabled; never trust caller-supplied identity.
+  return checkUserRateLimit(`anonymous-${operation}`, operation === 'read' ? 120 : 30) ? null : abuseResponse(429, 60);
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: Env }) => {
   try {
-    const authResult = await authenticateShareCaller(request, env);
-    if ('error' in authResult) {
+    const anonymous = !request.headers.has('Authorization');
+    const authResult = anonymous ? null : await authenticateShareCaller(request, env);
+    if (authResult && 'error' in authResult) {
       return jsonResponse({ error: authResult.error }, authResult.status);
     }
-
-    const rejection = await enforceAbuseLimit(env, 'share-create', authResult.user.id);
+    const creator = authResult && 'user' in authResult ? authResult.user.id : null;
+    const rejection = anonymous ? await anonymousLimit(env, 'create')
+      : await enforceAbuseLimit(env, 'share-create', creator!);
     if (rejection) return rejection;
 
-    if (!checkUserRateLimit(authResult.user.id)) {
+    if (creator && !checkUserRateLimit(creator)) {
       return abuseResponse(429, 60);
     }
 
@@ -210,24 +230,26 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     // Generate secure random 128-bit token (16 bytes = 32 hex chars)
     // Retry loop handles extremely rare collisions safely without overwriting existing records
     let token = '';
+    let revokeSecret = '';
     let inserted = false;
     const maxCollisionAttempts = 3;
 
     for (let attempt = 0; attempt < maxCollisionAttempts; attempt++) {
       const randomBytes = new Uint8Array(16);
       crypto.getRandomValues(randomBytes);
-      const candidateToken = Array.from(randomBytes)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
+      const candidateSecret = anonymous ? randomCapability() : '';
+      const candidateToken = anonymous ? await digestCapability(candidateSecret) : Array.from(randomBytes)
+        .map((b) => b.toString(16).padStart(2, '0')).join('');
 
       try {
         await env.DB.prepare(
           `INSERT INTO shared_setlists (share_token, setlist_name, payload_json, created_at, expires_at, creator_user_id, is_revoked)
            VALUES (?, ?, ?, ?, ?, ?, 0)`
         )
-          .bind(candidateToken, sanitized.name, JSON.stringify(sanitized), now, expiresAt, authResult.user.id)
+          .bind(candidateToken, sanitized.name, JSON.stringify(anonymous ? { ...sanitized, shareAccess: PUBLIC_SHARE_MODE } : sanitized), now, expiresAt, creator)
           .run();
         token = candidateToken;
+        revokeSecret = candidateSecret;
         inserted = true;
         break;
       } catch (insertErr: unknown) {
@@ -247,6 +269,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
       token,
       name: sanitized.name,
       songCount: sanitized.songs.length,
+      ...(anonymous ? { revokeSecret } : {}),
       expiresAt,
     });
   } catch (err: unknown) {
@@ -257,11 +280,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: Env }) => {
   try {
-    const authResult = await authenticateShareCaller(request, env);
-    if ('error' in authResult) {
-      return jsonResponse({ error: authResult.error }, authResult.status);
-    }
-
     const url = new URL(request.url);
     const token = url.searchParams.get('token');
 
@@ -269,11 +287,16 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
       return jsonResponse({ error: 'INVALID_OR_MISSING_TOKEN' }, 400);
     }
 
+    const publicCandidate = /^[a-f0-9]{64}$/i.test(token) && !request.headers.has('Authorization');
+    const authResult = publicCandidate ? null : await authenticateShareCaller(request, env);
+    if (authResult && 'error' in authResult) return jsonResponse({ error: authResult.error }, authResult.status);
+
     if (!env.DB) {
       return jsonResponse({ error: 'DATABASE_UNAVAILABLE' }, 503);
     }
 
-    const rejection = await enforceAbuseLimit(env, 'share-read', authResult.user.id);
+    const rejection = publicCandidate ? await anonymousLimit(env, 'read')
+      : await enforceAbuseLimit(env, 'share-read', authResult && 'user' in authResult ? authResult.user.id : undefined);
     if (rejection) return rejection;
 
     const row = await env.DB.prepare(
@@ -289,6 +312,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
 
     if (!row) {
       return jsonResponse({ error: 'SHARED_SETLIST_NOT_FOUND' }, 404);
+    }
+
+    const payload = JSON.parse(row.payload_json);
+    if (publicCandidate && (row.creator_user_id || payload.shareAccess !== PUBLIC_SHARE_MODE)) {
+      return jsonResponse({ error: 'Authentication required for legacy share' }, 401);
     }
 
     if (row.is_revoked === 1) {
@@ -307,7 +335,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
       }
     }
 
-    const payload = JSON.parse(row.payload_json);
     const validated = validateSharedSetlistPayload(payload);
     if (!validated.isValid) {
       return jsonResponse({ error: 'CORRUPTED_SHARED_SETLIST' }, 500);
@@ -325,6 +352,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
 
 export async function handleRevokeShare(request: Request, env: Env): Promise<Response> {
   try {
+    if (!request.headers.has('Authorization')) return await revokeAnonymousShare(request, env);
     const authResult = await authenticateShareCaller(request, env);
     if ('error' in authResult) {
       return jsonResponse({ error: authResult.error }, authResult.status);
@@ -418,3 +446,26 @@ export async function handleRevokeShare(request: Request, env: Env): Promise<Res
 export const onRequestDelete = async ({ request, env }: { request: Request; env: Env }) => {
   return handleRevokeShare(request, env);
 };
+
+async function revokeAnonymousShare(request: Request, env: Env): Promise<Response> {
+  const rejection = await anonymousLimit(env, 'revoke');
+  if (rejection) return rejection;
+  const body = await readBoundedJson(request, 16 * 1024);
+  if (body.error) return jsonResponse({ error: body.error }, body.status);
+  const { token, revokeSecret } = (body.data || {}) as Record<string, unknown>;
+  if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token) ||
+      typeof revokeSecret !== 'string' || !/^[a-f0-9]{64}$/.test(revokeSecret) ||
+      await digestCapability(revokeSecret) !== token) {
+    return jsonResponse({ error: 'FORBIDDEN_NOT_SHARE_OWNER' }, 403);
+  }
+  if (!env.DB) return jsonResponse({ error: 'DATABASE_UNAVAILABLE' }, 503);
+  const row = await env.DB.prepare('SELECT payload_json, creator_user_id FROM shared_setlists WHERE share_token = ?')
+    .bind(token).first<{ payload_json: string; creator_user_id: string | null }>();
+  if (!row) return jsonResponse({ error: 'SHARED_SETLIST_NOT_FOUND' }, 404);
+  if (row.creator_user_id || JSON.parse(row.payload_json).shareAccess !== PUBLIC_SHARE_MODE) {
+    return jsonResponse({ error: 'FORBIDDEN_NOT_SHARE_OWNER' }, 403);
+  }
+  await env.DB.prepare('UPDATE shared_setlists SET is_revoked = 1, revoked_at = ? WHERE share_token = ?')
+    .bind(new Date().toISOString(), token).run();
+  return jsonResponse({ success: true, revoked: true, token });
+}
