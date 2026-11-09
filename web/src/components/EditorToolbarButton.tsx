@@ -5,6 +5,7 @@ export interface EditorToolbarButtonProps extends React.ButtonHTMLAttributes<HTM
   label: string
   description?: string
   shortcut?: string
+  align?: 'right' | 'left'
   children: React.ReactNode
 }
 
@@ -12,6 +13,7 @@ export const EditorToolbarButton: React.FC<EditorToolbarButtonProps> = ({
   label,
   description,
   shortcut,
+  align = 'left',
   children,
   onClick,
   className = '',
@@ -86,7 +88,7 @@ export const EditorToolbarButton: React.FC<EditorToolbarButtonProps> = ({
       </button>
 
       {isOpen && anchorEl && (
-        <DropdownPortal anchorEl={anchorEl} open={isOpen} onClose={() => setIsOpen(false)} align="center">
+        <DropdownPortal anchorEl={anchorEl} open={isOpen} onClose={() => setIsOpen(false)} align={align}>
           <div
             role="tooltip"
             data-testid="editor-toolbar-tooltip"
