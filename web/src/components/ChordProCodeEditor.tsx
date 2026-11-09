@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useLayoutEffect } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -12,13 +12,13 @@ import {
   parseChordProSections,
   type ChordProSection,
 } from '../utils/chordProSections'
+import { indentText } from '../utils/editorText'
 
 export interface ChordProCodeEditorProps {
   rawContent: string
   onChange: (newContent: string) => void
   onSelectRange: (start: number, end: number) => void
   onShowToast: (message: string) => void
-  onCaptureSelection?: () => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   onBeforeInput?: (e: React.FormEvent<HTMLTextAreaElement>) => void
   onSelect?: (e: React.SyntheticEvent<HTMLTextAreaElement>) => void
@@ -29,7 +29,6 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
   onChange,
   onSelectRange,
   onShowToast,
-  onCaptureSelection,
   onKeyDown,
   onBeforeInput,
   onSelect,
@@ -37,8 +36,24 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
   const [foldedSectionIds, setFoldedSectionIds] = useState<Set<string>>(new Set())
   const [copiedSectionId, setCopiedSectionId] = useState<string | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const activeSelectionRef = useRef<{
+    sectionId: string
+    selectionStart: number
+    selectionEnd: number
+  } | null>(null)
 
   const parsedSections = useMemo(() => parseChordProSections(rawContent), [rawContent])
+
+  useLayoutEffect(() => {
+    if (!activeSelectionRef.current) return
+    const { sectionId, selectionStart, selectionEnd } = activeSelectionRef.current
+    activeSelectionRef.current = null
+    const textarea = textareaRefs.current[sectionId]
+    if (textarea && document.activeElement === textarea) {
+      textarea.setSelectionRange(selectionStart, selectionEnd)
+    }
+  }, [rawContent])
 
   const toggleFold = (sectionId: string) => {
     setFoldedSectionIds((prev) => {
@@ -84,7 +99,14 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
     onShowToast(`Selected entire [${section.cleanLabel}] section`)
   }
 
-  const handleSectionTextChange = (sectionId: string, newText: string) => {
+  const handleSectionTextChange = (sectionId: string, newText: string, textarea?: HTMLTextAreaElement) => {
+    if (textarea) {
+      activeSelectionRef.current = {
+        sectionId,
+        selectionStart: textarea.selectionStart,
+        selectionEnd: textarea.selectionEnd,
+      }
+    }
     const updatedParts = parsedSections.sections.map((s) => {
       if (s.id === sectionId) {
         return newText
@@ -261,16 +283,34 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
                 /* Expanded Section Text Editor */
                 <div className="p-2 bg-app-base rounded-b-lg">
                   <textarea
+                    ref={(el) => {
+                      textareaRefs.current[section.id] = el
+                    }}
                     data-testid={`section-textarea-${section.id}`}
                     aria-label={`Content of section ${section.cleanLabel}`}
                     value={section.fullText}
-                    onChange={(e) => handleSectionTextChange(section.id, e.target.value)}
+                    onChange={(e) => handleSectionTextChange(section.id, e.target.value, e.currentTarget)}
                     onBeforeInput={onBeforeInput}
                     onSelect={(e) => {
-                      onCaptureSelection?.()
+                      const target = e.currentTarget
+                      onSelectRange(section.startChar + target.selectionStart, section.startChar + target.selectionEnd)
                       onSelect?.(e)
                     }}
-                    onKeyDown={onKeyDown}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                        e.preventDefault()
+                        const textarea = e.currentTarget
+                        const indented = indentText(textarea.value, textarea.selectionStart, textarea.selectionEnd, e.shiftKey)
+                        handleSectionTextChange(section.id, indented.text, textarea)
+                        activeSelectionRef.current = {
+                          sectionId: section.id,
+                          selectionStart: indented.start,
+                          selectionEnd: indented.end,
+                        }
+                        return
+                      }
+                      onKeyDown?.(e)
+                    }}
                     rows={Math.max(2, section.fullLines.length)}
                     spellCheck={false}
                     className="w-full bg-transparent text-app-heading font-mono text-sm leading-relaxed focus:outline-none resize-y selection:bg-app-action/30 selection:text-app-heading p-1"

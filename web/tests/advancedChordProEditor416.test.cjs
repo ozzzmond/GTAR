@@ -582,3 +582,142 @@ test('FIX_5:INTERACTIVE_BUTTON_HELP: Toolbar buttons provide accessible popover 
   assert.ok(tooltip, 'Popover tooltip must appear on focus')
   assert.match(tooltip.textContent, /Clear all chords and lyrics after confirmation/)
 })
+
+test('FOCUS_AND_CURSOR_INTEGRITY: Continuous typing in Verse 1 preserves focus and never migrates to Header/Directives', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  // Ensure Sections mode is active
+  const verse1Textarea = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  assert.ok(verse1Textarea, 'Verse 1 textarea must exist')
+
+  // Focus Verse 1 textarea
+  verse1Textarea.focus()
+  assert.equal(document.activeElement, verse1Textarea, 'Focus must start on Verse 1 textarea')
+
+  // Simulate continuous typing with words and spaces
+  const initialVerse1 = verse1Textarea.value
+  const typedPhrases = [
+    ' and I am renewed',
+    ' in Your awesome love',
+    ' every single day',
+  ]
+
+  let currentText = initialVerse1
+  for (const phrase of typedPhrases) {
+    currentText = currentText + phrase
+    await change(verse1Textarea, currentText)
+
+    // Focus must NOT jump to the primary sr-only textarea or Header/Directives
+    assert.equal(document.activeElement, verse1Textarea, 'Focus must remain on Verse 1 textarea during continuous typing')
+
+    // Header directives must remain completely uncorrupted
+    const headerTextarea = document.querySelector('[data-testid="section-textarea-sec-0"]')
+    assert.ok(headerTextarea, 'Header section textarea must exist')
+    assert.match(headerTextarea.value, /^{title:\s*Worship Song}/, 'Header must start with title directive, not typed characters')
+    assert.doesNotMatch(headerTextarea.value, /renewed|awesome|single/, 'Typed text must not migrate to Header')
+
+    // Primary raw textarea must also reflect the exact same content without leading corruption
+    const rawTextarea = document.querySelector('textarea[data-testid="editor-raw-textarea"]')
+    assert.ok(rawTextarea.value.startsWith('{title: Worship Song}'), 'Primary raw content must start with title directive')
+  }
+
+  // Final check: Verse 1 contains all typed words in place without duplication
+  assert.ok(verse1Textarea.value.includes('and I am renewed in Your awesome love every single day'))
+})
+
+test('INDEPENDENT_MULTI_SECTION_EDITING: Editing multiple sections maintains isolation and boundaries', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const introTextarea = document.querySelector('[data-testid="section-textarea-sec-1"]')
+  const verse1Textarea = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  const chorus1Textarea = document.querySelector('[data-testid="section-textarea-sec-3"]')
+  assert.ok(introTextarea)
+  assert.ok(verse1Textarea)
+  assert.ok(chorus1Textarea)
+
+  // Edit Intro
+  await change(introTextarea, introTextarea.value + '\n[Intro riff]')
+  assert.ok(introTextarea.value.includes('[Intro riff]'))
+  assert.ok(!verse1Textarea.value.includes('[Intro riff]'))
+
+  // Edit Chorus
+  await change(chorus1Textarea, chorus1Textarea.value + '\n[G]Amen')
+  assert.ok(chorus1Textarea.value.includes('[G]Amen'))
+  assert.ok(!introTextarea.value.includes('[G]Amen'))
+  assert.ok(!verse1Textarea.value.includes('[G]Amen'))
+
+  // Verify Header directives still untouched
+  const headerTextarea = document.querySelector('[data-testid="section-textarea-sec-0"]')
+  assert.ok(headerTextarea.value.startsWith('{title: Worship Song}'))
+})
+
+test('UNDO_REDO_AND_MODE_SWITCH: Preserves section edits across history and mode switches', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const verse1Textarea = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  const originalVerse1 = verse1Textarea.value
+
+  // Type an edit in Verse 1
+  await change(verse1Textarea, originalVerse1 + '\n[C]New line added')
+
+  const undoBtn = document.querySelector('[data-testid="editor-undo-button"]')
+  const redoBtn = document.querySelector('[data-testid="editor-redo-button"]')
+  assert.equal(undoBtn.disabled, false)
+
+  // Undo in Sections mode
+  await act(async () => {
+    undoBtn.click()
+  })
+
+  const restoredVerse1 = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  assert.equal(restoredVerse1.value, originalVerse1)
+
+  // Redo in Sections mode
+  await act(async () => {
+    redoBtn.click()
+  })
+
+  const redoneVerse1 = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  assert.ok(redoneVerse1.value.includes('New line added'))
+
+  // Switch to Raw mode
+  const modeToggle = document.querySelector('[data-testid="editor-mode-toggle"]')
+  await act(async () => {
+    modeToggle.click()
+  })
+
+  const rawTextarea = document.querySelector('textarea[data-testid="editor-raw-textarea"]')
+  assert.ok(rawTextarea.value.includes('New line added'))
+
+  // Switch back to Sections mode
+  await act(async () => {
+    modeToggle.click()
+  })
+
+  const sectionTextareaAgain = document.querySelector('[data-testid="section-textarea-sec-2"]')
+  assert.ok(sectionTextareaAgain.value.includes('New line added'))
+})

@@ -157,6 +157,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   } | null>(null)
 
   const captureEditorSelection = () => {
+    if (editorMode !== 'raw') return
     const textarea = textareaRef.current
     if (textarea) {
       selection.current = { start: textarea.selectionStart, end: textarea.selectionEnd }
@@ -171,6 +172,10 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   }
 
   useLayoutEffect(() => {
+    if (editorMode !== 'raw') {
+      pendingCaretRestoration.current = null
+      return
+    }
     if (!pendingCaretRestoration.current) return
     const { songId, selectionStart, selectionEnd, scrollTop, scrollLeft } = pendingCaretRestoration.current
     if (songId !== editingSong.id) {
@@ -197,7 +202,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     textarea.scrollLeft = scrollLeft
     selection.current = { start: clampedStart, end: clampedEnd }
     pendingCaretRestoration.current = null
-  }, [localRawContent, editingSong.id])
+  }, [localRawContent, editingSong.id, editorMode])
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
 
   const [isSaving, setIsSaving] = useState(false)
@@ -615,7 +620,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const chartState = { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset }
     const previousEdit: ChartTextEdit = { text: localRawContent, ...selection.current, chartState }
     if (remember) {
-      history.current.record(previousEdit, { text: cleaned, start: textareaRef.current?.selectionStart ?? 0, end: textareaRef.current?.selectionEnd ?? 0 })
+      const currentStart = editorMode === 'raw' ? (textareaRef.current?.selectionStart ?? 0) : selection.current.start
+      const currentEnd = editorMode === 'raw' ? (textareaRef.current?.selectionEnd ?? 0) : selection.current.end
+      history.current.record(previousEdit, { text: cleaned, start: currentStart, end: currentEnd })
       setHistoryCanUndo(history.current.canUndo())
       setHistoryCanRedo(history.current.canRedo())
     }
@@ -757,8 +764,11 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const handleSelectAll = () => {
     const textarea = textareaRef.current
     if (!textarea) return
-    textarea.focus()
+    if (editorMode === 'raw') {
+      textarea.focus()
+    }
     textarea.setSelectionRange(0, textarea.value.length)
+    selection.current = { start: 0, end: textarea.value.length }
   }
 
   // Helper 6: Clear
@@ -1303,7 +1313,23 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                     : 'Switch to Code Editor with collapsible musical sections'
                 }
                 data-testid="editor-mode-toggle"
-                onClick={() => setEditorMode((m) => (m === 'code' ? 'raw' : 'code'))}
+                onClick={() => {
+                  setEditorMode((m) => {
+                    const next = m === 'code' ? 'raw' : 'code'
+                    if (next === 'raw') {
+                      pendingCaretRestoration.current = {
+                        songId: editingSong.id,
+                        selectionStart: selection.current.start,
+                        selectionEnd: selection.current.end,
+                        scrollTop: 0,
+                        scrollLeft: 0,
+                      }
+                    } else {
+                      pendingCaretRestoration.current = null
+                    }
+                    return next
+                  })
+                }}
                 className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer flex items-center gap-1 font-mono text-[10px] font-bold"
               >
                 <Layers className="w-3.5 h-3.5 text-app-action" />
@@ -1358,27 +1384,17 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 rawContent={localRawContent}
                 onChange={(newText) => handleRawContentChange(newText)}
                 onSelectRange={(start, end) => {
+                  selection.current = { start, end }
                   const textarea = textareaRef.current
                   if (textarea) {
                     try {
-                      textarea.focus()
                       textarea.setSelectionRange(start, end)
-                      selection.current = { start, end }
                     } catch {
                       // headless fallback
                     }
                   }
                 }}
                 onShowToast={showToast}
-                onCaptureSelection={captureEditorSelection}
-                onBeforeInput={(e) => {
-                  const target = e.currentTarget
-                  selection.current = { start: target.selectionStart, end: target.selectionEnd }
-                }}
-                onSelect={(e) => {
-                  const target = e.currentTarget
-                  selection.current = { start: target.selectionStart, end: target.selectionEnd }
-                }}
                 onKeyDown={handleEditorKeyDown}
               />
             )}
