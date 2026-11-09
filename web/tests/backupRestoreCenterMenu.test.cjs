@@ -58,11 +58,11 @@ test('Settings menu layout: Theme, Backup & Restore, Debug Logs, Recovery Data, 
     assert.ok(!buttonTexts(popover).includes('Sign In with Google'), 'Sign in button removed')
     assert.doesNotMatch(popover.textContent, /Sign in to use cloud backup|Whitelist/)
 
-    // Settings layout order per #434
+    // Settings layout order per #434 & QA follow-up
     assert.ok(document.querySelector('[data-testid="settings-theme-button"]'), 'Theme entry exists')
     assert.ok(document.querySelector('[data-testid="settings-backup-restore-button"]'), 'Backup & Restore entry exists')
     assert.ok(document.querySelector('[data-testid="settings-debug-logs"]'), 'Debug Logs entry exists')
-    assert.ok(document.querySelector('[data-testid="settings-recovery-data"]'), 'Recovery Data entry exists')
+    assert.equal(document.querySelector('[data-testid="settings-recovery-data"]'), null, 'Top-level Recovery Data row removed per CHANGE_3')
     assert.ok(document.querySelector('[data-testid="advanced-tools"]'), 'Advanced Tools exists')
     assert.ok(document.querySelector('[data-testid="settings-about-button"]'), 'About GTAR entry exists')
 
@@ -94,33 +94,29 @@ test('Advanced Tools holds Web Sources and ProPresenter stub', async () => {
   } finally { await act(async () => root.unmount()) }
 })
 
-test('Recovery data row opens recovery data panel and closes menu', async () => {
+test('Recovery data is consolidated inside Debug Logs, top-level row removed (#434)', async () => {
   const { root, popover } = await mountHeader({ dev: false })
   try {
-    const row = document.querySelector('[data-testid="settings-recovery-data"]')
-    assert.ok(row, 'Recovery data row exists')
-    let opened = 0
-    const onOpen = () => { opened++ }
-    window.addEventListener('gtar-open-recovery-data', onOpen)
-    await act(async () => row.click())
-    window.removeEventListener('gtar-open-recovery-data', onOpen)
-    assert.equal(opened, 1, 'opens the Recovery data panel')
-    assert.equal(document.querySelector('.avatar-popover'), null, 'menu closes')
+    assert.equal(document.querySelector('[data-testid="settings-recovery-data"]'), null, 'Separate top-level Recovery data row removed')
+    const debugLogsButton = document.querySelector('[data-testid="settings-debug-logs"]')
+    assert.ok(debugLogsButton, 'Debug Logs button exists in Settings')
+    await act(async () => debugLogsButton.click())
+    assert.equal(document.querySelector('.avatar-popover'), null, 'menu closes after clicking Debug Logs')
   } finally { await act(async () => root.unmount()) }
 })
 
-test('Recovery data dot shows only while some copies cannot be opened', async () => {
+test('Recovery data dot alerts on Debug Logs button when unreadable copies exist', async () => {
   localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: [{ id: 's1', title: 'A', rawContent: 'C' }], setlists: [] }))
   localStorage.setItem('gtar_sync_recovery:download:1', JSON.stringify({ songs: [{ id: 'old', title: 'Old', rawContent: 'D' }], setlists: [] }))
-  const dot = () => document.querySelector('[data-testid="settings-recovery-data-dot"]')
+  const dot = () => document.querySelector('[data-testid="settings-debug-logs-dot"]')
   try {
     let { root } = await mountHeader({ dev: false })
-    assert.equal(dot(), null, 'readable copies: no dot')
+    assert.equal(dot(), null, 'readable copies: no dot on Debug Logs')
     await act(async () => root.unmount())
     localStorage.setItem('gtar_sync_recovery:download:2', '{broken')
     ;({ root } = await mountHeader({ dev: false }))
-    assert.ok(dot(), 'unreadable copy: dot')
-    assert.equal(document.querySelector('[data-testid="settings-recovery-data"]').getAttribute('aria-label'), "Recovery data, some copies can't be opened")
+    assert.ok(dot(), 'unreadable copy: dot alerts on Debug Logs')
+    assert.equal(document.querySelector('[data-testid="settings-debug-logs"]').getAttribute('aria-label'), "Debug Logs and Recovery Data, some recovery copies can't be opened")
     await act(async () => root.unmount())
   } finally { localStorage.clear() }
 })

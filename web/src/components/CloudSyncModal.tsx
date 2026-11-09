@@ -84,7 +84,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         data-testid="cloud-sync-modal-card"
         className="w-full max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
-        <div data-testid="cloud-sync-modal-header" className="px-5 py-3 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
+        <div data-testid="cloud-sync-modal-header" className="px-5 py-3.5 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
               <FolderArchive className="w-4 h-4" aria-hidden="true" />
@@ -97,7 +97,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             onClick={onClose}
             disabled={fileBusy}
             aria-label="Close"
-            className="w-11 h-11 -mr-2 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer disabled:opacity-50"
+            className="w-9 h-9 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -120,13 +120,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           </TagLibraryContext.Provider>
         </div>
 
-        <div data-testid="cloud-sync-modal-footer" className="px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex items-center justify-end gap-2 text-[11px] text-app-muted">
+        <div data-testid="cloud-sync-modal-footer" className="px-5 py-3.5 border-t border-app-border/80 bg-app-base/60 flex items-center justify-end gap-2 text-xs text-app-muted">
           <button
             type="button"
             data-testid="cloud-sync-close-button"
             disabled={fileBusy}
             onClick={onClose}
-            className="min-h-11 px-4 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-50"
+            className="min-h-11 px-4 py-2 rounded-xl bg-app-base hover:bg-app-surface border border-app-border text-app-heading text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
           >
             Close
           </button>

@@ -1,6 +1,5 @@
 import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
-import { openRecoveryData } from '../utils/recoveryReview'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { SearchResults } from './SearchResults'
@@ -10,7 +9,6 @@ import {
   Globe,
   Palette,
   Wrench,
-  History,
   Command,
   Trash2,
   Download,
@@ -326,25 +324,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   const popoverItem = 'w-full min-h-11 px-3 py-2 rounded-xl bg-app-base hover:bg-app-surface text-app-heading ui-primary-text text-xs font-semibold flex items-center gap-2.5 border border-app-border transition-colors cursor-pointer mb-2'
 
-  // Recovery Data: accessible in Settings
+  // Recovery Data: accessible within Debug Logs
   const isSuperAdmin = false
   const showRecoveryData = isDevEnv || isSuperAdmin || true
   const recoveryAttention = useRecoveryAttention(showRecoveryData)
-  const recoveryDataRow = (
-    <button
-      type="button"
-      data-testid="settings-recovery-data"
-      onClick={() => { setShowSettingsMenu(false); openRecoveryData() }}
-      className={`${popoverItem} justify-between`}
-      aria-label={recoveryAttention ? "Recovery data, some copies can't be opened" : undefined}
-    >
-      <div className="flex items-center gap-2.5">
-        <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-        <span>Recovery Data</span>
-      </div>
-      {recoveryAttention && <span data-testid="settings-recovery-data-dot" aria-hidden="true" className={recoveryDotClass} />}
-    </button>
-  )
 
   // Advanced Tools: future home for optional Web Sources, ProPresenter, and modular integrations
   const advancedTools = (
@@ -754,18 +737,20 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>Backup &amp; Restore</span>
                 </button>
 
-                {/* 3. Debug Logs (with Recovery Data management at bottom of section) */}
+                {/* 3. Debug Logs (includes Recovery Data management) */}
                 <button
                   type="button"
                   data-testid="settings-debug-logs"
                   onClick={() => { setShowSettingsMenu(false); setShowDebugLogsModal(true) }}
-                  className={popoverItem}
+                  className={`${popoverItem} justify-between`}
+                  aria-label={recoveryAttention ? "Debug Logs and Recovery Data, some recovery copies can't be opened" : undefined}
                 >
-                  <Terminal className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-                  <span>Debug Logs</span>
+                  <div className="flex items-center gap-2.5">
+                    <Terminal className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+                    <span>Debug Logs</span>
+                  </div>
+                  {recoveryAttention && <span data-testid="settings-debug-logs-dot" aria-hidden="true" className={recoveryDotClass} />}
                 </button>
-
-                {recoveryDataRow}
 
                 {/* 4. Advanced Tools */}
                 {advancedTools}
