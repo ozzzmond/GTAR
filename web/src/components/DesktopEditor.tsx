@@ -23,7 +23,9 @@ import {
   FilePlus,
   Sparkles,
   Loader2,
+  Layers,
 } from 'lucide-react'
+import { ChordProCodeEditor } from './ChordProCodeEditor'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
@@ -110,6 +112,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
+  const [editorMode, setEditorMode] = useState<'code' | 'raw'>('code')
   const fields = (value: ActiveSongState) => ({
     title: value.title || '',
     artist: value.artist || '',
@@ -767,6 +770,40 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     handleRawContentChange(updated)
   }
 
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return
+    const textarea = e.currentTarget
+    const current: ChartTextEdit = {
+      text: localRawContent,
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+      chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset },
+    }
+    selection.current = { start: current.start, end: current.end }
+    let next: TextEdit | undefined
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      e.stopPropagation()
+      handleSave()
+      return
+    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
+      e.preventDefault()
+      next = e.key.toLowerCase() === 'y' || e.shiftKey ? history.current.redo(current) : history.current.undo(current)
+      if (next) handleRawContentChange(next.text, false, (next as ChartTextEdit).chartState)
+    } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      next = indentText(current.text, current.start, current.end, e.shiftKey)
+      handleRawContentChange(next.text)
+    }
+    if (next) {
+      const edit = next
+      requestAnimationFrame(() => {
+        textarea.setSelectionRange(edit.start, edit.end)
+        selection.current = { start: edit.start, end: edit.end }
+      })
+    }
+  }
+
   const songInputs = (
     <div className="border-b border-app-border bg-app-surface/80 px-3 py-2 sm:px-4 sm:py-2.5 flex flex-row md:flex-col items-stretch gap-2 text-xs shrink-0">
       {/* Song Title */}
@@ -1018,6 +1055,17 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
                 className="p-1.5 rounded bg-app-surface text-app-action hover:bg-app-action/20 cursor-pointer">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
               </button>
+              {/* View Mode Toggle: Code Editor (Foldable Sections) vs Raw Text */}
+              <button
+                type="button"
+                data-testid="editor-mode-toggle"
+                onClick={() => setEditorMode((m) => (m === 'code' ? 'raw' : 'code'))}
+                className="p-1.5 rounded bg-app-surface hover:bg-app-base text-app-text hover:text-app-heading transition-colors cursor-pointer flex items-center gap-1 font-mono text-[10px] font-bold"
+                aria-label={editorMode === 'code' ? 'Switch to Raw Text View' : 'Switch to Code Editor View'}
+              >
+                <Layers className="w-3.5 h-3.5 text-app-action" />
+                <span className="hidden sm:inline">{editorMode === 'code' ? 'Sections' : 'Raw'}</span>
+              </button>
               {/* Compact Save Action Button */}
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -1037,43 +1085,54 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             </div>
           </div>
 
-          {/* Textarea: Standard ChordPro Notation */}
+          {/* Textarea & Code Editor: Standard ChordPro Notation */}
           <div className="flex-1 relative flex overflow-hidden">
             <textarea
               ref={textareaRef}
+              data-testid="editor-raw-textarea"
               value={localRawContent}
               onChange={(e) => handleRawContentChange(e.target.value)}
               placeholder="Enter ChordPro lyrics with [G] chords (e.g. When the [A]night has come) or standalone chord progressions..."
               onBeforeInput={(e) => { selection.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd } }}
               onSelect={(e) => { selection.current = { start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd } }}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return
-                const textarea = e.currentTarget
-                const current: ChartTextEdit = { text: localRawContent, start: textarea.selectionStart, end: textarea.selectionEnd, chartState: { key: localKey, originalKey: localOriginalKey, confirmedChartKey, transposeOffset } }
-                selection.current = { start: current.start, end: current.end }
-                let next: TextEdit | undefined
-                if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  handleSave()
-                  return
-                } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase())) {
-                  e.preventDefault()
-                  next = e.key.toLowerCase() === 'y' || e.shiftKey ? history.current.redo(current) : history.current.undo(current)
-                  if (next) handleRawContentChange(next.text, false, (next as ChartTextEdit).chartState)
-                } else if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                  e.preventDefault()
-                  next = indentText(current.text, current.start, current.end, e.shiftKey)
-                  handleRawContentChange(next.text)
-                }
-                if (next) {
-                  const edit = next
-                  requestAnimationFrame(() => { textarea.setSelectionRange(edit.start, edit.end); selection.current = { start: edit.start, end: edit.end } })
-                }
-              }}
+              onKeyDown={handleEditorKeyDown}
               spellCheck={false}
-              className="w-full h-full p-4 bg-app-base text-app-heading font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-app-action/30 selection:text-app-heading overflow-y-auto"
+              className={
+                editorMode === 'raw'
+                  ? 'w-full h-full p-4 bg-app-base text-app-heading font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-app-action/30 selection:text-app-heading overflow-y-auto'
+                  : 'sr-only'
+              }
             />
+
+            {editorMode === 'code' && (
+              <ChordProCodeEditor
+                rawContent={localRawContent}
+                onChange={(newText) => handleRawContentChange(newText)}
+                onSelectRange={(start, end) => {
+                  const textarea = textareaRef.current
+                  if (textarea) {
+                    try {
+                      textarea.focus()
+                      textarea.setSelectionRange(start, end)
+                      selection.current = { start, end }
+                    } catch {
+                      // headless fallback
+                    }
+                  }
+                }}
+                onShowToast={showToast}
+                onCaptureSelection={captureEditorSelection}
+                onBeforeInput={(e) => {
+                  const target = e.currentTarget
+                  selection.current = { start: target.selectionStart, end: target.selectionEnd }
+                }}
+                onSelect={(e) => {
+                  const target = e.currentTarget
+                  selection.current = { start: target.selectionStart, end: target.selectionEnd }
+                }}
+                onKeyDown={handleEditorKeyDown}
+              />
+            )}
           </div>
         </div>
 
