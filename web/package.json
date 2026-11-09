@@ -13,7 +13,6 @@
     "dev:debug": "vite --port 5174 --mode debug",
     "dev:api": "wrangler pages dev --port 8788",
     "d1:migrate:local": "wrangler d1 migrations apply DB --local",
-    "d1:migrate:preview": "node -e \"console.warn('[DEPRECATED] d1:migrate:preview used local emulation. For local dev use d1:migrate:local. For remote DEV D1 migrations use npm run d1:migrate:dev:remote'); process.exit(1)\"",
     "d1:migrate:dev:remote": "node scripts/migrate-dev-remote.cjs",
     "admin:bootstrap:local": "node scripts/bootstrap-local-admin.cjs",
     "build": "tsc -b && vite build",
