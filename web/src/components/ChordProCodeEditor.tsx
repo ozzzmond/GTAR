@@ -38,7 +38,6 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const activeSelectionRef = useRef<{
-    sectionId: string
     selectionStart: number
     selectionEnd: number
   } | null>(null)
@@ -47,13 +46,32 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
 
   useLayoutEffect(() => {
     if (!activeSelectionRef.current) return
-    const { sectionId, selectionStart, selectionEnd } = activeSelectionRef.current
-    activeSelectionRef.current = null
-    const textarea = textareaRefs.current[sectionId]
-    if (textarea && document.activeElement === textarea) {
-      textarea.setSelectionRange(selectionStart, selectionEnd)
+    const { selectionStart, selectionEnd } = activeSelectionRef.current
+    // Section IDs are positional: edits can split/merge sections. Resolve the
+    // document position against the newly parsed source, including EOF.
+    const section = parsedSections.sections.find((s, index) =>
+      selectionStart >= s.startChar &&
+      (selectionStart < s.endChar || index === parsedSections.sections.length - 1))
+    if (!section) {
+      activeSelectionRef.current = null
+      return
     }
-  }, [rawContent])
+    if (foldedSectionIds.has(section.id)) {
+      setFoldedSectionIds((prev) => {
+        const next = new Set(prev)
+        next.delete(section.id)
+        return next
+      })
+      return
+    }
+    activeSelectionRef.current = null
+    const textarea = textareaRefs.current[section.id]
+    if (textarea) {
+      textarea.focus()
+      textarea.setSelectionRange(selectionStart - section.startChar,
+        Math.min(selectionEnd, section.endChar) - section.startChar)
+    }
+  }, [parsedSections.sections, foldedSectionIds])
 
   const toggleFold = (sectionId: string) => {
     setFoldedSectionIds((prev) => {
@@ -94,17 +112,26 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
 
   const handleSelectSection = (section: ChordProSection, e?: React.MouseEvent) => {
     e?.stopPropagation()
+    activeSelectionRef.current = {
+      selectionStart: section.startChar,
+      selectionEnd: section.endChar,
+    }
+    setFoldedSectionIds((prev) => {
+      const next = new Set(prev)
+      next.delete(section.id)
+      return next
+    })
     setSelectedSectionId(section.id)
     onSelectRange(section.startChar, section.endChar)
     onShowToast(`Selected entire [${section.cleanLabel}] section`)
   }
 
   const handleSectionTextChange = (sectionId: string, newText: string, textarea?: HTMLTextAreaElement) => {
-    if (textarea) {
+    const section = parsedSections.sections.find((s) => s.id === sectionId)
+    if (textarea && section && document.activeElement === textarea) {
       activeSelectionRef.current = {
-        sectionId,
-        selectionStart: textarea.selectionStart,
-        selectionEnd: textarea.selectionEnd,
+        selectionStart: section.startChar + textarea.selectionStart,
+        selectionEnd: section.startChar + textarea.selectionEnd,
       }
     }
     const updatedParts = parsedSections.sections.map((s) => {
@@ -303,9 +330,8 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
                         const indented = indentText(textarea.value, textarea.selectionStart, textarea.selectionEnd, e.shiftKey)
                         handleSectionTextChange(section.id, indented.text, textarea)
                         activeSelectionRef.current = {
-                          sectionId: section.id,
-                          selectionStart: indented.start,
-                          selectionEnd: indented.end,
+                          selectionStart: section.startChar + indented.start,
+                          selectionEnd: section.startChar + indented.end,
                         }
                         return
                       }
