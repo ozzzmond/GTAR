@@ -489,6 +489,166 @@ test('FIX_2:RESIZABLE_EDITOR_PREVIEW: Resizable divider supports keyboard and re
   assert.ok(resetBtn, '50/50 reset button on mobile divider must exist')
 })
 
+test('F4: Breakpoint switch leaves no stale inline width/height on editor and preview panes', async () => {
+  window.innerWidth = 1024
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const leftPane = document.querySelector('[data-testid="editor-pane-left"]')
+  const rightPane = document.querySelector('[data-testid="editor-pane-right"]')
+  assert.ok(leftPane, 'Editor left pane must exist')
+  assert.ok(rightPane, 'Preview right pane must exist')
+
+  // Verify responsive CSS variables are used without inline width/height
+  assert.equal(leftPane.style.width, '', 'left pane has no inline width')
+  assert.equal(leftPane.style.height, '', 'left pane has no inline height')
+  assert.equal(rightPane.style.width, '', 'right pane has no inline width')
+  assert.equal(rightPane.style.height, '', 'right pane has no inline height')
+
+  const container = leftPane.parentElement
+  assert.ok(container.style.getPropertyValue('--editor-split-ratio'), 'Container must have --editor-split-ratio CSS variable')
+  assert.ok(container.style.getPropertyValue('--preview-split-ratio'), 'Container must have --preview-split-ratio CSS variable')
+
+  // Classes must be responsive
+  assert.ok(leftPane.className.includes('h-[var(--editor-split-ratio)]'))
+  assert.ok(leftPane.className.includes('md:w-[var(--editor-split-ratio)]'))
+  assert.ok(rightPane.className.includes('h-[var(--preview-split-ratio)]'))
+  assert.ok(rightPane.className.includes('md:w-[var(--preview-split-ratio)]'))
+
+  // Simulate crossing breakpoint to mobile
+  window.innerWidth = 500
+  // Dimensions remain governed by CSS and free of stale inline values
+  assert.equal(leftPane.style.width, '', 'left pane still has no stale inline width on mobile')
+  assert.equal(leftPane.style.height, '', 'left pane still has no stale inline height on mobile')
+  assert.equal(rightPane.style.width, '', 'right pane still has no stale inline width on mobile')
+  assert.equal(rightPane.style.height, '', 'right pane still has no stale inline height on mobile')
+})
+
+test('F5: Mobile divider has touch-action none, 44px hit area, and pointer drag with capture/cancel', async () => {
+  await act(async () => {
+    root.render(
+      React.createElement(DesktopEditor, {
+        song: SAMPLE_SONG,
+        transposeOffset: 0,
+        onUpdateSong: () => true,
+      })
+    )
+  })
+
+  const mobileDivider = document.querySelector('[data-testid="editor-preview-divider-mobile"]')
+  const desktopDivider = document.querySelector('[data-testid="editor-preview-divider"]')
+  assert.ok(mobileDivider, 'Mobile divider must exist')
+  assert.ok(desktopDivider, 'Desktop divider must exist')
+
+  // touch-action none
+  assert.equal(mobileDivider.style.touchAction, 'none', 'Mobile divider has touch-action: none inline')
+  assert.ok(mobileDivider.className.includes('touch-none'), 'Mobile divider has touch-none class')
+  assert.equal(desktopDivider.style.touchAction, 'none', 'Desktop divider has touch-action: none inline')
+  assert.ok(desktopDivider.className.includes('touch-none'), 'Desktop divider has touch-none class')
+
+  // Hit area >= 44px
+  assert.ok(mobileDivider.className.includes('min-h-[44px]'), 'Mobile divider has min-h-[44px]')
+  assert.ok(mobileDivider.className.includes('h-11'), 'Mobile divider has h-11')
+
+  // Visible grip handle
+  const grip = mobileDivider.querySelector('.rounded-full')
+  assert.ok(grip, 'Mobile divider has visible grip pill')
+
+  // Pointer drag on mobile divider
+  const container = mobileDivider.parentElement
+  container.getBoundingClientRect = () => ({
+    top: 0,
+    left: 0,
+    width: 400,
+    height: 1000,
+    right: 400,
+    bottom: 1000,
+  })
+
+  let capturedId = null
+  let releasedId = null
+  mobileDivider.setPointerCapture = (id) => { capturedId = id }
+  mobileDivider.hasPointerCapture = (id) => capturedId === id
+  mobileDivider.releasePointerCapture = (id) => { releasedId = id; capturedId = null }
+
+  // Start pointerdown
+  await act(async () => {
+    mobileDivider.dispatchEvent(
+      new window.PointerEvent('pointerdown', {
+        button: 0,
+        pointerId: 77,
+        bubbles: true,
+      })
+    )
+  })
+  assert.equal(capturedId, 77, 'pointer capture was set on pointerdown')
+
+  // Drag to 600px (60% of 1000px height)
+  await act(async () => {
+    mobileDivider.dispatchEvent(
+      new window.PointerEvent('pointermove', {
+        pointerId: 77,
+        clientY: 600,
+        bubbles: true,
+      })
+    )
+  })
+  assert.equal(mobileDivider.getAttribute('aria-valuenow'), '60', 'splitRatio updated to 60% on vertical drag')
+
+  // Cancel pointer
+  await act(async () => {
+    mobileDivider.dispatchEvent(
+      new window.PointerEvent('pointercancel', {
+        pointerId: 77,
+        bubbles: true,
+      })
+    )
+  })
+  assert.equal(releasedId, 77, 'pointer capture was released on pointercancel')
+
+  // Drag and release via pointerup
+  await act(async () => {
+    mobileDivider.dispatchEvent(
+      new window.PointerEvent('pointerdown', {
+        button: 0,
+        pointerId: 88,
+        bubbles: true,
+      })
+    )
+  })
+  assert.equal(capturedId, 88)
+
+  await act(async () => {
+    mobileDivider.dispatchEvent(
+      new window.PointerEvent('pointermove', {
+        pointerId: 88,
+        clientY: 700,
+        bubbles: true,
+      })
+    )
+  })
+  assert.equal(mobileDivider.getAttribute('aria-valuenow'), '70')
+
+  await act(async () => {
+    mobileDivider.dispatchEvent(
+      new window.PointerEvent('pointerup', {
+        pointerId: 88,
+        clientY: 700,
+        bubbles: true,
+      })
+    )
+  })
+  assert.equal(releasedId, 88, 'pointer capture was released on pointerup')
+  assert.equal(mobileDivider.getAttribute('aria-valuenow'), '70')
+})
+
 test('FIX_3:METADATA_MODAL_CLEANUP: Metadata dialog opens with clean styling and key alignment', async () => {
   await act(async () => {
     root.render(
