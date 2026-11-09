@@ -859,10 +859,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     const container = splitContainerRef.current
     if (!container) return
 
-    handle.setPointerCapture?.(e.pointerId)
-    const isHorizontal = window.innerWidth >= 768
+    const pointerId = e.pointerId
+    try {
+      handle.setPointerCapture?.(pointerId)
+    } catch {
+      // ignore
+    }
+
+    const isHorizontal = handle.getAttribute('aria-orientation') === 'vertical'
 
     const onPointerMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      ev.preventDefault()
       const rect = container.getBoundingClientRect()
       let ratio: number
       if (isHorizontal) {
@@ -876,9 +884,22 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       setSplitRatio(clamped)
     }
 
-    const onPointerUp = (ev: PointerEvent) => {
+    const cleanup = (ev: PointerEvent) => {
       handle.removeEventListener('pointermove', onPointerMove)
       handle.removeEventListener('pointerup', onPointerUp)
+      handle.removeEventListener('pointercancel', onPointerCancel)
+      try {
+        if (handle.hasPointerCapture?.(ev.pointerId)) {
+          handle.releasePointerCapture(ev.pointerId)
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const onPointerUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      cleanup(ev)
       const rect = container.getBoundingClientRect()
       let ratio: number
       if (isHorizontal) {
@@ -895,8 +916,14 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       }
     }
 
+    const onPointerCancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      cleanup(ev)
+    }
+
     handle.addEventListener('pointermove', onPointerMove)
     handle.addEventListener('pointerup', onPointerUp)
+    handle.addEventListener('pointercancel', onPointerCancel)
   }
 
   const handleResizeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -1110,14 +1137,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       <div className="md:hidden">{songInputs}</div>
 
       {/* 3. MAIN SPLIT PANE: Raw ChordPro Editor (Left) & Live Stage Preview (Right) */}
-      <div ref={splitContainerRef} className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+      <div
+        ref={splitContainerRef}
+        style={{
+          '--editor-split-ratio': `${splitRatio}%`,
+          '--preview-split-ratio': `${100 - splitRatio}%`,
+        } as React.CSSProperties}
+        className="flex-1 flex flex-col md:flex-row overflow-hidden relative"
+      >
         {/* LEFT PANE: Raw ChordPro Editor */}
         <div
-          style={{
-            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${splitRatio}%` : undefined,
-            height: typeof window !== 'undefined' && window.innerWidth < 768 ? `${splitRatio}%` : undefined,
-          }}
-          className="flex flex-col border-b md:border-b-0 md:border-r border-app-border bg-app-base h-1/2 md:h-full overflow-hidden"
+          data-testid="editor-pane-left"
+          className="flex flex-col border-b md:border-b-0 md:border-r border-app-border bg-app-base w-full h-[var(--editor-split-ratio)] md:w-[var(--editor-split-ratio)] md:h-full overflow-hidden shrink-0"
         >
           <div className="hidden md:block">{songInputs}</div>
 
@@ -1414,7 +1445,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           onPointerDown={handlePointerDownResize}
           onKeyDown={handleResizeKeyDown}
           onDoubleClick={handleResetSplit}
-          className="hidden md:flex w-2.5 bg-app-base hover:bg-app-action/30 active:bg-app-action/50 cursor-col-resize select-none items-center justify-center border-x border-app-border transition-colors shrink-0 group focus:outline-none focus:bg-app-action/40"
+          style={{ touchAction: 'none' }}
+          className="hidden md:flex w-2.5 bg-app-base hover:bg-app-action/30 active:bg-app-action/50 cursor-col-resize select-none items-center justify-center border-x border-app-border transition-colors shrink-0 group focus:outline-none focus:bg-app-action/40 touch-none"
         >
           <div className="w-0.5 h-6 rounded bg-app-muted/50 group-hover:bg-app-action transition-colors" />
         </div>
@@ -1432,14 +1464,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           onPointerDown={handlePointerDownResize}
           onKeyDown={handleResizeKeyDown}
           onDoubleClick={handleResetSplit}
-          className="flex md:hidden h-4 bg-app-surface border-y border-app-border cursor-row-resize select-none items-center justify-between px-3 text-[10px] text-app-muted shrink-0 group focus:outline-none focus:bg-app-action/20"
+          style={{ touchAction: 'none' }}
+          className="flex md:hidden min-h-[44px] h-11 bg-app-surface border-y border-app-border cursor-row-resize select-none items-center justify-between px-3 text-[10px] text-app-muted shrink-0 group focus:outline-none focus:bg-app-action/20 touch-none"
         >
           <span className="font-mono text-[9px] opacity-70">Editor {Math.round(splitRatio)}%</span>
-          <div className="w-8 h-1 rounded bg-app-muted/50 group-hover:bg-app-action" />
+          <div className="flex items-center justify-center py-2 px-3">
+            <div className="w-10 h-1.5 rounded-full bg-app-muted/60 group-hover:bg-app-action transition-colors" />
+          </div>
           <button
             type="button"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={handleResetSplit}
-            className="text-[9px] font-mono text-app-action hover:underline cursor-pointer"
+            className="min-h-[32px] px-2 py-1 text-[10px] font-mono font-medium text-app-action hover:underline cursor-pointer rounded"
             aria-label="Reset split to 50/50"
           >
             50/50
@@ -1448,11 +1484,8 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
         {/* RIGHT PANE: Live Real-time Stage Preview Sync */}
         <div
-          style={{
-            width: typeof window !== 'undefined' && window.innerWidth >= 768 ? `${100 - splitRatio}%` : undefined,
-            height: typeof window !== 'undefined' && window.innerWidth < 768 ? `${100 - splitRatio}%` : undefined,
-          }}
-          className="flex-1 flex flex-col bg-app-base h-1/2 md:h-full overflow-hidden"
+          data-testid="editor-pane-right"
+          className="flex-1 flex flex-col bg-app-base w-full h-[var(--preview-split-ratio)] md:w-[var(--preview-split-ratio)] md:h-full overflow-hidden min-h-0 min-w-0"
         >
           <div className="flex-1 p-4 sm:p-6 md:pt-2.5 overflow-y-auto bg-app-base select-text">
             <div className="border-b border-app-border pb-3 mb-4 flex items-center justify-between">
