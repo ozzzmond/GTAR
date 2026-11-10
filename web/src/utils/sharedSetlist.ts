@@ -11,6 +11,11 @@ export interface SharedSetlistSong {
   title: string
   artist?: string
   key?: string
+  originalKey?: string
+  confirmedChartKey?: string
+  year?: string
+  format?: ActiveSongState['format']
+  transposeOffset?: number
   capo?: string
   bpm?: string
   time?: string
@@ -86,6 +91,15 @@ export function sanitizeSetlistForShare(
     if (bpm) songEntry.bpm = bpm.slice(0, 10)
     if (time) songEntry.time = time.slice(0, 10)
 
+    const source = typeof item.rawContent === 'string' ? item : resolveSetlistSong(item as { title: string; id?: string | number }, librarySongs)
+    if (source) {
+      for (const field of ['originalKey', 'confirmedChartKey', 'year'] as const) {
+        const value = source[field]
+        if (typeof value === 'string' && value.trim()) songEntry[field] = value.trim().slice(0, 10)
+      }
+      if (source.format === 'CHORD_PRO' || source.format === 'TWO_LINE' || source.format === 'PLAIN') songEntry.format = source.format
+      if (typeof source.transposeOffset === 'number' && Number.isSafeInteger(source.transposeOffset)) songEntry.transposeOffset = source.transposeOffset
+    }
     resolvedSongs.push(songEntry)
     if (resolvedSongs.length >= MAX_SHARE_SONGS_COUNT) break
   }
@@ -174,6 +188,17 @@ export function validateSharedSetlistPayload(
       validatedSong.time = sRec.time.trim().slice(0, 10)
     }
 
+    for (const field of ['originalKey', 'confirmedChartKey', 'year'] as const) {
+      if (typeof sRec[field] === 'string' && sRec[field].trim()) validatedSong[field] = sRec[field].trim().slice(0, 10)
+    }
+    if (sRec.format !== undefined) {
+      if (sRec.format !== 'CHORD_PRO' && sRec.format !== 'TWO_LINE' && sRec.format !== 'PLAIN') return { isValid: false, error: 'Invalid shared song format' }
+      validatedSong.format = sRec.format
+    }
+    if (sRec.transposeOffset !== undefined) {
+      if (typeof sRec.transposeOffset !== 'number' || !Number.isSafeInteger(sRec.transposeOffset)) return { isValid: false, error: 'Invalid TRANSPOSE_OFFSET' }
+      validatedSong.transposeOffset = sRec.transposeOffset
+    }
     validatedSongs.push(validatedSong)
   }
 

@@ -34,29 +34,32 @@ const { createRoot } = require('react-dom/client')
 const { ShareSetlistModal } = require('../src/components/ShareSetlistModal.tsx')
 for (const kind of ['unbound', 'mismatch']) test(`active account creates QR share from ${kind} device library without changing owner bytes`, async () => {
   const owner = deviceOwner(kind)
-  global.fetch = async (url, options) => { calls.push({ url, ...options }); return response({ token: 'share-token-b' }) }
+  global.fetch = async (url, options) => { calls.push({ url, ...options }); return response({ token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) }) }
   const root = createRoot(document.getElementById('root'))
   try {
     await act(async () => root.render(React.createElement(ShareSetlistModal, { setlist: library.setlists[0], allSongs: library.songs, onClose() {} })))
     assert.equal(calls.length, 1)
     assert.equal(calls[0].url, '/api/setlist/share')
-    assert.equal(calls[0].headers.Authorization, 'Bearer token-b')
+    assert.equal(calls[0].headers.Authorization, undefined)
     assert.ok(document.querySelector('img[src^="data:image/svg+xml"]'))
-    assert.match(document.querySelector('input').value, /share=share-token-b/)
+    assert.match(document.querySelector('input').value, /share=a{64}/)
     assert.equal(localStorage.getItem(OWNER_KEY), owner)
   } finally { await act(async () => root.unmount()) }
 })
-for (const status of ['signed-out', 'pending']) test(`${status} account cannot create a QR share`, async () => {
+for (const status of ['signed-out', 'pending']) test(`${status} account creates only the explicitly shared snapshot without login`, async () => {
   const owner = deviceOwner('mismatch')
   signIn(status)
-  global.fetch = async (url, options) => { calls.push({ url, ...options }); throw new Error('No request allowed') }
+  global.fetch = async (url, options) => { calls.push({ url, ...options }); return response({ token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) }) }
   const root = createRoot(document.getElementById('root'))
   try {
     await act(async () => root.render(React.createElement(ShareSetlistModal, { setlist: library.setlists[0], allSongs: library.songs, onClose() {} })))
-    assert.match(document.body.textContent, /Sign in to create a QR code \/ share link\./)
+    assert.doesNotMatch(document.body.textContent, /Sign in/)
     assert.ok([...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Export JSON'))
-    assert.equal(document.querySelector('img'), null)
-    assert.deepEqual(calls, [])
+    assert.ok(document.querySelector('img'))
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].headers.Authorization, undefined)
+    assert.equal(JSON.parse(calls[0].body).songs[0].rawContent, '[C]Device chart')
+    assert.equal(localStorage.getItem('gtar_library_v1'), JSON.stringify(library))
     assert.equal(localStorage.getItem(OWNER_KEY), owner)
   } finally { await act(async () => root.unmount()) }
 })

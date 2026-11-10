@@ -248,7 +248,7 @@ async function openMenu() {
 }
 const menuItems = () => $$('[data-testid="workspace-scope-menu"] [role^="menuitem"]').map(el => el.getAttribute('data-testid'))
 
-test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setlists wired to existing handlers', async () => {
+test('S1_MENU: collection ⋯ menu holds Sort, Import and Manage; dedicated sharing wired to existing handlers', async () => {
   const opened = []
   await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onOpenSetlists: () => opened.push('manage') }))
   const btn = $('[data-testid="workspace-scope-menu-btn"]')
@@ -257,7 +257,7 @@ test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setli
   await openMenu()
   assert.deepEqual(menuItems(), [
     'workspace-sort-manual', 'workspace-sort-title_asc', 'workspace-sort-title_desc',
-    'workspace-menu-share', 'workspace-menu-import', 'workspace-menu-manage',
+    'workspace-menu-import', 'workspace-menu-manage',
   ], 'Newest/Oldest stay hidden without reliable timestamps (existing Sort rule)')
   assert.equal($('[data-testid="workspace-sort-manual"]').getAttribute('aria-checked'), 'true')
 
@@ -267,8 +267,10 @@ test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setli
     ['workspace-setlist-card-sl-2', 'workspace-setlist-card-sl-1', 'workspace-setlist-card-sl-3'])
   assert.equal($('[data-testid="workspace-scope-menu"]'), null, 'choosing an item closes the menu')
 
-  // QR → existing share flow (several setlists → existing chooser)
-  await openMenu(); await click($('[data-testid="workspace-menu-share"]'))
+  await openMenu()
+  assert.equal($('[data-testid="workspace-menu-share"]'), null)
+  assert.equal($('[data-testid="workspace-menu-import"]').textContent.trim(), 'Import Setlist')
+  await click($('[data-testid="main-share-setlist-btn"]'))
   assert.ok($('[data-testid="share-setlist-chooser-dialog"]'), 'QR share opens the existing chooser')
   await click($('[data-testid="share-setlist-chooser-dialog"] [aria-label="Close"]'))
 
@@ -281,7 +283,7 @@ test('S1_MENU: collection ⋯ menu holds Sort, QR share, Import and Manage Setli
   assert.deepEqual(opened, ['manage'])
 })
 
-test('S1_MENU: single-setlist ⋯ menu shares, imports, exports and manages through existing handlers', async () => {
+test('S1_MENU: single-setlist ⋯ menu imports, exports and manages; dedicated sharing through existing handlers', async () => {
   const calls = []
   const auth = signIn('member', 'active')
   await mountAuthed(baseProps({
@@ -291,9 +293,12 @@ test('S1_MENU: single-setlist ⋯ menu shares, imports, exports and manages thro
   }), auth)
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await openMenu()
-  assert.deepEqual(menuItems(), ['workspace-menu-share', 'workspace-menu-import',
+  assert.deepEqual(menuItems(), ['workspace-menu-import',
     'workspace-menu-export-json', 'workspace-menu-manage'])
-  await click($('[data-testid="workspace-menu-share"]'))
+  assert.equal($('[data-testid="workspace-menu-share"]'), null)
+  assert.equal($('[data-testid="workspace-menu-import"]').textContent.trim(), 'Import Setlist')
+  assert.equal($('[data-testid="workspace-menu-export-json"]').textContent.trim(), 'Export Setlist')
+  await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
   await openMenu(); await click($('[data-testid="workspace-menu-manage"]'))
   assert.deepEqual(calls, [['share', 'sl-1'], ['manage']])
   await openMenu(); await click($('[data-testid="workspace-menu-import"]'))

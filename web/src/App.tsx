@@ -1,3 +1,4 @@
+import { sharedSongToActiveSong } from './utils/sharedSetlistLibrary'
 import { SetlistTrashConfirmation } from './components/SetlistTrashConfirmation'
 import { ExplorerDragDrop } from './components/ExplorerDragDrop'
 import { TagLibraryContext } from './utils/tagLibraryContext'
@@ -69,7 +70,7 @@ import { getStoredSessionStatus } from './utils/googleAuth'
 import { useOptionalGoogleAuth } from './utils/authContext'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
-import type { SharedSetlistPayload } from './utils/sharedSetlist'
+import { validateSharedSetlistPayload, type SharedSetlistPayload } from './utils/sharedSetlist'
 import { WebsiteUrlSourceModal } from './components/WebsiteUrlSourceModal'
 import type { SongFontStyleOption } from './components/StageSettingsModal'
 import { StageErrorBoundary } from './components/StageErrorBoundary'
@@ -573,6 +574,10 @@ function LibraryApp() {
 
       // Safe handling for malformed tokens: purge immediately fail-closed
       if (!/^[a-f0-9]{16,64}$/i.test(shareToken)) {
+        queueMicrotask(() => {
+          setToastMessage('Invalid shared setlist link.')
+          setTimeout(() => setToastMessage(null), 4000)
+        })
         try {
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.removeItem('gtar_pending_share_token')
@@ -599,7 +604,8 @@ function LibraryApp() {
         : (auth.session ? (auth.session.sessionToken || auth.session.idToken || auth.session.token) : null)
 
       // If unauthenticated or session expired, retain pending token in sessionStorage for restoration
-      if (!authToken || auth.isExpired || !authContext?.session || authContext.accessStatus !== 'active') {
+      const publicShare = tokenToFetch.length === 64
+      if (!publicShare && (!authToken || auth.isExpired || !authContext?.session || authContext.accessStatus !== 'active')) {
         try {
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.setItem('gtar_pending_share_token', tokenToFetch)
@@ -612,10 +618,10 @@ function LibraryApp() {
 
       const headers: Record<string, string> = {
         Accept: 'application/json',
-        Authorization: `Bearer ${authToken}`,
+        ...(!publicShare ? { Authorization: `Bearer ${authToken}` } : {}),
       }
 
-      fetch(`/api/setlist/share?token=${encodeURIComponent(tokenToFetch)}`, { headers })
+      fetch(`/api/setlist/share?token=${encodeURIComponent(tokenToFetch)}`, { headers, signal: AbortSignal.timeout(15000) })
         .then(async (res) => {
           inFlightShareRef.current = null
           if (!res.ok) {
@@ -651,7 +657,9 @@ function LibraryApp() {
           return res.json()
         })
         .then((data) => {
-          if (data?.setlist) {
+          const validated = validateSharedSetlistPayload(data?.setlist)
+          if (!validated.isValid) throw new Error('Invalid shared setlist payload received.')
+          if (validated.isValid) {
             resolvedShareRef.current = tokenToFetch
             // Successful share resolution: clear pending token
             try {
@@ -659,7 +667,7 @@ function LibraryApp() {
                 sessionStorage.removeItem('gtar_pending_share_token')
               }
             } catch { /* ignore */ }
-            setIncomingSharedSetlist(data.setlist)
+            setIncomingSharedSetlist(validated.setlist)
           }
         })
         .catch((err) => {
@@ -684,7 +692,7 @@ function LibraryApp() {
           // Clean up share parameter from URL without page reload once processed
           try {
             const cleanUrl = new URL(window.location.href)
-            if (cleanUrl.searchParams.has('share')) {
+            if (resolvedShareRef.current === tokenToFetch && cleanUrl.searchParams.has('share')) {
               cleanUrl.searchParams.delete('share')
               window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
             }
@@ -1526,18 +1534,7 @@ function LibraryApp() {
   }
 
   const handleOpenSharedSetlistInStage = (shared: SharedSetlistPayload) => {
-    const newSongStates: ActiveSongState[] = shared.songs.map((s) => ({
-      id: generateUUID(),
-      title: s.title,
-      artist: s.artist || '',
-      key: s.key || detectSongKey(s.rawContent || ''),
-      capo: s.capo || 'No Capo',
-      bpm: s.bpm || '120',
-      time: s.time,
-      format: 'CHORD_PRO',
-      transposeOffset: 0,
-      rawContent: s.rawContent,
-    }))
+    const newSongStates: ActiveSongState[] = shared.songs.map(s => ({ ...sharedSongToActiveSong(s), id: generateUUID() }))
 
     const newSetlist: WebSetlist = {
       id: generateUUID(),
@@ -1987,11 +1984,21 @@ function LibraryApp() {
       )}
 
       {/* Import Shared Setlist Preview Modal */}
-      {incomingSharedSetlist && authContext?.session && authContext.accessStatus === 'active' && (
+      {incomingSharedSetlist && (
         <ImportSharedSetlistModal
           sharedSetlist={incomingSharedSetlist}
           onImport={handleImportSharedSetlist}
-          onOpenStage={handleOpenSharedSetlistInStage}
+          localSetlists={setlists}
+          localSongs={songs}
+          onViewExisting={(existing) => { setIncomingSharedSetlist(null); openSetlistManager(existing) }}
+          onOpenStage={(shared, existing) => {
+            if (!existing) { handleOpenSharedSetlistInStage(shared); return }
+            setIncomingSharedSetlist(null)
+            setActiveSetlistId(existing.id)
+            setActiveSetlistSongIndex(0)
+            setQueueMode('setlist')
+            setActiveView('stage')
+          }}
           onClose={() => setIncomingSharedSetlist(null)}
         />
       )}

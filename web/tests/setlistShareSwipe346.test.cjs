@@ -22,7 +22,7 @@ beforeEach(() => {
   requests = []
   global.fetch = async (url, options) => {
     requests.push([url, options])
-    return new Response(JSON.stringify(url === '/api/setlist/share' ? { token: 'offline-test' } : { setlists: [] }), { status: 200 })
+    return new Response(JSON.stringify(url === '/api/setlist/share' ? { token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) } : { setlists: [] }), { status: 200 })
   }
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
@@ -59,6 +59,7 @@ test('#346 open-setlist header shares the selected setlist through the existing 
   await click(find('workspace-setlist-card-second'))
   await click(find('workspace-setlist-header').querySelector('[aria-label="Share Setlist"]'))
   assert.match(find('share-setlist-modal-card').textContent, /Second \(1 song\)/)
+  assert.match(host.textContent, /snapshot for 3 days/)
   const share = requests.find(([url]) => url === '/api/setlist/share')
   assert.ok(share, 'existing share dialog creates its snapshot')
   assert.equal(JSON.parse(share[1].body).name, 'Second')
@@ -86,7 +87,7 @@ test('#346 QR dialog Export JSON downloads the existing single-setlist format', 
 
 const { resolveObjectURL } = require('node:buffer')
 
-test('#346 local export stays available while QR creation loads, and sign-out hides an in-flight QR result', async () => {
+test('#346 local export stays available while QR creation loads, and account changes do not interrupt anonymous sharing', async () => {
   let finishShare
   global.fetch = () => new Promise(resolve => { finishShare = resolve })
   const render = async value => act(async () => root.render(React.createElement(AuthContext.Provider, { value },
@@ -97,13 +98,13 @@ test('#346 local export stays available while QR creation loads, and sign-out hi
   assert.match(host.textContent, /Creating snapshot/)
   // Stored credentials remain, so this exercises the live context gate too.
   await render({ session: null, accessStatus: 'pending' })
-  assert.match(host.textContent, /Sign in to create a QR code \/ share link\./)
+  assert.match(host.textContent, /Creating snapshot/)
   assert.ok(button('Export JSON'))
-  assert.equal(button('Close').disabled, false)
-  await act(async () => finishShare(new Response(JSON.stringify({ token: 'late-share' }), { status: 200 })))
-  assert.equal(host.querySelector('img'), null)
-  assert.equal(host.querySelector('input'), null)
-  assert.equal(button('Revoke Share Link'), undefined)
+  assert.equal(button('Close').disabled, true)
+  await act(async () => finishShare(new Response(JSON.stringify({ token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) }), { status: 200 })))
+  assert.ok(host.querySelector('img'))
+  assert.ok(host.querySelector('input'))
+  assert.ok(button('Revoke Share Link'))
 })
 
 test('#346 swipe right reveals Share Setlist and opens the selected QR dialog without opening the card', async () => {
@@ -157,4 +158,61 @@ test('#346 setlist swipe and held/native drag stay separate; tap and keyboard st
   card = find('workspace-setlist-card-second')
   await act(async () => card.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
   assert.match(find('workspace-setlist-header').textContent, /Second/)
+})
+
+
+test('#433 copy and revoke use different capabilities; URL excludes revoke secret', async () => {
+  localStorage.clear()
+  const copied = []
+  Object.defineProperty(global, 'navigator', { configurable: true, value: { clipboard: { writeText: async text => copied.push(text) } } })
+  window.confirm = () => true
+  await act(async () => root.render(React.createElement(ShareSetlistModal, { setlist: lists[1], allSongs: songs, onClose() {} })))
+  assert.ok(host.querySelector('svg.lucide-share-2'))
+  await click(button('Copy'))
+  assert.equal(copied[0], window.location.origin + '?share=' + 'a'.repeat(64))
+  assert.equal(copied[0].includes('b'.repeat(64)), false)
+  await click(button('Revoke Share Link'))
+  const revoke = requests.find(([url]) => url === '/api/setlist/revoke')
+  assert.deepEqual(JSON.parse(revoke[1].body), { token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) })
+  assert.equal(revoke[1].headers.Authorization, undefined)
+  assert.match(host.textContent, /Share Link Revoked/)
+  assert.equal(host.querySelector('img'), null)
+})
+
+for (const failure of ['network', 'service', 'invalid']) test(`#433 ${failure} failure preserves export and enables close`, async () => {
+  localStorage.clear()
+  global.fetch = async () => {
+    if (failure === 'network') throw new Error('Network unavailable')
+    return new Response(JSON.stringify(failure === 'invalid' ? {} : { error: 'DATABASE_UNAVAILABLE' }), { status: failure === 'service' ? 503 : 200 })
+  }
+  await act(async () => root.render(React.createElement(ShareSetlistModal, { setlist: lists[1], allSongs: songs, onClose() {} })))
+  assert.match(host.textContent, /Unable to generate share link/)
+  assert.ok(button('Export JSON'))
+  assert.equal(button('Close').disabled, false)
+  assert.equal(host.querySelector('img'), null)
+})
+
+for (const kind of ['missing', 'oversized']) test(`#433 ${kind} setlist is rejected before upload`, async () => {
+  const setlist = kind === 'missing' ? { ...lists[1], songs: [{ id: 'missing', title: 'Missing' }] } : { ...lists[1], songs: Array(101).fill(lists[1].songs[0]) }
+  await act(async () => root.render(React.createElement(ShareSetlistModal, { setlist, allSongs: songs, onClose() {} })))
+  assert.equal(requests.length, 0)
+  assert.match(host.textContent, /Unable to generate share link/)
+  assert.ok(button('Export JSON'))
+})
+
+
+test('#433 recipient metadata is accurate; duplicate Stage reuses existing setlist', async () => {
+  const { ImportSharedSetlistModal } = require('../src/components/ImportSharedSetlistModal.tsx')
+  const { sanitizeSetlistForShare } = require('../src/utils/sharedSetlist.ts')
+  const metadataSong = { ...songs[0], originalKey: 'G', key: 'C', transposeOffset: 2, bpm: '73 BPM', time: '6/8', year: '2010', capo: 'No Capo' }
+  const shared = sanitizeSetlistForShare(lists[1], [metadataSong])
+  const stage = [], imported = []
+  await act(async () => root.render(React.createElement(ImportSharedSetlistModal, { sharedSetlist: shared, localSetlists: [lists[1]], localSongs: [metadataSong], onImport: s => imported.push(s), onOpenStage: (...args) => stage.push(args), onClose() {} })))
+  for (const label of ['Orig Key: G', 'Chart Key: C', 'Current Key: D', '73 BPM', 'Time: 6/8', 'Year: 2010']) assert.ok(host.textContent.includes(label), label)
+  assert.doesNotMatch(host.textContent, /Capo/)
+  assert.match(host.textContent, /already in your library/)
+  await click(button('View in Stage Mode'))
+  assert.equal(stage[0][1], lists[1])
+  assert.equal(imported.length, 0)
+  assert.equal(requests.length, 0)
 })

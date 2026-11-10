@@ -40,7 +40,7 @@ afterEach(async () => { if (root) { await act(async () => root.unmount()); root 
 function freshModules() {
   for (const key of Object.keys(require.cache)) if (key.startsWith(srcDir)) delete require.cache[key]
 }
-async function mountApp(url, { keepStorage = false, realHome = false, auth = null, requests = [] } = {}) {
+async function mountApp(url, { keepStorage = false, realHome = false, auth = null, requests = [], sharedPayload = null, shareStatus = 200 } = {}) {
   const previous = keepStorage ? dom.window.localStorage : null
   const saved = previous ? Object.fromEntries(Object.keys(previous).map(k => [k, previous.getItem(k)])) : null
   if (root) { await act(async () => root.unmount()); root = null }
@@ -59,7 +59,8 @@ async function mountApp(url, { keepStorage = false, realHome = false, auth = nul
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
   global.fetch = async (url, options) => {
     requests.push([url, options])
-    if (url === '/api/setlist/share') return new Response(JSON.stringify({ token: 'offline-test' }), { status: 200 })
+    if (String(url).startsWith('/api/setlist/share?')) return new Response(JSON.stringify(sharedPayload ? { setlist: sharedPayload } : { error: 'SHARED_SETLIST_EXPIRED' }), { status: shareStatus })
+    if (url === '/api/setlist/share') return new Response(JSON.stringify({ token: 'a'.repeat(64), revokeSecret: 'b'.repeat(64) }), { status: 200 })
     throw new Error('offline')
   }
   if (saved) for (const [k, v] of Object.entries(saved)) localStorage.setItem(k, v)
@@ -118,20 +119,19 @@ test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-
   assert.equal(home.setlists.find(sl => sl.id === 'sl-1').isDeleted, true, 'soft-delete survives reload')
 })
 
-test('#346 real signed-out App opens local share from header, menu and swipe without a share request', async () => {
+test('#346 real signed-out App creates anonymous shares from dedicated buttons and swipe without redundant menu actions', async () => {
   const requests = []
   await mountApp('http://localhost/', { realHome: true, requests })
   await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
   const assertLocalShare = () => {
     const modal = $('[data-testid="share-setlist-modal-card"]')
     assert.ok(modal)
-    assert.match(modal.textContent, /Sign in to create a QR code \/ share link\./)
     assert.ok(button('Export JSON'))
-    assert.equal(modal.querySelector('img'), null)
-    assert.equal(modal.querySelector('input'), null)
-    assert.equal(button('Copy'), undefined)
-    assert.equal(button('Revoke Share Link'), undefined)
-    assert.equal(requests.filter(([url]) => url === '/api/setlist/share').length, 0)
+    assert.ok(modal.querySelector('img'))
+    assert.match(modal.querySelector('input').value, /share=a{64}$/)
+    assert.ok(button('Copy'))
+    assert.ok(button('Revoke Share Link'))
+    assert.ok(requests.filter(([url]) => url === '/api/setlist/share').length > 0)
   }
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
@@ -143,12 +143,16 @@ test('#346 real signed-out App opens local share from header, menu and swipe wit
   finally { window.HTMLAnchorElement.prototype.click = originalClick }
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   await click($('[data-testid="workspace-scope-menu-btn"]'))
-  await click($('[data-testid="workspace-menu-share"]'))
+  assert.equal($('[data-testid="workspace-menu-share"]'), null)
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
   assertLocalShare()
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   await click($('[data-testid="workspace-crumb-scope"]'))
   await click($('[data-testid="workspace-scope-menu-btn"]'))
-  await click($('[data-testid="workspace-menu-share"]'))
+  assert.equal($('[data-testid="workspace-menu-share"]'), null)
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="main-share-setlist-btn"]'))
   assertLocalShare()
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   const card = $('[data-testid="workspace-setlist-card-sl-1"]')
@@ -162,7 +166,7 @@ test('#346 real signed-out App opens local share from header, menu and swipe wit
   assertLocalShare()
 })
 
-for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus} App gates the QR section while keeping local export`, async () => {
+for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus} App shares without credentials while keeping local export`, async () => {
   const requests = [], now = Date.now()
   const session = { version: 1, user: { id: 'owner', sub: 'owner', email: 'owner@example.test', access_status: accessStatus },
     sessionToken: 'offline-token', access_status: accessStatus, authenticatedAt: now, lastVerifiedAt: now, localExpiresAt: now + 3600000, expiresAt: now + 3600000 }
@@ -174,18 +178,14 @@ for (const accessStatus of ['active', 'pending']) test(`#346 real ${accessStatus
   assert.ok(modal)
   assert.ok(button('Export JSON'))
   const shares = requests.filter(([url]) => url === '/api/setlist/share')
-  if (accessStatus === 'active') {
+  {
     assert.equal(shares.length, 1)
     assert.equal(JSON.parse(shares[0][1].body).name, 'Sunday AM')
     assert.ok(modal.querySelector('img[alt="QR Code for Setlist Sharing"]'))
-    assert.match(modal.querySelector('input').value, /\?share=offline-test$/)
+    assert.match(modal.querySelector('input').value, /\?share=a{64}$/)
     assert.ok(button('Copy'))
     assert.ok(button('Revoke Share Link'))
-  } else {
-    assert.equal(shares.length, 0)
-    assert.equal(modal.querySelector('img'), null)
-    assert.equal(modal.querySelector('input'), null)
-    assert.match(modal.textContent, /Sign in to create a QR code \/ share link\./)
+
   }
 })
 
@@ -259,3 +259,131 @@ test('manage remains available without the legacy drawer outside local developme
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'))
 })
 
+
+
+test('#433 fresh signed-out recipient opens URL snapshot without changing local songs until explicit import', async () => {
+  const requests = []
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: 'Other device', songs: [{ title: 'Remote song', rawContent: '{key: C}\n[C]Remote words' }] }
+  await mountApp(`http://localhost/?share=${'a'.repeat(64)}`, { sharedPayload, requests })
+  const read = requests.find(([url]) => String(url).startsWith('/api/setlist/share?'))
+  assert.ok(read)
+  assert.equal(read[1].headers.Authorization, undefined)
+  assert.match(document.body.textContent, /Other device/)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+  await click(button('Import'))
+  assert.ok(stored().songs.some(song => song.rawContent.includes('Remote words')))
+  assert.ok(stored().setlists.some(setlist => setlist.name === 'Other device'))
+})
+
+for (const status of [410, 503]) test(`#433 signed-out recipient sees ${status} feedback`, async () => {
+  await mountApp(`http://localhost/?share=${'a'.repeat(64)}`, { shareStatus: status })
+  assert.match(document.body.textContent, status === 410 ? /expired/ : /SHARED_SETLIST_EXPIRED/)
+  assert.equal(window.location.search.includes('share='), status !== 410)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+})
+
+
+test('#433 pasted share URL loads signed out and validates before showing recipient preview', async () => {
+  const requests = []
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: 'Pasted snapshot', songs: [{ title: 'Pasted song', rawContent: '[C]Pasted words' }] }
+  await mountApp('http://localhost/', { realHome: true, sharedPayload, requests })
+  await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="workspace-menu-import"]'))
+  const input = $('[data-testid="paste-share-link-input"]')
+  assert.equal(input.disabled, false)
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'http://localhost/?share=' + 'a'.repeat(64))
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+  await click($('[data-testid="load-share-link-btn"]'))
+  assert.match(document.body.textContent, /Pasted snapshot/)
+  const read = requests.find(([url]) => String(url).startsWith('/api/setlist/share?'))
+  assert.ok(read)
+  assert.equal(read[1].headers.Authorization, undefined)
+  assert.equal(stored().songs.length, LIBRARY.songs.length)
+})
+
+
+for (const action of ['View Existing', 'Import Anyway']) test(`#433 exact duplicate offers ${action} without automatic library changes`, async () => {
+  const { sanitizeSetlistForShare } = require('../src/utils/sharedSetlist.ts')
+  const sharedPayload = sanitizeSetlistForShare(LIBRARY.setlists[0], LIBRARY.songs)
+  const requests = []
+  await mountApp(`http://localhost/?share=${'a'.repeat(64)}`, { sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./)
+  assert.equal(button('Import to Songbook'), undefined)
+  const before = JSON.stringify(stored())
+  const requestCount = requests.length
+  await click(button(action))
+  assert.equal(requests.length, requestCount, 'duplicate actions make no Cloudflare requests')
+  if (action === 'View Existing') {
+    assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'))
+    assert.equal($('[data-testid="setlist-manager-name"]').textContent, 'Sunday AM')
+    assert.equal(JSON.stringify(stored()), before)
+  } else {
+    assert.equal(stored().setlists.length, LIBRARY.setlists.length + 1)
+    assert.equal(stored().songs.length, LIBRARY.songs.length + 1)
+    assert.deepEqual(stored().setlists.find(list => list.id === 'sl-1').songs, LIBRARY.setlists[0].songs.map((ref, position) => ({ ...ref, entryId: 'entry:sl-1:' + position, position })))
+  }
+})
+
+
+for (const variant of ['missing cached key', 'noncanonical cached key', 'lowercase cached key', 'canonical cached key']) test(`#433 persisted five-song share reopens as a duplicate: ${variant}`, async () => {
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: '11012026', songs: Array.from({ length: 5 }, (_, i) => ({
+    title: `Shared song ${i + 1}`, artist: 'Shared Artist',
+    rawContent: `{title: Shared song ${i + 1}}\n{key: G}\n[G]Shared verse ${i + 1}`,
+    ...(variant === 'missing cached key' ? {} : { key: variant === 'noncanonical cached key' ? 'g major' : variant === 'lowercase cached key' ? 'g' : 'G' }),
+  })) }
+  const url = `http://localhost/?share=${'a'.repeat(64)}`
+  const requests = []
+  await mountApp(url, { sharedPayload, requests })
+  assert.doesNotMatch(document.body.textContent, /This setlist is already in your library/)
+  await click(button('Import to Songbook'))
+  const imported = stored().setlists.find(list => list.name === '11012026')
+  assert.ok(imported)
+  assert.equal(imported.songs.length, 5)
+  const before = JSON.stringify(stored())
+  await mountApp(url, { keepStorage: true, sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./, 'same QR/URL must detect the actually persisted import')
+  assert.equal(button('Import to Songbook'), undefined)
+  assert.ok(button('Import Anyway'))
+  assert.ok(button('View Existing'))
+  assert.equal(JSON.stringify(stored()), before, 'opening the share adds no songs or setlists')
+  await click(button('View Existing'))
+  assert.equal($('[data-testid="setlist-manager-name"]').textContent, '11012026')
+  assert.equal(JSON.stringify(stored()), before)
+  assert.equal($('[data-testid="setlist-manager-select"]').value, String(imported.id))
+  await mountApp(url, { keepStorage: true, sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./)
+  assert.equal(JSON.stringify(stored()), before)
+  await click(button('Import Anyway'))
+  assert.equal(stored().songs.length, LIBRARY.songs.length + 10)
+  assert.equal(stored().setlists.length, LIBRARY.setlists.length + 2)
+  assert.ok(stored().setlists.some(list => list.id === imported.id), 'original import remains intact')
+  const afterExplicitImport = JSON.stringify(stored())
+  await mountApp(url, { keepStorage: true, sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./)
+  assert.equal(button('Import to Songbook'), undefined)
+  assert.equal(JSON.stringify(stored()), afterExplicitImport)
+})
+
+
+for (const change of ['arrangement', 'song order']) test(`#433 persisted import does not block a different ${change}`, async () => {
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: '11012026', songs: Array.from({ length: 5 }, (_, i) => ({
+    title: `Different-control song ${i + 1}`, rawContent: `{key: C}\n[C]Verse ${i + 1}`,
+  })) }
+  const url = `http://localhost/?share=${'a'.repeat(64)}`
+  await mountApp(url, { sharedPayload })
+  await click(button('Import to Songbook'))
+  const before = JSON.stringify(stored())
+  const changed = { ...sharedPayload, songs: change === 'song order' ? [...sharedPayload.songs].reverse() : sharedPayload.songs.map((song, i) => i === 0 ? { ...song, transposeOffset: 2 } : song) }
+  await mountApp(url, { keepStorage: true, sharedPayload: changed })
+  assert.doesNotMatch(document.body.textContent, /This setlist is already in your library/)
+  assert.ok(button('Import to Songbook'))
+  assert.equal(button('Import Anyway'), undefined)
+  assert.equal(JSON.stringify(stored()), before)
+  await click(button('Import to Songbook'))
+  assert.equal(stored().setlists.length, LIBRARY.setlists.length + 2)
+  assert.equal(stored().songs.length, LIBRARY.songs.length + 10)
+})

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { generateQrSvgDataUri } from '../utils/qrCode';
 import { exportSingleSetlistJson } from '../utils/jsonBackup';
-import { sanitizeSetlistForShare } from '../utils/sharedSetlist';
+import { sanitizeSetlistForShare, validateSharedSetlistPayload, MAX_SHARE_SONGS_COUNT, MAX_SHARE_RAW_CONTENT_LENGTH } from '../utils/sharedSetlist';
 import type { SharedSetlistPayload } from '../utils/sharedSetlist';
 import type { WebSetlist, ActiveSongState } from '../types/gtar';
-import { getStoredSessionStatus } from '../utils/googleAuth';
-import { useOptionalGoogleAuth } from '../utils/authContext';
+import { resolveSetlistSong } from '../utils/setlistSongs';
+import { Share2 } from 'lucide-react';
 
 interface ShareSetlistModalProps {
   setlist: WebSetlist;
@@ -18,21 +18,16 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
   allSongs,
   onClose,
 }) => {
-  const auth = useOptionalGoogleAuth();
-  const stored = getStoredSessionStatus();
-  const canCreateShare = !!stored.session && !stored.isExpired && (
-    auth ? !!auth.session && auth.accessStatus === 'active' : stored.session.access_status === 'active'
-  );
-  const [shareLoading, setLoading] = useState(false);
-  const loading = canCreateShare && shareLoading;
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareToken, setShareToken] = useState<string>('');
   const [shareUrl, setShareUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [qrDataUri, setQrDataUri] = useState<string>('');
   const [revoked, setRevoked] = useState(false);
-  const [shareRevoking, setRevoking] = useState(false);
-  const revoking = canCreateShare && shareRevoking;
+  const [revoking, setRevoking] = useState(false);
+  const [revokeSecret, setRevokeSecret] = useState('');
+  const [copyError, setCopyError] = useState('');
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   // Restore focus to triggering element when modal closes
@@ -56,7 +51,6 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
   }, [loading, revoking, onClose]);
 
   useEffect(() => {
-    if (!canCreateShare) return;
     let isCancelled = false;
 
     const createShare = async () => {
@@ -64,28 +58,23 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
       setError(null);
 
       try {
-        const { session, isExpired } = getStoredSessionStatus();
-        if (!session || isExpired) {
-          throw new Error('Authentication required to share setlist');
-        }
-        const authToken = session.sessionToken || session.idToken || session.token;
-        if (!authToken) {
-          throw new Error('Authentication token missing');
-        }
-        const userStatus = session.access_status || session.user?.access_status || 'active';
-        if (userStatus !== 'active') {
-          throw new Error('Active account approval required to share setlist');
-        }
+        if (setlist.songs.length > MAX_SHARE_SONGS_COUNT) throw new Error(`Sharing supports up to ${MAX_SHARE_SONGS_COUNT} songs. Use Export JSON for larger setlists.`);
+        if (setlist.songs.some(ref => !resolveSetlistSong(ref, allSongs))) throw new Error('Some songs are missing or in Trash. Restore them before sharing, or use Export JSON.');
         const payload: SharedSetlistPayload = sanitizeSetlistForShare(setlist, allSongs);
 
-        // Request share token from backend with active session authorization
+        const validation = validateSharedSetlistPayload(payload);
+        if (!validation.isValid) throw new Error(validation.error);
+        if (payload.songs.some(song => song.rawContent.length > MAX_SHARE_RAW_CONTENT_LENGTH)) throw new Error('A song exceeds the sharing size limit. Use Export JSON.');
+        if (new TextEncoder().encode(JSON.stringify(payload)).length > 1024 * 1024) throw new Error('Setlist exceeds the 1 MB sharing limit. Use Export JSON.');
+
+        // Publish only this explicit, self-contained snapshot; no cloud library access.
         const res = await fetch('/api/setlist/share', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
           },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (!res.ok) {
@@ -93,13 +82,18 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           if (res.status === 429) {
             throw new Error('Share creation limit reached — please wait a moment');
           }
+          if (res.status === 503) throw new Error('Sharing service unavailable. Try again later or use Export JSON.');
           throw new Error(errData.error || `HTTP ${res.status}`);
         }
 
         const data = await res.json();
         if (isCancelled) return;
 
+        if (!/^[a-f0-9]{64}$/.test(data.token) || !/^[a-f0-9]{64}$/.test(data.revokeSecret)) {
+          throw new Error('Invalid sharing service response. Use Export JSON or try again later.');
+        }
         setShareToken(data.token);
+        setRevokeSecret(data.revokeSecret);
         const origin = window.location.origin;
         const generatedUrl = `${origin}?share=${data.token}`;
         setShareUrl(generatedUrl);
@@ -124,22 +118,23 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [setlist, allSongs, canCreateShare]);
+  }, [setlist, allSongs]);
 
   const handleCopy = async () => {
-    if (!canCreateShare || !shareUrl) return;
+    if (!shareUrl) return;
+    setCopyError('');
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback
       setCopied(false);
+      setCopyError('Copy unavailable. Select and copy the link above.');
     }
   };
 
   const handleRevoke = async () => {
-    if (!canCreateShare || !shareToken || revoking) return;
+    if (!revokeSecret || !shareToken || revoking) return;
     if (
       !window.confirm(
         'Revoke this share link? Once revoked, anyone with the QR code or link will no longer be able to view or import this setlist.'
@@ -150,18 +145,13 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
     setRevoking(true);
     setRevokeError(null);
     try {
-      const { session } = getStoredSessionStatus();
-      const authToken = session?.sessionToken || session?.idToken || session?.token;
-      if (!authToken) {
-        throw new Error('Authentication required to revoke link');
-      }
       const res = await fetch('/api/setlist/revoke', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ token: shareToken }),
+        body: JSON.stringify({ token: shareToken, revokeSecret }),
+        signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -198,12 +188,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
             <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-              <svg className="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="7" />
-                <rect x="14" y="3" width="7" height="7" />
-                <rect x="14" y="14" width="7" height="7" />
-                <rect x="3" y="14" width="7" height="7" />
-              </svg>
+              <Share2 className="w-5 h-5 text-indigo-400" aria-hidden="true" />
               Share Setlist
             </h3>
             <p className="text-xs text-slate-400 mt-0.5 font-medium truncate max-w-[240px]">
@@ -229,18 +214,14 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           </div>
         )}
 
-        {!canCreateShare && (
-          <p className="text-xs text-slate-400">Sign in to create a QR code / share link.</p>
-        )}
-
-        {canCreateShare && error && (
+        {error && (
           <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm space-y-2">
             <p className="font-semibold">Unable to generate share link</p>
             <p className="text-xs opacity-90">{error}</p>
           </div>
         )}
 
-        {canCreateShare && revoked && (
+        {revoked && (
           <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm space-y-2 text-center animate-fade-in">
             <p className="font-semibold flex items-center justify-center gap-1.5">
               <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,7 +235,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
           </div>
         )}
 
-        {canCreateShare && !loading && !error && !revoked && qrDataUri && (
+        {!loading && !error && !revoked && qrDataUri && (
           <div className="flex flex-col items-center space-y-4">
             <div className="p-3 bg-white rounded-xl shadow-inner border border-slate-200">
               <img
@@ -264,13 +245,15 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
               />
             </div>
             <p className="text-xs text-slate-400 text-center px-2">
-              Scan with mobile camera to import this setlist directly into GTAR.
+              Scan with mobile camera. Anyone with this QR code or link can preview and import this snapshot for 3 days. Internet required. Revoke before closing this dialog if needed.
             </p>
 
             <div className="w-full flex items-center gap-2">
               <input
                 type="text"
                 readOnly
+                aria-label="Setlist share URL"
+                onFocus={(event) => event.currentTarget.select()}
                 value={shareUrl}
                 className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono truncate focus:outline-none"
               />
@@ -296,6 +279,8 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
                 )}
               </button>
             </div>
+
+            {copyError && <p role="status" className="text-xs text-slate-400">{copyError}</p>}
 
             {revokeError && (
               <p className="text-xs text-rose-400 text-center">{revokeError}</p>

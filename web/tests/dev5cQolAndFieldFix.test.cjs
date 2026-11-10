@@ -141,6 +141,7 @@ test('DELIVERABLE 3: generateQrMatrix decodes identically via independent jsQR d
   const testUrls = [
     // Representative GTAR share URL
     'https://gtar.pages.dev/?share=0123456789abcdef',
+    'https://dev.gtar-web.pages.dev/?share=' + 'a'.repeat(64),
     // Short URL
     'https://gtar.dev/?share=a1b2c3d4e5f60718',
     // Longer URL / query params

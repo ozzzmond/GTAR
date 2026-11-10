@@ -1,3 +1,4 @@
+import { sharedSongToActiveSong } from './sharedSetlistLibrary'
 import type { TagColors } from './songTags'
 /**
  * #85 slice 2: import, merge and restore handlers moved verbatim from App.tsx. Behavior is unchanged.
@@ -13,7 +14,6 @@ import { normalizeBackupSong, parseBackupJson } from './jsonBackup'
 import { mergeBackupLibrary, partitionSongs } from './setlistSongs'
 import { mergeImportedSetlists } from './importIdentity'
 import { generateUUID } from './uuid'
-import { detectSongKey } from './songParser'
 
 type Setter<T> = Dispatch<SetStateAction<T>>
 export interface LibraryImportsInput {
@@ -113,18 +113,7 @@ export function useLibraryImports({
   }
 
   const handleImportSharedSetlist = (shared: SharedSetlistPayload) => {
-    const newSongStates: ActiveSongState[] = shared.songs.map((s) => ({
-      id: generateUUID(),
-      title: s.title,
-      artist: s.artist || '',
-      key: s.key || detectSongKey(s.rawContent || ''),
-      capo: s.capo || 'No Capo',
-      bpm: s.bpm || '120',
-      time: s.time,
-      format: 'CHORD_PRO',
-      transposeOffset: 0,
-      rawContent: s.rawContent,
-    }))
+    const newSongStates: ActiveSongState[] = shared.songs.map(s => ({ ...sharedSongToActiveSong(s), id: generateUUID() }))
 
     const newSetlist: WebSetlist = {
       id: generateUUID(),
