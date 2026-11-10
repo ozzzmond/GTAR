@@ -245,6 +245,7 @@ New or renamed tests await a human choice of primary category.
 - [explorerFullPort.test.cjs](explorerFullPort.test.cjs)
 - [explorerPhase2Layout.test.cjs](explorerPhase2Layout.test.cjs)
 - [foldersTagsShortcuts.test.cjs](foldersTagsShortcuts.test.cjs)
+- [gtar1Export.test.cjs](gtar1Export.test.cjs)
 - [layoutDirective332.test.cjs](layoutDirective332.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryStore.test.cjs](libraryStore.test.cjs)
