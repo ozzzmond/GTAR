@@ -39,6 +39,10 @@
       "tier": "scale"
     },
     {
+      "file": "r2VersionBootstrap.test.cjs",
+      "tier": "release"
+    },
+    {
       "file": "stageCast2Runtime.test.cjs",
       "tier": "workerd"
     }
