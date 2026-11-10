@@ -1815,6 +1815,7 @@ function LibraryApp() {
             onManageSetlist={handleManageSetlist}
             onOpenSetlistManager={openSetlistManager}
             onDeleteSong={handleDeleteSong}
+            onRenameSetlist={handleManagerRename}
             onDeleteSetlist={handleManagerDelete}
             setlists={setlists}
             onSelectSetlistSong={(setlistId, songIdx) => {

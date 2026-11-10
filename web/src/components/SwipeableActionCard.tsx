@@ -14,6 +14,7 @@ export interface SwipeableActionCardProps {
   id: string | number
   leftAction?: SwipeActionConfig // Revealed on swipe right (deltaX > 0)
   rightAction?: SwipeActionConfig // Revealed on swipe left (deltaX < 0)
+  secondaryRightAction?: SwipeActionConfig // Revealed on swipe left alongside rightAction (e.g. Rename)
   armThreshold?: number // Default: 75px
   maxSwipe?: number // Default: 110px
   disabled?: boolean
@@ -79,8 +80,9 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   id,
   leftAction,
   rightAction,
-  armThreshold = 75,
-  maxSwipe = 110,
+  secondaryRightAction,
+  armThreshold: userArmThreshold,
+  maxSwipe,
   disabled = false,
   className = '',
   cardClassName = '',
@@ -94,6 +96,12 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const [offset, setOffset] = useState(0)
   const [isArmed, setIsArmed] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const cardContainerRef = useRef<HTMLDivElement>(null)
+
+  const hasSecondary = Boolean(secondaryRightAction && !secondaryRightAction.disabled)
+  const panelWidth = 140
+  const openThreshold = 40
 
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -101,21 +109,25 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const didMoveBeyondTap = useRef(false)
   const isArmedRef = useRef(false)
   const offsetRef = useRef(0)
+  const isOpenRef = useRef(false)
 
   // Keep refs in sync for touch release evaluation
   // Publish committed values before input events; suspended renders cannot leak.
   useLayoutEffect(() => {
     isArmedRef.current = isArmed
     offsetRef.current = offset
-  }, [isArmed, offset])
+    isOpenRef.current = isOpen
+  }, [isArmed, offset, isOpen])
 
   const resetCard = useCallback(() => {
     setOffset(0)
     setIsArmed(false)
     setIsDragging(false)
+    setIsOpen(false)
     gestureIntent.current = 'undecided'
     isArmedRef.current = false
     offsetRef.current = 0
+    isOpenRef.current = false
   }, [])
 
   // Register in active coordinator
@@ -126,13 +138,39 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
     }
   }, [id, resetCard])
 
+  // Global listeners when card settles OPEN
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleGlobalPointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null
+      if (cardContainerRef.current && !cardContainerRef.current.contains(target)) {
+        resetCard()
+      }
+    }
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        resetCard()
+      }
+    }
+
+    document.addEventListener('pointerdown', handleGlobalPointerDown, true)
+    document.addEventListener('keydown', handleGlobalKeyDown, true)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleGlobalPointerDown, true)
+      document.removeEventListener('keydown', handleGlobalKeyDown, true)
+    }
+  }, [isOpen, resetCard])
+
   // Reset if disabled changes
   useEffect(() => {
-    if (disabled && (offset !== 0 || isArmed)) {
+    if (disabled && (offset !== 0 || isArmed || isOpen)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Disabling a card must clear its live gesture and coordinator state.
       resetCard()
     }
-  }, [disabled, offset, isArmed, resetCard])
+  }, [disabled, offset, isArmed, isOpen, resetCard])
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (disabled) return
@@ -159,15 +197,19 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
 
     const clientX = e.touches[0].clientX
     const clientY = e.touches[0].clientY
-    const deltaX = clientX - touchStartX.current
+    const rawDeltaX = clientX - touchStartX.current
     const deltaY = clientY - touchStartY.current
 
+    // If card was already open at -panelWidth, offset begins from -panelWidth
+    const baseOffset = isOpenRef.current ? -panelWidth : 0
+    const totalDeltaX = baseOffset + rawDeltaX
+
     if (gestureIntent.current === 'undecided') {
-      const intent = evaluateSwipeIntent(deltaX, deltaY, 8)
+      const intent = evaluateSwipeIntent(rawDeltaX, deltaY, 8)
       gestureIntent.current = intent
 
       if (intent === 'vertical') {
-        // Primary vertical scroll intent: leave offset at 0 and do not intercept
+        // Primary vertical scroll intent: leave offset as is and do not intercept
         return
       }
       if (intent === 'horizontal') {
@@ -183,12 +225,19 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
         e.preventDefault()
       }
 
+      const activeArmThreshold = totalDeltaX < 0
+        ? (userArmThreshold ?? (hasSecondary ? 160 : 75))
+        : (userArmThreshold ?? 75)
+      const activeMaxSwipe = totalDeltaX < 0
+        ? (maxSwipe ?? (hasSecondary ? 200 : 110))
+        : (maxSwipe ?? 110)
+
       const { offset: nextOffset, isArmed: nextArmed } = computeSwipeOffset(
-        deltaX,
+        totalDeltaX,
         Boolean(leftAction && !leftAction.disabled),
-        Boolean(rightAction && !rightAction.disabled),
-        armThreshold,
-        maxSwipe
+        Boolean((rightAction && !rightAction.disabled) || (secondaryRightAction && !secondaryRightAction.disabled)),
+        activeArmThreshold,
+        activeMaxSwipe
       )
 
       setOffset(nextOffset)
@@ -206,8 +255,27 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
       if (armed) {
         if (currentOffset > 0 && leftAction && !leftAction.disabled) {
           leftAction.onAction()
+          resetCard()
+          return
         } else if (currentOffset < 0 && rightAction && !rightAction.disabled) {
           rightAction.onAction()
+          resetCard()
+          return
+        }
+      }
+
+      // If card has secondaryRightAction and left swipe reached openThreshold
+      if (hasSecondary && currentOffset < 0) {
+        if (Math.abs(currentOffset) >= openThreshold) {
+          // Settle OPEN
+          setOffset(-panelWidth)
+          setIsArmed(false)
+          setIsDragging(false)
+          setIsOpen(true)
+          offsetRef.current = -panelWidth
+          isOpenRef.current = true
+          gestureIntent.current = 'undecided'
+          return
         }
       }
     }
@@ -221,6 +289,14 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   }
 
   const handleClick = (e: React.MouseEvent) => {
+    // If card was open, clicking front card closes it instead of navigating
+    if (isOpen) {
+      e.preventDefault()
+      e.stopPropagation()
+      resetCard()
+      return
+    }
+
     // If a horizontal swipe gesture occurred, suppress click on the card surface
     if (didMoveBeyondTap.current) {
       e.preventDefault()
@@ -235,7 +311,7 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const isSwipingRight = offset > 0
 
   return (
-    <div className={`relative overflow-hidden ${className}`}>
+    <div ref={cardContainerRef} className={`relative overflow-hidden ${className}`}>
       {/* Background Action Underlayer: Left Action (Revealed on Swipe Right) */}
       {leftAction && isSwipingRight && (
         <div
@@ -268,35 +344,68 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
         </div>
       )}
 
-      {/* Background Action Underlayer: Right Action (Revealed on Swipe Left) */}
-      {rightAction && isSwipingLeft && (
+      {/* Background Action Underlayer: Right Action(s) (Revealed on Swipe Left) */}
+      {(rightAction || secondaryRightAction) && isSwipingLeft && (
         <div
-          data-testid={rightAction.testId || `swipe-action-right-${id}`}
-          data-armed={isArmed ? 'true' : 'false'}
-          aria-label={rightAction.ariaLabel || rightAction.label}
-          className={`absolute inset-y-0 right-0 flex items-center justify-end pr-3.5 sm:pr-4 pl-3 gap-2 transition-colors duration-150 z-0 rounded-xl ${
-            isArmed
-              ? rightAction.isDestructive
-                ? 'bg-[#DC6E67] text-white shadow-inner font-bold'
-                : 'bg-app-action text-app-on-action shadow-inner font-bold'
-              : rightAction.isDestructive
-                ? 'bg-[#DC6E67]/25 text-status-error'
-                : 'bg-app-action/20 text-app-action'
-          }`}
+          className="absolute inset-y-0 right-0 flex items-stretch justify-end z-0 rounded-xl overflow-hidden"
           style={{ width: `${Math.max(-offset, 0)}px` }}
         >
-          <div
-            className={`flex items-center gap-1.5 transition-transform duration-150 shrink-0 ${
-              isArmed ? 'scale-110 font-bold' : 'scale-100 opacity-90'
-            }`}
-          >
-            {offset <= -60 && (
-              <span className="text-[11px] sm:text-xs font-mono font-bold tracking-tight select-none">
-                {rightAction.label}
-              </span>
-            )}
-            {rightAction.icon}
-          </div>
+          {secondaryRightAction && (
+            <button
+              type="button"
+              data-testid={secondaryRightAction.testId || `swipe-action-rename-${id}`}
+              aria-label={secondaryRightAction.ariaLabel || secondaryRightAction.label}
+              onClick={(e) => {
+                e.stopPropagation()
+                secondaryRightAction.onAction()
+                resetCard()
+              }}
+              className="flex-1 min-w-[50px] flex items-center justify-center gap-1.5 bg-app-action text-app-on-action px-2 transition-transform duration-150 cursor-pointer"
+            >
+              {secondaryRightAction.icon}
+              {offset <= -70 && (
+                <span className="text-[11px] sm:text-xs font-mono font-bold tracking-tight select-none">
+                  {secondaryRightAction.label}
+                </span>
+              )}
+            </button>
+          )}
+          {rightAction && (
+            <div
+              data-testid={rightAction.testId || `swipe-action-right-${id}`}
+              data-armed={isArmed ? 'true' : 'false'}
+              aria-label={rightAction.ariaLabel || rightAction.label}
+              onClick={(e) => {
+                e.stopPropagation()
+                rightAction.onAction()
+                resetCard()
+              }}
+              className={`flex items-center justify-end pr-3.5 sm:pr-4 pl-3 gap-2 transition-colors duration-150 cursor-pointer ${
+                secondaryRightAction ? 'flex-1 min-w-[60px]' : 'w-full'
+              } ${
+                isArmed
+                  ? rightAction.isDestructive
+                    ? 'bg-[#DC6E67] text-white shadow-inner font-bold'
+                    : 'bg-app-action text-app-on-action shadow-inner font-bold'
+                  : rightAction.isDestructive
+                    ? 'bg-[#DC6E67]/25 text-status-error'
+                    : 'bg-app-action/20 text-app-action'
+              }`}
+            >
+              <div
+                className={`flex items-center gap-1.5 transition-transform duration-150 shrink-0 ${
+                  isArmed ? 'scale-110 font-bold' : 'scale-100 opacity-90'
+                }`}
+              >
+                {offset <= -60 && (
+                  <span className="text-[11px] sm:text-xs font-mono font-bold tracking-tight select-none">
+                    {rightAction.label}
+                  </span>
+                )}
+                {rightAction.icon}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

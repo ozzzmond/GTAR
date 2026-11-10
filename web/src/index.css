@@ -697,10 +697,19 @@ body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"],
 body[data-explorer-drag-kind] [aria-label="Dismiss Music Explorer"] { pointer-events: none; }
 body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"] > div { pointer-events: auto; }
 
-.setlist-hover-delete { display: none; }
+.setlist-hover-delete, .setlist-hover-rename, .setlist-hover-share, .song-hover-rename, .song-hover-delete { display: none; }
 @media (hover: hover) and (pointer: fine) {
-  .setlist-hover-delete { display: inline-flex; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
-  .setlist-hover-delete:focus-visible { opacity: 1; pointer-events: auto; }
+  .setlist-hover-delete, .setlist-hover-rename, .setlist-hover-share, .song-hover-rename, .song-hover-delete { display: inline-flex; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+  .setlist-hover-delete:focus-visible, .setlist-hover-rename:focus-visible, .setlist-hover-share:focus-visible,
+  .song-hover-rename:focus-visible, .song-hover-delete:focus-visible { opacity: 1; pointer-events: auto; }
   .ui-setlist-card:hover .setlist-hover-delete,
-  .ui-setlist-card:focus-within .setlist-hover-delete { opacity: 1; pointer-events: auto; }
+  .ui-setlist-card:hover .setlist-hover-rename,
+  .ui-setlist-card:hover .setlist-hover-share,
+  .ui-setlist-card:focus-within .setlist-hover-delete,
+  .ui-setlist-card:focus-within .setlist-hover-rename,
+  .ui-setlist-card:focus-within .setlist-hover-share,
+  .ui-song-card:hover .song-hover-rename,
+  .ui-song-card:hover .song-hover-delete,
+  .ui-song-card:focus-within .song-hover-rename,
+  .ui-song-card:focus-within .song-hover-delete { opacity: 1; pointer-events: auto; }
 }

@@ -875,8 +875,8 @@ export interface PreferenceSettings {
 }
 export interface BackupSettingsV2 { appearance: AppearanceSettings; preferences: PreferenceSettings }
 export interface SettingsRestoreChoice { appearance: boolean; preferences: boolean }
-/** Recommended defaults (#251; not owner-approved): restore appearance, keep this device's preferences. */
-export const DEFAULT_SETTINGS_RESTORE_CHOICE: SettingsRestoreChoice = { appearance: true, preferences: false }
+/** Restores all supported settings present in the backup without category toggles (#436). */
+export const DEFAULT_SETTINGS_RESTORE_CHOICE: SettingsRestoreChoice = { appearance: true, preferences: true }
 
 const LEGACY_SETTING_FIELDS = ['themeMode', 'customThemeColors', 'factoryThemeOverrides', 'stageSettings'] as const
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)

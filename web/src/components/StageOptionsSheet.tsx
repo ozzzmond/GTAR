@@ -150,23 +150,23 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
       {/* Sheet / Modal Container */}
       <div className="relative w-full sm:max-w-xl max-h-[88dvh] bg-app-surface border border-app-border sm:rounded-3xl rounded-t-3xl shadow-2xl z-10 flex flex-col overflow-hidden text-app-text">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-app-border bg-app-base sticky top-0 z-10">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-app-border bg-app-base sticky top-0 z-10">
           <div className="flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-app-accent" />
-            <h2 className="text-base font-bold text-app-heading tracking-tight">Stage Options</h2>
+            <Sliders className="w-4 h-4 text-app-accent" />
+            <h2 className="text-sm font-bold text-app-heading tracking-tight">Stage Options</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close options"
-            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-surface rounded-xl transition-colors"
+            className="min-w-11 min-h-11 sm:min-w-9 sm:min-h-9 p-1 flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-surface rounded-lg transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Scrollable Content */}
-        <div className="overflow-y-auto overscroll-contain p-5 space-y-6 text-xs text-app-text">
+        <div className="overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4 text-xs text-app-text">
           {/* Autoscroll Speed */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">

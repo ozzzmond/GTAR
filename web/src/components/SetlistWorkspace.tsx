@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Play, Plus, Share2, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Pencil, Play, Plus, Share2, Trash2, Upload } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
@@ -28,6 +28,7 @@ export interface SetlistWorkspaceProps {
   /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
   onRequestTrashSetlist?: (id: string | number) => void
+  onRenameSetlist?: (setlistId: string | number, name: string) => boolean
   onDeleteSetlist?: (setlistId: string | number) => boolean
   onNewSetlist?: () => void
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
@@ -80,6 +81,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onPlaySetlistPosition,
   onOpenSong,
   onManageSetlist,
+  onRenameSetlist,
   onDeleteSetlist,
   onRequestTrashSetlist,
   onNewSetlist,
@@ -89,6 +91,16 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const [openSetlistId, setOpenSetlistId] = useState<string | number | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
+  const [editingSetlistId, setEditingSetlistId] = useState<string | number | null>(null)
+  const [setlistNameInput, setSetlistNameInput] = useState('')
+
+  const handleSaveSetlistName = (setlistId: string | number) => {
+    const trimmed = setlistNameInput.trim()
+    if (trimmed && onRenameSetlist) {
+      onRenameSetlist(setlistId, trimmed)
+    }
+    setEditingSetlistId(null)
+  }
   const openSetlist = useMemo(
     () => (openSetlistId === null ? null : setlists.find(sl => !sl.isDeleted && String(sl.id) === String(openSetlistId)) || null),
     [openSetlistId, setlists]
@@ -398,6 +410,15 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                       label: 'Share Setlist',
                       onAction: () => menu.onShareSetlist?.(sl),
                     } : undefined}
+                    secondaryRightAction={onRenameSetlist ? {
+                      icon: <Pencil className="w-4 h-4" />,
+                      label: 'Rename',
+                      testId: `swipe-action-rename-${sl.id}`,
+                      onAction: () => {
+                        setEditingSetlistId(sl.id)
+                        setSetlistNameInput(sl.name)
+                      },
+                    } : undefined}
                     rightAction={onDeleteSetlist ? {
                       icon: <Trash2 className="w-4 h-4" />,
                       label: 'Delete',
@@ -405,21 +426,90 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                       onAction: () => setConfirmDeleteId(sl.id),
                     } : undefined}
                     className="rounded-2xl"
-                    cardClassName="ui-setlist-card group h-full p-3.5 rounded-2xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
+                    cardClassName="ui-setlist-card group h-full p-3 sm:p-3.5 rounded-xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
                         <ListMusic className="ui-section-icon w-4 h-4 text-app-section shrink-0" />
-                        <h3 className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
-                          {sl.name}
-                        </h3>
+                        {editingSetlistId === sl.id ? (
+                          <form
+                            onSubmit={e => { e.preventDefault(); handleSaveSetlistName(sl.id) }}
+                            onClick={e => e.stopPropagation()}
+                            className="flex items-center gap-1.5 min-w-0 flex-1"
+                          >
+                            <input
+                              type="text"
+                              autoFocus
+                              value={setlistNameInput}
+                              onChange={e => setSetlistNameInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Escape') {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setEditingSetlistId(null)
+                                }
+                              }}
+                              data-testid={`setlist-rename-input-${sl.id}`}
+                              className="px-1.5 py-0.5 rounded border border-app-border bg-app-base text-xs font-bold text-app-heading min-w-0 flex-1"
+                            />
+                            <button
+                              type="submit"
+                              data-testid={`setlist-rename-save-${sl.id}`}
+                              className="min-h-9 px-2 py-0.5 rounded bg-app-action text-app-on-action text-xs font-semibold cursor-pointer"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingSetlistId(null)}
+                              data-testid={`setlist-rename-cancel-${sl.id}`}
+                              className="min-h-9 px-1.5 py-0.5 rounded bg-app-base text-app-muted hover:text-app-heading text-xs cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </form>
+                        ) : (
+                          <>
+                            <h3 className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
+                              {sl.name}
+                            </h3>
+                            {onRenameSetlist && (
+                              <button
+                                type="button"
+                                aria-label={`Rename setlist ${sl.name}`}
+                                data-testid={`desktop-rename-setlist-${sl.id}`}
+                                onClick={e => {
+                                  e.stopPropagation()
+                                  setEditingSetlistId(sl.id)
+                                  setSetlistNameInput(sl.name)
+                                }}
+                                className="setlist-hover-rename opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded hover:bg-app-base text-app-muted hover:text-app-heading transition-opacity shrink-0 cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
-                      <span
-                        data-testid={`workspace-setlist-count-${sl.id}`}
-                        className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
-                      >
-                        {count} {count === 1 ? 'song' : 'songs'}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          data-testid={`workspace-setlist-count-${sl.id}`}
+                          className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
+                        >
+                          {count} {count === 1 ? 'song' : 'songs'}
+                        </span>
+                        {menu?.onShareSetlist && (
+                          <button
+                            type="button"
+                            aria-label={`Share setlist ${sl.name}`}
+                            data-testid={`desktop-share-setlist-${sl.id}`}
+                            onClick={e => { e.stopPropagation(); menu.onShareSetlist?.(sl) }}
+                            className={`${touch} setlist-hover-share opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-2 rounded-lg text-app-action hover:bg-app-action/10 transition-opacity flex items-center justify-center cursor-pointer`}
+                          >
+                            <Share2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                       {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}

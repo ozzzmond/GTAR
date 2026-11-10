@@ -590,7 +590,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
             className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-9 cursor-pointer shrink-0">
-            <div className="w-9 h-9 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
+            <div className="w-10 h-10 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
               <img src={mascotSrc} alt="GTAR Logo"
                 className="w-full h-full object-contain p-0 select-none scale-110" />
             </div>

@@ -45,6 +45,11 @@ test('AboutModal renders application identity, dynamic version metadata, and loc
     assert.match(dialog.textContent, /GTAR Live Stage Companion/)
     assert.match(dialog.textContent, /Offline-First Stage Teleprompter/)
 
+    // Environment row
+    const envEl = document.querySelector('[data-testid="about-environment-string"]')
+    assert.ok(envEl, 'environment element present')
+    assert.equal(envEl.textContent.trim(), 'Development')
+
     // Authoritative version string (not hardcoded or invented)
     const versionEl = document.querySelector('[data-testid="about-version-string"]')
     assert.ok(versionEl, 'version element present')
@@ -56,7 +61,7 @@ test('AboutModal renders application identity, dynamic version metadata, and loc
     assert.match(dialog.textContent, /No mandatory login/)
 
     // Licensing and GitHub link
-    assert.match(dialog.textContent, /MIT License/)
+    assert.equal(dialog.textContent.includes('MIT License'), false, 'About panel must not claim unverified MIT License')
     const ghLink = dialog.querySelector('a[href*="github.com/ozzzmond/GTAR"]')
     assert.ok(ghLink, 'GitHub repo link present')
 
