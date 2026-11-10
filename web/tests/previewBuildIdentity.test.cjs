@@ -25,7 +25,7 @@ test('Cloudflare feature preview header shows build SHA on desktop and mobile wi
     const defines = loaded.config.define
     assert.equal(defines.__GTAR_PROD_VERSION__, 'null')
     assert.equal(defines['import.meta.env.VITE_APP_ENV'], '"production"')
-    assert.equal(JSON.parse(defines.__GTAR_DEV_VERSION__), '1.0.145-dev.3')
+    assert.equal(JSON.parse(defines.__GTAR_DEV_VERSION__), '1.1.0-dev.1')
     assert.equal(defines.__GTAR_DEV_PROVENANCE__, 'null')
     assert.equal(defines.__GTAR_STAGE_CAST2_ENABLED__, 'true')
     const emitted = []
