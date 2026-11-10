@@ -482,9 +482,6 @@ const menuIcon = 'w-3.5 h-3.5 text-app-action shrink-0'
 
 const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist | null; onDone: () => void }> = ({ menu, openSetlist, onDone }) => {
   const run = (action?: () => void) => () => { onDone(); action?.() }
-  const share = openSetlist
-    ? (menu.onShareSetlist ? () => menu.onShareSetlist!(openSetlist) : undefined)
-    : menu.onShareAll
   return (
     <div
       role="menu"
@@ -515,23 +512,17 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
           })}
         </div>
       )}
-      {share && (
-        <button type="button" role="menuitem" data-testid="workspace-menu-share" onClick={run(share)} className={menuItem}>
-          <Share2 className="w-3.5 h-3.5 text-app-accent shrink-0" />
-          <span>{openSetlist ? 'Share setlist (QR)' : 'Share a setlist (QR)'}</span>
-        </button>
-      )}
       {menu.onImport && (
         <button type="button" role="menuitem" data-testid="workspace-menu-import" onClick={run(menu.onImport)} className={menuItem}>
           <Upload className={menuIcon} />
-          <span>Import setlist…</span>
+          <span>Import Setlist</span>
         </button>
       )}
       {openSetlist && menu.onExportSetlist && (
         <button type="button" role="menuitem" data-testid="workspace-menu-export-json"
           onClick={run(() => menu.onExportSetlist!(openSetlist))} className={menuItem}>
           <Upload className={`${menuIcon} rotate-180`} />
-          <span>Export JSON</span>
+          <span>Export Setlist</span>
         </button>
       )}
       {menu.onManageSetlists && (

@@ -19,7 +19,16 @@ test('#433 anonymous creation, independent recipient read, capability revocation
   try {
     const created = await api.onRequestPost({ request: request('POST', payload), env })
     assert.equal(created.status, 200)
-    const { token, revokeSecret } = await created.json()
+    const { token, revokeSecret, expiresAt } = await created.json()
+    const ttl = Date.parse(expiresAt) - Date.now()
+    assert.ok(ttl <= 3 * 86400000 && ttl > 3 * 86400000 - 1000, 'new anonymous shares expire in 3 days')
+    const actualNow = Date.now
+    try {
+      Date.now = () => Date.parse(expiresAt) - 1
+      assert.equal((await api.onRequestGet({ request: request('GET', null, token), env })).status, 200)
+      Date.now = () => Date.parse(expiresAt) + 1
+      assert.equal((await api.onRequestGet({ request: request('GET', null, token), env })).status, 410)
+    } finally { Date.now = actualNow }
     assert.match(token, /^[a-f0-9]{64}$/)
     assert.ok(revokeSecret)
     const read = await api.onRequestGet({ request: request('GET', null, token), env })

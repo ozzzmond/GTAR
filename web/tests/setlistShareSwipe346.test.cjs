@@ -59,6 +59,7 @@ test('#346 open-setlist header shares the selected setlist through the existing 
   await click(find('workspace-setlist-card-second'))
   await click(find('workspace-setlist-header').querySelector('[aria-label="Share Setlist"]'))
   assert.match(find('share-setlist-modal-card').textContent, /Second \(1 song\)/)
+  assert.match(host.textContent, /snapshot for 3 days/)
   const share = requests.find(([url]) => url === '/api/setlist/share')
   assert.ok(share, 'existing share dialog creates its snapshot')
   assert.equal(JSON.parse(share[1].body).name, 'Second')

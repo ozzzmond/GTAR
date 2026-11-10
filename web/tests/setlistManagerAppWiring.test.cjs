@@ -119,7 +119,7 @@ test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-
   assert.equal(home.setlists.find(sl => sl.id === 'sl-1').isDeleted, true, 'soft-delete survives reload')
 })
 
-test('#346 real signed-out App creates anonymous shares from header, menu and swipe', async () => {
+test('#346 real signed-out App creates anonymous shares from dedicated buttons and swipe without redundant menu actions', async () => {
   const requests = []
   await mountApp('http://localhost/', { realHome: true, requests })
   await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
@@ -143,12 +143,16 @@ test('#346 real signed-out App creates anonymous shares from header, menu and sw
   finally { window.HTMLAnchorElement.prototype.click = originalClick }
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   await click($('[data-testid="workspace-scope-menu-btn"]'))
-  await click($('[data-testid="workspace-menu-share"]'))
+  assert.equal($('[data-testid="workspace-menu-share"]'), null)
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
   assertLocalShare()
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   await click($('[data-testid="workspace-crumb-scope"]'))
   await click($('[data-testid="workspace-scope-menu-btn"]'))
-  await click($('[data-testid="workspace-menu-share"]'))
+  assert.equal($('[data-testid="workspace-menu-share"]'), null)
+  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  await click($('[data-testid="main-share-setlist-btn"]'))
   assertLocalShare()
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   const card = $('[data-testid="workspace-setlist-card-sl-1"]')

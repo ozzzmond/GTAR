@@ -224,8 +224,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     const sanitized = sanitizeSetlistForShare(validated.setlist);
 
     const now = new Date().toISOString();
-    // Default TTL: 30 days
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    // Anonymous snapshots expire after 3 days; legacy account shares keep 30 days.
+    const expiresAt = new Date(Date.now() + (anonymous ? 3 : 30) * 24 * 60 * 60 * 1000).toISOString();
 
     // Generate secure random 128-bit token (16 bytes = 32 hex chars)
     // Retry loop handles extremely rare collisions safely without overwriting existing records

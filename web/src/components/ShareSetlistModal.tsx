@@ -245,7 +245,7 @@ export const ShareSetlistModal: React.FC<ShareSetlistModalProps> = ({
               />
             </div>
             <p className="text-xs text-slate-400 text-center px-2">
-              Scan with mobile camera. Anyone with this QR code or link can preview and import this snapshot for 30 days. Internet required. Revoke before closing this dialog if needed.
+              Scan with mobile camera. Anyone with this QR code or link can preview and import this snapshot for 3 days. Internet required. Revoke before closing this dialog if needed.
             </p>
 
             <div className="w-full flex items-center gap-2">

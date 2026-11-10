@@ -17,7 +17,7 @@ new service, migration, or deployment configuration is introduced.
   no creator. All historical/account shares retain their existing authorization.
   Anonymous revoke requires the separate capability whose digest matches the token;
   knowing the read URL alone cannot revoke. Existing account/admin revoke stays intact.
-- Shares expire after 30 days. Revoke is available while the sender's modal remains
+- New anonymous shares expire after 3 days. Existing snapshots keep their stored expiry. Revoke is available while the sender's modal remains
   open; closing loses the revoke capability. No capability is put in recipient URLs
   or saved in localStorage. Sharing again creates a separate immutable snapshot.
 - Creation/revocation are limited to 30/minute and reads to 120/minute globally
