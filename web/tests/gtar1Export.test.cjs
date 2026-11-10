@@ -51,3 +51,28 @@ test('tag annotation records source tag and full SHA', () => {
   const sha = 'a'.repeat(40)
   assert.equal(E.annotation(E.mapSourceTag('v1.2.0'), sha), `GTAR1 v1.0.0 = GTAR PROD v1.2.0 @ ${sha}`)
 })
+
+test('wrangler config is rewritten for GTAR1 and never binds GTAR resources', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../wrangler.jsonc'), 'utf8')
+  const ids = { prod: '11111111-1111-4111-8111-111111111111', dev: '22222222-2222-4222-8222-222222222222' }
+  const out = E.patchWrangler(source, ids)
+  const json = JSON.parse(out)
+  assert.equal(json.name, 'gtar1')
+  assert.deepEqual(json.d1_databases.map(d => [d.database_name, d.database_id]), [['gtar1-db-prod', ids.prod]])
+  assert.equal(json.env.preview.d1_databases[0].database_id, ids.dev)
+  assert.equal(json.env.production.d1_databases[0].database_id, ids.prod)
+  for (const bad of ['gtar-db-', 'gtar-stage-cast2', 'gtar-web', 'durable_objects', 'CAST2_ORIGIN']) assert.ok(!out.includes(bad), bad)
+  assert.throws(() => E.patchWrangler(source, { prod: 'nope', dev: ids.dev }), /must be a UUID/)
+  assert.throws(() => E.patchWrangler(source.replace('gtar-db-dev', 'other-db'), ids), /unexpected D1 database/)
+  assert.throws(() => E.patchWrangler('{ // comment\n}', ids))
+})
+
+test('GTAR-only migration helper is excluded and the About repo link points at GTAR1', () => {
+  assert.ok(E.isExcluded('web/scripts/migrate-dev-remote.cjs'))
+  const pkg = JSON.parse(E.patchPackageVersion(JSON.stringify({ version: '1', scripts: { build: 'x', 'd1:migrate:dev:remote': 'y' } }), '1.0.0'))
+  assert.deepEqual(Object.keys(pkg.scripts), ['build'])
+  const about = fs.readFileSync(path.join(__dirname, '../src/components/AboutModal.tsx'), 'utf8')
+  const out = E.patchAboutModal(about)
+  assert.ok(out.includes('href="https://github.com/ozzzmond/GTAR1"') && !out.includes('href="https://github.com/ozzzmond/GTAR"'))
+  assert.throws(() => E.patchAboutModal('<a>none</a>'), /needs review/)
+})
