@@ -159,7 +159,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close options"
-            className="min-w-9 min-h-9 p-1 flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-surface rounded-lg transition-colors cursor-pointer"
+            className="min-w-11 min-h-11 sm:min-w-9 sm:min-h-9 p-1 flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-surface rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>

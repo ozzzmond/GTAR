@@ -130,6 +130,26 @@ test('GH436_CHECKLIST_03: Header logo is normalized to 40x40px (w-10 h-10)', () 
   assert.ok(headerHtml.includes('w-10 h-10'), 'Header logo container is normalized to w-10 h-10 (40x40px)')
 })
 
+test('GH436_MUST_FIX_2: Stage Options close button and modified controls stay >=44px below sm', () => {
+  const stageOptionsSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageOptionsSheet.tsx'), 'utf8')
+  assert.ok(
+    stageOptionsSource.includes('min-w-11 min-h-11 sm:min-w-9 sm:min-h-9'),
+    'StageOptionsSheet close button must be min-w-11 min-h-11 on mobile and sm:min-w-9 sm:min-h-9 on desktop'
+  )
+
+  const songbookSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SongbookHomeView.tsx'), 'utf8')
+  assert.ok(
+    songbookSource.includes('min-h-11 sm:min-h-9'),
+    'SongbookHomeView filter selects stay min-h-11 on mobile (< sm)'
+  )
+
+  const stageViewSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  assert.ok(
+    stageViewSource.includes('min-h-11 sm:min-h-9 min-w-11 sm:min-w-9'),
+    'StageView toolbar controls stay min-h-11 min-w-11 on mobile (< sm)'
+  )
+})
+
 test('GH436_CHECKLIST_04: Song card metadata row displays verified orig key, chart key, tempo, time, year without inventing missing fields', () => {
   const songs = [
     {

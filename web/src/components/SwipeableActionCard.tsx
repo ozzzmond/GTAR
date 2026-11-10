@@ -81,7 +81,7 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   leftAction,
   rightAction,
   secondaryRightAction,
-  armThreshold = 75,
+  armThreshold: userArmThreshold,
   maxSwipe,
   disabled = false,
   className = '',
@@ -96,6 +96,14 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const [offset, setOffset] = useState(0)
   const [isArmed, setIsArmed] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const cardContainerRef = useRef<HTMLDivElement>(null)
+
+  const hasSecondary = Boolean(secondaryRightAction && !secondaryRightAction.disabled)
+  const panelWidth = 140
+  const openThreshold = 40
+  const armThreshold = userArmThreshold ?? (hasSecondary ? 160 : 75)
+  const effectiveMaxSwipe = maxSwipe ?? (hasSecondary ? 200 : 110)
 
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -103,21 +111,25 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const didMoveBeyondTap = useRef(false)
   const isArmedRef = useRef(false)
   const offsetRef = useRef(0)
+  const isOpenRef = useRef(false)
 
   // Keep refs in sync for touch release evaluation
   // Publish committed values before input events; suspended renders cannot leak.
   useLayoutEffect(() => {
     isArmedRef.current = isArmed
     offsetRef.current = offset
-  }, [isArmed, offset])
+    isOpenRef.current = isOpen
+  }, [isArmed, offset, isOpen])
 
   const resetCard = useCallback(() => {
     setOffset(0)
     setIsArmed(false)
     setIsDragging(false)
+    setIsOpen(false)
     gestureIntent.current = 'undecided'
     isArmedRef.current = false
     offsetRef.current = 0
+    isOpenRef.current = false
   }, [])
 
   // Register in active coordinator
@@ -128,13 +140,39 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
     }
   }, [id, resetCard])
 
+  // Global listeners when card settles OPEN
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleGlobalPointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null
+      if (cardContainerRef.current && !cardContainerRef.current.contains(target)) {
+        resetCard()
+      }
+    }
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        resetCard()
+      }
+    }
+
+    document.addEventListener('pointerdown', handleGlobalPointerDown, true)
+    document.addEventListener('keydown', handleGlobalKeyDown, true)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleGlobalPointerDown, true)
+      document.removeEventListener('keydown', handleGlobalKeyDown, true)
+    }
+  }, [isOpen, resetCard])
+
   // Reset if disabled changes
   useEffect(() => {
-    if (disabled && (offset !== 0 || isArmed)) {
+    if (disabled && (offset !== 0 || isArmed || isOpen)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Disabling a card must clear its live gesture and coordinator state.
       resetCard()
     }
-  }, [disabled, offset, isArmed, resetCard])
+  }, [disabled, offset, isArmed, isOpen, resetCard])
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (disabled) return
@@ -161,15 +199,19 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
 
     const clientX = e.touches[0].clientX
     const clientY = e.touches[0].clientY
-    const deltaX = clientX - touchStartX.current
+    const rawDeltaX = clientX - touchStartX.current
     const deltaY = clientY - touchStartY.current
 
+    // If card was already open at -panelWidth, offset begins from -panelWidth
+    const baseOffset = isOpenRef.current ? -panelWidth : 0
+    const totalDeltaX = baseOffset + rawDeltaX
+
     if (gestureIntent.current === 'undecided') {
-      const intent = evaluateSwipeIntent(deltaX, deltaY, 8)
+      const intent = evaluateSwipeIntent(rawDeltaX, deltaY, 8)
       gestureIntent.current = intent
 
       if (intent === 'vertical') {
-        // Primary vertical scroll intent: leave offset at 0 and do not intercept
+        // Primary vertical scroll intent: leave offset as is and do not intercept
         return
       }
       if (intent === 'horizontal') {
@@ -185,13 +227,19 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
         e.preventDefault()
       }
 
-      const effectiveMaxSwipe = maxSwipe ?? (secondaryRightAction ? 140 : 110)
+      const activeArmThreshold = totalDeltaX < 0
+        ? (userArmThreshold ?? (hasSecondary ? 160 : 75))
+        : (userArmThreshold ?? 75)
+      const activeMaxSwipe = totalDeltaX < 0
+        ? (maxSwipe ?? (hasSecondary ? 200 : 110))
+        : (maxSwipe ?? 110)
+
       const { offset: nextOffset, isArmed: nextArmed } = computeSwipeOffset(
-        deltaX,
+        totalDeltaX,
         Boolean(leftAction && !leftAction.disabled),
         Boolean((rightAction && !rightAction.disabled) || (secondaryRightAction && !secondaryRightAction.disabled)),
-        armThreshold,
-        effectiveMaxSwipe
+        activeArmThreshold,
+        activeMaxSwipe
       )
 
       setOffset(nextOffset)
@@ -209,8 +257,27 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
       if (armed) {
         if (currentOffset > 0 && leftAction && !leftAction.disabled) {
           leftAction.onAction()
+          resetCard()
+          return
         } else if (currentOffset < 0 && rightAction && !rightAction.disabled) {
           rightAction.onAction()
+          resetCard()
+          return
+        }
+      }
+
+      // If card has secondaryRightAction and left swipe reached openThreshold
+      if (hasSecondary && currentOffset < 0) {
+        if (Math.abs(currentOffset) >= openThreshold) {
+          // Settle OPEN
+          setOffset(-panelWidth)
+          setIsArmed(false)
+          setIsDragging(false)
+          setIsOpen(true)
+          offsetRef.current = -panelWidth
+          isOpenRef.current = true
+          gestureIntent.current = 'undecided'
+          return
         }
       }
     }
@@ -224,6 +291,14 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   }
 
   const handleClick = (e: React.MouseEvent) => {
+    // If card was open, clicking front card closes it instead of navigating
+    if (isOpen) {
+      e.preventDefault()
+      e.stopPropagation()
+      resetCard()
+      return
+    }
+
     // If a horizontal swipe gesture occurred, suppress click on the card surface
     if (didMoveBeyondTap.current) {
       e.preventDefault()
@@ -238,7 +313,7 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const isSwipingRight = offset > 0
 
   return (
-    <div className={`relative overflow-hidden ${className}`}>
+    <div ref={cardContainerRef} className={`relative overflow-hidden ${className}`}>
       {/* Background Action Underlayer: Left Action (Revealed on Swipe Right) */}
       {leftAction && isSwipingRight && (
         <div
