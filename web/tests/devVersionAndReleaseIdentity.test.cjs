@@ -13,7 +13,7 @@ const webDir = path.resolve(__dirname, '..')
 const { parseDevTag, inspectCheckpoint, main: releaseMetadataMain, HISTORICAL_TAG_EXCEPTIONS } = require('../../.github/release_metadata.cjs')
 const { resolveReleaseIdentity, resolveDevIdentity, resolveDeploymentId, getCommittedDevVersion } = require('../../.github/release_identity.cjs')
 const canonicalDevVersion = getCommittedDevVersion(root)
-assert.equal(canonicalDevVersion, '1.0.145-dev.2', 'Canonical DEV metadata must match target DEV checkpoint')
+assert.equal(canonicalDevVersion, '1.0.145-dev.3', 'Canonical DEV metadata must match target DEV checkpoint')
 
 test('current DEV source stamps and missing-package fallback agree', t => {
   const lock = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
@@ -745,15 +745,15 @@ test('STEP_6.23: Header formatting helpers format diagnostics and versions accur
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', 'v1.1.133'), 'v1.1.133')
 
   // Line 1: TAGGED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'TAGGED: v1.0.130-dev.4a · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.145-dev.2', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'TAGGED · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, 'v1.0.145-dev.2'), 'TAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.3'), 'TAGGED: v1.0.130-dev.4a · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: 'v1.0.145-dev.3', commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.3'), 'TAGGED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'TAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, 'v1.0.145-dev.3'), 'TAGGED · SHA: d69d1cb')
   // Line 1: UNTAGGED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'abcdef0', deploymentId: null }, 'v1.0.145-dev.2'), 'SHA: abcdef0')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.3'), 'SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNTAGGED', tagName: null, commitSha: 'abcdef0', deploymentId: null }, 'v1.0.145-dev.3'), 'SHA: abcdef0')
   // Line 1: UNVERIFIED
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.2'), 'UNVERIFIED · SHA: d69d1cb')
-  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'unknown', deploymentId: null }, '1.0.145-dev.2'), 'UNVERIFIED · SHA: unknown')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'd69d1cb', deploymentId: null }, '1.0.145-dev.3'), 'UNVERIFIED · SHA: d69d1cb')
+  assert.equal(formatDevDiagLine1({ tagStatus: 'UNVERIFIED', tagName: null, commitSha: 'unknown', deploymentId: null }, '1.0.145-dev.3'), 'UNVERIFIED · SHA: unknown')
 
   // Line 2: DEPLOYMENT
   assert.equal(formatDevDiagLine2({ tagStatus: 'TAGGED', tagName: 'v1.0.130-dev.4a', commitSha: 'd69d1cb', deploymentId: '55d0cc6b' }), 'DEPLOYMENT: 55d0cc6b')

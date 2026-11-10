@@ -82,7 +82,7 @@ test('rejects mismatched and malformed package version without exports', t => {
 })
 test('preview workflow binds exact tag checkout and validates before npm operations', () => {
   const yaml = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/web-preview.yml'), 'utf8')
-  assert.match(yaml, /tags: \['v1\.0\.\*-dev\.\*'\]/)
+  assert.match(yaml, /tags: \['v1\.0\.\*-dev\.\*', 'v1\.1\.\*-dev\.\*'\]/)
   assert.match(yaml, /tag:\s+description:[^\n]+\s+required: true\s+type: string/)
   assert.match(yaml, /ref: refs\/tags\/\$\{\{ env.REQUESTED_TAG \}\}/)
   assert.match(yaml, /fetch-depth: 0/)
@@ -128,3 +128,14 @@ test('REGRESSION: live v1.0.136-dev.1a tag in actual repository validates cleanl
     /Lettered checkpoint is not promotable/)
 })
 
+test('new zero-base preview CLI accepts numeric and lettered checkpoints, rejecting wrong scheme stamps', t => {
+  const f = fixture(t, '1.1.0-dev.1')
+  for (const tag of ['v1.1.0-dev.1', 'v1.1.0-dev.1a']) {
+    f.git('tag', tag)
+    const result = f.run('--tag', tag)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, new RegExp(`IS_PROMOTABLE=${!tag.endsWith('a')}`))
+  }
+  fs.writeFileSync(f.envFile, 'EXISTING=preserved\n')
+  f.git('tag', 'v1.1.1-dev.1'); rejected(f, '--tag', 'v1.1.1-dev.1')
+})

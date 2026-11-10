@@ -2,7 +2,7 @@ name: Build GTAR Web Preview
 
 on:
   push:
-    tags: ['v1.0.*-dev.*']
+    tags: ['v1.0.*-dev.*', 'v1.1.*-dev.*']
   workflow_dispatch:
     inputs:
       tag:

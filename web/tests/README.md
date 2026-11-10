@@ -260,6 +260,7 @@ New or renamed tests await a human choice of primary category.
 - [onsongImport.test.cjs](onsongImport.test.cjs)
 - [previewBuildIdentity.test.cjs](previewBuildIdentity.test.cjs)
 - [qaBackupFixtureScale.test.cjs](qaBackupFixtureScale.test.cjs)
+- [r2VersionBootstrap.test.cjs](r2VersionBootstrap.test.cjs)
 - [recoveryArchivesIdb.test.cjs](recoveryArchivesIdb.test.cjs)
 - [recoveryDataPanel.test.cjs](recoveryDataPanel.test.cjs)
 - [recoveryResolution.test.cjs](recoveryResolution.test.cjs)

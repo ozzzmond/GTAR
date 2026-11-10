@@ -1,11 +1,13 @@
 # GTAR GitHub preview contract
 
 GitHub tags are the version source of truth. Canonical DEV tags are
-`v1.0.<positive-base>-dev.<positive-iteration>[optional single lowercase letter]`.
+`v1.0.<positive-base>-dev.<positive-iteration>[optional single lowercase letter]`
+(historical scheme) and `v1.1.<nonnegative-base>-dev.<positive-iteration>[optional single lowercase letter]`
+(R2 scheme; base zero is valid).
 Neither numeric component may contain leading zeroes. Numeric DEV tags are
 promotable; lettered DEV tags are not. Production tags are rejected by preview validation.
 
-Pushes of `v1.0.*-dev.*` tags trigger preview validation. Manual dispatch requires
+Pushes of `v1.0.*-dev.*` and `v1.1.*-dev.*` tags trigger preview validation. Manual dispatch requires
 an explicit canonical tag. The workflow checks out `refs/tags/<requested tag>`
 with complete history, then runs the standalone Node helper before install,
 tests, lint, and build:
@@ -256,3 +258,75 @@ native environment approval, fresh checks and verified Pages deployment.
 
 After `VERIFIED_PROD`, separately review a dev metadata PR for advisory next DEV,
 validate/merge it, then manually create its tag under the existing policy.
+
+## R2 version scheme and owner-only controller bootstrap (#439)
+
+The provisional final old-scheme checkpoint is **v1.0.145-dev.3** (T).
+No final checkpoint SHA has been selected and no tag is created by this change.
+Only this exact clean tag maps to PROD **v1.2.0**, with advisory next DEV
+**v1.1.0-dev.1**. It requires direct committed T metadata, not a stabilization
+alias. A different accepted checkpoint name requires a reviewed tooling change
+and matching trusted-controller installation before tagging. Never move a tag.
+
+Historical v1.0 DEV mappings remain v1.1.(base + iteration), except T. New
+v1.1.B-dev.N maps to v1.2.(B + N), next DEV v1.1.(B + N)-dev.1. B may be zero;
+N must be positive. For example v1.1.0-dev.1 gives v1.2.1 and next
+v1.1.1-dev.1. Arithmetic must be safe integers without leading zeroes. Lettered
+checkpoints remain preview-only. DEV ordering compares scheme minor, base,
+iteration, then suffix; PROD ordering compares minor then patch. Thus v1.2.0
+exceeds historical v1.1.145 despite its smaller patch. The R2 mapping remains
+permanent for runtime identity and baseline reconciliation, not a reusable
+permission to promote another old-scheme checkpoint.
+
+The mapping constant in release_metadata.cjs fixes T/PROD/next DEV; it cannot
+contain its own final source commit SHA. The owner records the final accepted C
+SHA and binds it through expected_sha, the validated plan, and native approval
+in GitHub execution history. The atomic transaction persists v1.2.0 -> C alongside
+T -> C. These canonical immutable tags and the approved run are the SHA authority;
+there is no package-derived or guessed SHA fallback. Administrators remain bound
+by the existing rule never to rewrite tags; this does not claim to defeat a
+privileged coordinated rewrite of tags and audit history.
+
+Required sequence (each live action needs its existing separate authorization):
+
+1. Complete #436 item 01 before release acceptance. Review/validate the #439 DEV
+   implementation draft PR; owner confirms CI and QA and merges it, producing A.
+2. Separately prepare a reviewed controller-install commit B parented by current
+   main. Install the approved .github/release_metadata.cjs, release_identity.cjs,
+   prod_controller.cjs and web-preview.yml bytes from A. release.yml is unchanged.
+   Preserve the entire main web/ tree, migrations, bindings and existing tags.
+   This is an explicit owner-authorized non-force main update, not this DEV PR's
+   permission to touch main. Verify exact diff/SHA and baseline reconciliation.
+3. Before B is pushed, verify Pages runs the existing fail-closed production
+   identity guard. The push may schedule a build: B has no clean DEV checkpoint
+   and no matching PROD tag, so it must fail before deployment. Do not disable
+   protection, set an identity override, rely on skip-ci, change Pages settings,
+   or create a tag for B. If this no-deployment property cannot be established,
+   stop before installation. A failed bootstrap build is not release proof.
+4. Merge that exact B into DEV through an ancestry-preserving reconciliation
+   draft PR targeting dev. Owner must preserve B ancestry (no squash/rebase that
+   removes B). The accepted result C must include A and B, differ from B, equal
+   the DEV tip, and contain the exact trusted parser/identity bytes on main B.
+   This reconciliation is the final merge before checkpoint acceptance,
+   superseding the earlier statement that A itself must be the final merge.
+5. Run required checks on final C, record its full SHA, and reconfirm absent T and
+   v1.2.0. Owner accepts C and explicitly authorizes/creates T at C. Any later
+   code merge invalidates that acceptance; stop and select a new reviewed
+   checkpoint without moving/reusing T.
+6. Dispatch the trusted main B workflow with T, expected_sha=C and dry_run=true.
+   Require prod_tag=v1.2.0 and next_dev_tag=v1.1.0-dev.1. Dry run performs readiness
+   gates only. A real run requires separate owner authorization, exact-C Web
+   validation, native environment approval and all fresh post-approval checks.
+7. Existing atomic non-force promotion advances main B -> C and creates v1.2.0
+   at C together. Require new exact-SHA Pages production proof and release.json.
+   Only after VERIFIED_PROD review a separate metadata PR for 1.1.0-dev.1 and
+   separately authorize its manual checkpoint tag. Never pre-stamp this version.
+
+Stop on unexpected branch/tag drift, wrong/moved checkpoint, collision, helper
+byte mismatch, missing B ancestry, main already at C, unverified bootstrap build
+behavior, failed baseline reconciliation, failed tests or unavailable approval,
+Pages or D1 readiness. No main-only application update or gate exception is
+allowed. Pending D1 migrations require separately authorized human remediation.
+After ambiguous push results inspect refs without retrying mutation. A promoted
+but unverified release retains its refs as PROD_PROMOTED_BUT_UNVERIFIED; never
+automatically roll back main, move/delete tags or redeploy a historical identity.

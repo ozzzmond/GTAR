@@ -36,3 +36,17 @@ promotion, and verification of the new exact-SHA deployment remain mandatory.
 cleanup SHA, but its committed stamps remained `1.0.123-dev.6`, so tag-preview
 metadata validation rejected it. Do not move or recreate that tag or weaken the
 validator. The next hygiene checkpoint uses `1.0.123-dev.6b` consistently.
+
+### Planned R2 version baseline (#439; not yet released)
+
+Provisional T=v1.0.145-dev.3 maps only to PROD v1.2.0 and advisory next DEV
+v1.1.0-dev.1. No accepted final SHA or deployment is asserted by this entry.
+Historical tags and their mappings remain unchanged. The final SHA is bound by
+the owner-approved exact-SHA run and canonical immutable DEV/PROD tags, not a
+self-referential source constant. Keep the R2 mapping for future identity checks.
+
+The required owner-only A/B/C bootstrap, ancestry-preserving final reconciliation,
+stop conditions and no-rollback contract are defined in the
+[live release contract](../RELEASE_WORKFLOW_README.md#r2-version-scheme-and-owner-only-controller-bootstrap-439).
+The R2 mapping is distinct from the abandoned v1.1.122 ancestry exception; it
+does not authorize old deployment recovery or waive any release gate.
