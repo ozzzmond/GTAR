@@ -3,6 +3,15 @@
 Historical context only. The live release contract is
 [RELEASE_WORKFLOW_README.md](../RELEASE_WORKFLOW_README.md).
 
+### R2 VERIFIED_PROD and DEV metadata rebaseline (#441)
+
+R2 PROD `v1.2.0` is VERIFIED_PROD: tag `v1.2.0` points to
+`3cfe5b7a912e4982fc72ce96dd656ebcd787862b`, verified by
+[promotion run 42812916456](https://github.com/ozzzmond/GTAR/actions/runs/42812916456).
+The DEV metadata baseline is now `1.1.0-dev.1`. The owner creates tag
+`v1.1.0-dev.1` manually after merge; this metadata change creates no tag.
+The historical R2 checkpoint mapping below remains unchanged.
+
 ### Historical reviewed baseline after abandoned v1.1.122
 
 GitHub discovery for this rebaseline found both dev and main at
