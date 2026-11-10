@@ -102,8 +102,6 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   const hasSecondary = Boolean(secondaryRightAction && !secondaryRightAction.disabled)
   const panelWidth = 140
   const openThreshold = 40
-  const armThreshold = userArmThreshold ?? (hasSecondary ? 160 : 75)
-  const effectiveMaxSwipe = maxSwipe ?? (hasSecondary ? 200 : 110)
 
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)

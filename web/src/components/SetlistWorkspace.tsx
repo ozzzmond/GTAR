@@ -425,7 +425,6 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                       isDestructive: true,
                       onAction: () => setConfirmDeleteId(sl.id),
                     } : undefined}
-                    armThreshold={75}
                     className="rounded-2xl"
                     cardClassName="ui-setlist-card group h-full p-3 sm:p-3.5 rounded-xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
                   >

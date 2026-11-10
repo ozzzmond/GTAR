@@ -93,13 +93,28 @@ test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-
   await mountApp('http://localhost/', { realHome: true })
   await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
   const before = localStorage.getItem('gtar_library_v1')
+
+  // Partial swipe (~80px) on setlist card settles open with tappable Rename and Delete
+  const card = $('[data-testid="workspace-setlist-card-sl-1"]')
+  for (const [type, x] of [['touchstart', 200], ['touchmove', 120], ['touchend', 120]]) {
+    const event = new window.Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 1, clientX: x, clientY: 20 }
+    Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : [point] }, changedTouches: { value: [point] } })
+    await act(async () => card.dispatchEvent(event))
+  }
+  assert.ok($('[data-testid="swipe-action-rename-sl-1"]'), 'partial swipe settles open with tappable Rename')
+  assert.ok($('[aria-label="Delete"]'), 'partial swipe settles open with tappable Delete')
+  await act(async () => {
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+
   const swipeDelete = async () => {
-    const card = $('[data-testid="workspace-setlist-card-sl-1"]')
-    for (const [type, x] of [['touchstart', 150], ['touchmove', 50], ['touchend', 50]]) {
+    const targetCard = $('[data-testid="workspace-setlist-card-sl-1"]')
+    for (const [type, x] of [['touchstart', 250], ['touchmove', 50], ['touchend', 50]]) {
       const event = new window.Event(type, { bubbles: true, cancelable: true })
       const point = { identifier: 1, clientX: x, clientY: 20 }
       Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : [point] }, changedTouches: { value: [point] } })
-      await act(async () => card.dispatchEvent(event))
+      await act(async () => targetCard.dispatchEvent(event))
       if (type === 'touchmove') assert.ok($('[aria-label="Delete"]'), 'swipe left reveals Delete')
     }
   }
