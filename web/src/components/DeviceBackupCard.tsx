@@ -223,7 +223,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
     const backup = prepareBackup()
     if (!backup) return
     if (!canCopyBackup(backup)) {
-      showFeedback('error', `Backup is too large to copy safely (${mb(backup.bytes)}). Use Save backup file or Download .json.`)
+      showFeedback('error', `Backup is too large to copy safely (${mb(backup.bytes)}). Use Save backup file or Download backup.`)
       return
     }
     reportExport(backup, await copyBackup(backup, exportEnv))
@@ -517,11 +517,11 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={handleDownloadBackup} className={secondaryButton}>
               <Download className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
-              <span>Download .json</span>
+              <span>Download backup</span>
             </button>
             <button type="button" onClick={handleCopyBackup} className={secondaryButton}>
               <Copy className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
-              <span>Copy JSON</span>
+              <span>Copy backup</span>
             </button>
           </div>
           <button type="button" data-testid="restore-file-button" disabled={isRestoring || restoreBlocked}

@@ -454,7 +454,7 @@ test('dialog export: share sheet path with wording that never claims an upload',
   // #304: the device-only "last backup" line is gone (it never counted cloud backups).
   assert.equal(document.querySelector('[data-testid="backup-status"]'), null)
   // Download path from the same dialog.
-  await act(async () => button('Download .json').click())
+  await act(async () => button('Download backup').click())
   assert.equal(calls.downloads.length, 1)
   assert.match(document.body.textContent, /handed to browser downloads/)
 }))

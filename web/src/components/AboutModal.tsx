@@ -42,6 +42,11 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   const isProductionRelease = GTAR_APP_VERSION !== '0.0.0-unversioned' && !GTAR_PREVIEW_IDENTITY && !isDevEnv
   const mascotSrc = isProductionRelease ? prodMascot : devMascot
   const displayVersion = formatHeaderVersion(isDevEnv, GTAR_DEV_VERSION, GTAR_APP_VERSION)
+  const environmentLabel = isDevEnv
+    ? 'Development'
+    : GTAR_PREVIEW_IDENTITY
+      ? 'Preview'
+      : 'Production'
 
   return (
     <div
@@ -112,7 +117,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
               </div>
               <div>
                 <span className="text-app-muted block">Environment</span>
-                <span className="font-semibold text-app-heading block">{isDevEnv ? 'Development' : 'Production'}</span>
+                <span data-testid="about-environment-string" className="font-semibold text-app-heading block">{environmentLabel}</span>
               </div>
               {isDevEnv && (
                 <div className="col-span-2 pt-1 border-t border-app-border/40 space-y-0.5">

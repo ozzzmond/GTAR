@@ -43,7 +43,7 @@ test('Backup & Restore modal: header bar, device card, footer; retired cloud con
     assert.doesNotMatch(document.body.textContent, /Sync Center/)
     const device = q('device-backup-card')
     assert.match(device.textContent, /^This device \(file\)/)
-    assert.deepEqual(buttons(device), ['Save backup file', 'Download .json', 'Copy JSON', 'Restore from file'])
+    assert.deepEqual(buttons(device), ['Save backup file', 'Download backup', 'Copy backup', 'Restore from file'])
     assert.ok(q('save-backup-file-button').className.includes('bg-app-action') && q('save-backup-file-button').className.includes('w-full'))
     assert.ok(q('restore-file-button').className.includes('border-app-border'))
     assert.match(device.textContent, /On this device1 songs · 0 setlists · 0 in trash/)

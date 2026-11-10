@@ -1328,25 +1328,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               </button>
                             </form>
                           ) : (
-                            <div className="flex items-center gap-1 group/title min-w-0">
-                              <h3 title={song.title || 'Untitled Song'} className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
-                                {song.title || 'Untitled Song'}
-                              </h3>
-                              {!isSongSelectionMode && (
-                                <button
-                                  type="button"
-                                  aria-label={`Rename ${song.title || 'song'}`}
-                                  data-testid={`desktop-rename-song-${originalIdx}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    startRenameSong(originalIdx, song.title || '')
-                                  }}
-                                  className="song-hover-rename p-0.5 rounded text-app-muted hover:text-app-heading hover:bg-app-base/60 shrink-0 cursor-pointer transition-colors"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
+                            <h3 title={song.title || 'Untitled Song'} className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
+                              {song.title || 'Untitled Song'}
+                            </h3>
                           )}
                           <p className="ui-secondary-text text-xs text-app-muted truncate">
                             {song.artist || 'Unknown Artist'}
@@ -1356,18 +1340,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
                       {!isSongSelectionMode && (
                         <div className="shrink-0 -mr-2 -mt-2 flex items-center">
-                          {/* Desktop hover Delete action */}
                           <button
                             type="button"
-                            aria-label={`Delete ${song.title || 'song'}`}
-                            data-testid={`desktop-delete-song-${originalIdx}`}
+                            aria-label={`Rename ${song.title || 'song'}`}
+                            data-testid={`desktop-rename-song-${originalIdx}`}
                             onClick={(e) => {
                               e.stopPropagation()
-                              setConfirmDeleteIdx(originalIdx)
+                              startRenameSong(originalIdx, song.title || '')
                             }}
-                            className="song-hover-delete p-1.5 rounded-lg text-status-error/80 hover:text-status-error hover:bg-status-error/10 cursor-pointer transition-colors mr-0.5"
+                            className="song-hover-rename opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base cursor-pointer transition-all mr-0.5"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Pencil className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
@@ -1431,83 +1414,82 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       )}
                     </div>
 
-                    {/* Secondary metadata row (Checklist 04: verified key, tempo, time, year) */}
+                    {/* Secondary metadata row (Checklist 04 / Round 3: uniform pills) */}
                     {hasCardMeta && (
                       <div
                         data-testid={`meta-row-${originalIdx}`}
-                        className="flex flex-wrap items-center gap-1.5 mt-2 text-[11px] font-mono text-app-muted"
+                        className="flex flex-wrap items-center gap-1.5 mt-2"
                       >
                         {origKey && (
                           <span
                             data-testid={`meta-orig-key-${originalIdx}`}
-                            className="px-1.5 py-0.2 rounded bg-app-base border border-app-border/80 text-app-accent font-semibold"
-                            aria-label={`Original Key: ${origKey}`}
+                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            aria-label={`Orig Key: ${origKey}`}
                           >
-                            Orig {origKey}
+                            <span className="text-app-muted font-normal">Orig Key:</span>
+                            <span className="text-app-heading font-bold">{origKey}</span>
                           </span>
                         )}
-                        {chartKey && chartKey !== origKey && (
+                        {chartKey && (
                           <span
                             data-testid={`meta-chart-key-${originalIdx}`}
-                            className="px-1.5 py-0.2 rounded bg-app-base border border-app-border/80 text-app-text font-semibold"
-                            aria-label={`Chart: ${chartKey}`}
+                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            aria-label={`Chart Key: ${chartKey}`}
                           >
-                            Chart {chartKey}
+                            <span className="text-app-muted font-normal">Chart Key:</span>
+                            <span className="text-app-heading font-bold">{chartKey}</span>
                           </span>
                         )}
                         {songBpm && (
                           <span
                             data-testid={`meta-tempo-${originalIdx}`}
-                            className="text-app-muted"
+                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Tempo: ${songBpm}`}
                           >
-                            {songBpm}
+                            <span className="text-app-muted font-normal">Tempo:</span>
+                            <span className="text-app-heading font-bold">{songBpm}</span>
                           </span>
                         )}
                         {songTime && (
                           <span
                             data-testid={`meta-time-${originalIdx}`}
-                            className="text-app-muted"
-                            aria-label={`Time signature: ${songTime}`}
+                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            aria-label={`Time: ${songTime}`}
                           >
-                            {songTime}
+                            <span className="text-app-muted font-normal">Time:</span>
+                            <span className="text-app-heading font-bold">{songTime}</span>
                           </span>
                         )}
                         {songYear && (
                           <span
                             data-testid={`meta-year-${originalIdx}`}
-                            className="text-app-muted"
+                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Year: ${songYear}`}
                           >
-                            {songYear}
+                            <span className="text-app-muted font-normal">Year:</span>
+                            <span className="text-app-heading font-bold">{songYear}</span>
                           </span>
                         )}
                       </div>
                     )}
-
-                    {/* Tag pills (GTAR1) */}
-                    {tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {tags.slice(0, 3).map((t) => (
-                          <button key={t} type="button" data-testid={`song-tag-${originalIdx}-${t}`}
-                            style={tagChipStyle(tagColors, t)}
-                            onClick={(e) => { e.stopPropagation(); onSelectView?.({ type: 'TAG', tag: t }) }}
-                            className="relative px-1.5 py-0.5 rounded-md bg-app-section/15 text-app-section border border-app-section/40 text-[10px] font-medium hover:border-app-section transition-colors cursor-pointer after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">
-                            #{t}
-                          </button>
-                        ))}
-                        {tags.length > 3 && <span className="text-[10px] text-app-muted font-mono">+{tags.length - 3}</span>}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Card footer: key, BPM, status badges, Stage, date */}
-                  <div className="mt-2.5 pt-2 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {song.key && (
-                        <span className="px-1.5 py-0.5 rounded bg-app-base border border-app-border text-app-accent font-mono font-bold text-[11px]">{song.key}</span>
+                  {/* Card footer: tags, status badges, setlist count, Stage, Delete */}
+                  <div className="mt-2.5 pt-2 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted flex-wrap">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                      {tags.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {tags.slice(0, 3).map((t) => (
+                            <button key={t} type="button" data-testid={`song-tag-${originalIdx}-${t}`}
+                              style={tagChipStyle(tagColors, t)}
+                              onClick={(e) => { e.stopPropagation(); onSelectView?.({ type: 'TAG', tag: t }) }}
+                              className="relative px-1.5 py-0.5 rounded-md bg-app-section/15 text-app-section border border-app-section/40 text-[10px] font-medium hover:border-app-section transition-colors cursor-pointer after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">
+                              #{t}
+                            </button>
+                          ))}
+                          {tags.length > 3 && <span className="text-[10px] text-app-muted font-mono">+{tags.length - 3}</span>}
+                        </div>
                       )}
-                      {song.bpm && <span className="text-[10px] text-app-muted font-mono">{formatTempoLabel(song.bpm)}</span>}
                       <SongStatusBadge
                         testId={`song-metadata-status-${originalIdx}`}
                         ariaLabel={isMetaOk ? 'Metadata OK' : 'Needs Metadata'}
@@ -1672,13 +1654,27 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {!isSongSelectionMode && (
                         <button type="button" data-testid={`song-stage-${originalIdx}`} aria-label={`Play ${song.title || 'song'} in Stage`}
                           onClick={(e) => { e.stopPropagation(); onSelectSong(originalIdx) }}
                           className="relative px-2 py-0.5 rounded-md bg-app-action hover:brightness-110 text-app-on-action font-semibold text-[11px] transition-colors flex items-center gap-1 cursor-pointer after:absolute after:-inset-y-3 after:-inset-x-1 after:content-['']">
                           <Play className="w-2.5 h-2.5 fill-current" />
                           <span>Stage</span>
+                        </button>
+                      )}
+                      {!isSongSelectionMode && (
+                        <button
+                          type="button"
+                          aria-label={`Delete ${song.title || 'song'}`}
+                          data-testid={`desktop-delete-song-${originalIdx}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConfirmDeleteIdx(originalIdx)
+                          }}
+                          className="song-hover-delete opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-status-error/80 hover:text-status-error hover:bg-status-error/10 cursor-pointer transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                       {date ? <span className="text-[10px] text-app-muted">{new Date(date).toLocaleDateString()}</span> : null}

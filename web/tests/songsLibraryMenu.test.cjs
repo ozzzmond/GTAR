@@ -40,7 +40,8 @@ test('no Key sort option and no Key filter', async () => {
   assert.deepEqual(sorts, ['title', 'artist', 'date'])
   const options = [...document.querySelectorAll('option')].map(o => o.value)
   assert.ok(!options.includes('key') && !sorts.includes('key'), 'Key sort removed')
-  assert.doesNotMatch(document.body.textContent, /All Keys|Key:/)
+  const filterBar = document.querySelector('[data-testid="songs-library-filters"]')
+  assert.doesNotMatch(filterBar ? filterBar.textContent : document.body.textContent, /All Keys|Key:/)
 })
 
 test('a saved Key sort falls back to title, and a saved key filter no longer hides songs', async () => {

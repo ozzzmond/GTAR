@@ -491,16 +491,13 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                           </>
                         )}
                       </div>
-                      <span
-                        data-testid={`workspace-setlist-count-${sl.id}`}
-                        className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
-                      >
-                        {count} {count === 1 ? 'song' : 'songs'}
-                      </span>
-                    </div>
-                    <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
-                      {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
                       <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          data-testid={`workspace-setlist-count-${sl.id}`}
+                          className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
+                        >
+                          {count} {count === 1 ? 'song' : 'songs'}
+                        </span>
                         {menu?.onShareSetlist && (
                           <button
                             type="button"
@@ -512,6 +509,11 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                             <Share2 className="w-4 h-4" aria-hidden="true" />
                           </button>
                         )}
+                      </div>
+                    </div>
+                    <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
+                      {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           data-testid={`workspace-manage-${sl.id}`}

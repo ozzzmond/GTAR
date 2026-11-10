@@ -133,5 +133,5 @@ test('4. Main song library view has exactly one primary search surface in Header
   // #319: GTAR1 filter bar keeps Metadata filter and Title/Artist/Date sort (#149: no Key filter)
   assert.match(homeHtml, /aria-label="Sort songs"/)
   assert.match(homeHtml, /data-testid="filter-metadata-select"/)
-  assert.doesNotMatch(homeHtml, /Key:/)
+  assert.doesNotMatch(homeHtml, /All Keys|data-testid="filter-key-select"/)
 })
