@@ -4,6 +4,7 @@ import { parseChordProDirectives, formatTempoLabel } from './chordProMetadata'
 import { resolveSongKeys, transposeContext } from './songKeySemantics'
 import { resolveSetlistSongIndexed, songIdIndex } from './setlistSongs'
 import { detectSongKey } from './songParser'
+import { canonicalSongKey } from './musicalKey'
 
 /** Preserve snapshot arrangement state; absent metadata stays unknown. */
 export function sharedSongToActiveSong(song: SharedSetlistSong): Omit<ActiveSongState, 'id'> {
@@ -55,7 +56,9 @@ function arrangement(song: Partial<ActiveSongState> & { rawContent: string; titl
  */
 export function findSharedSetlistDuplicate(shared: SharedSetlistPayload, setlists: WebSetlist[], songs: ActiveSongState[]): WebSetlist | null {
   if (!shared.songs.length) return null
-  const incoming = shared.songs.map(arrangement)
+  // Compare the key that import actually persists, including legacy missing caches
+  // and canonical spelling. Keep raw chart, ORIGINAL_KEY and arrangement checks intact.
+  const incoming = shared.songs.map(song => arrangement({ ...song, key: canonicalSongKey(sharedSongToActiveSong(song).key) }))
   if (incoming.some(value => value === null)) return null
   const index = songIdIndex(songs)
   return setlists.find(list => !list.isDeleted && list.songs.length === incoming.length &&

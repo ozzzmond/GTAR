@@ -327,3 +327,63 @@ for (const action of ['View Existing', 'Import Anyway']) test(`#433 exact duplic
     assert.deepEqual(stored().setlists.find(list => list.id === 'sl-1').songs, LIBRARY.setlists[0].songs.map((ref, position) => ({ ...ref, entryId: 'entry:sl-1:' + position, position })))
   }
 })
+
+
+for (const variant of ['missing cached key', 'noncanonical cached key', 'lowercase cached key', 'canonical cached key']) test(`#433 persisted five-song share reopens as a duplicate: ${variant}`, async () => {
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: '11012026', songs: Array.from({ length: 5 }, (_, i) => ({
+    title: `Shared song ${i + 1}`, artist: 'Shared Artist',
+    rawContent: `{title: Shared song ${i + 1}}\n{key: G}\n[G]Shared verse ${i + 1}`,
+    ...(variant === 'missing cached key' ? {} : { key: variant === 'noncanonical cached key' ? 'g major' : variant === 'lowercase cached key' ? 'g' : 'G' }),
+  })) }
+  const url = `http://localhost/?share=${'a'.repeat(64)}`
+  const requests = []
+  await mountApp(url, { sharedPayload, requests })
+  assert.doesNotMatch(document.body.textContent, /This setlist is already in your library/)
+  await click(button('Import to Songbook'))
+  const imported = stored().setlists.find(list => list.name === '11012026')
+  assert.ok(imported)
+  assert.equal(imported.songs.length, 5)
+  const before = JSON.stringify(stored())
+  await mountApp(url, { keepStorage: true, sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./, 'same QR/URL must detect the actually persisted import')
+  assert.equal(button('Import to Songbook'), undefined)
+  assert.ok(button('Import Anyway'))
+  assert.ok(button('View Existing'))
+  assert.equal(JSON.stringify(stored()), before, 'opening the share adds no songs or setlists')
+  await click(button('View Existing'))
+  assert.equal($('[data-testid="setlist-manager-name"]').textContent, '11012026')
+  assert.equal(JSON.stringify(stored()), before)
+  assert.equal($('[data-testid="setlist-manager-select"]').value, String(imported.id))
+  await mountApp(url, { keepStorage: true, sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./)
+  assert.equal(JSON.stringify(stored()), before)
+  await click(button('Import Anyway'))
+  assert.equal(stored().songs.length, LIBRARY.songs.length + 10)
+  assert.equal(stored().setlists.length, LIBRARY.setlists.length + 2)
+  assert.ok(stored().setlists.some(list => list.id === imported.id), 'original import remains intact')
+  const afterExplicitImport = JSON.stringify(stored())
+  await mountApp(url, { keepStorage: true, sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./)
+  assert.equal(button('Import to Songbook'), undefined)
+  assert.equal(JSON.stringify(stored()), afterExplicitImport)
+})
+
+
+for (const change of ['arrangement', 'song order']) test(`#433 persisted import does not block a different ${change}`, async () => {
+  const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: '11012026', songs: Array.from({ length: 5 }, (_, i) => ({
+    title: `Different-control song ${i + 1}`, rawContent: `{key: C}\n[C]Verse ${i + 1}`,
+  })) }
+  const url = `http://localhost/?share=${'a'.repeat(64)}`
+  await mountApp(url, { sharedPayload })
+  await click(button('Import to Songbook'))
+  const before = JSON.stringify(stored())
+  const changed = { ...sharedPayload, songs: change === 'song order' ? [...sharedPayload.songs].reverse() : sharedPayload.songs.map((song, i) => i === 0 ? { ...song, transposeOffset: 2 } : song) }
+  await mountApp(url, { keepStorage: true, sharedPayload: changed })
+  assert.doesNotMatch(document.body.textContent, /This setlist is already in your library/)
+  assert.ok(button('Import to Songbook'))
+  assert.equal(button('Import Anyway'), undefined)
+  assert.equal(JSON.stringify(stored()), before)
+  await click(button('Import to Songbook'))
+  assert.equal(stored().setlists.length, LIBRARY.setlists.length + 2)
+  assert.equal(stored().songs.length, LIBRARY.songs.length + 10)
+})
