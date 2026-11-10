@@ -32,6 +32,19 @@ new service, migration, or deployment configuration is introduced.
   available for reload. Previewing alone does not write the recipient's library;
   Import/Stage remains an explicit action.
 
+- Optional snapshot fields `originalKey`, `confirmedChartKey`, `year`, `format`, and
+  `transposeOffset` preserve explicit metadata and arrangement state without IDs.
+  Old snapshots remain valid. Recipient details distinguish ORIGINAL_KEY,
+  CHART_KEY, and PERFORMANCE_KEY; missing/estimated keys and absent tempo are not
+  advertised as verified metadata. Import/Stage preserve the available state.
+- Duplicate checks are local, using ordered full chart content and arrangement
+  equality (including repeated entries, key state, transpose, capo, tempo, time,
+  year and format). Setlist names and stripped private IDs do not establish a
+  match. Missing/ambiguous references, trashed content and empty charts fail
+  conservatively. View Existing opens the existing manager; Import Anyway adds
+  fresh records explicitly. Stage reuses an exact existing setlist, avoiding a
+  hidden duplicate import. No duplicate check requests reach Cloudflare.
+
 Owner preview QA: signed out, share from All Setlists and Setlist Detail, scan QR
 and open copied URL in another browser/device; verify preview, Import/Stage,
 Export JSON, revoke, expiry/error feedback, and unchanged sender data. Installed

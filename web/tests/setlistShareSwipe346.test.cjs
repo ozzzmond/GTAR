@@ -199,3 +199,20 @@ for (const kind of ['missing', 'oversized']) test(`#433 ${kind} setlist is rejec
   assert.match(host.textContent, /Unable to generate share link/)
   assert.ok(button('Export JSON'))
 })
+
+
+test('#433 recipient metadata is accurate; duplicate Stage reuses existing setlist', async () => {
+  const { ImportSharedSetlistModal } = require('../src/components/ImportSharedSetlistModal.tsx')
+  const { sanitizeSetlistForShare } = require('../src/utils/sharedSetlist.ts')
+  const metadataSong = { ...songs[0], originalKey: 'G', key: 'C', transposeOffset: 2, bpm: '73 BPM', time: '6/8', year: '2010', capo: 'No Capo' }
+  const shared = sanitizeSetlistForShare(lists[1], [metadataSong])
+  const stage = [], imported = []
+  await act(async () => root.render(React.createElement(ImportSharedSetlistModal, { sharedSetlist: shared, localSetlists: [lists[1]], localSongs: [metadataSong], onImport: s => imported.push(s), onOpenStage: (...args) => stage.push(args), onClose() {} })))
+  for (const label of ['Orig Key: G', 'Chart Key: C', 'Current Key: D', '73 BPM', 'Time: 6/8', 'Year: 2010']) assert.ok(host.textContent.includes(label), label)
+  assert.doesNotMatch(host.textContent, /Capo/)
+  assert.match(host.textContent, /already in your library/)
+  await click(button('View in Stage Mode'))
+  assert.equal(stage[0][1], lists[1])
+  assert.equal(imported.length, 0)
+  assert.equal(requests.length, 0)
+})

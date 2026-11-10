@@ -304,3 +304,26 @@ test('#433 pasted share URL loads signed out and validates before showing recipi
   assert.equal(read[1].headers.Authorization, undefined)
   assert.equal(stored().songs.length, LIBRARY.songs.length)
 })
+
+
+for (const action of ['View Existing', 'Import Anyway']) test(`#433 exact duplicate offers ${action} without automatic library changes`, async () => {
+  const { sanitizeSetlistForShare } = require('../src/utils/sharedSetlist.ts')
+  const sharedPayload = sanitizeSetlistForShare(LIBRARY.setlists[0], LIBRARY.songs)
+  const requests = []
+  await mountApp(`http://localhost/?share=${'a'.repeat(64)}`, { sharedPayload, requests })
+  assert.match(document.body.textContent, /This setlist is already in your library\./)
+  assert.equal(button('Import to Songbook'), undefined)
+  const before = JSON.stringify(stored())
+  const requestCount = requests.length
+  await click(button(action))
+  assert.equal(requests.length, requestCount, 'duplicate actions make no Cloudflare requests')
+  if (action === 'View Existing') {
+    assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'))
+    assert.equal($('[data-testid="setlist-manager-name"]').textContent, 'Sunday AM')
+    assert.equal(JSON.stringify(stored()), before)
+  } else {
+    assert.equal(stored().setlists.length, LIBRARY.setlists.length + 1)
+    assert.equal(stored().songs.length, LIBRARY.songs.length + 1)
+    assert.deepEqual(stored().setlists.find(list => list.id === 'sl-1').songs, LIBRARY.setlists[0].songs.map((ref, position) => ({ ...ref, entryId: 'entry:sl-1:' + position, position })))
+  }
+})

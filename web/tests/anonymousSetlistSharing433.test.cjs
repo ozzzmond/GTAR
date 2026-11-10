@@ -71,3 +71,60 @@ test('#433 anonymous validation, expiry, unavailable service and rate limits fai
     assert.equal(limited.headers.get('Retry-After'), '60')
   } finally { DB.sqlite.close() }
 })
+
+
+const { sanitizeSetlistForShare, validateSharedSetlistPayload } = require('../src/utils/sharedSetlist.ts')
+const { sharedSongMetadata, sharedSongToActiveSong, findSharedSetlistDuplicate } = require('../src/utils/sharedSetlistLibrary.ts')
+const rich = { title: 'Arrangement', artist: 'Artist', key: 'D', originalKey: 'C', confirmedChartKey: 'D', bpm: '73 BPM', time: '6/8', year: '2010', capo: 'No Capo', transposeOffset: 2, format: 'CHORD_PRO', rawContent: '{key: D}\n{original_key: C}\n{tempo: 73 BPM}\n{time: 6/8}\n{year: 2010}\n[D]Words' }
+test('#433 snapshot metadata and arrangement survive serialization, validation and import', () => {
+  const shared = sanitizeSetlistForShare({ name: 'Rich', songs: [{ ...rich, id: 'private', credentials: 'secret' }] })
+  const result = validateSharedSetlistPayload(shared)
+  assert.equal(result.isValid, true)
+  const song = result.setlist.songs[0]
+  assert.equal(song.id, undefined)
+  assert.equal(song.credentials, undefined)
+  assert.equal(song.originalKey, 'C')
+  assert.equal(song.year, '2010')
+  assert.equal(song.transposeOffset, 2)
+  assert.deepEqual(sharedSongMetadata(song), ['Orig Key: C', 'Chart Key: D', 'Current Key: E', '73 BPM', 'Time: 6/8', 'Year: 2010'])
+  assert.deepEqual(sharedSongToActiveSong(song), rich)
+  const legacy = { title: 'Legacy', rawContent: '[C]Words' }
+  assert.deepEqual(sharedSongMetadata(legacy), [])
+  assert.equal(sharedSongToActiveSong(legacy).bpm, '', 'missing tempo is not invented')
+  assert.equal(sharedSongToActiveSong(legacy).originalKey, undefined)
+  assert.equal(validateSharedSetlistPayload({ ...shared, songs: [{ ...song, transposeOffset: 1.5 }] }).isValid, false)
+})
+
+test('#433 duplicate comparison requires ordered, resolved content and arrangement equality', () => {
+  const songs = [{ ...rich, id: 'a' }, { ...rich, id: 'b', title: 'Other', rawContent: rich.rawContent + '\nOther verse' }]
+  const refs = order => order.map(id => ({ id, title: id === 'a' ? rich.title : 'Other' }))
+  const list = { id: 'local', name: 'Different name', songs: refs(['a', 'a', 'b']) }
+  const shared = sanitizeSetlistForShare(list, songs)
+  assert.equal(findSharedSetlistDuplicate(shared, [list], songs), list)
+  assert.equal(findSharedSetlistDuplicate(shared, [{ ...list, songs: refs(['a', 'b', 'a']) }], songs), null)
+  assert.equal(findSharedSetlistDuplicate(shared, [{ ...list, isDeleted: true }], songs), null)
+  for (const changes of [{ rawContent: rich.rawContent + '\nDifferent chart' }, { transposeOffset: 3 }, { capo: '2' }, { bpm: '80' }, { time: '4/4' }, { year: '2011' }, { format: 'TWO_LINE' }, { key: 'E' }, { originalKey: 'F' }]) {
+    assert.equal(findSharedSetlistDuplicate(shared, [list], [{ ...songs[0], ...changes }, songs[1]]), null, JSON.stringify(changes))
+  }
+  assert.equal(findSharedSetlistDuplicate(shared, [list], [{ ...songs[0], isDeleted: true }, songs[1]]), null)
+  const legacy = { ...list, songs: list.songs.map(({ title }) => ({ title })) }
+  assert.equal(findSharedSetlistDuplicate(shared, [legacy], songs), legacy)
+  assert.equal(findSharedSetlistDuplicate(shared, [legacy], [...songs, { ...songs[0], id: 'ambiguous' }]), null)
+  assert.equal(findSharedSetlistDuplicate({ ...shared, songs: [{ title: 'Arrangement', rawContent: '' }] }, [{ ...list, songs: refs(['a']) }], songs), null)
+})
+
+
+test('#433 D1 round trip retains optional snapshot metadata with private fields excluded', async () => {
+  api._resetRateLimitsForTesting()
+  const DB = createSongbookSqlite()
+  for (const name of ['0003_shared_setlists.sql', '0005_shared_setlists_revocation.sql']) DB.sqlite.exec(fs.readFileSync(`${__dirname}/../migrations/${name}`, 'utf8'))
+  try {
+    const shared = { ...payload, songs: [{ ...rich, id: 'private-id', userId: 'private-owner' }] }
+    const created = await api.onRequestPost({ request: request('POST', shared), env: { DB } })
+    assert.equal(created.status, 200)
+    const { token } = await created.json()
+    const read = await api.onRequestGet({ request: request('GET', null, token), env: { DB } })
+    assert.equal(read.status, 200)
+    assert.deepEqual((await read.json()).setlist.songs, [rich])
+  } finally { DB.sqlite.close() }
+})

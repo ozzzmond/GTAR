@@ -1,3 +1,4 @@
+import { sharedSongToActiveSong } from './utils/sharedSetlistLibrary'
 import { SetlistTrashConfirmation } from './components/SetlistTrashConfirmation'
 import { ExplorerDragDrop } from './components/ExplorerDragDrop'
 import { TagLibraryContext } from './utils/tagLibraryContext'
@@ -1533,18 +1534,7 @@ function LibraryApp() {
   }
 
   const handleOpenSharedSetlistInStage = (shared: SharedSetlistPayload) => {
-    const newSongStates: ActiveSongState[] = shared.songs.map((s) => ({
-      id: generateUUID(),
-      title: s.title,
-      artist: s.artist || '',
-      key: s.key || detectSongKey(s.rawContent || ''),
-      capo: s.capo || 'No Capo',
-      bpm: s.bpm || '120',
-      time: s.time,
-      format: 'CHORD_PRO',
-      transposeOffset: 0,
-      rawContent: s.rawContent,
-    }))
+    const newSongStates: ActiveSongState[] = shared.songs.map(s => ({ ...sharedSongToActiveSong(s), id: generateUUID() }))
 
     const newSetlist: WebSetlist = {
       id: generateUUID(),
@@ -1998,7 +1988,17 @@ function LibraryApp() {
         <ImportSharedSetlistModal
           sharedSetlist={incomingSharedSetlist}
           onImport={handleImportSharedSetlist}
-          onOpenStage={handleOpenSharedSetlistInStage}
+          localSetlists={setlists}
+          localSongs={songs}
+          onViewExisting={(existing) => { setIncomingSharedSetlist(null); openSetlistManager(existing) }}
+          onOpenStage={(shared, existing) => {
+            if (!existing) { handleOpenSharedSetlistInStage(shared); return }
+            setIncomingSharedSetlist(null)
+            setActiveSetlistId(existing.id)
+            setActiveSetlistSongIndex(0)
+            setQueueMode('setlist')
+            setActiveView('stage')
+          }}
           onClose={() => setIncomingSharedSetlist(null)}
         />
       )}
