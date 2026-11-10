@@ -144,13 +144,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
           {/* Documentation & Links */}
           <div className="p-3 rounded-xl bg-app-base border border-app-border space-y-2">
             <div className="text-[11px] font-bold text-app-heading border-b border-app-border/60 pb-1">
-              Project &amp; License
+              Project &amp; Documentation
             </div>
             <div className="space-y-1.5 text-[11px]">
-              <div className="flex items-center justify-between">
-                <span className="text-app-muted">License</span>
-                <span className="font-semibold text-app-heading">MIT License</span>
-              </div>
               <div className="flex items-center justify-between">
                 <span className="text-app-muted">Source Code</span>
                 <a

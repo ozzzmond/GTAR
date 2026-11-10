@@ -56,7 +56,7 @@ test('AboutModal renders application identity, dynamic version metadata, and loc
     assert.match(dialog.textContent, /No mandatory login/)
 
     // Licensing and GitHub link
-    assert.match(dialog.textContent, /MIT License/)
+    assert.equal(dialog.textContent.includes('MIT License'), false, 'About panel must not claim unverified MIT License')
     const ghLink = dialog.querySelector('a[href*="github.com/ozzzmond/GTAR"]')
     assert.ok(ghLink, 'GitHub repo link present')
 

@@ -294,5 +294,6 @@ New or renamed tests await a human choice of primary category.
 - [tvPresentationPolish.test.cjs](tvPresentationPolish.test.cjs)
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
 - [uiUxPolish403.test.cjs](uiUxPolish403.test.cjs)
+- [uiUxPolish436.test.cjs](uiUxPolish436.test.cjs)
 - [userManagementRootProtection.test.cjs](userManagementRootProtection.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->

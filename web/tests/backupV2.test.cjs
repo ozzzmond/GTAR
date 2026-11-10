@@ -366,48 +366,42 @@ async function pick(dom, mode, payload, beforeChoice) {
 const current = { id: 'cur', title: 'Current', artist: '', rawContent: '[G]current' }
 const incoming = { id: 'inc', title: 'Incoming', artist: '', rawContent: '[C]incoming' }
 for (const mode of ['replace', 'merge']) {
-  for (const appearance of [true, false]) {
-    for (const preferences of [true, false]) {
-      test(`restore ${mode} × appearance ${appearance} × preferences ${preferences}: only chosen settings, verified library, snapshot first`, withJsdom(async ({ dom, root }) => {
-        // Source device: every setting set; build the file there.
-        fullSettingsStorage(localStorage)
-        const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
-        // Target device: different values everywhere, plus unrelated device state.
-        localStorage.clear()
-        const device = { [bs.SETTINGS_KEYS.themeMode]: 'oled-black', gtar_songbook_sort: 'date', gtar_stage_font_weight: 'medium', ...EXCLUDED }
-        for (const [k, v] of Object.entries(device)) localStorage.setItem(k, v)
-        persistLibrary({ songs: [current], setlists: [] })
-        let snapshotBeforeWrite = false
-        const save = (songs, setlists) => {
-          snapshotBeforeWrite = !!localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)
-          const base = mode === 'merge' ? [current] : []
-          persistLibrary({ songs: [...base, ...songs], setlists }, localStorage, { force: true })
-        }
-        await act(async () => root.render(React.createElement(DeviceBackupCard, {
-          isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => assert.fail('fallback'),
-          onFullRestore: save, onSmartMerge: save,
-        })))
-        assert.equal(document.querySelector('[data-testid="restore-settings-choice"]'), null, 'settings choice lives in the restore preview')
-        await pick(dom, mode, payload, async () => {
-          assert.match(document.body.textContent, /This backup has 11 appearance and 6 preference settings/)
-          assert.equal(checkbox('Appearance').checked, true, 'appearance restores by default')
-          assert.equal(checkbox('Preferences').checked, false, 'preferences stay on the device by default')
-          if (checkbox('Appearance').checked !== appearance) await act(async () => checkbox('Appearance').click())
-          if (checkbox('Preferences').checked !== preferences) await act(async () => checkbox('Preferences').click())
-        })
-        if (mode === 'replace') await act(async () => button('Confirm replace').click())
-        assert.match(document.body.textContent, /Backup restored: 1 songs, 0 setlists \(verified after saving\)/)
-        assert.equal(snapshotBeforeWrite, true, 'verified safety snapshot exists before the library changes')
-        assert.equal(JSON.parse(localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.songs[0].id, 'cur')
-        const ids = readPersistedLibrary().songs.map(s => s.id)
-        assert.deepEqual(ids, mode === 'merge' ? ['cur', 'inc'] : ['inc'])
-        const { raw } = fullSettingsStorage(new MemoryStorage())
-        for (const key of APPEARANCE_KEYS) assert.equal(localStorage.getItem(key), appearance ? raw[key] : (device[key] ?? null), key)
-        for (const key of PREFERENCE_KEYS) assert.equal(localStorage.getItem(key), preferences ? raw[key] : (device[key] ?? null), key)
-        for (const [k, v] of Object.entries(EXCLUDED)) assert.equal(localStorage.getItem(k), v, `device state ${k} untouched`)
-      }))
+  test(`restore ${mode}: restores all supported settings in backup without category toggles, verified library, snapshot first (#436)`, withJsdom(async ({ dom, root }) => {
+    // Source device: every setting set; build the file there.
+    fullSettingsStorage(localStorage)
+    const payload = JSON.parse(jb.buildVerifiedBackup([incoming], []).json)
+    // Target device: different values everywhere, plus unrelated device state.
+    localStorage.clear()
+    const device = { [bs.SETTINGS_KEYS.themeMode]: 'oled-black', gtar_songbook_sort: 'date', gtar_stage_font_weight: 'medium', ...EXCLUDED }
+    for (const [k, v] of Object.entries(device)) localStorage.setItem(k, v)
+    persistLibrary({ songs: [current], setlists: [] })
+    let snapshotBeforeWrite = false
+    const save = (songs, setlists) => {
+      snapshotBeforeWrite = !!localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)
+      const base = mode === 'merge' ? [current] : []
+      persistLibrary({ songs: [...base, ...songs], setlists }, localStorage, { force: true })
     }
-  }
+    await act(async () => root.render(React.createElement(DeviceBackupCard, {
+      isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => assert.fail('fallback'),
+      onFullRestore: save, onSmartMerge: save,
+    })))
+    assert.equal(document.querySelector('[data-testid="restore-settings-choice"]'), null, 'no settings checkboxes')
+    await pick(dom, mode, payload, async () => {
+      assert.match(document.body.textContent, /This backup has 11 appearance and 6 preference settings/)
+      assert.equal(document.querySelector('input[type="checkbox"]'), null, 'no category toggle checkboxes (#436)')
+      assert.ok(document.querySelector('[data-testid="restore-settings-disclosure"]'), 'clear disclosure present')
+    })
+    if (mode === 'replace') await act(async () => button('Confirm replace').click())
+    assert.match(document.body.textContent, /Backup restored: 1 songs, 0 setlists \(verified after saving\)/)
+    assert.equal(snapshotBeforeWrite, true, 'verified safety snapshot exists before the library changes')
+    assert.equal(JSON.parse(localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.songs[0].id, 'cur')
+    const ids = readPersistedLibrary().songs.map(s => s.id)
+    assert.deepEqual(ids, mode === 'merge' ? ['cur', 'inc'] : ['inc'])
+    const { raw } = fullSettingsStorage(new MemoryStorage())
+    for (const key of APPEARANCE_KEYS) assert.equal(localStorage.getItem(key), raw[key], key)
+    for (const key of PREFERENCE_KEYS) assert.equal(localStorage.getItem(key), raw[key], key)
+    for (const [k, v] of Object.entries(EXCLUDED)) assert.equal(localStorage.getItem(k), v, `device state ${k} untouched`)
+  }))
 }
 
 test('restore that does not read back correctly is not reported as success and leaves settings alone', withJsdom(async ({ dom, root }) => {
@@ -862,7 +856,7 @@ test('R2 dialog: damaged recovery data stays unresolved until explicitly discard
   assert.equal(banner(), null)
 }))
 
-test('R2 dialog: a restore with settings ticked is refused while recovery is unfinished; library-only restore still works', withJsdom(async ({ dom, root }) => {
+test('R2 dialog: a restore carrying settings is refused while recovery is unfinished; backup without settings still works (#436)', withJsdom(async ({ dom, root }) => {
   const source = await pendingSnapshotStorage()
   for (const [k, v] of source.map) localStorage.setItem(k, v)
   const snapshot = localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY)
@@ -879,7 +873,9 @@ test('R2 dialog: a restore with settings ticked is refused while recovery is unf
   assert.equal(calls, 0)
   assert.equal(readPersistedLibrary().songs[0].id, 'cur')
   assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot)
-  await pick(dom, 'replace', payload, () => act(async () => checkbox('Appearance').click()))
+  // Backup without settings does not touch settings, so it does not conflict with recovery
+  const libraryOnlyPayload = { ...payload, settings: { appearance: {}, preferences: {} } }
+  await pick(dom, 'replace', libraryOnlyPayload)
   await act(async () => button('Confirm replace').click())
   assert.match(document.body.textContent, /Backup restored: 1 songs/)
   assert.equal(localStorage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), snapshot, 'unfinished recovery evidence untouched')

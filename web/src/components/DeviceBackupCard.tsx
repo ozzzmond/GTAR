@@ -267,12 +267,13 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   }
 
   const executeRestore = async (parsed: ParsedBackupResult, isDestructive: boolean) => {
-    // #257 F1: a new settings restore would replace the only copy of an unfinished one's original values.
+    // #257 F1 / #436: a new settings restore would replace the only copy of an unfinished one's original values.
     const recovery = inspectSettingsRecovery(targetStorage)
-    if (recovery.state !== 'none' && (restoreChoice.appearance || restoreChoice.preferences)) {
+    const hasBackupSettings = fieldCount(parsed.settings.appearance) > 0 || fieldCount(parsed.settings.preferences) > 0
+    if (recovery.state !== 'none' && hasBackupSettings) {
       setPendingRestore(null)
       setSettingsRecovery(recovery)
-      showFeedback('error', `Restore not started: ${recovery.state === 'pending' ? 'an earlier settings restore did not finish' : recovery.state === 'committed' ? 'a copy of the settings from before the last restore is still kept' : 'settings recovery data is damaged'}. Resolve it first (see above), or untick Appearance and Preferences to restore only the library. Nothing was changed.`)
+      showFeedback('error', `Restore not started: ${recovery.state === 'pending' ? 'an earlier settings restore did not finish' : recovery.state === 'committed' ? 'a copy of the settings from before the last restore is still kept' : 'settings recovery data is damaged'}. Resolve it first (see above). Nothing was changed.`)
       return
     }
     if (restoreBlockedRef.current) { showFeedback('error', RESTORE_BLOCKED_MESSAGE); return }

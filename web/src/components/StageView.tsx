@@ -1920,7 +1920,7 @@ export const StageView: React.FC<StageViewProps> = ({
       {/*    Hidden entirely in performance mode — replaced by floating HUD.  */}
       {/* =================================================================== */}
       <div
-        className={`border-b border-app-border bg-app-surface px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 z-20 shadow-md transition-all duration-300 ${
+        className={`border-b border-app-border bg-app-surface px-4 sm:px-6 py-1.5 flex flex-wrap items-center justify-between gap-2.5 z-20 shadow-md transition-all duration-300 ${
           inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'opacity-100'
         }`}
       >
@@ -1931,7 +1931,7 @@ export const StageView: React.FC<StageViewProps> = ({
             onClick={() => { if (onBack) onBack(); else navigateBack() }}
             aria-label="Back"
             data-testid="toolbar-back"
-            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Back</span>
@@ -1940,7 +1940,7 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={onOpenEditor}
             aria-label="Editor"
-            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
             <FileEdit className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Editor</span>
@@ -1949,7 +1949,7 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={onOpenBandSync}
             aria-label="Band Sync"
-            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
             <Radio className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Band Sync</span>
@@ -1963,7 +1963,7 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={() => setIsKeyPickerOpen(true)}
             aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}. Click to transpose.`}
-            className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
             <span className="text-app-muted">Key:</span>
             <span className="font-bold text-app-accent">{effectivePerformanceKey || '—'}</span>
@@ -2016,7 +2016,7 @@ export const StageView: React.FC<StageViewProps> = ({
               }
             }}
             aria-label="Toggle Chords vs Numbers"
-            className={`hidden sm:inline-flex min-h-[44px] px-3 items-center rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 ${
+            className={`hidden sm:inline-flex min-h-11 sm:min-h-9 px-3 items-center rounded-lg text-xs font-bold border transition-colors cursor-pointer shrink-0 ${
               notation === 'numbers'
                 ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                 : 'bg-app-base border-app-border text-app-text hover:border-app-action'
@@ -2030,7 +2030,7 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={handleToggleAutoScroll}
             aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
-            className={`ui-button min-w-[44px] min-h-[44px] px-2.5 h-11 rounded-xl border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+            className={`ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 px-2.5 rounded-lg border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
               isAutoScrolling
                 ? 'bg-status-error/15 border-status-error text-status-error hover:bg-status-error/25 shadow-sm'
                 : 'bg-app-button hover:brightness-110 border-app-border text-app-button-text'
@@ -2049,16 +2049,16 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={() => setIsStageMenuOpen(true)}
             aria-label="Open Stage Options"
-            className="ui-button min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-app-base border border-app-border text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+            className="ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 w-11 sm:w-9 h-11 sm:h-9 rounded-lg bg-app-base border border-app-border text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
           >
-            <Sliders className="w-5 h-5" />
+            <Sliders className="w-4 h-4" />
           </button>
 
           {/* Cast button (stays in this second toolbar row) */}
           <button
             type="button"
             onClick={handleTogglePresentation}
-            className={`min-w-[44px] min-h-[44px] p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
+            className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
               isCastActive
                 ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
                 : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'

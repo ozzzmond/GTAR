@@ -14,6 +14,7 @@ export interface SwipeableActionCardProps {
   id: string | number
   leftAction?: SwipeActionConfig // Revealed on swipe right (deltaX > 0)
   rightAction?: SwipeActionConfig // Revealed on swipe left (deltaX < 0)
+  secondaryRightAction?: SwipeActionConfig // Revealed on swipe left alongside rightAction (e.g. Rename)
   armThreshold?: number // Default: 75px
   maxSwipe?: number // Default: 110px
   disabled?: boolean
@@ -79,8 +80,9 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
   id,
   leftAction,
   rightAction,
+  secondaryRightAction,
   armThreshold = 75,
-  maxSwipe = 110,
+  maxSwipe,
   disabled = false,
   className = '',
   cardClassName = '',
@@ -183,12 +185,13 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
         e.preventDefault()
       }
 
+      const effectiveMaxSwipe = maxSwipe ?? (secondaryRightAction ? 140 : 110)
       const { offset: nextOffset, isArmed: nextArmed } = computeSwipeOffset(
         deltaX,
         Boolean(leftAction && !leftAction.disabled),
-        Boolean(rightAction && !rightAction.disabled),
+        Boolean((rightAction && !rightAction.disabled) || (secondaryRightAction && !secondaryRightAction.disabled)),
         armThreshold,
-        maxSwipe
+        effectiveMaxSwipe
       )
 
       setOffset(nextOffset)
@@ -268,35 +271,68 @@ export const SwipeableActionCard: React.FC<SwipeableActionCardProps> = ({
         </div>
       )}
 
-      {/* Background Action Underlayer: Right Action (Revealed on Swipe Left) */}
-      {rightAction && isSwipingLeft && (
+      {/* Background Action Underlayer: Right Action(s) (Revealed on Swipe Left) */}
+      {(rightAction || secondaryRightAction) && isSwipingLeft && (
         <div
-          data-testid={rightAction.testId || `swipe-action-right-${id}`}
-          data-armed={isArmed ? 'true' : 'false'}
-          aria-label={rightAction.ariaLabel || rightAction.label}
-          className={`absolute inset-y-0 right-0 flex items-center justify-end pr-3.5 sm:pr-4 pl-3 gap-2 transition-colors duration-150 z-0 rounded-xl ${
-            isArmed
-              ? rightAction.isDestructive
-                ? 'bg-[#DC6E67] text-white shadow-inner font-bold'
-                : 'bg-app-action text-app-on-action shadow-inner font-bold'
-              : rightAction.isDestructive
-                ? 'bg-[#DC6E67]/25 text-status-error'
-                : 'bg-app-action/20 text-app-action'
-          }`}
+          className="absolute inset-y-0 right-0 flex items-stretch justify-end z-0 rounded-xl overflow-hidden"
           style={{ width: `${Math.max(-offset, 0)}px` }}
         >
-          <div
-            className={`flex items-center gap-1.5 transition-transform duration-150 shrink-0 ${
-              isArmed ? 'scale-110 font-bold' : 'scale-100 opacity-90'
-            }`}
-          >
-            {offset <= -60 && (
-              <span className="text-[11px] sm:text-xs font-mono font-bold tracking-tight select-none">
-                {rightAction.label}
-              </span>
-            )}
-            {rightAction.icon}
-          </div>
+          {secondaryRightAction && (
+            <button
+              type="button"
+              data-testid={secondaryRightAction.testId || `swipe-action-rename-${id}`}
+              aria-label={secondaryRightAction.ariaLabel || secondaryRightAction.label}
+              onClick={(e) => {
+                e.stopPropagation()
+                secondaryRightAction.onAction()
+                resetCard()
+              }}
+              className="flex-1 min-w-[50px] flex items-center justify-center gap-1.5 bg-app-action text-app-on-action px-2 transition-transform duration-150 cursor-pointer"
+            >
+              {secondaryRightAction.icon}
+              {offset <= -70 && (
+                <span className="text-[11px] sm:text-xs font-mono font-bold tracking-tight select-none">
+                  {secondaryRightAction.label}
+                </span>
+              )}
+            </button>
+          )}
+          {rightAction && (
+            <div
+              data-testid={rightAction.testId || `swipe-action-right-${id}`}
+              data-armed={isArmed ? 'true' : 'false'}
+              aria-label={rightAction.ariaLabel || rightAction.label}
+              onClick={(e) => {
+                e.stopPropagation()
+                rightAction.onAction()
+                resetCard()
+              }}
+              className={`flex items-center justify-end pr-3.5 sm:pr-4 pl-3 gap-2 transition-colors duration-150 cursor-pointer ${
+                secondaryRightAction ? 'flex-1 min-w-[60px]' : 'w-full'
+              } ${
+                isArmed
+                  ? rightAction.isDestructive
+                    ? 'bg-[#DC6E67] text-white shadow-inner font-bold'
+                    : 'bg-app-action text-app-on-action shadow-inner font-bold'
+                  : rightAction.isDestructive
+                    ? 'bg-[#DC6E67]/25 text-status-error'
+                    : 'bg-app-action/20 text-app-action'
+              }`}
+            >
+              <div
+                className={`flex items-center gap-1.5 transition-transform duration-150 shrink-0 ${
+                  isArmed ? 'scale-110 font-bold' : 'scale-100 opacity-90'
+                }`}
+              >
+                {offset <= -60 && (
+                  <span className="text-[11px] sm:text-xs font-mono font-bold tracking-tight select-none">
+                    {rightAction.label}
+                  </span>
+                )}
+                {rightAction.icon}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

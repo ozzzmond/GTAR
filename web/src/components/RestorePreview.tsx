@@ -14,8 +14,8 @@ export interface RestorePreviewProps {
   provenance?: BackupProvenance
   /** False for a single-setlist file, which can only be merged. */
   canReplace?: boolean
-  /** Appearance / preferences choice; shown only when the backup carries settings. */
-  settings?: { appearance: number; preferences: number; choice: SettingsRestoreChoice; onChoice: (choice: SettingsRestoreChoice) => void }
+  /** Appearance / preferences counts; shown only when the backup carries settings. */
+  settings?: { appearance: number; preferences: number; choice?: SettingsRestoreChoice; onChoice?: (choice: SettingsRestoreChoice) => void }
   note?: React.ReactNode
   busy?: boolean
   blocked?: boolean
@@ -59,19 +59,13 @@ export const RestorePreview: React.FC<RestorePreviewProps> = ({
       {row('Only on device', onlyOnDevice)}
       {row('Only in backup', onlyCounts(backup, device))}
     </div>
-    {settings && !confirmReplace && <fieldset data-testid="restore-settings-choice" className="space-y-1 text-[11px]">
-      <legend className="text-app-muted mb-1">This backup has {settings.appearance} appearance and {settings.preferences} preference settings.</legend>
-      <label className="min-h-11 flex items-center gap-2.5 text-app-heading cursor-pointer">
-        <input type="checkbox" className="w-4 h-4 shrink-0 accent-app-action" checked={settings.choice.appearance} disabled={busy}
-          onChange={e => settings.onChoice({ ...settings.choice, appearance: e.target.checked })} />
-        <span>Also restore appearance (theme, colours, stage and TV text)</span>
-      </label>
-      <label className="min-h-11 flex items-center gap-2.5 text-app-heading cursor-pointer">
-        <input type="checkbox" className="w-4 h-4 shrink-0 accent-app-action" checked={settings.choice.preferences} disabled={busy}
-          onChange={e => settings.onChoice({ ...settings.choice, preferences: e.target.checked })} />
-        <span>Also restore preferences (songbook sort and filters)</span>
-      </label>
-    </fieldset>}
+    {settings && !confirmReplace && (settings.appearance > 0 || settings.preferences > 0) && (
+      <div data-testid="restore-settings-disclosure" className="p-2.5 rounded-lg bg-app-base/80 text-[11px] space-y-1">
+        <p className="text-app-muted">
+          This backup has {settings.appearance} appearance and {settings.preferences} preference settings. All settings present in the backup will be restored.
+        </p>
+      </div>
+    )}
     {note}
     {!confirmReplace ? <>
       <p className="text-[11px] text-app-text">A verified local safety snapshot is saved first. Merge into device: Adds and updates songs; deletes nothing.</p>

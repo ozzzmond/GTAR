@@ -35,7 +35,8 @@ import {
   Link,
 } from 'lucide-react'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
-import { getSongMetadataStatus, formatTempoLabel } from '../utils/chordProMetadata'
+import { getSongMetadataStatus, formatTempoLabel, syncCanonicalDirectives } from '../utils/chordProMetadata'
+import { resolveSongKeys } from '../utils/songKeySemantics'
 import { extractShareToken, validateSharedSetlistPayload, type SharedSetlistPayload } from '../utils/sharedSetlist'
 import { SongStatusBadge } from './SongStatusBadge'
 import { SwipeableActionCard } from './SwipeableActionCard'
@@ -69,6 +70,7 @@ interface SongbookHomeViewProps {
   onSearchQueryChange?: (query: string) => void
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
   onBulkAddSongsToSetlist?: (songIds: Array<string | number>, setlistId: string | number) => void
+  onRenameSetlist?: (setlistId: string | number, name: string) => boolean
   onShareSetlist?: (setlist: WebSetlist) => void
   onImportSharedSetlist?: (shared: SharedSetlistPayload) => void
   /** #149: Songs Library ⋯ menu → the existing song import dialog. */
@@ -102,6 +104,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onOpenSetlistManager,
   onDeleteSong,
   onRequestTrashSetlist,
+  onRenameSetlist,
   onDeleteSetlist,
   setlists = [],
   onSelectSetlistSong,
@@ -114,6 +117,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onImportSharedSetlist,
   onOpenImportSongs,
   onTrashDuplicates,
+  onUpdateSong,
   view,
   onSelectView,
   onEditSong,
@@ -125,6 +129,35 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [membershipSongId, setMembershipSongId] = useState<string | number | null>(null)
   const membershipSong = songs.find(song => membershipSongId !== null && String(song.id) === String(membershipSongId))
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null)
+  const [editingSongIdx, setEditingSongIdx] = useState<number | null>(null)
+  const [editingSongTitle, setEditingSongTitle] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  const startRenameSong = (idx: number, currentTitle: string) => {
+    setEditingSongIdx(idx)
+    setEditingSongTitle(currentTitle)
+    setTimeout(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    }, 50)
+  }
+
+  const cancelRenameSong = () => {
+    setEditingSongIdx(null)
+    setEditingSongTitle('')
+  }
+
+  const saveRenameSong = (idx: number) => {
+    const song = songs[idx]
+    if (!song) return
+    const trimmed = editingSongTitle.trim() || 'Untitled Song'
+    if (trimmed !== song.title && onUpdateSong) {
+      const rawContent = song.rawContent ? syncCanonicalDirectives(song.rawContent, { title: trimmed }) : song.rawContent
+      onUpdateSong({ id: song.id, title: trimmed, ...(rawContent !== undefined ? { rawContent } : {}) })
+    }
+    setEditingSongIdx(null)
+    setEditingSongTitle('')
+  }
   const [activeMenuSongIdx, setActiveMenuSongIdx] = useState<number | null>(null)
   // Anchor elements for portal-positioned kebab menus (set on click, not read in render)
   const [songMenuAnchor, setSongMenuAnchor] = useState<HTMLElement | null>(null)
@@ -930,7 +963,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-label="Filter songs by metadata"
                   value={filterMetadata}
                   onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
-                  className="min-h-11 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="min-h-11 sm:min-h-9 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-lg px-2.5 outline-none cursor-pointer"
                 >
                   <option value="ALL">All Metadata</option>
                   <option value="METADATA_OK">Metadata OK</option>
@@ -942,7 +975,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-label="Filter songs by setlist"
                     value={filterSetlistId}
                     onChange={(e) => handleFilterSetlistChange(e.target.value)}
-                    className="min-h-11 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                    className="min-h-11 sm:min-h-9 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-lg px-2.5 outline-none cursor-pointer"
                   >
                     <option value="ALL">All Setlists</option>
                     {activeSetlists.map((sl) => (
@@ -957,17 +990,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-label="Filter songs by tags"
                   value={filterTags}
                   onChange={(e) => handleFilterTagsChange(e.target.value as TagsFilterOption)}
-                  className="min-h-11 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="min-h-11 sm:min-h-9 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-lg px-2.5 outline-none cursor-pointer"
                 >
                   <option value="ALL">All Tags</option>
                   <option value="TAGGED">Tagged</option>
                   <option value="NO_TAG">No tag</option>
                 </select>
-                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-xl text-xs w-fit">
+                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-lg text-xs w-fit">
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
                       onClick={() => handleSortChange(field)}
-                      className={`min-h-11 px-2.5 rounded-xl font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                      className={`min-h-11 sm:min-h-9 px-2.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
                         sortBy === field ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-text'}`}>
                       {field === 'title' ? 'Title' : field === 'artist' ? 'Artist' : 'Date'}{sortBy === field && (sortDirection === 'asc' ? ' ↑' : ' ↓')}
                     </button>
@@ -978,7 +1011,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             {songs.length > 0 && (
                 <button type="button" data-testid="toggle-song-selection-mode" aria-pressed={isSongSelectionMode}
                   onClick={() => { setIsSongSelectionMode(!isSongSelectionMode); setSelectedSongIds(new Set()) }}
-                  className={`col-start-2 row-start-1 justify-self-end shrink-0 min-h-11 px-2.5 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  className={`col-start-2 row-start-1 justify-self-end shrink-0 min-h-11 sm:min-h-9 px-2.5 rounded-lg text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
                     isSongSelectionMode ? 'bg-app-action/15 border-app-action text-app-action' : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'}`}>
                   {isSongSelectionMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                   <span>Select</span>
@@ -997,7 +1030,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     closeAllMenus()
                     setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
                   }}
-                  className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0`}
+                  className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 rounded-lg border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0`}
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -1078,6 +1111,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             songs={songs}
             onSelectScope={(scope) => onSelectView?.({ type: scope })}
             onManageSetlist={onManageSetlist}
+            onRenameSetlist={onRenameSetlist}
             onDeleteSetlist={onDeleteSetlist}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
             onOpenSong={onSelectSong}
@@ -1169,11 +1203,22 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               const isDeleting = confirmDeleteIdx === originalIdx
               const isMenuOpen = activeMenuSongIdx === originalIdx
               const isSongChosen = selectedSongIds.has(song.id ?? originalIdx)
+              const isRenaming = editingSongIdx === originalIdx
               const songSetlists = getSongSetlists(song)
               const metadataStatus = getSongMetadataStatus(song)
               const isMetaOk = metadataStatus.status === 'METADATA_OK'
               const tags = normalizeTags(song.tags)
               const date = song.createdAt
+
+              // Resolve domain keys for checklist 04
+              const resolvedKeys = resolveSongKeys(song)
+              const origKey = resolvedKeys.originalKey
+              const chartKey = resolvedKeys.chartKey
+              const songBpm = song.bpm ? formatTempoLabel(song.bpm) : null
+              const songTime = song.time ? song.time.trim() : null
+              const songYear = song.year !== undefined && song.year !== null ? String(song.year).trim() : null
+
+              const hasCardMeta = Boolean(origKey || chartKey || songBpm || songTime || songYear)
 
               return (
                 <SwipeableActionCard
@@ -1188,13 +1233,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       : 'bg-app-song hover:brightness-95 border-app-border'
                   }`}
                   onClick={() => {
+                    if (isRenaming) return
                     if (isSongSelectionMode) {
                       toggleSongSelection(song.id ?? originalIdx)
                     } else {
                       onSelectSong(originalIdx)
                     }
                   }}
-                  disabled={isDeleting || isMenuOpen || isSongSelectionMode}
+                  disabled={isDeleting || isMenuOpen || isSongSelectionMode || isRenaming}
                   leftAction={{
                     icon: <ListPlus className="w-4 h-4 text-current" />,
                     label: 'Add to Setlist',
@@ -1202,6 +1248,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     disabled: song.id === undefined,
                     onAction: () => {
                       setMembershipSongId(song.id ?? null)
+                    },
+                  }}
+                  secondaryRightAction={{
+                    icon: <Pencil className="w-4 h-4 text-current" />,
+                    label: 'Rename',
+                    testId: `swipe-action-rename-${originalIdx}`,
+                    onAction: () => {
+                      startRenameSong(originalIdx, song.title || '')
                     },
                   }}
                   rightAction={{
@@ -1230,9 +1284,70 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <h3 title={song.title || 'Untitled Song'} className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
-                            {song.title || 'Untitled Song'}
-                          </h3>
+                          {isRenaming ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                saveRenameSong(originalIdx)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1.5 py-0.5"
+                            >
+                              <input
+                                ref={renameInputRef}
+                                type="text"
+                                value={editingSongTitle}
+                                onChange={(e) => setEditingSongTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    e.stopPropagation()
+                                    cancelRenameSong()
+                                  }
+                                }}
+                                data-testid={`song-rename-input-${originalIdx}`}
+                                className="w-full text-xs font-semibold px-2 py-1 rounded bg-app-base border border-app-action text-app-heading focus:outline-none focus:ring-1 focus:ring-app-action"
+                                placeholder="Song title"
+                              />
+                              <button
+                                type="submit"
+                                aria-label="Save song name"
+                                data-testid={`song-rename-save-${originalIdx}`}
+                                className="p-1 rounded bg-app-action text-app-on-action hover:brightness-110 shrink-0 cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Cancel renaming song"
+                                data-testid={`song-rename-cancel-${originalIdx}`}
+                                onClick={cancelRenameSong}
+                                className="p-1 rounded text-app-muted hover:text-app-heading hover:bg-app-base shrink-0 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </form>
+                          ) : (
+                            <div className="flex items-center gap-1 group/title min-w-0">
+                              <h3 title={song.title || 'Untitled Song'} className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
+                                {song.title || 'Untitled Song'}
+                              </h3>
+                              {!isSongSelectionMode && (
+                                <button
+                                  type="button"
+                                  aria-label={`Rename ${song.title || 'song'}`}
+                                  data-testid={`desktop-rename-song-${originalIdx}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    startRenameSong(originalIdx, song.title || '')
+                                  }}
+                                  className="song-hover-rename p-0.5 rounded text-app-muted hover:text-app-heading hover:bg-app-base/60 shrink-0 cursor-pointer transition-colors"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                           <p className="ui-secondary-text text-xs text-app-muted truncate">
                             {song.artist || 'Unknown Artist'}
                           </p>
@@ -1240,7 +1355,20 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       </div>
 
                       {!isSongSelectionMode && (
-                        <div className="shrink-0 -mr-2 -mt-2">
+                        <div className="shrink-0 -mr-2 -mt-2 flex items-center">
+                          {/* Desktop hover Delete action */}
+                          <button
+                            type="button"
+                            aria-label={`Delete ${song.title || 'song'}`}
+                            data-testid={`desktop-delete-song-${originalIdx}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setConfirmDeleteIdx(originalIdx)
+                            }}
+                            className="song-hover-delete p-1.5 rounded-lg text-status-error/80 hover:text-status-error hover:bg-status-error/10 cursor-pointer transition-colors mr-0.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             aria-label={`Song options for ${song.title || 'song'}`}
@@ -1250,7 +1378,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             onClick={(e) => {
                               e.stopPropagation()
                               setActiveMenuSongIdx(isMenuOpen ? null : originalIdx)
-                                                        setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
+                              setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
                             }}
                             className="min-h-11 min-w-11 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base flex items-center justify-center transition-colors cursor-pointer"
                           >
@@ -1264,6 +1392,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                 className={`${cardMenuItem} text-app-action`}>
                                 <Play className="w-3.5 h-3.5 fill-current" />
                                 <span>Play in Stage</span>
+                              </button>
+                              <button type="button" data-testid={`menu-rename-song-${originalIdx}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setActiveMenuSongIdx(null)
+                                  startRenameSong(originalIdx, song.title || '')
+                                }}
+                                className={cardMenuItem}>
+                                <Pencil className="w-3.5 h-3.5 text-app-action" />
+                                <span>Rename</span>
                               </button>
                               {onEditSong && (
                                 <button type="button" data-testid={`menu-edit-song-${originalIdx}`}
@@ -1292,6 +1430,60 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         </div>
                       )}
                     </div>
+
+                    {/* Secondary metadata row (Checklist 04: verified key, tempo, time, year) */}
+                    {hasCardMeta && (
+                      <div
+                        data-testid={`meta-row-${originalIdx}`}
+                        className="flex flex-wrap items-center gap-1.5 mt-2 text-[11px] font-mono text-app-muted"
+                      >
+                        {origKey && (
+                          <span
+                            data-testid={`meta-orig-key-${originalIdx}`}
+                            className="px-1.5 py-0.2 rounded bg-app-base border border-app-border/80 text-app-accent font-semibold"
+                            aria-label={`Original Key: ${origKey}`}
+                          >
+                            Orig {origKey}
+                          </span>
+                        )}
+                        {chartKey && chartKey !== origKey && (
+                          <span
+                            data-testid={`meta-chart-key-${originalIdx}`}
+                            className="px-1.5 py-0.2 rounded bg-app-base border border-app-border/80 text-app-text font-semibold"
+                            aria-label={`Chart: ${chartKey}`}
+                          >
+                            Chart {chartKey}
+                          </span>
+                        )}
+                        {songBpm && (
+                          <span
+                            data-testid={`meta-tempo-${originalIdx}`}
+                            className="text-app-muted"
+                            aria-label={`Tempo: ${songBpm}`}
+                          >
+                            {songBpm}
+                          </span>
+                        )}
+                        {songTime && (
+                          <span
+                            data-testid={`meta-time-${originalIdx}`}
+                            className="text-app-muted"
+                            aria-label={`Time signature: ${songTime}`}
+                          >
+                            {songTime}
+                          </span>
+                        )}
+                        {songYear && (
+                          <span
+                            data-testid={`meta-year-${originalIdx}`}
+                            className="text-app-muted"
+                            aria-label={`Year: ${songYear}`}
+                          >
+                            {songYear}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Tag pills (GTAR1) */}
                     {tags.length > 0 && (
