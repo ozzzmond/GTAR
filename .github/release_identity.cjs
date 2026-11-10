@@ -2,7 +2,7 @@
 const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
-const { parseDevTag, inspectCheckpoint } = require('./release_metadata.cjs')
+const { parseDevTag, inspectCheckpoint, compareDevTags } = require('./release_metadata.cjs')
 const CANONICAL_REPOSITORY = 'https://github.com/ozzzmond/GTAR.git'
 const ABANDONED_PROD = Object.freeze({
   tag: 'v1.1.122', sha: 'c254195e6dfc946138336551e4ce8a87520baf7f',
@@ -24,7 +24,7 @@ function getCommittedDevVersion(root) {
       }
     }
   } catch {}
-  return '1.0.130-dev.4a'
+  return '1.0.145-dev.3'
 }
 
 function resolveDeploymentId(env, headSha, shortSha, tagName) {
@@ -110,21 +110,14 @@ function selectCandidate(candidates, headSha, shortSha, env, getTagSha) {
   // Multiple candidates: deterministically prefer clean numeric stabilization tag
   const cleanCandidates = candidates.filter(p => p.promotable)
   if (cleanCandidates.length > 0) {
-    cleanCandidates.sort((a, b) => {
-      if (b.base !== a.base) return b.base - a.base
-      return b.iteration - a.iteration
-    })
+    cleanCandidates.sort((a, b) => compareDevTags(b, a))
     return {
       tag: cleanCandidates[0].tag,
       promotable: true
     }
   }
 
-  const sorted = [...candidates].sort((a, b) => {
-    if (b.base !== a.base) return b.base - a.base
-    if (b.iteration !== a.iteration) return b.iteration - a.iteration
-    return (b.suffix || '').localeCompare(a.suffix || '')
-  })
+  const sorted = [...candidates].sort((a, b) => compareDevTags(b, a))
   return {
     tag: sorted[0].tag,
     promotable: false

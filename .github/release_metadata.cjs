@@ -4,13 +4,41 @@ const { execFileSync } = require('node:child_process')
 const { readFileSync, appendFileSync } = require('node:fs')
 const path = require('node:path')
 
+// Provisional tag name only: final SHA is selected/approved separately, never inferred.
+// Keep this mapping after release so immutable R2 identity remains reproducible.
+const R2_CHECKPOINT = Object.freeze({
+  tag: 'v1.0.145-dev.3', prodTag: 'v1.2.0', nextDevTag: 'v1.1.0-dev.1',
+})
+
 function parseDevTag(tag) {
-  const match = /^v1\.0\.([1-9]\d*)-dev\.([1-9]\d*)([a-z]?)$/.exec(tag)
-  if (!match) throw new Error('Invalid canonical DEV tag')
-  const base = Number(match[1]), iteration = Number(match[2])
+  const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.([1-9]\d*)([a-z]?)$/.exec(tag)
+  if (!match || match[0] !== tag) throw new Error('Invalid canonical DEV tag')
+  const minor = Number(match[1]), base = Number(match[2]), iteration = Number(match[3])
+  if (minor === 0 && base === 0) throw new Error('Invalid canonical DEV tag')
   if (!Number.isSafeInteger(base) || !Number.isSafeInteger(iteration) || !Number.isSafeInteger(base + iteration)) throw new Error('Unsafe canonical version arithmetic')
   const patch = base + iteration
-  return { tag, base, iteration, suffix: match[3], promotable: match[3] === '', prodTag: `v1.1.${patch}`, nextDevTag: `v1.0.${patch}-dev.1` }
+  const r2 = tag === R2_CHECKPOINT.tag
+  return { tag, minor, base, iteration, suffix: match[4], promotable: match[4] === '',
+    prodTag: r2 ? R2_CHECKPOINT.prodTag : `v1.${minor + 1}.${patch}`,
+    nextDevTag: r2 ? R2_CHECKPOINT.nextDevTag : `v1.${minor}.${patch}-dev.1` }
+}
+
+// Ascending scheme/version order; callers reverse it for latest-first selection.
+function compareDevTags(a, b) {
+  return a.minor - b.minor || a.base - b.base || a.iteration - b.iteration || a.suffix.localeCompare(b.suffix)
+}
+
+function parseProdTag(tag) {
+  const match = /^v1\.([12])\.(0|[1-9]\d*)$/.exec(tag)
+  if (!match || match[0] !== tag) throw new Error('Invalid canonical PROD tag')
+  const minor = Number(match[1]), patch = Number(match[2])
+  if ((minor === 1 && patch === 0) || !Number.isSafeInteger(patch)) throw new Error('Unsafe/invalid canonical PROD version')
+  return { tag, minor, patch }
+}
+
+function compareProdTags(a, b) {
+  const left = parseProdTag(a), right = parseProdTag(b)
+  return left.minor - right.minor || left.patch - right.patch
 }
 
 const HISTORICAL_TAG_EXCEPTIONS = Object.freeze({
@@ -28,7 +56,7 @@ function verifyStabilizationPair(git, targetTag, candidateVersion, sha) {
   const companionTag = 'v' + candidateVersion
   let companion
   try { companion = parseDevTag(companionTag) } catch { return null }
-  if (companion.suffix === '' || companion.base !== parsed.base || companion.iteration + 1 !== parsed.iteration) {
+  if (companion.suffix === '' || companion.minor !== parsed.minor || companion.base !== parsed.base || companion.iteration + 1 !== parsed.iteration) {
     return null
   }
   let companionSha
@@ -76,8 +104,12 @@ function inspectCheckpoint(root, tag) {
   const auth = read('web/functions/lib/authCore.ts')
   const directMatch = [pkg.version, lock.version, lock.packages?.['']?.version, dev].every(v => v === version) &&
     auth.includes(`GTAR Server-Authoritative Account & Access Control (${tag})`)
+  if (tag === R2_CHECKPOINT.tag) {
+    const sourceDev = /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1]
+    if (!directMatch || sourceDev !== version) throw new Error('R2 checkpoint requires exact version metadata')
+  }
   if (!directMatch) {
-    const expectedBase = `1.0.${parsed.base}-dev.${parsed.iteration}`
+    const expectedBase = `1.${parsed.minor}.${parsed.base}-dev.${parsed.iteration}`
     const expectedBaseTag = `v${expectedBase}`
     const letteredDev = hasTagDerivedDev ? version : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
     const isLetteredDevMatch = parsed.suffix !== '' &&
@@ -125,9 +157,10 @@ function main(args = process.argv.slice(2)) {
       statusLine = `METADATA_STATUS=${legacy.classification}\n`
     } else {
       const version = JSON.parse(readFileSync(path.join(root, 'web/package.json'), 'utf8')).version
-      const expectedBase = `1.0.${parsed.base}-dev.${parsed.iteration}`
+      const expectedBase = `1.${parsed.minor}.${parsed.base}-dev.${parsed.iteration}`
       const isDirectMatch = version === tag.slice(1)
       const isLetteredDevMatch = parsed.suffix !== '' && version === expectedBase
+      if (tag === R2_CHECKPOINT.tag && !isDirectMatch) throw new Error('R2 checkpoint requires exact version metadata')
       if (!isDirectMatch && !isLetteredDevMatch) {
         let pair
         try {
@@ -149,4 +182,4 @@ function main(args = process.argv.slice(2)) {
   }
 }
 if (require.main === module) process.exitCode = main()
-module.exports = { main, parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS, verifyStabilizationPair }
+module.exports = { R2_CHECKPOINT, compareDevTags, parseProdTag, compareProdTags, main, parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS, verifyStabilizationPair }
