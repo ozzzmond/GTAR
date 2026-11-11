@@ -6,11 +6,15 @@ D1 migration, dependency change or deployment is included. P0 remains unchanged.
 
 ## Trust boundaries
 
-`workers/stageCast2Worker.ts` is a proposed separate Worker entrypoint. Every
-controller claim and controller HTTP action uses the existing
-`authenticateUserRequest`: verified GTAR session/Google identity, authoritative
-D1 session revocation and active-account checks. Authentication errors fail
-closed. Authentication is never accepted from JSON, URL, or internal headers
+`workers/stageCast2Worker.ts` is a proposed separate Worker entrypoint. Sign-in is
+optional (#453 N1). Every controller claim and controller HTTP action tries the
+existing `authenticateUserRequest`: verified GTAR session/Google identity,
+authoritative D1 session revocation and active-account checks. An active account
+becomes the session owner; anything else (no, invalid, pending or denied
+credentials) is the anonymous owner `anonymous-controller-v1`, authorized only by
+the one-time PIN plus the independent controller credential, with a per-client
+claim limit. An account-owned session is never reachable by the anonymous owner.
+Authentication is never accepted from JSON, URL, or internal headers
 supplied by a caller. The Worker constructs new internal headers and never
 forwards GTAR bearer tokens, cookies or Google tokens to the hub/TV.
 

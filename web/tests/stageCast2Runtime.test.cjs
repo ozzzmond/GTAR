@@ -26,10 +26,10 @@ test('local workerd: isolated Worker/DO, real WebSocket upgrade, delivery, recon
     }
     const s = await call('/create', {})
     assert.equal(s.status, 200)
-    assert.equal((await call('/claim', { ref: s.ref, pin: s.pin })).status, 401)
     const c = await call('/claim', { ref: s.ref, pin: s.pin }, true)
     const receiver = { ref: s.ref, role: 'receiver', credential: s.receiverCredential }
     const controller = { ref: s.ref, role: 'controller', credential: c.controllerCredential }
+    assert.equal((await call('/ticket', controller)).status, 403)
     assert.equal((await call('/ticket', controller, true)).status, 200)
     assert.equal((await call('/claim', { ref: s.ref, pin: s.pin }, true)).status, 403)
     const connect = async scope => {

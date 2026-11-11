@@ -35,8 +35,10 @@ export class StageCast2ControllerManager {
   }
 
   public setSession(session: GoogleSession | null) {
+    const hadSession = !!this.session
     this.session = session
-    if (this.client && !session && this.client.view.ref) {
+    // Only an actual sign-out ends the pairing; anonymous controllers never had a session.
+    if (this.client && hadSession && !session && this.client.view.ref) {
       void this.end()
     }
   }
@@ -62,9 +64,8 @@ export class StageCast2ControllerManager {
         post: async (path, data, controller) => {
           if (!cast2LocalEnabled) throw Error('DISABLED')
           const session = this.session
-          if (controller && (!validSession(session) || !hasServerApproval(session) || !session?.sessionToken)) {
-            throw Error('AUTH_REQUIRED')
-          }
+          // Sign-in is optional: without an approved session the controller pairs anonymously by PIN.
+          const token = controller && validSession(session) && hasServerApproval(session) ? session?.sessionToken : undefined
           const response = await fetch('/cast2-api' + path, {
             method: 'POST',
             cache: 'no-store',
@@ -74,7 +75,7 @@ export class StageCast2ControllerManager {
             signal: AbortSignal.timeout(8000),
             headers: {
               'Content-Type': 'application/json',
-              ...(controller && session?.sessionToken ? { Authorization: `Bearer ${session.sessionToken}` } : {}),
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify(data),
           })

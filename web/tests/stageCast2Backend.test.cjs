@@ -268,13 +268,16 @@ test('GATEWAY: disabled by default, strict Origin, real auth adapter, no identit
     headers: { Origin: 'https://gtar.test', 'CF-Connecting-IP': '127.0.0.1', 'x-cast-owner': 'forged', Authorization: 'Bearer valid', ...overrides }, body: JSON.stringify(payload) })
   assert.equal((await worker.fetch(req('/create', {}), {})).status, 503)
   assert.equal((await worker.fetch(req('/claim', {}, { Origin: 'https://evil.test' }), env)).status, 403)
-  assert.equal((await worker.fetch(req('/claim', {}, { Authorization: 'Bearer invalid' }), env)).status, 401)
+  // Invalid or absent credentials are anonymous (#453 N1): forwarded with the sentinel owner, never a forged one.
+  assert.equal((await worker.fetch(req('/claim', {}, { Authorization: 'Bearer invalid' }), env)).status, 200)
+  assert.equal(seen.at(-1).headers.get('x-cast-owner'), 'anonymous-controller-v1')
   assert.equal((await worker.fetch(req('/claim', {}), env)).status, 200)
   assert.equal(seen.at(-1).headers.get('x-cast-owner'), 'verified-owner')
   assert.equal(seen.at(-1).headers.has('Authorization'), false)
   assert.equal((await worker.fetch(req('/create', {}), env)).status, 200)
   assert.equal(seen.at(-1).headers.has('x-cast-owner'), false)
-  assert.equal((await worker.fetch(req('/ticket', { role: 'controller' }, { Authorization: '' }), env)).status, 401)
+  assert.equal((await worker.fetch(req('/ticket', { role: 'controller' }, { Authorization: '' }), env)).status, 200)
+  assert.equal(seen.at(-1).headers.get('x-cast-owner'), 'anonymous-controller-v1')
   assert.equal((await worker.fetch(req('/create?credential=secret', {}), env)).status, 403)
   assert.equal((await worker.fetch(req('/create', { x: 'a'.repeat(2048) }), env)).status, 413)
   assert.ok(calls >= 3)
@@ -299,19 +302,47 @@ test('OWNER_RATE_LIMIT: persists across restart and bounds attempts over differe
   assert.equal((await restarted.claim(c, 'same-owner')).status, 429)
 })
 
-test('GATEWAY_AUTHORIZATION: pending/denied/absent identities cannot claim or use controller scopes', async () => {
+test('GATEWAY_AUTHORIZATION: only active accounts become owners; pending/denied/absent are anonymous', async () => {
   for (const access_status of ['pending', 'denied', 'active']) {
-    let forwarded = 0
+    const owners = []
     const worker = createStageCast2Worker(async () => ({ user: { id: 'owner', access_status } }))
     const env = { CAST2_MODE: 'reviewed-v1', CAST2_ORIGIN: 'https://gtar.test', CAST2_HUB: {
-      idFromName: n => n, get: () => ({ fetch: async () => { forwarded++; return Response.json({ ok: true }) } }),
+      idFromName: n => n, get: () => ({ fetch: async request => { owners.push(request.headers.get('x-cast-owner')); return Response.json({ ok: true }) } }),
     } }
     for (const [route, payload] of [['/claim', {}], ['/ticket', { role: 'controller' }], ['/revoke', { role: 'controller' }]]) {
       const response = await worker.fetch(new Request('https://worker.test' + route, { method: 'POST', headers: {
         Origin: 'https://gtar.test', 'CF-Connecting-IP': '127.0.0.1', Authorization: 'Bearer test',
       }, body: JSON.stringify(payload) }), env)
-      assert.equal(response.status, access_status === 'active' ? 200 : 401)
+      assert.equal(response.status, 200)
     }
-    assert.equal(forwarded, access_status === 'active' ? 3 : 0)
+    const expected = access_status === 'active' ? 'owner' : 'anonymous-controller-v1'
+    assert.deepEqual(owners, [expected, expected, expected])
   }
+})
+
+test('ANONYMOUS_CONTROLLER: PIN claim works without an account, stays isolated and per-client limited', async () => {
+  const anon = 'anonymous-controller-v1'
+  const f = await fixture(), s = await f.create()
+  const wrong = s.pin === '111111' ? '222222' : '111111'
+  const other = await f.create()
+  assert.equal((await f.call('/claim', { ref: s.ref, pin: wrong }, anon)).status, 403)
+  const c = await f.claim(s, anon)
+  assert.equal(c.status, 200)
+  const scope = { ref: s.ref, role: 'controller', credential: c.controllerCredential }
+  assert.equal((await f.call('/ticket', scope, anon)).status, 200)
+  assert.equal((await f.call('/ticket', scope, '')).status, 403)
+  assert.equal((await f.call('/ticket', { ...scope, credential: 'f'.repeat(64) }, anon)).status, 403)
+  assert.equal((await f.claim(s, anon)).status, 403)
+  assert.equal((await f.call('/ticket', { ...scope, ref: other.ref }, anon)).status, 403)
+  // An account-owned session is never reachable by the anonymous sentinel.
+  const owned = await f.create(), oc = await f.claim(owned, 'user-1')
+  assert.equal((await f.call('/ticket', { ref: owned.ref, role: 'controller', credential: oc.controllerCredential }, anon)).status, 403)
+  // Anonymous claim budget is per client, so one flooding client cannot lock out another.
+  const flood = await fixture(), target = await flood.create()
+  for (let i = 0; i < 3; i++) {
+    const decoy = await flood.create(), bad = decoy.pin === '111111' ? '222222' : '111111'
+    for (let j = 0; j < 4; j++) await flood.call('/claim', { ref: decoy.ref, pin: bad }, anon, await digest('flooder'))
+  }
+  assert.equal((await flood.call('/claim', { ref: target.ref, pin: target.pin }, anon, await digest('flooder'))).status, 429)
+  assert.equal((await flood.call('/claim', { ref: target.ref, pin: target.pin }, anon, await digest('friend'))).status, 200)
 })

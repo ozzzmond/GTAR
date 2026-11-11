@@ -287,7 +287,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
 
   const terminal = ['IDLE', 'ENDED', 'ERROR', 'REVOKED', 'EXPIRED', 'REPLACED'].includes(v.state) || (v.state === 'DISCONNECTED' && !!v.error.includes('exhausted'))
   const errorText: Record<string, string> = {
-    AUTH_REQUIRED: 'Sign in with an approved GTAR account, then try pairing again.',
+    AUTH_REQUIRED: 'Pairing authorization expired. Create a new pairing on the TV and try again.',
     DENIED: 'Pairing denied or expired. Create a new pairing on the TV and check its PIN.',
     DISABLED: 'TV pairing is unavailable on this site.',
     RATE_LIMITED: 'Too many attempts. Wait one minute, then create a new TV pairing.',
