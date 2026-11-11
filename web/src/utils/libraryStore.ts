@@ -182,8 +182,11 @@ export function libraryStorePersist(library: SyncLibrary, options: { expectedRaw
     ? { ...complete, tagColors: s.current.library.tagColors } : complete
   const plain = JSON.parse(JSON.stringify(withColors)) as SyncLibrary
   const sameContent = s.current.library !== null && deepEqual(s.current.library, plain)
-  if (!options.force && options.expectedRaw !== undefined && options.expectedRaw !== s.head && !sameContent) throw new LibraryStaleWriteError(s.head)
-  if (sameContent && s.current.token === s.head) return 'unchanged'
+  // Identical content is only a no-op while this tab's library is the head. Once another tab has
+  // committed a newer revision, the same content is this tab's older copy and must pass the gate.
+  const unchanged = sameContent && s.current.token === s.head
+  if (!options.force && options.expectedRaw !== undefined && options.expectedRaw !== s.head && !unchanged) throw new LibraryStaleWriteError(s.head)
+  if (unchanged) return 'unchanged'
   if (options.force) s.base = { token: null, any: true, full: true }
   else if (s.head !== s.current.token) {
     // Saving on top of another tab's announced revision this tab has not loaded: rewrite in full,
