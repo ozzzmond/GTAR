@@ -37,7 +37,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       users,
     })
   } catch (err) {
-    console.error('Failed to list users:', err)
+    console.error('Failed to list users:', err instanceof Error ? err.name : 'UnknownError')
     return errorResponse('Failed to list users', 500)
   }
 }

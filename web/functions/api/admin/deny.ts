@@ -65,7 +65,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     }
 
     const nowIso = new Date().toISOString()
-    await updateUserAccessStatus(env.DB!, userId, 'denied', nowIso)
+    // A write the database did not confirm must never be reported as applied.
+    if (!(await updateUserAccessStatus(env.DB!, userId, 'denied', nowIso))) {
+      return errorResponse('Failed to deny user', 500)
+    }
 
     return jsonResponse({
       success: true,

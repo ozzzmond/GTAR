@@ -57,6 +57,7 @@ Account access, sign-in, session lifecycle, and authentication UI.
 
 <!-- test-catalog:AUTH:start -->
 - [accountAccessFoundation.test.cjs](accountAccessFoundation.test.cjs)
+- [adminAccessStatusWriteFailure.test.cjs](adminAccessStatusWriteFailure.test.cjs)
 - [authBypassInteraction.test.cjs](authBypassInteraction.test.cjs)
 - [authGate.test.cjs](authGate.test.cjs)
 - [authLifecycle.test.cjs](authLifecycle.test.cjs)

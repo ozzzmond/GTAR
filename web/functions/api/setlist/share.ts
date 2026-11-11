@@ -273,7 +273,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
       expiresAt,
     });
   } catch (err: unknown) {
-    console.error('Failed to create shared setlist:', err);
+    console.error('Failed to create shared setlist:', err instanceof Error ? err.name : 'UnknownError');
     return jsonResponse({ error: 'FAILED_TO_CREATE_SHARE' }, 500);
   }
 };
@@ -345,7 +345,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
       token,
     });
   } catch (err: unknown) {
-    console.error('Failed to fetch shared setlist:', err);
+    console.error('Failed to fetch shared setlist:', err instanceof Error ? err.name : 'UnknownError');
     return jsonResponse({ error: 'FAILED_TO_FETCH_SHARE' }, 500);
   }
 };
@@ -438,7 +438,7 @@ export async function handleRevokeShare(request: Request, env: Env): Promise<Res
       token: row.share_token,
     });
   } catch (err: unknown) {
-    console.error('Failed to revoke shared setlist:', err);
+    console.error('Failed to revoke shared setlist:', err instanceof Error ? err.name : 'UnknownError');
     return jsonResponse({ error: 'FAILED_TO_REVOKE_SHARE' }, 500);
   }
 }
