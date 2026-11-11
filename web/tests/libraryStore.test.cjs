@@ -127,6 +127,29 @@ test('two tabs: a stale save never overwrites the other tab (announced, and miss
   assert.equal((await open(storage, factory)).tab.sj.readPersistedLibrary(storage).songs[0].title, 'From C')
 })
 
+// #453 D1: content equal to this tab's own (older) library is not an identical save once another
+// tab has committed a newer revision; it must be refused, not written over that revision.
+test('two tabs: an unchanged save from a tab that fell behind never overwrites the newer revision', async () => {
+  const { storage, factory } = device(10, 1)
+  const a = (await open(storage, factory)).tab
+  const b = (await open(storage, factory)).tab
+  const base = a.sj.libraryRevision(storage)
+  const lib = a.sj.readPersistedLibrary(storage)
+  b.sj.persistLibrary(titled(lib, 'From B'), storage, { expectedRaw: base })
+  await b.store.flushLibraryStore()
+  await h.settle(20) // BroadcastChannel delivery
+  assert.notEqual(a.sj.libraryRevision(storage), base, 'A learned the new head')
+  assert.throws(() => a.sj.persistLibrary(lib, storage, { expectedRaw: base }), err => a.sj.isStaleWriteConflictError(err))
+  await a.store.flushLibraryStore()
+  assert.equal((await open(storage, factory)).tab.sj.readPersistedLibrary(storage).songs[0].title, 'From B')
+
+  // An unchanged save while this tab is still at the head stays a no-op, also with an older expected revision.
+  const c = (await open(storage, factory)).tab
+  const head = c.sj.libraryRevision(storage)
+  c.sj.persistLibrary(c.sj.readPersistedLibrary(storage), storage, { expectedRaw: base })
+  assert.equal(c.sj.libraryRevision(storage), head)
+})
+
 test('reload keeps edits; quota error keeps the previous library and retries later', async () => {
   const { storage, factory } = device(10, 1)
   const { tab } = await open(storage, factory)
