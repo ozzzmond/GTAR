@@ -30,8 +30,6 @@ const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 
 const {
   insertUser,
-  findUserSongbook,
-  upsertUserSongbook,
   createSessionToken,
 } = require('../functions/lib/authCore.ts')
 

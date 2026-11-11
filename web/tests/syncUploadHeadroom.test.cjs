@@ -12,7 +12,6 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 const { makeLibrary } = require('./helpers/syntheticSongbook.cjs')
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
 const { createSessionToken } = require('../functions/lib/authCore.ts')
-const { writeCloudBackup } = require('../src/utils/manualCloudBackup.ts')
 const api = require('../functions/api/songbook/sync.ts')
 const sync = require('../src/utils/cloudBackupFormat.ts')
 

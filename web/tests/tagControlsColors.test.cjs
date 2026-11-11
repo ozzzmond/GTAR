@@ -152,29 +152,6 @@ test('App saves bulk tags, colors, rename and removal without changing other son
  for(let i=0;i<lib.songs.length;i++){const {tags:_old,...old}=lib.songs[i],{tags:_new,...newSong}=saved.songs[i];assert.deepEqual(newSong,old)}
  }finally{await act(async()=>root.unmount());host.remove();global.fetch=originalFetch}
 })
-test('offline cloud upload/read and replace/merge restore round trip colors; legacy checksum stays compatible',async()=>{
- const storage=h.freshStorage(),sj=require('../src/utils/syncJournal.ts'),cloud=require('../src/utils/manualCloudBackup.ts'),fmt=require('../src/utils/cloudBackupFormat.ts'),ex=require('../src/utils/backupExport.ts'),jb=require('../src/utils/jsonBackup.ts')
- const lib={...h.library(2,1),tagColors:{rock:'#abcdef'}};lib.songs=lib.songs.map(jb.normalizeBackupSong)
- const {tagColors:_colors,...legacy}=lib
- assert.equal(fmt.computeSongbookChecksum(lib),fmt.computeSongbookChecksum(legacy))
- const originalFetch=global.fetch;let record
- global.fetch=async(_url,options)=>{
- if(options.method==='POST'){const payload=JSON.parse(options.body);record={data:payload.data,checksum:payload.clientChecksum,version:1,updatedAt:'2026-11-03'};return{ok:true,json:async()=>({success:true})}}
- return{ok:true,json:async()=>({success:true,cloudRecord:record})}
- }
- try{
- const saved=await cloud.writeCloudBackup({token:'test',userId:'test'},lib,null)
- assert.deepEqual(saved.data.tagColors,lib.tagColors)
- for(const mode of ['replace','merge']){
- const before={...h.library(3,0),tagColors:{jazz:'#000000'}};sj.persistLibrary(before,storage)
- await cloud.restoreCloudBackup(before,saved.data,mode,incoming=>sj.persistLibrary(ex.expectedRestoredLibrary(before,incoming,mode),storage),storage)
- assert.deepEqual(sj.readPersistedLibrary(storage).tagColors,mode==='replace'?{rock:'#abcdef'}:{jazz:'#000000',rock:'#abcdef'})
- }
- // A server dropping colors must not be reported as a verified upload.
- global.fetch=async(_url,options)=>options.method==='POST'?{ok:true,json:async()=>({success:true})}:{ok:true,json:async()=>({success:true,cloudRecord:{...record,data:legacy}})}
- await assert.rejects(()=>cloud.writeCloudBackup({token:'test',userId:'test'},lib,null),/verification failed/)
- }finally{global.fetch=originalFetch}
-})
 test('canonical tag names matching object properties remain valid color keys',()=>{
  const t=require('../src/utils/songTags.ts'),colors=JSON.parse('{"__proto__":"#abcdef","constructor":"#123456"}')
  assert.equal(t.validTagColors(colors),true)

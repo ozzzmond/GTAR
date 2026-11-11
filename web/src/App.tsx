@@ -1706,21 +1706,6 @@ function LibraryApp() {
           folders={folders}
           onCloudRestore={handleFullRestore}
           onCloudMerge={handleSmartMerge}
-          onCloudSyncApplied={(updated) => {
-            // #208 F6: adopt what is stored now, not the sync's copy: a save from another surface may have
-            // landed after the sync wrote, and the stored library already contains both.
-            const stored = readPersistedLibrary() ?? updated
-            persistedBaselineRef.current = libraryRevision()
-            setCrossTabConflict(null)
-            const partition = partitionSongs(stored.songs)
-            setSongs(partition.active)
-            setDeletedSongs(partition.deleted)
-            setSetlists(stored.setlists)
-            setTagColors(stored.tagColors)
-            setFolders(stored.folders ?? [])
-            setToastMessage('Songbook synced with Cloud')
-            setTimeout(() => setToastMessage(null), 3500)
-          }}
         />
       )}
 

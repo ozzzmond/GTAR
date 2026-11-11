@@ -61,7 +61,6 @@ import { resolveThemePalette } from './ThemeModal'
 import devMascot from '../assets/bebegirl1-transparent.png'
 import prodMascot from '../assets/bebeboy-transparent.png'
 import { isDevEnv } from '../utils/env'
-import type { SyncLibrary } from '../utils/syncMerge'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -136,7 +135,6 @@ interface HeaderProps {
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
   onCloudRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   onCloudMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
-  onCloudSyncApplied?: (updatedLibrary: SyncLibrary) => void
   /** RFC #188 S6: pause automatic sync (editor open, cross-tab conflict). */
   autoSyncBlocked?: boolean
   onOpenCast?: () => void
@@ -176,7 +174,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSetlistSong,
   onSelectSetlist,
   onDirectImportOnlineSong,
-  onCloudSyncApplied,
   onCloudRestore,
   onCloudMerge,
   autoSyncBlocked = false,
@@ -897,7 +894,6 @@ export const Header: React.FC<HeaderProps> = ({
         folders={folders}
         isOpen={showBackupRestoreModal}
         onClose={() => setShowBackupRestoreModal(false)}
-        onSyncApplied={onCloudSyncApplied}
         restoreBlocked={autoSyncBlocked}
         deviceSongs={backupSongs}
         deviceSetlists={backupSongs ? setlists : undefined}

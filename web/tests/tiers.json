@@ -11,10 +11,6 @@
       "tier": "scale"
     },
     {
-      "file": "cloudSyncConcurrency.test.cjs",
-      "tier": "workerd"
-    },
-    {
       "file": "devVersionAndReleaseIdentity.test.cjs",
       "tier": "release"
     },

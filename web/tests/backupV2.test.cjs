@@ -83,33 +83,6 @@ const EXCLUDED = {
   gtar_backup_status_v1: '{"SECRET":"status"}', gtar_backup_reminder_v1: '{"SECRET":"reminder"}', gtar_pending_share_token: 'SECRET-share',
 }
 
-test('#356 cloud round trip restores every local JSON v2 setting key and excludes device/session state', async () => {
-  const { captureCloudBackup, writeCloudBackup, restoreCloudBackup } = require('../src/utils/manualCloudBackup.ts')
-  const { storage: source, raw } = fullSettingsStorage()
-  for (const [key, value] of Object.entries(EXCLUDED)) source.setItem(key, value)
-  const data = captureCloudBackup({ songs: [], setlists: [] }, source)
-  assert.doesNotMatch(JSON.stringify(data), /SECRET/)
-  let saved
-  const previousFetch = global.fetch
-  try {
-    global.fetch = async (_url, options) => {
-      if (options.method === 'POST') {
-        const body = JSON.parse(options.body)
-        saved = { userId: 'A', version: 1, checksum: body.clientChecksum, data: body.data }
-      }
-      return new Response(JSON.stringify({ success: true, cloudRecord: saved }))
-    }
-    const verified = await writeCloudBackup({ token: 't', userId: 'A' }, data, null)
-    const target = new MemoryStorage()
-    persistLibrary({ songs: [], setlists: [] }, target)
-    await restoreCloudBackup(readPersistedLibrary(target), verified.data, 'replace', lib => persistLibrary(lib, target), target)
-    for (const [key, value] of Object.entries(raw)) assert.equal(target.getItem(key), key === bs.SETTINGS_KEYS.themeMode ? null : value, key)
-    for (const key of Object.keys(EXCLUDED)) assert.equal(target.getItem(key), null, key)
-    const expected = bs.readBackupSettingsV2(source); delete expected.appearance.themeMode
-    assert.deepEqual(bs.readBackupSettingsV2(target), expected)
-  } finally { global.fetch = previousFetch }
-})
-
 test('the backup keys are exactly the documented appearance + preference keys', async () => {
   assert.deepEqual(new Set(bs.backupSettingsStorageKeys()), new Set([...APPEARANCE_KEYS, ...PREFERENCE_KEYS]))
   const { raw } = fullSettingsStorage()
