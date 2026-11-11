@@ -1,3 +1,4 @@
+// GH-432: post-rename Cloudflare Pages webhook probe (comment only; no runtime effect).
 import { StrictMode, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
