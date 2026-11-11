@@ -182,7 +182,7 @@ outputs first. Existing tags are never overwritten, moved or deleted.
 Package version and GTAR_DEV_VERSION remain tested DEV source stamps. Pages main
 requires its full CF_PAGES_COMMIT_SHA to equal HEAD, one exact clean DEV tag,
 consistent committed metadata, and its computed PROD tag at the same commit.
-The helper fetches tags directly from https://github.com/ozzzmond/GTAR-Dev.git and
+The helper fetches tags directly from https://github.com/ozzzmond/GTAR.git and
 checks selected tag objects against canonical remote refs. Checkout origin may
 be a Cloudflare mirror; it is neither consulted nor changed. Fetch never forces,
 deletes, or moves tags. Missing authority/network/history, moved or local-only
@@ -211,7 +211,7 @@ A historical GitHub check observed on DEV.10 was emitted by app
 
 The stronger implemented signal is the authenticated Cloudflare Pages read API.
 Preflight and post-approval require project `gtar-web`, GitHub source
-`ozzzmond/GTAR-Dev`, production branch `main`, and production Git builds enabled.
+`ozzzmond/GTAR`, production branch `main`, and production Git builds enabled.
 Verification polls the current canonical deployment (up to 40 reads, 15 seconds
 apart), then reads that deployment by ID. Required fields: matching project ID
 and name; explicit `environment=production`; GitHub source; `github:push` trigger;
@@ -235,51 +235,61 @@ Promotion followed by insufficient/failed verification reports
 `PROD_PROMOTED_BUT_UNVERIFIED` and fails the workflow. Preserve actual refs and
 investigate deployment/identity evidence. Never auto-rollback main or tags.
 
-### Owner-only repository rename installation (#432)
+### Owner-only restoration of the original repository identity (#432)
 
-This patch targets `ozzzmond/GTAR-Dev`; the repository is still named
-`ozzzmond/GTAR` until the owner separately approves and performs the rename.
-Both the Pages connection and deployment proof require the exact new repository
-name. Old-name metadata fails closed; there is no dual-name transition fallback.
-Before rename, unavailable canonical GitHub authority also blocks production
-builds. A DEV preview may report unverified tag identity during this interval.
+The owner cancelled the GTAR-Dev rename. The required final identity is
+`ozzzmond/GTAR`; both Pages source checks and canonical tag authority require
+that exact identity. Preserve the historical installation/reconciliation commits
+from PRs #458, #459 and #460. Restore identity through forward commits only;
+retain the additional negative identity and installation-ancestry tests.
 
-Keep merges, checkpoint tagging and promotions on hold during installation and
-rename. Review this draft PR against `dev`; do not use a normal production
-promotion to install it. Each live action below needs separate owner approval:
+Prepare separate draft PRs from freshly verified DEV and main. DEV changes only
+the two identity helpers, their related fixtures and these instructions. Main
+changes only `.github/release_identity.cjs` and `.github/prod_controller.cjs`;
+its entire existing web tree, workflows, release metadata and tags must remain
+unchanged. Never pull unreleased DEV application changes into the main repair.
 
-1. Prepare installation B parented by the freshly verified current `main`.
-   Copy only the reviewed `.github/release_identity.cjs` and
-   `.github/prod_controller.cjs` from the accepted patch. Preserve the entire
-   main `web/` tree, workflow files, migrations, bindings and historical tags.
-   Record B's exact diff/SHA and verify the production build guard fails closed
-   without canonical authority and without an exact clean DEV/PROD tag pair.
-   Do not tag B, disable protections, set identity overrides or rely on skip-ci.
-   Stop before pushing if the no-deployment property is not established.
-2. Owner installs B on `main` with an explicitly approved non-force update.
-   A scheduled Pages build must fail before deployment; confirm the existing
-   canonical production deployment ID/SHA remains unchanged.
-3. Reconcile that exact B into the patched `dev` through a separate draft PR,
-   preserving B ancestry with a merge commit (no squash/rebase of B). Verify B
-   is an ancestor of accepted C and that `release_identity.cjs` and the unchanged
-   `release_metadata.cjs` are byte-equal on main B and C. Revalidate final C;
-   helper mismatch or ancestry loss blocks subsequent promotion.
-4. Owner separately renames only this repository and verifies Cloudflare's Git
-   source reports `ozzzmond/GTAR-Dev`. Preserve project `gtar-web`, production
-   branch `main`, build settings, domains and database bindings. Check GitHub
-   rulesets, protected environment, credential repository access, App access
-   and deploy hooks; update legacy clone remotes. Do not touch GTAR1.
-5. Verify DEV preview/Actions and unchanged production deployment ID/SHA. Resume
-   promotion only after all prerequisites pass; use the reviewed main controller's
-   dry run with a separately accepted canonical checkpoint before any real release.
-   Historical deployments can retain old-name source metadata; they are not fresh
-   post-rename deployment proof. Do not deploy production just to test the rename.
+Keep promotions and checkpoint tagging paused. Owner-controlled sequence:
 
-If rename or integration repair fails, stop promotions and inspect actual refs
-and settings before retrying. Owner may rename back if the old name is available;
-coordinate any controller repair through review and the same fail-closed main
-installation/DEV reconciliation procedure. Never move tags or automatically
-roll back production. Do not reuse the old repository name for another project.
+1. Review both drafts and complete DEV preview QA and required checks. Confirm
+   the old GTAR URL redirects to this same repository ID rather than a different
+   repository. GitHub's rename form must still accept the target name at action
+   time; a redirect alone does not guarantee final name availability.
+2. Owner separately authorizes and performs the repository rename: repository
+   Settings > General > Repository name > GTAR > Rename. Do not change ownership,
+   GitHub App installation, project gtar-web, source settings, domains or bindings.
+   Update each clone with:
+   `git remote set-url origin https://github.com/ozzzmond/GTAR.git`
+3. Owner integrates the accepted DEV restoration using Create a merge commit.
+   This DEV push is the minimal automatic-webhook test: require a fresh preview
+   for its exact SHA and Git push trigger. Confirm the existing Pages connection
+   and deployment source report ozzzmond/GTAR and the DEV D1 binding is unchanged.
+   A manual redeploy does not establish webhook delivery.
+4. Stop before merging the main draft. With current production auto-deploy
+   enabled, any main merge starts the production build pipeline. An untagged
+   repair commit should be rejected by the clean DEV/atomic PROD tag guards,
+   but an expected failed build is not an approved safety mechanism. Rename
+   first avoids depending on canonical URL redirects; it does not remove the
+   production trigger. Obtain separate explicit owner approval of the production
+   impact and a reviewed installation plan before any main merge. Do not change
+   Cloudflare configuration, create a tag, use skip-ci or override identity to
+   bypass this checkpoint. If publication prevention cannot be accepted within
+   those constraints, leave the main draft unmerged and promotions on hold.
+5. If the owner later authorizes main installation, use Create a merge commit,
+   record the exact installed SHA, and reconcile it into restored DEV through a
+   separate ancestry-preserving merge. Verify main is an ancestor of accepted
+   DEV and all three release helpers are byte-equal before release acceptance.
+   Do not squash/rebase away installed ancestry. Verify the existing production
+   version 1.2.0, SHA 3cfe5b7a912e4982fc72ce96dd656ebcd787862b and deployment
+   ID remain unchanged; do not deploy production merely to test restoration.
+
+After rename, verify the restored canonical URL resolves to the same repository
+ID and unchanged historical tags. Check exact GTAR source contracts and canonical
+release identity using read-only checks; no new tags or production build are
+needed. Do not close #432 until rename, DEV webhook/preview, main installation,
+helper ancestry/equality and unchanged production have all been owner-verified.
+If the main checkpoint remains blocked, record that status and leave #432 open.
+Do not touch GTAR1, PROD D1, deployments, or unrelated application behavior.
 
 ### Current checkpoint and promotion procedure
 
