@@ -2,6 +2,7 @@
 // Owner-run sanitized snapshot export from GTAR PROD to GTAR1 (#445).
 // Dry run by default. Never pushes, tags or deploys; it only writes into an empty --out directory.
 const fs = require('node:fs')
+const crypto = require('node:crypto')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 
@@ -117,6 +118,21 @@ function demoSeedModule(dir = DEMO_SEED_DIR) {
     `export const GTAR1_DEMO_SETLISTS: WebSetlist[] = ${JSON.stringify(setlists, null, 2)}\n`
 }
 
+// Demo reset (#417): runs before the app opens its library, only in the demo build.
+const MAIN_APP_IMPORT = "const App = lazy(() => import('./App.tsx'))"
+const MAIN_APP_GATED = "import { gtar1DemoReady } from './data/gtar1DemoReset'\nconst App = lazy(async () => { await gtar1DemoReady; return import('./App.tsx') })"
+
+function demoResetModule(dir = DEMO_SEED_DIR) {
+  const hash = crypto.createHash('sha256')
+  for (const f of ['songs.json', 'setlists.json']) hash.update(fs.readFileSync(path.join(dir, f)))
+  return fs.readFileSync(path.join(dir, 'gtar1DemoReset.ts.txt'), 'utf8').replace('__SEED_VERSION__', hash.digest('hex').slice(0, 12))
+}
+
+function patchMainDemoReset(source) {
+  once('main.tsx', source, MAIN_APP_IMPORT)
+  return source.replace(MAIN_APP_IMPORT, MAIN_APP_GATED)
+}
+
 function patchDefaultLibrary(source) {
   once('defaultLibrary.ts', source, DEMO_SONGS_DECL)
   once('defaultLibrary.ts', source, DEMO_SETLISTS_DECL)
@@ -227,6 +243,8 @@ function writeSnapshot(repo, out, result, ids) {
   if (!result.included.includes('web/src/data/defaultLibrary.ts')) throw new Error('web/src/data/defaultLibrary.ts missing from export set')
   patch('web/src/data/defaultLibrary.ts', patchDefaultLibrary)
   fs.writeFileSync(path.join(out, 'web/src/data/gtar1DemoSeed.ts'), demoSeedModule())
+  fs.writeFileSync(path.join(out, 'web/src/data/gtar1DemoReset.ts'), demoResetModule())
+  patch('web/src/main.tsx', patchMainDemoReset)
   for (const f of [...new Set(BRANDING.map(r => r.file))].filter(f => f !== 'web/vite.config.ts')) {
     if (!result.included.includes(f)) throw new Error(`${f} missing from export set`)
     patch(f, t => patchBranding(f, f === 'web/src/components/AboutModal.tsx' ? patchAboutModal(t) : t))
@@ -257,4 +275,4 @@ if (require.main === module) {
   try { main(process.argv.slice(2)) } catch (e) { console.error('EXPORT FAILED: ' + e.message); process.exit(1) }
 }
 
-module.exports = { mapSourceTag, isExcluded, patchViteConfig, patchPackageVersion, patchWrangler, patchAboutModal, patchBranding, BRANDING, patchDefaultLibrary, patchViteDemoFlag, demoSeedModule, DEMO_SEED_DIR, ICONS, ICON_DIR, scanForSecrets, annotation, plan, writeSnapshot, VITE_IMPORT }
+module.exports = { mapSourceTag, isExcluded, patchViteConfig, patchPackageVersion, patchWrangler, patchAboutModal, patchBranding, BRANDING, patchDefaultLibrary, patchViteDemoFlag, demoSeedModule, demoResetModule, patchMainDemoReset, DEMO_SEED_DIR, ICONS, ICON_DIR, scanForSecrets, annotation, plan, writeSnapshot, VITE_IMPORT }
