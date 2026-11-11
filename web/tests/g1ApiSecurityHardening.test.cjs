@@ -15,9 +15,6 @@ for (const ext of ['.ts', '.tsx']) {
 
 const authCore = require('../functions/lib/authCore.ts')
 const sessionApi = require('../functions/api/auth/session.ts')
-const approveApi = require('../functions/api/admin/approve.ts')
-const denyApi = require('../functions/api/admin/deny.ts')
-const restoreApi = require('../functions/api/admin/restore.ts')
 const syncApi = require('../functions/api/songbook/sync.ts')
 const metadataApi = require('../functions/api/songbook/metadata.ts')
 
@@ -115,23 +112,16 @@ test('S1_JSON_STRUCTURE_VALIDATION: Rejection of null, arrays, primitives, and m
     { label: 'empty_string', body: '   ' },
   ]
 
-  // Test admin endpoints
-  for (const endpoint of [approveApi, denyApi, restoreApi]) {
-    for (const { label, body } of nonObjectPayloads) {
-      const req = new Request('https://gtar.local/api/admin/action', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body,
-      })
-      const res = await endpoint.onRequestPost({ request: req, env })
-      assert.equal(res.status, 400, `Expected 400 for ${label} on admin endpoint`)
-      const json = await res.json()
-      assert.equal(json.success, false)
-      assert.match(json.error, /Malformed JSON|invalid/i)
-    }
+  // Admin-sized bounded reader (shared helper; the admin HTTP endpoints were retired in #453)
+  for (const { label, body } of nonObjectPayloads) {
+    const req = new Request('https://gtar.local/api/admin/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body,
+    })
+    const res = await authCore.readBoundedJson(req, authCore.MAX_ADMIN_PAYLOAD_BYTES, { requireObject: true })
+    assert.equal(res.status, 400, `Expected 400 for ${label} on admin-sized reader`)
+    assert.ok(res.error)
   }
 
   // Test session endpoint
@@ -220,35 +210,6 @@ test('S1_FIELD_TYPE_VALIDATION: Rejection of invalid field types for sensitive a
     assert.match(json.error, /Missing required Google identity token/i)
   }
 
-  // 2. Admin: invalid userId types
-  const badAdminBodies = [
-    { userId: 123 },
-    { userId: true },
-    { userId: {} },
-    { userId: [] },
-    { userId: null },
-    { userId: '' },
-    { userId: '   ' },
-    {},
-  ]
-  for (const endpoint of [approveApi, denyApi, restoreApi]) {
-    for (const body of badAdminBodies) {
-      const req = new Request('https://gtar.local/api/admin/action', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify(body),
-      })
-      const res = await endpoint.onRequestPost({ request: req, env })
-      assert.equal(res.status, 400)
-      const json = await res.json()
-      assert.equal(json.success, false)
-      assert.match(json.error, /Missing required userId parameter/i)
-    }
-  }
-
   // 3. Metadata: invalid title and field types
   const badMetadataBodies = [
     { title: 123 },
@@ -313,11 +274,11 @@ test('S1_PAYLOAD_SIZE_BOUNDARIES: Exact limit, 1-byte overflow, missing/invalid 
   const resStreamedSessionOver = await sessionApi.onRequestPost({ request: streamedSessionOver, env })
   assert.equal(resStreamedSessionOver.status, 413)
 
-  // 2. Admin: limit 16KB
-  assert.equal(approveApi.MAX_ADMIN_PAYLOAD_BYTES, 16 * 1024)
+  // 2. Admin-sized bounded reader: limit 16KB
+  assert.equal(authCore.MAX_ADMIN_PAYLOAD_BYTES, 16 * 1024)
   const adminLimit = 16 * 1024
   // 1-byte overflow via Content-Length
-  const reqAdminOverCL = new Request('https://gtar.local/api/admin/approve', {
+  const reqAdminOverCL = new Request('https://gtar.local/api/admin/action', {
     method: 'POST',
     headers: {
       'Content-Length': String(adminLimit + 1),
@@ -326,18 +287,16 @@ test('S1_PAYLOAD_SIZE_BOUNDARIES: Exact limit, 1-byte overflow, missing/invalid 
     },
     body: JSON.stringify({ userId: 'user-1' }),
   })
-  const resAdminOverCL = await approveApi.onRequestPost({ request: reqAdminOverCL, env })
-  assert.equal(resAdminOverCL.status, 413)
+  assert.equal((await authCore.readBoundedJson(reqAdminOverCL, adminLimit, { requireObject: true })).status, 413)
 
   // Streamed overflow with non-numeric Content-Length header
   const adminPadOver = 'y'.repeat(adminLimit)
   const streamedAdminOver = createStreamRequest(
-    'https://gtar.local/api/admin/approve',
+    'https://gtar.local/api/admin/action',
     ['{"userId":"', adminPadOver, '"}'],
     { 'Content-Length': 'not-a-number', Authorization: `Bearer ${adminToken}` }
   )
-  const resStreamedAdminOver = await approveApi.onRequestPost({ request: streamedAdminOver, env })
-  assert.equal(resStreamedAdminOver.status, 413)
+  assert.equal((await authCore.readBoundedJson(streamedAdminOver, adminLimit, { requireObject: true })).status, 413)
 
   // 3. Metadata: limit 64KB
   assert.equal(metadataApi.MAX_METADATA_PAYLOAD_BYTES, 64 * 1024)
@@ -460,81 +419,29 @@ test('S4_CANARY_SANITIZATION: Server exceptions never expose internal diagnostic
   assert.ok(!metaStr.includes('CANARY'))
   assert.ok(!metaStr.includes('sk-999'))
   assert.ok(!metaStr.includes('/app/worker.ts'))
-
-  // 4. Admin approve/deny/restore unexpected DB exception sanitization
-  for (const endpoint of [approveApi, denyApi, restoreApi]) {
-    const failingDbAdmin = createMockDb([activeUser], new Map(), {
-      shouldThrow: true,
-      throwWhenArg: 'other-user',
-      throwMessage: CANARY_SQL_ERR,
-    })
-    const adminReq = new Request('https://gtar.local/api/admin/action', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ userId: 'other-user' }),
-    })
-    const adminRes = await endpoint.onRequestPost({ request: adminReq, env: { DB: failingDbAdmin, AUTH_SECRET: TEST_SECRET } })
-    assert.equal(adminRes.status, 500)
-    const adminJson = await adminRes.json()
-    assert.equal(adminJson.success, false)
-    assert.ok(!JSON.stringify(adminJson).includes('secret_token'))
-  }
 })
 
-test('AUTH_AND_PERMISSIONS: Administrative authorization and self-denial guards intact', async () => {
+test('AUTH_AND_PERMISSIONS: Administrative authorization gate intact', async () => {
   const admin = { id: 'admin-auth', google_sub: 'sub-admin-auth', email: 'admin@gtar.app', role: 'admin', access_status: 'active' }
   const member = { id: 'member-auth', google_sub: 'sub-member-auth', email: 'member@gtar.app', role: 'member', access_status: 'active' }
   const pending = { id: 'pending-auth', google_sub: 'sub-pending-auth', email: 'pending@gtar.app', role: 'member', access_status: 'pending' }
-  const target = { id: 'target-user', google_sub: 'sub-target', email: 'target@gtar.app', role: 'member', access_status: 'pending' }
 
-  const db = createMockDb([admin, member, pending, target])
+  const db = createMockDb([admin, member, pending])
   const env = { DB: db, AUTH_SECRET: TEST_SECRET }
-
-  const adminToken = await authCore.createSessionToken(admin, TEST_SECRET)
-  const memberToken = await authCore.createSessionToken(member, TEST_SECRET)
-  const pendingToken = await authCore.createSessionToken(pending, TEST_SECRET)
+  const gate = token => authCore.authenticateAdminRequest(new Request('https://gtar.local/api/admin/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ userId: 'target-user' }),
+  }), env)
 
   // 1. Missing Authorization header -> 401
-  const noAuthReq = new Request('https://gtar.local/api/admin/approve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: target.id }),
-  })
-  const noAuthRes = await approveApi.onRequestPost({ request: noAuthReq, env })
-  assert.equal(noAuthRes.status, 401)
-
+  assert.equal((await gate(null)).status, 401)
   // 2. Member caller -> 403 Forbidden
-  const memberReq = new Request('https://gtar.local/api/admin/approve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${memberToken}` },
-    body: JSON.stringify({ userId: target.id }),
-  })
-  const memberRes = await approveApi.onRequestPost({ request: memberReq, env })
-  assert.equal(memberRes.status, 403)
-
+  assert.equal((await gate(await authCore.createSessionToken(member, TEST_SECRET))).status, 403)
   // 3. Pending caller -> 403 Forbidden
-  const pendingReq = new Request('https://gtar.local/api/admin/approve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pendingToken}` },
-    body: JSON.stringify({ userId: target.id }),
-  })
-  const pendingRes = await approveApi.onRequestPost({ request: pendingReq, env })
-  assert.equal(pendingRes.status, 403)
-
-  // 4. Admin self-denial forbidden -> 400
-  const selfDenyReq = new Request('https://gtar.local/api/admin/deny', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-    body: JSON.stringify({ userId: admin.id }),
-  })
-  const selfDenyRes = await denyApi.onRequestPost({ request: selfDenyReq, env })
-  assert.equal(selfDenyRes.status, 400)
-  const selfDenyJson = await selfDenyRes.json()
-  assert.equal(selfDenyJson.success, false)
-  assert.match(selfDenyJson.error, /Self-denial forbidden/i)
+  assert.equal((await gate(await authCore.createSessionToken(pending, TEST_SECRET))).status, 403)
+  // 4. Active admin -> authorized against the D1 record
+  assert.equal((await gate(await authCore.createSessionToken(admin, TEST_SECRET))).user?.id, admin.id)
 })
 
 test('CONFLICTS_AND_VALID_REQUESTS: Optimistic concurrency and valid client flows remain intact', async () => {
@@ -556,43 +463,7 @@ test('CONFLICTS_AND_VALID_REQUESTS: Optimistic concurrency and valid client flow
   const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
   const token = await authCore.createSessionToken(activeUser, TEST_SECRET)
 
-  // 1. Valid Admin approve
-  const approveReq = new Request('https://gtar.local/api/admin/approve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ userId: targetUser.id }),
-  })
-  const approveRes = await approveApi.onRequestPost({ request: approveReq, env })
-  assert.equal(approveRes.status, 200)
-  const approveJson = await approveRes.json()
-  assert.equal(approveJson.success, true)
-  assert.equal(approveJson.access_status, 'active')
-
-  // 2. Valid Admin deny
-  const denyReq = new Request('https://gtar.local/api/admin/deny', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ userId: targetUser.id }),
-  })
-  const denyRes = await denyApi.onRequestPost({ request: denyReq, env })
-  assert.equal(denyRes.status, 200)
-  const denyJson = await denyRes.json()
-  assert.equal(denyJson.success, true)
-  assert.equal(denyJson.access_status, 'denied')
-
-  // 3. Valid Admin restore
-  const restoreReq = new Request('https://gtar.local/api/admin/restore', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ userId: targetUser.id }),
-  })
-  const restoreRes = await restoreApi.onRequestPost({ request: restoreReq, env })
-  assert.equal(restoreRes.status, 200)
-  const restoreJson = await restoreRes.json()
-  assert.equal(restoreJson.success, true)
-  assert.equal(restoreJson.access_status, 'active')
-
-  // 4. Revision conflict in Songbook Sync -> 409
+  // Revision conflict in Songbook Sync -> 409
   const conflictReq = new Request('https://gtar.local/api/songbook/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': activeUser.id },

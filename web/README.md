@@ -47,7 +47,9 @@ from frontend Vite variables:
   automatic local or deployed key. Never use a `VITE_` variable for this secret.
 - `BOOTSTRAP_ADMIN_GOOGLE_SUB` or `BOOTSTRAP_ADMIN_EMAIL`: explicitly identify the
   intended first administrator on the server. First-login-wins is not supported.
-  Other registrations start pending and require administrator approval.
+  Other registrations start pending. The in-app Manage Users screen and the
+  `/api/admin/*` approval endpoints were retired (#453); the server-side admin
+  gate (`authenticateAdminRequest`) and account status handling remain.
 
 Wrangler supports a local `.dev.vars` file for bindings/secrets. `.dev.vars` and
 `.dev.vars.*` are repository-ignored by `web/.gitignore`. Real secret values must

@@ -251,7 +251,6 @@ New or renamed tests await a human choice of primary category.
 - [libraryStore.test.cjs](libraryStore.test.cjs)
 - [libraryStoreScale.test.cjs](libraryStoreScale.test.cjs)
 - [loggerCapture.test.cjs](loggerCapture.test.cjs)
-- [manageUsersLayout.test.cjs](manageUsersLayout.test.cjs)
 - [manualCloudBackup.test.cjs](manualCloudBackup.test.cjs)
 - [manualCloudBackupApi.test.cjs](manualCloudBackupApi.test.cjs)
 - [manualCloudBackupUi.test.cjs](manualCloudBackupUi.test.cjs)
@@ -297,5 +296,4 @@ New or renamed tests await a human choice of primary category.
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
 - [uiUxPolish403.test.cjs](uiUxPolish403.test.cjs)
 - [uiUxPolish436.test.cjs](uiUxPolish436.test.cjs)
-- [userManagementRootProtection.test.cjs](userManagementRootProtection.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->
