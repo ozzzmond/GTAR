@@ -37,7 +37,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       count,
     })
   } catch (err) {
-    console.error('Failed to get pending count:', err instanceof Error ? err.name : 'UnknownError')
+    console.error('Failed to get pending count:', err)
     return errorResponse('Failed to get pending count', 500)
   }
 }

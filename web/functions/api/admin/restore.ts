@@ -61,10 +61,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     }
 
     const nowIso = new Date().toISOString()
-    // A write the database did not confirm must never be reported as applied.
-    if (!(await updateUserAccessStatus(env.DB!, userId, 'active', nowIso))) {
-      return errorResponse('Failed to restore user', 500)
-    }
+    await updateUserAccessStatus(env.DB!, userId, 'active', nowIso)
 
     return jsonResponse({
       success: true,
