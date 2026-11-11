@@ -8,7 +8,7 @@ const { execFileSync, spawnSync } = require('node:child_process')
 const root = path.resolve(__dirname, '../..')
 const C = require('../../.github/prod_controller.cjs')
 const { parseDevTag, inspectCheckpoint } = require('../../.github/release_metadata.cjs')
-const { resolveReleaseIdentity } = require('../../.github/release_identity.cjs')
+const { resolveReleaseIdentity, CANONICAL_REPOSITORY } = require('../../.github/release_identity.cjs')
 const yaml = readSource(path.join(root, '.github/workflows/release.yml'))
 function fixture(t, tag = 'v1.0.108-dev.11') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-prod-'))
@@ -38,8 +38,8 @@ function fixture(t, tag = 'v1.0.108-dev.11') {
 }
 const protectedEnv = () => ({ name: 'gtar-production', can_admins_bypass: false, protection_rules: [{ type: 'required_reviewers', prevent_self_review: false, reviewers: [{ type: 'User', reviewer: { type: 'User', login: 'ozzzmond', id: 17817198 } }] }], deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } })
 const policies = { branch_policies: [{ name: 'main', type: 'branch' }] }
-const project = () => ({ id: 'project-id', name: 'gtar-web', production_branch: 'main', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR', production_branch: 'main', production_deployments_enabled: true } }, canonical_deployment: { id: 'deployment-id' } })
-const deployment = sha => ({ id: 'deployment-id', project_id: 'project-id', project_name: 'gtar-web', environment: 'production', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR' } }, deployment_trigger: { type: 'github:push', metadata: { branch: 'main', commit_hash: sha, commit_dirty: false } }, created_on: '2026-10-04T01:01:00Z', is_skipped: false, latest_stage: { name: 'deploy', status: 'success' } })
+const project = () => ({ id: 'project-id', name: 'gtar-web', production_branch: 'main', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR-Dev', production_branch: 'main', production_deployments_enabled: true } }, canonical_deployment: { id: 'deployment-id' } })
+const deployment = sha => ({ id: 'deployment-id', project_id: 'project-id', project_name: 'gtar-web', environment: 'production', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR-Dev' } }, deployment_trigger: { type: 'github:push', metadata: { branch: 'main', commit_hash: sha, commit_dirty: false } }, created_on: '2026-10-04T01:01:00Z', is_skipped: false, latest_stage: { name: 'deploy', status: 'success' } })
 test('shared parser retains version policy, safe arithmetic, suffix rejection', () => {
   assert.equal(parseDevTag('v1.0.108-dev.10').prodTag, 'v1.1.118')
   assert.equal(parseDevTag('v1.0.108-dev.10a').promotable, false)
@@ -126,6 +126,47 @@ test('Cloudflare proof rejects preview, generic success, old/short SHA, wrong pr
   const p = project(); p.canonical_deployment.id = 'other'; assert.throws(() => C.deploymentProof(p, deployment(sha), sha, after))
   const q = project(); q.source.config.production_deployments_enabled = false; assert.throws(() => C.projectContract(q))
 })
+test('rename requires exact GTAR-Dev identity at both Cloudflare gates', () => {
+  assert.equal(CANONICAL_REPOSITORY, 'https://github.com/ozzzmond/GTAR-Dev.git')
+  const sha = 'a'.repeat(40), after = '2026-10-04T01:00:00Z'
+  C.projectContract(project())
+  C.deploymentProof(project(), deployment(sha), sha, after)
+  for (const name of ['GTAR', 'GTAR1', 'gtar-dev', 'GTAR-Dev-other', '*', '']) {
+    const p = project(); p.source.config.repo_name = name
+    assert.throws(() => C.projectContract(p), /GTAR-Dev Git integration/)
+    const d = deployment(sha); d.source.config.repo_name = name
+    assert.throws(() => C.deploymentProof(project(), d, sha, after), /production deployment proof/)
+  }
+  const p = project(); p.source.config.owner = 'other'
+  assert.throws(() => C.projectContract(p))
+  const d = deployment(sha); d.source.config.owner = 'other'
+  assert.throws(() => C.deploymentProof(project(), d, sha, after))
+})
+
+test('untagged main installation and ancestry reconciliation cannot release production', t => {
+  const f = fixture(t)
+  f.git('checkout', 'main'); f.git('commit', '--allow-empty', '-m', 'owner controller installation')
+  const installed = f.git('rev-parse', 'HEAD'), webTree = f.git('rev-parse', `${f.mainSha}:web`)
+  assert.equal(f.git('rev-parse', `${installed}:web`), webTree)
+  assert.equal(f.git('tag', '--points-at', installed), '')
+  const adapter = (...args) => f.git(...args.map(a => a === CANONICAL_REPOSITORY ? 'origin' : a))
+  const before = f.git('ls-remote', '--refs', 'origin')
+  assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: installed }, adapter), /one exact clean DEV checkpoint tag/)
+  assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: installed }, (...args) => {
+    if (args[0] === 'fetch') throw new Error('GTAR-Dev canonical authority unavailable before rename')
+    return adapter(...args)
+  }), /canonical authority unavailable/)
+  assert.throws(() => C.plan(f.repo, f.tag, installed, 'refs/heads/main', installed), /Exact tag must equal expected_sha/)
+  f.git('checkout', 'dev'); f.git('merge', '--no-ff', '-s', 'ours', 'main', '-m', 'preserve installation ancestry')
+  const reconciled = f.git('rev-parse', 'HEAD')
+  f.git('merge-base', '--is-ancestor', installed, reconciled)
+  assert.equal(C.runtimeContract(f.repo, reconciled), true)
+  f.git('update-ref', 'refs/remotes/origin/main', installed)
+  f.git('update-ref', 'refs/remotes/origin/dev', reconciled)
+  assert.throws(() => C.plan(f.repo, f.tag, reconciled, 'refs/heads/main', installed), /Exact tag must equal expected_sha/)
+  assert.equal(f.git('ls-remote', '--refs', 'origin'), before)
+})
+
 test('atomic non-force promotion preserves exact source tree and never changes dev', t => {
   const f = fixture(t), p = f.plan(), tree = f.git('rev-parse', `${f.sha}^{tree}`)
   const result = C.promote(f.repo, p)
@@ -157,7 +198,7 @@ test('advertised main race rejects before mutation; unsupported atomic push fail
 })
 test('main build identity derives exact DEV and PROD tags without source rewrites', t => {
   const f = fixture(t), env = { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.sha }
-  const adapter = (...args) => f.git(...args.map(a => a === 'https://github.com/ozzzmond/GTAR.git' ? 'origin' : a))
+  const adapter = (...args) => f.git(...args.map(a => a === CANONICAL_REPOSITORY ? 'origin' : a))
   assert.equal(resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'dev' }), null)
   assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /release tag missing/)
   C.promote(f.repo, f.plan())
@@ -169,7 +210,7 @@ test('main build identity derives exact DEV and PROD tags without source rewrite
   f.git('tag', 'v1.0.108-dev.12'); assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /one exact clean/)
 })
 test('readiness needs no retired DEV rulesets; remaining external gates fail closed', async () => {
-  const e = { GITHUB_REPOSITORY: 'ozzzmond/GTAR', APPROVAL_READ_TOKEN: 'test', CF_ACCOUNT_ID: 'a'.repeat(32), CF_PAGES_READ_TOKEN: 'test' }
+  const e = { GITHUB_REPOSITORY: 'ozzzmond/GTAR-Dev', APPROVAL_READ_TOKEN: 'test', CF_ACCOUNT_ID: 'a'.repeat(32), CF_PAGES_READ_TOKEN: 'test' }
   const calls = []
   const fetcher = async url => {
     calls.push(url)
@@ -181,6 +222,7 @@ test('readiness needs no retired DEV rulesets; remaining external gates fail clo
   const ready = await C.externalGate(e, fetcher)
   assert.equal(ready.project.name, 'gtar-web')
   assert.equal(calls.length, 3)
+  assert.deepEqual(calls.slice(0, 2), ['https://api.github.com/repos/ozzzmond/GTAR-Dev/environments/gtar-production', 'https://api.github.com/repos/ozzzmond/GTAR-Dev/environments/gtar-production/deployment-branch-policies'])
   assert.ok(calls.every(url => !url.includes('/rulesets')))
   await assert.rejects(C.externalGate(e, async () => { throw new Error('403') }), /403/)
   await assert.rejects(C.externalGate({ ...e, CF_ACCOUNT_ID: '' }, fetcher), /CF_ACCOUNT_ID/)

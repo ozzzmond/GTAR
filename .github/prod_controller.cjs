@@ -125,14 +125,14 @@ function approvalContract(env, policies) {
 function projectContract(p) {
   const c = p.source?.config
   must(p.name === 'gtar-web' && typeof p.id === 'string' && p.id && p.production_branch === 'main' && p.source?.type === 'github' &&
-    c?.owner === 'ozzzmond' && c.repo_name === 'GTAR' && c.production_branch === 'main' && c.production_deployments_enabled === true,
-    'Cloudflare gtar-web must use ozzzmond/GTAR Git integration with main production enabled')
+    c?.owner === 'ozzzmond' && c.repo_name === 'GTAR-Dev' && c.production_branch === 'main' && c.production_deployments_enabled === true,
+    'Cloudflare gtar-web must use ozzzmond/GTAR-Dev Git integration with main production enabled')
 }
 function deploymentProof(p, d, sha, after) {
   projectContract(p)
   const m = d.deployment_trigger?.metadata
   must(d.project_name === p.name && d.project_id === p.id && d.environment === 'production' &&
-    d.source?.type === 'github' && d.source.config?.owner === 'ozzzmond' && d.source.config?.repo_name === 'GTAR' &&
+    d.source?.type === 'github' && d.source.config?.owner === 'ozzzmond' && d.source.config?.repo_name === 'GTAR-Dev' &&
     d.deployment_trigger?.type === 'github:push' && m?.branch === 'main' && m.commit_hash === sha && m.commit_dirty === false &&
     d.is_skipped === false && d.latest_stage?.name === 'deploy' && d.latest_stage.status === 'success' &&
     Number.isFinite(Date.parse(d.created_on)) && Date.parse(d.created_on) > Date.parse(after) &&
