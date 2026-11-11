@@ -29,6 +29,7 @@ const VITE_SHIM = [
   "const resolveReleaseIdentity = (_root: string, env: Record<string, string | undefined> = process.env) => env.CF_PAGES_BRANCH === 'main'",
   "  ? { version: gtar1Release.version, sourceTag: gtar1Release.sourceTag, sha: gtar1Release.sourceSha }",
   '  : null',
+  'const gtar1IsDemo = process.env.CF_PAGES_BRANCH === \'demo\'',
   'type Gtar1DevIdentity = { tag?: string; version?: string; tagStatus?: string; shortSha?: string; deploymentId?: string } | null',
   'const resolveDevIdentity = (..._args: unknown[]): Gtar1DevIdentity => null',
   'const getCommittedDevVersion = (..._args: unknown[]): string => gtar1Release.version',
@@ -56,6 +57,60 @@ function patchPackageVersion(text, version) {
   if (json.scripts) delete json.scripts['d1:migrate:dev:remote'] // its script is excluded from the snapshot
   if (json.packages && json.packages['']) json.packages[''].version = version
   return JSON.stringify(json, null, 2) + '\n'
+}
+
+// Public branding: GTAR1 is the public name. Every replacement must match exactly `count` times (fail closed).
+const BRANDING = [
+  { file: 'web/index.html', from: '<title>GTAR Live Stage Companion</title>', to: '<title>GTAR1 Live Stage Companion</title>' },
+  { file: 'web/index.html', from: 'name="apple-mobile-web-app-title" content="GTAR"', to: 'name="apple-mobile-web-app-title" content="GTAR1"' },
+  { file: 'web/public/manifest.json', from: '"name": "GTAR Live Stage Companion"', to: '"name": "GTAR1 Live Stage Companion"' },
+  { file: 'web/public/manifest.json', from: '"short_name": "GTAR"', to: '"short_name": "GTAR1"' },
+  // Applied after patchViteConfig. Demo (branch `demo`) shows the release version and a Demo label.
+  { file: 'web/vite.config.ts', from: "'<title>GTAR Live Stage Companion</title>'", to: "'<title>' + (gtar1IsDemo ? 'GTAR1 Demo' : 'GTAR1 Live Stage Companion') + '</title>'" },
+  { file: 'web/vite.config.ts', from: "'GTAR-Dev Live Stage Companion' : 'GTAR Live Stage Companion'", to: "'GTAR-Dev Live Stage Companion' : (gtar1IsDemo ? 'GTAR1 Demo' : 'GTAR1 Live Stage Companion')" },
+  { file: 'web/vite.config.ts', from: "'GTAR-Dev' : 'GTAR'", to: "'GTAR-Dev' : (gtar1IsDemo ? 'GTAR1 Demo' : 'GTAR1')" },
+  { file: 'web/vite.config.ts', from: 'JSON.stringify(releaseIdentity?.version ?? null)', to: 'JSON.stringify(releaseIdentity?.version ?? gtar1Release.version)' },
+  { file: 'web/src/components/Header.tsx', from: 'aria-label="GTAR home"', to: 'aria-label="GTAR1 home"' },
+  { file: 'web/src/components/Header.tsx', from: 'alt="GTAR Logo"', to: 'alt="GTAR1 Logo"' },
+  { file: 'web/src/components/Header.tsx', from: 'transition-colors">\n                GTAR\n              </span>', to: 'transition-colors">\n                GTAR1\n              </span>' },
+  { file: 'web/src/components/Header.tsx', from: 'border border-app-accent/40">DEV</span>', to: 'border border-app-accent/40">DEMO</span>' },
+  { file: 'web/src/components/Header.tsx', from: '<span>About GTAR</span>', to: '<span>About GTAR1</span>' },
+  { file: 'web/src/components/AboutModal.tsx', from: '\n              About GTAR\n', to: '\n              About GTAR1\n' },
+  { file: 'web/src/components/AboutModal.tsx', from: '<span>GTAR Live Stage Companion</span>', to: '<span>GTAR1 Live Stage Companion</span>' },
+  { file: 'web/src/components/AboutModal.tsx', from: 'alt="GTAR Logo"', to: 'alt="GTAR1 Logo"' },
+  { file: 'web/src/components/AboutModal.tsx', from: "? 'Preview'", to: "? 'Demo'" },
+  { file: 'web/src/utils/headerFormatters.ts', from: 'PREVIEW · ', to: 'DEMO · ', count: 3 },
+  { file: 'web/src/components/AuthGate.tsx', from: '<h1 className="text-3xl font-bold">GTAR</h1>', to: '<h1 className="text-3xl font-bold">GTAR1</h1>' },
+]
+
+// GTAR1 icon (bebegirl2). Assets live next to this script, not in the source tag, so older tags export too.
+const ICON_DIR = path.join(__dirname, 'gtar1-assets')
+const ICONS = [
+  ...['', '-prod', '-dev'].flatMap(v => [
+    [`web/public/pwa${v}-192x192.png`, 'gtar1-icon-192.png'], [`web/public/pwa${v}-512x512.png`, 'gtar1-icon-512.png'],
+    [`web/public/apple-touch-icon${v}.png`, 'gtar1-icon-180.png'], [`web/public/favicon${v}.png`, 'gtar1-icon-64.png'],
+    [`web/public/favicon${v}.ico`, 'gtar1-favicon.ico'],
+  ]),
+  ...['web/public/prod-logo.png', 'web/public/dev-logo.png', 'web/src/assets/prod-logo.png', 'web/src/assets/dev-logo.png',
+    'web/src/assets/bebeboy-transparent.png', 'web/src/assets/bebegirl1-transparent.png'].map(f => [f, 'gtar1-icon-512.png']),
+]
+
+function applyIcons(out, included) {
+  for (const [target, asset] of ICONS) {
+    if (!included.includes(target)) throw new Error(`${target} missing from export set; icon mapping needs review`)
+    fs.copyFileSync(path.join(ICON_DIR, asset), path.join(out, target))
+  }
+}
+
+function patchBranding(file, source) {
+  let out = source
+  for (const rule of BRANDING.filter(r => r.file === file)) {
+    const expected = rule.count || 1
+    const found = out.split(rule.from).length - 1
+    if (found !== expected) throw new Error(`${file}: branding text "${rule.from.slice(0, 40)}" found ${found}x, expected ${expected}; export design needs review`)
+    out = out.split(rule.from).join(rule.to)
+  }
+  return out
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -129,9 +184,13 @@ function writeSnapshot(repo, out, result, ids) {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.copyFileSync(path.join(repo, f), target)
   }
+  applyIcons(out, result.included)
   const patch = (rel, fn) => { const p = path.join(out, rel); fs.writeFileSync(p, fn(fs.readFileSync(p, 'utf8'))) }
-  patch('web/vite.config.ts', patchViteConfig)
-  if (result.included.includes('web/src/components/AboutModal.tsx')) patch('web/src/components/AboutModal.tsx', patchAboutModal)
+  patch('web/vite.config.ts', t => patchBranding('web/vite.config.ts', patchViteConfig(t)))
+  for (const f of [...new Set(BRANDING.map(r => r.file))].filter(f => f !== 'web/vite.config.ts')) {
+    if (!result.included.includes(f)) throw new Error(`${f} missing from export set`)
+    patch(f, t => patchBranding(f, f === 'web/src/components/AboutModal.tsx' ? patchAboutModal(t) : t))
+  }
   if (result.included.includes('web/wrangler.jsonc')) patch('web/wrangler.jsonc', t => patchWrangler(t, ids))
   patch('web/package.json', t => patchPackageVersion(t, result.version))
   if (result.included.includes('web/package-lock.json')) patch('web/package-lock.json', t => patchPackageVersion(t, result.version))
@@ -158,4 +217,4 @@ if (require.main === module) {
   try { main(process.argv.slice(2)) } catch (e) { console.error('EXPORT FAILED: ' + e.message); process.exit(1) }
 }
 
-module.exports = { mapSourceTag, isExcluded, patchViteConfig, patchPackageVersion, patchWrangler, patchAboutModal, scanForSecrets, annotation, plan, writeSnapshot, VITE_IMPORT }
+module.exports = { mapSourceTag, isExcluded, patchViteConfig, patchPackageVersion, patchWrangler, patchAboutModal, patchBranding, BRANDING, ICONS, ICON_DIR, scanForSecrets, annotation, plan, writeSnapshot, VITE_IMPORT }

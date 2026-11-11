@@ -76,3 +76,34 @@ test('GTAR-only migration helper is excluded and the About repo link points at G
   assert.ok(out.includes('href="https://github.com/ozzzmond/GTAR1"') && !out.includes('href="https://github.com/ozzzmond/GTAR"'))
   assert.throws(() => E.patchAboutModal('<a>none</a>'), /needs review/)
 })
+
+test('public branding says GTAR1 and Demo, and fails closed when source text drifts', () => {
+  const root = path.join(__dirname, '..')
+  const files = [...new Set(E.BRANDING.map(r => r.file))]
+  for (const f of files) {
+    let src = fs.readFileSync(path.join(root, '..', f), 'utf8')
+    if (f === 'web/vite.config.ts') src = E.patchViteConfig(src)
+    if (f === 'web/src/components/AboutModal.tsx') src = E.patchAboutModal(src)
+    const out = E.patchBranding(f, src)
+    assert.notEqual(out, src, f)
+    assert.throws(() => E.patchBranding(f, 'unrelated'), /branding text/, f)
+  }
+  const header = E.patchBranding('web/src/components/Header.tsx', fs.readFileSync(path.join(root, 'src/components/Header.tsx'), 'utf8'))
+  assert.ok(header.includes('>DEMO</span>') && !header.includes('>DEV</span>'))
+  const vite = E.patchBranding('web/vite.config.ts', E.patchViteConfig(fs.readFileSync(path.join(root, 'vite.config.ts'), 'utf8')))
+  assert.ok(vite.includes("gtar1IsDemo ? 'GTAR1 Demo'") && vite.includes('?? gtar1Release.version'))
+})
+
+test('GTAR1 icon assets exist, are transparent PNG/ICO and every icon target is mapped', () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+  for (const asset of new Set(E.ICONS.map(([, a]) => a))) {
+    const buf = fs.readFileSync(path.join(E.ICON_DIR, asset))
+    assert.ok(asset.endsWith('.ico') ? buf.readUInt16LE(2) === 1 : buf.subarray(0, 4).equals(png), asset)
+  }
+  const sizes = { 'gtar1-icon-192.png': 192, 'gtar1-icon-512.png': 512, 'gtar1-icon-180.png': 180, 'gtar1-icon-64.png': 64 }
+  for (const [asset, n] of Object.entries(sizes)) {
+    const buf = fs.readFileSync(path.join(E.ICON_DIR, asset))
+    assert.equal(buf.readUInt32BE(16), n); assert.equal(buf.readUInt32BE(20), n); assert.equal(buf[25], 6, 'RGBA')
+  }
+  assert.ok(E.ICONS.some(([t]) => t === 'web/public/pwa-prod-512x512.png') && E.ICONS.some(([t]) => t === 'web/src/assets/bebegirl1-transparent.png'))
+})
