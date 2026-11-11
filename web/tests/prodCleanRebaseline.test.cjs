@@ -97,9 +97,13 @@ test('future checkpoint plans from abandoned baseline without requiring old depl
   const repo = path.join(dir, 'work')
   execFileSync('git', ['clone', '--shared', '--no-checkout', root, repo], { stdio: 'pipe' })
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim()
-  for (const t of git('tag', '--list').split('\n')) {
-    if (/^v1\.1\.[1-9]\d*$/.test(t) && Number(t.slice(5)) > Number(ABANDONED_PROD.tag.slice(5))) git('tag', '-d', t)
-  }
+  // Keep only the historical anchor and its source identity. Live PROD/DEV
+  // tags (including future releases or the synthetic checkpoint name) must
+  // not affect this abandoned-baseline scenario in the disposable clone.
+  const baselineTags = [ABANDONED_PROD.tag, ABANDONED_PROD.sourceTag].sort()
+  const liveTags = git('tag', '--list').split('\n').filter(tag => tag && !baselineTags.includes(tag))
+  if (liveTags.length) git('tag', '-d', ...liveTags)
+  assert.deepEqual(git('tag', '--list').split('\n').sort(), baselineTags)
   git('checkout', '-b', 'reviewed-main', ABANDONED_PROD.sha)
   git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
   for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', 'web/vite.config.ts']) fs.copyFileSync(path.join(root, file), path.join(repo, file))
