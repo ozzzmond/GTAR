@@ -171,7 +171,7 @@ test('denied routes do no AI, storage, or upstream work; auth/permission remains
       assert.equal((await api[handler]({ env: f.env, request: f.request(body === undefined ? 'GET' : 'POST', body, url) })).status, 429)
       const before = calls
       const anonymous = new Request(url || 'https://example.invalid', { method: body === undefined ? 'GET' : 'POST' })
-      const anonymousPublication = api === share
+      const anonymousPublication = api !== metadata
       assert.equal((await api[handler]({ env: f.env, request: anonymous })).status, anonymousPublication ? 429 : 401)
       assert.equal(calls, before + (anonymousPublication ? 1 : 0))
     }

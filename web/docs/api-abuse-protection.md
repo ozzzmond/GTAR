@@ -17,7 +17,7 @@ Its 429 now includes Retry-After and consistent JSON/CORS/cache semantics.
 | Session retrieval | Signed session or verified Google token, current D1 user and subject binding | 600/minute shared anonymous admission before token verification/D1 lookup |
 | Cloud Sync | Active D1 account, 2 MiB streaming bound, required CAS version/checksum | 120 reads and 60 writes/minute/account; rejection before Songbook storage work |
 | Metadata / Workers AI | Active D1 account, 64 KiB bound, validated fields, model validation, 300 output tokens | 10/minute plus 100/hour/account, consumed before inference; failed inference still costs admission |
-| UG search/tab | Active D1 account, query/URL allowlist, 2 MiB upstream response bound | Shared 60/minute/account before network fetch |
+| UG search/tab | No account (opt-in on the client, #453 N1); query/URL allowlist, 2 MiB upstream response bound; `UG_PROXY_MODE=disabled` turns the proxy off per deployment (503 `ONLINE_SOURCES_DISABLED`) | Shared anonymous 60/minute before network fetch, plus a per-isolate 60/minute fallback |
 | Catalog | Active D1 account, 256 KiB body, 100 KiB chart, pagination max 100, transactional revisions | Existing validation preserved; distributed catalog quotas deferred |
 | Admin | Current active admin and request bounds | Existing permissions preserved; distributed admin quotas deferred |
 

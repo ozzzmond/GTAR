@@ -30,18 +30,15 @@ test('limits decoded stream bytes, rejects advertised oversize, accepts exact bo
 })
 for (const endpoint of ['ug-search','ug-tab']) test(`${endpoint} returns timeout and oversize errors through handler`,async()=>{
   const previous=global.fetch, oldTimer=global.setTimeout
-  const authCore=require('../functions/lib/authCore.ts')
-  const originalAuth=authCore.authenticateUserRequest
-  authCore.authenticateUserRequest=async()=>({user:{id:'usr_test',role:'member',access_status:'active'}})
   const {onRequestGet}=require(`../functions/api/${endpoint}.ts`)
   const url=endpoint==='ug-search'?'https://local/api/ug-search?q=hello':'https://local/api/ug-tab?url='+encodeURIComponent('https://tabs.ultimate-guitar.com/tab/radiohead/creep-chords-4169')
   try {
     global.setTimeout=(fn,ms,...args)=>oldTimer(fn,ms===8000?20:ms,...args)
     global.fetch=async()=>new Response(new ReadableStream({pull(){return new Promise(()=>{})}}))
-    assert.equal((await onRequestGet({request:new Request(url)})).status,504)
+    assert.equal((await onRequestGet({request:new Request(url),env:{}})).status,504)
     global.fetch=async()=>new Response(new Uint8Array(2*1024*1024+1))
-    const response=await onRequestGet({request:new Request(url)})
+    const response=await onRequestGet({request:new Request(url),env:{}})
     assert.equal(response.status,502)
     assert.match((await response.json()).error,/size limit/)
-  } finally {global.fetch=previous;global.setTimeout=oldTimer;authCore.authenticateUserRequest=originalAuth}
+  } finally {global.fetch=previous;global.setTimeout=oldTimer}
 })
