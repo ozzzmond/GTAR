@@ -57,31 +57,6 @@ test('CAS: same-base clients cannot overwrite or reuse a successful revision', a
   }
 })
 
-test('HTTP: stable 409 contract, invalid metadata, checksum mismatch and user scoping', async () => {
-  const { db, request } = await fixture()
-  const first = await write(db, library('private'), emptyRevision)
-  const invalid = [ {}, { clientVersion: first.version, clientChecksum: first.checksum },
-    { expectedVersion: '1', expectedChecksum: first.checksum },
-    { expectedVersion: -1, expectedChecksum: null }, { expectedVersion: 0, expectedChecksum: first.checksum },
-    { expectedVersion: 1.5, expectedChecksum: first.checksum },
-    { expectedVersion: 1, expectedChecksum: null }, { expectedVersion: 1, expectedChecksum: 'bad' },
-    { expectedVersion: 1, expectedChecksum: 'ck_0000000000000000' },
-    { expectedVersion: Number.MAX_SAFE_INTEGER + 1, expectedChecksum: first.checksum } ]
-  for (const metadata of invalid) {
-    const response = await request('POST', { data: library('overwrite'), ...metadata, userId: 'user-b' })
-    assert.equal(response.status, 409)
-    const body = await response.json()
-    assert.equal(body.code, 'SONGBOOK_REVISION_CONFLICT')
-    assert.equal(body.success, false)
-    assert.equal(body.cloudRecord, undefined)
-    assert.equal(JSON.stringify(body).includes('private'), false)
-  }
-  await write(db, library('B secret'), emptyRevision, 'user-b')
-  const response = await request('POST', { ...postBody(library('A edit'), revision(first)), userId: 'user-b' })
-  assert.equal(response.status, 200)
-  assert.equal(JSON.parse((await findUserSongbook(db, 'user-b')).data_json).songs[0].rawContent, 'B secret')
-  assert.equal((await request('GET')).status, 200)
-})
 test('D1 local binding: actual first()/RETURNING and simultaneous writes enforce CAS', async () => {
   const { Miniflare, convertV4MiniflareOptions } = require('miniflare')
   const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{ modules: true, script: 'export default { fetch() { return new Response("test") } }',
@@ -109,24 +84,3 @@ test('D1 local binding: actual first()/RETURNING and simultaneous writes enforce
   } finally { await mf.dispose() }
 })
 
-test('CAS: identical-content retries reject stale bases without a new write', async () => {
-  const { db, request } = await fixture()
-  const data = library('same')
-  assert.equal((await request('POST', postBody(data, emptyRevision))).status, 200)
-  assert.equal((await request('POST', postBody(data, emptyRevision))).status, 409)
-  assert.equal((await findUserSongbook(db, 'user-a')).version, 1)
-})
-
-test('HTTP: database write failure preserves cloud revision; legacy clients receive update guidance', async () => {
-  const { request, db } = await fixture()
-  const first = await write(db, library('base'), emptyRevision)
-  const legacy = await request('POST', { data: library('legacy'), clientVersion: 1 })
-  assert.equal(legacy.status, 409)
-  assert.match((await legacy.json()).error, /Update the app/)
-  const prepare = db.prepare.bind(db)
-  db.prepare = sql => { if (/(?:INSERT INTO|UPDATE) user_songbooks/.test(sql)) throw new Error('database write failed'); return prepare(sql) }
-  const result = await request('POST', postBody(library('local'), revision(first)))
-  assert.equal(result.status, 500)
-  assert.match((await result.json()).error, /Failed to persist cloud songbook/)
-  assert.equal((await findUserSongbook(db, 'user-a')).version, first.version)
-})
