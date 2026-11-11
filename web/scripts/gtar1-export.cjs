@@ -15,6 +15,7 @@ const DENY = [
   'README.md', 'LICENSE', 'LICENSE.md',
   'web/tests/', 'web/docs/', 'web/GOOGLE_SYNC.md', 'web/LEGACY_IMPORT_COMPATIBILITY.md',
   'web/wrangler.stage-cast2-dev.jsonc',
+  'web/scripts/migrate-dev-remote.cjs', // hard-codes GTAR's dev D1 name and UUID
 ]
 const DENY_PATTERNS = [/^web\/STAGE_CAST2_.*\.md$/, /(^|\/)\.dev\.vars/, /(^|\/)\.env(\..*)?$/]
 const SECRET_PATTERNS = [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, /AIza[0-9A-Za-z_-]{35}/, /\bgh[pousr]_[0-9A-Za-z]{36,}\b/, /\bsk-[A-Za-z0-9]{32,}\b/]
@@ -52,8 +53,45 @@ function patchViteConfig(source) {
 function patchPackageVersion(text, version) {
   const json = JSON.parse(text)
   json.version = version
+  if (json.scripts) delete json.scripts['d1:migrate:dev:remote'] // its script is excluded from the snapshot
   if (json.packages && json.packages['']) json.packages[''].version = version
   return JSON.stringify(json, null, 2) + '\n'
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const D1_RENAMES = { 'gtar-db-prod': ['gtar1-db-prod', 'prod'], 'gtar-db-dev': ['gtar1-db-dev', 'dev'] }
+
+// GTAR1 must never bind GTAR's D1 databases or its Cast2 Durable Object worker.
+const ABOUT_REPO_LINK = 'href="https://github.com/ozzzmond/GTAR"'
+function patchAboutModal(source) {
+  if (source.split(ABOUT_REPO_LINK).length !== 2) throw new Error('AboutModal repo link not found exactly once; export design needs review')
+  return source.replace(ABOUT_REPO_LINK, 'href="https://github.com/ozzzmond/GTAR1"')
+}
+
+function patchWrangler(text, ids) {
+  for (const key of ['prod', 'dev']) if (!UUID.test(ids?.[key] || '')) throw new Error(`--d1-${key}-id must be a UUID`)
+  const json = JSON.parse(text) // plain JSON only; a JSONC comment makes this fail closed
+  const sourceIds = []
+  const fix = node => {
+    if (Array.isArray(node.d1_databases)) {
+      node.d1_databases = node.d1_databases.map(db => {
+        const rename = D1_RENAMES[db.database_name]
+        if (!rename) throw new Error(`unexpected D1 database ${db.database_name}; export design needs review`)
+        sourceIds.push(db.database_id)
+        return { ...db, database_name: rename[0], database_id: ids[rename[1]] }
+      })
+    }
+    delete node.durable_objects
+    if (node.vars) delete node.vars.CAST2_ORIGIN
+  }
+  json.name = 'gtar1'
+  fix(json)
+  for (const env of Object.values(json.env || {})) fix(env)
+  const out = JSON.stringify(json, null, 2) + '\n'
+  for (const bad of [...sourceIds, 'gtar-db-', 'gtar-stage-cast2', 'gtar-web']) {
+    if (bad && out.includes(bad)) throw new Error(`GTAR identifier ${bad} still present in wrangler.jsonc`)
+  }
+  return out
 }
 
 function scanForSecrets(file, buffer) {
@@ -82,7 +120,9 @@ function plan(repo, sourceTag) {
   return { ...map, sha, included, excluded, annotation: annotation(map, sha) }
 }
 
-function writeSnapshot(repo, out, result) {
+function writeSnapshot(repo, out, result, ids) {
+  // Validate before writing anything.
+  if (result.included.includes('web/wrangler.jsonc')) patchWrangler(fs.readFileSync(path.join(repo, 'web/wrangler.jsonc'), 'utf8'), ids)
   if (fs.existsSync(out) && fs.readdirSync(out).length) throw new Error('--out must not exist or must be empty')
   for (const f of result.included) {
     const target = path.join(out, f)
@@ -91,6 +131,8 @@ function writeSnapshot(repo, out, result) {
   }
   const patch = (rel, fn) => { const p = path.join(out, rel); fs.writeFileSync(p, fn(fs.readFileSync(p, 'utf8'))) }
   patch('web/vite.config.ts', patchViteConfig)
+  if (result.included.includes('web/src/components/AboutModal.tsx')) patch('web/src/components/AboutModal.tsx', patchAboutModal)
+  if (result.included.includes('web/wrangler.jsonc')) patch('web/wrangler.jsonc', t => patchWrangler(t, ids))
   patch('web/package.json', t => patchPackageVersion(t, result.version))
   if (result.included.includes('web/package-lock.json')) patch('web/package-lock.json', t => patchPackageVersion(t, result.version))
   fs.writeFileSync(path.join(out, 'web/gtar1-release.json'), JSON.stringify({
@@ -103,7 +145,7 @@ function main(argv) {
   for (let i = 0; i < argv.length; i += 2) opts[argv[i]] = argv[i + 1]
   const repo = path.resolve(opts['--repo'] || path.join(__dirname, '../..'))
   const result = plan(repo, opts['--source-tag'])
-  if (opts['--out']) writeSnapshot(repo, path.resolve(opts['--out']), result)
+  if (opts['--out']) writeSnapshot(repo, path.resolve(opts['--out']), result, { prod: opts['--d1-prod-id'], dev: opts['--d1-dev-id'] })
   console.log(JSON.stringify({
     mode: opts['--out'] ? 'WROTE_SNAPSHOT' : 'DRY_RUN', gtar1Tag: result.gtar1Tag, sourceTag: result.sourceTag, sha: result.sha,
     included: result.included.length, excluded: result.excluded.length, annotation: result.annotation,
@@ -116,4 +158,4 @@ if (require.main === module) {
   try { main(process.argv.slice(2)) } catch (e) { console.error('EXPORT FAILED: ' + e.message); process.exit(1) }
 }
 
-module.exports = { mapSourceTag, isExcluded, patchViteConfig, patchPackageVersion, scanForSecrets, annotation, plan, writeSnapshot, VITE_IMPORT }
+module.exports = { mapSourceTag, isExcluded, patchViteConfig, patchPackageVersion, patchWrangler, patchAboutModal, scanForSecrets, annotation, plan, writeSnapshot, VITE_IMPORT }
