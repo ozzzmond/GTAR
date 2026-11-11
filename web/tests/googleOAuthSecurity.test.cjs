@@ -207,8 +207,6 @@ test('mock identity fails closed without local request context or with any Pages
 
 test('hosted mock tokens cannot bootstrap, mint sessions, read users or authorize user/admin access', async t => {
   const { core, session, calls } = fixture(t)
-  const admin = require('../functions/api/admin/users.ts')
-  const approve = require('../functions/api/admin/approve.ts')
   let databaseCalls = 0
   const bindings = {
     TEST_MOCK_AUTH: 'true', AUTH_SECRET: 'disposable-private-key',
@@ -242,10 +240,6 @@ test('hosted mock tokens cannot bootstrap, mint sessions, read users or authoriz
     assert.equal((await session.onRequestGet({ request, env })).status, 401, url)
     assert.equal((await core.authenticateUserRequest(request, env)).status, 401, url)
     assert.equal((await core.authenticateAdminRequest(request, env)).status, 401, url)
-    assert.equal((await admin.onRequestGet({ request, env })).status, 401, url)
-    assert.equal((await approve.onRequestPost({ env, request: new Request(`${url}/api/admin/approve`, {
-      method: 'POST', headers, body: JSON.stringify({ userId: 'target-user' }),
-    }) })).status, 401, url)
   }
   assert.equal(databaseCalls, 0)
   assert.equal(calls.length, 0)

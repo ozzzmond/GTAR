@@ -52,11 +52,6 @@ const {
 } = require('../functions/lib/authCore.ts')
 
 const sessionFunction = require('../functions/api/auth/session.ts')
-const usersFunction = require('../functions/api/admin/users.ts')
-const pendingCountFunction = require('../functions/api/admin/pending-count.ts')
-const approveFunction = require('../functions/api/admin/approve.ts')
-const denyFunction = require('../functions/api/admin/deny.ts')
-const restoreFunction = require('../functions/api/admin/restore.ts')
 
 const {
   createDurableSession,
@@ -402,7 +397,7 @@ test('TARGETED: DENIED_ACCESS renders access denied state and blocks app access'
 })
 
 // 6. TARGETED: ADMIN_APPROVE_DENY
-test('TARGETED: ADMIN_APPROVE_DENY enables admin to approve, deny, and restore users', async () => {
+test('TARGETED: ADMIN_APPROVE_DENY account status transitions approve, deny, and restore users', async () => {
   const db = createMockD1()
   const env = {
     DB: db,
@@ -437,67 +432,22 @@ test('TARGETED: ADMIN_APPROVE_DENY enables admin to approve, deny, and restore u
   await insertUser(db, adminUser)
   await insertUser(db, pendingUser)
 
-  const adminToken = await createSessionToken(adminUser, env.AUTH_SECRET)
+  // The admin HTTP endpoints were retired (#453); the account state transitions remain.
+  const nowIso = new Date().toISOString()
 
   // 1. Approve pending user
-  const reqApprove = new Request('http://localhost/api/admin/approve', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
-    },
-    body: JSON.stringify({ userId: 'user-pending-1' }),
-  })
-  const resApprove = await approveFunction.onRequestPost({ request: reqApprove, env })
-  assert.equal(resApprove.status, 200)
-
+  assert.equal(await updateUserAccessStatus(db, 'user-pending-1', 'active', nowIso), true)
   const afterApprove = await findUserById(db, 'user-pending-1')
   assert.equal(afterApprove.access_status, 'active')
   assert.equal(afterApprove.role, 'member') // Role escalation forbidden
 
   // 2. Deny active user
-  const reqDeny = new Request('http://localhost/api/admin/deny', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
-    },
-    body: JSON.stringify({ userId: 'user-pending-1' }),
-  })
-  const resDeny = await denyFunction.onRequestPost({ request: reqDeny, env })
-  assert.equal(resDeny.status, 200)
-
-  const afterDeny = await findUserById(db, 'user-pending-1')
-  assert.equal(afterDeny.access_status, 'denied')
+  assert.equal(await updateUserAccessStatus(db, 'user-pending-1', 'denied', nowIso), true)
+  assert.equal((await findUserById(db, 'user-pending-1')).access_status, 'denied')
 
   // 3. Restore denied user
-  const reqRestore = new Request('http://localhost/api/admin/restore', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
-    },
-    body: JSON.stringify({ userId: 'user-pending-1' }),
-  })
-  const resRestore = await restoreFunction.onRequestPost({ request: reqRestore, env })
-  assert.equal(resRestore.status, 200)
-
-  const afterRestore = await findUserById(db, 'user-pending-1')
-  assert.equal(afterRestore.access_status, 'active')
-
-  // 4. Admin cannot deny themselves
-  const reqSelfDeny = new Request('http://localhost/api/admin/deny', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
-    },
-    body: JSON.stringify({ userId: 'admin-1' }),
-  })
-  const resSelfDeny = await denyFunction.onRequestPost({ request: reqSelfDeny, env })
-  assert.equal(resSelfDeny.status, 400)
-  const errSelf = await resSelfDeny.json()
-  assert.match(errSelf.error, /forbidden|cannot/i)
+  assert.equal(await updateUserAccessStatus(db, 'user-pending-1', 'active', nowIso), true)
+  assert.equal((await findUserById(db, 'user-pending-1')).access_status, 'active')
 })
 
 // 7. TARGETED: NON_ADMIN_ADMIN_API_REJECTION
@@ -525,28 +475,14 @@ test('TARGETED: NON_ADMIN_ADMIN_API_REJECTION non-admin or unauthenticated calle
 
   // 1. Unauthenticated request -> 401
   const reqUnauth = new Request('http://localhost/api/admin/users', { method: 'GET' })
-  const resUnauth = await usersFunction.onRequestGet({ request: reqUnauth, env })
-  assert.equal(resUnauth.status, 401)
+  assert.equal((await authenticateAdminRequest(reqUnauth, env)).status, 401)
 
-  // 2. Member request to admin list -> 403 Forbidden
+  // 2. Member request to the admin gate -> 403 Forbidden
   const reqMember = new Request('http://localhost/api/admin/users', {
     method: 'GET',
     headers: { Authorization: `Bearer ${memberToken}` },
   })
-  const resMember = await usersFunction.onRequestGet({ request: reqMember, env })
-  assert.equal(resMember.status, 403)
-
-  // 3. Member request to approve endpoint -> 403 Forbidden
-  const reqApprove = new Request('http://localhost/api/admin/approve', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${memberToken}`,
-    },
-    body: JSON.stringify({ userId: 'some-user' }),
-  })
-  const resApprove = await approveFunction.onRequestPost({ request: reqApprove, env })
-  assert.equal(resApprove.status, 403)
+  assert.equal((await authenticateAdminRequest(reqMember, env)).status, 403)
 })
 
 // 8. TARGETED: PENDING_STATUS_CHECK
@@ -727,7 +663,7 @@ test('TARGETED: LOOPBACK_DEV_BYPASS_CONTAINMENT strictly confined to dev loopbac
     method: 'GET',
     headers: { Authorization: 'Bearer dev_bypass_token' },
   })
-  return usersFunction.onRequestGet({ request: reqBypass, env }).then((res) => {
+  return authenticateAdminRequest(reqBypass, env).then((res) => {
     assert.equal(res.status, 401)
   })
 })

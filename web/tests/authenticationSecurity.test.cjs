@@ -11,7 +11,11 @@ require.extensions['.ts'] = (module, filename) => module._compile(
 
 const core = require('../functions/lib/authCore.ts')
 const session = require('../functions/api/auth/session.ts')
-const admin = require('../functions/api/admin/users.ts')
+// The admin HTTP endpoints were retired (#453); the admin gate itself is still authoritative.
+const admin = { async onRequestGet({ request, env }) {
+  const result = await core.authenticateAdminRequest(request, env)
+  return { status: 'error' in result ? result.status : 200 }
+} }
 const SECRET = 'disposable-auth-security-test-key'
 const RETIRED_KEY = 'gtar_d1_auth_internal_secret_dev_only'
 const user = {
@@ -135,7 +139,7 @@ test('authoritative inactive and unauthorized records cannot access protected en
   }
 })
 
-test('admin endpoint uses D1 role, including demotion and valid existing admin session', async () => {
+test('admin gate uses D1 role, including demotion and valid existing admin session', async () => {
   const member = fixture()
   assert.equal((await admin.onRequestGet({ request: request(legacyToken()), env: member.env })).status, 403)
   const authorized = fixture({ ...user, role: 'admin' })
