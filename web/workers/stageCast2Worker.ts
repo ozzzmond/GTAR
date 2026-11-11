@@ -1,6 +1,6 @@
 import { authenticateUserRequest } from '../functions/lib/authCore.ts'
 import type { AuthEnv } from '../functions/lib/authCore.ts'
-import { body, Denial, digest, reply } from './stageCast2Backend.ts'
+import { ANON_OWNER, body, Denial, digest, reply } from './stageCast2Backend.ts'
 export { StageCast2Hub } from './stageCast2Backend.ts'
 
 interface Env extends AuthEnv {
@@ -32,9 +32,11 @@ export function createStageCast2Worker(authenticate: Authenticate = authenticate
       } else {
         payload = await body(request)
         if (path === '/claim' || payload.role === 'controller') {
-          const result = await authenticate(request, env)
-          if ('error' in result || !result.user.id || result.user.access_status !== 'active') return reply({ error: 'AUTH_REQUIRED' }, 401)
-          headers.set('x-cast-owner', result.user.id)
+          // Sign-in is optional (#453 N1): a controller without an active account is anonymous and is
+          // authorized only by the one-time PIN plus the per-session controller credential.
+          const result = await authenticate(request, env).catch(() => ({ error: 'denied', status: 401 }))
+          const account = !('error' in result) && !!result.user.id && result.user.access_status === 'active'
+          headers.set('x-cast-owner', account ? result.user.id : ANON_OWNER)
         }
       }
       // Never forward caller-supplied internal headers, GTAR tokens, cookies or OAuth credentials.

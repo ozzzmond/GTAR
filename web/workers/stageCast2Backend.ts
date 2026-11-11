@@ -55,6 +55,8 @@ const runtime: Runtime = {
     return { server: pair[1], response: new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit) }
   },
 }
+/** Sentinel owner for controllers without an active account; never a real user id. */
+export const ANON_OWNER = 'anonymous-controller-v1'
 export const digest = async (value: string): Promise<string> => Array.from(new Uint8Array(
   await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('')
 const secret = (): string => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('')
@@ -209,7 +211,7 @@ export class StageCast2Hub {
   }
   private async authorize(s: Session, role: Role, credential: unknown, owner: string): Promise<void> {
     if (!opaque(credential) || await digest(credential) !== (role === 'receiver' ? s.receiverHash : s.controllerHash) ||
-      (role === 'controller' && (!owner || owner !== s.owner))) throw new Denial()
+      (role === 'controller' && (!owner || (s.owner !== ANON_OWNER && owner !== s.owner)))) throw new Denial()
   }
   async fetch(request: Request): Promise<Response> {
     try { return await this.serial(async () => {
@@ -220,8 +222,9 @@ export class StageCast2Hub {
       const owner = request.headers.get('x-cast-owner') || ''
       // Per-client limit first, so one client's rejected flood never consumes shared admission.
       // Anonymous and gateway-authenticated traffic draw from separate global pools.
-      this.limit('ip:' + ip, 40, !!owner)
-      this.limit(owner ? 'global:auth' : 'global:anon', POLICY.requests, !!owner)
+      const account = !!owner && owner !== ANON_OWNER
+      this.limit('ip:' + ip, 40, account)
+      this.limit(account ? 'global:auth' : 'global:anon', POLICY.requests, account)
       if (url.pathname === '/socket' && request.method === 'GET') return this.connect(request)
       if (request.method !== 'POST') throw new Denial('INVALID_REQUEST', 400)
       const b = await body(request)
@@ -247,7 +250,8 @@ export class StageCast2Hub {
       if (url.pathname === '/claim') {
         shape(b, ['ref', 'pin'])
         if (!owner) throw new Denial('AUTH_REQUIRED', 401)
-        this.limit('owner:' + await digest(owner), 10)
+        // Anonymous claims are limited per client; a shared owner bucket would let one caller lock everyone out.
+        this.limit(account ? 'owner:' + await digest(owner) : 'claim:' + ip, 10)
         if (s.state !== 'WAITING_FOR_CONTROLLER') throw new Denial()
         if (++s.guesses > POLICY.guesses) { this.end(s, 'REVOKED'); throw new Denial() }
         if (typeof b.pin !== 'string' || !/^\d{6}$/.test(b.pin) || await digest(s.ref + b.pin) !== s.pinHash) {
