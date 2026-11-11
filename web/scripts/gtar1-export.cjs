@@ -191,6 +191,8 @@ function patchWrangler(text, ids) {
     }
     delete node.durable_objects
     if (node.vars) delete node.vars.CAST2_ORIGIN
+    // GTAR1 ships no online song source: the UG proxy kill switch is forced on in every environment (#453).
+    node.vars = { ...node.vars, UG_PROXY_MODE: 'disabled' }
   }
   json.name = 'gtar1'
   fix(json)
