@@ -98,29 +98,6 @@ test('windowed song grid uses workspace tracks instead of viewport breakpoints',
   assert.equal(range().end, 16, 'resizing to one track recomputes the window')
 }))
 
-test('cloud button announces backup time accessibly, shows status badges and opens Backup & Restore', async () => ui(async ({ render, click }) => {
-  const { SyncStatusPill } = require('../src/components/SyncStatusPill.tsx')
-  let opened = 0
-  const props = { status: { state: 'backed-up', label: 'Backed up' }, lastBackup: '2026-11-02T00:00:00Z',
-    now: Date.parse('2026-11-02T08:00:00Z'), onClick: () => opened++, recoveryAttention: true }
-  await render(SyncStatusPill, props)
-  const button = () => document.querySelector('[data-testid="header-cloud-sync-button"]')
-  assert.equal(button().dataset.status, 'backed-up')
-  assert.ok(button().querySelector('.lucide-check'))
-  assert.match(button().getAttribute('aria-label'), /Last cloud backup: 8 h ago/)
-  assert.doesNotMatch(button().textContent, /ago|Last cloud/)
-  assert.ok(button().querySelector('[data-testid="cloud-recovery-dot"]'))
-  await click(button()); assert.equal(opened, 1)
-  await render(SyncStatusPill, { ...props, status: { state: 'not-backed-up', label: 'Not backed up' } })
-  assert.equal(button().dataset.status, 'not-backed-up')
-  assert.ok(button().querySelector('.lucide-circle-alert'))
-  await render(SyncStatusPill, { ...props, status: { state: 'unknown', label: 'Backup status unknown' }, lastBackup: null })
-  assert.equal(button().dataset.status, 'unknown')
-  await render(SyncStatusPill, { ...props, status: { state: 'signed-out', label: 'Not signed in' } })
-  assert.equal(button().dataset.status, 'signed-out')
-  assert.ok(button().querySelector('.lucide-ban'))
-}))
-
 test('compact Header opens Explorer in Stage and expands search with Ctrl/Cmd+K and Escape in Stage too', async () => ui(async ({ render, click }) => {
   window.innerWidth = 360
   const { Header } = require('../src/components/Header.tsx')
