@@ -21,7 +21,7 @@ for (const extension of ['.ts', '.tsx']) {
 
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
 const { bindOwner } = require('./helpers/libraryOwner.cjs')
-const { upsertUserSongbook, findUserSongbook, createSessionToken } = require('../functions/lib/authCore.ts')
+const { createSessionToken } = require('../functions/lib/authCore.ts')
 const api = require('../functions/api/songbook/sync.ts')
 const sync = require('../src/utils/cloudBackupFormat.ts')
 const {

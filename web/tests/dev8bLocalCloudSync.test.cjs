@@ -31,8 +31,6 @@ const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const {
   insertUser,
   findUserById,
-  findUserSongbook,
-  upsertUserSongbook,
   createSessionToken,
   verifySessionToken,
 } = require('../functions/lib/authCore.ts')
@@ -102,76 +100,3 @@ test('3: D1 migration 0002_songbook_sync.sql defines user_songbooks table and ca
   assert.ok(migration0002.includes('REFERENCES users(id) ON DELETE CASCADE'), '0002 must reference users table')
 })
 
-test('4: D1 schema operations support both Songbook and Setlist (DEV7) sync within user_songbooks payload', async () => {
-  const users = new Map()
-  const songbookDb = require('./helpers/songbookSqlite.cjs').createSongbookSqlite()
-
-  const mockDb = {
-    prepare(sql) {
-      if (sql.includes('user_songbooks')) return songbookDb.prepare(sql)
-      let bound = []
-      return {
-        bind(...args) {
-          bound = args
-          return this
-        },
-        async first() {
-          if (sql.includes('FROM users WHERE id = ?')) {
-            return users.get(bound[0]) || null
-          }
-
-          return null
-        },
-        async run() {
-          if (sql.includes('INSERT INTO users')) {
-            const [id, google_sub, email, display_name, picture_url, role, access_status, created_at, updated_at, last_login_at] = bound
-            users.set(id, { id, google_sub, email, display_name, picture_url, role, access_status, created_at, updated_at, last_login_at })
-            return { success: true }
-          }
-
-          return { success: true }
-        },
-      }
-    },
-  }
-
-  // Insert user
-  const userId = 'usr_test_123'
-  await insertUser(mockDb, {
-    id: userId,
-    google_sub: 'sub_123',
-    email: 'owner@example.com',
-    display_name: 'Tester',
-    picture_url: null,
-    role: 'admin',
-    access_status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_login_at: new Date().toISOString(),
-  })
-
-  // Upsert user songbook containing both songs and DEV7 setlists
-  const songId = generateUUID()
-  const setlistId = generateUUID()
-  const payload = {
-    songs: [{ id: songId, title: 'Amazing Grace', artist: 'Traditional', rawContent: '[G]Amazing [C]grace' }],
-    setlists: [{ id: setlistId, name: 'Morning Service', songs: [{ id: songId, title: 'Amazing Grace' }] }],
-  }
-  const checksum = computeSongbookChecksum(payload)
-
-  await upsertUserSongbook(mockDb, userId, JSON.stringify(payload), checksum, new Date().toISOString(), { version: 0, checksum: null })
-
-  // Verify retrieval
-  const retrieved = await findUserSongbook(mockDb, userId)
-  assert.ok(retrieved)
-  assert.equal(retrieved.user_id, userId)
-  assert.equal(retrieved.version, 1)
-  assert.equal(retrieved.checksum, checksum)
-
-  const parsed = JSON.parse(retrieved.data_json)
-  assert.equal(parsed.songs.length, 1)
-  assert.equal(parsed.songs[0].id, songId)
-  assert.equal(parsed.setlists.length, 1)
-  assert.equal(parsed.setlists[0].id, setlistId)
-  assert.equal(parsed.setlists[0].songs[0].id, songId)
-})

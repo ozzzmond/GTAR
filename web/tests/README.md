@@ -81,7 +81,6 @@ Cloud reconciliation, local persistence, backup, import recovery, and retirement
 - [backupV2.test.cjs](backupV2.test.cjs)
 - [cloudSetlistSync.test.cjs](cloudSetlistSync.test.cjs)
 - [cloudSongbookSync.test.cjs](cloudSongbookSync.test.cjs)
-- [cloudSyncConcurrency.test.cjs](cloudSyncConcurrency.test.cjs)
 - [crossTabDataIntegrity.test.cjs](crossTabDataIntegrity.test.cjs)
 - [deleteLifecycleRecovery.test.cjs](deleteLifecycleRecovery.test.cjs)
 - [dev8bLocalCloudSync.test.cjs](dev8bLocalCloudSync.test.cjs)

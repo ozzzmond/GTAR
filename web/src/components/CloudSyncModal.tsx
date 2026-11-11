@@ -3,9 +3,7 @@ import { TagLibraryContext } from '../utils/tagLibraryContext'
 import type { SetlistFolder } from '../types/gtar'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderArchive, X } from 'lucide-react'
-import type { CloudSongbookRecord } from '../utils/cloudBackupFormat'
 import { readPersistedLibrary } from '../utils/syncJournal'
-import type { SyncLibrary } from '../utils/syncMerge'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { ExportEnvironment } from '../utils/backupExport'
 import { DeviceBackupCard } from './DeviceBackupCard'
@@ -14,8 +12,6 @@ export interface CloudSyncModalProps {
   isOpen: boolean
   onClose: () => void
   restoreBlocked?: boolean
-  onSyncApplied?: (library: SyncLibrary) => void
-  onBackupSummary?: (record: CloudSongbookRecord | null | undefined) => void
   onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
   onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
   /** App library (songs including trash) for the file card; read from device storage when omitted. */
