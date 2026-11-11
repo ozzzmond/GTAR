@@ -3,7 +3,7 @@ const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 const { parseDevTag, inspectCheckpoint, compareDevTags } = require('./release_metadata.cjs')
-const CANONICAL_REPOSITORY = 'https://github.com/ozzzmond/GTAR-Dev.git'
+const CANONICAL_REPOSITORY = 'https://github.com/ozzzmond/GTAR.git'
 const ABANDONED_PROD = Object.freeze({
   tag: 'v1.1.122', sha: 'c254195e6dfc946138336551e4ce8a87520baf7f',
   sourceTag: 'v1.0.108-dev.14', tree: '59ca0769cee12f5d73f03e067c5b54be9a848de0'
