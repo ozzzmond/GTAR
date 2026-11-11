@@ -309,7 +309,7 @@ test('BACKEND_ERROR_SANITIZATION: /api/setlist/share sanitizes errors and hides 
   assert.equal(postData.details, undefined, 'Details field containing internal exceptions must not be present')
 
   // 2. GET failure when database throws internal error
-  const validToken = '0123456789abcdef'
+  const validToken = 'a'.repeat(64)
   const getReq = new Request(`https://gtar.pages.dev/api/setlist/share?token=${validToken}`, {
     method: 'GET',
     headers: {

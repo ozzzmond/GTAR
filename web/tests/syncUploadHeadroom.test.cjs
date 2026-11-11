@@ -39,10 +39,6 @@ async function withFetch(fn, body) {
   try { return await body() } finally { global.fetch = saved }
 }
 
-test('client limit matches the server limit', () => {
-  assert.equal(sync.SONGBOOK_UPLOAD_LIMIT_BYTES, api.MAX_SONGBOOK_PAYLOAD_BYTES)
-})
-
 test('headroom levels: ok below 75%, warning from 75%, over above the limit', () => {
   const limit = sync.SONGBOOK_UPLOAD_LIMIT_BYTES
   assert.equal(sync.songbookUploadHeadroom(Math.floor(limit * 0.5)).level, 'ok')
@@ -57,14 +53,3 @@ test('non-ASCII charts are counted in UTF-8 bytes, as the server counts them', (
   assert.ok(sync.estimateSongbookUploadBytes(lib) > chars)
 })
 
-test('estimate is an upper bound of the manual backup request body, within 100 bytes', async () => {
-  const lib = makeLibrary(40, 3, { chars: 3000 })
-  const { fetch, posts } = await cloud()
-  await withFetch(fetch, async () => {
-    const result = await writeCloudBackup({ token: 'token', userId: 'user-a' }, lib, null)
-    assert.equal(result.checksum, sync.computeSongbookChecksum(lib))
-  })
-  const actual = new TextEncoder().encode(posts[0]).byteLength
-  const estimate = sync.estimateSongbookUploadBytes(lib)
-  assert.ok(estimate >= actual && estimate - actual < 100, `estimate ${estimate}, actual ${actual}`)
-})

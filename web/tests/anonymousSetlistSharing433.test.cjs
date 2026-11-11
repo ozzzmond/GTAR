@@ -39,7 +39,7 @@ test('#433 anonymous creation, independent recipient read, capability revocation
     assert.equal((await api.onRequestGet({ request: request('GET', null, token), env })).status, 410)
     const legacy = 'a'.repeat(64)
     await DB.prepare('INSERT INTO shared_setlists (share_token,setlist_name,payload_json,created_at,expires_at) VALUES (?,?,?,?,?)').bind(legacy, 'Legacy', JSON.stringify(payload), new Date().toISOString(), '2099-01-01').run()
-    assert.equal((await api.onRequestGet({ request: request('GET', null, legacy), env })).status, 401)
+    assert.equal((await api.onRequestGet({ request: request('GET', null, legacy), env })).status, 410)
   } finally { DB.sqlite.close() }
 })
 

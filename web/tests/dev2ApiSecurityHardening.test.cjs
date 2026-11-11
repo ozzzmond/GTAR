@@ -266,17 +266,7 @@ test('REQUEST_SIZE_BOUNDING: Streaming and byte-level limits enforced across end
   authCore.authenticateUserRequest = async () => ({ user: { id: 'usr_test', role: 'member', access_status: 'active' } })
 
   try {
-    // 1. Songbook sync size boundary (MAX_SONGBOOK_PAYLOAD_BYTES = 2MB)
-    assert.equal(songbookSync.MAX_SONGBOOK_PAYLOAD_BYTES, 2 * 1024 * 1024)
-    const overLimitSync = new Request('https://gtar.local/api/songbook/sync', {
-      method: 'POST',
-      headers: { 'content-length': String(2 * 1024 * 1024 + 1), 'content-type': 'application/json', 'X-GTAR-Library-Owner': 'usr_test' },
-      body: JSON.stringify({ data: { songs: [], setlists: [] } }),
-    })
-    const syncRes = await songbookSync.onRequestPost({ request: overLimitSync, env: { DB: {} } })
-    assert.equal(syncRes.status, 413)
-
-    // 2. Songbook metadata size boundary (MAX_METADATA_PAYLOAD_BYTES = 64KB)
+    // 1. Songbook metadata size boundary (MAX_METADATA_PAYLOAD_BYTES = 64KB)
     assert.equal(songbookMetadata.MAX_METADATA_PAYLOAD_BYTES, 64 * 1024)
     const overLimitMeta = new Request('https://gtar.local/api/songbook/metadata', {
       method: 'POST',

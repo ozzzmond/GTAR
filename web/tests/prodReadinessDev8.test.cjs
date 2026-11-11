@@ -89,7 +89,7 @@ function createMockD1() {
 // SECTION 1: ACCOUNT & ACCESS LIFECYCLE HARDENING
 // ===========================================================================
 
-test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on client and server', async () => {
+test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on client (server sync retired)', async () => {
   const song1 = { id: generateUUID(), title: 'Zebra Song', rawContent: '[A]Line\r\n' }
   const song2 = { id: generateUUID(), title: 'Apple Song', rawContent: '[B]Line\n' }
   const setlist = { id: generateUUID(), name: 'Set A', songs: [{ id: song1.id, title: song1.title }] }
@@ -101,33 +101,6 @@ test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on cl
   const ck2 = computeSongbookChecksum(libOrder2)
 
   assert.equal(ck1, ck2, 'Checksum must be invariant to song order and CRLF newlines')
-
-  // Verify server computes identical checksum
-  const db = createMockD1()
-  const env = { DB: db, AUTH_SECRET: 'test_secret' }
-  const user = {
-    id: 'user_chk_test',
-    google_sub: 'sub_chk',
-    email: 'chk@test.com',
-    role: 'member',
-    access_status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_login_at: new Date().toISOString(),
-  }
-  await insertUser(db, user)
-  const token = await createSessionToken(user, env.AUTH_SECRET)
-
-  const postReq = new Request('https://gtar.dev/api/songbook/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-GTAR-Library-Owner': user.id },
-    body: JSON.stringify({ action: 'upload', data: libOrder1, expectedVersion: 0, expectedChecksum: null }),
-  })
-
-  const postRes = await syncApi.onRequestPost({ request: postReq, env })
-  assert.equal(postRes.status, 200)
-  const postData = await postRes.json()
-  assert.equal(postData.cloudRecord.checksum, ck1, 'Server checksum must exactly match client checksum')
 })
 
 // ===========================================================================

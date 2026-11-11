@@ -663,62 +663,6 @@ test('17. ADMIN_AUTHORIZATION: Admin endpoint enforces session revocation and ad
   assert.equal(resRevokedAdmin.status, 401)
 })
 
-test('18. CLOUD_SYNC_PROTECTION: Cloud Sync rejects revoked session token', async () => {
-  const { sqlite, db } = createTestSqliteDb()
-  const user = await seedUser(sqlite, { id: 'usr_sync' })
-  const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
-
-  const token = await authCore.createSessionToken(user, TEST_SECRET, 3600000, 'sid_sync')
-  const hash = createHash('sha256').update(token).digest('hex')
-  await authCore.createSessionRecord(db, {
-    id: 'sid_sync',
-    user_id: user.id,
-    session_token_hash: hash,
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 86400 * 1000).toISOString(),
-  })
-
-  // GET sync succeeds
-  const req = new Request('http://localhost/api/songbook/sync', { headers: { Authorization: `Bearer ${token}` } })
-  const res = await syncApi.onRequestGet({ request: req, env })
-  assert.equal(res.status, 200)
-
-  // Revoke session
-  await authCore.revokeSessionByTokenHash(db, hash, new Date().toISOString())
-
-  // GET sync now returns 401
-  const reqRev = new Request('http://localhost/api/songbook/sync', { headers: { Authorization: `Bearer ${token}` } })
-  const resRev = await syncApi.onRequestGet({ request: reqRev, env })
-  assert.equal(resRev.status, 401)
-})
-
-test('19. QR_SHARING_PROTECTION: QR share creation rejects revoked session token', async () => {
-  const { sqlite, db } = createTestSqliteDb()
-  const user = await seedUser(sqlite, { id: 'usr_share' })
-  const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
-
-  const token = await authCore.createSessionToken(user, TEST_SECRET, 3600000, 'sid_share')
-  const hash = createHash('sha256').update(token).digest('hex')
-  await authCore.createSessionRecord(db, {
-    id: 'sid_share',
-    user_id: user.id,
-    session_token_hash: hash,
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 86400 * 1000).toISOString(),
-  })
-
-  // Revoke session
-  await authCore.revokeSessionByTokenHash(db, hash, new Date().toISOString())
-
-  const postReq = new Request('http://localhost/api/setlist/share', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ setlistName: 'Sunday Morning', songbookPayload: { version: 1 } }),
-  })
-  const postRes = await shareApi.onRequestPost({ request: postReq, env })
-  assert.equal(postRes.status, 401)
-})
-
 test('20. RATE_LIMITING_AND_RETRY_AFTER: session-revoke rate limiting returns 429 with Retry-After', async () => {
   const { db } = createTestSqliteDb()
   const user = makeUser({ id: 'usr_rate' })
