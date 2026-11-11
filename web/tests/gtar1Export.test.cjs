@@ -137,3 +137,18 @@ test('demo seed is wired through a build flag and fails closed on source drift',
   const mod = E.demoSeedModule()
   assert.ok(mod.includes('export const GTAR1_DEMO_SONGS') && mod.includes('export const GTAR1_DEMO_SETLISTS'))
 })
+
+test('demo reset module is generated with a seed-content version and is wired only through the demo gate', () => {
+  const mod = E.demoResetModule()
+  assert.ok(!mod.includes('__SEED_VERSION__') && /SEED_VERSION = '[0-9a-f]{12}'/.test(mod))
+  assert.ok(mod.includes('15 * 60 * 1000') && mod.includes("import.meta.env.VITE_GTAR1_DEMO === '1'") && mod.includes('Reset demo'))
+  assert.equal(mod, E.demoResetModule())
+  const tmp = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'g1seed-'))
+  for (const f of ['songs.json', 'setlists.json', 'gtar1DemoReset.ts.txt']) fs.copyFileSync(path.join(E.DEMO_SEED_DIR, f), path.join(tmp, f))
+  fs.writeFileSync(path.join(tmp, 'songs.json'), '[]')
+  assert.notEqual(E.demoResetModule(tmp), mod)
+  const main = "const App = lazy(() => import('./App.tsx'))"
+  const out = E.patchMainDemoReset(main)
+  assert.ok(out.includes('await gtar1DemoReady') && out.includes("from './data/gtar1DemoReset'"))
+  assert.throws(() => E.patchMainDemoReset('nothing'), /needs review/)
+})
