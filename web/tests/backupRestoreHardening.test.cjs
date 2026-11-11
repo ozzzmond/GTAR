@@ -784,3 +784,29 @@ for (const mode of ['merge','replace']) test(`verified file ${mode} records Rest
  await act(async()=>{const button=buttonByText(mode==='replace'?'Confirm replace':'Merge into device');assert.ok(button);button.click()})
  assert.deepEqual(appLogger.getLogs().filter(e=>e.tag==='RestoreApplied').map(e=>e.message),[`Restore applied (${mode}, file): 1 songs, 0 setlists`])
 }))
+
+// #453 D2: "Merge into device" updates what the file carries. A field the file does not have
+// (older, Android-origin or hand-made files) must not reset the value saved on this device.
+test('#453 merge keeps saved capo, bpm, format and transposeOffset when the file omits them', () => {
+  const device = [{ id: 'a', title: 'Song', artist: 'Artist', key: 'G', capo: '2', bpm: '90', format: 'TWO_LINE', transposeOffset: 3, rawContent: 'G C\nla la', isFavorite: true }]
+  const file = fields => JSON.stringify({ songs: [{ id: 'a', title: 'Song (file)', artist: 'Artist', rawContent: 'G C\nla la', ...fields }], setlists: [] })
+
+  const partial = parseBackupJson(file({}), { mode: 'merge', existingSongs: device })
+  assert.equal(partial.isValid, true, partial.error)
+  const merged = mergeBackupLibrary(device, partial.songs, partial.setlists).songs[0]
+  assert.equal(merged.title, 'Song (file)', 'fields in the file still update the song')
+  assert.deepEqual({ capo: merged.capo, bpm: merged.bpm, format: merged.format, transposeOffset: merged.transposeOffset },
+    { capo: '2', bpm: '90', format: 'TWO_LINE', transposeOffset: 3 })
+
+  // A field the file states wins, including an explicit TRANSPOSE_ZERO.
+  const explicit = parseBackupJson(file({ capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0 }), { mode: 'merge', existingSongs: device })
+  const updated = mergeBackupLibrary(device, explicit.songs, explicit.setlists).songs[0]
+  assert.deepEqual({ capo: updated.capo, bpm: updated.bpm, format: updated.format, transposeOffset: updated.transposeOffset },
+    { capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0 })
+
+  // Replace and new songs keep the file-only defaults.
+  assert.equal(parseBackupJson(file({})).songs[0].transposeOffset, 0)
+  const added = parseBackupJson(file({}).replace('"id":"a"', '"id":"b"'), { mode: 'merge', existingSongs: device })
+  assert.deepEqual({ capo: added.songs[0].capo, bpm: added.songs[0].bpm, format: added.songs[0].format, transposeOffset: added.songs[0].transposeOffset },
+    { capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0 })
+})

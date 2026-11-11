@@ -327,6 +327,26 @@ function unknownBackupFields(data: Record<string, unknown> | unknown[], single: 
 
 export interface BackupParseOptions { mode?: 'replace' | 'merge'; existingSongs?: ActiveSongState[] }
 
+/**
+ * Merge updates what the file carries. For a song that already exists on this device (same ID), a
+ * field the file does not have keeps the device value instead of the import default; this never
+ * resets a saved TRANSPOSE_OFFSET. Replace and new songs are unaffected.
+ */
+const DEVICE_KEPT_FIELDS = ['capo', 'bpm', 'format', 'transposeOffset'] as const
+function keepDeviceValues(songs: ActiveSongState[], sources: Partial<ActiveSongState>[], existing: ActiveSongState[]): ActiveSongState[] {
+  const device = new Map(existing.filter(song => song.id !== undefined).map(song => [String(song.id), song]))
+  return songs.map((song, index) => {
+    const saved = device.get(String(song.id))
+    if (!saved) return song
+    const kept: Partial<ActiveSongState> = {}
+    for (const field of DEVICE_KEPT_FIELDS) {
+      const inFile = sources[index]?.[field]
+      if ((inFile === undefined || inFile === null) && saved[field] !== undefined && saved[field] !== null) Object.assign(kept, { [field]: saved[field] })
+    }
+    return { ...song, ...kept }
+  })
+}
+
 export function parseBackupJson(rawText: string, options: BackupParseOptions = {}): ParsedBackupResult {
   const invalid = (errors: string[], single = false): ParsedBackupResult => ({ isValid: false, isSingleSetlist: single,
     songs: [], setlists: [], settings: { appearance: {}, preferences: {} }, ignoredFields: [], error: `Backup rejected:\n${errors.map(error => `- ${error}`).join('\n')}` })
@@ -475,7 +495,8 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
     }
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
       ...legacySettingsOf(settingsV2), settings: settingsV2, ignoredFields: unknownBackupFields(data, single),
-      songs, setlists: bindLegacySetlists(boundIncoming, combined),
+      songs: options.mode === 'merge' ? keepDeviceValues(songs, sourceSongs, options.existingSongs ?? []) : songs,
+      setlists: bindLegacySetlists(boundIncoming, combined),
       ...(tagColors !== undefined ? { tagColors } : {}),
       ...(folders ? { folders } : {}),
       metadata,
