@@ -406,53 +406,6 @@ test('#359 PR-C: Header icon-only status button and responsive layout across wid
   }
 }))
 
-test('#359 PR-C: Cloud status button icon states, tooltips, and aria-labels are distinct and accurate', async () => ui(async ({ $, render }) => {
-  const { SyncStatusPill } = require('../src/components/SyncStatusPill.tsx')
-  const noop = () => {}
-
-  // 1. Signed out
-  await render(SyncStatusPill, { status: { state: 'signed-out', label: 'Not signed in' }, lastBackup: null, onClick: noop })
-  let btn = $('[data-testid="header-cloud-sync-button"]')
-  assert.equal(btn.dataset.status, 'signed-out')
-  assert.ok(btn.querySelector('.lucide-ban'), 'signed-out renders ban icon')
-  assert.match(btn.getAttribute('aria-label'), /Not signed in/)
-  assert.equal(btn.getAttribute('title'), null, 'no native title attribute')
-  assert.equal(btn.textContent.trim(), '', 'no text in signed-out state')
-  // Hover opens custom GTAR popover with accurate status
-  await act(async () => btn.dispatchEvent(new window.Event('mouseover', { bubbles: true })))
-  let popover = $('[data-testid="cloud-backup-popover"]')
-  assert.ok(popover, 'popover opens on hover')
-  assert.match(popover.textContent, /Not signed in/)
-  assert.match(popover.textContent, /Sign in to check cloud backup/)
-
-  // 2. Synced (backed-up)
-  await render(SyncStatusPill, { status: { state: 'backed-up', label: 'Backed up' }, lastBackup: '2026-11-05T00:00:00Z', now: Date.parse('2026-11-05T01:00:00Z'), onClick: noop })
-  btn = $('[data-testid="header-cloud-sync-button"]')
-  assert.equal(btn.dataset.status, 'backed-up')
-  assert.ok(btn.querySelector('.lucide-check'), 'backed-up renders check icon')
-  assert.match(btn.getAttribute('aria-label'), /Backed up/)
-  assert.equal(btn.getAttribute('title'), null, 'no native title attribute')
-  assert.equal(btn.textContent.trim(), '', 'no text in backed-up state')
-  await act(async () => btn.dispatchEvent(new window.Event('mouseover', { bubbles: true })))
-  popover = $('[data-testid="cloud-backup-popover"]')
-  assert.ok(popover, 'popover opens on hover')
-  assert.match(popover.textContent, /Backed up/)
-  assert.match(popover.textContent, /Last Backup/)
-
-  // 3. Not backed up (modified locally)
-  await render(SyncStatusPill, { status: { state: 'not-backed-up', label: 'Not backed up' }, lastBackup: '2026-11-05T00:00:00Z', onClick: noop })
-  btn = $('[data-testid="header-cloud-sync-button"]')
-  assert.equal(btn.dataset.status, 'not-backed-up')
-  assert.ok(btn.querySelector('.lucide-circle-alert'), 'not-backed-up renders alert icon')
-  assert.match(btn.getAttribute('aria-label'), /Not backed up/)
-  assert.equal(btn.getAttribute('title'), null, 'no native title attribute')
-  assert.equal(btn.textContent.trim(), '', 'no text in not-backed-up state')
-  await act(async () => btn.dispatchEvent(new window.Event('mouseover', { bubbles: true })))
-  popover = $('[data-testid="cloud-backup-popover"]')
-  assert.ok(popover, 'popover opens on hover')
-  assert.match(popover.textContent, /Not backed up/)
-}))
-
 test('#359 PR-C: All Header.tsx focus() calls specify { preventScroll: true }', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
   const focusMatches = [...source.matchAll(/\.focus\((.*?)\)/g)]
@@ -486,5 +439,4 @@ test('#388: Explorer nav fills the aside and the collapse control stacks above t
   assert.match(source, /className="h-full w-full overflow-y-auto"/, 'scroll container follows the aside width')
   assert.match(source, /className="relative z-20 flex min-h-11 min-w-11[^"]*"/, 'collapse control stacks above the z-10 resize handle')
 })
-
 

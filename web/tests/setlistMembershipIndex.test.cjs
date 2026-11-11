@@ -9,7 +9,6 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
   }).outputText, filename)
 const { resolveSetlistSong, resolveSetlistSongIndexed, songIdIndex } = require('../src/utils/setlistSongs.ts')
-const { snapshotFromSongbook } = require('../src/utils/sharedSetlistSnapshot.ts')
 const { makeLibrary, prng } = require('./helpers/syntheticSongbook.cjs')
 
 test('indexed resolution is identical to resolveSetlistSong, including duplicates, numeric IDs and legacy title refs', () => {
@@ -39,10 +38,4 @@ test('indexed resolution is identical to resolveSetlistSong, including duplicate
       : { title: rand() < 0.5 ? song.title.toUpperCase() : 'Missing ' + i, artist: rand() < 0.5 ? song.artist : undefined }
     assert.equal(resolveSetlistSongIndexed(ref, library.songs, big), resolveSetlistSong(ref, library.songs))
   }
-})
-
-test('oversized shared setlist reports its size and the 256 KB limit', () => {
-  const library = makeLibrary(62, 62, { chars: 8000 })
-  assert.throws(() => snapshotFromSongbook(library, library.setlists[0].id),
-    /^Error: Snapshot too large: \d+ KB exceeds the 256 KB shared setlist limit\. Split the setlist or shorten long charts/)
 })

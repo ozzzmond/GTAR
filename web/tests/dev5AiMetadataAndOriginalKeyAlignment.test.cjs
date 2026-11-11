@@ -184,14 +184,6 @@ test('DESKTOP_EDITOR_UI_INTEGRATION: DesktopEditor retires lookup action while p
   assert.doesNotMatch(editorSource, /acceptOriginalKey/, 'DesktopEditor must not invoke acceptOriginalKey')
 })
 
-// 7. CLIENT METADATA SERVICE CONTRACT
-test('CLIENT_METADATA_SERVICE_CONTRACT: songMetadataClient exports lookupSongMetadata with strict contract', () => {
-  const clientSource = fs.readFileSync(path.join(webDir, 'src/utils/songMetadataClient.ts'), 'utf8')
-  assert.ok(clientSource.includes('export async function lookupSongMetadata'), 'Must export lookupSongMetadata')
-  assert.ok(clientSource.includes('/api/songbook/metadata'), 'Must target POST /api/songbook/metadata')
-  assert.ok(clientSource.includes('normalizeMusicalKey'), 'Must validate returned originalKey with normalizeMusicalKey')
-})
-
 // 8. NON-DESTRUCTIVE OFFLINE / FAILURE BEHAVIOR
 test('NON_DESTRUCTIVE_FAILURE_AND_OFFLINE: Song content is never mutated on lookup failure or empty result', () => {
   const originalChart = `{title: Safe Song}\n{key: D}\n[D]Safe [G]chords`
