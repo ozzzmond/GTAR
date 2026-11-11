@@ -153,7 +153,7 @@ test('untagged main installation and ancestry reconciliation cannot release prod
   const before = f.git('ls-remote', '--refs', 'origin')
   assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: installed }, adapter), /one exact clean DEV checkpoint tag/)
   assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: installed }, (...args) => {
-    if (args[0] === 'fetch') throw new Error('Canonical authority unavailable')
+    if (args[0] === 'fetch') throw new Error('GTAR canonical authority unavailable')
     return adapter(...args)
   }), /canonical authority unavailable/)
   assert.throws(() => C.plan(f.repo, f.tag, installed, 'refs/heads/main', installed), /Exact tag must equal expected_sha/)
