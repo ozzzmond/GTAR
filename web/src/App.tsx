@@ -66,8 +66,6 @@ import { TrashView } from './components/TrashView'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { ExplorerNavigation } from './components/ExplorerNavigation'
 import type { ExplorerTarget } from './components/MusicExplorerNav'
-import { getStoredSessionStatus } from './utils/googleAuth'
-import { useOptionalGoogleAuth } from './utils/authContext'
 import { ShareSetlistModal } from './components/ShareSetlistModal'
 import { ImportSharedSetlistModal } from './components/ImportSharedSetlistModal'
 import { validateSharedSetlistPayload, type SharedSetlistPayload } from './utils/sharedSetlist'
@@ -552,7 +550,6 @@ function LibraryApp() {
   // True when StageView enters fullscreen or focus mode — hides the global Header
   const [isStagePerformanceMode, setIsStagePerformanceMode] = useState(false)
 
-  const authContext = useOptionalGoogleAuth()
   // Track in-flight and successfully processed tokens to prevent duplicate requests or retry loops
   const inFlightShareRef = useRef<string | null>(null)
   const resolvedShareRef = useRef<string | null>(null)
@@ -598,50 +595,44 @@ function LibraryApp() {
         return
       }
 
-      const auth = getStoredSessionStatus()
-      const authToken = authContext?.session
-        ? (authContext.session.sessionToken || authContext.session.idToken || authContext.session.token)
-        : (auth.session ? (auth.session.sessionToken || auth.session.idToken || auth.session.token) : null)
-
-      // If unauthenticated or session expired, retain pending token in sessionStorage for restoration
-      const publicShare = tokenToFetch.length === 64
-      if (!publicShare && (!authToken || auth.isExpired || !authContext?.session || authContext.accessStatus !== 'active')) {
+      // Only anonymous 64-hex shares exist (#453 N1); shorter account-era tokens are retired.
+      if (tokenToFetch.length !== 64) {
+        resolvedShareRef.current = tokenToFetch
         try {
-          if (typeof sessionStorage !== 'undefined') {
-            sessionStorage.setItem('gtar_pending_share_token', tokenToFetch)
+          if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('gtar_pending_share_token')
+          const cleanUrl = new URL(window.location.href)
+          if (cleanUrl.searchParams.has('share')) {
+            cleanUrl.searchParams.delete('share')
+            window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
           }
         } catch { /* ignore */ }
+        queueMicrotask(() => {
+          setToastMessage('This share link is from an older version and is no longer supported.')
+          setTimeout(() => setToastMessage(null), 4000)
+        })
         return
       }
 
       inFlightShareRef.current = tokenToFetch
 
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-        ...(!publicShare ? { Authorization: `Bearer ${authToken}` } : {}),
-      }
+      const headers: Record<string, string> = { Accept: 'application/json' }
 
       fetch(`/api/setlist/share?token=${encodeURIComponent(tokenToFetch)}`, { headers, signal: AbortSignal.timeout(15000) })
         .then(async (res) => {
           inFlightShareRef.current = null
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}))
-            if (res.status === 401) {
-              // Recoverable auth failure: token must survive in sessionStorage
-              throw { type: 'RECOVERABLE_AUTH', message: 'Authentication required to view shared setlist.' }
-            }
-            if (res.status === 403) {
-              // Recoverable access approval failure: token survives for when admin approves
-              throw { type: 'RECOVERABLE_AUTH', message: 'Active account approval required to view shared setlist.' }
-            }
             if (res.status === 410) {
-              // Terminal expired or revoked token outcome
+              // Terminal expired, revoked or retired token outcome
               const isRevoked = errData?.error === 'SHARED_SETLIST_REVOKED'
+              const isRetired = errData?.error === 'LEGACY_SHARE_RETIRED'
               throw {
                 type: 'TERMINAL_EXPIRED',
-                message: isRevoked
-                  ? 'This shared setlist link has been revoked.'
-                  : 'This shared setlist link has expired.',
+                message: isRetired
+                  ? 'This share link is from an older version and is no longer supported.'
+                  : isRevoked
+                    ? 'This shared setlist link has been revoked.'
+                    : 'This shared setlist link has expired.',
               }
             }
             if (res.status === 404) {
@@ -701,7 +692,7 @@ function LibraryApp() {
     } catch {
       /* ignore */
     }
-  }, [authContext?.session, authContext?.accessStatus])
+  }, [])
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())

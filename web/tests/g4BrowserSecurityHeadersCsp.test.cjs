@@ -223,7 +223,7 @@ test('3. SECURITY_HEADERS_HELPER_UNIT_TESTS: Verification of functions/lib/secur
 // ---------------------------------------------------------------------------
 // 3. Functions Response Headers Coverage Across Status Codes
 // ---------------------------------------------------------------------------
-test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 409, 410, 413, 429, 500, 503', async () => {
+test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 410, 413, 429, 500, 503', async () => {
   const testUser = {
     id: 'user-001',
     google_sub: 'sub-001',
@@ -263,13 +263,8 @@ test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 409,
   assert.equal(badReqRes.status, 400)
   assertSecurityHeaders(badReqRes, '400 bad request')
 
-  // 401: Unauthorized (invalid bearer; anonymous publishing is supported)
-  const unauthReq = new Request('http://localhost/api/setlist/share', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer invalid' },
-    body: JSON.stringify({ setlistName: 'Show', songs: [] }),
-  })
-  const unauthRes = await shareApi.onRequestPost({ request: unauthReq, env })
+  // 401: Unauthorized (session endpoint without a bearer token)
+  const unauthRes = await sessionApi.onRequestGet({ request: new Request('http://localhost/api/auth/session'), env })
   assert.equal(unauthRes.status, 401)
   assertSecurityHeaders(unauthRes, '401 unauthenticated')
 
@@ -296,38 +291,17 @@ test('4. FUNCTIONS_RESPONSE_SECURITY_HEADERS: 200, 204, 400, 401, 403, 404, 409,
   assertSecurityHeaders(nonOwnerRes, '403 forbidden')
 
   // 404: Not Found (share not found)
-  const notFoundReq = new Request('http://localhost/api/setlist/share?token=fedcba9876543210fedcba9876543210', {
+  const notFoundReq = new Request('http://localhost/api/setlist/share?token=' + 'f'.repeat(64), {
     headers: { Authorization: `Bearer ${validToken}` },
   })
   const notFoundRes = await shareApi.onRequestGet({ request: notFoundReq, env })
   assert.equal(notFoundRes.status, 404)
   assertSecurityHeaders(notFoundRes, '404 not found')
 
-  // 409: Conflict (CAS Songbook Revision Conflict)
-  const songbookMap = new Map()
-  songbookMap.set('user-001', {
-    user_id: 'user-001',
-    version: 5,
-    checksum: 'ck_curr_5',
-    encrypted_data: 'enc_data',
-    updated_at: new Date().toISOString(),
-  })
-  const dbWithSongbook = createMockDb([testUser], new Map(), songbookMap)
-  const conflictReq = new Request('http://localhost/api/songbook/sync', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${validToken}`,
-    },
-    body: JSON.stringify({
-      data: { songs: [{ title: 'Wonderwall', rawContent: 'Em7 G Dsus4 A7sus4' }], setlists: [] },
-      expectedChecksum: 'invalid_checksum',
-      expectedVersion: 5,
-    }),
-  })
-  const conflictRes = await syncApi.onRequestPost({ request: conflictReq, env: { DB: dbWithSongbook, AUTH_SECRET: TEST_SECRET } })
-  assert.equal(conflictRes.status, 409)
-  assertSecurityHeaders(conflictRes, '409 conflict')
+  // 410: Gone (retired songbook cloud sync endpoint)
+  const retiredSyncRes = await syncApi.onRequestGet()
+  assert.equal(retiredSyncRes.status, 410)
+  assertSecurityHeaders(retiredSyncRes, '410 retired sync')
 
   // 410: Gone (Revoked Share)
   shareMap.set('abcdef0123456789abcdef0123456789', {

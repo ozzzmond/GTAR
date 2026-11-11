@@ -159,8 +159,7 @@ test('denied routes do no AI, storage, or upstream work; auth/permission remains
   let inference = 0
   f.env.AI.run = async () => { inference++ }
   const endpoints = [
-    [share, 'onRequestPost', {}], [share, 'onRequestGet', undefined, 'https://example.invalid?token=0123456789abcdef'],
-    [sync, 'onRequestPost', {}], [sync, 'onRequestGet'],
+    [share, 'onRequestPost', {}], [share, 'onRequestGet', undefined, 'https://example.invalid?token=' + 'a'.repeat(64)],
     [metadata, 'onRequestPost', { title: 'Synthetic Song' }],
     [require('../functions/api/ug-search.ts'), 'onRequestGet', undefined, 'https://example.invalid?q=Song'],
     [require('../functions/api/ug-tab.ts'), 'onRequestGet', undefined, 'https://example.invalid?url=https://tabs.ultimate-guitar.com/tab/test/song-chords-1234'],
@@ -172,7 +171,7 @@ test('denied routes do no AI, storage, or upstream work; auth/permission remains
       assert.equal((await api[handler]({ env: f.env, request: f.request(body === undefined ? 'GET' : 'POST', body, url) })).status, 429)
       const before = calls
       const anonymous = new Request(url || 'https://example.invalid', { method: body === undefined ? 'GET' : 'POST' })
-      const anonymousPublication = api === share && handler === 'onRequestPost'
+      const anonymousPublication = api === share
       assert.equal((await api[handler]({ env: f.env, request: anonymous })).status, anonymousPublication ? 429 : 401)
       assert.equal(calls, before + (anonymousPublication ? 1 : 0))
     }
@@ -221,7 +220,7 @@ test('anonymous session callers share admission despite spoofed IP/account heade
   } finally { f.db.sqlite.close() }
 })
 
-test('enabled QR round trip, Sync CAS conflict, body limits, and AI budgets remain compatible', async () => {
+test('enabled QR round trip, body limits, and AI budgets remain compatible', async () => {
   share._resetRateLimitsForTesting()
   const ns = namespace()
   const f = await fixture(ns)
@@ -230,14 +229,10 @@ test('enabled QR round trip, Sync CAS conflict, body limits, and AI budgets rema
     const created = await share.onRequestPost({ env: f.env, request: f.request('POST', payload) })
     assert.equal(created.status, 200)
     const { token } = await created.json()
-    assert.match(token, /^[a-f0-9]{16,32}$/)
+    assert.match(token, /^[a-f0-9]{64}$/)
     assert.equal((await share.onRequestGet({ env: f.env, request: f.request('GET', undefined, `https://example.invalid?token=${token}`) })).status, 200)
-    const data = { songs: [], setlists: [] }
-    const body = { data, expectedVersion: 0, expectedChecksum: null }
-    assert.equal((await sync.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'X-GTAR-Library-Owner': f.user.id }) })).status, 200)
-    assert.equal((await sync.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'X-GTAR-Library-Owner': f.user.id }) })).status, 409)
     for (const [api, bytes, body] of [[share, share.MAX_SHARE_PAYLOAD_BYTES, payload],
-      [sync, sync.MAX_SONGBOOK_PAYLOAD_BYTES, { data }], [metadata, metadata.MAX_METADATA_PAYLOAD_BYTES, { title: 'Song' }],
+      [metadata, metadata.MAX_METADATA_PAYLOAD_BYTES, { title: 'Song' }],
       [session, session.MAX_SESSION_PAYLOAD_BYTES, {}]]) {
       assert.equal((await api.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'Content-Length': String(bytes + 1), 'X-GTAR-Library-Owner': f.user.id }) })).status, 413)
     }

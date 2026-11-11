@@ -297,7 +297,7 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
   const anonNoDbRes = await onRequestPost({ request: anonNoDbReq, env: { AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
   assert.equal(anonNoDbRes.status, 503, 'Anonymous publication requires the existing D1 service')
 
-  // 4. With active authenticated user and DB available, valid payload succeeds with 16-hex token
+  // 4. With active authenticated user and DB available, valid payload succeeds as an anonymous 64-hex share (Authorization is ignored)
   const validReq2 = new Request('https://gtar.local/api/setlist/share', {
     method: 'POST',
     headers: {
@@ -311,7 +311,7 @@ test('SETLIST_SHARING_HARDENING: Request byte bounding and missing DB fail-close
   const res3 = await onRequestPost({ request: validReq2, env: { DB: mockDb, AUTH_SECRET: authSecret, TEST_MOCK_AUTH: 'true' } })
   assert.equal(res3.status, 200)
   const body3 = await res3.json()
-  assert.match(body3.token, /^[0-9a-f]{16,32}$/)
+  assert.match(body3.token, /^[0-9a-f]{64}$/)
   assert.equal(body3.name, 'Sunday Worship')
   assert.equal(body3.songCount, 1)
   assert.equal(inserted, true)
