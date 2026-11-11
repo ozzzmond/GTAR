@@ -33,22 +33,11 @@ export interface FetchedChordSheet {
 
 export type OnlineSheetResult = FetchedChordSheet
 
-import { getStoredSessionStatus } from './googleAuth.ts'
-
-function getAuthHeaders(): Record<string, string> {
-  try {
-    const { session } = getStoredSessionStatus()
-    const token = session?.sessionToken || session?.idToken || session?.token
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  } catch {
-    return {}
-  }
-}
-
 export type OnlineSearchErrorCode =
   | 'NETWORK_ERROR'
   | 'INVALID_QUERY'
   | 'UNAUTHORIZED'
+  | 'DISABLED'
   | 'RESTRICTED'
   | 'RATE_LIMITED'
   | 'PARSE_ERROR'
@@ -397,9 +386,7 @@ export class UltimateGuitarProvider implements OnlineSearchProvider {
 
     // Live request: call GTAR backend scraper endpoint directly
     try {
-      const res = await fetch(`/api/ug-search?q=${encodeURIComponent(trimmed)}`, {
-        headers: getAuthHeaders(),
-      })
+      const res = await fetch(`/api/ug-search?q=${encodeURIComponent(trimmed)}`)
       if (res.ok) {
         const data = await res.json()
         if (data.success && Array.isArray(data.results)) {
@@ -411,8 +398,11 @@ export class UltimateGuitarProvider implements OnlineSearchProvider {
       if (res.status === 400) {
         throw new OnlineSearchError('Invalid search query', { status: 400, code: 'INVALID_QUERY' })
       }
-      if (res.status === 401) {
-        throw new OnlineSearchError('Active account login required for online search', { status: 401, code: 'UNAUTHORIZED' })
+      if (res.status === 503) {
+        const body = await res.json().catch(() => null)
+        if (body?.error === 'ONLINE_SOURCES_DISABLED') {
+          throw new OnlineSearchError('Online song sources are not available on this site.', { status: 503, code: 'DISABLED' })
+        }
       }
       if (res.status === 403) {
         throw new OnlineSearchError('Online search temporarily restricted', { status: 403, code: 'RESTRICTED' })
@@ -455,9 +445,7 @@ export class UltimateGuitarProvider implements OnlineSearchProvider {
     }
 
     try {
-      const res = await fetch(`/api/ug-tab?url=${encodeURIComponent(result.tabUrl)}`, {
-        headers: getAuthHeaders(),
-      })
+      const res = await fetch(`/api/ug-tab?url=${encodeURIComponent(result.tabUrl)}`)
       if (res.ok) {
         const data = await res.json()
         if (data.success && data.sheet && data.sheet.rawContent) {

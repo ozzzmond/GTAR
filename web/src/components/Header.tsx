@@ -52,6 +52,7 @@ import {
   type OnlineChordResult,
   type FetchedChordSheet,
 } from '../utils/onlineSearch'
+import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlineSources'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { AboutModal } from './AboutModal'
@@ -287,6 +288,7 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
   }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal])
+  const onlineSourcesEnabled = useOnlineSourcesEnabled()
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
   const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
@@ -464,7 +466,7 @@ export const Header: React.FC<HeaderProps> = ({
   // Real Online Chord Search (debounced 350ms)
   useEffect(() => {
     const trimmed = searchQuery.trim()
-    if (!trimmed || trimmed.length < 2) {
+    if (!onlineSourcesEnabled || !trimmed || trimmed.length < 2) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Invalid search queries synchronously clear prior remote results and request state.
       setOnlineResults([])
       setOnlineError(null)
@@ -489,7 +491,7 @@ export const Header: React.FC<HeaderProps> = ({
     }, 350)
 
     return () => clearTimeout(timeout)
-  }, [searchQuery])
+  }, [searchQuery, onlineSourcesEnabled])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -735,6 +737,24 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <FolderArchive className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
                   <span>Backup &amp; Restore</span>
+                </button>
+
+                {/* Online song sources: opt-in, off by default */}
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={onlineSourcesEnabled}
+                  data-testid="settings-online-sources"
+                  onClick={() => setOnlineSourcesEnabled(!onlineSourcesEnabled)}
+                  className={`${popoverItem} justify-between`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Globe className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+                    <span>Online song sources</span>
+                  </div>
+                  <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none bg-app-surface border border-app-border text-app-muted font-mono">
+                    {onlineSourcesEnabled ? 'On' : 'Off'}
+                  </span>
                 </button>
 
                 {/* 3. Debug Logs (includes Recovery Data management) */}

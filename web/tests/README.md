@@ -257,6 +257,7 @@ New or renamed tests await a human choice of primary category.
 - [multiTagFoundation.test.cjs](multiTagFoundation.test.cjs)
 - [musicExplorerDrawer.test.cjs](musicExplorerDrawer.test.cjs)
 - [nativeTooltipToPopover.test.cjs](nativeTooltipToPopover.test.cjs)
+- [onlineSourcesOptIn453.test.cjs](onlineSourcesOptIn453.test.cjs)
 - [onsongImport.test.cjs](onsongImport.test.cjs)
 - [previewBuildIdentity.test.cjs](previewBuildIdentity.test.cjs)
 - [qaBackupFixtureScale.test.cjs](qaBackupFixtureScale.test.cjs)

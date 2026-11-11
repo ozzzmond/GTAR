@@ -53,92 +53,32 @@ function createMockDb(users = []) {
   }
 }
 
-test('UG_PROXY_AUTH: Anonymous, expired, pending, denied, and missing DB fail closed', async () => {
-  const activeUser = {
-    id: 'user-active-1',
-    google_sub: 'sub-active-1',
-    email: 'active@gtar.app',
-    role: 'member',
-    access_status: 'active',
+test('UG_PROXY_OPEN: no account needed; kill switch, input validation and anonymous rate limit stay in force', async () => {
+  const { _resetUgGateForTesting } = require('../functions/ugGate.ts')
+  const tab = 'https://gtar.local/api/ug-tab?url=' + encodeURIComponent('https://example.com/not-ug')
+  for (const headers of [{}, { Authorization: 'Bearer totally-invalid-token' }]) {
+    _resetUgGateForTesting()
+    // Missing or junk credentials are irrelevant: empty search is a 200 and a non-UG tab URL is refused by host validation, not by auth.
+    const search = await ugSearch.onRequestGet({ request: new Request('https://gtar.local/api/ug-search?q=', { headers }), env: {} })
+    assert.equal(search.status, 200)
+    assert.deepEqual((await search.json()).results, [])
+    const bad = await ugTab.onRequestGet({ request: new Request(tab, { headers }), env: {} })
+    assert.equal(bad.status, 403)
+    assert.match((await bad.json()).error, /Forbidden target host/)
   }
-  const pendingUser = {
-    id: 'user-pending-1',
-    google_sub: 'sub-pending-1',
-    email: 'pending@gtar.app',
-    role: 'member',
-    access_status: 'pending',
-  }
-  const deniedUser = {
-    id: 'user-denied-1',
-    google_sub: 'sub-denied-1',
-    email: 'denied@gtar.app',
-    role: 'member',
-    access_status: 'denied',
-  }
-
-  const db = createMockDb([activeUser, pendingUser, deniedUser])
-
+  // Per-deployment kill switch (GTAR1): disabled before any validation or upstream work.
   for (const endpoint of [ugSearch, ugTab]) {
-    const url = endpoint === ugSearch
-      ? 'https://gtar.local/api/ug-search?q=oasis'
-      : 'https://gtar.local/api/ug-tab?url=' + encodeURIComponent('https://tabs.ultimate-guitar.com/tab/oasis/wonderwall-chords-27596')
-
-    // 1. Missing Authorization header -> 401
-    const noAuthRes = await endpoint.onRequestGet({
-      request: new Request(url),
-      env: { DB: db, AUTH_SECRET: TEST_SECRET },
-    })
-    assert.equal(noAuthRes.status, 401)
-    const noAuthJson = await noAuthRes.json()
-    assert.match(noAuthJson.error, /Authorization/i)
-
-    // 2. Malformed token -> 401
-    const badTokenRes = await endpoint.onRequestGet({
-      request: new Request(url, { headers: { Authorization: 'Bearer totally-invalid-token' } }),
-      env: { DB: db, AUTH_SECRET: TEST_SECRET },
-    })
-    assert.equal(badTokenRes.status, 401)
-
-    // 3. Expired token -> 401
-    const expiredToken = await createSessionToken(activeUser, TEST_SECRET, 10)
-    // Fast-forward past expiry
-    const oldNow = Date.now
-    try {
-      Date.now = () => oldNow() + 1000
-      const expiredRes = await endpoint.onRequestGet({
-        request: new Request(url, { headers: { Authorization: `Bearer ${expiredToken}` } }),
-        env: { DB: db, AUTH_SECRET: TEST_SECRET },
-      })
-      assert.equal(expiredRes.status, 401)
-    } finally {
-      Date.now = oldNow
-    }
-
-    // 4. Pending user -> 403
-    const pendingToken = await createSessionToken(pendingUser, TEST_SECRET, 3600000)
-    const pendingRes = await endpoint.onRequestGet({
-      request: new Request(url, { headers: { Authorization: `Bearer ${pendingToken}` } }),
-      env: { DB: db, AUTH_SECRET: TEST_SECRET },
-    })
-    assert.equal(pendingRes.status, 403)
-    const pendingJson = await pendingRes.json()
-    assert.match(pendingJson.error, /approval required/i)
-
-    // 5. Denied user -> 403
-    const deniedToken = await createSessionToken(deniedUser, TEST_SECRET, 3600000)
-    const deniedRes = await endpoint.onRequestGet({
-      request: new Request(url, { headers: { Authorization: `Bearer ${deniedToken}` } }),
-      env: { DB: db, AUTH_SECRET: TEST_SECRET },
-    })
-    assert.equal(deniedRes.status, 403)
-
-    // 6. Missing DB binding -> 500
-    const noDbRes = await endpoint.onRequestGet({
-      request: new Request(url, { headers: { Authorization: `Bearer ${deniedToken}` } }),
-      env: { AUTH_SECRET: TEST_SECRET },
-    })
-    assert.equal(noDbRes.status, 500)
+    const off = await endpoint.onRequestGet({ request: new Request('https://gtar.local/api/ug-search?q=oasis'), env: { UG_PROXY_MODE: 'disabled' } })
+    assert.equal(off.status, 503)
+    assert.equal((await off.json()).error, 'ONLINE_SOURCES_DISABLED')
   }
+  // Anonymous per-isolate fallback applies even without the optional distributed limiter.
+  _resetUgGateForTesting()
+  const statuses = []
+  for (let i = 0; i < 61; i++) statuses.push((await ugSearch.onRequestGet({ request: new Request('https://gtar.local/api/ug-search?q='), env: {} })).status)
+  assert.equal(statuses.slice(0, 60).every(code => code === 200), true)
+  assert.equal(statuses[60], 429)
+  _resetUgGateForTesting()
 })
 
 test('UG_PROXY_METHOD_ENFORCEMENT: Disallow non-GET/OPTIONS and handle OPTIONS CORS preflight', async () => {

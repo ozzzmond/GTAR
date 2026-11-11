@@ -1,15 +1,11 @@
-import { enforceAbuseLimit } from '../lib/abuseProtection.ts'
+import { ugGate, type UgEnv } from '../ugGate.ts'
 import { fetchUg } from '../ugFetch.ts'
 import { parseSearchResults, validateSearchQuery } from '../../src/utils/ugCore.ts'
-import {
-  authenticateUserRequest,
-  JSON_HEADERS as BASE_JSON_HEADERS,
-  type AuthEnv,
-} from '../lib/authCore.ts'
+import { JSON_HEADERS as BASE_JSON_HEADERS } from '../lib/authCore.ts'
 
 interface CloudflarePagesContext {
   request: Request
-  env: AuthEnv
+  env: UgEnv
 }
 
 const UG_HEADERS = {
@@ -39,13 +35,8 @@ export async function onRequestOptions(): Promise<Response> {
 }
 
 export async function onRequestGet(context: CloudflarePagesContext): Promise<Response> {
-  const auth = await authenticateUserRequest(context.request, context.env)
-  if ('error' in auth) {
-    return new Response(JSON.stringify({ success: false, error: auth.error }), {
-      status: auth.status,
-      headers: JSON_HEADERS,
-    })
-  }
+  const gated = await ugGate(context.env)
+  if (gated) return gated
 
   const reqUrl = new URL(context.request.url)
   const validation = validateSearchQuery(reqUrl.searchParams.get('q'))
@@ -63,9 +54,6 @@ export async function onRequestGet(context: CloudflarePagesContext): Promise<Res
       headers: JSON_HEADERS,
     })
   }
-
-  const rejection = await enforceAbuseLimit(context.env, 'ug-fetch', auth.user.id)
-  if (rejection) return rejection
 
   const target = `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(validation.query)}`
 

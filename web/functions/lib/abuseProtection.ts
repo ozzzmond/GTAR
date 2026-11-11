@@ -16,7 +16,7 @@ export const ABUSE_POLICIES = {
   'sync-write': { limit: 60, windowMs: 60_000, identity: 'account' },
   'metadata': { limit: 10, windowMs: 60_000, identity: 'account' },
   'metadata-budget': { limit: 100, windowMs: 3_600_000, identity: 'account' },
-  'ug-fetch': { limit: 60, windowMs: 60_000, identity: 'account' },
+  'ug-anonymous': { limit: 60, windowMs: 60_000, identity: 'anonymous' },
 } as const
 
 export type AbusePolicy = keyof typeof ABUSE_POLICIES
