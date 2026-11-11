@@ -206,6 +206,7 @@ Build/runtime configuration, release contracts, PWA lifecycle, and repository ch
 - [dev3mLintBehavior.test.cjs](dev3mLintBehavior.test.cjs)
 - [devVersionAndReleaseIdentity.test.cjs](devVersionAndReleaseIdentity.test.cjs)
 - [fieldCorrections108Dev8b.test.cjs](fieldCorrections108Dev8b.test.cjs)
+- [functionsTypecheckGate.test.cjs](functionsTypecheckGate.test.cjs)
 - [githubTagMetadata.test.cjs](githubTagMetadata.test.cjs)
 - [prodCleanRebaseline.test.cjs](prodCleanRebaseline.test.cjs)
 - [prodPromotionWorkflow.test.cjs](prodPromotionWorkflow.test.cjs)

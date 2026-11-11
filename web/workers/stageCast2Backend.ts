@@ -258,7 +258,7 @@ export class StageCast2Hub {
         // Possession of the displayed PIN plus an active server-authorized account is consent.
         // Serial persistence binds the first claim to its owner and burns the PIN before reply.
         s.state = transition(s.state, 'PAIRED')
-        s.deadline = Math.min(s.maxDeadline, this.rt.now() + POLICY.idleTimeoutMs)
+        s.deadline = Math.min(this.ensureMaxDeadline(s), this.rt.now() + POLICY.idleTimeoutMs)
         const credential = secret()
         s.controllerHash = await digest(credential); s.owner = owner; s.requestId = secret(); s.pinHash = ''
         this.renewLease(s)
