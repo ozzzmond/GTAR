@@ -1,0 +1,65 @@
+[
+  {
+    "id": "g1d00002-0001-4000-8000-000000000001",
+    "name": "Sunday Acoustic Set",
+    "createdAt": 1762819200101,
+    "songs": [
+      {
+        "id": "g1d00001-0001-4000-8000-000000000003",
+        "entryId": "g1d00003-0001-4000-8000-000000000100",
+        "position": 0,
+        "title": "Steady Ground",
+        "artist": "GTAR1 Demo (original)"
+      },
+      {
+        "id": "g1d00001-0001-4000-8000-000000000005",
+        "entryId": "g1d00003-0001-4000-8000-000000000101",
+        "position": 1,
+        "title": "Amazing Grace",
+        "artist": "John Newton (public domain)"
+      },
+      {
+        "id": "g1d00001-0001-4000-8000-000000000002",
+        "entryId": "g1d00003-0001-4000-8000-000000000102",
+        "position": 2,
+        "title": "Kape at Ulan",
+        "artist": "GTAR1 Demo (original)"
+      },
+      {
+        "id": "g1d00001-0001-4000-8000-000000000006",
+        "entryId": "g1d00003-0001-4000-8000-000000000103",
+        "position": 3,
+        "title": "When the Saints Go Marching In",
+        "artist": "Traditional (public domain)"
+      }
+    ]
+  },
+  {
+    "id": "g1d00002-0001-4000-8000-000000000002",
+    "name": "Open Mic Night",
+    "createdAt": 1762819200102,
+    "songs": [
+      {
+        "id": "g1d00001-0001-4000-8000-000000000001",
+        "entryId": "g1d00003-0001-4000-8000-000000000200",
+        "position": 0,
+        "title": "Sa Dulo ng Kalsada",
+        "artist": "GTAR1 Demo (original)"
+      },
+      {
+        "id": "g1d00001-0001-4000-8000-000000000004",
+        "entryId": "g1d00003-0001-4000-8000-000000000201",
+        "position": 1,
+        "title": "Long Way Home",
+        "artist": "GTAR1 Demo (original)"
+      },
+      {
+        "id": "g1d00001-0001-4000-8000-000000000006",
+        "entryId": "g1d00003-0001-4000-8000-000000000202",
+        "position": 2,
+        "title": "When the Saints Go Marching In",
+        "artist": "Traditional (public domain)"
+      }
+    ]
+  }
+]

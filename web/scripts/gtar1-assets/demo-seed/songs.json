@@ -1,0 +1,111 @@
+[
+  {
+    "id": "g1d00001-0001-4000-8000-000000000001",
+    "title": "Sa Dulo ng Kalsada",
+    "artist": "GTAR1 Demo (original)",
+    "key": "G",
+    "capo": "No Capo",
+    "bpm": "96",
+    "time": "4/4",
+    "format": "CHORD_PRO",
+    "transposeOffset": 0,
+    "tags": [
+      "Demo",
+      "Original",
+      "OPM"
+    ],
+    "createdAt": 1762819200001,
+    "rawContent": "{title: Sa Dulo ng Kalsada}\n{artist: GTAR1 Demo (original)}\n{key: G}\n{time: 4/4}\n{tempo: 96}\n\n{comment: Verse 1}\n[G]Sakay ng jeep, [D]bitbit ang gitara\n[Em]Mga pangarap ay [C]nasa bulsa pa\n[G]Walang sigurado, [D]pero tuloy lang\n[Em]May kantang naghihintay sa [C]dulo ng kalsada\n\n{comment: Chorus}\n[C]Tara na, [G]sabay tayong [D]umawit\n[C]Kahit sintunado, [G]kahit [D]pagod na\n[Em]Basta may [D]kasama sa [C]biyahe\n[G]Masaya na, [D]masaya na, [G]masaya na\n\n{comment: Verse 2}\n[G]Ulan sa bintana, [D]kape sa kamay\n[Em]Kapitbahay ay [C]nakikinig din\n[G]Isang kanta lang [D]para sa lahat\n[Em]Uuwi tayong [C]may ngiti sa labi\n\n{comment: Chorus}\n[C]Tara na, [G]sabay tayong [D]umawit\n[C]Kahit sintunado, [G]kahit [D]pagod na\n[Em]Basta may [D]kasama sa [C]biyahe\n[G]Masaya na, [D]masaya na, [G]masaya na\n"
+  },
+  {
+    "id": "g1d00001-0001-4000-8000-000000000002",
+    "title": "Kape at Ulan",
+    "artist": "GTAR1 Demo (original)",
+    "key": "D",
+    "capo": "Capo 2",
+    "bpm": "72",
+    "time": "4/4",
+    "format": "CHORD_PRO",
+    "transposeOffset": 0,
+    "tags": [
+      "Demo",
+      "Original",
+      "OPM",
+      "Ballad"
+    ],
+    "createdAt": 1762819200002,
+    "rawContent": "{title: Kape at Ulan}\n{artist: GTAR1 Demo (original)}\n{key: D}\n{time: 4/4}\n{tempo: 72}\n\n{comment: Verse 1}\n[D]Tahimik ang gabi, [A]tumutulo ang bubong\n[Bm]Mainit ang tasa, [G]malamig ang hangin\n[D]Hindi mo na kailangang [A]magsalita\n[Bm]Sapat na na andito [G]ka sa tabi ko\n\n{comment: Chorus}\n[G]Kape at ulan, [D]ikaw at ako\n[A]Walang minamadali [Bm]sa gabing ito\n[G]Kape at ulan, [D]hayaan nating [A]tumagal\n[G]Dito lang tayo [A]hanggang [D]umaga\n\n{comment: Bridge}\n[Bm]Bukas ay [G]bahala na\n[D]Ngayon ay [A]atin muna\n[Bm]Isang [G]awit pa\n\n{comment: Chorus}\n[G]Kape at ulan, [D]ikaw at ako\n[A]Walang minamadali [Bm]sa gabing ito\n[G]Kape at ulan, [D]hayaan nating [A]tumagal\n[G]Dito lang tayo [A]hanggang [D]umaga\n"
+  },
+  {
+    "id": "g1d00001-0001-4000-8000-000000000003",
+    "title": "Steady Ground",
+    "artist": "GTAR1 Demo (original)",
+    "key": "C",
+    "capo": "No Capo",
+    "bpm": "68",
+    "time": "4/4",
+    "format": "CHORD_PRO",
+    "transposeOffset": 0,
+    "tags": [
+      "Demo",
+      "Original",
+      "Worship"
+    ],
+    "createdAt": 1762819200003,
+    "rawContent": "{title: Steady Ground}\n{artist: GTAR1 Demo (original)}\n{key: C}\n{time: 4/4}\n{tempo: 68}\n\n{comment: Verse}\n[C]When the morning comes too [G]fast\n[Am]And the day is [F]heavy\n[C]You hold my hand and [G]I can stand\n[Am]You are my [F]steady ground\n\n{comment: Chorus}\n[F]I will [C]sing, I will [G]sing\n[Am]Though the [F]road is long\n[F]I will [C]trust, I will [G]trust\n[Am]You are [F]steady ground\n[F]Hold me [G]now, [C]hold me [G]now\n\n{comment: Verse 2}\n[C]In the quiet [G]I can hear\n[Am]Every worry [F]let me go\n[C]Peace is not a [G]place I find\n[Am]Peace is [F]someone I know\n\n{comment: Chorus}\n[F]I will [C]sing, I will [G]sing\n[Am]Though the [F]road is long\n[F]I will [C]trust, I will [G]trust\n[Am]You are [F]steady ground\n[F]Hold me [G]now, [C]hold me [G]now\n"
+  },
+  {
+    "id": "g1d00001-0001-4000-8000-000000000004",
+    "title": "Long Way Home",
+    "artist": "GTAR1 Demo (original)",
+    "key": "A",
+    "capo": "No Capo",
+    "bpm": "120",
+    "time": "4/4",
+    "format": "CHORD_PRO",
+    "transposeOffset": 0,
+    "tags": [
+      "Demo",
+      "Original",
+      "Country"
+    ],
+    "createdAt": 1762819200004,
+    "rawContent": "{title: Long Way Home}\n{artist: GTAR1 Demo (original)}\n{key: A}\n{time: 4/4}\n{tempo: 120}\n\n{comment: Verse 1}\n[A]Dust on the dashboard, [D]sun going down\n[A]Radio fading in a [E]little town\n[A]Twelve hours behind me, [D]one more to go\n[A]Singing to the fence posts [E]way out on the road\n\n{comment: Chorus}\n[D]It's a long way [A]home, but I'm [E]coming\n[D]Wheels keep [A]humming, [E]heart keeps drumming\n[D]It's a long way [A]home, and I [E]don't mind\n[D]Every mile's a [A]song I left [E]behind[A]\n\n{comment: Verse 2}\n[A]Coffee at a station, [D]a stranger says hi\n[A]We talk about the weather and the [E]big blue sky\n[A]Back on the highway, [D]windows rolled down\n[A]Nothing like the sound of the [E]road to town\n\n{comment: Chorus}\n[D]It's a long way [A]home, but I'm [E]coming\n[D]Wheels keep [A]humming, [E]heart keeps drumming\n[D]It's a long way [A]home, and I [E]don't mind\n[D]Every mile's a [A]song I left [E]behind[A]\n"
+  },
+  {
+    "id": "g1d00001-0001-4000-8000-000000000005",
+    "title": "Amazing Grace",
+    "artist": "John Newton (public domain)",
+    "key": "G",
+    "capo": "No Capo",
+    "bpm": "72",
+    "time": "3/4",
+    "format": "CHORD_PRO",
+    "transposeOffset": 0,
+    "tags": [
+      "Demo",
+      "Public domain",
+      "Hymn"
+    ],
+    "createdAt": 1762819200005,
+    "rawContent": "{title: Amazing Grace}\n{artist: John Newton (public domain)}\n{key: G}\n{time: 3/4}\n{tempo: 72}\n\n{comment: Words: John Newton, 1779. Traditional tune. Public domain. Chords: GTAR1 Demo arrangement.}\n\n{comment: Verse 1}\nA[G]mazing grace, how [G7]sweet the [C]sound\nThat [G]saved a wretch like [Em]me\nI [G]once was lost, but [G7]now am [C]found\nWas [G]blind, but [D]now I [G]see\n\n{comment: Verse 2}\n'Twas [G]grace that taught my [G7]heart to [C]fear\nAnd [G]grace my fears re[Em]lieved\nHow [G]precious did that [G7]grace ap[C]pear\nThe [G]hour I [D]first be[G]lieved\n\n{comment: Verse 3}\nThrough [G]many dangers, [G7]toils and [C]snares\nI [G]have already [Em]come\n'Tis [G]grace hath brought me [G7]safe thus [C]far\nAnd [G]grace will [D]lead me [G]home\n"
+  },
+  {
+    "id": "g1d00001-0001-4000-8000-000000000006",
+    "title": "When the Saints Go Marching In",
+    "artist": "Traditional (public domain)",
+    "key": "C",
+    "capo": "No Capo",
+    "bpm": "110",
+    "time": "4/4",
+    "format": "CHORD_PRO",
+    "transposeOffset": 0,
+    "tags": [
+      "Demo",
+      "Public domain",
+      "Traditional"
+    ],
+    "createdAt": 1762819200006,
+    "rawContent": "{title: When the Saints Go Marching In}\n{artist: Traditional (public domain)}\n{key: C}\n{time: 4/4}\n{tempo: 110}\n\n{comment: Traditional spiritual. Public domain. Chords: GTAR1 Demo arrangement.}\n\n{comment: Verse 1}\nOh, when the [C]saints go marching in\nOh, when the saints go [G7]marching in\nOh, I want to be in that [C]number\nWhen the [G7]saints go marching [C]in\n\n{comment: Verse 2}\nOh, when the [C]sun refuse to shine\nOh, when the sun refuse to [G7]shine\nOh, I want to be in that [C]number\nWhen the [G7]sun refuse to [C]shine\n"
+  }
+]

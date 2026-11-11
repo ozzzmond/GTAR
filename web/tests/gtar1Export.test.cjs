@@ -107,3 +107,33 @@ test('GTAR1 icon assets exist, are transparent PNG/ICO and every icon target is 
   }
   assert.ok(E.ICONS.some(([t]) => t === 'web/public/pwa-prod-512x512.png') && E.ICONS.some(([t]) => t === 'web/src/assets/bebegirl1-transparent.png'))
 })
+
+test('demo seed has valid, original-or-public-domain songs and two setlists that resolve', () => {
+  const songs = JSON.parse(fs.readFileSync(path.join(E.DEMO_SEED_DIR, 'songs.json'), 'utf8'))
+  const setlists = JSON.parse(fs.readFileSync(path.join(E.DEMO_SEED_DIR, 'setlists.json'), 'utf8'))
+  assert.ok(songs.length >= 4 && songs.length <= 6)
+  assert.equal(setlists.length, 2)
+  const ids = new Set(songs.map(s => s.id))
+  assert.equal(ids.size, songs.length)
+  for (const s of songs) {
+    assert.ok(s.title && s.key && s.rawContent.includes(`{title: ${s.title}}`) && s.rawContent.includes(`{key: ${s.key}}`), s.title)
+    assert.equal(s.transposeOffset, 0)
+  }
+  const entries = new Set()
+  for (const l of setlists) for (const [i, ref] of l.songs.entries()) {
+    assert.ok(ids.has(ref.id), `${l.name}: ${ref.title}`); assert.equal(ref.position, i)
+    assert.ok(!entries.has(ref.entryId)); entries.add(ref.entryId)
+  }
+  assert.ok(fs.readFileSync(path.join(E.DEMO_SEED_DIR, 'LICENSES.md'), 'utf8').includes('Public domain'))
+})
+
+test('demo seed is wired through a build flag and fails closed on source drift', () => {
+  const lib = "import type { ActiveSongState, WebSetlist } from '../types/gtar'\nexport const DEFAULT_SETLIST: ActiveSongState[] = []\nexport const DEFAULT_SAMPLE_SETLISTS: WebSetlist[] = []\n"
+  const out = E.patchDefaultLibrary(lib)
+  assert.ok(out.includes("VITE_GTAR1_DEMO === '1' ? GTAR1_DEMO_SONGS : []") && out.includes("from './gtar1DemoSeed'"))
+  assert.throws(() => E.patchDefaultLibrary('nothing'), /needs review/)
+  assert.throws(() => E.patchViteDemoFlag('nothing'), /needs review/)
+  assert.ok(E.patchViteDemoFlag("define: {\n      'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),\n}").includes('VITE_GTAR1_DEMO'))
+  const mod = E.demoSeedModule()
+  assert.ok(mod.includes('export const GTAR1_DEMO_SONGS') && mod.includes('export const GTAR1_DEMO_SETLISTS'))
+})
