@@ -9,7 +9,7 @@ const C = require('../.github/prod_controller.cjs')
 const { parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS } = require('../.github/release_metadata.cjs')
 const { resolveReleaseIdentity, ABANDONED_PROD } = require('../.github/release_identity.cjs')
 
-function createRepoFixture(t) {
+function createRepoFixture(t, { legacyBaseline = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-stabilization-test-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   const repo = path.join(dir, 'repo')
@@ -27,6 +27,7 @@ function createRepoFixture(t) {
 
   // Copy release controller files
   for (const f of ['prod_controller.cjs', 'release_metadata.cjs', 'release_identity.cjs', 'release_repository.cjs']) {
+    if (legacyBaseline && f === 'release_repository.cjs') continue
     put(`.github/${f}`, fs.readFileSync(path.join(root, '.github', f), 'utf8'))
   }
 
@@ -54,6 +55,9 @@ function createRepoFixture(t) {
 
   // Create dev branch from baseline and commit checkpoint on dev
   git('checkout', '-b', 'dev')
+  if (legacyBaseline) {
+    put('.github/release_repository.cjs', fs.readFileSync(path.join(root, '.github/release_repository.cjs'), 'utf8'))
+  }
   put('web/package.json', JSON.stringify({ name: 'web', version: '1.0.130-dev.5' }))
   put('web/package-lock.json', JSON.stringify({ name: 'web', version: '1.0.130-dev.5', packages: { '': { version: '1.0.130-dev.5' } } }))
   put('web/src/types/gtar.ts', `export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string' ? __GTAR_PROD_VERSION__ : '1.1.108';\nexport const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string' ? __GTAR_DEV_VERSION__ : '1.0.130-dev.5';\n`)
@@ -201,3 +205,45 @@ test('historical numeric alias with mismatched committed metadata rejects', () =
   }
   assert.throws(() => inspectCheckpoint(root, 'v1.0.130-dev.5'), /Checkpoint version metadata mismatch/)
 })
+
+test('actual v1.2.0 baseline retains tag-derived identity without the later repository helper', t => {
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
+  const baseline = '3cfe5b7a912e4982fc72ce96dd656ebcd787862b'
+  try { git('cat-file', '-e', `${baseline}^{commit}`) }
+  catch { t.skip('Shallow checkout lacks v1.2.0; deterministic baseline planner fixture still runs'); return }
+  assert.equal(git('rev-parse', 'refs/tags/v1.2.0^{commit}'), baseline)
+  assert.equal(JSON.parse(git('show', `${baseline}:web/package.json`)).version, '1.0.145-dev.3')
+  assert.equal(git('ls-tree', baseline, '.github/release_repository.cjs'), '')
+  const checkpoint = inspectCheckpoint(root, 'v1.0.145-dev.3')
+  assert.equal(checkpoint.sha, baseline)
+  assert.equal(checkpoint.prodTag, 'v1.2.0')
+  assert.equal(C.runtimeContract(root, baseline, false), true)
+})
+
+test('planner accepts a tag-derived baseline predating release_repository.cjs', t => {
+  const f = createRepoFixture(t, { legacyBaseline: true })
+  assert.equal(f.git('ls-tree', f.baselineSha, '.github/release_repository.cjs'), '')
+  const p = C.plan(f.repo, 'v1.0.130-dev.5', f.checkpointSha, 'refs/heads/main', f.baselineSha)
+  assert.equal(p.baselineSha, f.baselineSha)
+  assert.equal(p.prodTag, 'v1.1.135')
+  assert.equal(p.sha, f.checkpointSha)
+})
+
+for (const state of ['missing', 'altered']) {
+  test(`planner rejects an exact checkpoint with ${state} release_repository.cjs`, t => {
+    const f = createRepoFixture(t)
+    f.git('checkout', 'dev')
+    if (state === 'missing') fs.unlinkSync(path.join(f.repo, '.github/release_repository.cjs'))
+    else f.put('.github/release_repository.cjs', '// altered repository identity')
+    f.git('add', '.github/release_repository.cjs')
+    f.git('commit', '-m', `${state} checkpoint repository helper`)
+    const sha = f.git('rev-parse', 'HEAD')
+    f.git('tag', '-f', 'v1.0.130-dev.5', sha)
+    f.git('update-ref', 'refs/remotes/origin/dev', sha)
+    assert.equal(C.runtimeContract(f.repo, sha), false)
+    assert.throws(
+      () => C.plan(f.repo, 'v1.0.130-dev.5', sha, 'refs/heads/main', f.baselineSha),
+      /Tag-derived runtime identity contract missing\/different from controller/
+    )
+  })
+}
