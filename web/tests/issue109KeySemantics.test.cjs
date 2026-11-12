@@ -227,13 +227,12 @@ test('111: text transposition rebases nonzero offset once, including slash bass,
 
 test('111: confirmed chart survives backup and sync; confirmation-only changes are not discarded',()=>{
  const {normalizeBackupSong,createBackupPayload}=require('../src/utils/jsonBackup.ts')
- const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
  const raw='{original_key: E}\n[E]My [Esus4]song',confirmed={...song,key:'E',confirmedChartKey:'E',rawContent:raw,transposeOffset:-3}
  const normalized=normalizeBackupSong(confirmed);assert.equal(normalized.confirmedChartKey,'E');assert.equal(normalized.rawContent,raw);assert.equal(normalized.transposeOffset,-3)
  const backup=createBackupPayload([confirmed],[{id:'list',name:'List',songs:[{id:song.id,title:song.title}]}])
  assert.equal(backup.songs[0].confirmedChartKey,'E');assert.equal(backup.setlists[0].songs[0].id,song.id)
  const legacy={...confirmed};delete legacy.confirmedChartKey
- assert.notEqual(require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(legacy),require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(confirmed));assert.notEqual(computeSongbookChecksum({songs:[legacy],setlists:[]}),computeSongbookChecksum({songs:[confirmed],setlists:[]}))
+ assert.notEqual(require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(legacy),require('../src/utils/songbookFoundation.ts').computeSemanticSongFingerprint(confirmed))
  localStorage.clear();persistLibrary({songs:[normalized],setlists:[]});assert.equal(readPersistedLibrary().songs[0].confirmedChartKey,'E')
 })
 

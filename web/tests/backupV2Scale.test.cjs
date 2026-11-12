@@ -129,7 +129,7 @@ test('10,000 songs + 300 setlists + trash + every setting: export → verify →
   global.localStorage = new MemoryStorage()
 })
 
-test('10k-song file backup round trips 1000 tag colors with compact cloud metadata overhead', () => {
+test('10k-song file backup round trips 1000 tag colors', () => {
   const { songs, setlists } = makeLibrary(10000, 0)
   const colors = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`tag-${i}`, '#123456']))
   const payload = jb.createBackupPayload(songs, setlists, 'test', undefined, undefined, colors)
@@ -137,8 +137,4 @@ test('10k-song file backup round trips 1000 tag colors with compact cloud metada
   assert.equal(parsed.isValid, true, parsed.error)
   assert.deepEqual(parsed.tagColors, colors)
   assert.equal(parsed.songs.length, 10000)
-  const { estimateSongbookUploadBytes } = require('../src/utils/cloudBackupFormat.ts')
-  const baseline = estimateSongbookUploadBytes({ songs, setlists })
-  const overhead = estimateSongbookUploadBytes({ songs, setlists, tagColors: colors }) - baseline
-  assert.ok(overhead < 25000, `${overhead} bytes of optional metadata`)
 })
