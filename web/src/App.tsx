@@ -245,6 +245,8 @@ function LibraryApp() {
     return () => window.removeEventListener(OPEN_RECOVERY_DATA_EVENT, open)
   }, [])
   const editorNavigationGuard = useRef<((next: () => void) => void) | null>(null)
+  // Keep the setlist page across the workspace's viewer-time unmount.
+  const [workspaceSetlistId, setWorkspaceSetlistId] = useState<string | number | null>(null)
   const navigateSafely = (next: () => void) => {
     if (editorNavigationGuard.current) editorNavigationGuard.current(next)
     else next()
@@ -1132,6 +1134,7 @@ function LibraryApp() {
     setIsSetlistDrawerOpen(false)
     navigateSafely(() => {
       setExplorerSelection(target)
+      setWorkspaceSetlistId(null)
       setActiveView('songbook')
     })
   }
@@ -1790,6 +1793,8 @@ function LibraryApp() {
               setActiveView('stage')
             }}
             onSongMembershipChange={handleSongMembership}
+            openSetlistId={workspaceSetlistId}
+            onOpenSetlistChange={setWorkspaceSetlistId}
             onCreateSetlistForSong={handleCreateSetlistForSong}
             onNewSong={handleNewSong}
             onNewSetlist={handleNewSetlist}

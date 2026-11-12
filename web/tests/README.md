@@ -271,6 +271,7 @@ New or renamed tests await a human choice of primary category.
 - [setlistMergeConflictSkip.test.cjs](setlistMergeConflictSkip.test.cjs)
 - [setlistShareSwipe346.test.cjs](setlistShareSwipe346.test.cjs)
 - [setlistTrashAppWiring.test.cjs](setlistTrashAppWiring.test.cjs)
+- [setlistViewerNavigation.test.cjs](setlistViewerNavigation.test.cjs)
 - [setlistWorkspaceGtar1.test.cjs](setlistWorkspaceGtar1.test.cjs)
 - [smartThemeBackup372.test.cjs](smartThemeBackup372.test.cjs)
 - [songExport.test.cjs](songExport.test.cjs)

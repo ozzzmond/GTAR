@@ -159,7 +159,7 @@ test('S1_SETLIST: missing or trashed song rows show as unavailable and are disab
   assert.equal($('[data-testid="workspace-entry-0"]').getAttribute('aria-disabled'), null)
 })
 
-test('S1_SETLIST: Play in Stage opens the right setlist position; Open opens the library song', async () => {
+test('S1_SETLIST: Play in Stage and Open use the exact setlist position', async () => {
   const played = [], opened = []
   await openSetlist('sl-1', {
     onSelectSetlistSong: (id, idx) => played.push([id, idx]),
@@ -170,7 +170,8 @@ test('S1_SETLIST: Play in Stage opens the right setlist position; Open opens the
   assert.deepEqual(played, [['sl-1', 2], ['sl-1', 0]])
   await click($('[data-testid="workspace-entry-open-2"]'))
   await click($('[data-testid="workspace-entry-0"]'))
-  assert.deepEqual(opened, [1, 0], 'Open uses the library index of the resolved song')
+  assert.deepEqual(played, [['sl-1', 2], ['sl-1', 0], ['sl-1', 2], ['sl-1', 0]])
+  assert.deepEqual(opened, [], 'setlist entry opening never switches to the library queue')
 })
 
 test('S1_SETLIST: header Play in Stage starts at the first available entry', async () => {
