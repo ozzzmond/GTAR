@@ -14,6 +14,7 @@ import { transposeContext } from './utils/songKeySemantics'
 import { parseBandSetlist } from './utils/bandSetlistImport'
 import {
   libraryRevision,
+  loadedLibraryRevision,
   reloadLibraryRevision,
   persistLibrary,
   planDanglingReferenceRepair,
@@ -249,6 +250,9 @@ function LibraryApp() {
   }
   // Load once so legacy songs receive the same IDs used by the setlist migration.
   const [initialLibrary] = useState(() => {
+    // #453 D1: startup repairs are saves built on the library read here; they name its revision so a
+    // newer commit from another tab is never replaced (the stale write is refused and handled on mount).
+    const loadedRevision = loadedLibraryRevision()
     let savedLibrary = readPersistedLibrary()
     if (savedLibrary) {
       const normalized = normalizeSongbookIds(savedLibrary.songs, savedLibrary.setlists)
@@ -257,7 +261,7 @@ function LibraryApp() {
       if (normalized.migrated || cleaned.songs.length !== normalized.songs.length || cleaned.setlists.length !== normalized.setlists.length) {
         savedLibrary = cleaned
         try {
-          persistLibrary(savedLibrary)
+          persistLibrary(savedLibrary, localStorage, { expectedRaw: loadedRevision })
         } catch { /* storage quota or error */ }
       }
       return { ...partitionSongs(savedLibrary.songs), setlists: bindLegacySetlists(savedLibrary.setlists, savedLibrary.songs), folders: savedLibrary.folders ?? [], tagColors: savedLibrary.tagColors }
@@ -280,7 +284,7 @@ function LibraryApp() {
     const normalized = normalizeSongbookIds(combined, storedSetlists)
     const repaired = removeUnchangedSamples(deduplicateLibrary({ songs: normalized.songs, setlists: normalized.setlists }), cloudSyncedSetlistIds())
     try {
-      persistLibrary(repaired)
+      persistLibrary(repaired, localStorage, { expectedRaw: loadedRevision })
       performStorageHousekeeping()
     } catch { /* ignore */ }
     const migrated = readPersistedLibrary() ?? repaired

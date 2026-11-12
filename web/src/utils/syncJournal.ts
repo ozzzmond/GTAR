@@ -10,7 +10,7 @@ import { recoverySourceDigest } from './recoverySourceDigest'
 import { ARCHIVE_PREFIX, IDB_RECOVERY_MAX_BYTES, IDB_RECOVERY_MAX_COUNT, putRecoveryArchive, recoveryArchiveEntries,
   recoveryArchiveGet, recoveryArchivesInIndexedDb, removeRecoveryArchive } from './recoveryArchiveStore'
 import { LIBRARY_DB_NAME, LIBRARY_EXTERNAL_EVENT, LibraryStaleWriteError, isLibraryToken, libraryStoreActive, libraryStoreDecode, libraryStoreLoad,
-  libraryStorePersist, libraryStoreRead, libraryStoreRevision, reloadLibraryStore, openReadOnlyLibrary, blockLibraryStore, prepareLibraryStore,
+  libraryStorePersist, libraryStoreRead, libraryStoreRevision, libraryStoreLoadedRevision, reloadLibraryStore, openReadOnlyLibrary, blockLibraryStore, prepareLibraryStore,
   type LibrarySource, type LibraryStorePreparation, type MigrationStep } from './libraryStore'
 import { LIBRARY_V2_KEY, B2_FLAG_KEY, LIBRARY_B1_KEY, readLegacyLibrary } from './legacyLibrarySources'
 
@@ -774,6 +774,14 @@ export function isLibraryStoreActive(storage: Storage = localStorage): boolean {
 /** Opaque revision token of the persisted library, for revision gates and change checks. Throws like `Storage.getItem`. */
 export function libraryRevision(storage: Storage = localStorage): string | null {
   return storeActive(storage) ? libraryStoreRevision() : storage.getItem(LIBRARY_KEY)
+}
+/**
+ * Revision of the library `readPersistedLibrary` returns in this tab. It is behind `libraryRevision`
+ * when another tab committed a save this tab has not loaded yet; a save built on that read must
+ * name this revision as its base, so the stale-write gate can refuse it.
+ */
+export function loadedLibraryRevision(storage: Storage = localStorage): string | null {
+  try { return storeActive(storage) ? libraryStoreLoadedRevision() : storage.getItem(LIBRARY_KEY) } catch { return null }
 }
 /** Restores a revision read earlier with `libraryRevision` (rollback after a failed follow-up write; gtar_library_v1 only). */
 export function restoreLibraryRevision(revision: string | null, storage: Storage = localStorage): void {

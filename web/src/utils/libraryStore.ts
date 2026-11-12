@@ -150,6 +150,8 @@ function notify(name: string, detail?: unknown): void {
 export function libraryStoreActive(): boolean { return state !== null }
 export function libraryStoreReadOnly(): boolean { return !!state?.readOnly }
 export function libraryStoreRevision(): string | null { return state ? state.head : null }
+/** Revision of the library this tab holds (libraryStoreRead); behind the head until another tab's save is loaded. */
+export function libraryStoreLoadedRevision(): string | null { return state ? state.current.token : null }
 /** True while a save of this tab is not yet committed to IndexedDB (including a failed commit). */
 export function libraryStorePending(): boolean { return !!state && (state.dirty || state.flushing !== null || state.lastError !== null) }
 
