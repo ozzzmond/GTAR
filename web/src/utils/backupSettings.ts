@@ -762,23 +762,38 @@ export function persistCloudThemeSettings(
   return normalized
 }
 
-export function readBackupSettings(storage: Pick<Storage, 'getItem'> = localStorage): BackupSettings {
+/**
+ * #453 S1: reads each v1 setting on its own. A stored value that does not parse or validate is
+ * left out and its storage key is listed in `unreadable`; it never hides the other settings.
+ * Nothing is repaired or removed in storage.
+ */
+export function inspectBackupSettings(storage: Pick<Storage, 'getItem'> = localStorage): { settings: BackupSettings; unreadable: string[] } {
   const data: Record<string, unknown> = {}
-  const theme = storage.getItem(SETTINGS_KEYS.themeMode)
-  const colors = storage.getItem(SETTINGS_KEYS.customThemeColors)
-  if (theme !== null) data.themeMode = theme
-  if (colors !== null) data.customThemeColors = JSON.parse(colors)
-  const overrides = storage.getItem(SETTINGS_KEYS.factoryThemeOverrides)
-  if (overrides !== null) data.factoryThemeOverrides = JSON.parse(overrides)
   const stage: Record<string, unknown> = {}
+  const unreadable: string[] = []
+  const take = (key: string, parse: (raw: string) => unknown, check: (value: unknown) => Record<string, unknown>, keep: (value: unknown) => void) => {
+    const raw = storage.getItem(key)
+    if (raw === null) return
+    try {
+      const value = parse(raw)
+      if (validateBackupSettings(check(value)).length) unreadable.push(key)
+      else keep(value)
+    } catch { unreadable.push(key) }
+  }
+  const text = (raw: string) => raw
+  take(SETTINGS_KEYS.themeMode, text, themeMode => ({ themeMode }), value => { data.themeMode = value })
+  take(SETTINGS_KEYS.customThemeColors, JSON.parse, customThemeColors => ({ customThemeColors }), value => { data.customThemeColors = value })
+  take(SETTINGS_KEYS.factoryThemeOverrides, JSON.parse, factoryThemeOverrides => ({ factoryThemeOverrides }), value => { data.factoryThemeOverrides = value })
   for (const key of ['fontStyle', 'fontSizePx', 'scrollSpeed', 'isTwoColumn'] as const) {
-    const value = storage.getItem(SETTINGS_KEYS[key])
-    if (value !== null) stage[key] = key === 'fontStyle' ? value : JSON.parse(value)
+    take(SETTINGS_KEYS[key], key === 'fontStyle' ? text : JSON.parse, value => ({ stageSettings: { [key]: value } }), value => { stage[key] = value })
   }
   if (Object.keys(stage).length) data.stageSettings = stage
-  const errors = validateBackupSettings(data)
-  if (errors.length) throw new Error(errors.join('\n'))
-  return data as BackupSettings
+  return { settings: data as BackupSettings, unreadable }
+}
+
+/** The readable v1 settings; a malformed stored value is skipped (see inspectBackupSettings). */
+export function readBackupSettings(storage: Pick<Storage, 'getItem'> = localStorage): BackupSettings {
+  return inspectBackupSettings(storage).settings
 }
 
 export function restoreBackupSettings(settings: BackupSettings, storage: Pick<Storage, 'setItem'> = localStorage) {
@@ -923,9 +938,15 @@ export function settingsFromLegacy(settings: BackupSettings): BackupSettingsV2 {
   return { appearance, preferences: {} }
 }
 
-/** Reads every backed-up setting. v1 fields throw on malformed storage (as before); v2-only fields the app would ignore are skipped. */
+/** Reads every backed-up setting; values the app would ignore and malformed stored values are skipped. */
 export function readBackupSettingsV2(storage: Pick<Storage, 'getItem'> = localStorage): BackupSettingsV2 {
-  const appearance: AppearanceSettings = { ...readBackupSettings(storage) }
+  return inspectBackupSettingsV2(storage).settings
+}
+
+/** #453 S1: the settings a backup holds, plus the storage keys left out because their stored value is malformed. */
+export function inspectBackupSettingsV2(storage: Pick<Storage, 'getItem'> = localStorage): { settings: BackupSettingsV2; unreadable: string[] } {
+  const v1 = inspectBackupSettings(storage)
+  const appearance: AppearanceSettings = { ...v1.settings }
   for (const [field, spec] of Object.entries(APPEARANCE_EXTRA_SETTINGS)) {
     const raw = storage.getItem(spec.key)
     const value = raw === null ? undefined : spec.read(raw)
@@ -937,7 +958,7 @@ export function readBackupSettingsV2(storage: Pick<Storage, 'getItem'> = localSt
     const value = raw === null ? undefined : spec.read(raw)
     if (value !== undefined) Object.assign(preferences, { [field]: value })
   }
-  return { appearance, preferences }
+  return { settings: { appearance, preferences }, unreadable: v1.unreadable }
 }
 
 /** Stage typography fields for live reload after a restore. */
@@ -1149,6 +1170,7 @@ export function restorePreviousSettings(storage: SettingsStorage, options: Setti
   expectedRaw: string
 }): Promise<PreviousSettingsResult> {
   return withSettingsLock(options, () => {
+    options.beforeWrite?.()
     const recovery = inspectSettingsRecovery(storage)
     if (recovery.state === 'none') throw new Error('No previous-settings copy on this device')
     // Checked under the lock, before any write: a copy replaced or changed since it was shown is never applied.
@@ -1166,7 +1188,7 @@ export function restorePreviousSettings(storage: SettingsStorage, options: Setti
 
 /** Explicit user choice only: removes the copy whose exact bytes the user was shown. No setting changes. */
 export function discardSettingsRecovery(expectedRaw: string, storage: SettingsStorage = localStorage, options?: SettingsLockOptions): Promise<boolean> {
-  return withSettingsLock(options, () => clearSnapshot(storage, expectedRaw))
+  return withSettingsLock(options, () => { options?.beforeWrite?.(); return clearSnapshot(storage, expectedRaw) })
 }
 
 export type RecoveryCopyOutcome = 'removed' | 'kept-committed' | 'stale'
@@ -1260,6 +1282,8 @@ export async function restoreBackupSettingsV2(settings: BackupSettingsV2, choice
           clearSnapshot(storage, snapshotRaw)
           throw new SettingsRestoreError('rolled-back', `saving ${key} failed (${errorText(error)}); every setting was put back and verified`, { cause: error, failedKey: key })
         }
+        // #453 S2: storage now differs from the running UI; let it reload what is actually stored.
+        settingsChanged()
         throw new SettingsRestoreError('partial', `saving ${key} failed (${errorText(error)}) and ${unresolvedKeys.length} setting(s) could not be put back (${unresolvedKeys.join(', ')})`,
           { cause: error, failedKey: key, unresolvedKeys })
       }
