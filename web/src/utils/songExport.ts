@@ -26,6 +26,14 @@ export function songsToTxt(songs: ActiveSongState[]): { filename: string; text: 
   return { filename, text }
 }
 
+/**
+ * The charts of a text file written by songsToTxt: split on a ChordPro `{new_song}` (or `{ns}`)
+ * directive that stands on a line of its own. A file without the directive is one chart.
+ */
+export function splitTxtSongs(text: string): string[] {
+  return text.split(/^[ \t]*\{(?:new_song|ns)\}[ \t]*\r?$/im).map(part => part.trim()).filter(Boolean)
+}
+
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!))
 
 function renderLine(line: SongLine): string {
