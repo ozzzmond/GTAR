@@ -108,3 +108,37 @@ test('Songs Library ⋯ menu has Export songs, which opens the dialog', async ()
   await act(async () => document.querySelector('[data-testid="songs-library-menu-export"]').click())
   assert.ok(document.querySelector('[data-testid="export-songs-dialog"]'))
 })
+
+// #453 D5: the multi-song TXT export says GTAR imports the format back. Import Songs must split
+// the file on {new_song} instead of saving every chart as one song.
+test('#453: a multi-song TXT export imports back as the same songs', async () => {
+  const { ImportDialogModal } = require('../src/components/ImportDialogModal.tsx')
+  const exported = exp.songsToTxt([song('a'), song('b'), song('c', { rawContent: '[G]No title directive\n' })])
+  assert.deepEqual(exp.splitTxtSongs(exported.text), [song('a').rawContent.trim(), song('b').rawContent.trim(), '[G]No title directive'])
+  assert.deepEqual(exp.splitTxtSongs('{title: One}\r\n[G]x\r\n  {NS}  \r\n{title: Two}\r\n[C]y'), ['{title: One}\r\n[G]x', '{title: Two}\r\n[C]y'])
+  assert.deepEqual(exp.splitTxtSongs(song('a').rawContent), [song('a').rawContent.trim()], 'a single song is one part')
+  assert.equal(exp.splitTxtSongs('[G]text {new_song} inside a line').length, 1, 'only a directive on its own line separates songs')
+
+  const single = [], many = []
+  const pick = async (name, text) => {
+    document.body.innerHTML = '<div id="root"></div>'
+    root = createRoot(document.getElementById('root'))
+    await act(async () => root.render(React.createElement(ImportDialogModal, { isOpen: true, onClose() {}, onImportSong: s => single.push(s), onImportAllSongs: s => many.push(s) })))
+    const input = document.querySelector('input[type="file"]:not([multiple])')
+    Object.defineProperty(input, 'files', { configurable: true, value: [new dom.window.File([text], name, { type: '' })] })
+    await act(async () => { input.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 20)) })
+    await act(async () => root.unmount())
+    root = null
+  }
+  await pick(exported.filename, exported.text)
+  assert.equal(single.length, 0, 'not saved as one song')
+  assert.equal(many.length, 1)
+  assert.deepEqual(many[0].map(s => s.title), ['Song a', 'Song b', 'GTAR songs (3) (3)'])
+  assert.deepEqual(many[0].map(s => s.rawContent), [song('a').rawContent.trim(), song('b').rawContent.trim(), '[G]No title directive'])
+  assert.ok(many[0].every(s => !s.rawContent.includes('{new_song}')))
+
+  await pick('one.txt', song('a').rawContent)
+  assert.equal(single.length, 1, 'a single-song file imports as before')
+  assert.equal(single[0].rawContent, song('a').rawContent)
+  assert.equal(many.length, 1)
+})
