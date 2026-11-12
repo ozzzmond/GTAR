@@ -1,8 +1,14 @@
 # issue#438 — Optional-extension contract proposal (RnD, 2026-11-12)
 
-Baseline: `dev` @ 709ab99. **Proposal only. No framework code, no connector code, no Core change.**
+ASSUMED (repository baseline): `origin/dev` @ `9006be465ee5a0a13d82701d6206d1a5a9b58d5f`, containing merged PR#497. **Proposal only. No framework code, no connector code, no Core change.**
 Platform evidence: [415-propresenter-feasibility.md](415-propresenter-feasibility.md).
-Owner decision is required before any code (see "Owner decisions").
+ASSUMED: Owner decision is required before any code (see "Owner decisions").
+
+## Evidence labels for this proposal
+
+ASSUMED: Unless explicitly labelled otherwise, every statement, table row and code/type sketch in this document is an **ASSUMED** design proposal, repository observation or owner requirement; none is test evidence. **OWNER_TESTED** is limited to the supplied E14 curl observations linked in the feasibility document. **SPEC_STATED** marks supplied API facts. Owner decisions are recorded as ASSUMED requirements, not device tests.
+
+ASSUMED (owner decision, 2026-11-12): Each GTAR device follows ProPresenter directly and read-only. No GTAR device controls ProPresenter; no host/relay device. The core-side **extension host** below is a lifecycle component inside each GTAR app, not a network relay. Android-first audience: 5 Android, 3 iPhone/iPad; iOS/iPadOS WebKit is expected “not available on this device” for this extension, based on documentation, not a device test. CSP approval remains pending.
 
 ## Invariants (from issue#438, non-negotiable)
 
@@ -117,7 +123,9 @@ Rules:
 - Dispose is mandatory and idempotent. After disable the host verifies no subscriptions remain.
 - App offline (no internet) is not an extension state; `offline` is about the extension's own service.
 
-## 4. Core events (read-only, v1)
+## 4. Core events (read-only, candidate vocabulary)
+
+ASSUMED: The first consumer needs almost no core events: external song/slide changes arrive from ProPresenter, not GTAR. The vocabulary below is prospective; do not build or wire an event bus ahead of a concrete consumer. Streaming, parsing, dedupe, fallback and reconnect belong inside the extension and use the host's abort signal/status/dispose facilities.
 
 | Event | Payload | Fires when |
 |-------|---------|-----------|
@@ -199,7 +207,7 @@ What would change:
 
 | Candidate | Capabilities | Fits read-only v1 | Platform note |
 |-----------|--------------|-------------------|---------------|
-| ProPresenter follower (issue#415) | `net:lan`, `ui:panel` | Yes | **Blocked as deployed**; see feasibility doc |
+| ProPresenter follower (issue#415) | `net:lan`, `ui:panel`; no core events initially | Yes: direct GET-only follower | G2 passed for two origins via curl (OWNER_TESTED); CSP approval and Android browser feasibility pending (ASSUMED) |
 | MIDI controller | `device:midi`, events | Output only (send on song/section change). Input needs `control:*` | No Web MIDI on any iPhone; Chrome Android per documentation |
 | External metronome | `device:bluetooth` or `net:lan`, `events:song` | Likely | Transport undefined; Web Bluetooth not verified on any device |
 | Web source repositories | `net:https` | Needs design | Today's Web Sources is core, opt-in, default off; `connect-src` limits direct hosts |
@@ -218,11 +226,15 @@ What would change:
 | Connection test/status | `reportStatus` + panel | none |
 | Current/next lyrics | `ui:panel` slot | Needs a placement decision: panel only, or also inside Stage view (Stage is core; a Stage slot is a new seam) |
 | Song-change detection (ProPresenter side) | Internal to the extension | none |
-| 500 ms polling, reconnect | `signal` + `offline` state | Host should pause timers when the page is hidden |
+| Preferred chunked streaming; polling fallback and reconnect | Extension-owned transport + host `signal`, status and dispose | Extension owns framing, UUID-pair dedupe, bounded retry and visibility policy; no host transport or network relay |
 | Safe disabled/offline fallback | I2 + `error` isolation | none |
-| Read-only | No `control:*` in v1 | none |
+| Read-only | No `control:*` in v1; GET-only endpoint allowlist inside extension | Capability alone is insufficient; validate method/path/query and reject redirects outside the boundary |
 | "Not available on this device/browser" | `checkAvailability` | Cannot be decided by feature detection alone: the local-network block is only observable by trying. Needs a second, user-triggered "connection test" result distinct from `unavailable` |
-| Reach `http://<LAN>:1025` | `net:lan` | **Platform block, outside the contract:** CSP, CORS unknown, iOS |
+| Reach `http://<LAN>:1025` | `net:lan` | OWNER_TESTED: CORS headers for two origins via curl. ASSUMED: carried-forward CSP block (needs browser verification), preview-origin browser result, Android permission/stream behavior and iOS availability remain unresolved |
+
+SPEC_STATED: The three endpoints support optional `?chunked=true`; each update has the ordinary response shape. ASSUMED (owner allowlist): GET only `/v1/presentation/slide_index`, `/v1/status/slide`, `/v1/presentation/active`, optionally `?chunked=true`; no PUT/POST/DELETE or `/v1/status/updates`. SPEC_STATED: the latter is a POST JSON-array aggregation stream and requires preflight, so it is not an MVP shortcut.
+
+OWNER_TESTED: E14 curl streaming sends immediate state, then slide changes including backward navigation; final next fields empty; one identical UUID-pair repeat; pretty-printed multi-line JSON objects separated by blank lines. ASSUMED (design consequence): frame complete JSON objects across arbitrary reads and dedupe consecutive `(current.uuid, next.uuid)` pairs, all inside the extension. Browser transport and recovery remain untested; use the [Android DEV plan](415-propresenter-feasibility.md#owner-android-dev-browser-test-plan-not-executed).
 
 Takeaways:
 - The first consumer needs almost none of the four core events. It is an inbound follower. The event
@@ -241,8 +253,8 @@ and the tests for I1/I2/I7 (empty registry boots; disabled loads no chunk and ma
 No event bus yet.
 
 **Slice 2 depends on the feasibility outcome:**
-- If the owner's E14 check shows ProPresenter sends CORS headers **and** the owner accepts a
-  `connect-src` change: ProPresenter follower for Chromium, connection test first, "not available"
+- G2 has passed for two origins via curl (OWNER_TESTED). If the owner accepts a
+  `connect-src` decision and the Android DEV browser plan passes (ASSUMED): ProPresenter follower for Chromium, connection test first, "not available"
   on iOS. This is issue#415 Phase 3.
 - Otherwise: prove the contract with a consumer that has no network dependency (guitar tuner or
   metronome revamp fit; both are owner-named), and keep issue#415 parked on its options list.
@@ -257,7 +269,7 @@ first; it avoids designing the host around a connector that may not be reachable
 | D1 | Accept contract v1 as drafted (manifest, settings, lifecycle, capability list) | Accept as draft; freeze only after slice 2 |
 | D2 | Layout `web/src/extensions/` with build-time lazy chunks | Yes |
 | D3 | Events: wire none until a consumer needs one | Yes |
-| D4 | issue#415 path: run the E14 CORS check, then pick an option from the feasibility doc | Run the check first; it costs minutes |
+| D4 | issue#415 path: O1 complete via curl; O2+O3 leading, pending approval | Owner chooses CSP policy; run Android DEV plan before implementation; no host/relay |
 | D5 | Extension settings excluded from backup/restore in v1 | Yes |
 | D6 | Replace or remove the hard-coded ProPresenter stub row when the host lands | Replace by registry row |
 | D7 | Go / no-go for slice 1 | Go, after D1–D3 |
