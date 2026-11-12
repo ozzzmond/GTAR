@@ -138,13 +138,13 @@ test('unreadable or unwritable storage stays disabled without loading code', asy
   }
 })
 
-test('production registry is metadata only: ProPresenter is unavailable without a working toggle or connector', async () => {
+test('production registry denies unsupported devices without loading its lazy connector', async () => {
   assert.deepEqual(registry.map(entry => entry.manifest.id), ['propresenter-follower'])
   const data = storage(), host = new ExtensionHost(registry, data)
   await host.start(); await host.enable('propresenter-follower')
   assert.equal(host.getSnapshot('propresenter-follower').state, 'unavailable')
-  assert.equal(host.getSnapshot('propresenter-follower').message, 'Not yet available')
-  assert.equal(registry[0].load, undefined)
+  assert.equal(host.getSnapshot('propresenter-follower').message, 'Not available on this device/browser')
+  assert.equal(typeof registry[0].load, 'function')
   assert.deepEqual(data.writes, [])
 })
 

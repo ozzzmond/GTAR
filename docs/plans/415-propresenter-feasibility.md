@@ -4,20 +4,20 @@ ASSUMED (repository baseline): `origin/dev` @ `9006be465ee5a0a13d82701d6206d1a5a
 
 ## Evidence labels
 
-- **OWNER_TESTED**: only the E14 `curl.exe` observations supplied by the owner on 2026-11-12. Command-line evidence is not a browser test.
+- **OWNER_TESTED**: supplied E14 `curl.exe` and Android Chrome 157 observations on 2026-11-12, limited to each stated environment. Command-line evidence is not a browser test.
 - **SPEC_STATED**: the supplied ProPresenter OpenAPI facts or explicitly linked browser/security specifications.
 - **ASSUMED**: proposals, expectations, repository inspection, unverified items and owner decisions recorded as stated. An owner decision is a requirement, not test evidence. Unlabelled headings convey no evidence; each table row inherits its Evidence column.
 
 ## Verdict and gates
 
-ASSUMED: Direct browser following remains gated on the carried-forward CSP blocking assumption, which has not been reverified on a phone. G2 is passed for two supplied origins via curl; Android browser feasibility and CSP approval remain pending. This document does not authorize implementation.
+OWNER_TESTED: Android Chrome 157 fetch and chunked reader work on the CSP-candidate HTTPS preview after Local Network Access permission. G1/G4 pass for that environment only (details below). ASSUMED: earlier pending-gate statements below describe the historical assessment; installed PWA and broader device/network QA remain unverified.
 
 | Gate | Status | Evidence |
 |------|--------|----------|
-| G1 — GTAR CSP permits LAN HTTP fetch | BLOCKED in the previous feasibility assessment; carried-forward assumption, DEV browser verification required; decision pending owner approval | ASSUMED: inspected `connect-src`, not a deployed-browser retest |
+| G1 — GTAR CSP permits LAN HTTP fetch | PASS on CSP-candidate HTTPS preview, Android Chrome 157 | OWNER_TESTED: allowed port-1025 slide fetch after Local Network Access permission; control without candidate CSP unverified |
 | G2 — ProPresenter returns CORS headers | PASS for `https://gtar-web.pages.dev` and `https://dev.gtar-web.pages.dev` via curl only | OWNER_TESTED: observations below; not arbitrary origins or browser CORS enforcement |
 | G3 — HTTPS Chromium to LAN HTTP | Conditional expectation under browser permission/mixed-content rules | SPEC_STATED: [Chrome guidance](https://developer.chrome.com/blog/local-network-access); ASSUMED: not device evidence |
-| G4 — Android Chrome fetch + ReadableStream | UNTESTED | ASSUMED: owner plan below must establish this |
+| G4 — Android Chrome fetch + ReadableStream | PASS on Android Chrome 157 preview | OWNER_TESTED: initial snapshot, backward changes and repeated state via getReader(); not connector recovery QA |
 | G5 — iOS/iPadOS WebKit | Expected “not available on this device” for this extension | ASSUMED: owner direction based on documentation, not a device test or universal claim about future browsers |
 
 ## Owner evidence: E14, curl.exe, 2026-11-12
@@ -133,3 +133,13 @@ ASSUMED (prerequisite): This PR provides no connector or test harness. The raw t
 | B8 — installed PWA / audience | Repeat B1–B7 in installed DEV PWA when available; later repeat on remaining Android devices and church network. Record iOS as expectation until separately tested | Separate results per environment; no extrapolation from one phone or curl | ASSUMED: plan/expectation |
 
 ASSUMED (report template): For each case record NOT RUN / BLOCKED / PASS / FAIL, device/browser, origin/head SHA, action, expected vs actual, console error, response headers, timestamps and raw/delivered UUID pairs where applicable. Do not relabel these planned results OWNER_TESTED until the owner supplies actual evidence. CSP approval and device QA are still required before any implementation go decision.
+
+
+## OWNER_TESTED Android preview evidence - 2026-11-12
+
+- OWNER_TESTED: Android Chrome 157, HTTPS preview of the CSP candidate: `fetch('http://<IP>:1025/v1/status/slide')` works after allowing Local Network Access for the site; Chrome logs only a Mixed Content warning.
+- OWNER_TESTED: `?chunked=true` with `response.body.getReader()` delivers one complete JSON object per observed update. The first chunk is the initial state; backward navigation arrives; consecutive identical state can repeat.
+- OWNER_TESTED: observed chunks are pretty-printed multi-line JSON followed by CRLF separators, not newline-delimited JSON. ASSUMED: network reads can split/coalesce those objects; the connector must frame across reads.
+- OWNER_TESTED: served CSP permits only `http://*:1025/v1/status/slide`, `/v1/presentation/slide_index` and `/v1/presentation/active` for these ProPresenter reads, path-scoped on port 1025.
+- ASSUMED (slice 2 boundary): only the first two endpoints with exactly `?chunked=true` are used. To reconcile the exact URL allowlist with a one-shot connection test, the test cancels its GET after the initial object; it does not retain a test stream or introduce another URL. Normal feeds pause during the test. A host panel data/action seam fills slice 1's missing panel slot; it exposes no core events or control.
+- ASSUMED (unverified): control run without candidate CSP, installed Android PWA, several devices at once, church network, iOS/iPadOS, actual connector retry/permission/disable behavior and real presentation identity feed. Owner Android QA remains required; browser transport observations do not establish those results. Same-UUID text edits remain suppressed by the required tuple dedupe.

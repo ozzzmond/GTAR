@@ -259,6 +259,7 @@ New or renamed tests await a human choice of primary category.
 - [onlineSourcesOptIn453.test.cjs](onlineSourcesOptIn453.test.cjs)
 - [onsongImport.test.cjs](onsongImport.test.cjs)
 - [previewBuildIdentity.test.cjs](previewBuildIdentity.test.cjs)
+- [proPresenterFollower.test.cjs](proPresenterFollower.test.cjs)
 - [qaBackupFixtureScale.test.cjs](qaBackupFixtureScale.test.cjs)
 - [r2VersionBootstrap.test.cjs](r2VersionBootstrap.test.cjs)
 - [recoveryArchivesIdb.test.cjs](recoveryArchivesIdb.test.cjs)

@@ -1,9 +1,9 @@
 import { CONTRACT_VERSION } from '../contract'
-import type { ExtensionContext, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
+import type { ExtensionContext, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
 import { extensionStorageKey, normalizeSettings, readExtension, validSetting } from './settings'
 import type { ExtensionStorage } from './settings'
 
-export interface ExtensionSnapshot { state: ExtensionState; message?: string; settings: ExtensionSettings }
+export interface ExtensionSnapshot { state: ExtensionState; message?: string; settings: ExtensionSettings; panel?: ExtensionPanel }
 interface Runtime {
   entry: RegistryEntry
   snapshot: ExtensionSnapshot
@@ -62,6 +62,7 @@ export class ExtensionHost {
     runtime.dispose = undefined
     try { dispose?.() } catch { /* Isolation: disposal cannot escape into core. */ }
     runtime.listeners.clear()
+    runtime.snapshot = { ...runtime.snapshot, panel: undefined }
   }
   disable(id: string) {
     const runtime = this.runtimes.get(id)
@@ -115,6 +116,11 @@ export class ExtensionHost {
           this.update(runtime, state, this.redact(runtime, message))
         },
         log: message => { if (current()) this.logSink(this.redact(runtime, message) ?? '') },
+        setPanel: panel => {
+          if (!current() || !entry.manifest.capabilities.includes('ui:panel')) return
+          runtime.snapshot = { ...runtime.snapshot, panel }
+          for (const listener of this.listeners) listener()
+        },
       }
       const dispose = module.activate(ctx)
       if (!current()) { if (typeof dispose === 'function') dispose(); return }

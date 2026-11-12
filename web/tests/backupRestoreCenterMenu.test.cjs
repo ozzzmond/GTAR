@@ -92,8 +92,8 @@ test('Advanced Tools holds Web Sources and registry-driven ProPresenter informat
     assert.ok(tools.querySelector('[data-testid="profile-web-sources"]'), 'Web Sources preserved in Advanced Tools')
     assert.equal(tools.querySelector('[data-testid="settings-propresenter-stub"]'), null)
     const row = tools.querySelector('[data-testid="extension-propresenter-follower"]')
-    assert.match(row.textContent, /ProPresenter.*Not yet available/)
-    assert.equal(row.querySelector('button, input'), null, 'unshipped entry has no dead controls')
+    assert.match(row.textContent, /ProPresenter.*Not available on this device\/browser/)
+    assert.equal(row.querySelector('button, input'), null, 'unsupported browser has no toggle')
   } finally { await act(async () => root.unmount()) }
 })
 
