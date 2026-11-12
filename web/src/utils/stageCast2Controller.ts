@@ -153,6 +153,10 @@ export class StageCast2ControllerManager {
     client.dispose()
     this.ensureRunning()
     await client.start(ref, pin)
+    // A new pairing must publish the current in-memory song even when Stage has not changed.
+    this.unsubProjection?.()
+    this.unsubProjection = null
+    this.ensureRunning()
     this.notify()
   }
 

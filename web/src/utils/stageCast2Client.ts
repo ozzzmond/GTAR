@@ -13,6 +13,7 @@ export interface Cast2IO {
   now(): number
 }
 export interface Cast2ClientOptions {
+  clearSnapshotOnReconnect?: boolean
   maxFailures?: number
   backoff?: boolean
   initialBackoffMs?: number
@@ -44,6 +45,7 @@ export class Cast2Client {
   private maxBackoffMs: number
   private nextRetryAt = 0
   private restored = false
+  private clearSnapshotOnReconnect: boolean
 
   constructor(role: Role, io: Cast2IO, changed: (view: Cast2View) => void, options: Cast2ClientOptions = {}) {
     this.role = role
@@ -53,6 +55,7 @@ export class Cast2Client {
     this.backoff = options.backoff ?? false
     this.initialBackoffMs = options.initialBackoffMs ?? 1000
     this.maxBackoffMs = options.maxBackoffMs ?? 15000
+    this.clearSnapshotOnReconnect = options.clearSnapshotOnReconnect ?? false
   }
 
   private sessionStorageKey(): string {
@@ -119,7 +122,7 @@ export class Cast2Client {
       }
       this.close()
       // Preserve last confirmed presentation snapshot during temporary recoverable disconnection
-      this.emit({ state: 'DISCONNECTED', error: 'Connection interrupted. Retrying…' })
+      this.emit({ state: 'DISCONNECTED', error: 'Connection interrupted. Retrying…', ...(this.clearSnapshotOnReconnect ? { snapshot: null } : {}) })
     }
   }
 
@@ -213,6 +216,7 @@ export class Cast2Client {
         if (epoch !== this.epoch) return
         if (!opaque(data.ticket)) throw Error('Invalid ticket')
         this.sync = reconnectCast2(this.sync)
+        if (this.clearSnapshotOnReconnect) this.emit({ snapshot: null })
         this.connectingAt = this.io.now()
         const ws = this.io.socket(data.ticket); this.ws = ws
         ws.onopen = () => { if (epoch === this.epoch) { this.lastPing = this.io.now(); this.emit({ state: 'CONNECTED', error: '' }); this.sendSnapshot() } }

@@ -28,6 +28,15 @@ export const API_SECURITY_HEADERS: Record<string, string> = {
   'X-Frame-Options': 'DENY',
 }
 
+/** Dedicated unauthenticated display page: no camera, OAuth frames or cross-origin API access. */
+export const CHROMECAST_RECEIVER_HEADERS: Record<string, string> = {
+  ...API_SECURITY_HEADERS,
+  'Cache-Control': 'no-store',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(), clipboard-read=(), clipboard-write=(), fullscreen=(self), screen-wake-lock=(self), geolocation=(), microphone=(), payment=(), usb=()',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' https://www.gstatic.com/cast/sdk/libs/caf_receiver/; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'",
+}
+
 /**
  * Merges API security headers into an outgoing headers object,
  * preserving any already-defined application headers (CORS, Cache-Control, Content-Type, Retry-After).

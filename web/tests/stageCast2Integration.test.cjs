@@ -9,7 +9,7 @@ const { Cast2Client } = require('../src/utils/stageCast2Client.ts')
 const { StageCast2Hub, digest, POLICY } = require('../workers/stageCast2Backend.ts')
 const { projectCast2Presentation } = require('../src/utils/stageCast2Projection.ts')
 
-async function fixture() {
+async function fixture(receiverOptions = {}) {
   let now = 1000000
   const storage = { async get() {}, async put() {}, async setAlarm() {} }
   let bridge
@@ -51,7 +51,7 @@ async function fixture() {
       return ws
     },
   })
-  const receiver = new Cast2Client('receiver', io(''), () => {})
+  const receiver = new Cast2Client('receiver', io(''), () => {}, receiverOptions)
   const controller = new Cast2Client('controller', io('owner'), () => {})
   const flush = async () => { while (pending.length) await pending.shift()(); await hub.alarm(); await hub.alarm() }
   const pair = async () => {
@@ -105,6 +105,33 @@ test('P2: receiver reconnect obtains full snapshot and heartbeat retains connect
   assert.equal(f.receiver.view.state, 'CONNECTED')
   await f.receiver.end(); await f.flush(); await f.controller.tick()
   assert.equal(f.controller.view.state, 'ENDED')
+})
+
+test('Chromecast: reconnect clears old lyrics and obtains the authoritative song changed while offline', async () => {
+  const f = await fixture({ clearSnapshotOnReconnect: true }); await f.pair()
+  f.controller.publish(snapshot('Song A')); await f.flush()
+  f.receiver.ws.close(); await f.flush()
+  assert.equal(f.receiver.view.snapshot, null)
+  f.controller.publish(snapshot('Song B')); await f.flush()
+  await f.receiver.tick()
+  assert.equal(f.receiver.view.snapshot, null, 'opening a socket cannot replay the retained Song A')
+  await f.flush()
+  assert.equal(f.receiver.view.snapshot.displayTitle, 'Song B')
+  assert.equal(f.receiver.view.state, 'CONNECTED')
+})
+
+test('Chromecast: pairing handoff still uses server single-use PIN and expiring authorization', async () => {
+  const f = await fixture(); await f.receiver.start()
+  const { ref, pin } = f.receiver.view
+  await f.controller.start(ref, pin)
+  const replay = new Cast2Client('controller', f.controller.io, () => {})
+  await replay.start(ref, pin)
+  assert.equal(replay.view.state, 'ERROR')
+  assert.equal(replay.view.error, 'DENIED')
+  const g = await fixture(); await g.receiver.start()
+  g.advance(POLICY.pairingMs)
+  await g.controller.start(g.receiver.view.ref, g.receiver.view.pin)
+  assert.equal(g.controller.view.state, 'ERROR')
 })
 test('P2: pairing and authorized session expire, clearing TV content and credentials', async () => {
   const f = await fixture(); await f.receiver.start(); f.advance(POLICY.pairingMs); await f.receiver.tick()

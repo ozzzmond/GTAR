@@ -122,6 +122,7 @@ Presets, palettes, typography, semantic tokens, theme lifecycle, and theme sync.
 Performance controls, casting, navigation, continuity, and session persistence.
 
 <!-- test-catalog:STAGE:start -->
+- [chromecast.test.cjs](chromecast.test.cjs)
 - [dev3QolNavigationStageControls.test.cjs](dev3QolNavigationStageControls.test.cjs)
 - [fullscreenStageQol.test.cjs](fullscreenStageQol.test.cjs)
 - [issue361StageSearch.test.cjs](issue361StageSearch.test.cjs)

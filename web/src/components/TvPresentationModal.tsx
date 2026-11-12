@@ -3,6 +3,7 @@ import { Tv, Copy, Check, Monitor, X, ExternalLink } from 'lucide-react'
 import { stageCast } from '../utils/stageCast'
 import { stageCast2Controller } from '../utils/stageCast2Controller'
 import { StageCast2Panel } from './StageCast2Panel'
+import { ChromecastOutput } from './ChromecastOutput'
 
 const subscribe = (listener: () => void) => stageCast2Controller.subscribe(listener)
 const isConnected = () => stageCast2Controller.getView().state === 'CONNECTED'
@@ -85,6 +86,7 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-sm">
+          <ChromecastOutput />
           {canPopout && (
             <div data-testid="cast-popout-section" className="space-y-2 p-4 rounded-lg bg-app-surface/60 border border-app-border">
               <div className="flex items-center gap-2">

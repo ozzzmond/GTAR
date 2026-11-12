@@ -1,7 +1,9 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { chromecastAppId } from './src/utils/chromecastConfig.ts'
 import https from 'node:https'
 import url from 'node:url'
 import os from 'node:os'
@@ -254,6 +256,7 @@ export default defineConfig(({ mode }) => {
     : { ...process.env, GTAR_BUILD_MODE: mode })
   const isProd = process.env.CF_PAGES_BRANCH === 'main' || Boolean(releaseIdentity)
   const isStageCast2Dev = !isProd && (isDev || Boolean(devIdentity) || process.env.CF_PAGES_BRANCH === 'dev' || process.env.VITE_STAGE_CAST2 === 'true')
+  const castAppId = chromecastAppId(process.env.VITE_CHROMECAST_APP_ID ?? loadEnv(mode, import.meta.dirname, 'VITE_CHROMECAST_').VITE_CHROMECAST_APP_ID, isStageCast2Dev)
 
   // PWA manifest icon sets
   const devIcons = [
@@ -298,9 +301,15 @@ export default defineConfig(({ mode }) => {
   ]
 
   return {
+    build: {
+      rolldownOptions: {
+        input: castAppId ? { main: path.resolve(import.meta.dirname, 'index.html'), receiver: path.resolve(import.meta.dirname, 'cast-receiver.html') } : path.resolve(import.meta.dirname, 'index.html'),
+      },
+    },
     define: {
       'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),
       __GTAR_STAGE_CAST2_ENABLED__: JSON.stringify(isStageCast2Dev),
+      __GTAR_CHROMECAST_APP_ID__: JSON.stringify(castAppId),
       __GTAR_PROD_VERSION__: JSON.stringify(releaseIdentity?.version ?? null),
       __GTAR_PREVIEW_IDENTITY__: JSON.stringify(previewIdentity),
       __GTAR_DEV_VERSION__: JSON.stringify(
@@ -314,6 +323,16 @@ export default defineConfig(({ mode }) => {
       } : null),
     },
     plugins: [
+      {
+        name: 'gtar-chromecast-dev-headers',
+        // Leave source/PROD CSP untouched. Only configured DEV artifacts allow the official SDK.
+        closeBundle() {
+          if (!castAppId) return
+          const headersPath = path.resolve(import.meta.dirname, 'dist/_headers')
+          const headers = readFileSync(headersPath, 'utf8').replace("script-src 'self'", "script-src 'self' https://www.gstatic.com")
+          writeFileSync(headersPath, headers)
+        },
+      },
       {
         name: 'gtar-release-identity',
         generateBundle() {
@@ -379,7 +398,7 @@ export default defineConfig(({ mode }) => {
             '**/*.{js,css,html,ico,png,jpg,jpeg,svg,gif,webp,json,woff,woff2,ttf,eot,otf,mp3,wav,webmanifest}',
           ],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/cast-receiver\.html$/],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,

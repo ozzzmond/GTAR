@@ -9,11 +9,13 @@ import { SongLineRenderer } from './SongLineRenderer'
 import { splitSongLinesForColumns } from '../utils/songParser'
 import { createWakeLockController } from '../utils/stagePerformance'
 import { SETTINGS_CHANGED, readBackupSettingsV2 } from '../utils/backupSettings'
+import { loadChromecastReceiver } from '../utils/chromecastSdk'
+import { attachChromecastReceiver } from '../utils/chromecastHandoff'
 
 void React
 
 /** Auth goes only to same-origin P1 HTTP. Socket receives a single-use ticket, never OAuth. */
-export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
+export function StageCast2Panel({ receiver = false, chromecast = false }: { receiver?: boolean; chromecast?: boolean }) {
   const auth = useOptionalGoogleAuth()
   const [, refresh] = useState(0)
 
@@ -101,7 +103,7 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         return new WebSocket(url, ['cast2', 'ticket.' + ticket])
       },
-    }, () => refresh(n => n + 1), { maxFailures: 30, backoff: true })
+    }, () => refresh(n => n + 1), { maxFailures: 30, backoff: true, clearSnapshotOnReconnect: chromecast })
   })
 
   // Restore receiver session on mount if previously active in tab
@@ -110,6 +112,16 @@ export function StageCast2Panel({ receiver = false }: { receiver?: boolean }) {
       receiverClient.restore()
     }
   }, [receiver, receiverClient])
+
+  useEffect(() => {
+    if (!chromecast || !receiverClient || !cast2LocalEnabled) return
+    let live = true
+    let detach: (() => void) | undefined
+    void loadChromecastReceiver().then(context => {
+      if (live) detach = attachChromecastReceiver(context, receiverClient)
+    }).catch(() => { /* Browser / QR pairing remains available if the SDK cannot load. */ })
+    return () => { live = false; detach?.(); receiverClient.disconnect() }
+  }, [chromecast, receiverClient])
 
   // Subscribe to controller state changes when in controller mode
   useEffect(() => {
