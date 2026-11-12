@@ -114,7 +114,6 @@ Presets, palettes, typography, semantic tokens, theme lifecycle, and theme sync.
 - [dev3iCanonicalThemeRuntime.test.cjs](dev3iCanonicalThemeRuntime.test.cjs)
 - [dev3kFactoryThemeLifecycle.test.cjs](dev3kFactoryThemeLifecycle.test.cjs)
 - [dev3lSemanticColorCoverage.test.cjs](dev3lSemanticColorCoverage.test.cjs)
-- [g6CloudThemeSync.test.cjs](g6CloudThemeSync.test.cjs)
 - [themeSyncUiPolish108Dev8d.test.cjs](themeSyncUiPolish108Dev8d.test.cjs)
 <!-- test-catalog:THEMES:end -->
 
@@ -290,7 +289,6 @@ New or renamed tests await a human choice of primary category.
 - [storageQuotaRecovery.test.cjs](storageQuotaRecovery.test.cjs)
 - [swipeRenameTouchBehavior.test.cjs](swipeRenameTouchBehavior.test.cjs)
 - [syncCenterLayout.test.cjs](syncCenterLayout.test.cjs)
-- [syncUploadHeadroom.test.cjs](syncUploadHeadroom.test.cjs)
 - [tagControlsColors.test.cjs](tagControlsColors.test.cjs)
 - [testTiers.test.cjs](testTiers.test.cjs)
 - [themeModeAssignment369.test.cjs](themeModeAssignment369.test.cjs)

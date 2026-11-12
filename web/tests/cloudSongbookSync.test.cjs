@@ -26,8 +26,6 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
-
 const {
   insertUser,
   createSessionToken,
@@ -93,41 +91,6 @@ function createMockD1() {
     },
   }
 }
-
-// ---------------------------------------------------------------------------
-// 1. DETERMINISTIC CHECKSUM
-// ---------------------------------------------------------------------------
-test('CHECKSUM: produces deterministic collision-resistant fingerprint regardless of key order', () => {
-  const song1 = {
-    id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
-    title: 'Hotel California',
-    artist: 'Eagles',
-    key: 'Bm',
-    rawContent: '[Bm]Welcome to the Hotel California',
-  }
-  const song2 = {
-    id: 'c9bf9e57-1685-4c89-bafb-ff5af830be8a',
-    title: 'Wonderwall',
-    artist: 'Oasis',
-    key: 'Em',
-    rawContent: '[Em]Today is gonna be the day',
-  }
-
-  const libA = { songs: [song1, song2], setlists: [] }
-  const libB = { songs: [song2, song1], setlists: [] } // reverse array order
-
-  const hashA = computeSongbookChecksum(libA)
-  const hashB = computeSongbookChecksum(libB)
-
-  assert.equal(hashA, hashB, 'Checksum must be identical regardless of song array order')
-  assert.match(hashA, /^ck_[0-9a-f]{16}$/, 'Checksum format matches ck_<16hex>')
-
-  // Modifying content must change checksum
-  const modifiedSong = { ...song1, rawContent: '[Bm]Changed lyrics' }
-  const libC = { songs: [modifiedSong, song2], setlists: [] }
-  const hashC = computeSongbookChecksum(libC)
-  assert.notEqual(hashA, hashC, 'Content change must produce distinct checksum')
-})
 
 // ---------------------------------------------------------------------------
 // 2. DETERMINISTIC DECISION LOGIC: 7 CORE STATES

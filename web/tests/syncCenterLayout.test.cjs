@@ -16,14 +16,13 @@ const { act } = React
 const { createRoot } = require('react-dom/client')
 const auth = require('../src/utils/authContext.ts')
 const { CloudSyncModal } = require('../src/components/CloudSyncModal.tsx')
-const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { persistLibrary } = require('../src/utils/syncJournal.ts')
 const library = { songs: [{ id: '11111111-1111-4111-8111-111111111111', title: 'A', rawContent: '[C]Hi', artist: 'A' }], setlists: [] }
 const q = id => document.querySelector(`[data-testid="${id}"]`)
 
 async function mount(signedIn, before = () => {}) {
   localStorage.clear(); persistLibrary(library, localStorage); before()
-  const record = { version: 1, checksum: computeSongbookChecksum(library), updatedAt: '2026-11-01T09:37:35Z', data: library }
+  const record = { version: 1, checksum: 'ck_0000000000000000', updatedAt: '2026-11-01T09:37:35Z', data: library }
   const calls = []
   global.fetch = async (_, opts) => { calls.push(opts.method); return new Response(JSON.stringify({ success: true, cloudRecord: record })) }
   auth.useOptionalGoogleAuth = () => ({ session: signedIn ? { token: 't', user: { id: 'B', email: 'b@example.com', name: 'Bee' } } : null, accessStatus: 'active', signIn: async () => {} })

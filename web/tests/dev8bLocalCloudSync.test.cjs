@@ -27,7 +27,6 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const {
   insertUser,
   findUserById,

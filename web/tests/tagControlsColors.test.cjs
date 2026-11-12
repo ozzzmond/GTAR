@@ -22,15 +22,13 @@ test('colors survive B3 reload and sync validation rejects ambiguous or unsafe c
  for(const colors of [null,[],{Rock:'#abcdef'},{rock:'red'},{rock:'#fff'},{rock:'url(x)'}]) assert.throws(()=>other.sj.validateLibrary({...lib,tagColors:colors}))
  assert.doesNotThrow(()=>other.sj.validateLibrary(h.library(1,0)))
 })
-test('restore replace, merge, safety snapshot and cloud payload retain colors',()=>{
- const storage=h.freshStorage(), b=require('../src/utils/jsonBackup.ts'), ex=require('../src/utils/backupExport.ts'), cloud=require('../src/utils/cloudBackupFormat.ts')
+test('restore replace, merge and safety snapshot retain colors',()=>{
+ const storage=h.freshStorage(), b=require('../src/utils/jsonBackup.ts'), ex=require('../src/utils/backupExport.ts')
  const before={...h.library(2,1),tagColors:{rock:'#aabbcc',jazz:'#ffffff'}}
  const incoming={...h.library(2,1),tagColors:{rock:'#112233',new:'#ff0000'}}
  assert.deepEqual(ex.expectedRestoredLibrary(before,incoming,'replace').tagColors,incoming.tagColors)
  assert.deepEqual(ex.expectedRestoredLibrary(before,incoming,'merge').tagColors,{rock:'#112233',jazz:'#ffffff',new:'#ff0000'})
  b.createRestoreSafetySnapshot(before,storage);assert.deepEqual(b.restoreFromSafetySnapshot(storage).tagColors,before.tagColors)
- assert.deepEqual(JSON.parse(cloud.songbookUploadBody('upload',incoming,cloud.computeSongbookChecksum(incoming),0,null)).data.tagColors,incoming.tagColors)
- assert.ok(cloud.estimateSongbookUploadBytes(incoming)<10000)
 })
 test('sidebar rename and remove stay inline, cancel safely and report save failure',async()=>{
  h.freshStorage();global.IS_REACT_ACT_ENVIRONMENT=true

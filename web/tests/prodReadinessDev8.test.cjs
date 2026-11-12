@@ -26,8 +26,6 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
-
 const {
   insertUser,
   createSessionToken,
@@ -86,20 +84,6 @@ function createMockD1() {
 // ===========================================================================
 // SECTION 1: ACCOUNT & ACCESS LIFECYCLE HARDENING
 // ===========================================================================
-
-test('DEV8_DATA_04: Canonical Checksum produces 100% identical fingerprint on client (server sync retired)', async () => {
-  const song1 = { id: generateUUID(), title: 'Zebra Song', rawContent: '[A]Line\r\n' }
-  const song2 = { id: generateUUID(), title: 'Apple Song', rawContent: '[B]Line\n' }
-  const setlist = { id: generateUUID(), name: 'Set A', songs: [{ id: song1.id, title: song1.title }] }
-
-  const libOrder1 = { songs: [song1, song2], setlists: [setlist] }
-  const libOrder2 = { songs: [song2, song1], setlists: [setlist] }
-
-  const ck1 = computeSongbookChecksum(libOrder1)
-  const ck2 = computeSongbookChecksum(libOrder2)
-
-  assert.equal(ck1, ck2, 'Checksum must be invariant to song order and CRLF newlines')
-})
 
 // ===========================================================================
 // SECTION 3: CLOUD SETLIST & TOMBSTONE RECONCILIATION HARDENING

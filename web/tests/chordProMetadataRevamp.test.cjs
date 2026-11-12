@@ -28,7 +28,6 @@ const { normalizeMusicalKey, keysArePitchEquivalent } = require('../src/utils/mu
 const { parseGtarSong } = require('../src/utils/songParser.ts')
 const { transposeChordToken } = require('../src/utils/chordTransposer.ts')
 const { normalizeBackupSong, parseBackupJson, createBackupPayload } = require('../src/utils/jsonBackup.ts')
-const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
 const { computeSemanticSongFingerprint } = require('../src/utils/songbookFoundation.ts')
 
 const webDir = path.resolve(__dirname, '..')
@@ -177,10 +176,6 @@ test('TIME_SIGNATURE_ROUND_TRIP: persists through backup, cloud checksum, and re
   assert.notEqual(
     computeSemanticSongFingerprint(song),
     computeSemanticSongFingerprint(songAltTime)
-  )
-  assert.notEqual(
-    computeSongbookChecksum({ songs: [song], setlists: [] }),
-    computeSongbookChecksum({ songs: [songAltTime], setlists: [] })
   )
 
 })

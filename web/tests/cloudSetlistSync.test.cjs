@@ -26,8 +26,6 @@ for (const extension of ['.ts', '.tsx']) {
     )
 }
 
-const { computeSongbookChecksum } = require('../src/utils/cloudBackupFormat.ts')
-
 const {
   insertUser,
   createSessionToken,
@@ -100,59 +98,6 @@ test('1: setlist normalization preserves stable legacy IDs and rejects ID-less r
   for (const id of [undefined, '']) {
     assert.throws(() => normalizeSongbookIds(songs, [{ id, name: 'Ambiguous', songs: [ref] }]), /Stable ID required/)
   }
-})
-
-// ---------------------------------------------------------------------------
-// 2. CHECKSUM SENSITIVITY
-// ---------------------------------------------------------------------------
-test('2: checksum_sensitivity detects tombstone changes and song order changes', () => {
-  const songId1 = generateUUID()
-  const songId2 = generateUUID()
-  const setlistId = generateUUID()
-
-  const libraryA = {
-    songs: [
-      { id: songId1, title: 'Alpha', rawContent: '[C]A' },
-      { id: songId2, title: 'Beta', rawContent: '[D]B' },
-    ],
-    setlists: [
-      {
-        id: setlistId,
-        name: 'Order Set',
-        songs: [{ id: songId1, title: 'Alpha' }, { id: songId2, title: 'Beta' }],
-      },
-    ],
-  }
-
-  // Reorder songs in setlist
-  const libraryB = {
-    ...libraryA,
-    setlists: [
-      {
-        id: setlistId,
-        name: 'Order Set',
-        songs: [{ id: songId2, title: 'Beta' }, { id: songId1, title: 'Alpha' }],
-      },
-    ],
-  }
-
-  // Mark setlist as deleted (tombstone)
-  const libraryC = {
-    ...libraryA,
-    setlists: [
-      {
-        ...libraryA.setlists[0],
-        isDeleted: true,
-      },
-    ],
-  }
-
-  const checksumA = computeSongbookChecksum(libraryA)
-  const checksumB = computeSongbookChecksum(libraryB)
-  const checksumC = computeSongbookChecksum(libraryC)
-
-  assert.notEqual(checksumA, checksumB, 'Reordering songs in a setlist must change checksum')
-  assert.notEqual(checksumA, checksumC, 'Tombstoning a setlist must change checksum')
 })
 
 // ---------------------------------------------------------------------------
