@@ -3,7 +3,7 @@ export type Capability = 'events:song' | 'events:section' | 'events:setlist' | '
 export type SettingField =
   | { key: string; type: 'boolean'; label: string; default: boolean }
   | { key: string; type: 'text' | 'host'; label: string; default: string; placeholder?: string }
-  | { key: string; type: 'port' | 'number'; label: string; default: number; min?: number; max?: number }
+  | { key: string; type: 'port' | 'number'; label: string; default: number; min?: number; max?: number; readOnly?: boolean; note?: string }
   | { key: string; type: 'select'; label: string; default: string; options: { value: string; label: string }[] }
   | { key: string; type: 'secret'; label: string }
 export interface ExtensionManifest {
@@ -20,11 +20,17 @@ export type Availability = { available: true } | { available: false; reason: str
 // Feature flags only: no browser objects, permissions or core state cross this boundary.
 export interface HostEnv { readonly capabilities: readonly Capability[] }
 export type ExtensionState = 'absent' | 'disabled' | 'unavailable' | 'starting' | 'active' | 'offline' | 'error'
+// Ephemeral panel data/actions; never persisted or connected to core state.
+export interface ExtensionPanel {
+  fields: readonly { label: string; value: string }[]
+  actions: readonly { label: string; disabled?: boolean; run(): void }[]
+}
 export interface ExtensionContext {
   settings: { read(): ExtensionSettings; subscribe(listener: () => void): () => void }
   signal: AbortSignal
   reportStatus(state: 'active' | 'offline' | 'error', message?: string): void
   log(message: string): void
+  setPanel(panel: ExtensionPanel): void
 }
 // No events API in slice 1: event capabilities are refused until a consumer is approved.
 export interface ExtensionModule {
