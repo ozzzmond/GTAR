@@ -42,8 +42,9 @@ export function bindLegacySetlists(setlists: Array<Omit<WebSetlist, 'songs'> & {
       let entryId = ref.entryId || `entry:${setlist.id}:${position}`
       while (used.has(entryId)) entryId += ':duplicate'
       used.add(entryId)
+      // A named artist must match (same rule as resolveSetlistSong); a miss stays a broken shortcut, never a title guess.
       const song = ref.id !== undefined ? byId.get(String(ref.id)) :
-        (ref.artist?.trim() ? byTitleArtist.get(songIdentity(ref)) : undefined) ?? byTitle.get(ref.title.trim().toLowerCase())
+        ref.artist?.trim() ? byTitleArtist.get(songIdentity(ref)) : byTitle.get(ref.title.trim().toLowerCase())
       return { ...ref, id: song?.id ?? ref.id ?? `missing:${entryId}`, entryId, position }
     }) }
   })
