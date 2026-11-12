@@ -9,7 +9,7 @@ export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string'
   ? __GTAR_PROD_VERSION__ : '0.0.0-unversioned';
 declare const __GTAR_DEV_VERSION__: string | null
 export const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string'
-  ? __GTAR_DEV_VERSION__ : '1.1.0-dev.1';
+  ? __GTAR_DEV_VERSION__ : '1.1.0-dev.2';
 
 export interface PreviewBuildIdentity {
   tagStatus: 'UNTAGGED'

@@ -13,7 +13,7 @@ const webDir = path.resolve(__dirname, '..')
 const { parseDevTag, inspectCheckpoint, main: releaseMetadataMain, HISTORICAL_TAG_EXCEPTIONS } = require('../../.github/release_metadata.cjs')
 const { resolveReleaseIdentity, resolveDevIdentity, resolveDeploymentId, getCommittedDevVersion } = require('../../.github/release_identity.cjs')
 const canonicalDevVersion = getCommittedDevVersion(root)
-assert.equal(canonicalDevVersion, '1.1.0-dev.1', 'Canonical DEV metadata must match target DEV checkpoint')
+assert.equal(canonicalDevVersion, '1.1.0-dev.2', 'Canonical DEV metadata must match target DEV checkpoint')
 
 test('current DEV source stamps agree and missing-package fallback remains frozen', t => {
   const lock = JSON.parse(fs.readFileSync(path.join(webDir, 'package-lock.json'), 'utf8'))
