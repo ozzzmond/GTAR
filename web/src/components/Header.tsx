@@ -1,3 +1,5 @@
+import { ExtensionRows } from '../extensions/host/ExtensionRows'
+import { useExtensionHost } from '../extensions/host/useExtensionHost'
 import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
@@ -19,7 +21,6 @@ import {
   Settings,
   FolderArchive,
   Info,
-  Layers,
 } from 'lucide-react'
 import {
   SETTINGS_KEYS,
@@ -328,7 +329,9 @@ export const Header: React.FC<HeaderProps> = ({
   const showRecoveryData = isDevEnv || isSuperAdmin || true
   const recoveryAttention = useRecoveryAttention(showRecoveryData)
 
-  // Advanced Tools: future home for optional Web Sources, ProPresenter, and modular integrations
+  const extensionHost = useExtensionHost()
+
+  // Advanced Tools: optional sources and registry-driven extension rows
   const advancedTools = (
     <div data-testid="advanced-tools" className="w-full">
       <button
@@ -342,7 +345,7 @@ export const Header: React.FC<HeaderProps> = ({
           <Wrench className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
           <span>Advanced Tools</span>
         </span>
-        <span className="text-app-muted text-[10px]">{showAdvancedTools ? '▲' : '▼'}</span>
+        <span className="text-app-muted ui-secondary-text text-[10px]">{showAdvancedTools ? '▲' : '▼'}</span>
       </button>
       {showAdvancedTools && (
         <div className="pl-3 border-l-2 border-app-border/60 my-1 space-y-1">
@@ -355,16 +358,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Globe className="w-4 h-4 text-app-action shrink-0" />
             <span>Web Sources</span>
           </button>
-          <div
-            data-testid="settings-propresenter-stub"
-            className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-base/40 text-app-muted text-xs flex items-center justify-between border border-app-border/40 opacity-70 mb-2 cursor-not-allowed"
-          >
-            <span className="flex items-center gap-2.5">
-              <Layers className="w-4 h-4 text-app-muted shrink-0" aria-hidden="true" />
-              <span>ProPresenter</span>
-            </span>
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-surface text-app-muted ui-secondary-text border border-app-border">Modular</span>
-          </div>
+          <ExtensionRows host={extensionHost} rowClass={popoverItem} />
         </div>
       )}
     </div>
