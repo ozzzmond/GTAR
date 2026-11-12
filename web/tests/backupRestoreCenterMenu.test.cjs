@@ -79,7 +79,7 @@ test('Settings menu layout: Theme, Backup & Restore, Debug Logs, Recovery Data, 
   } finally { await act(async () => root.unmount()) }
 })
 
-test('Advanced Tools holds Web Sources and ProPresenter stub', async () => {
+test('Advanced Tools holds Web Sources and registry-driven ProPresenter information', async () => {
   const { root, popover } = await mountHeader({ dev: false })
   try {
     const toggle = document.querySelector('[data-testid="advanced-tools-button"]')
@@ -90,7 +90,10 @@ test('Advanced Tools holds Web Sources and ProPresenter stub', async () => {
 
     const tools = document.querySelector('[data-testid="advanced-tools"]')
     assert.ok(tools.querySelector('[data-testid="profile-web-sources"]'), 'Web Sources preserved in Advanced Tools')
-    assert.ok(tools.querySelector('[data-testid="settings-propresenter-stub"]'), 'ProPresenter modular integration present')
+    assert.equal(tools.querySelector('[data-testid="settings-propresenter-stub"]'), null)
+    const row = tools.querySelector('[data-testid="extension-propresenter-follower"]')
+    assert.match(row.textContent, /ProPresenter.*Not yet available/)
+    assert.equal(row.querySelector('button, input'), null, 'unshipped entry has no dead controls')
   } finally { await act(async () => root.unmount()) }
 })
 
@@ -133,4 +136,63 @@ test('#304: App no longer renders the JSON Bridge or the JSON backup dialog', ()
   assert.ok(!fs.existsSync(require.resolve('../src/components/Header.tsx').replace('Header.tsx', 'JsonBridgeModal.tsx')))
   assert.doesNotMatch(app, /BackupRestoreDialogModal|isBackupRestoreModalOpen/)
   assert.ok(!fs.existsSync(require.resolve('../src/components/Header.tsx').replace('Header.tsx', 'BackupRestoreDialogModal.tsx')))
+})
+
+
+test('Core Header boots with an empty extension registry and preserves menu actions (I1)', async () => {
+  const { registry } = require('../src/extensions/registry.ts')
+  const entries = registry.splice(0)
+  let root
+  try {
+    ;({ root } = await mountHeader())
+    await act(async () => document.querySelector('[data-testid="advanced-tools-button"]').click())
+    assert.equal(document.querySelector('[data-testid^="extension-"]'), null)
+    assert.ok(document.querySelector('[data-testid="profile-web-sources"]'))
+    await act(async () => document.querySelector('[data-testid="settings-backup-restore-button"]').click())
+    assert.equal(center.isOpen, true)
+  } finally {
+    if (root) await act(async () => root.unmount())
+    registry.push(...entries)
+  }
+})
+
+
+test('registry rows follow supplied entries and host panel enables/disables a test-only lazy module', async () => {
+  const { ExtensionHost } = require('../src/extensions/host/ExtensionHost.ts')
+  const { ExtensionRows } = require('../src/extensions/host/ExtensionRows.tsx')
+  const manifest = { id: 'ui-fixture', name: 'Fixture tool', summary: 'Test registry row', version: '1.0.0', contractVersion: 1, capabilities: [], settings: [{ key: 'label', type: 'text', label: 'Label', default: 'Default' }] }
+  let loads = 0, disposals = 0
+  const host = new ExtensionHost([{ manifest, checkAvailability: () => ({ available: true }), load: async () => {
+    loads++
+    return { manifest, checkAvailability: () => ({ available: true }), activate: () => () => disposals++ }
+  } }], localStorage)
+  const root = createRoot(document.getElementById('root'))
+  try {
+    await act(async () => root.render(React.createElement(ExtensionRows, { host, rowClass: 'row' })))
+    const row = document.querySelector('[data-testid="extension-ui-fixture"]')
+    assert.match(row.textContent, /Fixture tool.*Test registry row.*Off/)
+    assert.equal(document.querySelector('[data-testid="extension-propresenter-follower"]'), null)
+    assert.equal(loads, 0)
+    await act(async () => row.querySelector('button').click())
+    await act(async () => row.querySelector('input[type="checkbox"]').click())
+    assert.equal(loads, 1)
+    assert.equal(host.getSnapshot('ui-fixture').state, 'active')
+    await act(async () => row.querySelector('input[type="checkbox"]').click())
+    assert.equal(host.getSnapshot('ui-fixture').state, 'disabled')
+    assert.equal(disposals, 1)
+  } finally { await act(async () => root.unmount()); host.dispose(); localStorage.clear() }
+})
+
+test('extension settings and enabled state remain outside songbook settings backup and restore (D5)', () => {
+  const { readBackupSettings, restoreBackupSettings, backupSettingsStorageKeys } = require('../src/utils/backupSettings.ts')
+  const key = 'gtar_ext_test-only_v1'
+  const original = JSON.stringify({ enabled: true, settings: { token: 'private-device-secret' } })
+  localStorage.setItem(key, original)
+  try {
+    const backup = readBackupSettings(localStorage)
+    assert.doesNotMatch(JSON.stringify(backup), /private-device-secret|gtar_ext_/)
+    assert.equal(backupSettingsStorageKeys().includes(key), false)
+    restoreBackupSettings(backup, localStorage)
+    assert.equal(localStorage.getItem(key), original)
+  } finally { localStorage.clear() }
 })

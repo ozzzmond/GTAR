@@ -19,6 +19,16 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // Extension boundary: core sees only the host; implementations see only the portable contract.
+  { files: ['src/**/*.{ts,tsx}'], ignores: ['src/extensions/**'], rules: {
+    'no-restricted-imports': ['error', { patterns: [{ regex: 'extensions/(?!host(?:/|$))', message: 'Core imports extensions through host/ only.' }] }],
+  } },
+  { files: ['src/extensions/**/*.{ts,tsx}'], ignores: ['src/extensions/host/**', 'src/extensions/contract/**', 'src/extensions/registry.ts'], rules: {
+    'no-restricted-imports': ['error', { patterns: [{ regex: '^(?!\\.\\./contract(?:/|$)).*', message: 'Extensions import only contract/.' }] }],
+  } },
+  { files: ['src/extensions/contract/**/*.{ts,tsx}'], rules: {
+    'no-restricted-imports': ['error', { patterns: ['*'] }],
+  } },
   // These exact public helper exports predate the lint audit. Retain their API
   // and normal Vite importer invalidation instead of reorganizing theme/stage code.
   // New mixed exports remain errors; this does not enable arbitrary exports.
