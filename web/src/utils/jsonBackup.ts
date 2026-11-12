@@ -330,9 +330,10 @@ export interface BackupParseOptions { mode?: 'replace' | 'merge'; existingSongs?
 /**
  * Merge updates what the file carries. For a song that already exists on this device (same ID), a
  * field the file does not have keeps the device value instead of the import default; this never
- * resets a saved TRANSPOSE_OFFSET. Replace and new songs are unaffected.
+ * resets a saved TRANSPOSE_OFFSET and never replaces the saved CHART_KEY with one detected from the
+ * chart (either would change PERFORMANCE_KEY). Replace and new songs are unaffected.
  */
-const DEVICE_KEPT_FIELDS = ['capo', 'bpm', 'format', 'transposeOffset'] as const
+const DEVICE_KEPT_FIELDS = ['key', 'artist', 'capo', 'bpm', 'format', 'transposeOffset'] as const
 function keepDeviceValues(songs: ActiveSongState[], sources: Partial<ActiveSongState>[], existing: ActiveSongState[]): ActiveSongState[] {
   const device = new Map(existing.filter(song => song.id !== undefined).map(song => [String(song.id), song]))
   return songs.map((song, index) => {
