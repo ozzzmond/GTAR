@@ -11,7 +11,6 @@ const protection = require('../functions/lib/abuseProtection.ts')
 const auth = require('../functions/lib/authCore.ts')
 const share = require('../functions/api/setlist/share.ts')
 const sync = require('../functions/api/songbook/sync.ts')
-const metadata = require('../functions/api/songbook/metadata.ts')
 const session = require('../functions/api/auth/session.ts')
 const { createSongbookSqlite } = require('./helpers/songbookSqlite.cjs')
 const secret = 'synthetic-g2-abuse-secret-at-least-32-characters'
@@ -79,18 +78,18 @@ test('single caller expires on the exact boundary with positive rounded Retry-Af
   Date.now = () => now
   try {
     const env = enabled(namespace())
-    for (let i = 0; i < 10; i++) assert.equal(await protection.enforceAbuseLimit(env, 'metadata', 'a'), null)
-    assert.equal((await protection.enforceAbuseLimit(env, 'metadata', 'a')).headers.get('Retry-After'), '1')
+    for (let i = 0; i < 20; i++) assert.equal(await protection.enforceAbuseLimit(env, 'session-account', 'a'), null)
+    assert.equal((await protection.enforceAbuseLimit(env, 'session-account', 'a')).headers.get('Retry-After'), '1')
     now = 120_000
-    assert.equal(await protection.enforceAbuseLimit(env, 'metadata', 'a'), null)
+    assert.equal(await protection.enforceAbuseLimit(env, 'session-account', 'a'), null)
   } finally { Date.now = original }
 })
 
 test('disabled stays dormant; explicit invalid configuration and backend failures fail closed without logging', async () => {
   const ns = namespace()
   assert.equal(protection.abuseConfiguration({}), 'disabled')
-  assert.equal(await protection.enforceAbuseLimit(undefined, 'metadata'), null)
-  assert.equal(await protection.enforceAbuseLimit({ API_ABUSE_LIMITER: ns }, 'metadata'), null)
+  assert.equal(await protection.enforceAbuseLimit(undefined, 'session-account'), null)
+  assert.equal(await protection.enforceAbuseLimit({ API_ABUSE_LIMITER: ns }, 'session-account'), null)
   assert.equal(ns.names.length, 0)
   const saved = console.error
   let logs = 0
@@ -106,12 +105,12 @@ test('disabled stays dormant; explicit invalid configuration and backend failure
         new Response('broken')].map(response => enabled({ idFromName: n => n, get: () => ({ fetch: async () => response }) })),
       enabled({ idFromName: n => n, get: () => ({ fetch: async () => { throw new Error('secret backend') } }) }),
     ]) {
-      const result = await protection.enforceAbuseLimit(env, 'metadata', 'a')
+      const result = await protection.enforceAbuseLimit(env, 'session-account', 'a')
       assert.equal(result.status, 503)
       assert.equal(result.headers.get('Retry-After'), '5')
       assert.equal((await result.json()).error, 'ABUSE_PROTECTION_UNAVAILABLE')
     }
-    assert.equal((await protection.enforceAbuseLimit(enabled(ns), 'metadata')).status, 503)
+    assert.equal((await protection.enforceAbuseLimit(enabled(ns), 'session-account')).status, 503)
     assert.equal(logs, 0)
   } finally { console.error = saved }
 })
@@ -120,7 +119,7 @@ test('stalled backend headers and body fail closed even when transport ignores a
   for (const stalled of [() => new Promise(() => {}), async () =>
     new Response(new ReadableStream({ start() {} }))]) {
     const env = enabled({ idFromName: n => n, get: () => ({ fetch: stalled }) })
-    const result = await protection.enforceAbuseLimit(env, 'metadata', 'synthetic-timeout-user')
+    const result = await protection.enforceAbuseLimit(env, 'session-account', 'synthetic-timeout-user')
     assert.equal(result.status, 503)
     assert.equal(result.headers.get('Retry-After'), '5')
   }
@@ -143,7 +142,7 @@ async function fixture(ns = namespace()) {
     } } }
     return prepared(sql)
   }
-  const env = { ...enabled(ns), DB: db, AI: { run: async () => ({ response: '{}' }) } }
+  const env = { ...enabled(ns), DB: db }
   const token = await auth.createSessionToken(user, secret)
   const request = (method, body, url = 'https://example.invalid', headers = {}) => new Request(url, {
     method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...headers },
@@ -152,15 +151,12 @@ async function fixture(ns = namespace()) {
   return { env, request, user, operations, db }
 }
 
-test('denied routes do no AI, storage, or upstream work; auth/permission remains authoritative', async () => {
+test('denied routes do no storage or upstream work', async () => {
   let calls = 0
   const reject = { idFromName: n => n, get: () => ({ fetch: async () => { calls++; return Response.json({ allowed: false, retryAfter: 5 }) } }) }
   const f = await fixture(reject)
-  let inference = 0
-  f.env.AI.run = async () => { inference++ }
   const endpoints = [
     [share, 'onRequestPost', {}], [share, 'onRequestGet', undefined, 'https://example.invalid?token=' + 'a'.repeat(64)],
-    [metadata, 'onRequestPost', { title: 'Synthetic Song' }],
     [require('../functions/api/ug-search.ts'), 'onRequestGet', undefined, 'https://example.invalid?q=Song'],
     [require('../functions/api/ug-tab.ts'), 'onRequestGet', undefined, 'https://example.invalid?url=https://tabs.ultimate-guitar.com/tab/test/song-chords-1234'],
   ]
@@ -171,18 +167,14 @@ test('denied routes do no AI, storage, or upstream work; auth/permission remains
       assert.equal((await api[handler]({ env: f.env, request: f.request(body === undefined ? 'GET' : 'POST', body, url) })).status, 429)
       const before = calls
       const anonymous = new Request(url || 'https://example.invalid', { method: body === undefined ? 'GET' : 'POST' })
-      const anonymousPublication = api !== metadata
-      assert.equal((await api[handler]({ env: f.env, request: anonymous })).status, anonymousPublication ? 429 : 401)
-      assert.equal(calls, before + (anonymousPublication ? 1 : 0))
+      assert.equal((await api[handler]({ env: f.env, request: anonymous })).status, 429)
+      assert.equal(calls, before + 1)
     }
     delete f.env.API_ABUSE_LIMITER
     for (const [api, handler, body, url] of endpoints) {
       assert.equal((await api[handler]({ env: f.env,
         request: f.request(body === undefined ? 'GET' : 'POST', body, url) })).status, 503)
     }
-    f.user.access_status = 'denied'
-    assert.equal((await metadata.onRequestPost({ env: f.env, request: f.request('POST', { title: 'Song' }) })).status, 403)
-    assert.equal(inference, 0)
     assert.equal(f.operations.length, 0)
   } finally { global.fetch = savedFetch; f.db.sqlite.close() }
 })
@@ -220,7 +212,7 @@ test('anonymous session callers share admission despite spoofed IP/account heade
   } finally { f.db.sqlite.close() }
 })
 
-test('enabled QR round trip, body limits, and AI budgets remain compatible', async () => {
+test('enabled QR round trip and body limits remain compatible', async () => {
   share._resetRateLimitsForTesting()
   const ns = namespace()
   const f = await fixture(ns)
@@ -232,15 +224,8 @@ test('enabled QR round trip, body limits, and AI budgets remain compatible', asy
     assert.match(token, /^[a-f0-9]{64}$/)
     assert.equal((await share.onRequestGet({ env: f.env, request: f.request('GET', undefined, `https://example.invalid?token=${token}`) })).status, 200)
     for (const [api, bytes, body] of [[share, share.MAX_SHARE_PAYLOAD_BYTES, payload],
-      [metadata, metadata.MAX_METADATA_PAYLOAD_BYTES, { title: 'Song' }],
       [session, session.MAX_SESSION_PAYLOAD_BYTES, {}]]) {
       assert.equal((await api.onRequestPost({ env: f.env, request: f.request('POST', body, undefined, { 'Content-Length': String(bytes + 1), 'X-GTAR-Library-Owner': f.user.id }) })).status, 413)
     }
-    let runs = 0
-    f.env.AI.run = async (model, input) => { runs++; assert.equal(input.max_tokens, 300); return { response: '{}' } }
-    for (let i = 0; i < 10; i++) await metadata.onRequestPost({ env: f.env, request: f.request('POST', { title: 'Song' }) })
-    assert.equal((await metadata.onRequestPost({ env: f.env, request: f.request('POST', { title: 'Song' }) })).status, 429)
-    assert.equal(runs, 10)
-    assert.equal(ns.paths.filter(p => p === '/metadata-budget').length, 10)
   } finally { f.db.sqlite.close() }
 })

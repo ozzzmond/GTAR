@@ -16,7 +16,6 @@ for (const ext of ['.ts', '.tsx']) {
 const authCore = require('../functions/lib/authCore.ts')
 const sessionApi = require('../functions/api/auth/session.ts')
 const syncApi = require('../functions/api/songbook/sync.ts')
-const metadataApi = require('../functions/api/songbook/metadata.ts')
 
 const TEST_SECRET = 'g1-test-auth-secret-min-32-chars-long-secure-synthetic'
 
@@ -127,34 +126,6 @@ test('S1_FIELD_TYPE_VALIDATION: Rejection of invalid field types for sensitive a
     assert.match(json.error, /Missing required Google identity token/i)
   }
 
-  // 3. Metadata: invalid title and field types
-  const badMetadataBodies = [
-    { title: 123 },
-    { title: true },
-    { title: {} },
-    { title: [] },
-    { title: '' },
-    { title: '   ' },
-    { title: 'Valid Title', artist: 123 },
-    { title: 'Valid Title', currentKey: 456 },
-    { title: 'Valid Title', tempo: [] },
-    { title: 'Valid Title', timeSignature: 123 },
-    { title: 'Valid Title', year: {} },
-  ]
-  for (const body of badMetadataBodies) {
-    const req = new Request('https://gtar.local/api/songbook/metadata', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`,
-      },
-      body: JSON.stringify(body),
-    })
-    const res = await metadataApi.onRequestPost({ request: req, env: { ...env, AI: { run: async () => ({}) } } })
-    assert.equal(res.status, 400)
-    const json = await res.json()
-    assert.equal(json.success, false)
-  }
 })
 
 test('AUTH_AND_PERMISSIONS: Administrative authorization gate intact', async () => {
