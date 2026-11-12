@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import type { ActiveSongState, SetlistFolder } from '../types/gtar'
 import type { WebSetlist } from '../App'
 import {
-  StaleWriteConflictError, decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision,
+  StaleWriteConflictError, decodeLibraryRevision, getPersistedLibraryRaw, isQuotaError, isStaleWriteConflictError, libraryMatchesRevision, libraryRevision, loadLibraryRevision, loadedLibraryRevision,
   persistLibrary, saveCrossTabConflictSnapshot, setupCrossTabLibraryConflictGuard,
 } from './syncJournal'
 import { LIBRARY_WRITE_FAILED_EVENT, isMissingLibraryBodyError, libraryStorePending } from './libraryStore'
@@ -33,7 +33,10 @@ export interface LibraryPersistenceInput {
 export function useLibraryPersistence({
   songs, deletedSongs, setlists, folders, tagColors, setTagColors, setFolders, setSongs, setDeletedSongs, setSetlists, setToastMessage, editorRecoveryDraftRef,
 }: LibraryPersistenceInput) {
-  const persistedBaselineRef = useRef<string | null>(getPersistedLibraryRaw())
+  // #453 D1: the baseline is the revision of the library this tab actually read. It is behind the
+  // stored head when another tab committed between opening storage and this mount.
+  const persistedBaselineRef = useRef<string | null>(loadedLibraryRevision())
+  const startupHeadCheckedRef = useRef(false)
   const [crossTabConflict, setCrossTabConflict] = useState<{ remoteRaw: string | null; detectedAt: number } | null>(null)
 
   const [conflictRecoverySaved, setConflictRecoverySaved] = useState(false)
@@ -92,7 +95,7 @@ export function useLibraryPersistence({
 
   // Cross-tab storage conflict protection for the persisted library
   useEffect(() => {
-    const cleanup = setupCrossTabLibraryConflictGuard((externalRaw) => {
+    const onExternal = (externalRaw: string | null) => {
       const local = localLibraryRef.current ?? { songs, deletedSongs, setlists, folders, tagColors }
       const currentLocal = { songs: [...local.songs, ...local.deletedSongs], setlists: local.setlists, folders: local.folders, tagColors: local.tagColors }
       const baselineRaw = persistedBaselineRef.current
@@ -146,7 +149,15 @@ export function useLibraryPersistence({
           }
         }
       }
-    })
+    }
+    const cleanup = setupCrossTabLibraryConflictGuard(onExternal)
+    // #453 D1: a save committed by another tab before this guard was listening raised no event
+    // here. Handle it once, like any external update (adopt when clean, conflict otherwise).
+    if (!startupHeadCheckedRef.current) {
+      startupHeadCheckedRef.current = true
+      const head = getPersistedLibraryRaw()
+      if (head !== null && head !== persistedBaselineRef.current) onExternal(head)
+    }
     return cleanup
   }, [songs, deletedSongs, setlists, folders, tagColors, setTagColors, setFolders, getConflictDraft, editorRecoveryDraftRef, setSongs, setDeletedSongs, setSetlists, setToastMessage])
 

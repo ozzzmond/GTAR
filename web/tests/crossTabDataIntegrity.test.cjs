@@ -581,3 +581,72 @@ test('#300: Reload Other Tab\'s Version adopts committed B3 content without over
     Object.assign(global, prior)
   }
 })
+
+// #453 D1 (startup): a save another tab commits after this tab opened storage but before its app
+// mounted raises no event the app can hear. The app must not start on the older copy with the newer
+// revision as its baseline (its next save would silently replace the other tab's commit).
+test('#453: a commit from another tab before the app mounts is adopted, never overwritten', async () => {
+  const prior = { window: global.window, document: global.document, location: global.location, localStorage: global.localStorage,
+    sessionStorage: global.sessionStorage, indexedDB: global.indexedDB, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT }
+  const h = require('./helpers/tabHarness.cjs')
+  // The harness sets its jsdom globals only when first loaded; the previous test restored the earlier ones.
+  Object.assign(global, { window: h.dom.window, document: h.dom.window.document, location: h.dom.window.location })
+  h.dom.reconfigure({ url: 'https://gtar-web.pages.dev/' })
+  const storage = h.freshStorage()
+  const factory = new h.Factory()
+  Object.assign(global, { indexedDB: factory, sessionStorage: window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+  document.body.innerHTML = '<div id="root"></div>'
+  const React = require('react')
+  const { act } = React
+  const { createRoot } = require('react-dom/client')
+  h.newTab().sj.persistLibrary({ songs: [songA], setlists: [] }, storage)
+  const other = h.newTab()
+  await other.sj.prepareLibraryStorage(storage, { factory })
+  const local = h.newTab()
+  // The other tab commits right after this tab has opened storage, before its app mounts.
+  const prepare = local.sj.prepareLibraryStorage
+  local.sj.prepareLibraryStorage = async (...args) => {
+    const prepared = await prepare(...args)
+    other.sj.persistLibrary({ songs: [{ ...songA, title: 'Committed before mount' }, songB], setlists: [] }, storage, { expectedRaw: other.sj.libraryRevision(storage) })
+    await other.store.flushLibraryStore()
+    await h.settle(30)
+    return prepared
+  }
+  let home
+  const module = require('../src/components/SongbookHomeView.tsx')
+  const original = module.SongbookHomeView
+  module.SongbookHomeView = props => { home = props; return null }
+  const root = createRoot(document.getElementById('root'))
+  const originalTimeout = global.setTimeout
+  const timers = new Set()
+  global.setTimeout = (fn, delay, ...args) => {
+    const timer = originalTimeout(fn, delay, ...args)
+    timers.add(timer)
+    return timer
+  }
+  try {
+    const App = require('../src/App.tsx').default
+    await act(async () => { root.render(React.createElement(App)); await h.settle(60) })
+    for (let i = 0; i < 100 && !home; i++) await act(async () => { await h.settle(10) })
+    await act(async () => { await h.settle(60) })
+    assert.deepEqual(home.songs.map(song => song.title), ['Committed before mount', 'Song Beta'])
+    assert.equal(!!document.querySelector('[data-testid="cross-tab-conflict-alert"]'), false)
+    await local.store.flushLibraryStore()
+    other.store.resetLibraryStoreForTests()
+    const reopened = h.newTab()
+    try {
+      await reopened.sj.prepareLibraryStorage(storage, { factory })
+      assert.deepEqual(reopened.sj.readPersistedLibrary(storage).songs.map(song => song.title), ['Committed before mount', 'Song Beta'])
+    } finally { reopened.store.resetLibraryStoreForTests() }
+  } finally {
+    await act(async () => root.unmount())
+    module.SongbookHomeView = original
+    local.sj.prepareLibraryStorage = prepare
+    local.store.resetLibraryStoreForTests()
+    other.store.resetLibraryStoreForTests()
+    for (const timer of timers) clearTimeout(timer)
+    global.setTimeout = originalTimeout
+    Object.assign(global, prior)
+  }
+})
