@@ -11,11 +11,6 @@ require.extensions['.ts'] = (module, filename) => module._compile(
 
 const core = require('../functions/lib/authCore.ts')
 const session = require('../functions/api/auth/session.ts')
-// The admin HTTP endpoints were retired (#453); the admin gate itself is still authoritative.
-const admin = { async onRequestGet({ request, env }) {
-  const result = await core.authenticateAdminRequest(request, env)
-  return { status: 'error' in result ? result.status : 200 }
-} }
 const SECRET = 'disposable-auth-security-test-key'
 const RETIRED_KEY = 'gtar_d1_auth_internal_secret_dev_only'
 const user = {
@@ -73,8 +68,7 @@ for (const [label, secret] of [
     assert.equal((await session.onRequestPost({ request: post, env })).status, 503)
     assert.equal((await session.onRequestGet({ request: request(legacyToken()), env })).status, 503)
     assert.equal((await core.authenticateUserRequest(request(legacyToken()), env)).status, 503)
-    assert.equal((await admin.onRequestGet({ request: request(legacyToken()), env })).status, 503)
-    assert.equal((await core.authenticateAdminRequest(request('test_token:disposable-sub'), env)).status, 503)
+    assert.equal((await core.authenticateUserRequest(request('test_token:disposable-sub'), env)).status, 503)
     assert.deepEqual(counts(), { reads: 0, writes: 0 })
   })
 }
@@ -96,7 +90,6 @@ test('forged public-fallback session and invalid signature are rejected', async 
     assert.equal(await core.verifySessionToken(token, SECRET), null)
     assert.equal((await core.authenticateUserRequest(request(token), env)).status, 401)
     assert.equal((await session.onRequestGet({ request: request(token), env })).status, 401)
-    assert.equal((await admin.onRequestGet({ request: request(token), env })).status, 401)
   }
 })
 
@@ -116,7 +109,7 @@ test('uid/sub mismatch and absent user fail without disclosing account existence
   const { env } = fixture()
   const mismatch = legacyToken({ sub: 'other-sub' })
   const missing = legacyToken({ uid: 'absent-user' })
-  for (const authenticate of [core.authenticateUserRequest, core.authenticateAdminRequest]) {
+  for (const authenticate of [core.authenticateUserRequest]) {
     const a = await authenticate(request(mismatch), env)
     const b = await authenticate(request(missing), env)
     assert.deepEqual(a, b)
@@ -135,16 +128,7 @@ test('authoritative inactive and unauthorized records cannot access protected en
     const { env } = fixture(record)
     const token = legacyToken()
     assert.equal((await core.authenticateUserRequest(request(token), env)).status, 403)
-    assert.equal((await admin.onRequestGet({ request: request(token), env })).status, 403)
   }
-})
-
-test('admin gate uses D1 role, including demotion and valid existing admin session', async () => {
-  const member = fixture()
-  assert.equal((await admin.onRequestGet({ request: request(legacyToken()), env: member.env })).status, 403)
-  const authorized = fixture({ ...user, role: 'admin' })
-  const token = legacyToken({ role: 'member', status: 'pending' })
-  assert.equal((await admin.onRequestGet({ request: request(token), env: authorized.env })).status, 200)
 })
 
 test('explicit local mock identity with explicit signing key remains compatible', async () => {

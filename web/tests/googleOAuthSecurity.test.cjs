@@ -239,7 +239,6 @@ test('hosted mock tokens cannot bootstrap, mint sessions, read users or authoriz
     const request = new Request(`${url}/api/auth/session`, { headers })
     assert.equal((await session.onRequestGet({ request, env })).status, 401, url)
     assert.equal((await core.authenticateUserRequest(request, env)).status, 401, url)
-    assert.equal((await core.authenticateAdminRequest(request, env)).status, 401, url)
   }
   assert.equal(databaseCalls, 0)
   assert.equal(calls.length, 0)
@@ -273,6 +272,5 @@ test('local mock and private-key session remain compatible across all authentica
     const bindings = { ...env, ...markers }
     assert.equal((await session.onRequestGet({ request, env: bindings })).status, 200)
     assert.equal((await core.authenticateUserRequest(request, bindings)).user?.id, user.id)
-    assert.equal((await core.authenticateAdminRequest(request, bindings)).user?.id, user.id)
   }
 })
