@@ -98,7 +98,8 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
 function runtimeContract(root, sha, exact = true) {
   const git = gitAt(root)
   try {
-    for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', '.github/release_repository.cjs']) {
+    // Historical tag-derived baselines predate the repository helper; exact checkpoints must include it.
+    for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', ...(exact ? ['.github/release_repository.cjs'] : [])]) {
       const content = execFileSync('git', ['show', `${sha}:${file}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
       if (!content || !content.trim()) return false
       if (exact) {
