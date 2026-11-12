@@ -377,3 +377,23 @@ test('#300: PROD v1.1.141 first load migrates v1 without B1/B2 flags and keeps t
     global.IS_REACT_ACT_ENVIRONMENT = priorAct
   }
 })
+
+// #453 D4: persistLibrary stores canonical song keys ('' for a key it cannot normalize). The
+// "does this tab match the stored revision" check must compare that stored form; otherwise a song
+// whose key is not canonical never matches, and the tab reports unsaved changes forever.
+test('#453: a library with a key that is not canonical matches its own saved revision', async () => {
+  for (const withStore of [true, false]) {
+    const storage = h.freshStorage()
+    const tab = h.newTab()
+    if (withStore) await tab.sj.prepareLibraryStorage(storage, { factory: new h.Factory() })
+    const lib = h.library(3, 1)
+    lib.songs[0].key = 'C major'
+    lib.songs[1].key = 'bb'
+    tab.sj.persistLibrary(lib, storage, { expectedRaw: tab.sj.libraryRevision(storage) })
+    const revision = tab.sj.libraryRevision(storage)
+    assert.deepEqual(tab.sj.readPersistedLibrary(storage).songs.slice(0, 2).map(s => s.key), ['', 'Bb'], 'stored form')
+    assert.equal(tab.sj.libraryMatchesRevision(lib, revision), true, `matches (IndexedDB ${withStore})`)
+    assert.equal(tab.sj.libraryMatchesRevision(titled(lib, 'Edited'), revision), false, 'a real edit still differs')
+    if (withStore) await tab.store.flushLibraryStore()
+  }
+})
