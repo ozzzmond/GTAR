@@ -3,6 +3,26 @@
 Historical context only. The live release contract is
 [RELEASE_WORKFLOW_README.md](../RELEASE_WORKFLOW_README.md).
 
+### Release simplification and repository contract (#466)
+
+Numeric DEV parsing replaces letter suffixes and same-commit aliases. The 38
+historical lettered tags remain untouched and inert. The pinned
+`v1.0.130-dev.2` / committed `1.0.130-dev.2c` exception stays non-promotable.
+Latest DEV means latest numeric tag. Before promotion hotfixes use the next
+iteration; after promotion use advisory `nextDevTag` to avoid PROD identity reuse.
+
+Approval snapshots cover main, dev, selected DEV, computed PROD and baseline PROD
+refs only. PROD tags remain create-only; numeric `v1.1.*-dev.*` tags can move
+before candidate selection, with promotion bound to `expected_sha`. The owner
+changed the tag ruleset to exclude `v1.1.*-dev.*`; this PR changes no ruleset.
+Repository authority lives in `.github/release_repository.cjs`; Actions checks
+the numeric ID and Cloudflare independently checks the source owner/name.
+The new contract participates in trusted helper equality and preview overlays.
+
+Owner-only follow-ups: main controller installation, ancestry-preserving DEV
+reconciliation, a newly accepted checkpoint tag, and any Cloudflare or ruleset
+changes. No deployment or fresh production verification is claimed here.
+
 ### R2 VERIFIED_PROD and DEV metadata rebaseline (#441)
 
 R2 PROD `v1.2.0` is VERIFIED_PROD: tag `v1.2.0` points to

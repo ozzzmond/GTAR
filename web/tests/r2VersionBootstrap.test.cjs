@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
-const { R2_CHECKPOINT: R2, parseDevTag, compareDevTags, parseProdTag, compareProdTags, inspectCheckpoint, verifyStabilizationPair } = require('../../.github/release_metadata.cjs')
+const { R2_CHECKPOINT: R2, parseDevTag, compareDevTags, parseProdTag, compareProdTags, inspectCheckpoint } = require('../../.github/release_metadata.cjs')
 const { resolveReleaseIdentity, resolveDevIdentity, CANONICAL_REPOSITORY } = require('../../.github/release_identity.cjs')
 const controller = require('../../.github/prod_controller.cjs')
 const root = path.resolve(__dirname, '../..')
@@ -13,7 +13,6 @@ test('R2 is exactly one provisional tag; historical and subsequent formulas stay
   for (const [tag, prod, next] of [
     ['v1.0.145-dev.2', 'v1.1.147', 'v1.0.147-dev.1'],
     [R2.tag, 'v1.2.0', 'v1.1.0-dev.1'],
-    ['v1.0.145-dev.3a', 'v1.1.148', 'v1.0.148-dev.1'],
     ['v1.0.145-dev.4', 'v1.1.149', 'v1.0.149-dev.1'],
     ['v1.1.0-dev.1', 'v1.2.1', 'v1.1.1-dev.1'],
     ['v1.1.0-dev.2', 'v1.2.2', 'v1.1.2-dev.1'],
@@ -21,25 +20,22 @@ test('R2 is exactly one provisional tag; historical and subsequent formulas stay
   ]) {
     const p = parseDevTag(tag)
     assert.equal(p.prodTag, prod); assert.equal(p.nextDevTag, next)
-    assert.equal(p.promotable, !p.suffix)
   }
-  for (const tag of ['v1.1.0-dev.1a', 'v1.1.5-dev.3z']) assert.equal(parseDevTag(tag).promotable, false)
+  for (const tag of ['v1.1.0-dev.1a', 'v1.1.5-dev.3z']) assert.throws(() => parseDevTag(tag), /Invalid canonical DEV/)
 })
 
-test('strict canonical syntax, safe arithmetic, ordering and same-scheme stabilization', () => {
-  for (const tag of ['v1.0.0-dev.1', 'v1.1.00-dev.1', 'v1.1.1-dev.01', 'v1.1.0-dev.0',
+test('strict canonical syntax, safe arithmetic, numeric ordering', () => {
+  for (const tag of ['v1.1.00-dev.1', 'v1.1.1-dev.01', 'v1.1.0-dev.0',
     'v1.1.-1-dev.1', 'v1.1.0-dev.1A', 'v1.1.0-dev.1aa', 'v1.1.0-dev.1\n',
     'v1.1.0-dev.1\r', 'v1.2.0-dev.1', 'v1.1.9007199254740991-dev.1',
     'v1.1.0-dev.9007199254740992', 'v1.0.9007199254740992-dev.1']) assert.throws(() => parseDevTag(tag), tag)
   assert.equal(parseDevTag('v1.1.0-dev.9007199254740991').prodTag, 'v1.2.9007199254740991')
-  const tags = ['v1.0.999-dev.99z', 'v1.1.0-dev.1', 'v1.1.0-dev.1a'].map(parseDevTag)
-  assert.deepEqual(tags.sort((a, b) => compareDevTags(b, a)).map(p => p.tag), ['v1.1.0-dev.1a', 'v1.1.0-dev.1', 'v1.0.999-dev.99z'])
+  const tags = ['v1.0.999-dev.99', 'v1.1.0-dev.1', 'v1.1.0-dev.2'].map(parseDevTag)
+  assert.deepEqual(tags.sort((a, b) => compareDevTags(b, a)).map(p => p.tag), ['v1.1.0-dev.2', 'v1.1.0-dev.1', 'v1.0.999-dev.99'])
   assert.ok(compareProdTags('v1.2.0', 'v1.1.145') > 0)
   assert.ok(compareProdTags('v1.2.1', 'v1.2.0') > 0)
   for (const tag of ['v1.1.0', 'v1.2.00', 'v1.2.0\n', 'v1.2.9007199254740992', 'v1.3.1']) assert.throws(() => parseProdTag(tag))
-  const sha = 'a'.repeat(40), git = () => sha
-  assert.equal(verifyStabilizationPair(git, 'v1.1.0-dev.2', '1.1.0-dev.1a', sha).companionTag, 'v1.1.0-dev.1a')
-  assert.equal(verifyStabilizationPair(git, 'v1.1.5-dev.2', '1.0.5-dev.1a', sha), null)
+
 })
 
 // All branches/tags/pushes below belong only to a disposable local repository.
@@ -49,7 +45,7 @@ function fixture(t) {
   const repo = path.join(directory, 'work'); fs.mkdirSync(repo)
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   const put = (file, content) => { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), content) }
-  const helpers = ['.github/release_metadata.cjs', '.github/release_identity.cjs']
+  const helpers = ['.github/release_metadata.cjs', '.github/release_identity.cjs', '.github/release_repository.cjs']
   const install = () => { for (const file of helpers) put(file, fs.readFileSync(path.join(root, file), 'utf8')) }
   const stamps = tag => {
     const version = tag.slice(1)
@@ -119,8 +115,8 @@ test('R2 rejects wrong checkpoint, SHA drift, moved tag, lettered and duplicate 
   assert.throws(f.plan, /Exact tag/)
   f.git('tag', '-f', R2.tag, f.c)
   f.git('tag', R2.tag + 'a', f.c)
-  assert.throws(() => f.plan(R2.tag + 'a'), /Lettered/)
-  assert.throws(f.plan, /latest canonical/)
+  assert.throws(() => f.plan(R2.tag + 'a'), /Invalid canonical DEV/)
+  assert.equal(f.plan().sha, f.c)
   assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.c }, (...args) => {
     if (args[0] === 'ls-remote') return `${'a'.repeat(40)}\trefs/tags/${R2.tag}`
     return f.adapter(...args)
@@ -157,7 +153,7 @@ test('R2 baseline supports new DEV zero and blocks obsolete scheme promotions', 
   const identity = resolveDevIdentity(f.repo, {}, f.adapter)
   assert.equal(identity.tag, R2.nextDevTag)
   f.git('tag', 'v1.1.0-dev.1a', next)
-  assert.throws(() => controller.plan(f.repo, R2.nextDevTag, next, 'refs/heads/main', f.c), /latest canonical/)
+  assert.equal(controller.plan(f.repo, R2.nextDevTag, next, 'refs/heads/main', f.c).sha, next)
 })
 
 test('R2 requires direct stamps rather than a stabilization alias', t => {

@@ -3,7 +3,8 @@ const { execFileSync, spawnSync } = require('node:child_process')
 const { readFileSync, writeFileSync, appendFileSync, mkdirSync } = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
-const { parseDevTag, inspectCheckpoint, compareDevTags, parseProdTag, compareProdTags } = require('./release_metadata.cjs')
+const { parseDevTag, inspectCheckpoint, compareDevTags, parseProdTag, compareProdTags, fetchReleaseTags, HISTORICAL_TAG_EXCEPTIONS } = require('./release_metadata.cjs')
+const repository = require('./release_repository.cjs')
 const { ABANDONED_PROD } = require('./release_identity.cjs')
 const gitAt = root => (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const must = (ok, message) => { if (!ok) throw new Error(message) }
@@ -60,10 +61,9 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   must(controllerRef === 'refs/heads/main', 'Dispatch reviewed main controller only')
   must(/^[0-9a-f]{40}$/.test(expectedSha), 'expected_sha must be full lowercase SHA')
   const parsed = parseDevTag(tag)
-  must(parsed.promotable, 'Lettered checkpoint is not promotable')
   must(parsed.prodTag !== ABANDONED_PROD.tag && expectedSha !== ABANDONED_PROD.sha, 'Abandoned PROD release cannot be reused; new identity required')
   const checkpoint = inspectCheckpoint(root, tag)
-  must(checkpoint.promotable, 'Checkpoint metadata mismatch is not promotable')
+  must(checkpoint.promotable !== false, 'Checkpoint metadata mismatch is not promotable')
   must(checkpoint.sha === expectedSha, 'Exact tag must equal expected_sha')
   const devSha = git('rev-parse', 'refs/remotes/origin/dev^{commit}')
   const mainSha = git('rev-parse', 'refs/remotes/origin/main^{commit}')
@@ -74,7 +74,7 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   const tags = git('tag', '--list').split('\n').filter(Boolean)
   const devTags = tags.flatMap(t => { try { return [parseDevTag(t)] } catch { return [] } })
     .sort((a, b) => compareDevTags(b, a))
-  must(devTags[0]?.tag === tag, 'Not latest canonical DEV (including letters)')
+  must(devTags[0]?.tag === tag, `Not latest canonical DEV (numeric tags only): latest ${devTags[0]?.tag}; candidate ${tag} maps to ${parsed.prodTag}`)
   must(!tags.includes(parsed.prodTag), 'PROD tag collision; never overwrite')
   const prod = tags.filter(t => /^v1\.(?:1\.[1-9]\d*|2\.(?:0|[1-9]\d*))$/.test(t)).sort((a, b) => compareProdTags(b, a))
   must(prod.length, 'Canonical PROD baseline missing/unsafe')
@@ -86,7 +86,7 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   const pkg = sha => JSON.parse(git('show', `${sha}:web/package.json`)).version
   // Legacy PROD uses committed package. Future exact-source PROD uses tag/build identity.
   const derived = sha => {
-    const candidates = tags.flatMap(t => { try { const p = inspectCheckpoint(root, t); return p.sha === sha && p.promotable && p.prodTag === baseline ? [p] : [] } catch { return [] } })
+    const candidates = tags.flatMap(t => { try { const p = inspectCheckpoint(root, t); return p.sha === sha && p.promotable !== false && p.prodTag === baseline ? [p] : [] } catch { return [] } })
     return candidates.length === 1 && runtimeContract(root, sha, false)
   }
   must(abandoned || pkg(baselineSha) === baseline.slice(1) || derived(baselineSha), 'Baseline tagged metadata conflicts with release identity')
@@ -98,12 +98,11 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
 function runtimeContract(root, sha, exact = true) {
   const git = gitAt(root)
   try {
-    for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs']) {
-      const content = git('show', `${sha}:${file}`)
+    for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', '.github/release_repository.cjs']) {
+      const content = execFileSync('git', ['show', `${sha}:${file}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
       if (!content || !content.trim()) return false
       if (exact) {
-        const canonical = text => text.replace(/\r\n/g, '\n').trim()
-        if (canonical(content) !== canonical(readFileSync(path.join(__dirname, path.basename(file)), 'utf8'))) return false
+        if (content !== readFileSync(path.join(__dirname, path.basename(file)), 'utf8')) return false
       }
     }
     return git('show', `${sha}:web/vite.config.ts`).includes('resolveReleaseIdentity') &&
@@ -125,14 +124,14 @@ function approvalContract(env, policies) {
 function projectContract(p) {
   const c = p.source?.config
   must(p.name === 'gtar-web' && typeof p.id === 'string' && p.id && p.production_branch === 'main' && p.source?.type === 'github' &&
-    c?.owner === 'ozzzmond' && c.repo_name === 'GTAR' && c.production_branch === 'main' && c.production_deployments_enabled === true,
-    'Cloudflare gtar-web must use ozzzmond/GTAR Git integration with main production enabled')
+    c?.owner === repository.owner && c.repo_name === repository.name && c.production_branch === 'main' && c.production_deployments_enabled === true,
+    `Cloudflare gtar-web must use ${repository.owner}/${repository.name} Git integration with main production enabled`)
 }
 function deploymentProof(p, d, sha, after) {
   projectContract(p)
   const m = d.deployment_trigger?.metadata
   must(d.project_name === p.name && d.project_id === p.id && d.environment === 'production' &&
-    d.source?.type === 'github' && d.source.config?.owner === 'ozzzmond' && d.source.config?.repo_name === 'GTAR' &&
+    d.source?.type === 'github' && d.source.config?.owner === repository.owner && d.source.config?.repo_name === repository.name &&
     d.deployment_trigger?.type === 'github:push' && m?.branch === 'main' && m.commit_hash === sha && m.commit_dirty === false &&
     d.is_skipped === false && d.latest_stage?.name === 'deploy' && d.latest_stage.status === 'success' &&
     Number.isFinite(Date.parse(d.created_on)) && Date.parse(d.created_on) > Date.parse(after) &&
@@ -149,6 +148,7 @@ async function getJson(url, token, cloudflare = false) {
   return data
 }
 async function externalGate(e, fetcher = getJson) {
+  must(e.GITHUB_REPOSITORY_ID === String(repository.id), 'GITHUB_REPOSITORY_ID missing/mismatched')
   const base = `https://api.github.com/repos/${e.GITHUB_REPOSITORY}`
   const env = await fetcher(`${base}/environments/gtar-production`, e.APPROVAL_READ_TOKEN)
   const policies = await fetcher(`${base}/environments/gtar-production/deployment-branch-policies`, e.APPROVAL_READ_TOKEN)
@@ -162,8 +162,8 @@ async function externalGate(e, fetcher = getJson) {
 }
 function refresh(root) {
   const git = gitAt(root)
-  // New, complete tag namespace on every job/recheck. Detect moved/deleted tags via snapshot comparison.
-  git('fetch', 'origin', '+refs/heads/dev:refs/remotes/origin/dev', '+refs/heads/main:refs/remotes/origin/main', 'refs/tags/*:refs/tags/*')
+  // Refresh numeric R2 DEV tags; scoped snapshots detect selected-ref drift.
+  fetchReleaseTags(git, 'origin', ['+refs/heads/dev:refs/remotes/origin/dev', '+refs/heads/main:refs/remotes/origin/main'])
 }
 // Read committed configuration and blobs only; never execute checkpoint code or SQL.
 function migrationCheckpoint(root, sha, controllerSha, git = gitAt(root)) {
@@ -244,11 +244,19 @@ async function d1Readiness(root, p, e, project, reader = readD1Migrations, git =
   must(!pending.length, `D1 readiness HOLD: pending migrations: ${pending.join(', ')}; human remediation required, then rerun`)
   return { state: 'PASS', required: canonical.names, pending: [] }
 }
-function inventoryContract(root, refs) {
+function scopedRefs(refs, p) {
+  return Object.fromEntries(['refs/heads/main', 'refs/heads/dev', ...[p.tag, p.prodTag, p.baseline].map(t => `refs/tags/${t}`)]
+    .map(ref => [ref, refs[ref] || null]))
+}
+function snapshotContract(root, refs, p) {
   const git = gitAt(root)
-  const local = git('for-each-ref', '--format=%(objectname) %(refname)', 'refs/tags').split('\n').filter(Boolean)
-  const remote = Object.entries(refs).filter(([ref]) => ref.startsWith('refs/tags/'))
-  must(local.length === remote.length && local.every(line => { const [sha, ref] = line.split(' '); return refs[ref] === sha }), 'Tag inventory moved/deleted/stale; no rewriting allowed')
+  for (const [ref, object] of Object.entries(refs)) {
+    if (ref === `refs/tags/${p.prodTag}`) must(!object, 'PROD tag collision; never overwrite')
+    else {
+      const local = ref.startsWith('refs/heads/') ? ref.replace('refs/heads/', 'refs/remotes/origin/') : ref
+      must(object && git('rev-parse', local) === object, 'Scoped ref moved/deleted/stale')
+    }
+  }
 }
 function freshContract(p, e, refs, protection) {
   must(e.VALIDATED_SHA === p.sha && e.PLANNED_MAIN === p.mainSha && e.PLANNED_PROD === p.prodTag && e.PLANNED_REFS === JSON.stringify(refs) && e.PLANNED_PROTECTION === protection, 'Post-approval state differs from validated plan')
@@ -274,7 +282,7 @@ function promote(root, p, runner = spawnSync, inspect = remoteRefs) {
   return { state, started, pushExit: r.status ?? null }
 }
 function runtimeProof(identity, sha, prodTag) {
-  must(identity?.sha === sha && identity.version === prodTag.slice(1) && parseDevTag(identity.sourceTag).prodTag === prodTag && parseDevTag(identity.sourceTag).promotable, 'Deployed runtime release identity mismatch')
+  must(identity?.sha === sha && identity.version === prodTag.slice(1) && parseDevTag(identity.sourceTag).prodTag === prodTag && !HISTORICAL_TAG_EXCEPTIONS[identity.sourceTag], 'Deployed runtime release identity mismatch')
 }
 function emit(values) {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(values).map(([k, v]) => `${k}=${v}\n`).join(''))
@@ -306,19 +314,19 @@ async function main(mode, e = process.env) {
   }
   refresh(root)
   const p = plan(root, e.DEV_TAG, e.EXPECTED_SHA, e.CONTROLLER_REF, e.CONTROLLER_SHA)
-  const refs = remoteRefs(root)
-  inventoryContract(root, refs)
+  const refs = scopedRefs(remoteRefs(root), p)
+  snapshotContract(root, refs, p)
   const external = await externalGate(e)
   const d1 = await d1Readiness(root, p, e, external.project)
   if (mode === 'plan') { emit({ ready: true, d1: JSON.stringify(d1), sha: p.sha, prod_tag: p.prodTag, main_sha: p.mainSha, next_dev_tag: p.nextDevTag, protection: external.protection, refs: JSON.stringify(refs) }); return }
   must(mode === 'promote', 'Unknown controller command')
   freshContract(p, e, refs, external.protection)
   // Re-read refs after external protection/project reads, immediately before mutation.
-  must(JSON.stringify(remoteRefs(root)) === JSON.stringify(refs), 'Remote refs changed during fresh gate')
+  must(JSON.stringify(scopedRefs(remoteRefs(root), p)) === JSON.stringify(refs), 'Remote refs changed during fresh gate')
   emit({ state: 'AMBIGUOUS_REFS_MANUAL_REVIEW', started: new Date().toISOString() })
   const result = promote(root, p)
   emit(result)
   must(result.state === 'PROD_PROMOTED_BUT_UNVERIFIED', result.state)
 }
 if (require.main === module) main(process.argv[2]).catch(error => { emit({ error: error.message }); process.exitCode = 1 })
-module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, inventoryContract, freshContract, migrationCheckpoint, readD1Migrations, d1Readiness, main }
+module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, scopedRefs, snapshotContract, refresh, freshContract, migrationCheckpoint, readD1Migrations, d1Readiness, main }
