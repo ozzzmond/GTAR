@@ -47,7 +47,7 @@ async function mountHeader(options = {}) {
   return { root, popover: document.querySelector('.avatar-popover') }
 }
 
-test('Settings menu layout: Theme, Backup & Restore, Debug Logs, Recovery Data, Advanced Tools, About; header cloud button retired', async () => {
+test('Settings menu layout: Theme, Backup & Restore, Debug Logs, Recovery Data, About; Advanced Tools relocated to header wrench button; header cloud button retired', async () => {
   const { root, popover } = await mountHeader({ dev: false })
   try {
     // Header cloud button retired per #434
@@ -58,12 +58,15 @@ test('Settings menu layout: Theme, Backup & Restore, Debug Logs, Recovery Data, 
     assert.ok(!buttonTexts(popover).includes('Sign In with Google'), 'Sign in button removed')
     assert.doesNotMatch(popover.textContent, /Sign in to use cloud backup|Whitelist/)
 
-    // Settings layout order per #434 & QA follow-up
+    // Settings layout order per #434 & #503
     assert.ok(document.querySelector('[data-testid="settings-theme-button"]'), 'Theme entry exists')
     assert.ok(document.querySelector('[data-testid="settings-backup-restore-button"]'), 'Backup & Restore entry exists')
     assert.ok(document.querySelector('[data-testid="settings-debug-logs"]'), 'Debug Logs entry exists')
     assert.equal(document.querySelector('[data-testid="settings-recovery-data"]'), null, 'Top-level Recovery Data row removed per CHANGE_3')
-    assert.ok(document.querySelector('[data-testid="advanced-tools"]'), 'Advanced Tools exists')
+    assert.equal(popover.querySelector('[data-testid="advanced-tools"]'), null, 'Advanced Tools moved out of Settings menu per #503')
+    assert.equal(popover.querySelector('[data-testid="profile-web-sources"]'), null, 'Web Sources removed from Settings per #503')
+    assert.equal(popover.querySelector('[data-testid="settings-online-sources"]'), null, 'Online song sources moved out of Settings per #503')
+    assert.ok(document.querySelector('[data-testid="header-advanced-tools"]'), 'Header advanced tools button exists')
     assert.ok(document.querySelector('[data-testid="settings-about-button"]'), 'About GTAR entry exists')
 
     // Clicking Backup & Restore opens center directly
@@ -79,17 +82,19 @@ test('Settings menu layout: Theme, Backup & Restore, Debug Logs, Recovery Data, 
   } finally { await act(async () => root.unmount()) }
 })
 
-test('Advanced Tools holds Web Sources and registry-driven ProPresenter information', async () => {
-  const { root, popover } = await mountHeader({ dev: false })
+test('Advanced Tools holds Online song sources and registry-driven ProPresenter information (#503)', async () => {
+  const { root } = await mountHeader({ dev: false })
   try {
-    const toggle = document.querySelector('[data-testid="advanced-tools-button"]')
-    assert.match(toggle.textContent, /Advanced Tools/)
+    const toggle = document.querySelector('[data-testid="header-advanced-tools"]')
+    assert.equal(toggle.getAttribute('aria-label'), 'Advanced Tools')
     assert.equal(toggle.getAttribute('aria-expanded'), 'false')
     await act(async () => toggle.click())
     assert.equal(toggle.getAttribute('aria-expanded'), 'true')
 
-    const tools = document.querySelector('[data-testid="advanced-tools"]')
-    assert.ok(tools.querySelector('[data-testid="profile-web-sources"]'), 'Web Sources preserved in Advanced Tools')
+    const tools = document.querySelector('[data-testid="advanced-tools-popover"]')
+    assert.ok(tools, 'Advanced tools popover opened')
+    assert.ok(tools.querySelector('[data-testid="settings-online-sources"]'), 'Online song sources relocated to Advanced Tools')
+    assert.equal(tools.querySelector('[data-testid="profile-web-sources"]'), null, 'Web Sources removed per #503')
     assert.equal(tools.querySelector('[data-testid="settings-propresenter-stub"]'), null)
     const row = tools.querySelector('[data-testid="extension-propresenter-follower"]')
     assert.match(row.textContent, /ProPresenter.*Not available on this device\/browser/)
@@ -145,9 +150,9 @@ test('Core Header boots with an empty extension registry and preserves menu acti
   let root
   try {
     ;({ root } = await mountHeader())
-    await act(async () => document.querySelector('[data-testid="advanced-tools-button"]').click())
+    await act(async () => document.querySelector('[data-testid="header-advanced-tools"]').click())
     assert.equal(document.querySelector('[data-testid^="extension-"]'), null)
-    assert.ok(document.querySelector('[data-testid="profile-web-sources"]'))
+    assert.ok(document.querySelector('[data-testid="settings-online-sources"]'))
     await act(async () => document.querySelector('[data-testid="settings-backup-restore-button"]').click())
     assert.equal(center.isOpen, true)
   } finally {
@@ -195,4 +200,52 @@ test('extension settings and enabled state remain outside songbook settings back
     restoreBackupSettings(backup, localStorage)
     assert.equal(localStorage.getItem(key), original)
   } finally { localStorage.clear() }
+})
+
+test('Header control order and keyboard accessibility (#503)', async () => {
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  await act(async () => root.render(React.createElement(Header, props)))
+  try {
+    const themeToggle = document.querySelector('[data-testid="header-theme-mode-toggle"]')
+    const wrench = document.querySelector('[data-testid="header-advanced-tools"]')
+    const gear = document.querySelector('[data-testid="header-settings"]')
+
+    assert.ok(themeToggle, 'theme toggle exists')
+    assert.ok(wrench, 'wrench control exists')
+    assert.ok(gear, 'gear control exists')
+
+    // Document position check: theme toggle precedes wrench, wrench precedes gear
+    assert.ok(themeToggle.compareDocumentPosition(wrench) & Node.DOCUMENT_POSITION_FOLLOWING, 'theme toggle precedes wrench')
+    assert.ok(wrench.compareDocumentPosition(gear) & Node.DOCUMENT_POSITION_FOLLOWING, 'wrench precedes gear')
+
+    // Wrench button accessibility attributes
+    assert.equal(wrench.getAttribute('aria-label'), 'Advanced Tools')
+    assert.equal(wrench.getAttribute('aria-expanded'), 'false')
+    assert.equal(wrench.getAttribute('aria-haspopup'), 'menu')
+
+    // Click wrench to open popover
+    await act(async () => wrench.click())
+    assert.equal(wrench.getAttribute('aria-expanded'), 'true')
+    const popover = document.querySelector('[data-testid="advanced-tools-popover"]')
+    assert.ok(popover, 'advanced tools popover opened')
+    assert.ok(popover.classList.contains('max-h-[85vh]'), 'popover has max-height')
+    assert.ok(popover.classList.contains('overflow-y-auto'), 'popover has overflow-y-auto')
+
+    // Escape closes popover
+    await act(async () => {
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    assert.equal(document.querySelector('[data-testid="advanced-tools-popover"]'), null, 'Escape closes popover')
+    assert.equal(wrench.getAttribute('aria-expanded'), 'false')
+
+    // Reopen and test outside click dismissal
+    await act(async () => wrench.click())
+    assert.ok(document.querySelector('[data-testid="advanced-tools-popover"]'))
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
+    })
+    assert.equal(document.querySelector('[data-testid="advanced-tools-popover"]'), null, 'outside click closes popover')
+  } finally { await act(async () => root.unmount()) }
 })
