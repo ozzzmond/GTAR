@@ -239,6 +239,62 @@ Promotion followed by insufficient/failed verification reports
 `PROD_PROMOTED_BUT_UNVERIFIED` and fails the workflow. Preserve actual refs and
 investigate deployment/identity evidence. Never auto-rollback main or tags.
 
+### Owner-only restoration of the original repository identity (#432)
+
+The owner cancelled the GTAR-Dev rename. The required final identity is
+the owner/name in `.github/release_repository.cjs`; both Pages source checks and canonical tag authority require
+that exact identity. Preserve the historical installation/reconciliation commits
+from PRs #458, #459 and #460. Restore identity through forward commits only;
+retain the additional negative identity and installation-ancestry tests.
+
+Prepare separate draft PRs from freshly verified DEV and main. DEV changes only
+the two identity helpers, their related fixtures and these instructions. Main
+changes only `.github/release_identity.cjs` and `.github/prod_controller.cjs`;
+its entire existing web tree, workflows, release metadata and tags must remain
+unchanged. Never pull unreleased DEV application changes into the main repair.
+
+Keep promotions and checkpoint tagging paused. Owner-controlled sequence:
+
+1. Review both drafts and complete DEV preview QA and required checks. Confirm
+   the old GTAR URL redirects to this same repository ID rather than a different
+   repository. GitHub's rename form must still accept the target name at action
+   time; a redirect alone does not guarantee final name availability.
+2. Owner separately authorizes and performs the repository rename: repository
+   Settings > General > Repository name > name from `.github/release_repository.cjs` > Rename. Do not change ownership,
+   GitHub App installation, project gtar-web, source settings, domains or bindings.
+   Update each clone with:
+   `git remote set-url origin <url from .github/release_repository.cjs>`
+3. Owner integrates the accepted DEV restoration using Create a merge commit.
+   This DEV push is the minimal automatic-webhook test: require a fresh preview
+   for its exact SHA and Git push trigger. Confirm the existing Pages connection
+   and deployment source report the owner/name in `.github/release_repository.cjs` and the DEV D1 binding is unchanged.
+   A manual redeploy does not establish webhook delivery.
+4. Stop before merging the main draft. With current production auto-deploy
+   enabled, any main merge starts the production build pipeline. An untagged
+   repair commit should be rejected by the clean DEV/atomic PROD tag guards,
+   but an expected failed build is not an approved safety mechanism. Rename
+   first avoids depending on canonical URL redirects; it does not remove the
+   production trigger. Obtain separate explicit owner approval of the production
+   impact and a reviewed installation plan before any main merge. Do not change
+   Cloudflare configuration, create a tag, use skip-ci or override identity to
+   bypass this checkpoint. If publication prevention cannot be accepted within
+   those constraints, leave the main draft unmerged and promotions on hold.
+5. If the owner later authorizes main installation, use Create a merge commit,
+   record the exact installed SHA, and reconcile it into restored DEV through a
+   separate ancestry-preserving merge. Verify main is an ancestor of accepted
+   DEV and all three release helpers are byte-equal before release acceptance.
+   Do not squash/rebase away installed ancestry. Verify the existing production
+   version 1.2.0, SHA 3cfe5b7a912e4982fc72ce96dd656ebcd787862b and deployment
+   ID remain unchanged; do not deploy production merely to test restoration.
+
+After rename, verify the restored canonical URL resolves to the same repository
+ID and unchanged historical tags. Check exact GTAR source contracts and canonical
+release identity using read-only checks; no new tags or production build are
+needed. Do not close #432 until rename, DEV webhook/preview, main installation,
+helper ancestry/equality and unchanged production have all been owner-verified.
+If the main checkpoint remains blocked, record that status and leave #432 open.
+Do not touch GTAR1, PROD D1, deployments, or unrelated application behavior.
+
 ### Repository identity and owner-only controller installation (#466)
 
 `.github/release_repository.cjs` defines GitHub owner, repository name, numeric

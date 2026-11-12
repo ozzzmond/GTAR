@@ -195,5 +195,9 @@ test('production security gates reject lettered checkpoints, non-ancestor main, 
 })
 
 test('historical numeric alias with mismatched committed metadata rejects', () => {
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
+  for (const tag of ['v1.0.130-dev.5', 'v1.0.130-dev.4a']) {
+    assert.equal(git('rev-parse', `refs/tags/${tag}^{commit}`), '22a3d1d58e18de41bc985f4c64ddaa76b60baf10')
+  }
   assert.throws(() => inspectCheckpoint(root, 'v1.0.130-dev.5'), /Checkpoint version metadata mismatch/)
 })

@@ -41,6 +41,7 @@ function rejected(f, ...args) {
   const r = f.run(...args)
   assert.notEqual(r.status, 0); assert.equal(r.stdout, '')
   assert.equal(fs.readFileSync(f.envFile, 'utf8'), 'EXISTING=preserved\n')
+  return r
 }
 test('canonical numeric tags, lightweight and annotated, emit exact metadata', t => {
   for (const tag of ['v1.0.108-dev.8', 'v1.0.108-dev.9', 'v1.0.117-dev.1']) {
@@ -70,9 +71,13 @@ test('rejects tag on earlier commit and tag pointing to noncommit', t => {
   f.git('tag', '-a', 'v1.0.108-dev.9', '-m', 'old')
   fs.writeFileSync(path.join(f.root, 'new'), 'new')
   f.git('add', 'new'); f.git('commit', '-m', 'new HEAD')
-  rejected(f, '--tag', 'v1.0.108-dev.9')
-  f.git('tag', f.git('rev-parse', 'HEAD:web/package.json'))
-  rejected(f, '--tag')
+  assert.match(rejected(f, '--tag', 'v1.0.108-dev.9').stderr, /Peeled tag commit must equal HEAD/)
+  const blob = f.git('rev-parse', 'HEAD:web/package.json')
+  f.git('tag', 'v1.0.108-dev.10', blob)
+  assert.equal(f.git('cat-file', '-t', 'refs/tags/v1.0.108-dev.10'), 'blob')
+  const noncommit = rejected(f, '--tag', 'v1.0.108-dev.10')
+  assert.match(noncommit.stderr, /rev-parse --verify refs\/tags\/v1\.0\.108-dev\.10\^\{commit\}/)
+  assert.doesNotMatch(noncommit.stderr, /Require exactly|Invalid canonical DEV tag/)
 })
 test('rejects mismatched and malformed package version without exports', t => {
   const f = fixture(t, '1.0.108-dev.8j')
@@ -106,6 +111,7 @@ test('all 38 historical lettered tags are inert without moving them', () => {
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
   const tags = git('tag', '--list').split('\n').filter(t => /^v1\.0\.\d+-dev\.\d+[a-z]$/.test(t))
   assert.equal(tags.length, 38)
+  assert.equal(git('rev-parse', '--verify', 'refs/tags/v1.0.136-dev.1a^{commit}'), 'b73490ebd6616e762b95bc95bbbace753d341d92')
   const { parseDevTag, inspectCheckpoint } = require(source)
   for (const tag of tags) {
     assert.throws(() => parseDevTag(tag), /Invalid canonical DEV/)
