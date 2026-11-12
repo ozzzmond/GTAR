@@ -9,7 +9,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 const { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload, createRestoreSafetySnapshot, RESTORE_SNAPSHOT_KEY } = require('../src/utils/jsonBackup.ts')
 const { normalizeSongbookIds } = require('../src/utils/songbookFoundation.ts')
 const { mergeBackupLibrary, resolveSetlistSong } = require('../src/utils/setlistSongs.ts')
-const { mergeImportedSetlists } = require('../src/utils/importIdentity.ts')
+const { mergeImportedSetlists, mergeImportedSetlistsWithReport } = require('../src/utils/importIdentity.ts')
 const { parseBandSetlist } = require('../src/utils/bandSetlistImport.ts')
 const { bandSync } = require('../src/utils/bandSync.ts')
 const { persistLibrary, LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
@@ -59,13 +59,20 @@ test('repeated reception including a reload never manufactures identities', () =
   assert.deepEqual(receive(reloaded), first)
 })
 
-test('same source rename, stale sender and conflicting revision abort without replacing originals', () => {
+test('same source rename and stale sender keep the receiver setlist and report it; a conflicting song revision aborts', () => {
   const before = JSON.stringify(library)
-  for (const incoming of [{ ...payload, setlistName: 'Renamed' }, { ...payload, songs: [] },
-    { ...payload, songs: [{ ...song, rawContent: 'Stale chart' }] }]) {
-    assert.throws(() => receive(library, incoming), /revision conflict/)
+  // #453 D6: a setlist that differs is skipped and named instead of aborting; the original is never replaced.
+  for (const incoming of [{ ...payload, setlistName: 'Renamed' }, { ...payload, songs: [] }]) {
+    const parsed = parseBandSetlist(incoming, library.songs)
+    const songs = mergeBackupLibrary(library.songs, parsed.songs, parsed.setlists)
+    const report = mergeImportedSetlistsWithReport(library.setlists, songs.setlists)
+    assert.deepEqual(report.skipped, [{ id: list.id, name: list.name }])
+    assert.deepEqual(report.setlists, library.setlists)
+    assert.deepEqual(receive(library, incoming), library)
     assert.equal(JSON.stringify(library), before)
   }
+  assert.throws(() => receive(library, { ...payload, songs: [{ ...song, rawContent: 'Stale chart' }] }), /revision conflict/)
+  assert.equal(JSON.stringify(library), before)
 })
 
 test('independent same-name lists survive; ambiguous legacy sender aborts', () => {

@@ -928,7 +928,9 @@ function LibraryApp() {
         } else if (msg.type === 'SETLIST_SYNC' && msg.payload) {
           try {
             const parsed = parseBandSetlist(msg.payload, importStateRef.current.songs)
-            handleSmartMerge(parsed.songs, parsed.setlists)
+            const kept = handleSmartMerge(parsed.songs, parsed.setlists).skippedSetlists[0]
+            // #453 D6: the Leader's queue is not shown as received when this device kept its own version.
+            if (kept) throw new Error(`Setlist "${kept.name}" was changed on this device; the Leader's version was not applied.`)
             setActiveSetlistId(parsed.setlists[0].id)
           } catch (error) {
             setToastMessage(error instanceof Error ? error.message : 'Setlist reception aborted; resolve import conflict explicitly.')

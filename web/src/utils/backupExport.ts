@@ -11,7 +11,7 @@ import { appLogger } from './logger'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { COPY_JSON_MAX_BYTES, RESTORE_SNAPSHOT_KEY, createRestoreSafetySnapshot, stableStringify, triggerDownload, type VerifiedBackup } from './jsonBackup'
 import { bindLegacySetlists, mergeBackupLibrary } from './setlistSongs'
-import { mergeImportedSetlists } from './importIdentity'
+import { mergeImportedSetlists, mergeImportedSetlistsWithReport, type SkippedSetlist } from './importIdentity'
 import { canonicalSongKey } from './musicalKey'
 import { recordBackupStatus, type BackupDelivery } from './backupStatus'
 import { takeSafetySnapshot, flushLibraryStore } from './libraryStore'
@@ -148,6 +148,11 @@ export function expectedRestoredLibrary(before: Library, incoming: Library, mode
   const merged = mergeBackupLibrary(before.songs, incoming.songs, incoming.setlists)
   return { tagColors: { ...before.tagColors, ...incoming.tagColors }, songs: merged.songs, setlists: mergeImportedSetlists(before.setlists, merged.setlists),
     folders: incoming.folders ? [...new Map([...(before.folders ?? []), ...incoming.folders].map(folder => [folder.id, folder])).values()] : before.folders }
+}
+
+/** #453 D6: the setlists a merge of `incoming` into `before` keeps as they are, by the same rule expectedRestoredLibrary applies. */
+export function skippedMergeSetlists(before: Library, incoming: Library): SkippedSetlist[] {
+  return mergeImportedSetlistsWithReport(before.setlists, mergeBackupLibrary(before.songs, incoming.songs, incoming.setlists).setlists).skipped
 }
 
 function recordDiff(kind: 'song' | 'setlist', expected: Record<string, unknown>[], saved: Record<string, unknown>[], out: string[]): void {

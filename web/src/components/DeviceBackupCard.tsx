@@ -25,7 +25,7 @@ import {
 } from '../utils/backupSettings'
 import { isQuotaError } from '../utils/syncJournal'
 import {
-  canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, libraryWritesSaved, shareOrDownloadBackup, verifyRestoredLibrary,
+  canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, libraryWritesSaved, shareOrDownloadBackup, skippedMergeSetlists, verifyRestoredLibrary,
   type ExportEnvironment, type ExportOutcome,
 } from '../utils/backupExport'
 
@@ -54,7 +54,7 @@ interface DeviceBackupCardProps {
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
   onFullRestoreSongs?: (songs: Array<Partial<ActiveSongState>>) => void
   onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => unknown
   storage?: Storage
   /** Test seam for the share sheet, file and download APIs. */
   exportEnv?: ExportEnvironment
@@ -310,9 +310,13 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       }
 
       // #251: success is claimed only after the saved library is read back and matches the backup.
+      // #453 D6: a merge keeps setlists this device changed; the read-back check expects exactly that, and they are named below.
+      let keptSetlists: string[] = []
       if (verifiable) {
-        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary({ songs: allSongs, setlists, folders, tagColors }, { songs: parsed.songs, setlists: parsed.setlists, folders: parsed.folders, tagColors: parsed.tagColors },
-          replace ? 'replace' : 'merge', targetStorage)]
+        const before = { songs: allSongs, setlists, folders, tagColors }
+        const incoming = { songs: parsed.songs, setlists: parsed.setlists, folders: parsed.folders, tagColors: parsed.tagColors }
+        const problems = [...await libraryWritesSaved(), ...verifyRestoredLibrary(before, incoming, replace ? 'replace' : 'merge', targetStorage)]
+        if (!problems.length && !replace) keptSetlists = skippedMergeSetlists(before, incoming).map(list => `"${list.name}"`)
         if (problems.length) {
           setPendingRestore(null)
           showFeedback('error', `Restore could not be verified: ${problems.join('; ')}. Settings were not changed. The previous library is kept in the safety snapshot.`)
@@ -326,6 +330,8 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
         return
       }
 
+      const setlistCount = keptSetlists.length ? `${parsed.setlists.length - keptSetlists.length} of ${parsed.setlists.length}` : String(parsed.setlists.length)
+      const keptNote = keptSetlists.length ? ` Kept as it is on this device (changed since the backup was made): ${keptSetlists.join(', ')}.` : ''
       appLogger.info('RestoreApplied', `Restore applied (${replace ? 'replace' : 'merge'}, file): ${parsed.songs.length} songs, ${parsed.setlists.length} setlists`)
 
       // Library persistence and settings writes are separate operations; never claim
@@ -343,7 +349,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         setPendingRestore(null)
-        const library = `Library restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists (verified after saving)`
+        const library = `Library restored: ${parsed.songs.length} songs, ${setlistCount} setlists (verified after saving)${keptNote ? `.${keptNote.replace(/\.$/, '')}` : ''}`
         refreshSettingsRecovery()
         if (isSettingsRestoreError(err) && err.state !== 'partial') {
           showFeedback('error', `${library}, but settings were not restored: ${msg}. This device's previous settings are unchanged.`)
@@ -356,7 +362,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
 
       // Keep recovery snapshots after success too; they may contain unique data.
       setPendingRestore(null)
-      showFeedback(parsed.ignoredFields.length ? 'info' : 'success', `Backup restored: ${parsed.songs.length} songs, ${parsed.setlists.length} setlists (verified after saving).${settingsNote}`)
+      showFeedback(parsed.ignoredFields.length || keptSetlists.length ? 'info' : 'success', `Backup ${keptSetlists.length ? 'merged' : 'restored'}: ${parsed.songs.length} songs, ${setlistCount} setlists (verified after saving).${keptNote}${settingsNote}`)
     } finally {
       setIsRestoring(false)
     }
