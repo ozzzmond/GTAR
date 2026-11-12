@@ -88,6 +88,7 @@ import { stageCast2Enabled } from './utils/stageCast2Local'
 import { stageCast } from './utils/stageCast'
 import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
+import { canonicalSongKey } from './utils/musicalKey'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { isDevEnv } from './utils/env'
@@ -882,7 +883,7 @@ function LibraryApp() {
                   id: generateUUID(),
                   title: title || 'Synced Song',
                   artist: artist || '',
-                  key: msg.payload.key || detectSongKey(effectiveContent),
+                  key: canonicalSongKey(msg.payload.key || '') || detectSongKey(effectiveContent),
                   capo: msg.payload.capo || 'No Capo',
                   bpm: msg.payload.bpm || '120',
                   format: msg.payload.format || 'CHORD_PRO',
@@ -909,7 +910,7 @@ function LibraryApp() {
                 id: generateUUID(),
                 title: title || 'Synced Song',
                 artist: artist || '',
-                key: msg.payload.key || detectSongKey(effectiveContent),
+                key: canonicalSongKey(msg.payload.key || '') || detectSongKey(effectiveContent),
                 capo: msg.payload.capo || 'No Capo',
                 bpm: msg.payload.bpm || '120',
                 format: msg.payload.format || 'CHORD_PRO',
@@ -1196,7 +1197,7 @@ function LibraryApp() {
       id: generateUUID(),
       title: sheet.title,
       artist: sheet.artist,
-      key: sheet.key || detectSongKey(sheet.rawContent || ''),
+      key: canonicalSongKey(sheet.key || '') || detectSongKey(sheet.rawContent || ''),
       capo: sheet.capo || 'No Capo',
       bpm: sheet.bpm || '120',
       format: sheet.format,

@@ -814,7 +814,8 @@ export function libraryMatchesRevision(candidate: SyncLibrary, raw: string | nul
   if (raw === null) return false
   try {
     const stored = decodeLibraryRevision(raw) as SyncLibrary
-    const plain = JSON.parse(JSON.stringify(candidate)) as SyncLibrary
+    // Compare the form persistLibrary stores (canonical song keys), not the in-memory one.
+    const plain = JSON.parse(JSON.stringify(canonicalLibrary(candidate))) as SyncLibrary
     return same({ ...stored, folders: stored.folders ?? [] }, { ...plain, folders: plain.folders ?? [] })
   } catch { return false }
 }
