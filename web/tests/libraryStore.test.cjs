@@ -150,6 +150,36 @@ test('two tabs: an unchanged save from a tab that fell behind never overwrites t
   assert.equal(c.sj.libraryRevision(storage), head)
 })
 
+// #453 D1 (startup): another tab can commit between this tab opening storage and its app reading the
+// library. The library read then is this tab's older copy; a save built on it must name that
+// revision (loadedLibraryRevision), not the head, so the stale-write gate refuses it.
+test('two tabs: a save built on a library read before another tab\'s commit was loaded is refused', async () => {
+  const { storage, factory } = device(10, 1)
+  const a = (await open(storage, factory)).tab
+  const b = (await open(storage, factory)).tab
+  b.sj.persistLibrary(titled(b.sj.readPersistedLibrary(storage), 'From B'), storage, { expectedRaw: b.sj.libraryRevision(storage) })
+  await b.store.flushLibraryStore()
+  await h.settle(20) // BroadcastChannel delivery
+  // A's app starts only now: baseline and library as the app reads them.
+  const baseline = a.sj.loadedLibraryRevision(storage)
+  const lib = a.sj.readPersistedLibrary(storage)
+  assert.equal(lib.songs[0].title, 'Synthetic Song 000001', 'A still holds its older copy')
+  assert.notEqual(baseline, a.sj.libraryRevision(storage), 'the read revision is behind the head')
+  assert.equal(a.sj.libraryMatchesRevision(lib, baseline), true, 'the baseline names the library that was read')
+  const edited = { ...lib, songs: lib.songs.map((s, i) => i === 1 ? { ...s, title: 'A edit' } : s) }
+  assert.throws(() => a.sj.persistLibrary(edited, storage, { expectedRaw: baseline }), err => a.sj.isStaleWriteConflictError(err))
+  await a.store.flushLibraryStore()
+  assert.equal((await open(storage, factory)).tab.sj.readPersistedLibrary(storage).songs[0].title, 'From B')
+
+  // Without another tab's save the read revision is the head (also on gtar_library_v1 storage).
+  const c = (await open(storage, factory)).tab
+  assert.equal(c.sj.loadedLibraryRevision(storage), c.sj.libraryRevision(storage))
+  const plainStorage = h.freshStorage()
+  const d = h.newTab()
+  d.sj.persistLibrary(h.library(3, 1), plainStorage)
+  assert.equal(d.sj.loadedLibraryRevision(plainStorage), d.sj.libraryRevision(plainStorage))
+})
+
 test('reload keeps edits; quota error keeps the previous library and retries later', async () => {
   const { storage, factory } = device(10, 1)
   const { tab } = await open(storage, factory)
