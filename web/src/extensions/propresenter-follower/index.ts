@@ -64,10 +64,12 @@ function slides(value: unknown): Slides {
   return { current: slide(value.current), next: slide(value.next) }
 }
 function presentationName(value: unknown): string {
+  // Real 7.13 uses presentation_index; Swagger's presentation $ref points at the announcement schema.
+  // Follow the owner-tested response only; do not accept the incorrect presentation alias.
   if (!record(value)) throw new UnexpectedResponse()
-  if (value.presentation === null) return ''
-  if (!record(value.presentation) || !record(value.presentation.presentation_id) || typeof value.presentation.presentation_id.name !== 'string') throw new UnexpectedResponse()
-  return value.presentation.presentation_id.name
+  if (value.presentation_index === null) return ''
+  if (!record(value.presentation_index) || !record(value.presentation_index.presentation_id) || typeof value.presentation_index.presentation_id.name !== 'string') throw new UnexpectedResponse()
+  return value.presentation_index.presentation_id.name
 }
 export class SlideDedupe {
   private last?: readonly [string, string]

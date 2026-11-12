@@ -145,6 +145,16 @@ ASSUMED (report template): For each case record NOT RUN / BLOCKED / PASS / FAIL,
 - ASSUMED (unverified): control run without candidate CSP, installed Android PWA, several devices at once, church network, iOS/iPadOS, actual connector retry/permission/disable behavior and real presentation identity feed. Owner Android QA remains required; browser transport observations do not establish those results. Same-UUID text edits remain suppressed by the required tuple dedupe.
 
 
+### OWNER_TESTED: real 7.13 slide_index response
+
+OWNER_TESTED (owner-supplied curl, no `?chunked=true`): `GET /v1/presentation/slide_index` returned this verbatim response:
+
+```json
+{"presentation_index":{"index":0,"presentation_id":{"uuid":"b84615d0-1d75-4f8d-ac64-d09543b7a641","name":"Amazing Grace (My Chains Are Gone)","index":0}}}
+```
+
+SPEC_STATED (owner-supplied Swagger inspection): Swagger says `presentation`, but its `$ref` incorrectly points at the announcement schema. OWNER_TESTED: real 7.13 uses `presentation_index`. ASSUMED (implementation boundary): accept only `presentation_index`; null clears the name, invalid shapes retain the last good name marked stale. The older API table above records the incorrect spec shape, superseded by this evidence for 7.13. OWNER_TESTED (owner report): status/slide parsing already works on device; this correction leaves that parser unchanged. ASSUMED: replaying the snapshot in split/multi-object chunked tests validates local framing, not a new device transport test.
+
 ## Version and owner QA addendum - 2026-11-12
 
 - OWNER_TESTED: 7.13 on E14 demo and church PC (owner-reported).

@@ -24,6 +24,10 @@ function property(t, object, key, value) {
   return { mock: { restore } }
 }
 const bytes = text => new TextEncoder().encode(text)
+// OWNER_TESTED: real ProPresenter 7.13 curl response (no chunked), verbatim.
+const realPresentationRaw = '{"presentation_index":{"index":0,"presentation_id":{"uuid":"b84615d0-1d75-4f8d-ac64-d09543b7a641","name":"Amazing Grace (My Chains Are Gone)","index":0}}}'
+const realPresentation = JSON.parse(realPresentationRaw)
+const realPresentationName = realPresentation.presentation_index.presentation_id.name
 const state = (a = '', b = '', text = a) => ({ current: { uuid: a, text, notes: '' }, next: { uuid: b, text: b, notes: '' } })
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 
@@ -98,11 +102,11 @@ function fixture(t, fetcher) {
   })
   const controller = new AbortController()
   let panel, settings = { host: '192.168.1.2', port: 1025 }, settingsListener
-  const reports = []
-  const ctx = { signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value } }
+  const reports = [], panels = []
+  const ctx = { signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
   const dispose = activate(ctx)
   t.after(dispose)
-  return { requests, streams, reports, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
+  return { requests, streams, reports, panels, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
     hide(value) { doc.hidden = value; doc.dispatchEvent(new Event('visibilitychange')) },
     settings(value) { settings = value; settingsListener() }, send(index, value) { streams[index].enqueue(bytes(JSON.stringify(value))) } }
 }
@@ -110,9 +114,9 @@ test('only allowlisted GETs, no body/headers, redirect error; empty next and ide
   t.mock.timers.enable({ apis: ['setTimeout'] })
   t.mock.method(Math, 'random', () => 0.5)
   const f = fixture(t); await flush()
-  f.send(0, state('A', '', 'last slide')); f.send(1, { presentation: { index: 3, presentation_id: { name: 'Sunday' } } }); await flush()
+  f.send(0, state('A', '', 'last slide')); f.send(1, realPresentation); await flush()
   assert.equal(f.value('Status'), 'Live'); assert.equal(f.value('Next slide'), '')
-  assert.equal(f.value('Presentation'), 'Sunday')
+  assert.equal(f.value('Presentation'), realPresentationName)
   for (const r of f.requests) {
     assert.ok(paths.some(path => r.url === buildUrl('192.168.1.2', path)))
     assert.deepEqual(Object.keys(r.options).sort(), ['cache', 'credentials', 'method', 'redirect', 'signal'])
@@ -200,7 +204,7 @@ test('unknown response fields are ignored; every missing/wrong current/next text
   const f = fixture(t); await flush()
   const good = state('A', '', 'last good')
   good.extra = { arbitrary: ['ignored'] }; good.current.extra = { text: false }; good.next.extra = null
-  f.send(0, good); f.send(1, { presentation: { presentation_id: { name: 'Sunday', extra: 1 }, extra: false }, extra: [] }); await flush()
+  f.send(0, good); f.send(1, { presentation_index: { presentation_id: { name: realPresentationName, extra: 1 }, extra: false }, extra: [] }); await flush()
   assert.equal(f.value('Status'), 'Live'); assert.equal(f.value('Current slide'), 'last good')
   const invalid = [null, [], 'wrong root', 7, {}, { current: good.current }, { next: good.next }]
   for (const side of ['current', 'next']) {
@@ -219,7 +223,7 @@ test('unknown response fields are ignored; every missing/wrong current/next text
     assert.deepEqual(f.reports.at(-1), ['offline', 'Unexpected response from ProPresenter'])
     assert.equal(f.requests[activeStream].options.signal.aborted, true)
     // A healthy presentation feed must not erase the primary shape failure.
-    f.send(1, { presentation: { presentation_id: { name: 'Sunday' } } }); await flush()
+    f.send(1, { presentation_index: { presentation_id: { name: realPresentationName } } }); await flush()
     assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
     t.mock.timers.tick(1000); await flush(); activeStream = f.streams.length - 1
     f.send(activeStream, { ...good, current: { ...good.current, text: 'same UUID edit stays deduped' } }); await flush()
@@ -231,7 +235,7 @@ test('unknown response fields are ignored; every missing/wrong current/next text
 test('connection test validates all objects in a read and reports unexpected response while keeping stale text', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const f = fixture(t); await flush()
-  f.send(0, state('A', '', 'keep me')); f.send(1, { presentation: null }); await flush()
+  f.send(0, state('A', '', 'keep me')); f.send(1, { presentation_index: null }); await flush()
   f.panel.actions[0].run(); await flush()
   f.streams[2].enqueue(bytes(JSON.stringify(state()) + '\r\n' + JSON.stringify({ current: { text: 9 } }))); await flush()
   assert.equal(f.value('Connection test'), 'Unexpected response from ProPresenter')
@@ -243,18 +247,40 @@ test('connection test validates all objects in a read and reports unexpected res
 test('presentation response shapes are guarded, extra fields ignored, and last good name retained on failure', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] }); t.mock.method(Math, 'random', () => 0.5)
   const f = fixture(t); await flush()
-  f.send(0, state('A')); f.send(1, { presentation: { presentation_id: { name: 'Sunday', ignored: [] } }, ignored: {} }); await flush()
+  f.send(0, state('A')); f.send(1, { presentation_index: { presentation_id: { name: realPresentationName, ignored: [] } }, ignored: {} }); await flush()
   let activeStream = 1
-  for (const bad of [null, 42, [], {}, { presentation: [] }, { presentation: {} }, { presentation: { presentation_id: null } }, { presentation: { presentation_id: { name: 7 } } }]) {
+  for (const bad of [null, 42, [], {}, { presentation_index: [] }, { presentation_index: {} }, { presentation_index: { presentation_id: null } }, { presentation_index: { presentation_id: { name: 7 } } }, { presentation_index: { presentation_id: {} } }, { presentation: realPresentation.presentation_index }]) {
     f.send(activeStream, bad); await flush()
     assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
-    assert.equal(f.value('Presentation'), 'Sunday'); assert.equal(f.value('Data state'), 'Stale')
+    assert.equal(f.value('Presentation'), realPresentationName); assert.equal(f.value('Data state'), 'Stale')
     t.mock.timers.tick(1000); await flush(); activeStream = f.streams.length - 1
-    f.send(activeStream, { presentation: { presentation_id: { name: 'Sunday' } } }); await flush()
+    f.send(activeStream, { presentation_index: { presentation_id: { name: realPresentationName } } }); await flush()
     assert.equal(f.value('Status'), 'Live')
   }
-  f.send(activeStream, { presentation: null }); await flush()
+  f.send(activeStream, { presentation_index: null }); await flush()
   assert.equal(f.value('Presentation'), '')
+})
+
+test('real 7.13 slide_index fixture: split/chunked multi-object reads, null, old key rejected, and active recovery with status/slide unchanged', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] }); t.mock.method(Math, 'random', () => 0.5)
+  const f = fixture(t); await flush()
+  // Existing owner-confirmed status/slide shape: current/next string text/notes/uuid.
+  f.send(0, state('A', '', 'last slide')); await flush()
+  f.streams[1].enqueue(bytes(realPresentationRaw.slice(0, 23))); await flush()
+  assert.equal(f.value('Presentation'), '')
+  f.streams[1].enqueue(bytes(realPresentationRaw.slice(23) + '\r\n' + '{"presentation_index":null}' + '\r\n' + realPresentationRaw)); await flush()
+  const names = f.panels.map(panel => panel.fields.find(field => field.label === 'Presentation').value)
+  assert.deepEqual(names.slice(-3), [realPresentationName, '', realPresentationName])
+  assert.equal(f.value('Status'), 'Live'); assert.equal(f.value('Data state'), 'Current')
+  assert.deepEqual(f.reports.at(-1), ['active', 'Live'])
+  assert.equal(f.value('Current slide'), 'last slide'); assert.equal(f.value('Next slide'), '')
+  f.send(1, { presentation: realPresentation.presentation_index }); await flush()
+  assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
+  assert.equal(f.value('Presentation'), realPresentationName); assert.equal(f.value('Data state'), 'Stale')
+  t.mock.timers.tick(1000); await flush()
+  f.streams[2].enqueue(bytes(realPresentationRaw)); await flush()
+  assert.deepEqual(f.reports.at(-1), ['active', 'Live'])
+  assert.equal(f.value('Current slide'), 'last slide')
 })
 
 test('real follower panel in host row: default off, read-only port, current/next text, connection action and disable cleanup', async t => {
@@ -287,15 +313,16 @@ test('real follower panel in host row: default off, read-only port, current/next
     })
     await act(async () => {
       streams[0].enqueue(bytes(JSON.stringify(state('A', '', '<last slide>'))))
-      streams[1].enqueue(bytes(JSON.stringify({ presentation: { presentation_id: { name: 'Sunday' } } })))
+      streams[1].enqueue(bytes(realPresentationRaw))
       await flush()
     })
+    assert.equal(host.getSnapshot('propresenter-follower').state, 'active')
     const panel = document.querySelector('[aria-label="ProPresenter follower"]')
-    assert.match(panel.textContent, /Live.*192.168.1.2.*Sunday.*<last slide>/)
+    assert.match(panel.textContent, /Live.*192.168.1.2.*Amazing Grace \(My Chains Are Gone\).*<last slide>/)
     assert.equal(panel.querySelector('last'), null, 'slide text is rendered as text')
     assert.ok([...panel.querySelectorAll('div')].some(el => el.textContent === 'Next slide'))
     assert.equal(panel.querySelector('button').textContent, 'Test connection')
-    assert.ok([...writes.values()].every(value => !value.includes('<last slide>') && !value.includes('Sunday')))
+    assert.ok([...writes.values()].every(value => !value.includes('<last slide>') && !value.includes(realPresentationName)))
     await act(async () => document.querySelector('input[type="checkbox"]').click())
     assert.equal(document.querySelector('[aria-label="ProPresenter follower"]'), null)
     assert.ok(requests.every(r => r.options.signal.aborted))
