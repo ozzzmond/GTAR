@@ -11,21 +11,21 @@ const R2_CHECKPOINT = Object.freeze({
 })
 
 function parseDevTag(tag) {
-  const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.([1-9]\d*)([a-z]?)$/.exec(tag)
+  const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.([1-9]\d*)$/.exec(tag)
   if (!match || match[0] !== tag) throw new Error('Invalid canonical DEV tag')
   const minor = Number(match[1]), base = Number(match[2]), iteration = Number(match[3])
   if (minor === 0 && base === 0) throw new Error('Invalid canonical DEV tag')
   if (!Number.isSafeInteger(base) || !Number.isSafeInteger(iteration) || !Number.isSafeInteger(base + iteration)) throw new Error('Unsafe canonical version arithmetic')
   const patch = base + iteration
   const r2 = tag === R2_CHECKPOINT.tag
-  return { tag, minor, base, iteration, suffix: match[4], promotable: match[4] === '',
+  return { tag, minor, base, iteration,
     prodTag: r2 ? R2_CHECKPOINT.prodTag : `v1.${minor + 1}.${patch}`,
     nextDevTag: r2 ? R2_CHECKPOINT.nextDevTag : `v1.${minor}.${patch}-dev.1` }
 }
 
 // Ascending scheme/version order; callers reverse it for latest-first selection.
 function compareDevTags(a, b) {
-  return a.minor - b.minor || a.base - b.base || a.iteration - b.iteration || a.suffix.localeCompare(b.suffix)
+  return a.minor - b.minor || a.base - b.base || a.iteration - b.iteration
 }
 
 function parseProdTag(tag) {
@@ -50,26 +50,19 @@ const HISTORICAL_TAG_EXCEPTIONS = Object.freeze({
   }),
 })
 
-function verifyStabilizationPair(git, targetTag, candidateVersion, sha) {
-  const parsed = parseDevTag(targetTag)
-  if (parsed.suffix !== '') return null
-  const companionTag = 'v' + candidateVersion
-  let companion
-  try { companion = parseDevTag(companionTag) } catch { return null }
-  if (companion.suffix === '' || companion.minor !== parsed.minor || companion.base !== parsed.base || companion.iteration + 1 !== parsed.iteration) {
-    return null
-  }
-  let companionSha
-  try {
-    git('show-ref', '--verify', `refs/tags/${companionTag}`)
-    companionSha = git('rev-parse', '--verify', `refs/tags/${companionTag}^{commit}`)
-  } catch {
-    throw new Error('Missing companion hotfix tag for stabilization')
-  }
-  if (companionSha !== sha) {
-    throw new Error('Companion hotfix tag moved; identical commit required')
-  }
-  return { companionTag, companion }
+// Fetch only canonical release refs. Inert/unrelated tags cannot obstruct refresh.
+// Numeric R2 DEV refs may move; PROD and historical DEV refs stay non-forced.
+function fetchReleaseTags(git, remote, branches = []) {
+  const refs = git('ls-remote', '--refs', remote, 'refs/tags/*').split('\n').filter(Boolean)
+  const specs = refs.flatMap(line => {
+    const ref = line.split(/\s+/)[1]
+    if (!ref?.startsWith('refs/tags/')) return []
+    const tag = ref.slice('refs/tags/'.length)
+    try { return [`${parseDevTag(tag).minor === 1 ? '+' : ''}${ref}:${ref}`] } catch {}
+    try { parseProdTag(tag); return [`${ref}:${ref}`] } catch { return [] }
+  })
+  if (!specs.length) throw new Error('Canonical release tag inventory missing')
+  return git('fetch', remote, '--no-tags', ...branches, ...specs)
 }
 
 // Reads committed files at the selected checkpoint, never the working tree.
@@ -108,30 +101,7 @@ function inspectCheckpoint(root, tag) {
     const sourceDev = /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1]
     if (!directMatch || sourceDev !== version) throw new Error('R2 checkpoint requires exact version metadata')
   }
-  if (!directMatch) {
-    const expectedBase = `1.${parsed.minor}.${parsed.base}-dev.${parsed.iteration}`
-    const expectedBaseTag = `v${expectedBase}`
-    const letteredDev = hasTagDerivedDev ? version : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
-    const isLetteredDevMatch = parsed.suffix !== '' &&
-      [pkg.version, lock.version, lock.packages?.['']?.version].every(v => v === expectedBase) &&
-      (hasTagDerivedDev || letteredDev === expectedBase) &&
-      auth.includes(`GTAR Server-Authoritative Account & Access Control (${expectedBaseTag})`)
-    if (!isLetteredDevMatch) {
-      let pair
-      try {
-        pair = verifyStabilizationPair(git, tag, pkg.version, sha)
-      } catch (error) {
-        throw new Error(`Checkpoint version metadata mismatch: ${error.message}`)
-      }
-      if (!pair) throw new Error('Checkpoint version metadata mismatch')
-      const companionVersion = pair.companionTag.slice(1)
-      const companionDev = hasTagDerivedDev ? companionVersion : (/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1] || /GTAR_DEV_VERSION\s*=\s*(?:typeof __GTAR_DEV_VERSION__ === 'string'\s*\?\s*__GTAR_DEV_VERSION__\s*:\s*)?'([^']+)'/.exec(types)?.[1])
-      if ([pkg.version, lock.version, lock.packages?.['']?.version, companionDev].some(v => v !== companionVersion) ||
-          !auth.includes(`GTAR Server-Authoritative Account & Access Control (${pair.companionTag})`)) {
-        throw new Error('Checkpoint version metadata mismatch')
-      }
-    }
-  }
+  if (!directMatch) throw new Error('Checkpoint version metadata mismatch')
   return { ...parsed, sha, runtimeProd }
 }
 
@@ -139,7 +109,7 @@ function main(args = process.argv.slice(2)) {
   try {
     if (args.length !== 2 || args[0] !== '--tag') throw new Error('Require exactly --tag <canonical DEV tag>')
     const tag = args[1]
-    const parsed = parseDevTag(tag)
+    parseDevTag(tag)
     const root = path.resolve(__dirname, '..')
     const git = (...argv) => execFileSync('git', argv, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
     // Exact ref lookup accepts lightweight and annotated tags, and rejects branch aliases.
@@ -147,7 +117,7 @@ function main(args = process.argv.slice(2)) {
     const taggedCommit = git('rev-parse', '--verify', `refs/tags/${tag}^{commit}`)
     if (taggedCommit !== git('rev-parse', '--verify', 'HEAD')) throw new Error('Peeled tag commit must equal HEAD')
     const legacy = HISTORICAL_TAG_EXCEPTIONS[tag]
-    let promotable = parsed.promotable
+    let promotable = true
     let statusLine = ''
     if (legacy) {
       if (taggedCommit !== legacy.sha) throw new Error('Historical tag moved; immutable history required')
@@ -157,19 +127,7 @@ function main(args = process.argv.slice(2)) {
       statusLine = `METADATA_STATUS=${legacy.classification}\n`
     } else {
       const version = JSON.parse(readFileSync(path.join(root, 'web/package.json'), 'utf8')).version
-      const expectedBase = `1.${parsed.minor}.${parsed.base}-dev.${parsed.iteration}`
-      const isDirectMatch = version === tag.slice(1)
-      const isLetteredDevMatch = parsed.suffix !== '' && version === expectedBase
-      if (tag === R2_CHECKPOINT.tag && !isDirectMatch) throw new Error('R2 checkpoint requires exact version metadata')
-      if (!isDirectMatch && !isLetteredDevMatch) {
-        let pair
-        try {
-          pair = verifyStabilizationPair(git, tag, version, taggedCommit)
-        } catch (error) {
-          throw new Error(error.message)
-        }
-        if (!pair) throw new Error('web/package.json version must equal tag without leading v')
-      }
+      if (version !== tag.slice(1)) throw new Error('web/package.json version must equal tag without leading v')
     }
     const output = `RELEASE_TAG=${tag}\nRELEASE_TITLE=GTAR ${tag}\nIS_PRERELEASE=true\nIS_PROMOTABLE=${promotable}\n${statusLine}`
     // No metadata is emitted or appended until every validation above succeeds.
@@ -182,4 +140,4 @@ function main(args = process.argv.slice(2)) {
   }
 }
 if (require.main === module) process.exitCode = main()
-module.exports = { R2_CHECKPOINT, compareDevTags, parseProdTag, compareProdTags, main, parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS, verifyStabilizationPair }
+module.exports = { R2_CHECKPOINT, compareDevTags, parseProdTag, compareProdTags, main, parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS, fetchReleaseTags }

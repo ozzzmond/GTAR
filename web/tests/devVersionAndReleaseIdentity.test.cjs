@@ -74,8 +74,8 @@ test('STEP_6.2: Exact clean numeric DEV tag resolves exact version and promotabl
   assert.equal(parsed3.tag, 'v1.0.130-dev.3')
   assert.equal(parsed3.base, 130)
   assert.equal(parsed3.iteration, 3)
-  assert.equal(parsed3.suffix, '')
-  assert.equal(parsed3.promotable, true)
+  assert.equal(Object.hasOwn(parsed3, 'suffix'), false)
+  assert.equal(Object.hasOwn(parsed3, 'promotable'), false)
   assert.equal(parsed3.prodTag, 'v1.1.133')
   assert.equal(parsed3.nextDevTag, 'v1.0.133-dev.1')
 
@@ -95,11 +95,9 @@ test('STEP_6.2: Exact clean numeric DEV tag resolves exact version and promotabl
 })
 
 // STEP_6.3: Lettered DEV tag identity and non-promotability
-test('STEP_6.3: Lettered DEV tag resolves identity but is non-promotable', () => {
+test('STEP_6.3: Lettered DEV tag is rejected and leaves identity untagged', () => {
   for (const tag of ['v1.0.130-dev.1a', 'v1.0.130-dev.2c', 'v1.0.130-dev.3a']) {
-    const parsed = parseDevTag(tag)
-    assert.equal(parsed.promotable, false)
-    assert.ok(parsed.suffix.length > 0)
+    assert.throws(() => parseDevTag(tag), /Invalid canonical DEV/)
 
     const gitMock = (...args) => {
       const cmd = args.join(' ')
@@ -110,9 +108,9 @@ test('STEP_6.3: Lettered DEV tag resolves identity but is non-promotable', () =>
     }
     const identity = resolveDevIdentity(root, {}, gitMock)
     assert.equal(identity.version, canonicalDevVersion)
-    assert.equal(identity.tag, tag)
-    assert.equal(identity.tagStatus, 'TAGGED')
-    assert.equal(identity.isTagged, true)
+    assert.equal(identity.tag, null)
+    assert.equal(identity.tagStatus, 'UNTAGGED')
+    assert.equal(identity.isTagged, false)
     assert.equal(identity.promotable, false)
   }
 })
@@ -166,6 +164,7 @@ test('STEP_6.6: PROD tag identity and arithmetic: v1.0.130-dev.3 -> v1.1.133', (
   assert.equal(p3.prodTag, 'v1.1.133')
   assert.equal(p3.nextDevTag, 'v1.0.133-dev.1')
 
+  assert.throws(() => parseDevTag('v1.0.0-dev.1'))
   assert.throws(() => parseDevTag('v1.0.130-dev.0'))
   assert.throws(() => parseDevTag('v1.0.0130-dev.1'))
   assert.throws(() => parseDevTag('v1.1.130'))
@@ -272,7 +271,7 @@ test('STEP_6.11: Future clean DEV.3 tag passes inspectCheckpoint and CLI release
   const checkpoint = relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.3')
   assert.equal(checkpoint.sha, headSha)
   assert.equal(checkpoint.tag, 'v1.0.130-dev.3')
-  assert.equal(checkpoint.promotable, true)
+  assert.equal(checkpoint.promotable, undefined)
   assert.equal(checkpoint.prodTag, 'v1.1.133')
   assert.equal(checkpoint.nextDevTag, 'v1.0.133-dev.1')
 })
@@ -377,88 +376,39 @@ test('STEP_6.13: Regression: untagged build is unaffected even when physical HEA
     return ''
   }
   const dev4aIdentity = resolveDevIdentity(root, {}, dev4aGit)
-  assert.equal(dev4aIdentity.isTagged, true)
-  assert.equal(dev4aIdentity.tag, 'v1.0.130-dev.4a')
+  assert.equal(dev4aIdentity.isTagged, false)
+  assert.equal(dev4aIdentity.tag, null)
   assert.equal(dev4aIdentity.promotable, false)
 })
 
-// STEP_6.14: Allowed same-commit DEV.3a and DEV.4 stabilization pair
-test('STEP_6.14: Allowed same-commit DEV.3a hotfix and DEV.4 stabilization tag pass release contract', t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-dev3a-dev4-pass-'))
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
-  const repo = path.join(dir, 'repo'); fs.mkdirSync(repo)
+test('numeric checkpoints require direct metadata; newest numeric tag wins local identity', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-numeric-'))
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }))
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim()
-  const put = (file, data) => { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), data) }
-
+  const put = (file, content) => { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), content) }
   git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
-  put('.github/release_metadata.cjs', fs.readFileSync(path.join(root, '.github/release_metadata.cjs'), 'utf8'))
-  put('.github/release_identity.cjs', fs.readFileSync(path.join(root, '.github/release_identity.cjs'), 'utf8'))
-  put('web/package.json', JSON.stringify({ version: '1.0.130-dev.3a' }))
-  put('web/package-lock.json', JSON.stringify({ version: '1.0.130-dev.3a', packages: { '': { version: '1.0.130-dev.3a' } } }))
-  put('web/src/types/gtar.ts', fs.readFileSync(path.join(root, 'web/src/types/gtar.ts'), 'utf8'))
-  put('web/functions/lib/authCore.ts', '/**\n * GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.3a)\n */\n')
-  git('add', '.'); git('commit', '-m', 'hotfix dev.3a commit')
-  const headSha = git('rev-parse', 'HEAD')
-
-  // Both tags point to the exact same accepted commit
-  git('tag', 'v1.0.130-dev.3a')
-  git('tag', 'v1.0.130-dev.4')
-
-  const relMeta = require(path.join(repo, '.github/release_metadata.cjs'))
-  const relIdent = require(path.join(repo, '.github/release_identity.cjs'))
-
-  // 1. inspectCheckpoint validation
-  const cp3a = relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.3a')
-  assert.equal(cp3a.sha, headSha)
-  assert.equal(cp3a.tag, 'v1.0.130-dev.3a')
-  assert.equal(cp3a.promotable, false)
-  assert.equal(cp3a.prodTag, 'v1.1.133')
-
-  const cp4 = relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.4')
-  assert.equal(cp4.sha, headSha)
-  assert.equal(cp4.tag, 'v1.0.130-dev.4')
-  assert.equal(cp4.promotable, true)
-  assert.equal(cp4.prodTag, 'v1.1.134')
-  assert.equal(cp4.nextDevTag, 'v1.0.134-dev.1')
-
-  // 2. CLI execution of release_metadata.cjs
-  const cli3a = spawnSync(process.execPath, [path.join(repo, '.github/release_metadata.cjs'), '--tag', 'v1.0.130-dev.3a'], {
-    cwd: repo, encoding: 'utf8'
-  })
-  assert.equal(cli3a.status, 0, cli3a.stderr)
-  assert.equal(cli3a.stdout, 'RELEASE_TAG=v1.0.130-dev.3a\nRELEASE_TITLE=GTAR v1.0.130-dev.3a\nIS_PRERELEASE=true\nIS_PROMOTABLE=false\n')
-
-  const cli4 = spawnSync(process.execPath, [path.join(repo, '.github/release_metadata.cjs'), '--tag', 'v1.0.130-dev.4'], {
-    cwd: repo, encoding: 'utf8'
-  })
-  assert.equal(cli4.status, 0, cli4.stderr)
-  assert.equal(cli4.stdout, 'RELEASE_TAG=v1.0.130-dev.4\nRELEASE_TITLE=GTAR v1.0.130-dev.4\nIS_PRERELEASE=true\nIS_PROMOTABLE=true\n')
-
-  // 3. resolveDevIdentity behavior
-  const identReq3a = relIdent.resolveDevIdentity(repo, { REQUESTED_TAG: 'v1.0.130-dev.3a' })
-  assert.equal(identReq3a.version, '1.0.130-dev.3a')
-  assert.equal(identReq3a.tag, 'v1.0.130-dev.3a')
-  assert.equal(identReq3a.promotable, false)
-  assert.equal(identReq3a.isTagged, true)
-
-  const identReq4 = relIdent.resolveDevIdentity(repo, { REQUESTED_TAG: 'v1.0.130-dev.4' })
-  assert.equal(identReq4.version, '1.0.130-dev.3a')
-  assert.equal(identReq4.tag, 'v1.0.130-dev.4')
-  assert.equal(identReq4.tagStatus, 'TAGGED')
-  assert.equal(identReq4.promotable, true)
-  assert.equal(identReq4.isTagged, true)
-
-  // Without explicit requested tag, defaults to clean stabilization tag while version stays committed 1.0.130-dev.3a
-  const identDefault = relIdent.resolveDevIdentity(repo, {})
-  assert.equal(identDefault.version, '1.0.130-dev.3a')
-  assert.equal(identDefault.tag, 'v1.0.130-dev.4')
-  assert.equal(identDefault.tagStatus, 'TAGGED')
-  assert.equal(identDefault.promotable, true)
-  assert.equal(identDefault.isTagged, true)
+  put('.github/release_metadata.cjs', fs.readFileSync(path.join(root, '.github/release_metadata.cjs')))
+  const tag = 'v1.1.0-dev.2', version = tag.slice(1)
+  put('web/package.json', JSON.stringify({ version }))
+  put('web/package-lock.json', JSON.stringify({ version, packages: { '': { version } } }))
+  put('web/src/types/gtar.ts', `export const GTAR_DEV_VERSION = '${version}'`)
+  put('web/functions/lib/authCore.ts', `// GTAR Server-Authoritative Account & Access Control (${tag})`)
+  git('add', '.'); git('commit', '-m', 'numeric checkpoint')
+  for (const name of [tag, 'v1.1.0-dev.1', 'v1.1.0-dev.3a']) git('tag', name)
+  const sha = git('rev-parse', 'HEAD')
+  assert.equal(inspectCheckpoint(repo, tag).sha, sha)
+  assert.throws(() => inspectCheckpoint(repo, 'v1.1.0-dev.1'), /metadata mismatch/)
+  assert.throws(() => inspectCheckpoint(repo, 'v1.1.0-dev.3a'), /Invalid canonical DEV/)
+  const cli = spawnSync(process.execPath, [path.join(repo, '.github/release_metadata.cjs'), '--tag', tag], { encoding: 'utf8' })
+  assert.equal(cli.status, 0, cli.stderr)
+  assert.match(cli.stdout, /IS_PROMOTABLE=true/)
+  assert.equal(resolveDevIdentity(repo).tag, tag)
+  assert.equal(resolveDevIdentity(repo, { REQUESTED_TAG: 'v1.1.0-dev.3a' }).isTagged, false)
+  assert.equal(resolveDevIdentity(repo, { REQUESTED_TAG: 'v1.1.0-dev.1' }).tag, 'v1.1.0-dev.1')
 })
 
-// STEP_6.15: Rejected stabilization combinations fail closed across inspectCheckpoint and CLI
-test('STEP_6.15: Rejected stabilization combinations fail closed across inspectCheckpoint and CLI', t => {
+// STEP_6.15: Removed aliases fail closed across inspectCheckpoint and CLI
+test('STEP_6.15: Removed aliases fail closed across inspectCheckpoint and CLI', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-dev3a-fail-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   const repo = path.join(dir, 'repo'); fs.mkdirSync(repo)
@@ -468,6 +418,7 @@ test('STEP_6.15: Rejected stabilization combinations fail closed across inspectC
   git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
   put('.github/release_metadata.cjs', fs.readFileSync(path.join(root, '.github/release_metadata.cjs'), 'utf8'))
   put('.github/release_identity.cjs', fs.readFileSync(path.join(root, '.github/release_identity.cjs'), 'utf8'))
+  put('.github/release_repository.cjs', fs.readFileSync(path.join(root, '.github/release_repository.cjs'), 'utf8'))
   put('web/package.json', JSON.stringify({ version: '1.0.130-dev.3a' }))
   put('web/package-lock.json', JSON.stringify({ version: '1.0.130-dev.3a', packages: { '': { version: '1.0.130-dev.3a' } } }))
   put('web/src/types/gtar.ts', fs.readFileSync(path.join(root, 'web/src/types/gtar.ts'), 'utf8'))
@@ -480,13 +431,13 @@ test('STEP_6.15: Rejected stabilization combinations fail closed across inspectC
   git('tag', 'v1.0.130-dev.4')
   assert.throws(() => {
     relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.4')
-  }, /Checkpoint version metadata mismatch: Missing companion hotfix tag for stabilization/)
+  }, /Checkpoint version metadata mismatch/)
 
   const cliMissing = spawnSync(process.execPath, [path.join(repo, '.github/release_metadata.cjs'), '--tag', 'v1.0.130-dev.4'], {
     cwd: repo, encoding: 'utf8'
   })
   assert.notEqual(cliMissing.status, 0)
-  assert.ok(cliMissing.stderr.includes('Missing companion hotfix tag for stabilization'))
+  assert.ok(cliMissing.stderr.includes('web/package.json version must equal tag without leading v'))
 
   // Case B: Moved companion tag in Git (v1.0.130-dev.3a points to a different commit)
   git('tag', '-d', 'v1.0.130-dev.4')
@@ -497,13 +448,13 @@ test('STEP_6.15: Rejected stabilization combinations fail closed across inspectC
 
   assert.throws(() => {
     relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.4')
-  }, /Checkpoint version metadata mismatch: Companion hotfix tag moved; identical commit required/)
+  }, /Checkpoint version metadata mismatch/)
 
   const cliMoved = spawnSync(process.execPath, [path.join(repo, '.github/release_metadata.cjs'), '--tag', 'v1.0.130-dev.4'], {
     cwd: repo, encoding: 'utf8'
   })
   assert.notEqual(cliMoved.status, 0)
-  assert.ok(cliMoved.stderr.includes('Companion hotfix tag moved; identical commit required'))
+  assert.ok(cliMoved.stderr.includes('web/package.json version must equal tag without leading v'))
 
   // Case C: Invalid iteration transition (skipped iteration: dev.3a -> dev.5)
   git('tag', 'v1.0.130-dev.5')
@@ -515,7 +466,7 @@ test('STEP_6.15: Rejected stabilization combinations fail closed across inspectC
   git('tag', 'v1.0.130-dev.4a')
   assert.throws(() => {
     relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.4a')
-  }, /Checkpoint version metadata mismatch/)
+  }, /Invalid canonical DEV/)
 
   // Case E: Base version mismatch (committed 1.0.130-dev.3a, tag v1.0.131-dev.4)
   git('tag', 'v1.0.131-dev.4')
@@ -525,7 +476,7 @@ test('STEP_6.15: Rejected stabilization combinations fail closed across inspectC
 })
 
 // STEP_6.16: Unrelated metadata mismatches in committed files reject stabilization pair
-test('STEP_6.16: Unrelated metadata mismatches in committed files fail closed for stabilization pair', t => {
+test('STEP_6.16: Committed metadata mismatches reject numeric aliases', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-dev3a-mismatch-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   const repo = path.join(dir, 'repo'); fs.mkdirSync(repo)
@@ -535,6 +486,7 @@ test('STEP_6.16: Unrelated metadata mismatches in committed files fail closed fo
   git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
   put('.github/release_metadata.cjs', fs.readFileSync(path.join(root, '.github/release_metadata.cjs'), 'utf8'))
   put('.github/release_identity.cjs', fs.readFileSync(path.join(root, '.github/release_identity.cjs'), 'utf8'))
+  put('.github/release_repository.cjs', fs.readFileSync(path.join(root, '.github/release_repository.cjs'), 'utf8'))
   // Package has 3a, but lock has stale 3
   put('web/package.json', JSON.stringify({ version: '1.0.130-dev.3a' }))
   put('web/package-lock.json', JSON.stringify({ version: '1.0.130-dev.3', packages: { '': { version: '1.0.130-dev.3' } } }))
@@ -571,7 +523,7 @@ test('STEP_6.17: Cloudflare DEV build with missing local Git tags resolves verif
     if (cmd === 'rev-parse --short HEAD') return '419b94c'
     if (cmd === 'tag --points-at HEAD') return '' // Missing local tag in Cloudflare Pages clone
     if (args[0] === 'ls-remote') {
-      return '0bd2827c74c004d22e5d66615897b6dd7d4a2d6a\trefs/tags/v1.0.130-dev.3b\n' + sha + '\trefs/tags/v1.0.130-dev.3b^{}'
+      return '0bd2827c74c004d22e5d66615897b6dd7d4a2d6a\trefs/tags/v1.0.130-dev.3\n' + sha + '\trefs/tags/v1.0.130-dev.3^{}'
     }
     return ''
   }
@@ -584,11 +536,11 @@ test('STEP_6.17: Cloudflare DEV build with missing local Git tags resolves verif
 
   assert.equal(identity.version, canonicalDevVersion)
   assert.equal(identity.tagStatus, 'TAGGED')
-  assert.equal(identity.tag, 'v1.0.130-dev.3b')
+  assert.equal(identity.tag, 'v1.0.130-dev.3')
   assert.equal(identity.sha, sha)
   assert.equal(identity.shortSha, '419b94c')
   assert.equal(identity.isTagged, true)
-  assert.equal(identity.promotable, false)
+  assert.equal(identity.promotable, true)
 })
 
 // STEP_6.18: Cloudflare DEV build on genuinely untagged commit falls back to UNTAGGED provenance
@@ -620,8 +572,8 @@ test('STEP_6.18: Cloudflare DEV build on genuinely untagged commit falls back to
   assert.equal(identity.promotable, false)
 })
 
-// STEP_6.19: Cloudflare DEV build with stabilization pair prefers clean numeric tag unless explicit requested tag
-test('STEP_6.19: Cloudflare DEV build with stabilization pair prefers clean numeric tag unless explicit requested tag', () => {
+// STEP_6.19: Cloudflare DEV ignores lettered tags, including an explicit requested tag
+test('STEP_6.19: Cloudflare DEV ignores lettered tags, including an explicit requested tag', () => {
   const stabSha = '3333333333333333333333333333333333333333'
   const gitMock = (...args) => {
     const cmd = args.join(' ')
@@ -656,9 +608,9 @@ test('STEP_6.19: Cloudflare DEV build with stabilization pair prefers clean nume
   }, gitMock)
 
   assert.equal(identReq.version, canonicalDevVersion)
-  assert.equal(identReq.tagStatus, 'TAGGED')
-  assert.equal(identReq.tag, 'v1.0.130-dev.3a')
-  assert.equal(identReq.isTagged, true)
+  assert.equal(identReq.tagStatus, 'UNTAGGED')
+  assert.equal(identReq.tag, null)
+  assert.equal(identReq.isTagged, false)
   assert.equal(identReq.promotable, false)
 })
 
@@ -671,7 +623,7 @@ test('STEP_6.20: Untrusted or mismatched tag or SHA fails closed with UNVERIFIED
     if (cmd === 'rev-parse --short HEAD') return '419b94c'
     if (cmd === 'tag --points-at HEAD') return ''
     if (args[0] === 'ls-remote') {
-      return '0bd2827c74c004d22e5d66615897b6dd7d4a2d6a\trefs/tags/v1.0.130-dev.3b\n' + headSha + '\trefs/tags/v1.0.130-dev.3b^{}'
+      return '0bd2827c74c004d22e5d66615897b6dd7d4a2d6a\trefs/tags/v1.0.130-dev.3\n' + headSha + '\trefs/tags/v1.0.130-dev.3^{}'
     }
     return ''
   }
@@ -882,4 +834,22 @@ test('STEP_8.5: Production header behavior unchanged and diagnostics excluded', 
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', '1.0.140'), 'v1.0.140')
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', 'v1.0.140'), 'v1.0.140')
   assert.equal(formatHeaderVersion(false, '1.0.130-dev.4a', '1.1.133'), 'v1.1.133')
+})
+
+
+test('DEV environment override cannot replace canonical GitHub tag authority', () => {
+  const canonical = require('../../.github/release_repository.cjs').url
+  const calls = [], sha = 'a'.repeat(40)
+  const git = (...args) => {
+    calls.push(args)
+    if (args.join(' ') === 'rev-parse HEAD') return sha
+    if (args.join(' ') === 'rev-parse --short HEAD') return sha.slice(0, 7)
+    if (args[0] === 'ls-remote') return `${sha}\trefs/tags/v1.1.0-dev.1`
+    return ''
+  }
+  const identity = resolveDevIdentity(root, { CF_PAGES_BRANCH: 'dev', CANONICAL_REPOSITORY: 'https://example.invalid/other.git' }, git)
+  assert.equal(identity.tag, 'v1.1.0-dev.1')
+  const network = calls.filter(args => ['fetch', 'ls-remote'].includes(args[0]))
+  assert.ok(network.length >= 2)
+  assert.ok(network.every(args => args.includes(canonical) && !args.some(arg => arg.includes('example.invalid'))))
 })

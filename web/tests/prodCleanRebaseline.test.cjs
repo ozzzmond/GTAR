@@ -106,7 +106,7 @@ test('future checkpoint plans from abandoned baseline without requiring old depl
   assert.deepEqual(git('tag', '--list').split('\n').sort(), baselineTags)
   git('checkout', '-b', 'reviewed-main', ABANDONED_PROD.sha)
   git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
-  for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', 'web/vite.config.ts']) fs.copyFileSync(path.join(root, file), path.join(repo, file))
+  for (const file of ['.github/release_identity.cjs', '.github/release_metadata.cjs', '.github/release_repository.cjs', 'web/vite.config.ts']) fs.copyFileSync(path.join(root, file), path.join(repo, file))
   git('add', '.'); git('commit', '-m', 'reviewed synthetic rebaseline')
   const main = git('rev-parse', 'HEAD')
   git('update-ref', 'refs/remotes/origin/main', main)

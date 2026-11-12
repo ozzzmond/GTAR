@@ -34,8 +34,8 @@ function fixture(change = {}) {
     }
     if (cmd === `show ${change.baseline || baseline}:web/package.json`) return JSON.stringify({ version: (change.tag || tag).slice(1) })
     if (cmd === `show ${main}:.github/release_identity.cjs`) throw new Error('Legacy main has no runtime identity contract')
-    for (const file of ['release_identity.cjs', 'release_metadata.cjs']) {
-      if (cmd === `show ${checkpoint}:.github/${file}`) return fs.readFileSync(path.join(root, '.github', file), 'utf8').trim()
+    for (const file of ['release_identity.cjs', 'release_metadata.cjs', 'release_repository.cjs']) {
+      if (cmd === `show ${checkpoint}:.github/${file}`) return fs.readFileSync(path.join(root, '.github', file), 'utf8')
     }
     if (cmd === `show ${checkpoint}:web/vite.config.ts`) return change.missingRuntime ? '' : 'resolveReleaseIdentity'
     if (cmd === `show ${checkpoint}:web/src/types/gtar.ts`) return 'typeof __GTAR_PROD_VERSION__'
@@ -43,6 +43,7 @@ function fixture(change = {}) {
   }
   const module = { exports: {} }
   const sandbox = { module, __dirname: path.join(root, '.github'), process, console, require: name => {
+    if (name === './release_repository.cjs') return require('../.github/release_repository.cjs')
     if (name === './release_identity.cjs') return require('../.github/release_identity.cjs')
     if (name === 'node:child_process') return { execFileSync: (_, args) => git(...args) }
     if (name === './release_metadata.cjs') return { ...metadata, inspectCheckpoint: (_, selected) => ({ ...metadata.parseDevTag(selected), sha: selected === devTag ? checkpoint : baseline }) }

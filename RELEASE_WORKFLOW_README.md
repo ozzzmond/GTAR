@@ -1,11 +1,10 @@
 # GTAR GitHub preview contract
 
 GitHub tags are the version source of truth. Canonical DEV tags are
-`v1.0.<positive-base>-dev.<positive-iteration>[optional single lowercase letter]`
-(historical scheme) and `v1.1.<nonnegative-base>-dev.<positive-iteration>[optional single lowercase letter]`
+`v1.0.<positive-base>-dev.<positive-iteration>`
+(historical scheme) and `v1.1.<nonnegative-base>-dev.<positive-iteration>`
 (R2 scheme; base zero is valid).
-Neither numeric component may contain leading zeroes. Numeric DEV tags are
-promotable; lettered DEV tags are not. Production tags are rejected by preview validation.
+Neither numeric component may contain leading zeroes. Only numeric DEV tags are accepted. Production tags are rejected by preview validation.
 
 Pushes of `v1.0.*-dev.*` and `v1.1.*-dev.*` tags trigger preview validation. Manual dispatch requires
 an explicit canonical tag. The workflow checks out `refs/tags/<requested tag>`
@@ -17,11 +16,9 @@ node .github/release_metadata.cjs --tag "$REQUESTED_TAG"
 ```
 
 The helper requires the exact tag to exist, its peeled commit to equal HEAD,
-and `web/package.json` version to equal the tag without its leading `v` (or for
-canonical lettered DEV checkpoints, to equal the base numeric DEV version without
-leading `v`). Only after all checks pass does it print and append to `GITHUB_ENV`:
+and `web/package.json` version to equal the tag without its leading `v`. Only after all checks pass does it print and append to `GITHUB_ENV`:
 `RELEASE_TAG`, `RELEASE_TITLE` (`GTAR <tag>`), `IS_PRERELEASE=true`, and
-`IS_PROMOTABLE` (`false` for lettered checkpoints). The artifact name is exactly `RELEASE_TAG`.
+`IS_PROMOTABLE` (`false` only for the pinned legacy metadata exception). The artifact name is exactly `RELEASE_TAG`.
 
 This flow creates build artifacts only. It does not tag, push branches, deploy,
 or promote to production. No stage environment is included. The separate production planner below is fail-closed. Existing application versions and historical GitHub tags are unchanged.
@@ -50,7 +47,7 @@ All gate failures exit nonzero before production mutation.
 ### Exact source and approval gates
 
 Required inputs are the exact DEV tag and full lowercase SHA. Gates require a
-clean numeric tag, latest canonical DEV including lettered work, exact dev tip,
+clean numeric tag, latest numeric DEV, exact dev tip,
 consistent package/lock/DEV/auth source stamps, computed PROD above the canonical
 baseline, absent PROD tag, baseline ancestry, main ancestry, and unchanged
 controller/main since dispatch. Legacy app-v/web-v tags do not establish baseline.
@@ -140,8 +137,8 @@ schema/data mutation, or remediation. Humans review the pending filenames,
 perform any separately authorized remediation, and rerun the complete readiness
 check. The ledger records names, not SQL checksums; applied-file content/schema
 equivalence is not claimed. D1 state can change after the final read; concurrency
-does not lock external database writers. Lettered checkpoints remain
-non-promotable; canonical tags are created manually after checkpoint acceptance.
+does not lock external database writers.
+Canonical tags are created manually after checkpoint acceptance.
 
 ### Race and transaction contract
 
@@ -158,10 +155,14 @@ it does not lock DEV or compare-and-swap unchanged DEV refs. DEV/tag changes aft
 the final read can therefore occur; promotion remains bound to the exact validated
 checkpoint SHA. Keep the protected approval environment unchanged during a run.
 
-The post-approval job fetches branches and complete tags without forcing/replacing
-or deleting tags. A moved/deleted/stale inventory blocks. It recomputes every gate
-and compares the full remote-ref snapshot, main/SHA/PROD and protection/project
-fingerprint to the validated plan, then rereads refs immediately before push.
+The post-approval job fetches branches and canonical release tags. Inert and
+unrelated tags are ignored during fetch. Only numeric new-scheme
+DEV tags may be refreshed after movement; PROD, baseline and other tags fetch
+non-forced. It recomputes every gate and compares only `refs/heads/main`,
+`refs/heads/dev`, the selected DEV tag, computed PROD tag and baseline PROD tag
+against the validated plan, plus the protection/project fingerprint. It rereads
+these scoped refs immediately before push. Drift in any scoped ref blocks;
+`refs/pull/*` and unrelated tags are outside the snapshot.
 A pre-push hook verifies the server-advertised expected old main SHA and absent
 PROD tag; **both** updates must be present (a no-op main update cannot silently
 allow tag-only mutation). Receive-pack compares old refs atomically. The single
@@ -175,17 +176,20 @@ continues to verification; unchanged main plus absent tag means `NOT_PROMOTED`;
 partial, conflicting or unreadable refs mean `AMBIGUOUS_REFS_MANUAL_REVIEW`.
 No blind retry occurs. An unknown state is recorded before push for interrupted
 runners. Never rerun a mutation to recover an ambiguous result: inspect refs/run
-outputs first. Existing tags are never overwritten, moved or deleted.
+outputs first. PROD tags are create-only. New-scheme DEV tags `v1.1.*-dev.*` may move before
+candidate selection; promotion stays bound to `expected_sha`. The owner changed
+the tag ruleset to exclude `v1.1.*-dev.*`. Historical tags remain untouched.
 
 ### Runtime identity without source rewrite
 
 Package version and GTAR_DEV_VERSION remain tested DEV source stamps. Pages main
 requires its full CF_PAGES_COMMIT_SHA to equal HEAD, one exact clean DEV tag,
 consistent committed metadata, and its computed PROD tag at the same commit.
-The helper fetches tags directly from https://github.com/ozzzmond/GTAR.git and
+The helper fetches tags from the authority URL in
+[`.github/release_repository.cjs`](.github/release_repository.cjs) and
 checks selected tag objects against canonical remote refs. Checkout origin may
-be a Cloudflare mirror; it is neither consulted nor changed. Fetch never forces,
-deletes, or moves tags. Missing authority/network/history, moved or local-only
+be a Cloudflare mirror; it is neither consulted nor changed. Fetch can refresh only numeric R2 DEV tags; PROD and other tags remain
+non-forced. Missing authority/network/history, mismatched or local-only
 tags, wrong SHA, debug production builds, and abandoned identity reuse fail closed.
 No provider URL allowlist or fallback to guessed/package PROD version exists.
 
@@ -210,8 +214,8 @@ A historical GitHub check observed on DEV.10 was emitted by app
 **no explicit production marker**. Generic check success is never PROD proof.
 
 The stronger implemented signal is the authenticated Cloudflare Pages read API.
-Preflight and post-approval require project `gtar-web`, GitHub source
-`ozzzmond/GTAR`, production branch `main`, and production Git builds enabled.
+Preflight and post-approval require project `gtar-web`, GitHub source matching
+the owner/name in `.github/release_repository.cjs`, production branch `main`, and production Git builds enabled.
 Verification polls the current canonical deployment (up to 40 reads, 15 seconds
 apart), then reads that deployment by ID. Required fields: matching project ID
 and name; explicit `environment=production`; GitHub source; `github:push` trigger;
@@ -238,7 +242,7 @@ investigate deployment/identity evidence. Never auto-rollback main or tags.
 ### Owner-only restoration of the original repository identity (#432)
 
 The owner cancelled the GTAR-Dev rename. The required final identity is
-`ozzzmond/GTAR`; both Pages source checks and canonical tag authority require
+the owner/name in `.github/release_repository.cjs`; both Pages source checks and canonical tag authority require
 that exact identity. Preserve the historical installation/reconciliation commits
 from PRs #458, #459 and #460. Restore identity through forward commits only;
 retain the additional negative identity and installation-ancestry tests.
@@ -256,14 +260,14 @@ Keep promotions and checkpoint tagging paused. Owner-controlled sequence:
    repository. GitHub's rename form must still accept the target name at action
    time; a redirect alone does not guarantee final name availability.
 2. Owner separately authorizes and performs the repository rename: repository
-   Settings > General > Repository name > GTAR > Rename. Do not change ownership,
+   Settings > General > Repository name > name from `.github/release_repository.cjs` > Rename. Do not change ownership,
    GitHub App installation, project gtar-web, source settings, domains or bindings.
    Update each clone with:
-   `git remote set-url origin https://github.com/ozzzmond/GTAR.git`
+   `git remote set-url origin <url from .github/release_repository.cjs>`
 3. Owner integrates the accepted DEV restoration using Create a merge commit.
    This DEV push is the minimal automatic-webhook test: require a fresh preview
    for its exact SHA and Git push trigger. Confirm the existing Pages connection
-   and deployment source report ozzzmond/GTAR and the DEV D1 binding is unchanged.
+   and deployment source report the owner/name in `.github/release_repository.cjs` and the DEV D1 binding is unchanged.
    A manual redeploy does not establish webhook delivery.
 4. Stop before merging the main draft. With current production auto-deploy
    enabled, any main merge starts the production build pipeline. An untagged
@@ -291,6 +295,26 @@ helper ancestry/equality and unchanged production have all been owner-verified.
 If the main checkpoint remains blocked, record that status and leave #432 open.
 Do not touch GTAR1, PROD D1, deployments, or unrelated application behavior.
 
+### Repository identity and owner-only controller installation (#466)
+
+`.github/release_repository.cjs` defines GitHub owner, repository name, numeric
+repository ID and tag-authority URL once. The identity helper and Cloudflare
+project/deployment checks consume this contract. Cloudflare still compares
+owner/name independently because that is its Git source payload. Actions must
+provide `GITHUB_REPOSITORY_ID` equal to the contract ID; missing or different IDs
+fail closed. Environment variables cannot override canonical tag authority.
+The runtime contract includes the repository file alongside both helper files.
+Manual preview dispatch overlays all three files and Vite from the dispatch SHA.
+
+This DEV PR does not install a controller on main. The owner must separately
+approve main controller installation, verify its fail-closed bootstrap build,
+reconcile the exact installation into dev while preserving ancestry, validate
+the final checkpoint and authorize its numeric tag. Install all three helpers,
+the controller and preview overlay together. Preserve main's application tree,
+release.yml, database bindings and migrations during installation. Any ruleset
+or Cloudflare change remains owner-only and requires separate authorization.
+Do not touch GTAR1. See the A/B/C procedure below for ancestry and stop gates.
+
 ### Current checkpoint and promotion procedure
 
 Prepare changes through a dedicated PR against `dev`. Before merge, keep
@@ -302,7 +326,8 @@ Bump version metadata on `dev`, merge, then tag that merge SHA; the tag must mat
 
 Historical checkpoint notes: [release history](docs/release-history.md).
 
-Lettered checkpoints can produce DEV preview artifacts but cannot be promoted.
+Historical lettered tags are inert: parser, planner and identity filters reject
+or ignore them. They do not affect latest numeric DEV selection.
 
 Production requires a later clean numeric DEV checkpoint satisfying all controller
 gates, including latest DEV, exact dev tip, main ancestry, checkpoint metadata,
@@ -312,6 +337,11 @@ rollout snapshots are not deployment instructions. A dry run performs gates only
 Real promotion requires separate explicit human authorization, exact-SHA validation,
 native environment approval, fresh checks and verified Pages deployment.
 
+Hotfix rule: before promotion use the next numeric DEV iteration. After
+promotion use the advisory `nextDevTag` in a separately reviewed metadata PR.
+For example, `v1.1.0-dev.2` and `v1.1.1-dev.1` both map to `v1.2.2`; latest
+numeric DEV and create-only PROD collision gates reject identity reuse.
+
 After `VERIFIED_PROD`, separately review a dev metadata PR for advisory next DEV,
 validate/merge it, then manually create its tag under the existing policy.
 
@@ -320,16 +350,14 @@ validate/merge it, then manually create its tag under the existing policy.
 The provisional final old-scheme checkpoint is **v1.0.145-dev.3** (T).
 No final checkpoint SHA has been selected and no tag is created by this change.
 Only this exact clean tag maps to PROD **v1.2.0**, with advisory next DEV
-**v1.1.0-dev.1**. It requires direct committed T metadata, not a stabilization
-alias. A different accepted checkpoint name requires a reviewed tooling change
-and matching trusted-controller installation before tagging. Never move a tag.
+**v1.1.0-dev.1**. It requires direct committed T metadata. A different accepted checkpoint name requires a reviewed tooling change
+and matching trusted-controller installation before tagging. PROD tags remain create-only.
 
 Historical v1.0 DEV mappings remain v1.1.(base + iteration), except T. New
 v1.1.B-dev.N maps to v1.2.(B + N), next DEV v1.1.(B + N)-dev.1. B may be zero;
 N must be positive. For example v1.1.0-dev.1 gives v1.2.1 and next
-v1.1.1-dev.1. Arithmetic must be safe integers without leading zeroes. Lettered
-checkpoints remain preview-only. DEV ordering compares scheme minor, base,
-iteration, then suffix; PROD ordering compares minor then patch. Thus v1.2.0
+v1.1.1-dev.1. Arithmetic must be safe integers without leading zeroes.
+DEV ordering compares scheme minor, base and iteration; PROD ordering compares minor then patch. Thus v1.2.0
 exceeds historical v1.1.145 despite its smaller patch. The R2 mapping remains
 permanent for runtime identity and baseline reconciliation, not a reusable
 permission to promote another old-scheme checkpoint.
@@ -338,10 +366,10 @@ The mapping constant in release_metadata.cjs fixes T/PROD/next DEV; it cannot
 contain its own final source commit SHA. The owner records the final accepted C
 SHA and binds it through expected_sha, the validated plan, and native approval
 in GitHub execution history. The atomic transaction persists v1.2.0 -> C alongside
-T -> C. These canonical immutable tags and the approved run are the SHA authority;
-there is no package-derived or guessed SHA fallback. Administrators remain bound
-by the existing rule never to rewrite tags; this does not claim to defeat a
-privileged coordinated rewrite of tags and audit history.
+T -> C. The create-only PROD tag and the approved run are the SHA authority;
+there is no package-derived or guessed SHA fallback. PROD tags are create-only. New-scheme DEV tags may move before candidate
+selection, while promotion remains bound to `expected_sha`. This does not claim
+to defeat a privileged coordinated rewrite of PROD tags and audit history.
 
 Required sequence (each live action needs its existing separate authorization):
 
@@ -349,7 +377,7 @@ Required sequence (each live action needs its existing separate authorization):
    implementation draft PR; owner confirms CI and QA and merges it, producing A.
 2. Separately prepare a reviewed controller-install commit B parented by current
    main. Install the approved .github/release_metadata.cjs, release_identity.cjs,
-   prod_controller.cjs and web-preview.yml bytes from A. release.yml is unchanged.
+   release_repository.cjs, prod_controller.cjs and web-preview.yml bytes from A. release.yml is unchanged.
    Preserve the entire main web/ tree, migrations, bindings and existing tags.
    This is an explicit owner-authorized non-force main update, not this DEV PR's
    permission to touch main. Verify exact diff/SHA and baseline reconciliation.
@@ -362,7 +390,7 @@ Required sequence (each live action needs its existing separate authorization):
 4. Merge that exact B into DEV through an ancestry-preserving reconciliation
    draft PR targeting dev. Owner must preserve B ancestry (no squash/rebase that
    removes B). The accepted result C must include A and B, differ from B, equal
-   the DEV tip, and contain the exact trusted parser/identity bytes on main B.
+   the DEV tip, and contain the exact trusted parser/identity/repository bytes on main B.
    This reconciliation is the final merge before checkpoint acceptance,
    superseding the earlier statement that A itself must be the final merge.
 5. Run required checks on final C, record its full SHA, and reconfirm absent T and
