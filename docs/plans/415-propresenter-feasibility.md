@@ -77,6 +77,8 @@ ASSUMED (owner audience): 5 Android devices, 3 iPhone/iPad devices. Android-firs
 
 ASSUMED (repository inspection): The enforced header is `Content-Security-Policy`, with `connect-src 'self' https://accounts.google.com https://www.googleapis.com ws: wss:`. No explicit `http:` source is listed. The earlier assessment reported HTTP fetch blocked; it is not new OWNER_TESTED evidence.
 
+ASSUMED (2026-11-12 DEV-preview candidate, owner-approved option 3, applied only in a draft PR for Android testing): `connect-src` additionally lists `http://*:1025/v1/status/slide`, `http://*:1025/v1/presentation/slide_index` and `http://*:1025/v1/presentation/active`. Every other directive and existing source is unchanged; no blanket `http:` is added. Whether `http://*:1025` matches an IP-literal LAN host remains UNVERIFIED until the owner's Android test. This candidate does not pass G1 by itself and must not reach PROD on the strength of this document.
+
 | File/header | Role and approval impact | Evidence |
 |-------------|--------------------------|----------|
 | `web/public/_headers`, `/*` rule | Static page CSP and Permissions-Policy; copied to `web/dist/_headers` at build. This document header controls the proposed page fetch | ASSUMED: repository inspection |
