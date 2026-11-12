@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Pencil, Play, Plus, Share2, Trash2, Upload } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
@@ -20,11 +20,13 @@ export interface SetlistWorkspaceProps {
   /** Active setlists in display order (already searched and sorted by the caller). */
   setlists: WebSetlist[]
   songs: ActiveSongState[]
+  openSetlistId?: string | number | null
+  onOpenSetlistChange?: (id: string | number | null) => void
   onSelectScope?: (scope: SetlistWorkspaceScope) => void
   /** Stage entry at an exact setlist position (positions map 1:1 to setlist entries). */
   onPlaySetlistPosition?: (setlistId: string | number, position: number) => void
-  /** Opens the resolved song by its library index. */
-  onOpenSong?: (libraryIndex: number) => void
+  /** Opens the exact occurrence using the existing setlist queue. */
+  onOpenSong?: (setlistId: string | number, position: number) => void
   /** Manage flow: the #312 S2 Setlist Manager in DEV. */
   onManageSetlist?: (setlist: WebSetlist) => void
   onRequestTrashSetlist?: (id: string | number) => void
@@ -77,6 +79,8 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   scope, folderName,
   setlists,
   songs,
+  openSetlistId: controlledOpenSetlistId,
+  onOpenSetlistChange,
   onSelectScope,
   onPlaySetlistPosition,
   onOpenSong,
@@ -88,7 +92,12 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   menu,
 }) => {
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
-  const [openSetlistId, setOpenSetlistId] = useState<string | number | null>(null)
+  const [localOpenSetlistId, setLocalOpenSetlistId] = useState<string | number | null>(null)
+  const openSetlistId = controlledOpenSetlistId === undefined ? localOpenSetlistId : controlledOpenSetlistId
+  const setOpenSetlistId = (id: string | number | null) => {
+    setLocalOpenSetlistId(id)
+    onOpenSetlistChange?.(id)
+  }
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const [editingSetlistId, setEditingSetlistId] = useState<string | number | null>(null)
@@ -105,9 +114,12 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
     () => (openSetlistId === null ? null : setlists.find(sl => !sl.isDeleted && String(sl.id) === String(openSetlistId)) || null),
     [openSetlistId, setlists]
   )
-  if (openSetlistId !== null && !openSetlist) {
-    setOpenSetlistId(null)
+  if (controlledOpenSetlistId === undefined && localOpenSetlistId !== null && !openSetlist) {
+    setLocalOpenSetlistId(null)
   }
+  useEffect(() => {
+    if (controlledOpenSetlistId != null && !openSetlist) onOpenSetlistChange?.(null)
+  }, [controlledOpenSetlistId, openSetlist, onOpenSetlistChange])
   const songIndex = useMemo(() => songIdIndex(songs), [songs])
 
   // Missing or trashed songs stay visible for context but cannot be played or opened.
@@ -299,7 +311,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             <div className="space-y-2">
               {entries.map((entry, idx) => {
                 const unavailable = entry.libraryIndex === null
-                const open = () => { if (entry.libraryIndex !== null) onOpenSong?.(entry.libraryIndex) }
+                const open = () => { if (!unavailable) onOpenSong?.(openSetlist.id, idx) }
                 return (
                   <div
                     key={openSetlist.songs[idx].entryId ?? `${openSetlist.id}_${idx}`}

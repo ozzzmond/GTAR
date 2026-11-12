@@ -65,6 +65,8 @@ interface SongbookHomeViewProps {
   onDeleteSetlist?: (setlistId: string | number) => boolean
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
+  openSetlistId?: string | number | null
+  onOpenSetlistChange?: (id: string | number | null) => void
   onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => unknown
   searchQuery?: string
   onSearchQueryChange?: (query: string) => void
@@ -108,6 +110,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onDeleteSetlist,
   setlists = [],
   onSelectSetlistSong,
+  openSetlistId,
+  onOpenSetlistChange,
   onImportSingleSetlist,
   searchQuery: externalSearchQuery,
   onSearchQueryChange,
@@ -1114,7 +1118,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             onRenameSetlist={onRenameSetlist}
             onDeleteSetlist={onDeleteSetlist}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
-            onOpenSong={onSelectSong}
+            onOpenSong={onSelectSetlistSong}
+            openSetlistId={openSetlistId}
+            onOpenSetlistChange={onOpenSetlistChange}
             onNewSetlist={onNewSetlist}
             menu={{
               sortValue: effectiveSetlistSortBy,
