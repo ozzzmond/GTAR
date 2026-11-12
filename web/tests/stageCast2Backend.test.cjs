@@ -251,7 +251,7 @@ test('BOUNDED_ABUSE: global admission, per-client creation, per-owner and websoc
   for (let i = 0; i < 31; i++) ctl.emit('ping')
   await f2.flush(); assert.equal(ctl.closed, true)
   const f3 = await fixture()
-  for (let i = 0; i < POLICY.requests; i++) await f3.call('/status', {}, '', await digest('ip-' + i))
+  for (let i = 0; i < POLICY.anonRequests; i++) await f3.call('/status', {}, '', await digest('ip-' + (i % 24)))
   assert.equal((await f3.create()).status, 429)
 })
 test('GATEWAY: disabled by default, strict Origin, real auth adapter, no identity/token forwarding', async () => {
