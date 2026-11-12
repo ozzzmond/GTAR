@@ -193,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
-  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
+  const [showAdvancedToolsMenu, setShowAdvancedToolsMenu] = useState(false)
 
   const effectiveTheme: ThemeMode = currentTheme ||
     (typeof localStorage !== 'undefined' ? (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null) : null) ||
@@ -332,35 +332,39 @@ export const Header: React.FC<HeaderProps> = ({
   const extensionHost = useExtensionHost()
 
   // Advanced Tools: optional sources and registry-driven extension rows
-  const advancedTools = (
-    <div data-testid="advanced-tools" className="w-full">
+  const advancedToolsPopover = (
+    <div
+      role="menu"
+      aria-label="Advanced Tools"
+      data-testid="advanced-tools-popover"
+      className="avatar-popover animate-scale-in max-h-[85vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-1 py-1.5 mb-2 border-b border-app-border/60 flex items-center gap-2">
+        <Wrench className="w-4 h-4 text-app-accent" aria-hidden="true" />
+        <span className="text-xs font-bold text-app-heading">Advanced Tools</span>
+      </div>
+
+      {/* Online song sources: opt-in, off by default */}
       <button
         type="button"
-        data-testid="advanced-tools-button"
-        aria-expanded={showAdvancedTools}
-        onClick={() => setShowAdvancedTools(open => !open)}
+        role="menuitemcheckbox"
+        aria-checked={onlineSourcesEnabled}
+        data-testid="settings-online-sources"
+        onClick={() => setOnlineSourcesEnabled(!onlineSourcesEnabled)}
         className={`${popoverItem} justify-between`}
       >
-        <span className="flex items-center gap-2.5">
-          <Wrench className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-          <span>Advanced Tools</span>
-        </span>
-        <span className="text-app-muted ui-secondary-text text-[10px]">{showAdvancedTools ? '▲' : '▼'}</span>
-      </button>
-      {showAdvancedTools && (
-        <div className="pl-3 border-l-2 border-app-border/60 my-1 space-y-1">
-          <button
-            type="button"
-            data-testid="profile-web-sources"
-            onClick={() => { setShowSettingsMenu(false); onOpenWebsiteUrlSource() }}
-            className={popoverItem}
-          >
-            <Globe className="w-4 h-4 text-app-action shrink-0" />
-            <span>Web Sources</span>
-          </button>
-          <ExtensionRows host={extensionHost} rowClass={popoverItem} />
+        <div className="flex items-center gap-2.5">
+          <Globe className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+          <span>Online song sources</span>
         </div>
-      )}
+        <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none bg-app-surface border border-app-border text-app-muted ui-secondary-text font-mono">
+          {onlineSourcesEnabled ? 'On' : 'Off'}
+        </span>
+      </button>
+
+      {/* Extension registry rows (e.g. ProPresenter) */}
+      <ExtensionRows host={extensionHost} rowClass={popoverItem} />
     </div>
   )
 
@@ -412,6 +416,8 @@ export const Header: React.FC<HeaderProps> = ({
   const searchContainerRef = useRef<HTMLElement>(null)
   const settingsMenuContainerRef = useRef<HTMLDivElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
+  const advancedToolsContainerRef = useRef<HTMLDivElement>(null)
+  const advancedToolsButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!showSettingsMenu) return
@@ -425,6 +431,19 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showSettingsMenu])
+
+  useEffect(() => {
+    if (!showAdvancedToolsMenu) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowAdvancedToolsMenu(false)
+        advancedToolsButtonRef.current?.focus({ preventScroll: true })
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showAdvancedToolsMenu])
 
   // Filter matching songs for real-time search dropdown overlay
   const matchingSearchSongs = useMemo(() => {
@@ -495,6 +514,12 @@ export const Header: React.FC<HeaderProps> = ({
           return
         }
         setShowSettingsMenu(false)
+      }
+      if (advancedToolsContainerRef.current && !advancedToolsContainerRef.current.contains(e.target as Node)) {
+        if (advancedToolsButtonRef.current && advancedToolsButtonRef.current.contains(e.target as Node)) {
+          return
+        }
+        setShowAdvancedToolsMenu(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -681,6 +706,24 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {/* Advanced Tools Wrench Button & Popover */}
+          <div ref={advancedToolsContainerRef} className="avatar-wrapper flex items-center justify-center shrink-0">
+            <button
+              ref={advancedToolsButtonRef}
+              type="button"
+              aria-label="Advanced Tools"
+              aria-haspopup="menu"
+              aria-expanded={showAdvancedToolsMenu}
+              data-testid="header-advanced-tools"
+              onClick={() => setShowAdvancedToolsMenu(!showAdvancedToolsMenu)}
+              className="relative w-9 h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
+            >
+              <Wrench className="w-5 h-5 text-app-action header-neutral-icon" aria-hidden="true" />
+            </button>
+
+            {showAdvancedToolsMenu && advancedToolsPopover}
+          </div>
+
           {/* Settings Gear Button & Dropdown */}
           <div ref={settingsMenuContainerRef} className="avatar-wrapper flex items-center justify-center shrink-0">
             <button
@@ -730,24 +773,6 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>Backup &amp; Restore</span>
                 </button>
 
-                {/* Online song sources: opt-in, off by default */}
-                <button
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={onlineSourcesEnabled}
-                  data-testid="settings-online-sources"
-                  onClick={() => setOnlineSourcesEnabled(!onlineSourcesEnabled)}
-                  className={`${popoverItem} justify-between`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Globe className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-                    <span>Online song sources</span>
-                  </div>
-                  <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none bg-app-surface border border-app-border text-app-muted font-mono">
-                    {onlineSourcesEnabled ? 'On' : 'Off'}
-                  </span>
-                </button>
-
                 {/* 3. Debug Logs (includes Recovery Data management) */}
                 <button
                   type="button"
@@ -763,10 +788,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {recoveryAttention && <span data-testid="settings-debug-logs-dot" aria-hidden="true" className={recoveryDotClass} />}
                 </button>
 
-                {/* 4. Advanced Tools */}
-                {advancedTools}
-
-                {/* 5. About GTAR */}
+                {/* 4. About GTAR */}
                 <button
                   type="button"
                   data-testid="settings-about-button"

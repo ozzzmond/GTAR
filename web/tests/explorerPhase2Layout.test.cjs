@@ -113,26 +113,27 @@ test('header: actions relocated per #359 (Theme/Trash/More removed, Theme/Source
   assert.ok($('button[aria-label="GTAR home"]'), 'GTAR home aria-label')
   assert.equal($('img[alt="GTAR Logo"]')?.getAttribute('alt'), 'GTAR Logo')
 
-  // Settings popover contains relocated items (#359, #434)
+  // Settings popover contains relocated items (#359, #434, #503)
   await click($('[data-testid="header-settings"]'))
   assert.ok($('[data-testid="settings-theme-button"]'), 'Theme in Settings popover')
-  await click($('[data-testid="advanced-tools-button"]'))
-  assert.ok($('[data-testid="profile-web-sources"]'), 'Web Sources in Settings popover')
+  assert.equal($('[data-testid="advanced-tools-button"]'), null, 'Advanced Tools moved to header per #503')
+  assert.equal($('[data-testid="profile-web-sources"]'), null, 'Web Sources removed per #503')
   assert.ok($('[data-testid="profile-trash-button"]'), 'Trash in Settings popover')
 
   // Theme item triggers onToggleTheme
   await click($('[data-testid="settings-theme-button"]'))
   assert.deepEqual(calls, ['theme'])
 
-  // Web Sources item triggers onOpenWebsiteUrlSource
-  await click($('[data-testid="header-settings"]'))
-  await click($('[data-testid="profile-web-sources"]'))
-  assert.deepEqual(calls, ['theme', 'sources'])
+  // Advanced Tools is now in the header (#503)
+  await click($('[data-testid="header-advanced-tools"]'))
+  assert.ok($('[data-testid="advanced-tools-popover"]'), 'Advanced Tools popover opens')
+  assert.ok($('[data-testid="settings-online-sources"]'), 'Online sources in Advanced Tools popover')
+  await click($('[data-testid="header-advanced-tools"]'))
 
   // Trash item triggers onViewChange('trash')
   await click($('[data-testid="header-settings"]'))
   await click($('[data-testid="profile-trash-button"]'))
-  assert.deepEqual(calls, ['theme', 'sources', 'view:trash'])
+  assert.deepEqual(calls, ['theme', 'view:trash'])
 
   // Esc closes Settings popover
   await click($('[data-testid="header-settings"]'))

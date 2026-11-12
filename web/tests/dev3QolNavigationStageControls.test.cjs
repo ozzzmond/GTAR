@@ -34,9 +34,10 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear pres
   assert.equal(headerSource.indexOf('label="Theme"'), -1, 'Theme removed from header toolbar')
   assert.equal(headerSource.indexOf('label="More"'), -1, 'More removed from header toolbar')
 
-  // Relocated actions in Settings popover (#434)
+  // Relocated actions in Settings popover (#434, #503)
   assert.ok(headerSource.includes('data-testid="settings-theme-button"'), 'Theme in Settings popover')
-  assert.ok(headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources in Settings popover')
+  assert.ok(headerSource.includes('data-testid="header-advanced-tools"'), 'Advanced Tools in header toolbar per #503')
+  assert.ok(!headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources row removed per #503')
   assert.ok(headerSource.includes('data-testid="profile-trash-button"'), 'Trash in Settings popover (<md)')
 
   // Verify Stage Box ordering
@@ -56,9 +57,9 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear pres
 })
 
 // =============================================================================
-// 3. WEB SOURCES RELOCATION & PROFILE POPOVER (#359)
+// 3. WEB SOURCES REMOVAL (#503) & PROFILE POPOVER RETIREMENT
 // =============================================================================
-test('DEV3_WEB_SOURCES_RELOCATION_AND_PROFILE_POPOVER: Web Sources relocated to Profile popover; More menu retired per #359', () => {
+test('DEV3_WEB_SOURCES_REMOVAL_AND_ADVANCED_TOOLS: Web Sources row removed per #503; More menu retired per #359', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
 
   // Web Sources not in primary header toolbar (#332)
@@ -68,9 +69,8 @@ test('DEV3_WEB_SOURCES_RELOCATION_AND_PROFILE_POPOVER: Web Sources relocated to 
   assert.ok(!headerSource.includes('3-Dots Overflow Menu'), 'More menu retired')
   assert.ok(!headerSource.includes('moreButtonRef'), 'moreButtonRef retired')
 
-  // Web Sources relocated to Profile popover (#359)
-  assert.ok(headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources present inside Profile popover')
-  assert.ok(headerSource.includes('onOpenWebsiteUrlSource()'), 'Web Sources triggers onOpenWebsiteUrlSource in Profile popover')
+  // Web Sources removed from popover per #503
+  assert.ok(!headerSource.includes('data-testid="profile-web-sources"'), 'Web Sources row removed')
 })
 
 // =============================================================================
