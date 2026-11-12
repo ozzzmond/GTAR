@@ -5,7 +5,7 @@ import { assertImportIds, canonicalImportId } from './importIdentity'
 import { generateUUID } from './uuid'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { GTAR_APP_VERSION } from '../types/gtar'
-import { readBackupSettingsV2, settingsFromLegacy, validateBackupSettings, validateBackupSettingsV2, type BackupSettings, type BackupSettingsV2 } from './backupSettings'
+import { inspectBackupSettingsV2, readBackupSettingsV2, settingsFromLegacy, validateBackupSettings, validateBackupSettingsV2, type BackupSettings, type BackupSettingsV2 } from './backupSettings'
 import { bindLegacySetlists, ensureSongIds, partitionSongs, resolveSetlistSong } from './setlistSongs'
 import { detectSongKey } from './songParser'
 import { canonicalSongKey, normalizeMusicalKey } from './musicalKey'
@@ -156,6 +156,8 @@ export interface VerifiedBackup {
   settingsFingerprint: string
   tagColorsFingerprint?: string
   schemaVersion: number
+  /** #453 S1: storage keys of settings left out because their stored value is malformed. */
+  unreadableSettings: string[]
 }
 
 export const settingsFingerprint = (settings: BackupSettingsV2) => `c53:${cyrb53(stableStringify(settings))}`
@@ -215,7 +217,8 @@ export function buildVerifiedBackup(songs: ActiveSongState[], setlists: WebSetli
   const json = JSON.stringify(payload, null, 2)
   const counts = verifyBackupJson(json, payload)
   return { json, fileName: backupFileName(), bytes: new TextEncoder().encode(json).length, counts,
-    fingerprint: payload.contentFingerprint, tagColorsFingerprint: stableStringify(payload.tagColors), settingsFingerprint: settingsFingerprint(payload.settings), schemaVersion: payload.schemaVersion }
+    fingerprint: payload.contentFingerprint, tagColorsFingerprint: stableStringify(payload.tagColors), settingsFingerprint: settingsFingerprint(payload.settings), schemaVersion: payload.schemaVersion,
+    unreadableSettings: inspectBackupSettingsV2().unreadable }
 }
 
 /** Download-only export (menus). Verified before the download starts; records the backup status. */

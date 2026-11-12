@@ -183,9 +183,12 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
     if (outcome.kind === 'share-cancelled') { showFeedback('info', 'Share cancelled. No backup was saved.'); return }
     if (outcome.kind === 'failed') { showFeedback('error', `Backup not exported: ${outcome.message}`); return }
     const verified = `Backup file verified (${countsText(backup.counts)}, ${mb(backup.bytes)})`
-    if (outcome.kind === 'shared') showFeedback('info', `${verified} and sent to the share sheet. GTAR cannot see where it was saved; check that it is in Files, iCloud Drive or your cloud drive.`)
-    else if (outcome.kind === 'copied') showFeedback('info', `${verified} and copied to the clipboard. Paste it somewhere safe; GTAR cannot see where it went.`)
-    else showFeedback('info', `${outcome.reason === 'share-unavailable' ? 'Sharing files is not available here, so ' : outcome.reason === 'share-failed' ? 'The share sheet failed, so ' : ''}${verified} and handed to browser downloads as ${backup.fileName}. Check that it was saved.`)
+    // #453 S1: damaged settings never block the backup; they are left out and named.
+    const skipped = backup.unreadableSettings.length
+      ? ` Not in this backup: ${backup.unreadableSettings.length} setting${backup.unreadableSettings.length === 1 ? '' : 's'} stored on this device could not be read (${backup.unreadableSettings.join(', ')}). Songs, setlists and every other setting are included.` : ''
+    if (outcome.kind === 'shared') showFeedback('info', `${verified} and sent to the share sheet. GTAR cannot see where it was saved; check that it is in Files, iCloud Drive or your cloud drive.${skipped}`)
+    else if (outcome.kind === 'copied') showFeedback('info', `${verified} and copied to the clipboard. Paste it somewhere safe; GTAR cannot see where it went.${skipped}`)
+    else showFeedback('info', `${outcome.reason === 'share-unavailable' ? 'Sharing files is not available here, so ' : outcome.reason === 'share-failed' ? 'The share sheet failed, so ' : ''}${verified} and handed to browser downloads as ${backup.fileName}. Check that it was saved.${skipped}`)
   }
 
   const handleSaveBackup = async () => {
