@@ -143,7 +143,7 @@ test('1. STATIC_HEADERS_FILE_COVERAGE: Cloudflare Pages _headers definition inte
   assert.deepEqual(directives.get('style-src'), new Set(["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com']), 'style-src must allow inline CSS variables and Google Fonts')
   assert.deepEqual(directives.get('font-src'), new Set(["'self'", 'data:', 'https://fonts.gstatic.com']), 'font-src must permit Google Fonts CDN and data URIs')
   assert.deepEqual(directives.get('img-src'), new Set(["'self'", 'data:', 'blob:', 'https://*.googleusercontent.com', 'https://accounts.google.com', 'https://ssl.gstatic.com']), 'img-src must permit data QR, blobs, and Google avatars')
-  assert.deepEqual(directives.get('connect-src'), new Set(["'self'", 'https://accounts.google.com', 'https://www.googleapis.com', 'ws:', 'wss:']), 'connect-src must permit GIS, OAuth userinfo, and BandSync WebSockets')
+  assert.deepEqual(directives.get('connect-src'), new Set(["'self'", 'https://accounts.google.com', 'https://www.googleapis.com', 'ws:', 'wss:', 'http://*:1025/v1/status/slide', 'http://*:1025/v1/presentation/slide_index', 'http://*:1025/v1/presentation/active']), 'connect-src must permit GIS, OAuth userinfo, BandSync WebSockets, and the issue#415 ProPresenter DEV-preview candidate paths')
   assert.deepEqual(directives.get('frame-src'), new Set(['https://accounts.google.com']), 'frame-src must permit GIS One-Tap/FedCM iframes')
   assert.deepEqual(directives.get('frame-ancestors'), new Set(["'none'"]), "frame-ancestors must be 'none'")
   assert.deepEqual(directives.get('object-src'), new Set(["'none'"]), "object-src must be 'none'")
@@ -156,6 +156,7 @@ test('1. STATIC_HEADERS_FILE_COVERAGE: Cloudflare Pages _headers definition inte
   assert.ok(![...directives.values()].some((sources) => sources.has("'unsafe-eval'")), 'Must NOT contain unsafe-eval')
   assert.ok(!directives.get('script-src').has('*'), 'Must NOT wildcard script-src')
   assert.ok(!directives.get('connect-src').has('*'), 'Must NOT wildcard connect-src')
+  assert.ok(!directives.get('connect-src').has('http:'), 'Must NOT blanket-allow http: in connect-src (issue#415 candidate is path-scoped)')
 
   // Cache-Control for PWA lifecycle assets
   assert.ok(rules.has('/index.html'), 'Must configure /index.html')
@@ -469,4 +470,11 @@ test('#160: the enforced CSP is identical in public/_headers and the Functions s
     assert.ok(fromFile.includes(needle), needle)
   }
   assert.doesNotMatch(fromFile, /script-src[^;]*'unsafe-inline'/, 'no inline scripts allowed')
+
+  // issue#415 DEV-preview candidate: exactly three path-scoped LAN HTTP reads, no blanket http:
+  const connectSources = fromFile.match(/connect-src ([^;]+);/)[1].trim().split(/\s+/)
+  for (const candidate of ['http://*:1025/v1/status/slide', 'http://*:1025/v1/presentation/slide_index', 'http://*:1025/v1/presentation/active']) {
+    assert.ok(connectSources.includes(candidate), `missing issue#415 candidate source ${candidate}`)
+  }
+  assert.ok(!connectSources.includes('http:'), 'no blanket http: source')
 })
