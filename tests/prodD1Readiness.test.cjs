@@ -119,7 +119,7 @@ test('plan and fresh post-approval main path cannot reach promotion on D1 HOLD',
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../.github/prod_controller.cjs'), 'utf8'), context)
   // Replace independent gates only; exercise the actual D1 gate and main ordering.
   vm.runInContext(`refresh = () => {}; plan = () => p; remoteRefs = () => ({});
-    inventoryContract = () => {}; externalGate = async () => ({ project, protection: 'test' });
+    snapshotContract = () => {}; externalGate = async () => ({ project, protection: 'test' });
     readD1Migrations = async () => rows;
     freshContract = () => events.push('fresh'); emit = value => events.push(value);
     promote = () => { events.push('mutation'); return { state: 'PROD_PROMOTED_BUT_UNVERIFIED' } };`, context)

@@ -6,7 +6,7 @@ const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const root = path.resolve(__dirname, '..')
 const C = require('../.github/prod_controller.cjs')
-const { parseDevTag, inspectCheckpoint, verifyStabilizationPair, HISTORICAL_TAG_EXCEPTIONS } = require('../.github/release_metadata.cjs')
+const { parseDevTag, inspectCheckpoint, HISTORICAL_TAG_EXCEPTIONS } = require('../.github/release_metadata.cjs')
 const { resolveReleaseIdentity, ABANDONED_PROD } = require('../.github/release_identity.cjs')
 
 function createRepoFixture(t) {
@@ -26,7 +26,7 @@ function createRepoFixture(t) {
   git('config', 'user.email', 'release-test@example.com')
 
   // Copy release controller files
-  for (const f of ['prod_controller.cjs', 'release_metadata.cjs', 'release_identity.cjs']) {
+  for (const f of ['prod_controller.cjs', 'release_metadata.cjs', 'release_identity.cjs', 'release_repository.cjs']) {
     put(`.github/${f}`, fs.readFileSync(path.join(root, '.github', f), 'utf8'))
   }
 
@@ -54,13 +54,13 @@ function createRepoFixture(t) {
 
   // Create dev branch from baseline and commit checkpoint on dev
   git('checkout', '-b', 'dev')
-  put('web/package.json', JSON.stringify({ name: 'web', version: '1.0.130-dev.4a' }))
-  put('web/package-lock.json', JSON.stringify({ name: 'web', version: '1.0.130-dev.4a', packages: { '': { version: '1.0.130-dev.4a' } } }))
-  put('web/src/types/gtar.ts', `export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string' ? __GTAR_PROD_VERSION__ : '1.1.108';\nexport const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string' ? __GTAR_DEV_VERSION__ : '1.0.130-dev.4a';\n`)
-  put('web/functions/lib/authCore.ts', `// GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.4a)`)
+  put('web/package.json', JSON.stringify({ name: 'web', version: '1.0.130-dev.5' }))
+  put('web/package-lock.json', JSON.stringify({ name: 'web', version: '1.0.130-dev.5', packages: { '': { version: '1.0.130-dev.5' } } }))
+  put('web/src/types/gtar.ts', `export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string' ? __GTAR_PROD_VERSION__ : '1.1.108';\nexport const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string' ? __GTAR_DEV_VERSION__ : '1.0.130-dev.5';\n`)
+  put('web/functions/lib/authCore.ts', `// GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.5)`)
 
   git('add', '.')
-  git('commit', '-m', 'checkpoint stabilization')
+  git('commit', '-m', 'numeric checkpoint')
   const checkpointSha = git('rev-parse', 'HEAD')
   git('tag', 'v1.0.130-dev.4a')
   git('tag', 'v1.0.130-dev.5')
@@ -78,12 +78,12 @@ function createRepoFixture(t) {
   return { repo, git, put, baselineSha, checkpointSha }
 }
 
-test('valid DEV.4a and DEV.5 stabilization pair inspects and plans cleanly', t => {
+test('direct numeric DEV.5 checkpoint inspects and plans despite a lettered tag', t => {
   const f = createRepoFixture(t)
   const checkpoint = inspectCheckpoint(f.repo, 'v1.0.130-dev.5')
   assert.equal(checkpoint.tag, 'v1.0.130-dev.5')
   assert.equal(checkpoint.sha, f.checkpointSha)
-  assert.equal(checkpoint.promotable, true)
+  assert.equal(checkpoint.promotable, undefined)
   assert.equal(checkpoint.prodTag, 'v1.1.135')
 
   const plan = C.plan(f.repo, 'v1.0.130-dev.5', f.checkpointSha, 'refs/heads/main', f.baselineSha)
@@ -94,33 +94,25 @@ test('valid DEV.4a and DEV.5 stabilization pair inspects and plans cleanly', t =
   assert.equal(plan.sha, f.checkpointSha)
 })
 
-test('stabilization pair fails closed when companion tag is missing', t => {
+test('numeric checkpoint needs no lettered companion', t => {
   const f = createRepoFixture(t)
   f.git('tag', '-d', 'v1.0.130-dev.4a')
-  assert.throws(
-    () => inspectCheckpoint(f.repo, 'v1.0.130-dev.5'),
-    /Checkpoint version metadata mismatch: Missing companion hotfix tag for stabilization/
-  )
+  assert.equal(inspectCheckpoint(f.repo, 'v1.0.130-dev.5').sha, f.checkpointSha)
 })
 
-test('stabilization pair fails closed when companion tag points to a different commit', t => {
+test('lettered tag movement cannot affect numeric checkpoint', t => {
   const f = createRepoFixture(t)
-  // Move companion tag to baseline
   f.git('tag', '-f', 'v1.0.130-dev.4a', f.baselineSha)
-  assert.throws(
-    () => inspectCheckpoint(f.repo, 'v1.0.130-dev.5'),
-    /Checkpoint version metadata mismatch: Companion hotfix tag moved; identical commit required/
-  )
+  assert.equal(C.plan(f.repo, 'v1.0.130-dev.5', f.checkpointSha, 'refs/heads/main', f.baselineSha).sha, f.checkpointSha)
 })
 
-test('stabilization pair fails closed on metadata mismatch against companion tag', t => {
+test('numeric checkpoint rejects mismatched auth metadata', t => {
   const f = createRepoFixture(t)
   // Put a mismatched version in authCore
   f.put('web/functions/lib/authCore.ts', `// GTAR Server-Authoritative Account & Access Control (v1.0.130-dev.3c)`)
   f.git('add', 'web/functions/lib/authCore.ts')
   f.git('commit', '-m', 'mismatched auth')
   const badSha = f.git('rev-parse', 'HEAD')
-  f.git('tag', '-f', 'v1.0.130-dev.4a', badSha)
   f.git('tag', '-f', 'v1.0.130-dev.5', badSha)
   assert.throws(
     () => inspectCheckpoint(f.repo, 'v1.0.130-dev.5'),
@@ -185,7 +177,7 @@ test('production security gates reject lettered checkpoints, non-ancestor main, 
   // Lettered checkpoint is not promotable
   assert.throws(
     () => C.plan(f.repo, 'v1.0.130-dev.4a', f.checkpointSha, 'refs/heads/main', f.baselineSha),
-    /Lettered checkpoint is not promotable/
+    /Invalid canonical DEV tag/
   )
 
   // Wrong dispatch ref
@@ -202,52 +194,10 @@ test('production security gates reject lettered checkpoints, non-ancestor main, 
   )
 })
 
-test('dry-run readiness against the actual expected DEV.5 checkpoint in local repository', t => {
+test('historical numeric alias with mismatched committed metadata rejects', () => {
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
-  const expectedSha = '22a3d1d58e18de41bc985f4c64ddaa76b60baf10'
-  const targetTag = 'v1.0.130-dev.5'
-  const companionTag = 'v1.0.130-dev.4a'
-
-  // Live-state snapshot: only meaningful while origin/dev is exactly the DEV.5 checkpoint.
-  // Once dev advances (e.g. DEV.6), skip instead of failing; fixture tests above keep gate coverage.
-  const tryGit = (...args) => { try { return git(...args) } catch { return null } }
-  if (tryGit('rev-parse', '--verify', '--quiet', 'refs/remotes/origin/dev^{commit}') !== expectedSha ||
-      tryGit('rev-parse', '--verify', '--quiet', `refs/tags/${targetTag}^{commit}`) !== expectedSha ||
-      !tryGit('rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}')) {
-    t.skip('live origin/dev no longer at DEV.5 checkpoint')
-    return
+  for (const tag of ['v1.0.130-dev.5', 'v1.0.130-dev.4a']) {
+    assert.equal(git('rev-parse', `refs/tags/${tag}^{commit}`), '22a3d1d58e18de41bc985f4c64ddaa76b60baf10')
   }
-
-  // Read-only verify tags exist and point to expected SHA
-  assert.equal(git('rev-parse', `refs/tags/${targetTag}^{commit}`), expectedSha)
-  assert.equal(git('rev-parse', `refs/tags/${companionTag}^{commit}`), expectedSha)
-
-  // Read-only verify checkpoint inspection
-  const cp = inspectCheckpoint(root, targetTag)
-  assert.equal(cp.tag, targetTag)
-  assert.equal(cp.sha, expectedSha)
-  assert.equal(cp.promotable, true)
-  assert.equal(cp.prodTag, 'v1.1.135')
-
-  // Read-only verify runtime contract against controller
-  assert.equal(C.runtimeContract(root, expectedSha), true)
-
-  // Read-only verify plan output with origin/main as controller.
-  // DEV.5 is a historical fixture: once main gains commits not on DEV.5 (e.g. controller PR #62),
-  // it is no longer currently promotable, and the controller must fail closed on ancestry.
-  const mainSha = git('rev-parse', 'refs/remotes/origin/main^{commit}')
-  if (tryGit('merge-base', '--is-ancestor', mainSha, expectedSha) === null) {
-    assert.throws(
-      () => C.plan(root, targetTag, expectedSha, 'refs/heads/main', mainSha),
-      /merge-base --is-ancestor/
-    )
-    return
-  }
-  const planned = C.plan(root, targetTag, expectedSha, 'refs/heads/main', mainSha)
-  assert.equal(planned.tag, targetTag)
-  assert.equal(planned.sha, expectedSha)
-  assert.equal(planned.prodTag, 'v1.1.135')
-  assert.equal(planned.baseline, 'v1.1.130')
-  assert.equal(planned.mainSha, mainSha)
-  assert.equal(planned.devSha, expectedSha)
+  assert.throws(() => inspectCheckpoint(root, 'v1.0.130-dev.5'), /Checkpoint version metadata mismatch/)
 })

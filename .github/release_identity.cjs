@@ -2,8 +2,8 @@
 const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
-const { parseDevTag, inspectCheckpoint, compareDevTags } = require('./release_metadata.cjs')
-const CANONICAL_REPOSITORY = 'https://github.com/ozzzmond/GTAR.git'
+const { parseDevTag, inspectCheckpoint, compareDevTags, HISTORICAL_TAG_EXCEPTIONS, fetchReleaseTags } = require('./release_metadata.cjs')
+const CANONICAL_REPOSITORY = require('./release_repository.cjs').url
 const ABANDONED_PROD = Object.freeze({
   tag: 'v1.1.122', sha: 'c254195e6dfc946138336551e4ce8a87520baf7f',
   sourceTag: 'v1.0.108-dev.14', tree: '59ca0769cee12f5d73f03e067c5b54be9a848de0'
@@ -65,10 +65,10 @@ function resolveReleaseIdentity(root, env = process.env, gitOverride) {
   if (!/^[0-9a-f]{40}$/.test(sha || '') || git('rev-parse', 'HEAD') !== sha) throw new Error('Release full commit SHA must equal build HEAD')
   if (production && validation) throw new Error('Production cannot use validation identity')
   // Pages may use a provider-owned mirror. Fetch canonical authority explicitly;
-  // never change origin, trust its URL, or force any existing tag.
-  git('fetch', CANONICAL_REPOSITORY, 'refs/tags/v1.*:refs/tags/v1.*')
+  // never change origin or trust its URL; only numeric R2 DEV tags may refresh.
+  fetchReleaseTags(git, CANONICAL_REPOSITORY)
   const tags = git('tag', '--points-at', 'HEAD').split('\n')
-  const candidates = tags.flatMap(t => { try { const p = parseDevTag(t); return p.promotable ? [p] : [] } catch { return [] } })
+  const candidates = tags.flatMap(t => { try { const p = parseDevTag(t); return HISTORICAL_TAG_EXCEPTIONS[t] ? [] : [p] } catch { return [] } })
   if (candidates.length !== 1) throw new Error('Build requires one exact clean DEV checkpoint tag')
   const checkpoint = inspectCheckpoint(root, candidates[0].tag)
   const selected = production ? [checkpoint.tag, checkpoint.prodTag] : [checkpoint.tag]
@@ -82,7 +82,7 @@ function resolveReleaseIdentity(root, env = process.env, gitOverride) {
   return { version: checkpoint.prodTag.slice(1), sourceTag: checkpoint.tag, sha }
 }
 
-function selectCandidate(candidates, headSha, shortSha, env, getTagSha) {
+function selectCandidate(candidates, headSha, env, getTagSha) {
   const requested = env.REQUESTED_TAG || env.RELEASE_TAG
   if (requested) {
     try {
@@ -91,7 +91,7 @@ function selectCandidate(candidates, headSha, shortSha, env, getTagSha) {
       if (tagSha === headSha) {
         return {
           tag: p.tag,
-          promotable: p.promotable
+          promotable: !HISTORICAL_TAG_EXCEPTIONS[p.tag]
         }
       }
     } catch {}
@@ -100,28 +100,8 @@ function selectCandidate(candidates, headSha, shortSha, env, getTagSha) {
 
   if (candidates.length === 0) return null
 
-  if (candidates.length === 1) {
-    return {
-      tag: candidates[0].tag,
-      promotable: candidates[0].promotable
-    }
-  }
-
-  // Multiple candidates: deterministically prefer clean numeric stabilization tag
-  const cleanCandidates = candidates.filter(p => p.promotable)
-  if (cleanCandidates.length > 0) {
-    cleanCandidates.sort((a, b) => compareDevTags(b, a))
-    return {
-      tag: cleanCandidates[0].tag,
-      promotable: true
-    }
-  }
-
-  const sorted = [...candidates].sort((a, b) => compareDevTags(b, a))
-  return {
-    tag: sorted[0].tag,
-    promotable: false
-  }
+  const selected = [...candidates].sort((a, b) => compareDevTags(b, a))[0]
+  return { tag: selected.tag, promotable: !HISTORICAL_TAG_EXCEPTIONS[selected.tag] }
 }
 
 function resolveDevIdentity(root, env = process.env, gitOverride) {
@@ -152,7 +132,7 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
     const shortSha = git('rev-parse', '--short', 'HEAD') || headSha.slice(0, 7)
 
     const isCloudflare = Boolean(env.CF_PAGES || env.CF_PAGES_BRANCH || env.CF_PAGES_COMMIT_SHA || env.GTAR_VERIFY_TAGS)
-    const canonicalRepo = env.CANONICAL_REPOSITORY || CANONICAL_REPOSITORY
+    const canonicalRepo = CANONICAL_REPOSITORY
 
     if (isCloudflare) {
       if (env.CF_PAGES_COMMIT_SHA && (!/^[0-9a-f]{40}$/.test(env.CF_PAGES_COMMIT_SHA) || env.CF_PAGES_COMMIT_SHA !== headSha)) {
@@ -170,7 +150,7 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
       }
 
       try {
-        git('fetch', canonicalRepo, 'refs/tags/v1.*:refs/tags/v1.*')
+        fetchReleaseTags(git, canonicalRepo)
       } catch {}
 
       let canonicalTagMap = null
@@ -223,7 +203,7 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
         }
       })
 
-      const selected = selectCandidate(candidates, headSha, shortSha, env, tag => canonicalTagMap.get(tag))
+      const selected = selectCandidate(candidates, headSha, env, tag => canonicalTagMap.get(tag))
       if (selected) {
         const deploymentId = resolveDeploymentId(env, headSha, shortSha, selected.tag)
         return {
@@ -282,7 +262,7 @@ function resolveDevIdentity(root, env = process.env, gitOverride) {
       }
     })
 
-    const selected = selectCandidate(candidates, headSha, shortSha, env, tag => {
+    const selected = selectCandidate(candidates, headSha, env, tag => {
       try {
         return git('rev-parse', '--verify', `refs/tags/${tag}^{commit}`)
       } catch {
