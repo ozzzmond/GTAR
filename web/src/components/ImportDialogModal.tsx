@@ -6,6 +6,7 @@ import { parseGtarSong, detectSongKey } from '../utils/songParser'
 import { extractDirectives } from '../utils/chordSheetParser'
 import { parseBackupJson } from '../utils/jsonBackup'
 import { isOnSongFile, looksLikeArchive, onsongToChordPro, SONG_FILE_EXTENSIONS } from '../utils/onsongImport'
+import { splitTxtSongs } from '../utils/songExport'
 
 interface ImportDialogModalProps {
   isOpen: boolean
@@ -98,6 +99,17 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
     }
   }
 
+  // #453 D5: a text file with several charts separated by {new_song} (GTAR's multi-song TXT export).
+  // Returns null for a single chart, OnSong and JSON files, which keep their own paths.
+  const parseMultiSongText = (filename: string, original: string): Array<Partial<ActiveSongState>> | null => {
+    if (isOnSongFile(filename) || filename.toLowerCase().endsWith('.json') || looksLikeArchive(original)) return null
+    const parts = splitTxtSongs(original)
+    if (parts.length < 2) return null
+    const base = filename.replace(/\.[^/.]+$/, '')
+    return parts.map((part, index) => parseFileContent(`${base} (${index + 1}).txt`, part))
+      .filter((song): song is Partial<ActiveSongState> => !!song && !!song.rawContent)
+  }
+
   // Handle single file import (.txt, .chordpro, .json)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -163,6 +175,13 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
       }
 
       // 2. Loose song file content (.txt, .cho, .chordpro, .onsong, loose JSON)
+      const several = parseMultiSongText(file.name, text)
+      if (several && several.length > 0) {
+        onImportAllSongs(several)
+        showFeedback('success', `Imported ${several.length} songs from "${file.name}"!`)
+        e.target.value = ''
+        return
+      }
       const song = parseFileContent(file.name, text)
       if (song && isOnSongFile(file.name)) {
         setPreview({ song, filename: file.name, warnings: onsongToChordPro(text).warnings })
@@ -196,6 +215,8 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
       try {
         const text = await file.text()
+        const several = parseMultiSongText(file.name, text)
+        if (several) { importedList.push(...several); continue }
         const song = parseFileContent(file.name, text)
         if (song && song.rawContent) {
           importedList.push(song)
