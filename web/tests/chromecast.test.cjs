@@ -80,8 +80,8 @@ test('Chromecast: receiver-only headers replace broad permissions and leave norm
   assert.match(response.headers.get('Permissions-Policy'), /camera=\(\)/)
   const csp = response.headers.get('Content-Security-Policy')
   assert.match(csp, /connect-src 'self'; frame-src 'none'; frame-ancestors 'none'/)
-  assert.match(csp, /https:\/\/www.gstatic.com\/cast\/sdk\/libs\/caf_receiver\//)
-  assert.doesNotMatch(csp, /unsafe-eval|accounts.google.com|https:\/\/www.gstatic.com;/)
+  assert.match(csp, /https:\/\/www\.gstatic\.com\/cast\/sdk\/libs\/caf_receiver\//)
+  assert.doesNotMatch(csp, /unsafe-eval|accounts\.google\.com|https:\/\/www\.gstatic\.com;/)
   const normal = await middleware({ request: new Request('https://dev.example/tv'), next })
   assert.equal(normal.headers.get('Permissions-Policy'), 'camera=(self)')
 })
@@ -123,7 +123,7 @@ test('Chromecast: Web Sender SDK lifecycle preserves the controller, rejects rep
     sender = loaded.chromecastSender; controller = loaded.stageCast2Controller
     assert.equal(sender.supported(), true)
     const init = sender.initialize()
-    assert.match(document.querySelector('script').src, /^https:\/\/www.gstatic.com\/cv\/js\/sender\//)
+    assert.match(document.querySelector('script').src, /^https:\/\/www\.gstatic\.com\/cv\/js\/sender\//)
     window.__onGCastApiAvailable(true); await init
     assert.equal(sender.getView().state, 'ready')
     const React = require('react')
