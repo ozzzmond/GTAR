@@ -2,7 +2,9 @@ import { CAST2_VERSION, validateCast2Message } from '../src/utils/stageCast2Prot
 import type { ReceiverSnapshot } from '../src/utils/stageCast2Protocol'
 
 export const POLICY = Object.freeze({ pairingMs: 120_000, idleTimeoutMs: 600_000, sessionMs: 600_000,
-  maxLifetimeMs: 5_400_000, ticketMs: 15_000, heartbeatMs: 45_000, sessions: 32, guesses: 5, requests: 120, buckets: 512,
+  maxLifetimeMs: 5_400_000, ticketMs: 15_000, heartbeatMs: 45_000, sessions: 32, guesses: 5, requests: 120,
+  // Anonymous (no-account) traffic shares one pool across every receiver and controller since #467; ~30 req/min per live session.
+  anonRequests: 32 * 30, buckets: 512,
   // Controller sockets stay authorized only while authenticated HTTP keeps renewing this lease (#84).
   authLeaseMs: 30_000, storedSessions: 128 })
 export type State = 'CREATED' | 'WAITING_FOR_CONTROLLER' | 'AWAITING_TV_APPROVAL' | 'PAIRED' | 'DISCONNECTED' | 'EXPIRED' | 'REVOKED'
@@ -224,7 +226,7 @@ export class StageCast2Hub {
       // Anonymous and gateway-authenticated traffic draw from separate global pools.
       const account = !!owner && owner !== ANON_OWNER
       this.limit('ip:' + ip, 40, account)
-      this.limit(account ? 'global:auth' : 'global:anon', POLICY.requests, account)
+      this.limit(account ? 'global:auth' : 'global:anon', account ? POLICY.requests : POLICY.anonRequests, account)
       if (url.pathname === '/socket' && request.method === 'GET') return this.connect(request)
       if (request.method !== 'POST') throw new Denial('INVALID_REQUEST', 400)
       const b = await body(request)

@@ -129,7 +129,7 @@ test('ADMISSION: one client\'s rejected flood does not consume shared admission'
 
 test('ADMISSION: an anonymous global flood does not starve authenticated controllers', async () => {
   const f = await fixture(), { s, c } = await f.paired()
-  for (let i = 0; i < POLICY.requests; i++) await f.call('/status', {}, '', await digest('anon-' + i))
+  for (let i = 0; i < POLICY.anonRequests; i++) await f.call('/status', {}, '', await digest('anon-' + (i % 24)))
   assert.equal((await f.call('/create', {}, '', await digest('late-tv'))).status, 429, 'anonymous pool is bounded')
   assert.equal((await f.call('/status', f.controller(s, c), 'user-1', await digest('phone'))).status, 200)
 })
@@ -150,4 +150,11 @@ test('CAPACITY: expired unclaimed pairings stop holding live slots after the pai
   f.clock.now += POLICY.pairingMs; await f.flush()
   f.clock.now += 60_000 // next rate window
   assert.equal((await f.call('/create', {}, '', await digest('fresh-tv'))).status, 200)
+})
+
+test('ADMISSION: #453 C1 anonymous traffic of a full house of live sessions is not rate limited', async () => {
+  const f = await fixture()
+  // 32 sessions x (controller tick every 5 s + receiver poll) stay inside the shared anonymous pool.
+  const ips = await Promise.all(Array.from({ length: 32 }, (_, i) => digest('tv-' + i)))
+  for (let round = 0; round < 25; round++) for (const ip of ips) assert.equal((await f.call('/status', {}, '', ip)).status !== 429, true, 'request ' + (round * 32) + ' limited')
 })
