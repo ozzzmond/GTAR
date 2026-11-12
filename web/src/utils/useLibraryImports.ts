@@ -12,7 +12,7 @@ import type { SharedSetlistPayload } from './sharedSetlist'
 import { libraryRevision, persistLibrary, preserveStoredLibrary } from './syncJournal'
 import { normalizeBackupSong, parseBackupJson } from './jsonBackup'
 import { mergeBackupLibrary, partitionSongs } from './setlistSongs'
-import { mergeImportedSetlists } from './importIdentity'
+import { mergeImportedSetlistsWithReport, type LibraryMergeResult } from './importIdentity'
 import { generateUUID } from './uuid'
 
 type Setter<T> = Dispatch<SetStateAction<T>>
@@ -48,13 +48,14 @@ export function useLibraryImports({
   // eslint-disable-next-line react-hooks/refs
   importStateRef.current = { songs: [...songs, ...deletedSongs], setlists, folders, tagColors }
 
-  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[], importedTagColors?: TagColors) => {
+  const handleSmartMerge = useCallback((importedSongs: Array<Partial<ActiveSongState>>, importedSetlists: WebSetlist[], importedFolders?: SetlistFolder[], importedTagColors?: TagColors): LibraryMergeResult => {
     const existingSongs = importStateRef.current.songs
     const parsed = parseBackupJson(JSON.stringify({ songs: importedSongs, setlists: importedSetlists, ...(importedTagColors !== undefined ? { tagColors: importedTagColors } : {}), ...(importedFolders ? { folders: importedFolders } : {}) }), { mode: 'merge', existingSongs })
     if (!parsed.isValid) throw new Error(parsed.error)
     const merged = mergeBackupLibrary(existingSongs, parsed.songs, parsed.setlists)
     const partition = partitionSongs(merged.songs)
-    const nextSetlists = mergeImportedSetlists(importStateRef.current.setlists, merged.setlists)
+    // #453 D6: a setlist changed on this device is kept and reported; it never aborts the merge.
+    const { setlists: nextSetlists, skipped: skippedSetlists } = mergeImportedSetlistsWithReport(importStateRef.current.setlists, merged.setlists)
     const nextFolders = importedFolders ? [...new Map([...(importStateRef.current.folders ?? []), ...importedFolders].map(folder => [folder.id, folder])).values()] : importStateRef.current.folders
     const nextColors = { ...importStateRef.current.tagColors, ...parsed.tagColors }
     // A merge based on stale React state must never replace a newer tab's data.
@@ -67,6 +68,7 @@ export function useLibraryImports({
     setTagColors?.(nextColors)
     setSetlists(nextSetlists)
     if (nextFolders) setFolders?.(nextFolders)
+    return { skippedSetlists }
   }, [setTagColors, setFolders, persistedBaselineRef, setCrossTabConflict, setSongs, setDeletedSongs, setSetlists])
 
   const handleImportSong = (imported: Partial<ActiveSongState>) => {
@@ -106,10 +108,14 @@ export function useLibraryImports({
     setQueueMode('library')
   }
 
-  const handleImportSingleSetlist = (setlist: WebSetlist, newSongs: ActiveSongState[]) => {
-    handleSmartMerge(newSongs, [setlist])
-    setToastMessage(`Imported setlist "${setlist.name}" (${setlist.songs.length} songs)`)
-    setTimeout(() => setToastMessage(null), 4000)
+  const handleImportSingleSetlist = (setlist: WebSetlist, newSongs: ActiveSongState[]): LibraryMergeResult => {
+    const result = handleSmartMerge(newSongs, [setlist])
+    const kept = result.skippedSetlists[0]
+    setToastMessage(kept
+      ? `Setlist "${kept.name}" was changed on this device and was kept as it is. The file's songs were merged.`
+      : `Imported setlist "${setlist.name}" (${setlist.songs.length} songs)`)
+    setTimeout(() => setToastMessage(null), kept ? 8000 : 4000)
+    return result
   }
 
   const handleImportSharedSetlist = (shared: SharedSetlistPayload) => {

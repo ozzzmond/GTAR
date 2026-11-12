@@ -2,6 +2,7 @@ import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
 import React, { useRef, useState } from 'react'
 import { FolderOpen, FileText, FolderUp, X, Check, AlertCircle } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import type { LibraryMergeResult } from '../utils/importIdentity'
 import { parseGtarSong, detectSongKey } from '../utils/songParser'
 import { extractDirectives } from '../utils/chordSheetParser'
 import { parseBackupJson } from '../utils/jsonBackup'
@@ -13,8 +14,8 @@ interface ImportDialogModalProps {
   onClose: () => void
   onImportSong: (song: Partial<ActiveSongState>) => void
   onImportAllSongs: (songs: Array<Partial<ActiveSongState>>) => void
-  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => void
+  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => LibraryMergeResult | void
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[]) => LibraryMergeResult | void
   existingSongs?: ActiveSongState[]
   existingSetlists?: WebSetlist[]
 }
@@ -31,7 +32,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(
     null
   )
   // #149 S4: converted OnSong files are previewed before they are saved.
@@ -39,15 +40,18 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
 
   if (!isOpen) return null
 
-  const showFeedback = (type: 'success' | 'error', message: string) => {
+  const showFeedback = (type: 'success' | 'error' | 'info', message: string) => {
     setFeedback({ type, message })
     setTimeout(() => {
       setFeedback(null)
       if (type === 'success') {
         onClose()
       }
-    }, 1800)
+    }, type === 'info' ? 10000 : 1800)
   }
+  // #453 D6: setlists the merge kept because this device changed them; the dialog stays open so the names can be read.
+  const keptNote = (result: LibraryMergeResult | void) => result?.skippedSetlists.length
+    ? ` Kept as it is on this device (changed since the file was made): ${result.skippedSetlists.map(list => `"${list.name}"`).join(', ')}.` : ''
 
   // Parse a text or loose json file content into song state
   const parseFileContent = (filename: string, original: string): Partial<ActiveSongState> | null => {
@@ -137,22 +141,22 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
           if (parsed.isValid) {
             // A. Single Setlist package (.json)
             if (parsed.isSingleSetlist && parsed.setlists.length > 0) {
-              if (onImportSingleSetlist) {
-                onImportSingleSetlist(parsed.setlists[0], parsed.songs as ActiveSongState[])
-              } else if (onSmartMerge) {
-                onSmartMerge(parsed.songs, parsed.setlists)
-              } else {
-                onImportAllSongs(parsed.songs)
-              }
-              showFeedback('success', `Imported setlist "${parsed.singleSetlistName || parsed.setlists[0].name}" (${parsed.songs.length} tracks)!`)
+              const result = onImportSingleSetlist ? onImportSingleSetlist(parsed.setlists[0], parsed.songs as ActiveSongState[])
+                : onSmartMerge ? onSmartMerge(parsed.songs, parsed.setlists)
+                : onImportAllSongs(parsed.songs)
+              const kept = keptNote(result)
+              if (kept) showFeedback('info', `Merged ${parsed.songs.length} tracks; the setlist was not replaced.${kept}`)
+              else showFeedback('success', `Imported setlist "${parsed.singleSetlistName || parsed.setlists[0].name}" (${parsed.songs.length} tracks)!`)
               return
             }
 
             // B. Multi-setlist backup / song package (.json)
             if (parsed.setlists.length > 0) {
               if (onSmartMerge) {
-                onSmartMerge(parsed.songs, parsed.setlists)
-                showFeedback('success', `Imported ${parsed.songs.length} songs and ${parsed.setlists.length} setlists!`)
+                const result = onSmartMerge(parsed.songs, parsed.setlists)
+                const kept = keptNote(result)
+                if (kept) showFeedback('info', `Imported ${parsed.songs.length} songs and ${parsed.setlists.length - result!.skippedSetlists.length} of ${parsed.setlists.length} setlists.${kept}`)
+                else showFeedback('success', `Imported ${parsed.songs.length} songs and ${parsed.setlists.length} setlists!`)
                 return
               }
             }
@@ -282,7 +286,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
           {feedback && (
             <div
               className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
-                feedback.type === 'success'
+                feedback.type !== 'error'
                   ? 'bg-app-action/15 border-app-action/40 text-app-action'
                   : 'bg-[#DC6E67]/15 border-[#DC6E67]/40 text-status-error'
               }`}

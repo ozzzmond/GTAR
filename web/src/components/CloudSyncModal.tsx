@@ -13,7 +13,7 @@ export interface CloudSyncModalProps {
   onClose: () => void
   restoreBlocked?: boolean
   onFullRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
-  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => void | Promise<void>
+  onSmartMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[], tagColors?: TagColors) => unknown
   /** App library (songs including trash) for the file card; read from device storage when omitted. */
   deviceSongs?: ActiveSongState[]
   folders?: SetlistFolder[]

@@ -65,7 +65,7 @@ interface SongbookHomeViewProps {
   onDeleteSetlist?: (setlistId: string | number) => boolean
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
-  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => void
+  onImportSingleSetlist?: (setlist: WebSetlist, songs: ActiveSongState[]) => unknown
   searchQuery?: string
   onSearchQueryChange?: (query: string) => void
   onBulkDeleteSongs?: (songIds: Array<string | number>) => void
