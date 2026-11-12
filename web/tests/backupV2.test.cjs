@@ -89,13 +89,64 @@ test('the backup keys are exactly the documented appearance + preference keys', 
   assert.deepEqual(new Set(Object.keys(raw)), new Set(bs.backupSettingsStorageKeys()))
 })
 
-test('values the app would ignore are not exported; malformed v1 storage still blocks export', async () => {
+test('values the app would ignore are not exported', async () => {
   const storage = new MemoryStorage()
   storage.setItem('gtar_stage_chord_scale', '9'); storage.setItem('gtar_tv_font_size', '20px'); storage.setItem('gtar_edge_swipe_panel', 'yes')
   storage.setItem('gtar_songbook_sort', 'random'); storage.setItem('gtar_stage_font_weight', 'heavy')
   assert.deepEqual(bs.readBackupSettingsV2(storage), { appearance: {}, preferences: {} })
+  assert.deepEqual(bs.inspectBackupSettingsV2(storage).unreadable, [])
+})
+
+// #453 S1 (replaces "malformed v1 storage still blocks export"): one damaged appearance key is left out and named.
+function damagedSettingsStorage(storage = new MemoryStorage()) {
+  storage.setItem(bs.SETTINGS_KEYS.themeMode, 'azure-stage')
   storage.setItem(bs.SETTINGS_KEYS.customThemeColors, '{broken')
-  assert.throws(() => bs.readBackupSettingsV2(storage))
+  storage.setItem(bs.SETTINGS_KEYS.fontSizePx, 'abc')
+  storage.setItem(bs.SETTINGS_KEYS.scrollSpeed, '77')
+  storage.setItem(bs.SETTINGS_KEYS.fontStyle, 'serif')
+  storage.setItem('gtar_songbook_sort', 'artist')
+  return storage
+}
+const DAMAGED_KEYS = [bs.SETTINGS_KEYS.customThemeColors, bs.SETTINGS_KEYS.fontSizePx]
+test('#453 S1: a malformed appearance key is skipped and reported; the valid settings are still read', async () => {
+  const storage = damagedSettingsStorage()
+  const expected = { appearance: { themeMode: 'azure-stage', stageSettings: { fontStyle: 'serif', scrollSpeed: 77 } }, preferences: { songbookSort: 'artist' } }
+  const read = bs.inspectBackupSettingsV2(storage)
+  assert.deepEqual(read.settings, expected)
+  assert.deepEqual(read.unreadable, DAMAGED_KEYS)
+  assert.deepEqual(bs.readBackupSettingsV2(storage), expected)
+  assert.deepEqual(bs.validateBackupSettingsV2(read.settings), [])
+  // S5: the App and Stage settings reload read the same way and no longer throw.
+  assert.deepEqual(bs.readBackupSettings(storage), expected.appearance)
+  // Out-of-range and wrong-type values count as unreadable too; every other key is unaffected.
+  for (const [key, bad] of [[bs.SETTINGS_KEYS.themeMode, 'no-such-theme'], [bs.SETTINGS_KEYS.scrollSpeed, '100000'], [bs.SETTINGS_KEYS.isTwoColumn, '"yes"'],
+    [bs.SETTINGS_KEYS.fontStyle, 'comic'], [bs.SETTINGS_KEYS.factoryThemeOverrides, '[]'], [bs.SETTINGS_KEYS.customThemeColors, JSON.stringify({ bgHex: 'red' })]]) {
+    const { storage: full, raw } = fullSettingsStorage()
+    const all = bs.readBackupSettingsV2(full)
+    full.setItem(key, bad)
+    const partial = bs.inspectBackupSettingsV2(full)
+    assert.deepEqual(partial.unreadable, [key], key)
+    full.setItem(key, raw[key])
+    assert.deepEqual(bs.readBackupSettingsV2(full), all)
+    assert.equal(stableCount(partial.settings), stableCount(all) - 1, `${key}: exactly one setting left out`)
+  }
+})
+const stableCount = settings => Object.keys(settings.appearance).filter(k => k !== 'stageSettings').length + Object.keys(settings.appearance.stageSettings ?? {}).length + Object.keys(settings.preferences).length
+
+test('#453 S1: export with a malformed appearance key still produces a verified backup with songs and valid settings', async () => {
+  const prior = global.localStorage
+  global.localStorage = damagedSettingsStorage()
+  try {
+    const backup = jb.buildVerifiedBackup([{ id: 'a', title: 'A', artist: '', rawContent: '[C]a' }], [])
+    assert.deepEqual(backup.unreadableSettings, DAMAGED_KEYS)
+    const parsed = jb.parseBackupJson(backup.json)
+    assert.equal(parsed.isValid, true, parsed.error)
+    assert.deepEqual(parsed.songs.map(s => s.id), ['a'])
+    assert.deepEqual(parsed.settings, { appearance: { themeMode: 'azure-stage', stageSettings: { fontStyle: 'serif', scrollSpeed: 77 } }, preferences: { songbookSort: 'artist' } })
+    assert.deepEqual(DAMAGED_KEYS.map(key => global.localStorage.getItem(key)), ['{broken', 'abc'], 'export never repairs or removes the stored values')
+    global.localStorage = new MemoryStorage()
+    assert.deepEqual(jb.buildVerifiedBackup([], []).unreadableSettings, [])
+  } finally { global.localStorage = prior }
 })
 
 test('v1 backups still import: all v1 settings become appearance and restore to the same keys', async () => {
@@ -431,6 +482,62 @@ test('dialog export: share sheet path with wording that never claims an upload',
   assert.equal(calls.downloads.length, 1)
   assert.match(document.body.textContent, /handed to browser downloads/)
 }))
+
+test('#453 S1 dialog: a malformed appearance key no longer blocks the backup; the skipped key is named', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  damagedSettingsStorage(localStorage)
+  const { env, calls } = fakeEnv({ canShare: false })
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
+    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env,
+  })))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  await act(async () => button('Download backup').click())
+  const text = document.body.textContent
+  assert.doesNotMatch(text, /Backup not created/)
+  assert.equal(calls.downloads.length, 1)
+  assert.match(text, /Backup file verified \(1 songs, 0 setlists, 0 in trash/)
+  assert.match(text, /Not in this backup: 2 settings stored on this device could not be read \(gtar_custom_theme_colors, gtar_stage_font_size\)/)
+}))
+
+test('#453 S2: a partial settings restore announces the change so the running app reloads its settings', withJsdom(async () => {
+  const storage = new FailingWrites(5, { failPutBack: true })
+  deviceSettings(storage)
+  storage.armed = true
+  let events = 0
+  const listener = () => { events++ }
+  window.addEventListener(bs.SETTINGS_CHANGED, listener)
+  try {
+    await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'partial')
+    assert.equal(events, 1)
+    // A verified rollback leaves storage as it was: no event.
+    const clean = new FailingWrites(5); deviceSettings(clean); clean.armed = true
+    await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, clean), error => error.state === 'rolled-back')
+    assert.equal(events, 1)
+  } finally { window.removeEventListener(bs.SETTINGS_CHANGED, listener) }
+}))
+
+test('#453 S3: beforeWrite runs under the lock before put-back and discard change anything', async () => {
+  const make = async () => {
+    const storage = new FailingWrites(5, { failPutBack: true }); deviceSettings(storage); storage.armed = true
+    await assert.rejects(() => bs.restoreBackupSettingsV2(backedUpSettings(), ALL_SETTINGS, storage), error => error.state === 'partial')
+    storage.armed = false
+    return storage
+  }
+  const refuse = () => { throw new Error('caller changed') }
+  for (const run of [
+    (storage, raw, beforeWrite) => bs.restorePreviousSettings(storage, { expectedRaw: raw, beforeWrite }),
+    (storage, raw, beforeWrite) => bs.discardSettingsRecovery(raw, storage, { beforeWrite }),
+  ]) {
+    const storage = await make()
+    const raw = storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), before = [...storage.map]
+    await assert.rejects(() => run(storage, raw, refuse), /caller changed/)
+    assert.deepEqual([...storage.map], before, 'nothing changed when the recheck refuses')
+    let called = 0
+    await run(storage, raw, () => { called++; assert.deepEqual([...storage.map], before, 'runs before the first mutation') })
+    assert.equal(called, 1)
+    assert.equal(storage.getItem(bs.SETTINGS_RESTORE_SNAPSHOT_KEY), null)
+  }
+})
 
 test('menu export (download) is verified and recorded; Cloud V1 library keys are not touched', async () => {
   const storage = new MemoryStorage()
