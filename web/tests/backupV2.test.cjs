@@ -394,6 +394,26 @@ test('restore that does not read back correctly is not reported as success and l
   assert.equal(readPersistedLibrary().songs[0].id, 'cur')
 }))
 
+test('#453 D6: merge with a setlist changed on this device restores the rest, names the skipped setlist and still verifies', withJsdom(async ({ dom, root }) => {
+  const ref = (s, list, position) => ({ id: s.id, title: s.title, artist: s.artist, entryId: `entry:${list}:${position}`, position })
+  const list = (id, name, songs) => ({ id, name, createdAt: 1, songs: songs.map((s, i) => ref(s, id, i)) })
+  const device = { songs: [current], setlists: [list('l1', 'Renamed on device', [current])] }
+  persistLibrary(device)
+  const payload = JSON.parse(jb.buildVerifiedBackup([current, incoming], [list('l1', 'Gig', [current]), list('l2', 'New', [incoming])]).json)
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
+    isOpen: true, onClose: () => {}, allSongs: device.songs, setlists: device.setlists, onImportAllSongs: () => assert.fail('fallback'), onSmartMerge: appMerge(),
+  })))
+  await pick(dom, 'merge', payload)
+  const text = document.body.textContent
+  assert.doesNotMatch(text, /revision conflict|Failed to restore|could not be verified/)
+  assert.match(text, /Backup merged: 2 songs, 1 of 2 setlists \(verified after saving\)/)
+  assert.match(text, /Kept as it is on this device \(changed since the backup was made\): "Renamed on device"/)
+  const saved = readPersistedLibrary()
+  assert.deepEqual(saved.songs.map(s => s.id), ['cur', 'inc'])
+  assert.deepEqual(saved.setlists.map(l => [l.id, l.name]), [['l1', 'Renamed on device'], ['l2', 'New']])
+  assert.equal(JSON.parse(localStorage.getItem(jb.RESTORE_SNAPSHOT_KEY)).library.setlists[0].name, 'Renamed on device')
+}))
+
 test('merge aborts with zero library change when the safety snapshot cannot be saved', withJsdom(async ({ dom, root }) => {
   const storage = new QuotaStorage(10)
   let merged = false

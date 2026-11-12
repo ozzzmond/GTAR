@@ -268,6 +268,7 @@ New or renamed tests await a human choice of primary category.
 - [retiredLegacyShareAndSync453.test.cjs](retiredLegacyShareAndSync453.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
+- [setlistMergeConflictSkip.test.cjs](setlistMergeConflictSkip.test.cjs)
 - [setlistShareSwipe346.test.cjs](setlistShareSwipe346.test.cjs)
 - [setlistTrashAppWiring.test.cjs](setlistTrashAppWiring.test.cjs)
 - [setlistWorkspaceGtar1.test.cjs](setlistWorkspaceGtar1.test.cjs)
