@@ -143,3 +143,12 @@ ASSUMED (report template): For each case record NOT RUN / BLOCKED / PASS / FAIL,
 - OWNER_TESTED: served CSP permits only `http://*:1025/v1/status/slide`, `/v1/presentation/slide_index` and `/v1/presentation/active` for these ProPresenter reads, path-scoped on port 1025.
 - ASSUMED (slice 2 boundary): only the first two endpoints with exactly `?chunked=true` are used. To reconcile the exact URL allowlist with a one-shot connection test, the test cancels its GET after the initial object; it does not retain a test stream or introduce another URL. Normal feeds pause during the test. A host panel data/action seam fills slice 1's missing panel slot; it exposes no core events or control.
 - ASSUMED (unverified): control run without candidate CSP, installed Android PWA, several devices at once, church network, iOS/iPadOS, actual connector retry/permission/disable behavior and real presentation identity feed. Owner Android QA remains required; browser transport observations do not establish those results. Same-UUID text edits remain suppressed by the required tuple dedupe.
+
+
+## Version and owner QA addendum - 2026-11-12
+
+- OWNER_TESTED: 7.13 on E14 demo and church PC (owner-reported).
+- ASSUMED (owner-reported, not independently verified): the newest ProPresenter release is a later major version. Newer versions are untested; an upgrade requires re-running the Android test. The 7.13 installation on the church PC is not evidence of church-network or follower QA.
+- ASSUMED (primary QA plan): the owner's E14 with ProPresenter 7.13 demo; the demo watermark is irrelevant to the API. Test several simultaneous followers while slides change; tablet Wi-Fi off/on; ProPresenter close/reopen; PC sleep/wake; wrong IP and ProPresenter closed; last slide with empty next; switching presentations. All outcomes remain unverified until the owner reports.
+- ASSUMED (church-only smoke plan): before service, open `http://<church-PC-IP>:1025/v1/status/slide` in Chrome on a phone once. This checks the network path only; it does not establish HTTPS-page permissions, streaming or extension behavior. Church-only risks: Wi-Fi client isolation, firewall profile/inbound TCP 1025 rule, DHCP address changes.
+- ASSUMED (response contract): validate every slide object's current/next and string text/notes/uuid before accepting it; ignore unknown fields. An unexpected shape marks the last good state stale with status "Unexpected response from ProPresenter"; bounded retry remains local to the extension.

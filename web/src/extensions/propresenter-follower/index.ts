@@ -21,7 +21,7 @@ export class ObjectFrames {
     const frames: unknown[] = []
     for (const char of this.decoder.decode(bytes, { stream: true })) {
       if (!this.buffer && /\s/.test(char)) continue
-      if (!this.buffer && char !== '{') throw Error('Expected object')
+      if (!this.buffer && char !== '{') throw new UnexpectedResponse()
       this.buffer += char
       if (this.buffer.length > 1024 * 1024) throw Error('Frame too large')
       if (this.quoted) {
@@ -47,10 +47,27 @@ export class ObjectFrames {
 }
 type Slide = { uuid: string; text: string }
 export type Slides = { current: Slide; next: Slide }
+const unexpectedMessage = 'Unexpected response from ProPresenter'
+class UnexpectedResponse extends Error {
+  constructor() { super(unexpectedMessage) }
+}
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+function slide(value: unknown): Slide {
+  if (!record(value) || typeof value.text !== 'string' || typeof value.notes !== 'string' || typeof value.uuid !== 'string') throw new UnexpectedResponse()
+  // Project only displayed fields. Notes and unknown fields are not retained.
+  return { uuid: value.uuid, text: value.text }
+}
 function slides(value: unknown): Slides {
-  const data = value as Slides
-  if (!data || !data.current || !data.next || [data.current, data.next].some(slide => typeof slide.uuid !== 'string' || typeof slide.text !== 'string')) throw Error('Invalid slide state')
-  return { current: { uuid: data.current.uuid, text: data.current.text }, next: { uuid: data.next.uuid, text: data.next.text } }
+  if (!record(value)) throw new UnexpectedResponse()
+  return { current: slide(value.current), next: slide(value.next) }
+}
+function presentationName(value: unknown): string {
+  if (!record(value)) throw new UnexpectedResponse()
+  if (value.presentation === null) return ''
+  if (!record(value.presentation) || !record(value.presentation.presentation_id) || typeof value.presentation.presentation_id.name !== 'string') throw new UnexpectedResponse()
+  return value.presentation.presentation_id.name
 }
 export class SlideDedupe {
   private last?: readonly [string, string]
@@ -79,8 +96,10 @@ export function activate(ctx: ExtensionContext) {
   const readers = new Set<ReadableStreamDefaultReader<Uint8Array>>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const live = [false, false]
+  const unexpected = [false, false]
   const publish = () => ctx.setPanel({ fields: [
     { label: 'Status', value: status },
+    { label: 'Data state', value: displayed ? live.every(Boolean) && !unexpected.some(Boolean) ? 'Current' : 'Stale' : '' },
     { label: 'Host', value: String(ctx.settings.read().host) },
     { label: 'Presentation', value: presentation },
     { label: 'Current slide', value: displayed?.current.text ?? '' },
@@ -91,8 +110,9 @@ export function activate(ctx: ExtensionContext) {
   const cancel = (reader: ReadableStreamDefaultReader<Uint8Array>) => { void reader.cancel().catch(() => {}) }
   const current = (epoch: number) => !disposed && !page.hidden && generation === epoch
   const updateStatus = () => {
-    status = live.every(Boolean) ? 'Live' : 'Stale / Offline'
-    ctx.reportStatus(live.every(Boolean) ? 'active' : 'offline', status)
+    const healthy = live.every(Boolean) && !unexpected.some(Boolean)
+    status = unexpected.some(Boolean) ? unexpectedMessage : healthy ? 'Live' : 'Stale / Offline'
+    ctx.reportStatus(healthy ? 'active' : 'offline', status)
     publish()
   }
   async function testConnection() {
@@ -118,9 +138,17 @@ export function activate(ctx: ExtensionContext) {
         if (!current(epoch)) return
         if (part.done) throw Error('EOF')
         const frames = parser.push(part.value)
-        if (frames.length) { slides(frames[0]); testResult = 'Connected'; break }
+        if (frames.length) {
+          for (const frame of frames) slides(frame)
+          unexpected[0] = false; testResult = 'Connected'; break
+        }
       }
-    } catch { if (current(epoch)) testResult = `Cannot reach ProPresenter. ${hint}` }
+    } catch (error) {
+      if (current(epoch)) {
+        if (error instanceof UnexpectedResponse) { unexpected[0] = true; testResult = unexpectedMessage }
+        else testResult = `Cannot reach ProPresenter. ${hint}`
+      }
+    }
     finally {
       controller.abort()
       if (reader) { cancel(reader); readers.delete(reader) }
@@ -153,17 +181,17 @@ export function activate(ctx: ExtensionContext) {
               const state = slides(frame)
               if (dedupe.accept(state)) displayed = state
             } else {
-              const data = frame as { presentation: null | { presentation_id: { name: string } } }
-              if (!data || !('presentation' in data) || (data.presentation !== null && typeof data.presentation?.presentation_id?.name !== 'string')) throw Error('Invalid presentation')
-              presentation = data.presentation?.presentation_id.name ?? ''
+              presentation = presentationName(frame)
             }
             failures = 0
+            unexpected[index] = false
             live[index] = true
             updateStatus()
           }
         }
-      } catch {
+      } catch (error) {
         if (current(epoch)) {
+          if (error instanceof UnexpectedResponse) unexpected[index] = true
           live[index] = false
           updateStatus()
         }
@@ -195,13 +223,14 @@ export function activate(ctx: ExtensionContext) {
     pause()
     if (disposed) return
     if (page.hidden) { updateStatus(); return }
-    status = 'Connecting'
-    ctx.reportStatus('active', status)
+    status = unexpected.some(Boolean) ? unexpectedMessage : 'Connecting'
+    ctx.reportStatus(unexpected.some(Boolean) ? 'offline' : 'active', status)
     publish()
     feed(0, generation); feed(1, generation)
   }
   function settingsChanged() {
     displayed = undefined; presentation = ''; testResult = ''; dedupe = new SlideDedupe()
+    unexpected.fill(false)
     restart()
   }
   const unsubscribe = ctx.settings.subscribe(settingsChanged)

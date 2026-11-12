@@ -24,7 +24,7 @@ function property(t, object, key, value) {
   return { mock: { restore } }
 }
 const bytes = text => new TextEncoder().encode(text)
-const state = (a = '', b = '', text = a) => ({ current: { uuid: a, text }, next: { uuid: b, text: b } })
+const state = (a = '', b = '', text = a) => ({ current: { uuid: a, text, notes: '' }, next: { uuid: b, text: b, notes: '' } })
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 
 test('object framing: pretty multiline, multiple objects, arbitrary byte splits, UTF-8 and escaped braces', () => {
@@ -193,6 +193,68 @@ test('production disabled registry has zero load/network/timer/listener/storage-
   await host.start(); host.dispose()
   assert.deepEqual(effects, [])
   assert.equal(host.getSnapshot(entry.manifest.id).panel, undefined)
+})
+
+test('unknown response fields are ignored; every missing/wrong current/next text/notes/uuid becomes unexpected and stale without escaping to core', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] }); t.mock.method(Math, 'random', () => 0.5)
+  const f = fixture(t); await flush()
+  const good = state('A', '', 'last good')
+  good.extra = { arbitrary: ['ignored'] }; good.current.extra = { text: false }; good.next.extra = null
+  f.send(0, good); f.send(1, { presentation: { presentation_id: { name: 'Sunday', extra: 1 }, extra: false }, extra: [] }); await flush()
+  assert.equal(f.value('Status'), 'Live'); assert.equal(f.value('Current slide'), 'last good')
+  const invalid = [null, [], 'wrong root', 7, {}, { current: good.current }, { next: good.next }]
+  for (const side of ['current', 'next']) {
+    for (const value of [null, [], 'not object', false]) invalid.push({ ...good, [side]: value })
+    for (const key of ['text', 'notes', 'uuid']) {
+      const missing = structuredClone(good); delete missing[side][key]; invalid.push(missing)
+      for (const value of [null, 42, false, [], {}]) invalid.push({ ...good, [side]: { ...good[side], [key]: value } })
+    }
+  }
+  let activeStream = 0
+  for (const bad of invalid) {
+    f.send(activeStream, bad); await flush()
+    assert.equal(f.value('Status'), 'Unexpected response from ProPresenter', JSON.stringify(bad))
+    assert.equal(f.value('Data state'), 'Stale')
+    assert.equal(f.value('Current slide'), 'last good'); assert.equal(f.value('Next slide'), '')
+    assert.deepEqual(f.reports.at(-1), ['offline', 'Unexpected response from ProPresenter'])
+    assert.equal(f.requests[activeStream].options.signal.aborted, true)
+    // A healthy presentation feed must not erase the primary shape failure.
+    f.send(1, { presentation: { presentation_id: { name: 'Sunday' } } }); await flush()
+    assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
+    t.mock.timers.tick(1000); await flush(); activeStream = f.streams.length - 1
+    f.send(activeStream, { ...good, current: { ...good.current, text: 'same UUID edit stays deduped' } }); await flush()
+    assert.equal(f.value('Status'), 'Live'); assert.equal(f.value('Data state'), 'Current')
+    assert.equal(f.value('Current slide'), 'last good')
+  }
+})
+
+test('connection test validates all objects in a read and reports unexpected response while keeping stale text', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const f = fixture(t); await flush()
+  f.send(0, state('A', '', 'keep me')); f.send(1, { presentation: null }); await flush()
+  f.panel.actions[0].run(); await flush()
+  f.streams[2].enqueue(bytes(JSON.stringify(state()) + '\r\n' + JSON.stringify({ current: { text: 9 } }))); await flush()
+  assert.equal(f.value('Connection test'), 'Unexpected response from ProPresenter')
+  assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
+  assert.equal(f.value('Data state'), 'Stale'); assert.equal(f.value('Current slide'), 'keep me')
+  assert.equal(f.requests[2].options.signal.aborted, true)
+})
+
+test('presentation response shapes are guarded, extra fields ignored, and last good name retained on failure', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] }); t.mock.method(Math, 'random', () => 0.5)
+  const f = fixture(t); await flush()
+  f.send(0, state('A')); f.send(1, { presentation: { presentation_id: { name: 'Sunday', ignored: [] } }, ignored: {} }); await flush()
+  let activeStream = 1
+  for (const bad of [null, 42, [], {}, { presentation: [] }, { presentation: {} }, { presentation: { presentation_id: null } }, { presentation: { presentation_id: { name: 7 } } }]) {
+    f.send(activeStream, bad); await flush()
+    assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
+    assert.equal(f.value('Presentation'), 'Sunday'); assert.equal(f.value('Data state'), 'Stale')
+    t.mock.timers.tick(1000); await flush(); activeStream = f.streams.length - 1
+    f.send(activeStream, { presentation: { presentation_id: { name: 'Sunday' } } }); await flush()
+    assert.equal(f.value('Status'), 'Live')
+  }
+  f.send(activeStream, { presentation: null }); await flush()
+  assert.equal(f.value('Presentation'), '')
 })
 
 test('real follower panel in host row: default off, read-only port, current/next text, connection action and disable cleanup', async t => {
