@@ -41,80 +41,7 @@ test('ENTRY_POINT_PLACEMENT: Primary Lookup Metadata action is retired from edit
 })
 
 // 2. CANONICAL CHORDPRO METADATA EXTRACTION & INPUTS
-test('CANONICAL_METADATA_INPUTS: Lookup derives input from canonical structured ChordPro directives, sends no body/lyrics', () => {
-  const { parseChordProDirectives } = require(path.join(webDir, 'src/utils/chordProMetadata.ts'))
-  const { validateMetadataPayload } = require(path.join(webDir, 'functions/api/songbook/metadata.ts'))
-
-  // Hillsong United - Go canonical fixture
-  const sampleChordPro = `{title: Go}
-{artist: Hillsong United}
-{key: G}
-{tempo: 130 BPM}
-{time: 4/4}
-{year: 2011}
-
-{comment: Chorus 1}
-We're giving it [G]all away, away
-We're giving it [C]all to go Your way`
-
-  const parsed = parseChordProDirectives(sampleChordPro).metadata
-  assert.equal(parsed.title, 'Go')
-  assert.equal(parsed.artist, 'Hillsong United')
-  assert.equal(parsed.key, 'G')
-  assert.equal(parsed.tempo, '130 BPM')
-  assert.equal(parsed.time, '4/4')
-  assert.equal(parsed.year, '2011')
-
-  // Validation accepts extended fields
-  const validated = validateMetadataPayload({
-    title: parsed.title,
-    artist: parsed.artist,
-    currentKey: parsed.key,
-    tempo: parsed.tempo,
-    timeSignature: parsed.time,
-    year: parsed.year,
-  })
-  assert.equal(validated.isValid, true)
-  assert.equal(validated.data.title, 'Go')
-  assert.equal(validated.data.artist, 'Hillsong United')
-  assert.equal(validated.data.currentKey, 'G')
-  assert.equal(validated.data.tempo, '130 BPM')
-  assert.equal(validated.data.timeSignature, '4/4')
-  assert.equal(validated.data.year, '2011')
-
-  // Ensure body/lyrics are NEVER included in request payload
-  assert.equal(validated.data.rawContent, undefined)
-  assert.equal(validated.data.body, undefined)
-  assert.equal(validated.data.lyrics, undefined)
-})
-
 // 3. PROMPT SEMANTICS: CURRENT KEY VS ORIGINAL KEY & ZERO TRANSPOSE INSTRUCTIONS
-test('PROMPT_SEMANTICS: Prompt explicitly distinguishes current chart key from original key, instructs zero transposition', () => {
-  const { buildWorkersAiMetadataPrompt } = require(path.join(webDir, 'functions/api/songbook/metadata.ts'))
-
-  const prompt = buildWorkersAiMetadataPrompt('Go', 'Hillsong United', 'G', {
-    tempo: '130 BPM',
-    timeSignature: '4/4',
-    year: '2011',
-  })
-
-  // System prompt requirements
-  assert.ok(prompt.system.includes('metadata suggestion assistant'), 'System prompt identifies as metadata suggestion assistant')
-  assert.ok(prompt.system.includes('Do not alter chord charts'), 'System prompt prohibits chord chart alterations')
-  assert.ok(prompt.system.includes('Do not transpose anything'), 'System prompt prohibits transposition')
-
-  // User prompt requirements
-  assert.ok(prompt.user.includes('Title: "Go"'), 'User prompt contains Title')
-  assert.ok(prompt.user.includes('Artist: "Hillsong United"'), 'User prompt contains Artist')
-  assert.ok(prompt.user.includes('Current Chart Key: "G"'), 'User prompt identifies G as Current Chart Key')
-  assert.ok(prompt.user.includes('CURRENT/PERFORMANCE chart key, NOT necessarily the original recording key'), 'User prompt explicitly warns key is performance key')
-  assert.ok(prompt.user.includes('Existing Tempo Hint: "130 BPM"'), 'User prompt includes tempo hint')
-  assert.ok(prompt.user.includes('Existing Time Signature Hint: "4/4"'), 'User prompt includes time hint')
-  assert.ok(prompt.user.includes('Existing Release Year Hint: "2011"'), 'User prompt includes year hint')
-  assert.ok(prompt.user.includes('currentKey MUST NOT automatically be reported as originalKey'), 'Prompt forbids equating currentKey to originalKey')
-  assert.ok(prompt.user.includes('No Transposition / No Chords: Do not alter chord charts. Do not transpose anything'), 'Prompt re-asserts no transposition')
-})
-
 // 4. METADATA PREVIEW RETIREMENT & DIRECTIVE SYNCHRONIZATION PRESERVATION
 test('PREVIEW_UX_RETIREMENT_AND_DIRECTIVES: Suggestion Preview modal removed from editor while directive sync and transpose are preserved', () => {
   const editorSource = fs.readFileSync(path.join(webDir, 'src/components/DesktopEditor.tsx'), 'utf8')
@@ -156,13 +83,3 @@ test('PREVIEW_UX_RETIREMENT_AND_DIRECTIVES: Suggestion Preview modal removed fro
 })
 
 // 5. FAILURE & AMBIGUITY WORDING IN BACKEND API
-test('FAILURE_UX_WORDING: Backend API displays accurate suggestion-based failure wording without claiming external factual DB search', () => {
-  const { validateAndReconcileAiOutput } = require(path.join(webDir, 'functions/api/songbook/metadata.ts'))
-
-  // not_found from model returns "No confident metadata suggestion found"
-  const notFoundRes = validateAndReconcileAiOutput({
-    response: JSON.stringify({ status: 'not_found' }),
-  }, 'Obscure Unknown Track')
-  assert.equal(notFoundRes.status, 'not_found')
-  assert.ok(notFoundRes.error.includes('No confident metadata suggestion found'))
-})

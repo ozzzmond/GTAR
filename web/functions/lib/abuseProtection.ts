@@ -14,8 +14,6 @@ export const ABUSE_POLICIES = {
   'share-revoke': { limit: 30, windowMs: 60_000, identity: 'account' },
   'sync-read': { limit: 120, windowMs: 60_000, identity: 'account' },
   'sync-write': { limit: 60, windowMs: 60_000, identity: 'account' },
-  'metadata': { limit: 10, windowMs: 60_000, identity: 'account' },
-  'metadata-budget': { limit: 100, windowMs: 3_600_000, identity: 'account' },
   'ug-anonymous': { limit: 60, windowMs: 60_000, identity: 'anonymous' },
 } as const
 

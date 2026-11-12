@@ -19,7 +19,6 @@ const { validateTabUrl, ALLOWED_UG_HOSTS } = require('../src/utils/ugCore.ts')
 const ugSearch = require('../functions/api/ug-search.ts')
 const ugTab = require('../functions/api/ug-tab.ts')
 const songbookSync = require('../functions/api/songbook/sync.ts')
-const songbookMetadata = require('../functions/api/songbook/metadata.ts')
 
 const TEST_SECRET = 'dev2-test-auth-secret-minimum-32-characters-long'
 
@@ -133,7 +132,7 @@ test('EXTERNAL_URL_HARDENING: validateTabUrl enforces strict HTTPS and Ultimate 
   assert.equal(validateTabUrl(null).valid, false)
 })
 
-test('ERROR_DISCLOSURE: Proxy and AI metadata routes do not disclose internal stack, tokens or URLs', async () => {
+test('ERROR_DISCLOSURE: Proxy routes do not disclose internal stack, tokens or URLs', async () => {
   const previousFetch = global.fetch
   try {
     // 1. UG search throws unexpected internal network error with system paths/tokens
@@ -172,26 +171,6 @@ test('ERROR_DISCLOSURE: Proxy and AI metadata routes do not disclose internal st
       assert.ok(!JSON.stringify(tabJson).includes('/var/run/secrets'))
       assert.ok(!JSON.stringify(tabJson).includes('10.0.0.1'))
 
-      // 3. Workers AI metadata error sanitization
-      const failingAi = {
-        AI: {
-          async run() {
-            throw new Error('D1_ERROR: table users column secret_token /usr/local/app.ts leaked')
-          },
-        },
-      }
-      const aiReq = new Request('https://gtar.local/api/songbook/metadata', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Creep' }),
-      })
-      const aiRes = await songbookMetadata.onRequestPost({ request: aiReq, env: failingAi })
-      assert.equal(aiRes.status, 500)
-      const aiJson = await aiRes.json()
-      assert.equal(aiJson.success, false)
-      assert.equal(aiJson.error, 'Workers AI execution failed: Inference service error')
-      assert.ok(!JSON.stringify(aiJson).includes('secret_token'))
-      assert.ok(!JSON.stringify(aiJson).includes('/usr/local'))
     } finally {
       authCore.authenticateUserRequest = originalAuth
     }
@@ -200,22 +179,3 @@ test('ERROR_DISCLOSURE: Proxy and AI metadata routes do not disclose internal st
   }
 })
 
-test('REQUEST_SIZE_BOUNDING: Streaming and byte-level limits enforced across endpoints', async () => {
-  const authCore = require('../functions/lib/authCore.ts')
-  const originalAuth = authCore.authenticateUserRequest
-  authCore.authenticateUserRequest = async () => ({ user: { id: 'usr_test', role: 'member', access_status: 'active' } })
-
-  try {
-    // 1. Songbook metadata size boundary (MAX_METADATA_PAYLOAD_BYTES = 64KB)
-    assert.equal(songbookMetadata.MAX_METADATA_PAYLOAD_BYTES, 64 * 1024)
-    const overLimitMeta = new Request('https://gtar.local/api/songbook/metadata', {
-      method: 'POST',
-      headers: { 'content-length': String(64 * 1024 + 1), 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'A' }),
-    })
-    const metaRes = await songbookMetadata.onRequestPost({ request: overLimitMeta, env: { AI: {} } })
-    assert.equal(metaRes.status, 413)
-  } finally {
-    authCore.authenticateUserRequest = originalAuth
-  }
-})
