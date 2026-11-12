@@ -9,6 +9,11 @@ const { resolveReleaseIdentity, resolveDevIdentity, CANONICAL_REPOSITORY } = req
 const controller = require('../../.github/prod_controller.cjs')
 const root = path.resolve(__dirname, '../..')
 
+test('zero base is rejected in minor-0 DEV tags and accepted in minor-1 DEV tags', () => {
+  assert.throws(() => parseDevTag('v1.0.0-dev.1'), /Invalid canonical DEV tag/)
+  assert.equal(parseDevTag('v1.1.0-dev.1').tag, 'v1.1.0-dev.1')
+})
+
 test('R2 is exactly one provisional tag; historical and subsequent formulas stay distinct', () => {
   for (const [tag, prod, next] of [
     ['v1.0.145-dev.2', 'v1.1.147', 'v1.0.147-dev.1'],
@@ -25,7 +30,7 @@ test('R2 is exactly one provisional tag; historical and subsequent formulas stay
 })
 
 test('strict canonical syntax, safe arithmetic, numeric ordering', () => {
-  for (const tag of ['v1.1.00-dev.1', 'v1.1.1-dev.01', 'v1.1.0-dev.0',
+  for (const tag of ['v1.0.0-dev.1', 'v1.1.00-dev.1', 'v1.1.1-dev.01', 'v1.1.0-dev.0',
     'v1.1.-1-dev.1', 'v1.1.0-dev.1A', 'v1.1.0-dev.1aa', 'v1.1.0-dev.1\n',
     'v1.1.0-dev.1\r', 'v1.2.0-dev.1', 'v1.1.9007199254740991-dev.1',
     'v1.1.0-dev.9007199254740992', 'v1.0.9007199254740992-dev.1']) assert.throws(() => parseDevTag(tag), tag)

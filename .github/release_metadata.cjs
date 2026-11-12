@@ -14,6 +14,7 @@ function parseDevTag(tag) {
   const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.([1-9]\d*)$/.exec(tag)
   if (!match || match[0] !== tag) throw new Error('Invalid canonical DEV tag')
   const minor = Number(match[1]), base = Number(match[2]), iteration = Number(match[3])
+  if (minor === 0 && base === 0) throw new Error('Invalid canonical DEV tag')
   if (!Number.isSafeInteger(base) || !Number.isSafeInteger(iteration) || !Number.isSafeInteger(base + iteration)) throw new Error('Unsafe canonical version arithmetic')
   const patch = base + iteration
   const r2 = tag === R2_CHECKPOINT.tag

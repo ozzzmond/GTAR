@@ -1,7 +1,7 @@
 # GTAR GitHub preview contract
 
 GitHub tags are the version source of truth. Canonical DEV tags are
-`v1.0.<nonnegative-base>-dev.<positive-iteration>`
+`v1.0.<positive-base>-dev.<positive-iteration>`
 (historical scheme) and `v1.1.<nonnegative-base>-dev.<positive-iteration>`
 (R2 scheme; base zero is valid).
 Neither numeric component may contain leading zeroes. Only numeric DEV tags are accepted. Production tags are rejected by preview validation.

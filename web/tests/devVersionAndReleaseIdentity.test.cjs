@@ -164,6 +164,7 @@ test('STEP_6.6: PROD tag identity and arithmetic: v1.0.130-dev.3 -> v1.1.133', (
   assert.equal(p3.prodTag, 'v1.1.133')
   assert.equal(p3.nextDevTag, 'v1.0.133-dev.1')
 
+  assert.throws(() => parseDevTag('v1.0.0-dev.1'))
   assert.throws(() => parseDevTag('v1.0.130-dev.0'))
   assert.throws(() => parseDevTag('v1.0.0130-dev.1'))
   assert.throws(() => parseDevTag('v1.1.130'))
