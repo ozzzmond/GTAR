@@ -435,7 +435,7 @@ test('10. USER_ROLE_AND_STATUS_CHANGES: Account pending or denied denies access 
   assert.equal(res.status, 403)
 })
 
-test('11. ACCOUNT_DENIAL_AND_RESTORATION: Denying user revokes sessions, restoring does not resurrect', async () => {
+test('11. ACCOUNT_DENIAL_AND_RESTORATION: Revoked sessions of a denied user are not resurrected by restoring the account', async () => {
   const { sqlite, db } = createTestSqliteDb()
   const user = await seedUser(sqlite, { id: 'usr_deny_restore', access_status: 'active' })
   const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
@@ -455,9 +455,10 @@ test('11. ACCOUNT_DENIAL_AND_RESTORATION: Denying user revokes sessions, restori
   const res1 = await authCore.authenticateUserRequest(req1, env)
   assert.equal(res1.user?.id, user.id)
 
-  // Admin denies user
+  // Account denied in D1 with its sessions revoked (the admin helper was removed, #453; revocation is the kept primitive)
   const nowIso = new Date().toISOString()
-  await authCore.updateUserAccessStatus(db, user.id, 'denied', nowIso)
+  assert.equal(await authCore.revokeAllUserSessions(db, user.id, nowIso), true)
+  sqlite.prepare(`UPDATE users SET access_status = 'denied' WHERE id = ?`).run(user.id)
 
   // Verify session 1 is marked revoked in D1
   const sessRow = sqlite.prepare('SELECT * FROM sessions WHERE session_token_hash = ?').get(tokenHash1)
@@ -467,8 +468,8 @@ test('11. ACCOUNT_DENIAL_AND_RESTORATION: Denying user revokes sessions, restori
   const resDeny = await authCore.authenticateUserRequest(req1, env)
   assert.ok(resDeny.status === 401 || resDeny.status === 403)
 
-  // Admin restores user to active
-  await authCore.updateUserAccessStatus(db, user.id, 'active', new Date().toISOString())
+  // Account restored to active in D1
+  sqlite.prepare(`UPDATE users SET access_status = 'active' WHERE id = ?`).run(user.id)
 
   // Token1 must NOT be resurrected!
   const resAfterRestore = await authCore.authenticateUserRequest(req1, env)
@@ -617,50 +618,6 @@ test('16. GOOGLE_ID_TOKEN_FALLBACK: Revoked session does not fall back to Google
   const googleRes = await authCore.authenticateUserRequest(googleReq, env)
   // Rejected because token issued prior to revocation
   assert.ok(googleRes.status === 401)
-})
-
-test('17. ADMIN_AUTHORIZATION: Admin endpoint enforces session revocation and admin role', async () => {
-  const { sqlite, db } = createTestSqliteDb()
-  const adminUser = await seedUser(sqlite, { id: 'usr_admin', role: 'admin' })
-  const memberUser = await seedUser(sqlite, { id: 'usr_member', role: 'member' })
-  const env = { DB: db, AUTH_SECRET: TEST_SECRET, TEST_MOCK_AUTH: 'true' }
-
-  // Admin token
-  const adminToken = await authCore.createSessionToken(adminUser, TEST_SECRET, 3600000, 'sid_admin')
-  const adminHash = createHash('sha256').update(adminToken).digest('hex')
-  await authCore.createSessionRecord(db, {
-    id: 'sid_admin',
-    user_id: adminUser.id,
-    session_token_hash: adminHash,
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 86400 * 1000).toISOString(),
-  })
-
-  // Member token
-  const memberToken = await authCore.createSessionToken(memberUser, TEST_SECRET, 3600000, 'sid_member')
-  const memberHash = createHash('sha256').update(memberToken).digest('hex')
-  await authCore.createSessionRecord(db, {
-    id: 'sid_member',
-    user_id: memberUser.id,
-    session_token_hash: memberHash,
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 86400 * 1000).toISOString(),
-  })
-
-  // Admin access succeeds
-  const reqAdmin = new Request('http://localhost/api/admin/users', { headers: { Authorization: `Bearer ${adminToken}` } })
-  const resAdmin = await authCore.authenticateAdminRequest(reqAdmin, env)
-  assert.equal(resAdmin.user?.id, adminUser.id)
-
-  // Member access gets 403 Forbidden
-  const reqMember = new Request('http://localhost/api/admin/users', { headers: { Authorization: `Bearer ${memberToken}` } })
-  const resMember = await authCore.authenticateAdminRequest(reqMember, env)
-  assert.equal(resMember.status, 403)
-
-  // Revoked admin gets 401
-  await authCore.revokeSessionByTokenHash(db, adminHash, new Date().toISOString())
-  const resRevokedAdmin = await authCore.authenticateAdminRequest(reqAdmin, env)
-  assert.equal(resRevokedAdmin.status, 401)
 })
 
 test('20. RATE_LIMITING_AND_RETRY_AFTER: session-revoke rate limiting returns 429 with Retry-After', async () => {
@@ -1538,9 +1495,6 @@ test('33. REGRESSION_HOTFIX_GOOGLE_ID_TOKEN_IAT_PROPAGATION_AND_FAIL_CLOSED_REVO
   const userAuthOk = await authCore.authenticateUserRequest(dummyReq, env)
   assert.equal(userAuthOk.user?.id, user.id, 'Post-revocation Google ID token must pass authenticateUserRequest')
 
-  const adminAuthOk = await authCore.authenticateAdminRequest(dummyReq, env)
-  assert.equal(adminAuthOk.user?.id, user.id, 'Post-revocation Google ID token must pass authenticateAdminRequest')
-
   const sessionGetOk = await sessionApi.onRequestGet({ request: dummyReq, env })
   assert.equal(sessionGetOk.status, 200, 'Post-revocation Google ID token must pass GET /api/auth/session')
 
@@ -1551,7 +1505,6 @@ test('33. REGRESSION_HOTFIX_GOOGLE_ID_TOKEN_IAT_PROPAGATION_AND_FAIL_CLOSED_REVO
     headers: { Authorization: `Bearer ${staleToken}` },
   })
   assert.equal((await authCore.authenticateUserRequest(staleReq, env)).status, 401)
-  assert.equal((await authCore.authenticateAdminRequest(staleReq, env)).status, 401)
   assert.equal((await sessionApi.onRequestGet({ request: staleReq, env })).status, 401)
 
   // 3. Missing iat when sessions_revoked_at is set -> fails closed with 401
@@ -1560,7 +1513,6 @@ test('33. REGRESSION_HOTFIX_GOOGLE_ID_TOKEN_IAT_PROPAGATION_AND_FAIL_CLOSED_REVO
     headers: { Authorization: `Bearer ${missingIatToken}` },
   })
   assert.equal((await authCore.authenticateUserRequest(missingIatReq, env)).status, 401)
-  assert.equal((await authCore.authenticateAdminRequest(missingIatReq, env)).status, 401)
   assert.equal((await sessionApi.onRequestGet({ request: missingIatReq, env })).status, 401)
 
   // 4. Malformed or future iat -> fails closed with 401

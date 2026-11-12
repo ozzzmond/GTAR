@@ -48,8 +48,9 @@ from frontend Vite variables:
 - `BOOTSTRAP_ADMIN_GOOGLE_SUB` or `BOOTSTRAP_ADMIN_EMAIL`: explicitly identify the
   intended first administrator on the server. First-login-wins is not supported.
   Other registrations start pending. The in-app Manage Users screen and the
-  `/api/admin/*` approval endpoints were retired (#453); the server-side admin
-  gate (`authenticateAdminRequest`) and account status handling remain.
+  `/api/admin/*` approval endpoints were retired (#453), and so were the
+  server-side admin helpers. Accounts are approved or denied in D1 directly
+  (`users.access_status`); the account gate checks that status on every request.
 
 Wrangler supports a local `.dev.vars` file for bindings/secrets. `.dev.vars` and
 `.dev.vars.*` are repository-ignored by `web/.gitignore`. Real secret values must

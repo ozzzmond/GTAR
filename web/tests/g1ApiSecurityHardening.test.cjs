@@ -128,26 +128,25 @@ test('S1_FIELD_TYPE_VALIDATION: Rejection of invalid field types for sensitive a
 
 })
 
-test('AUTH_AND_PERMISSIONS: Administrative authorization gate intact', async () => {
-  const admin = { id: 'admin-auth', google_sub: 'sub-admin-auth', email: 'admin@gtar.app', role: 'admin', access_status: 'active' }
+test('AUTH_AND_PERMISSIONS: Account authorization gate intact', async () => {
   const member = { id: 'member-auth', google_sub: 'sub-member-auth', email: 'member@gtar.app', role: 'member', access_status: 'active' }
   const pending = { id: 'pending-auth', google_sub: 'sub-pending-auth', email: 'pending@gtar.app', role: 'member', access_status: 'pending' }
+  const denied = { id: 'denied-auth', google_sub: 'sub-denied-auth', email: 'denied@gtar.app', role: 'member', access_status: 'denied' }
 
-  const db = createMockDb([admin, member, pending])
+  const db = createMockDb([member, pending, denied])
   const env = { DB: db, AUTH_SECRET: TEST_SECRET }
-  const gate = token => authCore.authenticateAdminRequest(new Request('https://gtar.local/api/admin/action', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ userId: 'target-user' }),
+  // The admin gate was removed with its last callers (#453); the account gate is the remaining authority.
+  const gate = token => authCore.authenticateUserRequest(new Request('https://gtar.local/api/auth/session', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   }), env)
 
   // 1. Missing Authorization header -> 401
   assert.equal((await gate(null)).status, 401)
-  // 2. Member caller -> 403 Forbidden
-  assert.equal((await gate(await authCore.createSessionToken(member, TEST_SECRET))).status, 403)
-  // 3. Pending caller -> 403 Forbidden
+  // 2. Pending caller -> 403 Forbidden
   assert.equal((await gate(await authCore.createSessionToken(pending, TEST_SECRET))).status, 403)
-  // 4. Active admin -> authorized against the D1 record
-  assert.equal((await gate(await authCore.createSessionToken(admin, TEST_SECRET))).user?.id, admin.id)
+  // 3. Denied caller -> 403 Forbidden
+  assert.equal((await gate(await authCore.createSessionToken(denied, TEST_SECRET))).status, 403)
+  // 4. Active member -> authorized against the D1 record
+  assert.equal((await gate(await authCore.createSessionToken(member, TEST_SECRET))).user?.id, member.id)
 })
 

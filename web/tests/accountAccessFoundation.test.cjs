@@ -42,13 +42,10 @@ const {
   isBootstrapAdmin,
   createSessionToken,
   verifySessionToken,
-  authenticateAdminRequest,
+  authenticateUserRequest,
   insertUser,
   findUserByGoogleSub,
   findUserById,
-  updateUserAccessStatus,
-  getPendingUsersCount,
-  listAllUsers,
 } = require('../functions/lib/authCore.ts')
 
 const sessionFunction = require('../functions/api/auth/session.ts')
@@ -396,95 +393,6 @@ test('TARGETED: DENIED_ACCESS renders access denied state and blocks app access'
   }
 })
 
-// 6. TARGETED: ADMIN_APPROVE_DENY
-test('TARGETED: ADMIN_APPROVE_DENY account status transitions approve, deny, and restore users', async () => {
-  const db = createMockD1()
-  const env = {
-    DB: db,
-    AUTH_SECRET: 'test-secret',
-  }
-
-  // Populate admin and pending member in D1
-  const adminUser = {
-    id: 'admin-1',
-    google_sub: 'sub-admin',
-    email: 'admin@gtar.app',
-    display_name: 'Admin',
-    picture_url: null,
-    role: 'admin',
-    access_status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_login_at: new Date().toISOString(),
-  }
-  const pendingUser = {
-    id: 'user-pending-1',
-    google_sub: 'sub-pending-1',
-    email: 'newbie@gtar.app',
-    display_name: 'Newbie',
-    picture_url: null,
-    role: 'member',
-    access_status: 'pending',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_login_at: new Date().toISOString(),
-  }
-  await insertUser(db, adminUser)
-  await insertUser(db, pendingUser)
-
-  // The admin HTTP endpoints were retired (#453); the account state transitions remain.
-  const nowIso = new Date().toISOString()
-
-  // 1. Approve pending user
-  assert.equal(await updateUserAccessStatus(db, 'user-pending-1', 'active', nowIso), true)
-  const afterApprove = await findUserById(db, 'user-pending-1')
-  assert.equal(afterApprove.access_status, 'active')
-  assert.equal(afterApprove.role, 'member') // Role escalation forbidden
-
-  // 2. Deny active user
-  assert.equal(await updateUserAccessStatus(db, 'user-pending-1', 'denied', nowIso), true)
-  assert.equal((await findUserById(db, 'user-pending-1')).access_status, 'denied')
-
-  // 3. Restore denied user
-  assert.equal(await updateUserAccessStatus(db, 'user-pending-1', 'active', nowIso), true)
-  assert.equal((await findUserById(db, 'user-pending-1')).access_status, 'active')
-})
-
-// 7. TARGETED: NON_ADMIN_ADMIN_API_REJECTION
-test('TARGETED: NON_ADMIN_ADMIN_API_REJECTION non-admin or unauthenticated callers rejected', async () => {
-  const db = createMockD1()
-  const env = {
-    DB: db,
-    AUTH_SECRET: 'test-secret',
-  }
-
-  const memberUser = {
-    id: 'member-1',
-    google_sub: 'sub-member',
-    email: 'member@gtar.app',
-    display_name: 'Member',
-    picture_url: null,
-    role: 'member',
-    access_status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    last_login_at: new Date().toISOString(),
-  }
-  await insertUser(db, memberUser)
-  const memberToken = await createSessionToken(memberUser, env.AUTH_SECRET)
-
-  // 1. Unauthenticated request -> 401
-  const reqUnauth = new Request('http://localhost/api/admin/users', { method: 'GET' })
-  assert.equal((await authenticateAdminRequest(reqUnauth, env)).status, 401)
-
-  // 2. Member request to the admin gate -> 403 Forbidden
-  const reqMember = new Request('http://localhost/api/admin/users', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${memberToken}` },
-  })
-  assert.equal((await authenticateAdminRequest(reqMember, env)).status, 403)
-})
-
 // 8. TARGETED: PENDING_STATUS_CHECK
 test('TARGETED: PENDING_STATUS_CHECK returns pending state and transitions to active when approved', async () => {
   const db = createMockD1()
@@ -518,8 +426,8 @@ test('TARGETED: PENDING_STATUS_CHECK returns pending state and transitions to ac
   const data1 = await res1.json()
   assert.equal(data1.user.access_status, 'pending')
 
-  // Update in D1 to active
-  await updateUserAccessStatus(db, 'user-check-1', 'active', new Date().toISOString())
+  // Update in D1 to active (accounts are approved in D1 directly since the admin helpers were removed, #453)
+  await db.prepare(`UPDATE users SET access_status = ?, updated_at = ? WHERE id = ?`).bind('active', new Date().toISOString(), 'user-check-1').run()
 
   // Status check after approval
   const res2 = await sessionFunction.onRequestGet({ request: req1, env })
@@ -659,11 +567,11 @@ test('TARGETED: LOOPBACK_DEV_BYPASS_CONTAINMENT strictly confined to dev loopbac
   // Dev bypass does not generate a signed D1 server token
   const db = createMockD1()
   const env = { DB: db, AUTH_SECRET: 'test-secret' }
-  const reqBypass = new Request('http://localhost/api/admin/users', {
+  const reqBypass = new Request('http://localhost/api/auth/session', {
     method: 'GET',
     headers: { Authorization: 'Bearer dev_bypass_token' },
   })
-  return authenticateAdminRequest(reqBypass, env).then((res) => {
+  return authenticateUserRequest(reqBypass, env).then((res) => {
     assert.equal(res.status, 401)
   })
 })
