@@ -21,7 +21,7 @@
     "lint:sync": "eslint src/utils/syncMerge.ts src/utils/syncJournal.ts src/utils/jsonBackup.ts src/utils/setlistSongs.ts src/utils/backupSettings.ts src/utils/stagePerformance.ts src/utils/googleAuth.ts src/utils/authPolicy.ts src/utils/bandSyncAddress.ts src/utils/songbookFoundation.ts src/utils/uuid.ts --max-warnings 0"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "chordsheetjs": "^18.0.0",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.64.0",
