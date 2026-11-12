@@ -132,19 +132,34 @@ test('import-as-new carries folders and retains unmatched legacy shortcuts', () 
   assert.equal(result.folders[1].parentId,result.folders[0].id)
 })
 
-test('legacy binding trims case, prefers unique artist matches, and never guesses ambiguous titles', () => {
+test('legacy binding trims case, requires the named artist to match, and never guesses ambiguous titles', () => {
  const {bindLegacySetlists}=require('../src/utils/setlistSongs.ts')
  const songs=[{id:'a',title:'  Same ',artist:' Artist A '},{id:'b',title:'same',artist:'Artist B'},{id:'u',title:' Unique ',artist:'C'}]
  const input=[{id:'legacy-rules',name:'Legacy',songs:[{title:'SAME'},{title:' same ',artist:' artist b '},{title:'UNIQUE',artist:'old label'},{title:'missing'},{id:'absent',title:'Unique'}]}]
  const result=bindLegacySetlists(input,songs)
  assert.match(result[0].songs[0].id,/^missing:/)
  assert.equal(result[0].songs[1].id,'b')
- assert.equal(result[0].songs[2].id,'u')
+ assert.match(result[0].songs[2].id,/^missing:/,'#453 D3: a named artist that differs never binds by title alone')
  assert.match(result[0].songs[3].id,/^missing:/)
  assert.equal(result[0].songs[4].id,'absent','explicit IDs remain authoritative')
  assert.deepEqual(bindLegacySetlists(result,songs),result)
  const duplicateArtist=bindLegacySetlists([{id:'d',name:'D',songs:[{title:'same',artist:'artist a'}]}],[songs[0],{...songs[0],id:'duplicate'}])
  assert.match(duplicateArtist[0].songs[0].id,/^missing:/)
+})
+test('#453 D3: an ID-less {title, artist} reference binds only to that artist and otherwise stays a broken shortcut', () => {
+ const {bindLegacySetlists,resolveSetlistSong,validateSetlistReferences}=require('../src/utils/setlistSongs.ts')
+ const songs=[{id:'cover',title:'Hallelujah',artist:'Jeff Buckley'},{id:'solo',title:'Solo',artist:''}]
+ const refs=[{title:'Hallelujah',artist:'Leonard Cohen'},{title:' hallelujah ',artist:'JEFF BUCKLEY'},{title:'Hallelujah'},{title:'Hallelujah',artist:'  '},{title:'Solo',artist:'Someone'}]
+ const [bound]=bindLegacySetlists([{id:'l',name:'L',songs:refs}],songs)
+ assert.equal(bound.songs[0].id,'missing:entry:l:0','different artist follows the dangling-reference path')
+ assert.equal(bound.songs[0].title,'Hallelujah');assert.equal(bound.songs[0].artist,'Leonard Cohen')
+ assert.equal(bound.songs[1].id,'cover')
+ assert.equal(bound.songs[2].id,'cover','no artist named: unique title still binds')
+ assert.equal(bound.songs[3].id,'cover','blank artist counts as not named')
+ assert.match(bound.songs[4].id,/^missing:/,'named artist never binds to a song without one')
+ refs.forEach((ref,i)=>assert.equal(resolveSetlistSong(ref,songs)?.id,/^missing:/.test(bound.songs[i].id)?undefined:bound.songs[i].id,`bind and resolve agree for ref ${i}`))
+ assert.equal(validateSetlistReferences([bound],songs).length,2)
+ assert.deepEqual(bindLegacySetlists([bound],songs),[bound])
 })
 test('B3 partial library saves that omit folders retain folder records and order; explicit [] clears them',async()=>{
  const storage=h.freshStorage(),factory=new h.Factory(),tab=h.newTab()
