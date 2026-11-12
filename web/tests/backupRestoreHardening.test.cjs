@@ -810,3 +810,46 @@ test('#453 merge keeps saved capo, bpm, format and transposeOffset when the file
   assert.deepEqual({ capo: added.songs[0].capo, bpm: added.songs[0].bpm, format: added.songs[0].format, transposeOffset: added.songs[0].transposeOffset },
     { capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 0 })
 })
+
+// #453 D2 (completeness): the saved CHART_KEY and artist follow the same rule. Without it a file
+// that omits `key` replaced the saved CHART_KEY with one detected from the chart, which silently
+// changes PERFORMANCE_KEY (CHART_KEY plus the kept TRANSPOSE_OFFSET).
+test('#453 merge keeps the saved CHART_KEY and artist when the file omits them', () => {
+  const chart = '[G]la [C]la [D]la [G]la'
+  const device = [{ id: 'a', title: 'Song', artist: 'Artist', key: 'A', originalKey: 'A', capo: '', bpm: '120', format: 'CHORD_PRO', transposeOffset: 3, rawContent: chart }]
+  const file = fields => JSON.stringify({ songs: [{ id: 'a', title: 'Song', rawContent: chart, ...fields }], setlists: [] })
+
+  const partial = parseBackupJson(file({}), { mode: 'merge', existingSongs: device })
+  assert.equal(partial.isValid, true, partial.error)
+  const merged = mergeBackupLibrary(device, partial.songs, partial.setlists).songs[0]
+  assert.deepEqual({ key: merged.key, artist: merged.artist, originalKey: merged.originalKey, transposeOffset: merged.transposeOffset },
+    { key: 'A', artist: 'Artist', originalKey: 'A', transposeOffset: 3 })
+
+  // A key or artist the file states wins, including an explicitly empty one.
+  const explicit = parseBackupJson(file({ key: 'G', artist: '' }), { mode: 'merge', existingSongs: device })
+  const updated = mergeBackupLibrary(device, explicit.songs, explicit.setlists).songs[0]
+  assert.deepEqual({ key: updated.key, artist: updated.artist }, { key: 'G', artist: '' })
+
+  // Replace and new songs still take the key detected from the chart.
+  assert.equal(parseBackupJson(file({})).songs[0].key, 'G')
+  const added = parseBackupJson(file({}).replace('"id":"a"', '"id":"b"'), { mode: 'merge', existingSongs: device })
+  assert.deepEqual({ key: added.songs[0].key, artist: added.songs[0].artist }, { key: 'G', artist: '' })
+})
+
+// #453 D2 (completeness): songs are matched by ID only. A song without an ID in the file is never
+// matched to a device song by title and artist: merge refuses it, and Import as New adds a copy.
+test('#453 a song without an ID never updates the device song with the same title and artist', () => {
+  const { previewBackupImport, confirmImportAsNew } = require('../src/utils/legacyImport.ts')
+  const device = [{ id: 'a', title: 'Song', artist: 'Artist', key: 'A', capo: '2', bpm: '90', format: 'CHORD_PRO', transposeOffset: 3, rawContent: '[A]saved' }]
+  const raw = JSON.stringify({ songs: [{ title: 'Song', artist: 'Artist', rawContent: '[G]from file' }], setlists: [] })
+  const strict = parseBackupJson(raw, { mode: 'merge', existingSongs: device })
+  assert.equal(strict.isValid, false)
+  assert.match(strict.error, /Stable ID required/)
+  const preview = previewBackupImport(raw, { mode: 'merge', existingSongs: device })
+  assert.equal(preview.importAsNew, true)
+  const imported = confirmImportAsNew(preview, { songs: device, setlists: [] }, () => true)
+  const merged = mergeBackupLibrary(device, imported.songs, imported.setlists).songs
+  assert.equal(merged.length, 2, 'added as a new song')
+  assert.deepEqual(merged[0], device[0], 'the device song is unchanged')
+  assert.notEqual(merged[1].id, 'a')
+})
