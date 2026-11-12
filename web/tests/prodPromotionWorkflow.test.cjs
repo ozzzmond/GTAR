@@ -8,7 +8,7 @@ const { execFileSync, spawnSync } = require('node:child_process')
 const root = path.resolve(__dirname, '../..')
 const C = require('../../.github/prod_controller.cjs')
 const { parseDevTag, inspectCheckpoint } = require('../../.github/release_metadata.cjs')
-const { resolveReleaseIdentity } = require('../../.github/release_identity.cjs')
+const { resolveReleaseIdentity, CANONICAL_REPOSITORY } = require('../../.github/release_identity.cjs')
 const yaml = readSource(path.join(root, '.github/workflows/release.yml'))
 function fixture(t, tag = 'v1.0.108-dev.11') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-prod-'))
@@ -17,7 +17,7 @@ function fixture(t, tag = 'v1.0.108-dev.11') {
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim()
   const put = (file, data) => { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), data) }
   git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com')
-  for (const file of ['release_metadata.cjs', 'release_identity.cjs']) put(`.github/${file}`, fs.readFileSync(path.join(root, '.github', file)))
+  for (const file of ['release_metadata.cjs', 'release_identity.cjs', 'release_repository.cjs']) put(`.github/${file}`, fs.readFileSync(path.join(root, '.github', file)))
   put('web/package.json', '{"version":"1.1.62"}')
   put('web/vite.config.ts', 'resolveReleaseIdentity')
   put('web/src/types/gtar.ts', 'typeof __GTAR_PROD_VERSION__')
@@ -42,7 +42,7 @@ const project = () => ({ id: 'project-id', name: 'gtar-web', production_branch: 
 const deployment = sha => ({ id: 'deployment-id', project_id: 'project-id', project_name: 'gtar-web', environment: 'production', source: { type: 'github', config: { owner: 'ozzzmond', repo_name: 'GTAR' } }, deployment_trigger: { type: 'github:push', metadata: { branch: 'main', commit_hash: sha, commit_dirty: false } }, created_on: '2026-10-04T01:01:00Z', is_skipped: false, latest_stage: { name: 'deploy', status: 'success' } })
 test('shared parser retains version policy, safe arithmetic, suffix rejection', () => {
   assert.equal(parseDevTag('v1.0.108-dev.10').prodTag, 'v1.1.118')
-  assert.equal(parseDevTag('v1.0.108-dev.10a').promotable, false)
+  assert.throws(() => parseDevTag('v1.0.108-dev.10a'), /Invalid canonical DEV/)
   for (const t of ['v1.0.0108-dev.1', 'v1.0.108-dev.0', 'v1.0.9007199254740991-dev.1', 'v1.0.108-dev.1\n']) assert.throws(() => parseDevTag(t))
 })
 test('valid exact-source plan is read-only and ignores legacy tags', t => {
@@ -67,8 +67,8 @@ test('exact tag, full SHA, dispatch context, dev drift, suffix/latest and collis
   assert.throws(() => C.plan(f.repo, 'missing', f.sha, 'refs/heads/main', f.mainSha))
   assert.throws(() => C.plan(f.repo, f.tag, f.sha, 'refs/heads/dev', f.mainSha))
   assert.throws(() => C.plan(f.repo, f.tag, f.sha, 'refs/heads/main', f.sha), /Controller\/main/)
-  f.git('tag', `${f.tag}a`); assert.throws(f.plan, /latest canonical/)
-  assert.throws(() => C.plan(f.repo, `${f.tag}a`, f.sha, 'refs/heads/main', f.mainSha), /Lettered/)
+  f.git('tag', `${f.tag}a`); assert.equal(f.plan().tag, f.tag)
+  assert.throws(() => C.plan(f.repo, `${f.tag}a`, f.sha, 'refs/heads/main', f.mainSha), /Invalid canonical DEV/)
   f.git('tag', 'v1.1.119'); assert.throws(f.plan)
   f.git('update-ref', 'refs/remotes/origin/dev', f.mainSha); assert.throws(f.plan, /dev tip/)
 })
@@ -126,6 +126,47 @@ test('Cloudflare proof rejects preview, generic success, old/short SHA, wrong pr
   const p = project(); p.canonical_deployment.id = 'other'; assert.throws(() => C.deploymentProof(p, deployment(sha), sha, after))
   const q = project(); q.source.config.production_deployments_enabled = false; assert.throws(() => C.projectContract(q))
 })
+test('restored repository requires exact GTAR identity at both Cloudflare gates', () => {
+  assert.equal(CANONICAL_REPOSITORY, require('../../.github/release_repository.cjs').url)
+  const sha = 'a'.repeat(40), after = '2026-10-04T01:00:00Z'
+  C.projectContract(project())
+  C.deploymentProof(project(), deployment(sha), sha, after)
+  for (const name of ['GTAR-Dev', 'GTAR1', 'gtar', 'Gtar', 'gtar-dev', 'GTAR-other', '*', '']) {
+    const p = project(); p.source.config.repo_name = name
+    assert.throws(() => C.projectContract(p), /GTAR Git integration/)
+    const d = deployment(sha); d.source.config.repo_name = name
+    assert.throws(() => C.deploymentProof(project(), d, sha, after), /production deployment proof/)
+  }
+  const p = project(); p.source.config.owner = 'other'
+  assert.throws(() => C.projectContract(p))
+  const d = deployment(sha); d.source.config.owner = 'other'
+  assert.throws(() => C.deploymentProof(project(), d, sha, after))
+})
+
+test('untagged main installation and ancestry reconciliation cannot release production', t => {
+  const f = fixture(t)
+  f.git('checkout', 'main'); f.git('commit', '--allow-empty', '-m', 'owner controller installation')
+  const installed = f.git('rev-parse', 'HEAD'), webTree = f.git('rev-parse', `${f.mainSha}:web`)
+  assert.equal(f.git('rev-parse', `${installed}:web`), webTree)
+  assert.equal(f.git('tag', '--points-at', installed), '')
+  const adapter = (...args) => f.git(...args.map(a => a === CANONICAL_REPOSITORY ? 'origin' : a))
+  const before = f.git('ls-remote', '--refs', 'origin')
+  assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: installed }, adapter), /one exact clean DEV checkpoint tag/)
+  assert.throws(() => resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: installed }, (...args) => {
+    if (args[0] === 'fetch') throw new Error('GTAR canonical authority unavailable')
+    return adapter(...args)
+  }), /canonical authority unavailable/)
+  assert.throws(() => C.plan(f.repo, f.tag, installed, 'refs/heads/main', installed), /Exact tag must equal expected_sha/)
+  f.git('checkout', 'dev'); f.git('merge', '--no-ff', '-s', 'ours', 'main', '-m', 'preserve installation ancestry')
+  const reconciled = f.git('rev-parse', 'HEAD')
+  f.git('merge-base', '--is-ancestor', installed, reconciled)
+  assert.equal(C.runtimeContract(f.repo, reconciled), true)
+  f.git('update-ref', 'refs/remotes/origin/main', installed)
+  f.git('update-ref', 'refs/remotes/origin/dev', reconciled)
+  assert.throws(() => C.plan(f.repo, f.tag, reconciled, 'refs/heads/main', installed), /Exact tag must equal expected_sha/)
+  assert.equal(f.git('ls-remote', '--refs', 'origin'), before)
+})
+
 test('atomic non-force promotion preserves exact source tree and never changes dev', t => {
   const f = fixture(t), p = f.plan(), tree = f.git('rev-parse', `${f.sha}^{tree}`)
   const result = C.promote(f.repo, p)
@@ -157,7 +198,7 @@ test('advertised main race rejects before mutation; unsupported atomic push fail
 })
 test('main build identity derives exact DEV and PROD tags without source rewrites', t => {
   const f = fixture(t), env = { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.sha }
-  const adapter = (...args) => f.git(...args.map(a => a === 'https://github.com/ozzzmond/GTAR.git' ? 'origin' : a))
+  const adapter = (...args) => f.git(...args.map(a => a === CANONICAL_REPOSITORY ? 'origin' : a))
   assert.equal(resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'dev' }), null)
   assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /release tag missing/)
   C.promote(f.repo, f.plan())
@@ -169,7 +210,7 @@ test('main build identity derives exact DEV and PROD tags without source rewrite
   f.git('tag', 'v1.0.108-dev.12'); assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /one exact clean/)
 })
 test('readiness needs no retired DEV rulesets; remaining external gates fail closed', async () => {
-  const e = { GITHUB_REPOSITORY: 'ozzzmond/GTAR', APPROVAL_READ_TOKEN: 'test', CF_ACCOUNT_ID: 'a'.repeat(32), CF_PAGES_READ_TOKEN: 'test' }
+  const e = { GITHUB_REPOSITORY: 'ozzzmond/GTAR', GITHUB_REPOSITORY_ID: String(require('../../.github/release_repository.cjs').id), APPROVAL_READ_TOKEN: 'test', CF_ACCOUNT_ID: 'a'.repeat(32), CF_PAGES_READ_TOKEN: 'test' }
   const calls = []
   const fetcher = async url => {
     calls.push(url)
@@ -178,9 +219,14 @@ test('readiness needs no retired DEV rulesets; remaining external gates fail clo
     if (url.startsWith('https://api.cloudflare.com/')) return project()
     throw new Error(`Unexpected API read: ${url}`)
   }
+  for (const id of [undefined, '', '1']) {
+    await assert.rejects(C.externalGate({ ...e, GITHUB_REPOSITORY_ID: id }, fetcher), /GITHUB_REPOSITORY_ID/)
+  }
+  assert.equal(calls.length, 0)
   const ready = await C.externalGate(e, fetcher)
   assert.equal(ready.project.name, 'gtar-web')
   assert.equal(calls.length, 3)
+  assert.deepEqual(calls.slice(0, 2), ['https://api.github.com/repos/ozzzmond/GTAR/environments/gtar-production', 'https://api.github.com/repos/ozzzmond/GTAR/environments/gtar-production/deployment-branch-policies'])
   assert.ok(calls.every(url => !url.includes('/rulesets')))
   await assert.rejects(C.externalGate(e, async () => { throw new Error('403') }), /403/)
   await assert.rejects(C.externalGate({ ...e, CF_ACCOUNT_ID: '' }, fetcher), /CF_ACCOUNT_ID/)
@@ -237,13 +283,25 @@ test('post approval rejects any validated SHA/main/tag/ref/protection drift', ()
   C.freshContract(p, e, refs, 'protected')
   for (const key of Object.keys(e)) assert.throws(() => C.freshContract(p, { ...e, [key]: 'changed' }, refs, 'protected'), /Post-approval/)
 })
-test('tag inventory rejects deletion/movement without rewriting historical tags', t => {
-  const f = fixture(t)
+test('scoped snapshot ignores unrelated refs and rejects every scoped drift', t => {
+  const f = fixture(t), p = f.plan()
   const refs = Object.fromEntries(f.git('ls-remote', '--refs', 'origin').split('\n').map(line => { const [sha, ref] = line.split(/\s+/); return [ref, sha] }))
-  C.inventoryContract(f.repo, refs)
-  const missing = { ...refs }; delete missing['refs/tags/v1.1.62']; assert.throws(() => C.inventoryContract(f.repo, missing))
-  assert.throws(() => C.inventoryContract(f.repo, { ...refs, 'refs/tags/v1.1.62': f.sha }))
+  const scoped = C.scopedRefs(refs, p)
+  C.snapshotContract(f.repo, scoped, p)
+  const e = { VALIDATED_SHA: p.sha, PLANNED_MAIN: p.mainSha, PLANNED_PROD: p.prodTag, PLANNED_REFS: JSON.stringify(scoped), PLANNED_PROTECTION: 'protected' }
+  for (const ref of ['refs/pull/999/head', 'refs/tags/unrelated', 'refs/tags/v1.1.0-dev.1']) {
+    assert.deepEqual(C.scopedRefs({ ...refs, [ref]: p.mainSha }, p), scoped)
+    C.freshContract(p, e, C.scopedRefs({ ...refs, [ref]: p.sha }, p), 'protected')
+  }
+  for (const ref of Object.keys(scoped)) {
+    const changed = { ...refs, [ref]: scoped[ref] === p.sha ? p.mainSha : p.sha }
+    assert.throws(() => C.freshContract(p, e, C.scopedRefs(changed, p), 'protected'), /Post-approval/)
+    assert.throws(() => C.snapshotContract(f.repo, C.scopedRefs(changed, p), p), /Scoped ref|collision/)
+    const missing = { ...refs }; delete missing[ref]
+    if (scoped[ref]) assert.throws(() => C.snapshotContract(f.repo, C.scopedRefs(missing, p), p), /Scoped ref/)
+  }
 })
+
 test('runtime proof binds deployed artifact version and source tag to exact promoted SHA', () => {
   const sha = 'a'.repeat(40), identity = { sha, version: '1.1.119', sourceTag: 'v1.0.108-dev.11' }
   C.runtimeProof(identity, sha, 'v1.1.119')
@@ -266,4 +324,94 @@ test('terminal report keeps dry, verified, unverified and ambiguous outcomes dis
       assert.equal(r.status, exit); assert.ok(fs.readFileSync(summary, 'utf8').includes(text))
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+
+test('numeric R2 DEV moves before selection refresh safely, unrelated drift does not block promotion', t => {
+  const f = fixture(t, 'v1.1.0-dev.2')
+  const older = 'v1.1.0-dev.1'
+  f.git('tag', older, f.mainSha); f.git('push', 'origin', `refs/tags/${older}`)
+  // Remote movement is confined to this disposable repository.
+  f.git('--git-dir', f.remote, 'update-ref', `refs/tags/${older}`, f.sha)
+  f.git('update-ref', 'refs/tags/' + f.tag, f.mainSha)
+  C.refresh(f.repo)
+  assert.equal(f.git('rev-parse', `refs/tags/${older}`), f.sha)
+  assert.equal(f.git('rev-parse', 'refs/tags/' + f.tag), f.sha)
+  const p = f.plan()
+  const read = () => Object.fromEntries(f.git('ls-remote', '--refs', 'origin').split('\n').filter(Boolean).map(line => { const [sha, ref] = line.split(/\s+/); return [ref, sha] }))
+  const planned = C.scopedRefs(read(), p)
+  f.git('--git-dir', f.remote, 'update-ref', 'refs/pull/999/head', f.sha)
+  f.git('--git-dir', f.remote, 'update-ref', `refs/tags/${older}`, f.mainSha)
+  f.git('--git-dir', f.remote, 'update-ref', 'refs/tags/unrelated', f.sha)
+  C.refresh(f.repo)
+  const fresh = f.plan()
+  C.freshContract(fresh, { VALIDATED_SHA: p.sha, PLANNED_MAIN: p.mainSha, PLANNED_PROD: p.prodTag, PLANNED_REFS: JSON.stringify(planned), PLANNED_PROTECTION: 'test' }, C.scopedRefs(read(), fresh), 'test')
+  assert.equal(C.promote(f.repo, fresh).state, 'PROD_PROMOTED_BUT_UNVERIFIED')
+})
+
+test('PROD and non-R2 tag fetches remain non-forced', t => {
+  for (const tag of ['v1.1.62', 'v1.0.10-dev.1']) {
+    const f = fixture(t, 'v1.1.0-dev.2')
+    if (tag !== 'v1.1.62') { f.git('tag', tag, f.mainSha); f.git('push', 'origin', `refs/tags/${tag}`) }
+    f.git('--git-dir', f.remote, 'update-ref', `refs/tags/${tag}`, f.sha)
+    assert.throws(() => C.refresh(f.repo))
+    assert.equal(f.git('rev-parse', `refs/tags/${tag}`), f.mainSha)
+  }
+})
+
+test('all historical letters cannot change latest numeric plan or production identity', t => {
+  const f = fixture(t)
+  const historical = execFileSync('git', ['tag', '--list'], { cwd: root, encoding: 'utf8' }).trim().split('\n').filter(t => /^v1\.0\.\d+-dev\.\d+[a-z]$/.test(t))
+  assert.equal(historical.length, 38)
+  for (const tag of historical) f.git('tag', tag, f.sha)
+  assert.equal(f.plan().tag, f.tag)
+  assert.equal(C.promote(f.repo, f.plan()).state, 'PROD_PROMOTED_BUT_UNVERIFIED')
+  const adapter = (...args) => f.git(...args.map(a => a === CANONICAL_REPOSITORY ? 'origin' : a))
+  assert.equal(resolveReleaseIdentity(f.repo, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.sha }, adapter).sourceTag, f.tag)
+})
+
+test('same PROD mapping cannot bypass latest numeric or create-only collision gates', t => {
+  const f = fixture(t, 'v1.1.0-dev.2')
+  const other = 'v1.1.1-dev.1'
+  assert.equal(parseDevTag(f.tag).prodTag, parseDevTag(other).prodTag)
+  f.git('tag', other, f.sha)
+  assert.throws(f.plan, /Not latest canonical DEV.*v1\.1\.1-dev\.1.*v1\.2\.2/)
+  // A genuine new checkpoint on the higher base must still reject a used PROD tag.
+  for (const file of ['web/package.json', 'web/package-lock.json', 'web/src/types/gtar.ts', 'web/functions/lib/authCore.ts']) {
+    f.put(file, fs.readFileSync(path.join(f.repo, file), 'utf8').replaceAll(f.tag.slice(1), other.slice(1)))
+  }
+  f.git('add', '.'); f.git('commit', '-m', 'higher base')
+  const sha = f.git('rev-parse', 'HEAD')
+  f.git('tag', '-f', other, sha); f.git('update-ref', 'refs/remotes/origin/dev', sha)
+  f.git('tag', 'v1.2.2', f.mainSha)
+  assert.throws(() => C.plan(f.repo, other, sha, 'refs/heads/main', f.mainSha), /PROD tag collision/)
+})
+
+test('each trusted helper including repository identity rejects byte changes and missing files', t => {
+  for (const file of ['release_identity.cjs', 'release_metadata.cjs', 'release_repository.cjs']) {
+    const f = fixture(t)
+    const target = `.github/${file}`
+    f.put(target, fs.readFileSync(path.join(f.repo, target), 'utf8').replace('const ', 'const  ').replace('module.exports = ', 'module.exports  = '))
+    f.git('add', '.'); f.git('commit', '-m', 'one byte divergence')
+    assert.equal(C.runtimeContract(f.repo, f.git('rev-parse', 'HEAD')), false, file)
+    f.put(target, fs.readFileSync(path.join(root, target), 'utf8') + ' ')
+    f.git('add', '.'); f.git('commit', '-m', 'trailing byte divergence')
+    assert.equal(C.runtimeContract(f.repo, f.git('rev-parse', 'HEAD')), false, file)
+    f.git('rm', target); f.git('commit', '-m', 'missing trusted helper')
+    assert.equal(C.runtimeContract(f.repo, f.git('rev-parse', 'HEAD')), false, file)
+  }
+})
+
+
+test('moved unrelated and lettered tags remain inert during fetch and plan', t => {
+  const f = fixture(t, 'v1.1.0-dev.2')
+  for (const tag of ['unrelated', 'v1.1.0-dev.1a', 'v1.0.130-dev.4a']) {
+    f.git('tag', tag, f.mainSha); f.git('push', 'origin', `refs/tags/${tag}`)
+    f.git('--git-dir', f.remote, 'update-ref', `refs/tags/${tag}`, f.sha)
+  }
+  C.refresh(f.repo)
+  assert.equal(f.plan().tag, f.tag)
+  for (const tag of ['unrelated', 'v1.1.0-dev.1a', 'v1.0.130-dev.4a']) {
+    assert.equal(f.git('rev-parse', `refs/tags/${tag}`), f.mainSha)
+  }
 })

@@ -19,7 +19,7 @@ test('current checkpoint DEV stamps agree before human tagging', () => {
     assert.equal(/export const GTAR_DEV_VERSION = '([^']+)'/.exec(types)?.[1], pkg.version)
   }
   assert.ok(read('web/functions/lib/authCore.ts').includes(`GTAR Server-Authoritative Account & Access Control (v${pkg.version})`))
-  if (parsed.suffix) assert.equal(parsed.promotable, false)
+  assert.equal(parsed.tag, `v${pkg.version}`)
 })
 function fixture(t, version = '1.0.108-dev.9') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gtar-tag-'))
@@ -41,15 +41,16 @@ function rejected(f, ...args) {
   const r = f.run(...args)
   assert.notEqual(r.status, 0); assert.equal(r.stdout, '')
   assert.equal(fs.readFileSync(f.envFile, 'utf8'), 'EXISTING=preserved\n')
+  return r
 }
-test('canonical numeric and lettered tags, lightweight and annotated, emit exact metadata', t => {
-  for (const tag of ['v1.0.108-dev.8', 'v1.0.108-dev.9', 'v1.0.108-dev.9a', 'v1.0.117-dev.1']) {
+test('canonical numeric tags, lightweight and annotated, emit exact metadata', t => {
+  for (const tag of ['v1.0.108-dev.8', 'v1.0.108-dev.9', 'v1.0.117-dev.1']) {
     for (const annotated of [false, true]) {
       const f = fixture(t, tag.slice(1))
       f.git('tag', ...(annotated ? ['-a', tag, '-m', 'annotated'] : [tag]))
       const r = f.run('--tag', tag)
       assert.equal(r.status, 0, r.stderr)
-      const expected = `RELEASE_TAG=${tag}\nRELEASE_TITLE=GTAR ${tag}\nIS_PRERELEASE=true\nIS_PROMOTABLE=${!tag.endsWith('a')}\n`
+      const expected = `RELEASE_TAG=${tag}\nRELEASE_TITLE=GTAR ${tag}\nIS_PRERELEASE=true\nIS_PROMOTABLE=true\n`
       assert.equal(r.stdout, expected)
       assert.equal(fs.readFileSync(f.envFile, 'utf8'), 'EXISTING=preserved\n' + expected)
     }
@@ -70,9 +71,13 @@ test('rejects tag on earlier commit and tag pointing to noncommit', t => {
   f.git('tag', '-a', 'v1.0.108-dev.9', '-m', 'old')
   fs.writeFileSync(path.join(f.root, 'new'), 'new')
   f.git('add', 'new'); f.git('commit', '-m', 'new HEAD')
-  rejected(f, '--tag', 'v1.0.108-dev.9')
-  f.git('tag', 'v1.0.108-dev.9a', f.git('rev-parse', 'HEAD:web/package.json'))
-  rejected(f, '--tag', 'v1.0.108-dev.9a')
+  assert.match(rejected(f, '--tag', 'v1.0.108-dev.9').stderr, /Peeled tag commit must equal HEAD/)
+  const blob = f.git('rev-parse', 'HEAD:web/package.json')
+  f.git('tag', 'v1.0.108-dev.10', blob)
+  assert.equal(f.git('cat-file', '-t', 'refs/tags/v1.0.108-dev.10'), 'blob')
+  const noncommit = rejected(f, '--tag', 'v1.0.108-dev.10')
+  assert.match(noncommit.stderr, /rev-parse --verify refs\/tags\/v1\.0\.108-dev\.10\^\{commit\}/)
+  assert.doesNotMatch(noncommit.stderr, /Require exactly|Invalid canonical DEV tag/)
 })
 test('rejects mismatched and malformed package version without exports', t => {
   const f = fixture(t, '1.0.108-dev.8j')
@@ -86,55 +91,41 @@ test('preview workflow binds exact tag checkout and validates before npm operati
   assert.match(yaml, /tag:\s+description:[^\n]+\s+required: true\s+type: string/)
   assert.match(yaml, /ref: refs\/tags\/\$\{\{ env.REQUESTED_TAG \}\}/)
   assert.match(yaml, /fetch-depth: 0/)
+  assert.match(yaml, /git checkout[^\n]+\.github\/release_repository\.cjs/)
   assert.match(yaml, /run: node \.github\/release_metadata\.cjs --tag "\$REQUESTED_TAG"/)
   assert.ok(yaml.indexOf('run: node .github/release_metadata.cjs') < yaml.indexOf('run: npm ci'))
   assert.match(yaml, /name: \$\{\{ env.RELEASE_TAG \}\}/)
 })
 
-test('REGRESSION: v1.0.136-dev.1a lettered tag validates against committed 1.0.136-dev.1 base version as non-promotable', t => {
-  const f = fixture(t, '1.0.136-dev.1')
-  f.git('tag', '-a', 'v1.0.136-dev.1a', '-m', 'GTAR DEV.1a - Save Status P3 and PWA hardening')
-  const r = f.run('--tag', 'v1.0.136-dev.1a')
-  assert.equal(r.status, 0, r.stderr)
-  const expected = 'RELEASE_TAG=v1.0.136-dev.1a\nRELEASE_TITLE=GTAR v1.0.136-dev.1a\nIS_PRERELEASE=true\nIS_PROMOTABLE=false\n'
-  assert.equal(r.stdout, expected)
-  assert.equal(fs.readFileSync(f.envFile, 'utf8'), 'EXISTING=preserved\n' + expected)
-
-  // Rejects lettered tag when committed base version is wrong iteration or base
-  fs.writeFileSync(f.envFile, 'EXISTING=preserved\n')
-  rejected(f, '--tag', 'v1.0.136-dev.2a')
-  rejected(f, '--tag', 'v1.0.137-dev.1a')
-
-  // Rejects clean numeric tag when package version is lettered unless stabilization pair companion exists
-  rejected(f, '--tag', 'v1.0.136-dev.2')
+test('lettered preview tags reject with both numeric and lettered package stamps', t => {
+  for (const version of ['1.0.136-dev.1', '1.0.136-dev.1a']) {
+    const f = fixture(t, version)
+    f.git('tag', '-a', 'v1.0.136-dev.1a', '-m', 'historical')
+    rejected(f, '--tag', 'v1.0.136-dev.1a')
+    rejected(f, '--tag', 'v1.0.136-dev.2a')
+    rejected(f, '--tag', 'v1.0.137-dev.1a')
+  }
 })
 
-test('REGRESSION: live v1.0.136-dev.1a tag in actual repository validates cleanly and binds exact peeled SHA', () => {
-  const expectedTagSha = 'b73490ebd6616e762b95bc95bbbace753d341d92'
+test('all 38 historical lettered tags are inert without moving them', () => {
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim()
-  const tagSha = git('rev-parse', '--verify', 'refs/tags/v1.0.136-dev.1a^{commit}')
-  assert.equal(tagSha, expectedTagSha, 'Live peeled tag commit must equal expected immutable SHA')
-
-  const { inspectCheckpoint } = require(source)
-  const cp = inspectCheckpoint(root, 'v1.0.136-dev.1a')
-  assert.equal(cp.sha, expectedTagSha)
-  assert.equal(cp.tag, 'v1.0.136-dev.1a')
-  assert.equal(cp.promotable, false)
-  assert.equal(cp.prodTag, 'v1.1.137')
-
-  // Prod promotion planner strictly rejects lettered DEV checkpoint
-  const { plan } = require(path.join(root, '.github/prod_controller.cjs'))
-  assert.throws(() => plan(root, 'v1.0.136-dev.1a', expectedTagSha, 'refs/heads/main', '1111111111111111111111111111111111111111'),
-    /Lettered checkpoint is not promotable/)
+  const tags = git('tag', '--list').split('\n').filter(t => /^v1\.0\.\d+-dev\.\d+[a-z]$/.test(t))
+  assert.equal(tags.length, 38)
+  assert.equal(git('rev-parse', '--verify', 'refs/tags/v1.0.136-dev.1a^{commit}'), 'b73490ebd6616e762b95bc95bbbace753d341d92')
+  const { parseDevTag, inspectCheckpoint } = require(source)
+  for (const tag of tags) {
+    assert.throws(() => parseDevTag(tag), /Invalid canonical DEV/)
+    assert.throws(() => inspectCheckpoint(root, tag), /Invalid canonical DEV/)
+  }
 })
 
-test('new zero-base preview CLI accepts numeric and lettered checkpoints, rejecting wrong scheme stamps', t => {
+test('new zero-base preview CLI accepts numeric checkpoints, rejecting wrong scheme stamps', t => {
   const f = fixture(t, '1.1.0-dev.1')
-  for (const tag of ['v1.1.0-dev.1', 'v1.1.0-dev.1a']) {
+  for (const tag of ['v1.1.0-dev.1']) {
     f.git('tag', tag)
     const result = f.run('--tag', tag)
     assert.equal(result.status, 0, result.stderr)
-    assert.match(result.stdout, new RegExp(`IS_PROMOTABLE=${!tag.endsWith('a')}`))
+    assert.match(result.stdout, new RegExp(`IS_PROMOTABLE=true`))
   }
   fs.writeFileSync(f.envFile, 'EXISTING=preserved\n')
   f.git('tag', 'v1.1.1-dev.1'); rejected(f, '--tag', 'v1.1.1-dev.1')
