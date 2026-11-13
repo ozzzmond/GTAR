@@ -1,7 +1,7 @@
 import { useContext, useMemo, useState, useSyncExternalStore } from 'react'
 import { ExtensionHostContext } from '../extensions/host/ExtensionHostContext'
 import { useOptionalGoogleAuth } from './authContext'
-import { matchLiveLyrics, projectLyrics } from './liveLyrics'
+import { matchLiveLyricRanges, projectLyrics } from './liveLyrics'
 import type { ActiveSongState, SongLine } from '../types/gtar'
 
 const emptySubscribe = () => () => {}
@@ -14,7 +14,9 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
   const account = JSON.stringify([auth?.bypass ?? false, auth?.session?.user?.sub ?? null, auth?.session?.user?.id ?? null])
   const snapshot = useSyncExternalStore(host?.subscribeFollow ?? emptySubscribe, host?.getFollowSnapshot ?? emptySnapshot, emptySnapshot)
   const projection = useMemo(() => snapshot?.live ? projectLyrics(lines) : [], [lines, snapshot?.live])
-  const matches = useMemo(() => snapshot?.live && snapshot.current ? matchLiveLyrics(projection, snapshot.current.text) : emptyIds, [projection, snapshot])
+  const currentText = snapshot?.live ? snapshot.current?.text ?? '' : ''
+  const ranges = useMemo(() => matchLiveLyricRanges(projection, currentText), [projection, currentText])
+  const matches = useMemo(() => new Set(ranges.flat()), [ranges])
   const scope = useMemo(() => ({ songId: song.id, content: song.rawContent, missing: song.isMissing, account, fullscreen, suspended, navigationScope, session: snapshot?.session }), [song.id, song.rawContent, song.isMissing, account, fullscreen, suspended, navigationScope, snapshot?.session])
   const [confirmation, setConfirmation] = useState({ scope, enabled: false })
   // Clear before paint; exiting cannot revive an old confirmation on re-entry.
@@ -29,5 +31,7 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
   const status = !snapshot?.live ? 'Waiting for fresh presentation and slide data'
     : !snapshot.current?.text.trim() ? 'Blank slide'
     : matches.size === 0 ? 'Slide not matched' : confirmed ? 'Live lyrics on · assisted session' : 'Live lyrics off'
-  return { activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
+  const scrollRange = confirmed && ranges.length === 1 ? ranges[0] : null
+  const slideKey = JSON.stringify([snapshot?.current?.uuid, currentText])
+  return { scrollRange, slideKey, verificationScope: scope, activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
 }

@@ -13,7 +13,7 @@ Module._resolveFilename = function(request, parent, ...args) {
 }
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText, filename)
 const { parseGtarSong, splitSongLinesForColumns } = require('../src/utils/songParser.ts')
-const { projectLyrics, matchLiveLyrics, lyricTokens } = require('../src/utils/liveLyrics.ts')
+const { projectLyrics, matchLiveLyrics, matchLiveLyricRanges, lyricTokens } = require('../src/utils/liveLyrics.ts')
 const React = require('react'), { act } = React
 const { SongLineRenderer } = require('../src/components/SongLineRenderer.tsx')
 const { renderToStaticMarkup } = require('react-dom/server')
@@ -24,6 +24,8 @@ test('read-only projection excludes chords, TAB, headings and metadata; complete
   const parsed = parseGtarSong(chart, 3), before = JSON.stringify(parsed)
   const projection = projectLyrics(parsed.lines)
   assert.equal(projection.length, 4)
+  assert.equal(matchLiveLyricRanges(projection, 'Morning light fills the sky We sing together').length, 2)
+  assert.equal(matchLiveLyricRanges(projection, 'We sing together').length, 2)
   const expected = projection.map(line => line.anchorId)
   assert.deepEqual([...matchLiveLyrics(projection, 'Morning light\nfills the sky!\nWe sing together')], expected)
   assert.equal(matchLiveLyrics(projection, 'light fills the sky').size, 0)

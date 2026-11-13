@@ -250,6 +250,7 @@ New or renamed tests await a human choice of primary category.
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryStore.test.cjs](libraryStore.test.cjs)
 - [libraryStoreScale.test.cjs](libraryStoreScale.test.cjs)
+- [liveLyricScroll.test.cjs](liveLyricScroll.test.cjs)
 - [liveLyrics.test.cjs](liveLyrics.test.cjs)
 - [loggerCapture.test.cjs](loggerCapture.test.cjs)
 - [manualCloudBackup.test.cjs](manualCloudBackup.test.cjs)

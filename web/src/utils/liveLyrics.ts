@@ -29,11 +29,11 @@ export function projectLyrics(lines: readonly SongLine[]): LyricProjection[] {
   })
   return result
 }
-// Exact complete-line coverage; all occurrences, never a scroll target.
-export function matchLiveLyrics(projection: readonly LyricProjection[], text: string): ReadonlySet<number> {
+// Exact complete-line coverage; preserve occurrence boundaries for safe scrolling.
+export function matchLiveLyricRanges(projection: readonly LyricProjection[], text: string): readonly (readonly number[])[] {
   const wanted = lyricTokens(text)
-  const anchors = new Set<number>()
-  if (!wanted.length) return anchors
+  const ranges: number[][] = []
+  if (!wanted.length) return ranges
   for (let start = 0; start < projection.length; start++) {
     let offset = 0
     for (let end = start; end < projection.length && projection[end].sectionId === projection[start].sectionId; end++) {
@@ -41,11 +41,15 @@ export function matchLiveLyrics(projection: readonly LyricProjection[], text: st
       if (!line.tokens.every((token, index) => token === wanted[offset + index])) break
       offset += line.tokens.length
       if (offset === wanted.length) {
-        for (let index = start; index <= end; index++) anchors.add(projection[index].anchorId)
+        ranges.push(projection.slice(start, end + 1).map(line => line.anchorId))
         break
       }
       if (offset > wanted.length) break
     }
   }
-  return anchors
+  return ranges
+}
+
+export function matchLiveLyrics(projection: readonly LyricProjection[], text: string): ReadonlySet<number> {
+  return new Set(matchLiveLyricRanges(projection, text).flat())
 }

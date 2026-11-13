@@ -11,6 +11,6 @@ export function LiveLyricsControl({ live, songTitle }: { live: ReturnType<typeof
       <p className="whitespace-pre-wrap mt-2">Current slide: {live.snapshot.current?.text ?? 'Unavailable'}</p>
       <button type="button" className="ui-button min-h-11 px-3 mt-2 disabled:opacity-50" disabled={!live.canConfirm} onClick={live.confirm}>Confirm same song · enable highlights</button>
     </>}
-    <p role="status" className="text-app-muted">{live.status}. Highlight only; scroll manually.</p>
+    <p role="status" className="text-app-muted">{live.status}. Auto-scroll follows unique matches; manual scrolling pauses it.</p>
   </details>
 }

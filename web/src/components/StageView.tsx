@@ -1,3 +1,4 @@
+import { useLiveLyricScroll } from '../utils/useLiveLyricScroll'
 import { LiveLyricsControl } from './LiveLyrics'
 import { useLiveLyrics } from '../utils/useLiveLyrics'
 import { TvPresentationOptions } from './TvPresentationOptions'
@@ -581,6 +582,11 @@ export const StageView: React.FC<StageViewProps> = ({
     isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive,
     JSON.stringify([queueMode, activeSongIndex, activeSetlistSongIndex]))
 
+  const liveScroll = useLiveLyricScroll(scrollContainerRef, {
+    enabled: liveLyrics.confirmed, session: liveLyrics.verificationScope,
+    slideKey: liveLyrics.slideKey, range: liveLyrics.scrollRange, speedScrolling: isAutoScrolling,
+  })
+
   // Band Sync subscriptions
   useEffect(() => {
     const unsub = bandSync.subscribe((st) => setSyncState(st))
@@ -781,6 +787,7 @@ export const StageView: React.FC<StageViewProps> = ({
   // Also keeps the sub-pixel accumulator in sync after a user manually drags
   // the scroll position (e.g. touch-scroll during autoscroll pause).
   const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const isLiveLyricScroll = liveScroll.controller.handleScroll()
     const target = e.currentTarget
     const currentTop = target.scrollTop
     const isScrollingDown = currentTop > lastScrollTopRef.current + 5
@@ -812,6 +819,9 @@ export const StageView: React.FC<StageViewProps> = ({
     if (!isAutoScrolling) {
       accumulatedScrollRef.current = target.scrollTop
     }
+
+    // Keep local section/scroll bookkeeping, but never echo ProPresenter-owned movement.
+    if (isLiveLyricScroll) return
 
     // Mirror to Stage Cast teleprompter screen in real time with active line/section anchor
     let activeLineIndex = 0
@@ -859,6 +869,7 @@ export const StageView: React.FC<StageViewProps> = ({
   // Toggle autoscroll and broadcast if HOST
   const handleToggleAutoScroll = useCallback(() => {
     const nextVal = !isAutoScrolling
+    if (nextVal) liveScroll.controller.pause()
     setIsAutoScrolling(nextVal)
     if (nextVal) {
       // Record activation time so the touch-cancel guard knows not to kill this
@@ -868,7 +879,7 @@ export const StageView: React.FC<StageViewProps> = ({
     if (syncState.role === 'HOST') {
       bandSync.broadcastAutoScroll(nextVal, scrollSpeed)
     }
-  }, [isAutoScrolling, syncState.role, scrollSpeed])
+  }, [isAutoScrolling, syncState.role, scrollSpeed, liveScroll.controller])
 
   // Adjust scroll speed and broadcast if HOST
   const handleAdjustSpeed = useCallback((newSpeed: number) => {
@@ -888,6 +899,7 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [parsedSong.lines])
 
   const handlePrevSection = useCallback(() => {
+    liveScroll.controller.pause()
     const container = scrollContainerRef.current
     if (!container) return
 
@@ -961,9 +973,10 @@ export const StageView: React.FC<StageViewProps> = ({
     stageCast.broadcastScroll(targetTop, prevFraction, targetSectionIndex)
     container.scrollTo({ top: targetTop, behavior: 'smooth' })
     triggerOverlaysShow()
-  }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow])
+  }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow, liveScroll.controller])
 
   const handleNextSection = useCallback(() => {
+    liveScroll.controller.pause()
     const container = scrollContainerRef.current
     if (!container) return
 
@@ -998,7 +1011,7 @@ export const StageView: React.FC<StageViewProps> = ({
     stageCast.broadcastScroll(targetTop, nextFraction, nextSectionIndex)
     container.scrollTo({ top: targetTop, behavior: 'smooth' })
     triggerOverlaysShow()
-  }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow])
+  }, [inPerformanceMode, showStageOverlays, triggerOverlaysShow, liveScroll.controller])
 
   const executePrevSong = useCallback(() => {
     if (isInSetlistMode && onSelectSetlistSongIndex) {
@@ -2109,6 +2122,13 @@ export const StageView: React.FC<StageViewProps> = ({
       {/* =================================================================== */}
       {/* 2. MAIN SCROLLING CANVAS (Exact SongLinesColumn from Compose)        */}
       {/* =================================================================== */}
+      {isFullscreen && liveLyrics.confirmed && liveScroll.paused && (
+        <button type="button" onClick={liveScroll.controller.resume}
+          disabled={isAutoScrolling || !liveLyrics.scrollRange}
+          aria-label={isAutoScrolling ? 'Resume auto-scroll unavailable while speed scrolling' : !liveLyrics.scrollRange ? 'Resume auto-scroll unavailable without a unique lyric match' : 'Resume auto-scroll'}
+          className="ui-button absolute bottom-24 left-3 z-40 min-h-11 px-3 rounded-xl border border-app-border bg-app-surface text-app-text shadow-lg disabled:opacity-50"
+        >Resume auto-scroll</button>
+      )}
       <div
         ref={scrollContainerRef}
         onScroll={handleContainerScroll}
