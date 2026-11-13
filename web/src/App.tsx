@@ -1,3 +1,4 @@
+import { ExtensionHostProvider } from './extensions/host/ExtensionHostProvider'
 import { sharedSongToActiveSong } from './utils/sharedSetlistLibrary'
 import { SetlistTrashConfirmation } from './components/SetlistTrashConfirmation'
 import { ExplorerDragDrop } from './components/ExplorerDragDrop'
@@ -154,7 +155,7 @@ function LibraryStartup() {
   return <>
     {storageNotice && <aside role="alert" data-testid="library-store-fallback" className="p-4 bg-amber-100 text-black">{storageNotice}</aside>}
     <OldRecoveryExportPrompt />
-    <LibraryStartupReadyInner />
+    <ExtensionHostProvider><LibraryStartupReadyInner /></ExtensionHostProvider>
   </>
 }
 

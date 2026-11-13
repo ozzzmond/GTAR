@@ -171,3 +171,42 @@ test('real test-only import stays unloaded when disabled and cleans its timer an
     assert.deepEqual([probe.listeners, probe.timers, probe.disposals], [0, 0, 1])
   } finally { host.dispose(); delete globalThis[symbol] }
 })
+
+
+test('follower-only memory output is generation scoped, frozen, projected and invalidated on identity, settings and disable', async () => {
+  const data = storage(), messages = []
+  const f = fixture({ manifest: { id: 'propresenter-follower' } })
+  const other = fixture()
+  const host = new ExtensionHost([f.entry, other.entry], data, undefined, message => messages.push(message))
+  await host.enable('propresenter-follower'); await host.enable('test-only')
+  assert.equal(other.context.publishFollowSnapshot, undefined)
+  const value = { live: true, presentation: { uuid: 'presentation-a', title: 'Synthetic', slideIndex: 0, notes: 'discard' }, current: { uuid: 'slide-a', text: 'Synthetic lyric content', notes: 'discard' }, extra: 'discard' }
+  f.context.publishFollowSnapshot(value)
+  const first = host.getFollowSnapshot()
+  assert.equal(Object.isFrozen(first), true); assert.equal(Object.isFrozen(first.current), true)
+  assert.equal(JSON.stringify(first).includes('discard'), false)
+  value.current.text = 'Edited lyric content'
+  assert.equal(first.current.text, 'Synthetic lyric content')
+  f.context.publishFollowSnapshot(value)
+  assert.equal(host.getFollowSnapshot().session, first.session)
+  f.context.publishFollowSnapshot({ ...value, presentation: { ...value.presentation, uuid: 'presentation-b' } })
+  assert.notEqual(host.getFollowSnapshot().session, first.session)
+  f.context.publishFollowSnapshot({ ...value, live: false })
+  const offline = host.getFollowSnapshot().session
+  f.context.publishFollowSnapshot(value)
+  assert.notEqual(host.getFollowSnapshot().session, offline)
+  host.saveSettings('propresenter-follower', {})
+  assert.equal(host.getFollowSnapshot(), null)
+  f.context.publishFollowSnapshot(value)
+  const oldContext = f.context
+  host.disable('propresenter-follower')
+  assert.equal(host.getFollowSnapshot(), null)
+  oldContext.publishFollowSnapshot(value)
+  assert.equal(host.getFollowSnapshot(), null)
+  await host.enable('propresenter-follower')
+  oldContext.publishFollowSnapshot(value)
+  assert.equal(host.getFollowSnapshot(), null)
+  assert.equal([...data.data.values()].some(text => text.includes('lyric')), false)
+  assert.deepEqual(messages, [])
+  host.dispose()
+})

@@ -1,4 +1,4 @@
-import type { ExtensionContext } from '../contract'
+import type { ExtensionContext, FollowObservation } from '../contract'
 
 export const paths = ['/v1/status/slide', '/v1/presentation/slide_index'] as const
 export function buildUrl(host: string, path: typeof paths[number]): string {
@@ -71,11 +71,22 @@ function presentationName(value: unknown): string {
   if (!record(value.presentation_index) || !record(value.presentation_index.presentation_id) || typeof value.presentation_index.presentation_id.name !== 'string') throw new UnexpectedResponse()
   return value.presentation_index.presentation_id.name
 }
+function presentationIdentity(value: unknown): FollowObservation['presentation'] {
+  if (!record(value) || !record(value.presentation_index)) return null
+  const data = value.presentation_index
+  const id = data.presentation_id
+  // Older/name-only responses still render in the panel, but cannot enable assisted following.
+  if (!record(id) || typeof id.uuid !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id.uuid) ||
+    typeof id.name !== 'string' || !id.name.trim() ||
+    !Number.isSafeInteger(data.index) || Number(data.index) < 0 ||
+    !Number.isSafeInteger(id.index) || Number(id.index) < 0) return null
+  return { uuid: id.uuid, title: id.name, slideIndex: Number(data.index) }
+}
 export class SlideDedupe {
-  private last?: readonly [string, string]
+  private last?: string
   accept(state: Slides): boolean {
-    const pair = [state.current.uuid, state.next.uuid] as const
-    if (this.last && this.last[0] === pair[0] && this.last[1] === pair[1]) return false
+    const pair = JSON.stringify([state.current.uuid, state.current.text, state.next.uuid, state.next.text])
+    if (this.last && this.last === pair) return false
     this.last = pair
     return true
   }
@@ -88,6 +99,8 @@ export function activate(ctx: ExtensionContext) {
   let dedupe = new SlideDedupe()
   let displayed: Slides | undefined
   let presentation = ''
+  let identity: FollowObservation['presentation'] = null
+  let observedCurrent: FollowObservation['current'] = null
   let status = 'Connecting'
   let testResult = ''
   let disposed = false
@@ -98,8 +111,14 @@ export function activate(ctx: ExtensionContext) {
   const readers = new Set<ReadableStreamDefaultReader<Uint8Array>>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const live = [false, false]
+  const fresh = [false, false]
   const unexpected = [false, false]
-  const publish = () => ctx.setPanel({ fields: [
+  const publish = () => {
+    ctx.publishFollowSnapshot?.({
+      live: fresh.every(Boolean) && live.every(Boolean) && !unexpected.some(Boolean) && !!identity && !!observedCurrent,
+      presentation: identity, current: observedCurrent,
+    })
+    ctx.setPanel({ fields: [
     { label: 'Status', value: status },
     { label: 'Data state', value: displayed ? live.every(Boolean) && !unexpected.some(Boolean) ? 'Current' : 'Stale' : '' },
     { label: 'Host', value: String(ctx.settings.read().host) },
@@ -108,6 +127,7 @@ export function activate(ctx: ExtensionContext) {
     { label: 'Next slide', value: displayed?.next.text ?? '' },
     { label: 'Connection test', value: testResult },
   ], actions: [{ label: 'Test connection', disabled: !!testController || page.hidden, run: () => { void testConnection() } }] })
+  }
   const request = (url: string, signal: AbortSignal) => fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit', redirect: 'error', signal })
   const cancel = (reader: ReadableStreamDefaultReader<Uint8Array>) => { void reader.cancel().catch(() => {}) }
   const current = (epoch: number) => !disposed && !page.hidden && generation === epoch
@@ -181,13 +201,16 @@ export function activate(ctx: ExtensionContext) {
           for (const frame of parser.push(part.value)) {
             if (index === 0) {
               const state = slides(frame)
+              observedCurrent = state.current.uuid ? state.current : null
               if (dedupe.accept(state)) displayed = state
             } else {
               presentation = presentationName(frame)
+              identity = presentationIdentity(frame)
             }
             failures = 0
             unexpected[index] = false
             live[index] = true
+            fresh[index] = true
             updateStatus()
           }
         }
@@ -195,6 +218,9 @@ export function activate(ctx: ExtensionContext) {
         if (current(epoch)) {
           if (error instanceof UnexpectedResponse) unexpected[index] = true
           live[index] = false
+          fresh.fill(false)
+          identity = null
+          observedCurrent = null
           updateStatus()
         }
       } finally {
@@ -220,6 +246,9 @@ export function activate(ctx: ExtensionContext) {
     if (testTimer) clearTimeout(testTimer)
     testTimer = undefined
     live.fill(false)
+    fresh.fill(false)
+    identity = null; observedCurrent = null
+    publish()
   }
   function restart() {
     pause()

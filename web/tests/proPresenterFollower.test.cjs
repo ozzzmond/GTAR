@@ -102,11 +102,11 @@ function fixture(t, fetcher) {
   })
   const controller = new AbortController()
   let panel, settings = { host: '192.168.1.2', port: 1025 }, settingsListener
-  const reports = [], panels = []
-  const ctx = { signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
+  const reports = [], panels = [], snapshots = []
+  const ctx = { publishFollowSnapshot: value => snapshots.push(value), signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
   const dispose = activate(ctx)
   t.after(dispose)
-  return { requests, streams, reports, panels, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
+  return { requests, streams, reports, panels, snapshots, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
     hide(value) { doc.hidden = value; doc.dispatchEvent(new Event('visibilitychange')) },
     settings(value) { settings = value; settingsListener() }, send(index, value) { streams[index].enqueue(bytes(JSON.stringify(value))) } }
 }
@@ -128,8 +128,8 @@ test('only allowlisted GETs, no body/headers, redirect error; empty next and ide
   assert.equal(f.value('Status'), 'Stale / Offline'); assert.equal(f.value('Current slide'), 'last slide')
   t.mock.timers.tick(999); await flush(); assert.equal(f.requests.length, 2)
   t.mock.timers.tick(1); await flush(); assert.equal(f.requests.length, 3)
-  f.send(2, state('A', '', 'repeat should not replace')); await flush()
-  assert.equal(f.value('Current slide'), 'last slide'); assert.equal(f.value('Status'), 'Live')
+  f.send(2, state('A', '', 'edited current slide')); await flush()
+  assert.equal(f.value('Current slide'), 'edited current slide'); assert.equal(f.value('Status'), 'Live')
   f.send(2, state('B', 'C')); await flush(); f.send(2, state('A', 'B')); await flush()
   assert.equal(f.value('Current slide'), 'A')
   f.dispose(); assert.ok(f.requests.every(r => r.options.signal.aborted))
@@ -226,8 +226,10 @@ test('unknown response fields are ignored; every missing/wrong current/next text
     f.send(1, { presentation_index: { presentation_id: { name: realPresentationName } } }); await flush()
     assert.equal(f.value('Status'), 'Unexpected response from ProPresenter')
     t.mock.timers.tick(1000); await flush(); activeStream = f.streams.length - 1
-    f.send(activeStream, { ...good, current: { ...good.current, text: 'same UUID edit stays deduped' } }); await flush()
+    f.send(activeStream, { ...good, current: { ...good.current, text: 'same UUID edit delivered' } }); await flush()
     assert.equal(f.value('Status'), 'Live'); assert.equal(f.value('Data state'), 'Current')
+    assert.equal(f.value('Current slide'), 'same UUID edit delivered')
+    f.send(activeStream, good); await flush()
     assert.equal(f.value('Current slide'), 'last good')
   }
 })
@@ -331,4 +333,38 @@ test('real follower panel in host row: default off, read-only port, current/next
     await act(async () => { host.dispose(); root.unmount() })
     dom.window.close()
   }
+})
+
+
+test('assisted snapshot retains validated identity/index and current only; edits, blank, disconnect and schema failures never stay live', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] }); t.mock.method(Math, 'random', () => 0.5)
+  const f = fixture(t); await flush()
+  f.send(0, state('A', 'B', 'Synthetic morning light')); await flush()
+  assert.equal(f.snapshots.at(-1).live, false)
+  f.send(1, realPresentation); await flush()
+  assert.deepEqual(f.snapshots.at(-1), { live: true,
+    presentation: { uuid: realPresentation.presentation_index.presentation_id.uuid, title: realPresentationName, slideIndex: 0 },
+    current: { uuid: 'A', text: 'Synthetic morning light' } })
+  assert.equal(JSON.stringify(f.snapshots).includes('notes'), false)
+  assert.equal(JSON.stringify(f.snapshots).includes('next'), false)
+  f.send(0, state('A', 'C', 'Changed same UUID')); await flush()
+  assert.equal(f.snapshots.at(-1).current.text, 'Changed same UUID')
+  f.send(0, state('A', '', '')); await flush()
+  assert.equal(f.snapshots.at(-1).current.text, '')
+  f.streams[0].close(); await flush()
+  assert.equal(f.snapshots.at(-1).live, false)
+  t.mock.timers.tick(1000); await flush()
+  f.send(2, state('A', '', 'Synthetic morning light')); await flush()
+  assert.equal(f.snapshots.at(-1).live, false, 'recovery needs fresh identity as well')
+  f.send(1, realPresentation); await flush()
+  assert.equal(f.snapshots.at(-1).live, true)
+  for (const [key, value] of [['uuid', 'bad'], ['index', -1], ['index', 0.5], ['index', '0']]) {
+    const bad = structuredClone(realPresentation); bad.presentation_index.presentation_id[key] = value
+    f.send(1, bad); await flush(); assert.equal(f.snapshots.at(-1).live, false)
+  }
+  const bad = structuredClone(realPresentation); bad.presentation_index.index = -1
+  f.send(1, bad); await flush(); assert.equal(f.snapshots.at(-1).presentation, null)
+  f.send(1, { presentation_index: null }); await flush()
+  assert.equal(f.snapshots.at(-1).live, false)
+  f.hide(true); assert.equal(f.snapshots.at(-1).live, false)
 })

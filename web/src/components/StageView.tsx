@@ -1,3 +1,5 @@
+import { LiveLyricsControl } from './LiveLyrics'
+import { useLiveLyrics } from '../utils/useLiveLyrics'
 import { TvPresentationOptions } from './TvPresentationOptions'
 import { transposeContext } from '../utils/songKeySemantics'
 import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings, readStageAppearanceExtras } from '../utils/backupSettings'
@@ -574,7 +576,10 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [fontSizePx, syncState.role])
 
   // Parse song with native v1.0.42 parser and active transpose offset
-  const parsedSong = parseGtarSong(song.rawContent, transposeOffset)
+  const parsedSong = useMemo(() => parseGtarSong(song.rawContent, transposeOffset), [song.rawContent, transposeOffset])
+  const liveLyrics = useLiveLyrics(song, parsedSong.lines, isFullscreen,
+    isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive,
+    JSON.stringify([queueMode, activeSongIndex, activeSetlistSongIndex]))
 
   // Band Sync subscriptions
   useEffect(() => {
@@ -2194,6 +2199,7 @@ export const StageView: React.FC<StageViewProps> = ({
             </div>
           )}
 
+          {isFullscreen && <LiveLyricsControl live={liveLyrics} songTitle={song.title} />}
           {/* Song Lines Rendering: Chart in a Card for Stage Preview */}
           <div className={!inPerformanceMode ? 'ui-song-card bg-app-surface rounded-2xl p-4 sm:p-6 border border-app-border shadow-xl overflow-x-auto min-h-[400px]' : ''}>
             {song.isMissing ? (
@@ -2206,6 +2212,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 <div className="min-w-0">
                   <SongLineRenderer
                     lines={col1Lines}
+                    activeLineIds={liveLyrics.activeLineIds}
                     fontSizePx={fontSizePx}
                     fontFamily={fontStyle}
                     onChordClick={handleChordClick}
@@ -2222,6 +2229,8 @@ export const StageView: React.FC<StageViewProps> = ({
                 <div className="min-w-0 md:border-l md:border-app-border/60 md:pl-6 lg:pl-10">
                   <SongLineRenderer
                     lines={col2Lines}
+                    lineOffset={col1Lines.length}
+                    activeLineIds={liveLyrics.activeLineIds}
                     fontSizePx={fontSizePx}
                     fontFamily={fontStyle}
                     onChordClick={handleChordClick}
@@ -2238,6 +2247,7 @@ export const StageView: React.FC<StageViewProps> = ({
             ) : (
               <SongLineRenderer
                 lines={parsedSong.lines}
+                activeLineIds={liveLyrics.activeLineIds}
                 fontSizePx={fontSizePx}
                 fontFamily={fontStyle}
                 onChordClick={handleChordClick}

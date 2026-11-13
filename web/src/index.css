@@ -692,3 +692,9 @@ body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"] > div { poin
   .ui-song-card:focus-within .song-hover-rename,
   .ui-song-card:focus-within .song-hover-delete { opacity: 1; pointer-events: auto; }
 }
+
+/* Live lyric cue: no geometry, text-color, chord, or motion changes. */
+[data-live-lyric="true"] {
+  background-color: color-mix(in srgb, var(--custom-stage-text) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--custom-stage-text);
+}
