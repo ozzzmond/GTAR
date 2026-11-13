@@ -31,4 +31,3 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
     : matches.size === 0 ? 'Slide not matched' : confirmed ? 'Live lyrics on · assisted session' : 'Live lyrics off'
   return { activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
 }
-
