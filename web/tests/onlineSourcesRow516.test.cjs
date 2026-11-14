@@ -266,3 +266,74 @@ test('#516 Header uses one Online song sources row with no separate Manage Sourc
   const row = fs.readFileSync(path.join(__dirname, '../src/components/OnlineSourcesRow.tsx'), 'utf8')
   assert.match(row, /pl-3 border-l-2 border-app-border\/60/)
 })
+
+test('#516 search links render as a separate bottom section that opens in a new tab', async () => {
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  const links = [{ id: 'worshipchords', name: 'WorshipChords', href: 'https://worshipchords.com/?s=relentless' }]
+  await act(async () => {
+    root.render(React.createElement(SearchResults, {
+      songs: [], setlists: [], online: [], searchLinks: links, onOpenImport() {}, onOpenSources() {},
+      onSelectSong() {}, onSelectSetlist() {}, onPreviewOnline() {},
+    }))
+  })
+  try {
+    const rows = qa('[data-testid="search-link-row"]')
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].tagName, 'A')
+    assert.equal(rows[0].getAttribute('href'), 'https://worshipchords.com/?s=relentless')
+    assert.equal(rows[0].getAttribute('target'), '_blank')
+    assert.equal(rows[0].getAttribute('rel'), 'noopener noreferrer')
+    assert.match(rows[0].textContent, /Search on WorshipChords/)
+    assert.match(rows[0].textContent, /opens in a new tab/)
+    assert.equal(q('[data-testid="online-result-source"]'), null, 'not mixed into online results')
+    const section = rows[0].parentElement
+    assert.match(section.textContent, /Preview & Import a chart/)
+    assert.match(section.textContent, /Browse external song sources/)
+  } finally { await act(async () => root.unmount()) }
+})
+
+test('#516 no search link rows without links', async () => {
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(React.createElement(SearchResults, { songs: [], setlists: [], online: [], onSelectSong() {}, onSelectSetlist() {}, onPreviewOnline() {} }))
+  })
+  try { assert.equal(qa('[data-testid="search-link-row"]').length, 0) } finally { await act(async () => root.unmount()) }
+})
+
+test('#516 Header passes search links only while online sources are enabled', () => {
+  const header = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
+  assert.match(header, /searchLinks=\{onlineSourcesEnabled \? getSearchLinks\(onlineSourceSettings, searchQuery\) : \[\]\}/)
+})
+
+test('#516 Website form takes an optional Search URL and rejects one without {query}', async () => {
+  const { root } = await mount()
+  try {
+    await click(buttonText('Website'))
+    await type(byLabel('Name (optional)'), 'Songs')
+    await type(byLabel('Website URL'), 'songs.example.org')
+    await type(byLabel('Search URL (optional)'), 'https://songs.example.org/')
+    await submitForm()
+    assert.match(q('#online-sources-form-error').textContent, /\{query\}/)
+    assert.equal(localStorage.getItem(settings.ONLINE_SOURCE_SETTINGS_KEY), null, 'invalid form saves nothing')
+    await type(byLabel('Search URL (optional)'), 'https://songs.example.org/?q={query}')
+    await submitForm()
+    assert.equal(stored().sources.at(-1).searchUrl, 'https://songs.example.org/?q={query}')
+    await click(byLabel('Edit Songs'))
+    assert.equal(byLabel('Search URL (optional)').value, 'https://songs.example.org/?q={query}')
+    await type(byLabel('Search URL (optional)'), '')
+    await submitForm()
+    assert.equal('searchUrl' in stored().sources.at(-1), false)
+  } finally { await act(async () => root.unmount()) }
+})
+
+test('#516 added WorshipChords keeps its curated search URL', async () => {
+  const { root } = await mount()
+  try {
+    await click(byLabel('Add WorshipChords'))
+    assert.equal(stored().sources.at(-1).searchUrl, 'https://worshipchords.com/?s={query}')
+  } finally { await act(async () => root.unmount()) }
+})

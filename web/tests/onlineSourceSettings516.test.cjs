@@ -250,3 +250,78 @@ test('#516 Header uses the configured-sources search and keeps the global ON/OFF
   assert.match(header, /if \(!onlineSourcesEnabled \|\| !trimmed \|\| trimmed\.length < 2\)/)
   assert.doesNotMatch(header, /searchOnlineChords\(/)
 })
+
+test('#516 search URL templates need {query} in the path or query, never the host', () => {
+  assert.equal(ok(settings.validateSearchUrlTemplate('https://example.com/?s={query}')), 'https://example.com/?s={query}')
+  assert.equal(ok(settings.validateSearchUrlTemplate('example.com/search/{query}/chords')), 'https://example.com/search/{query}/chords')
+  assert.match(fail(settings.validateSearchUrlTemplate('https://example.com/?s=x')), /\{query\}/)
+  assert.match(fail(settings.validateSearchUrlTemplate('https://{query}.example.com/')), /website name/)
+  assert.match(fail(settings.validateSearchUrlTemplate('https://example.com:{query}/')), /./)
+  assert.match(fail(settings.validateSearchUrlTemplate('javascript:alert({query})')), /http/)
+  assert.match(fail(settings.validateSearchUrlTemplate('https://user:pw@example.com/?s={query}')), /credentials/)
+  assert.match(fail(settings.validateSearchUrlTemplate('   ')), /empty/)
+  assert.match(fail(settings.validateSearchUrlTemplate(null)), /empty/)
+})
+
+test('#516 buildSearchUrl encodes the query and rejects empty queries or bad templates', () => {
+  const template = 'https://worshipchords.com/?s={query}'
+  assert.equal(settings.buildSearchUrl(template, 'relentless'), 'https://worshipchords.com/?s=relentless')
+  assert.equal(settings.buildSearchUrl(template, ' good  & "evil" #1 '), 'https://worshipchords.com/?s=good%20%20%26%20%22evil%22%20%231')
+  assert.equal(settings.buildSearchUrl(template, '   '), null)
+  assert.equal(settings.buildSearchUrl('https://example.com/', 'x'), null)
+  const long = settings.buildSearchUrl(template, 'a'.repeat(500))
+  assert.equal(long.length, 'https://worshipchords.com/?s='.length + settings.MAX_LINK_QUERY_LENGTH)
+})
+
+test('#516 WorshipChords has a curated search link but no provider and no fetching', () => {
+  const supported = settings.SUPPORTED_SOURCES.find(source => source.id === 'worshipchords')
+  assert.equal(supported.searchUrl, 'https://worshipchords.com/?s={query}')
+  const added = ok(settings.addSupportedSource(settings.createDefaultSettings(), 'worshipchords'))
+  assert.deepEqual(settings.getSearchLinks(added, 'relentless'), [
+    { id: 'worshipchords', name: 'WorshipChords', href: 'https://worshipchords.com/?s=relentless' },
+  ])
+  assert.equal(search.getSearchableProviders(added, () => undefined).length, 0)
+  const sources = fs.readdirSync(path.join(__dirname, '../functions/api'))
+  assert.equal(sources.some(name => /^wc-|worship/i.test(name)), false)
+})
+
+test('#516 getSearchLinks lists only enabled Link sources that have a search URL, in list order', () => {
+  let current = settings.createDefaultSettings()
+  current = ok(settings.addShortcut(current, { name: 'Alpha', url: 'alpha.example.org', searchUrl: 'alpha.example.org/find?q={query}' }))
+  current = ok(settings.addShortcut(current, { name: 'NoSearch', url: 'plain.example.org' }))
+  current = ok(settings.addShortcut(current, { name: 'Beta', url: 'beta.example.org', searchUrl: 'https://beta.example.org/s/{query}' }))
+  assert.deepEqual(settings.getSearchLinks(current, 'x y').map(link => [link.name, link.href]), [
+    ['Alpha', 'https://alpha.example.org/find?q=x%20y'],
+    ['Beta', 'https://beta.example.org/s/x%20y'],
+  ])
+  const off = settings.setSourceEnabled(current, 'custom-2', false)
+  assert.deepEqual(settings.getSearchLinks(off, 'x').map(link => link.name), ['Beta'])
+  assert.deepEqual(settings.getSearchLinks(current, ''), [])
+})
+
+test('#516 add and update shortcut validate the Search URL and allow clearing it', () => {
+  const base = settings.createDefaultSettings()
+  assert.match(fail(settings.addShortcut(base, { url: 'a.example.org', searchUrl: 'https://a.example.org/' })), /\{query\}/)
+  let current = ok(settings.addShortcut(base, { url: 'a.example.org', searchUrl: 'a.example.org/?s={query}' }))
+  assert.equal(current.sources.at(-1).searchUrl, 'https://a.example.org/?s={query}')
+  assert.match(fail(settings.updateShortcut(current, 'custom-2', { url: 'a.example.org', searchUrl: 'nope' })), /\{query\}/)
+  current = ok(settings.updateShortcut(current, 'custom-2', { name: 'A', url: 'a.example.org', searchUrl: '  ' }))
+  assert.equal('searchUrl' in current.sources.at(-1), false)
+  assert.equal(base.sources.length, 1, 'input settings stay unchanged')
+})
+
+test('#516 stored searchUrl is sanitized; a pre-existing curated WorshipChords shortcut gains its search URL once', () => {
+  const stored = (extra) => JSON.stringify({ version: 1, mode: 'all', sources: [
+    { kind: 'shortcut', id: 'worshipchords', name: 'WorshipChords', url: 'https://www.worshipchords.com/', enabled: true, ...extra },
+  ] })
+  const migrated = settings.parseStoredSettings(stored({}))
+  assert.equal(migrated.sources[0].searchUrl, 'https://worshipchords.com/?s={query}')
+  const edited = settings.parseStoredSettings(JSON.stringify({ version: 1, mode: 'all', sources: [
+    { kind: 'shortcut', id: 'worshipchords', name: 'WorshipChords', url: 'https://other.example.org/', enabled: true },
+  ] }))
+  assert.equal('searchUrl' in edited.sources[0], false, 'retargeted shortcut is not given the curated search URL')
+  const bad = settings.parseStoredSettings(stored({ searchUrl: 'javascript:alert({query})' }))
+  assert.equal('searchUrl' in bad.sources[0], false, 'invalid stored template is dropped, not replaced')
+  const custom = settings.parseStoredSettings(stored({ searchUrl: 'https://worshipchords.com/search/{query}' }))
+  assert.equal(custom.sources[0].searchUrl, 'https://worshipchords.com/search/{query}')
+})

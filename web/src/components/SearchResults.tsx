@@ -1,7 +1,8 @@
 import React from 'react'
-import { Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2 } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { OnlineChordResult } from '../utils/onlineSearch'
+import type { SearchLink } from '../utils/onlineSourceSettings'
 
 /** GTAR1 shows up to 8 rows per group. */
 export const SEARCH_GROUP_LIMIT = 8
@@ -13,6 +14,8 @@ export interface SearchResultsProps {
   isSearchingOnline?: boolean
   isOffline?: boolean
   onlineError?: string | null
+  /** Link sources that open a site search in a new tab. Never fetched by GTAR. */
+  searchLinks?: SearchLink[]
   onSelectSong: (originalIdx: number) => void
   onSelectSetlist: (setlist: WebSetlist) => void
   onPreviewOnline: (result: OnlineChordResult) => void
@@ -28,7 +31,7 @@ const headingClass = 'px-3 pt-2 text-xs font-bold text-app-heading flex items-ce
  * carrying GTAR's shared catalog, setlist and online results.
  */
 export function SearchResults({
-  songs, setlists, online, isSearchingOnline, isOffline, onlineError,
+  songs, setlists, online, isSearchingOnline, isOffline, onlineError, searchLinks = [],
   onSelectSong, onSelectSetlist, onPreviewOnline, onOpenImport, onOpenSources,
 }: SearchResultsProps): React.ReactElement {
   const shownSongs = songs.slice(0, SEARCH_GROUP_LIMIT)
@@ -70,6 +73,12 @@ export function SearchResults({
         : onlineError && <p className="px-3 pb-2 text-xs text-status-error">{onlineError}</p>}
       {onOpenImport && <button type="button" className={actionClass} onClick={onOpenImport}>Preview &amp; Import a chart</button>}
       {onOpenSources && <button type="button" className={actionClass} onClick={onOpenSources}>Browse external song sources</button>}
+      {searchLinks.map(link => <a key={link.id} href={link.href} target="_blank" rel="noopener noreferrer"
+        data-testid="search-link-row" className={`${actionClass} flex items-center justify-between gap-2`}>
+        <span className="min-w-0 break-words">Search on {link.name}</span>
+        <ExternalLink className="w-3.5 h-3.5 shrink-0 text-app-muted" aria-hidden="true" />
+        <span className="sr-only">(opens in a new tab)</span>
+      </a>)}
     </div>
   </section>
 }

@@ -46,6 +46,7 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
   const [formUrl, setFormUrl] = useState('')
+  const [formSearchUrl, setFormSearchUrl] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmRestore, setConfirmRestore] = useState(false)
   const [status, setStatus] = useState('')
@@ -54,7 +55,7 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
     saveOnlineSourceSettings(next)
     if (message) setStatus(message)
   }
-  const resetForm = () => { setFormOpen(false); setEditingId(null); setFormName(''); setFormUrl(''); setFormError(null) }
+  const resetForm = () => { setFormOpen(false); setEditingId(null); setFormName(''); setFormUrl(''); setFormSearchUrl(''); setFormError(null) }
   const applyResult = (result: Result<OnlineSourceSettings>, message: string): boolean => {
     if (!result.ok) { setStatus(''); setFormError(result.error); return false }
     setFormError(null)
@@ -64,8 +65,8 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
   const submitForm = (event: React.FormEvent) => {
     event.preventDefault()
     const done = editingId
-      ? applyResult(updateShortcut(settings, editingId, { name: formName, url: formUrl }), 'Website updated.')
-      : applyResult(addShortcut(settings, { name: formName, url: formUrl }), 'Website added.')
+      ? applyResult(updateShortcut(settings, editingId, { name: formName, url: formUrl, searchUrl: formSearchUrl }), 'Website updated.')
+      : applyResult(addShortcut(settings, { name: formName, url: formUrl, searchUrl: formSearchUrl }), 'Website added.')
     if (done) resetForm()
   }
   const startEdit = (id: string) => {
@@ -75,6 +76,7 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
     setEditingId(id)
     setFormName(entry.name)
     setFormUrl(entry.url)
+    setFormSearchUrl(entry.searchUrl ?? '')
     setFormError(null)
   }
   const remove = (id: string, name: string) => {
@@ -142,6 +144,7 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
             >
               <p><strong className="text-app-heading">Search</strong> sources show results in GTAR.</p>
               <p><strong className="text-app-heading">Link</strong> sources only open in your browser.</p>
+              <p>A Link with a Search URL (use {'{query}'}) also adds a search link under your results.</p>
               <p>Arrows set the order. Primary only uses the first enabled search source.</p>
               <p>Removed sources stay removed until you add them again or restore defaults.</p>
             </div>
@@ -241,6 +244,16 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
                 placeholder="https://example.com"
                 aria-invalid={formError ? true : undefined}
                 aria-describedby={formError ? 'online-sources-form-error' : undefined}
+                className={fieldClass}
+              />
+              <input
+                type="text"
+                inputMode="url"
+                aria-label="Search URL (optional)"
+                value={formSearchUrl}
+                maxLength={2048}
+                onChange={event => { setFormSearchUrl(event.target.value); if (formError) setFormError(null) }}
+                placeholder="Search URL, e.g. https://example.com/?s={query}"
                 className={fieldClass}
               />
               {formError && <p id="online-sources-form-error" role="alert" className="text-[11px] text-status-error">{formError}</p>}
