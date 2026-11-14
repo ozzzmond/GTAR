@@ -51,7 +51,9 @@ export function useAutoLiveLyrics(manual: ReturnType<typeof useLiveLyrics>, song
     : !charts.consistent || shared ? 'Auto lyrics neutral - shared or ambiguous slide text'
     : !manual.matchingRanges.length ? 'Slide not matched'
     : 'Live lyrics on - automatic DEV checks'
-  return { ...manual, section: confirmed && manual.sectionLineId !== null ? { scope: sectionScope, lineId: manual.sectionLineId } : null, automaticMode: true, confirmed, canConfirm: false, status,
+  const section = confirmed && manual.sectionLineId !== null ? { scope: sectionScope, lineId: manual.sectionLineId } : null
+  // Validate all matched geometry for a unique section; never choose a duplicate line occurrence.
+  return { ...manual, section, automaticMode: true, confirmed, canConfirm: false, status,
     activeLineIds: confirmed ? manual.matchedLineIds : noLines,
-    scrollRange: confirmed && manual.matchingRanges.length === 1 ? manual.matchingRanges[0] : null }
+    scrollRange: section ? [...manual.matchedLineIds] : confirmed && manual.matchingRanges.length === 1 ? manual.matchingRanges[0] : null }
 }

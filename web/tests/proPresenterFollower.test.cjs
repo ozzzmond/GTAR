@@ -402,3 +402,12 @@ test('automatic lyric read is bounded GET-only, validates fresh identity and can
   assert.equal(f.snapshots.at(-1).live, false)
   assert.equal(f.snapshots.at(-1).currentReadIdentityRevision, undefined)
 })
+
+test('owner-observed unknown slide index remains null while healthy presentation/current content remain available', async t => {
+  const f = fixture(t); await flush()
+  const unknown = structuredClone(realPresentation); unknown.presentation_index.index = 0xffffffff
+  f.send(0, state('current', 'next', 'Synthetic words')); f.send(1, unknown); await flush()
+  assert.equal(f.snapshots.at(-1).live, true)
+  assert.equal(f.snapshots.at(-1).presentation.slideIndex, null)
+  assert.equal(f.snapshots.at(-1).current.uuid, 'current')
+})

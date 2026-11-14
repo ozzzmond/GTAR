@@ -63,7 +63,7 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
   const entry = { manifest, checkAvailability: () => ({ available: true }), load: async () => ({ manifest, checkAvailability: () => ({ available: true }), activate: value => { ctx = value; return () => {} } }) }
   const host = new ExtensionHost([entry], { getItem: () => null, setItem() {} })
   await host.enable(manifest.id)
-  const songs = [1, 2, 3].map(id => ({ id, title: `Synthetic song ${id}`, artist: '', key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: id, rawContent: `{title: Synthetic song ${id}}\n{comment: Verse1}\n[C]Unique lyric for song ${id}\n[G]Another verse line ${id}\n[G]Repeated refrain ${id}\n{comment: Chorus}\n[G]Repeated refrain ${id}\n[C]Unique chorus ${id}\n{comment: Verse2}\n[D]Unique second verse ${id}\n{comment: Bridge}\n[A]Unique bridge ${id}\n[C]Shared setlist words`, format: 'CHORD_PRO', capo: '', bpm: '' }))
+  const songs = [1, 2, 3].map(id => ({ id, title: `Synthetic song ${id}`, artist: '', key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: id, rawContent: `{title: Synthetic song ${id}}\n{comment: Verse1}\n[C]Unique lyric for song ${id}\n[G]Another verse line ${id}\n[G]Repeated refrain ${id}\n{comment: Chorus}\n[G]Repeated refrain ${id}\n[C]Unique chorus ${id}\n[G]Local repeated chorus ${id}\nD       A\nLocal repeated chorus ${id}\n{comment: Verse2}\n[D]Unique second verse ${id}\n{comment: Repeat Chorus}\n{comment: Bridge}\n[A]Unique bridge ${id}\n[C]Shared setlist words`, format: 'CHORD_PRO', capo: '', bpm: '' }))
   const list = { id: 'active', name: 'QA', songs: songs.map((song, index) => ({ id: song.id, entryId: `entry-${index}`, position: index, title: song.title })) }
   const followSetlist = projectFollowSetlist('active', 'setlist', list, songs)
   const selections = [], transposes = []
@@ -135,7 +135,10 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
     assert.equal([...document.querySelectorAll('button')].some(el => el.textContent === 'Resume auto-scroll'), false)
     await moveTo('Unique chorus 2', 'Chorus', 56)
     await moveTo('Unique second verse 2', 'Verse2')
-    await moveTo('Unique chorus 2', 'Chorus')
+    await moveTo('Local repeated chorus 2', 'Chorus')
+    assert.equal(highlighted(), 2, 'all same-section matches remain highlighted; no line is chosen')
+    const beforeSameChorus = scrollMoves.length
+    await confirmFresh('Unique chorus 2'); await flushFrames(); assert.equal(scrollMoves.length, beforeSameChorus)
     await moveTo('Unique bridge 2', 'Bridge')
     await moveTo('Unique lyric for song 2', 'Verse1')
     const beforeAmbiguous = scrollMoves.length

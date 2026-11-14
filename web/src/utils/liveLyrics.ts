@@ -54,10 +54,10 @@ export function matchLiveLyrics(projection: readonly LyricProjection[], text: st
   return new Set(matchLiveLyricRanges(projection, text).flat())
 }
 
-// Only one complete exact occurrence can authorize section positioning.
+// Multiple exact occurrences can authorize a header only when every match belongs to that same parsed section.
 export function resolveLiveLyricSection(projection: readonly LyricProjection[], ranges: readonly (readonly number[])[]): number | null {
-  if (ranges.length !== 1 || !ranges[0].length) return null
-  const lines = ranges[0].map(anchor => projection.find(line => line.anchorId === anchor))
+  if (!ranges.length || ranges.some(range => !range.length)) return null
+  const lines = [...new Set(ranges.flat())].map(anchor => projection.find(line => line.anchorId === anchor))
   const section = lines[0]?.sectionId
   return section !== undefined && section >= 0 && lines.every(line => line?.sectionId === section) ? section : null
 }

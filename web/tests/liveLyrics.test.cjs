@@ -161,3 +161,17 @@ test('section resolution uses global parsed header anchors only for one complete
   assert.equal(resolveLiveLyricSection(projection, [[projection[0].anchorId, projection[1].anchorId]]), null)
   assert.equal(JSON.stringify(parsed), before)
 })
+
+test('repeated lyric ranges in one section resolve its header; empty repeat markers and cross-section duplicates do not choose occurrences', () => {
+  const source = '{comment: Verse1}\nOpening words\n{comment: Chorus}\n[C]One chorus refrain\nG       D\nOne chorus refrain\n{comment: Verse2}\nSecond verse words\n{comment: Repeat Chorus}\n{comment: Bridge}\nBridge words'
+  const parsed = parseGtarSong(source, 3), projection = projectLyrics(parsed.lines)
+  const ranges = matchLiveLyricRanges(projection, 'One chorus refrain')
+  assert.equal(ranges.length, 2)
+  assert.equal(parsed.lines[resolveLiveLyricSection(projection, ranges)].title, 'Chorus')
+  assert.equal(matchLiveLyricRanges(projection, 'Repeat Chorus').length, 0)
+  assert.equal(resolveLiveLyricSection(projection, [ranges[0], []]), null)
+  const two = projectLyrics(parseGtarSong(source + '\n{comment: Chorus2}\n[D]One chorus refrain', 0).lines)
+  assert.equal(resolveLiveLyricSection(two, matchLiveLyricRanges(two, 'One chorus refrain')), null)
+  const sameLabel = projectLyrics(parseGtarSong(source + '\n{comment: Chorus}\n[D]One chorus refrain', 0).lines)
+  assert.equal(resolveLiveLyricSection(sameLabel, matchLiveLyricRanges(sameLabel, 'One chorus refrain')), null, 'same label on distinct headers is still ambiguous')
+})

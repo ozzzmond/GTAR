@@ -80,7 +80,8 @@ function presentationIdentity(value: unknown): FollowObservation['presentation']
     typeof id.name !== 'string' || !id.name.trim() ||
     !Number.isSafeInteger(data.index) || Number(data.index) < 0 ||
     !Number.isSafeInteger(id.index) || Number(id.index) < 0) return null
-  return { uuid: id.uuid, title: id.name, slideIndex: Number(data.index) }
+  // Owner-observed UINT32_MAX means no usable slide index, not an occurrence.
+  return { uuid: id.uuid, title: id.name, slideIndex: Number(data.index) === 0xffffffff ? null : Number(data.index) }
 }
 export class SlideDedupe {
   private last?: string
