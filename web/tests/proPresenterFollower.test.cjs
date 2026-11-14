@@ -342,7 +342,7 @@ test('assisted snapshot retains validated identity/index and current only; edits
   f.send(0, state('A', 'B', 'Synthetic morning light')); await flush()
   assert.equal(f.snapshots.at(-1).live, false)
   f.send(1, realPresentation); await flush()
-  assert.deepEqual(f.snapshots.at(-1), { live: true,
+  assert.deepEqual(f.snapshots.at(-1), { live: true, identityRevision: 1,
     presentation: { uuid: realPresentation.presentation_index.presentation_id.uuid, title: realPresentationName, slideIndex: 0 },
     current: { uuid: 'A', text: 'Synthetic morning light' } })
   assert.equal(JSON.stringify(f.snapshots).includes('notes'), false)

@@ -148,3 +148,20 @@ test('other programmatic Stage movement does not count as manual intent', t => {
   f.update(); f.flush()
   assert.equal(f.moves.length, 1, 'unchanged snapshot does not fight another programmatic scroll')
 })
+
+
+test('Auto Follow preserves manual scroll pause across a neutral song transition and new verification until explicit Resume', t => {
+  const f = fixture(t, [[0, 1200, 40], [1, 2400, 40]])
+  f.update({ range: [0], preservePause: true }); f.flush()
+  f.container.dispatchEvent(new f.dom.window.Event('wheel'))
+  assert.equal(f.controller.getPaused(), true)
+  f.update({ enabled: false, session: {}, range: null }); f.flush()
+  assert.equal(f.controller.getPaused(), true)
+  f.update({ enabled: true, session: {}, slideKey: 'verified-new-song', range: [1] }); f.flush()
+  assert.equal(f.moves.length, 1)
+  assert.equal(f.controller.getPaused(), true)
+  f.controller.resume(); f.flush()
+  assert.equal(f.moves.length, 2)
+  assert.equal(f.container.scrollTop, 2220)
+  assert.equal(f.outgoing, 0)
+})

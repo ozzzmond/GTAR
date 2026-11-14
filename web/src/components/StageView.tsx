@@ -1,3 +1,7 @@
+import { SetlistAutoFollowControl } from './SetlistAutoFollowControl'
+import { useSetlistAutoFollow } from '../utils/useSetlistAutoFollow'
+import { setlistAutoFollowDev } from '../utils/setlistAutoFollowDev'
+import type { FollowSelection, FollowSetlist } from '../utils/setlistAutoFollow'
 import { useLiveLyricScroll } from '../utils/useLiveLyricScroll'
 import { LiveLyricsControl } from './LiveLyrics'
 import { useLiveLyrics } from '../utils/useLiveLyrics'
@@ -66,6 +70,10 @@ import type { ActiveSongState, WebSetlist } from '../types/gtar'
 
 interface StageViewProps {
   song: ActiveSongState
+  followSetlist?: FollowSetlist | null
+  followManualRevision?: number
+  onFollowSetlistEntry?: (request: FollowSelection) => boolean
+  isProPresenterSelection?: boolean
   songs: ActiveSongState[]
   activeSongIndex: number
   onSelectSongIndex: (index: number) => void
@@ -125,6 +133,10 @@ export const LINE_SPACING_OPTIONS: { value: StageLineSpacing; label: string }[] 
 
 export const StageView: React.FC<StageViewProps> = ({
   song,
+  followSetlist = null,
+  followManualRevision = 0,
+  onFollowSetlistEntry,
+  isProPresenterSelection = false,
   songs,
   activeSongIndex,
   onSelectSongIndex,
@@ -582,9 +594,13 @@ export const StageView: React.FC<StageViewProps> = ({
     isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive,
     JSON.stringify([queueMode, activeSongIndex, activeSetlistSongIndex]))
 
+  const autoFollow = useSetlistAutoFollow(liveLyrics.snapshot, followSetlist, activeSetlistSongIndex, followManualRevision,
+    isFullscreen, isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive, onFollowSetlistEntry)
+
   const liveScroll = useLiveLyricScroll(scrollContainerRef, {
     enabled: liveLyrics.confirmed, session: liveLyrics.verificationScope,
     slideKey: liveLyrics.slideKey, range: liveLyrics.scrollRange, speedScrolling: isAutoScrolling,
+    preservePause: autoFollow.state.mode === 'auto' && isFullscreen,
   })
 
   // Band Sync subscriptions
@@ -1077,6 +1093,7 @@ export const StageView: React.FC<StageViewProps> = ({
   useEffect(() => {
     if (previousSongKeyRef.current !== null && previousSongKeyRef.current !== currentSongKey) {
       if (scrollContainerRef.current) {
+        if (isProPresenterSelection) liveScroll.controller.markProgrammaticPosition(0)
         scrollContainerRef.current.scrollTop = 0
       }
       lastScrollTopRef.current = 0
@@ -1096,12 +1113,13 @@ export const StageView: React.FC<StageViewProps> = ({
         clearTimeout(transitionTimeoutRef.current)
         transitionTimeoutRef.current = null
       }
-      stageCast.broadcastScroll(0, 0, 0)
+      if (!isProPresenterSelection) stageCast.broadcastScroll(0, 0, 0)
     }
     previousSongKeyRef.current = currentSongKey
-  }, [currentSongKey])
+  }, [currentSongKey, isProPresenterSelection, liveScroll.controller])
 
   const triggerSongSlide = useCallback((direction: 'next' | 'prev') => {
+    autoFollow.controller.override()
     const slideEl = slideContentRef.current
     const container = scrollContainerRef.current
 
@@ -1174,7 +1192,7 @@ export const StageView: React.FC<StageViewProps> = ({
         }, slideInDuration + 30)
       })
     }, slideOutDuration)
-  }, [])
+  }, [autoFollow.controller])
 
   const handlePrevSong = useCallback(() => triggerSongSlide('prev'), [triggerSongSlide])
   const handleNextSong = useCallback(() => triggerSongSlide('next'), [triggerSongSlide])
@@ -1319,6 +1337,7 @@ export const StageView: React.FC<StageViewProps> = ({
         const isNext = (deltaX <= -60 || (deltaX <= -30 && velocity >= 0.45)) && canNextNow
         const isPrev = (deltaX >= 60 || (deltaX >= 30 && velocity >= 0.45)) && canPrevNow
 
+        if (isNext || isPrev) autoFollow.controller.override()
         if (slideEl) {
           if (isNext) {
             isAnimatingRef.current = true
@@ -1419,7 +1438,7 @@ export const StageView: React.FC<StageViewProps> = ({
         clearTimeout(transitionTimeoutRef.current)
       }
     }
-  }, [])
+  }, [autoFollow.controller])
 
   // Keyboard stage controls:
   // - Spacebar: Toggle Auto-Scroll (Play / Pause)
@@ -1603,6 +1622,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Mirror stage state to secondary screen / Cast Presentation window in real-time
   useEffect(() => {
+    if (isProPresenterSelection && !isCastActive) return
     stageCast.broadcastState({
       song,
       effectiveKey,
@@ -1615,7 +1635,7 @@ export const StageView: React.FC<StageViewProps> = ({
       lineSpacing,
       notation,
     })
-  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing, notation])
+  }, [song, effectiveKey, transposeOffset, fontSizePx, fontStyle, isTwoColumn, chordScale, fontWeight, lineSpacing, notation, isProPresenterSelection, isCastActive])
 
   useEffect(() => {
     // Listen for REQUEST_STATE from external teleprompter window
@@ -2219,7 +2239,9 @@ export const StageView: React.FC<StageViewProps> = ({
             </div>
           )}
 
-          {isFullscreen && <LiveLyricsControl live={liveLyrics} songTitle={song.title} />}
+          {isFullscreen && <LiveLyricsControl live={liveLyrics} songTitle={song.title} onConfirmed={autoFollow.controller.associateCurrent}>
+            {setlistAutoFollowDev && <SetlistAutoFollowControl follow={autoFollow} />}
+          </LiveLyricsControl>}
           {/* Song Lines Rendering: Chart in a Card for Stage Preview */}
           <div className={!inPerformanceMode ? 'ui-song-card bg-app-surface rounded-2xl p-4 sm:p-6 border border-app-border shadow-xl overflow-x-auto min-h-[400px]' : ''}>
             {song.isMissing ? (

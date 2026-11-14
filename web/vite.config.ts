@@ -301,6 +301,7 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.VITE_APP_ENV': JSON.stringify(appEnv),
       __GTAR_STAGE_CAST2_ENABLED__: JSON.stringify(isStageCast2Dev),
+      __GTAR_SETLIST_AUTO_FOLLOW_DEV__: JSON.stringify(!isProd && (isDev || isPreview)),
       __GTAR_PROD_VERSION__: JSON.stringify(releaseIdentity?.version ?? null),
       __GTAR_PREVIEW_IDENTITY__: JSON.stringify(previewIdentity),
       __GTAR_DEV_VERSION__: JSON.stringify(

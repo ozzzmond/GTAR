@@ -4,6 +4,7 @@ export interface LiveScrollInput {
   slideKey: string
   range: readonly number[] | null
   speedScrolling: boolean
+  preservePause?: boolean
 }
 
 export function liveLyricScrollTarget(scrollTop: number, scrollHeight: number, height: number, top: number, bottom: number): number | null {
@@ -59,11 +60,12 @@ export class LiveLyricScroller {
     this.input = input
     const changed = !previous || previous.session !== input.session || previous.slideKey !== input.slideKey || previous.enabled !== input.enabled || previous.range !== input.range
     if (changed || input.speedScrolling) this.cancelPending()
-    if (!input.enabled) { this.setPaused(false); return }
-    if (previous?.session !== input.session) this.setPaused(false)
+    if (!input.enabled) { if (!input.preservePause) this.setPaused(false); return }
+    if (previous?.session !== input.session && !input.preservePause) this.setPaused(false)
     if (input.speedScrolling) { this.pause(); return }
     if (changed && !this.paused) this.schedule()
   }
+  markProgrammaticPosition = (top: number) => { this.expectedTop = top }
   // Called before Stage's existing scroll handler. Own writes never broadcast or pause.
   handleScroll = () => {
     if (this.expectedTop !== null && this.container && Math.abs(this.container.scrollTop - this.expectedTop) <= 1) return true

@@ -1,3 +1,4 @@
+export type { FollowSnapshot } from '../contract'
 import { CONTRACT_VERSION } from '../contract'
 import type { ExtensionContext, FollowObservation, FollowSnapshot, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
 import { extensionStorageKey, normalizeSettings, readExtension, validSetting } from './settings'
@@ -18,6 +19,11 @@ export class ExtensionHost {
   private followListeners = new Set<() => void>()
   private followSnapshot: FollowSnapshot | null = null
   private followSession = 0
+  private followConnection = 0
+  private identityRevision = 0
+  private sourceIdentityRevision: number | undefined
+  private followRefresh: (() => void) | undefined
+  requestFollowRefresh = () => { this.followRefresh?.() }
   getFollowSnapshot = () => this.followSnapshot
   subscribeFollow = (listener: () => void) => {
     this.followListeners.add(listener)
@@ -25,9 +31,12 @@ export class ExtensionHost {
   }
   private publishFollow(value: FollowObservation | null) {
     const previous = this.followSnapshot
+    if (!value?.live || !previous?.live) this.followConnection++
+    if (value?.identityRevision !== this.sourceIdentityRevision || value?.presentation?.uuid !== previous?.presentation?.uuid || value?.presentation?.title !== previous?.presentation?.title) this.identityRevision++
+    this.sourceIdentityRevision = value?.identityRevision
     if (!value?.live || !previous?.live || value.presentation?.uuid !== previous.presentation?.uuid) this.followSession++
     this.followSnapshot = value ? Object.freeze({
-      session: this.followSession, live: value.live,
+      session: this.followSession, connection: this.followConnection, identityRevision: this.identityRevision, live: value.live,
       presentation: value.presentation ? Object.freeze({ uuid: value.presentation.uuid, title: value.presentation.title, slideIndex: value.presentation.slideIndex }) : null,
       current: value.current ? Object.freeze({ uuid: value.current.uuid, text: value.current.text }) : null,
     }) : null
@@ -74,7 +83,7 @@ export class ExtensionHost {
   }
   private stop(runtime: Runtime) {
     runtime.generation++
-    if (runtime.entry.manifest.id === 'propresenter-follower') this.publishFollow(null)
+    if (runtime.entry.manifest.id === 'propresenter-follower') { this.followRefresh = undefined; this.publishFollow(null) }
     runtime.controller?.abort()
     runtime.controller = undefined
     const dispose = runtime.dispose
@@ -136,6 +145,7 @@ export class ExtensionHost {
         },
         log: message => { if (current()) this.logSink(this.redact(runtime, message) ?? '') },
         ...(entry.manifest.id === 'propresenter-follower' ? {
+          setFollowRefresh: (refresh: () => void) => { if (current()) this.followRefresh = () => { if (current()) refresh() } },
           publishFollowSnapshot: (snapshot: FollowObservation) => {
             if (current()) this.publishFollow(snapshot)
           },

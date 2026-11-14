@@ -105,6 +105,7 @@ export function activate(ctx: ExtensionContext) {
   let testResult = ''
   let disposed = false
   let generation = 0
+  let identityRevision = 0
   let testController: AbortController | undefined
   let testTimer: ReturnType<typeof setTimeout> | undefined
   const connections = new Set<AbortController>()
@@ -116,7 +117,7 @@ export function activate(ctx: ExtensionContext) {
   const publish = () => {
     ctx.publishFollowSnapshot?.({
       live: fresh.every(Boolean) && live.every(Boolean) && !unexpected.some(Boolean) && !!identity && !!observedCurrent,
-      presentation: identity, current: observedCurrent,
+      presentation: identity, current: observedCurrent, identityRevision,
     })
     ctx.setPanel({ fields: [
     { label: 'Status', value: status },
@@ -206,6 +207,7 @@ export function activate(ctx: ExtensionContext) {
             } else {
               presentation = presentationName(frame)
               identity = presentationIdentity(frame)
+              identityRevision++
             }
             failures = 0
             unexpected[index] = false
@@ -274,6 +276,7 @@ export function activate(ctx: ExtensionContext) {
     page.removeEventListener('visibilitychange', restart)
     ctx.signal.removeEventListener('abort', dispose)
   }
+  ctx.setFollowRefresh?.(restart)
   page.addEventListener('visibilitychange', restart)
   ctx.signal.addEventListener('abort', dispose, { once: true })
   restart()

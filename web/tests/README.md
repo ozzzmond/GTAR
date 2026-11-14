@@ -270,6 +270,7 @@ New or renamed tests await a human choice of primary category.
 - [recoveryRetentionGuidance.test.cjs](recoveryRetentionGuidance.test.cjs)
 - [retiredLegacyShareAndSync453.test.cjs](retiredLegacyShareAndSync453.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
+- [setlistAutoFollow.test.cjs](setlistAutoFollow.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [setlistMergeConflictSkip.test.cjs](setlistMergeConflictSkip.test.cjs)
 - [setlistShareSwipe346.test.cjs](setlistShareSwipe346.test.cjs)

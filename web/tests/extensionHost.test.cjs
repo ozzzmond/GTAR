@@ -210,3 +210,19 @@ test('follower-only memory output is generation scoped, frozen, projected and in
   assert.deepEqual(messages, [])
   host.dispose()
 })
+
+
+test('dedicated refresh is follower-only, generation-bound and has no effect when disabled', async () => {
+  const f = fixture({ manifest: { id: 'propresenter-follower' } }), other = fixture(), host = new ExtensionHost([f.entry, other.entry], storage())
+  let refreshes = 0
+  host.requestFollowRefresh(); assert.equal(refreshes, 0)
+  await host.enable('propresenter-follower'); await host.enable('test-only')
+  assert.equal(other.context.setFollowRefresh, undefined)
+  f.context.setFollowRefresh(() => refreshes++)
+  host.requestFollowRefresh(); assert.equal(refreshes, 1)
+  const stale = f.context
+  host.disable('propresenter-follower'); host.requestFollowRefresh(); assert.equal(refreshes, 1)
+  stale.setFollowRefresh(() => refreshes++)
+  host.requestFollowRefresh(); assert.equal(refreshes, 1)
+  host.dispose()
+})

@@ -25,7 +25,8 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
   const confirmed = eligible && confirmation.scope === scope && confirmation.enabled
   const canConfirm = eligible && matches.size > 0
   const confirm = () => {
-    if (canConfirm && host?.getFollowSnapshot() === snapshot) setConfirmation({ scope, enabled: true })
+    if (canConfirm && host?.getFollowSnapshot() === snapshot) { setConfirmation({ scope, enabled: true }); return true }
+    return false
   }
   const stop = () => setConfirmation({ scope, enabled: false })
   const status = !snapshot?.live ? 'Waiting for fresh presentation and slide data'
