@@ -62,11 +62,13 @@ test('#453 provider calls the proxy without credentials and maps a disabled depl
   } finally { global.fetch = saved }
 })
 
-test('#453 search bar queries online only when the toggle is on and the menu exposes it as a checkbox', () => {
+test('#453 search bar queries online only when the toggle is on and the menu exposes it as a switch', () => {
   const header = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
   assert.match(header, /useOnlineSourcesEnabled\(\)/)
   assert.match(header, /if \(!onlineSourcesEnabled \|\| !trimmed \|\| trimmed\.length < 2\)/)
   assert.match(header, /\[searchQuery, onlineSourcesEnabled, onlineSourceSettings\]/)
-  assert.match(header, /role="menuitemcheckbox"[\s\S]*?aria-checked=\{onlineSourcesEnabled\}[\s\S]*?data-testid="settings-online-sources"/)
+  assert.match(header, /<OnlineSourcesRow[^>]*enabled=\{onlineSourcesEnabled\}[^>]*onToggle=\{setOnlineSourcesEnabled\}/)
+  const row = fs.readFileSync(path.join(__dirname, '../src/components/OnlineSourcesRow.tsx'), 'utf8')
+  assert.match(row, /role="switch"[\s\S]*?aria-checked=\{enabled\}[\s\S]*?data-testid="settings-online-sources"/)
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../src/utils/onlineSearchProvider.ts'), 'utf8'), /Active account login required/)
 })

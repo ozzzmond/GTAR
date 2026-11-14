@@ -70,7 +70,9 @@ test('Semantic tokens cover responsive home/header while factory presets and Sta
   for (const file of ['Header', 'SongbookHomeView']) {
     const source = fs.readFileSync(require.resolve(`../src/components/${file}.tsx`), 'utf8')
     assert.ok(source.includes('ui-primary-text'))
-    assert.ok(source.includes('ui-secondary-text'))
+    // The Online song sources row (and its secondary pills) now lives in OnlineSourcesRow (#516).
+    const secondarySource = file === 'Header' ? source + fs.readFileSync(require.resolve('../src/components/OnlineSourcesRow.tsx'), 'utf8') : source
+    assert.ok(secondarySource.includes('ui-secondary-text'))
     assert.ok(source.includes('sm:'))
   }
   for (const style of ['mono', 'sans', 'serif']) assert.ok(css.includes(`body.theme-custom .stage-${style} { font-family: var(--custom-font-stage, var(--font-stage-${style})); }`))

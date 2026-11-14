@@ -8,7 +8,6 @@ import { SearchResults } from './SearchResults'
 import {
   Search,
   X,
-  Globe,
   Palette,
   Wrench,
   Command,
@@ -19,7 +18,6 @@ import {
   Sun,
   Moon,
   Settings,
-  Settings2,
   FolderArchive,
   Info,
 } from 'lucide-react'
@@ -59,7 +57,7 @@ import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlin
 import { useOnlineSourceSettings } from '../utils/onlineSourceSettings'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
-import { ManageSourcesModal } from './ManageSourcesModal'
+import { OnlineSourcesRow } from './OnlineSourcesRow'
 import { AboutModal } from './AboutModal'
 import { CloudSyncModal } from './CloudSyncModal'
 import { resolveThemePalette } from './ThemeModal'
@@ -195,7 +193,6 @@ export const Header: React.FC<HeaderProps> = ({
   void isCastActive
   const [showBackupRestoreModal, setShowBackupRestoreModal] = useState(false)
   const [showDebugLogsModal, setShowDebugLogsModal] = useState(false)
-  const [showManageSources, setShowManageSources] = useState(false)
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showAdvancedToolsMenu, setShowAdvancedToolsMenu] = useState(false)
@@ -273,7 +270,7 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus({ preventScroll: true }) }, [mobileSearchOpen])
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (shortcutsBlocked || showBackupRestoreModal || showDebugLogsModal || showAboutModal || showManageSources) return
+      if (shortcutsBlocked || showBackupRestoreModal || showDebugLogsModal || showAboutModal) return
       const target = event.target instanceof HTMLElement ? event.target : null
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         if (target?.closest('dialog, [role=dialog]') || target?.id === 'multi-song-search-input') return
@@ -290,7 +287,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal, showManageSources])
+  }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal])
   const onlineSourcesEnabled = useOnlineSourcesEnabled()
   const onlineSourceSettings = useOnlineSourceSettings()
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
@@ -305,7 +302,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Header dialog overlay blocks Stage keyboard/pedal shortcuts
   const showCloudSyncModal = showBackupRestoreModal
-  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal || showAboutModal || showManageSources
+  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal || showAboutModal
   const overlayCallback = useRef(onOverlayChange)
   useEffect(() => { overlayCallback.current = onOverlayChange }, [onOverlayChange])
   useEffect(() => { overlayCallback.current?.(headerOverlayOpen) }, [headerOverlayOpen])
@@ -351,33 +348,8 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="text-xs font-bold text-app-heading">Advanced Tools</span>
       </div>
 
-      {/* Online song sources: opt-in, off by default */}
-      <button
-        type="button"
-        role="menuitemcheckbox"
-        aria-checked={onlineSourcesEnabled}
-        data-testid="settings-online-sources"
-        onClick={() => setOnlineSourcesEnabled(!onlineSourcesEnabled)}
-        className={`${popoverItem} justify-between`}
-      >
-        <div className="flex items-center gap-2.5">
-          <Globe className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-          <span>Online song sources</span>
-        </div>
-        <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none bg-app-surface border border-app-border text-app-muted ui-secondary-text font-mono">
-          {onlineSourcesEnabled ? 'On' : 'Off'}
-        </span>
-      </button>
-
-      <button
-        type="button"
-        data-testid="settings-manage-sources"
-        onClick={() => { setShowAdvancedToolsMenu(false); setShowManageSources(true) }}
-        className={popoverItem}
-      >
-        <Settings2 className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-        <span>Manage Sources</span>
-      </button>
+      {/* Online song sources: opt-in, off by default; expands to the source list (#516) */}
+      <OnlineSourcesRow rowClass={popoverItem} enabled={onlineSourcesEnabled} onToggle={setOnlineSourcesEnabled} />
 
       {/* Extension registry rows (e.g. ProPresenter) */}
       <ExtensionRows host={extensionHost} rowClass={popoverItem} />
@@ -919,13 +891,6 @@ export const Header: React.FC<HeaderProps> = ({
       <DebugLogsModal
         isOpen={showDebugLogsModal}
         onClose={() => setShowDebugLogsModal(false)}
-      />
-
-      {/* Manage online song sources */}
-      <ManageSourcesModal
-        isOpen={showManageSources}
-        onClose={() => { setShowManageSources(false); advancedToolsButtonRef.current?.focus({ preventScroll: true }) }}
-        onlineSourcesEnabled={onlineSourcesEnabled}
       />
 
       {/* About GTAR Modal */}

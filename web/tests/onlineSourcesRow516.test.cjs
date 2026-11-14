@@ -1,4 +1,4 @@
-// #516 PR B: Manage Sources panel behavior, persistence, empty state, validation and accessibility.
+// #516 PR B: Online song sources row (switch + expandable source list), help popover and result source labels.
 const { test, after } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -21,13 +21,15 @@ Object.defineProperty(global, 'navigator', { configurable: true, value: dom.wind
 const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
-const { ManageSourcesModal } = require('../src/components/ManageSourcesModal.tsx')
+const { OnlineSourcesRow } = require('../src/components/OnlineSourcesRow.tsx')
+const { SearchResults } = require('../src/components/SearchResults.tsx')
 const settings = require('../src/utils/onlineSourceSettings.ts')
 
 const q = selector => document.querySelector(selector)
 const qa = selector => [...document.querySelectorAll(selector)]
 const stored = () => JSON.parse(localStorage.getItem(settings.ONLINE_SOURCE_SETTINGS_KEY))
 const byLabel = label => qa('button, a, input').find(el => el.getAttribute('aria-label') === label)
+const buttonText = text => qa('button').find(button => button.textContent.trim() === text)
 
 async function mount(props = {}) {
   localStorage.clear()
@@ -35,14 +37,15 @@ async function mount(props = {}) {
   const container = document.getElementById('root')
   container.innerHTML = ''
   const root = createRoot(container)
-  const calls = { closed: 0 }
+  const calls = { toggled: [] }
   await act(async () => {
-    root.render(React.createElement(ManageSourcesModal, {
-      isOpen: props.isOpen ?? true,
-      onClose: () => { calls.closed += 1 },
-      onlineSourcesEnabled: props.onlineSourcesEnabled ?? true,
+    root.render(React.createElement(OnlineSourcesRow, {
+      rowClass: 'w-full min-h-11 px-3 py-2 rounded-xl flex items-center gap-2.5 border cursor-pointer mb-2',
+      enabled: props.enabled ?? true,
+      onToggle: next => { calls.toggled.push(next) },
     }))
   })
+  if (props.expand !== false) await click(q('[data-testid="online-sources-expand"]'))
   return { root, calls }
 }
 async function click(el) { await act(async () => { el.click() }) }
@@ -52,52 +55,52 @@ async function type(input, value) {
 }
 async function submitForm() { await act(async () => { q('[data-testid="manage-sources-form"]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })) }) }
 async function addWebsite(name, url) {
-  const [nameInput, urlInput] = qa('[data-testid="manage-sources-form"] input')
-  await type(nameInput, name)
-  await type(urlInput, url)
+  if (!q('[data-testid="manage-sources-form"]')) await click(buttonText('Website'))
+  await type(byLabel('Name (optional)'), name)
+  await type(byLabel('Website URL'), url)
   await submitForm()
 }
 
-test('#516 modal renders an accessible dialog with default UG source, mode choices and supported list', async () => {
+test('#516 one row: switch toggles online search, the row expands the source list', async () => {
+  const { root, calls } = await mount({ expand: false, enabled: false })
+  try {
+    const sw = q('[data-testid="settings-online-sources"]')
+    assert.equal(sw.getAttribute('role'), 'switch')
+    assert.equal(sw.getAttribute('aria-checked'), 'false')
+    assert.equal(q('[data-testid="online-sources-panel"]'), null)
+    await click(sw)
+    assert.deepEqual(calls.toggled, [true])
+    assert.equal(q('[data-testid="online-sources-panel"]'), null, 'switch does not expand')
+    const expand = q('[data-testid="online-sources-expand"]')
+    assert.equal(expand.getAttribute('aria-expanded'), 'false')
+    await click(expand)
+    assert.equal(expand.getAttribute('aria-expanded'), 'true')
+    assert.ok(q('[data-testid="online-sources-panel"]'))
+    assert.deepEqual(calls.toggled, [true], 'expanding does not toggle')
+    await click(expand)
+    assert.equal(q('[data-testid="online-sources-panel"]'), null)
+  } finally { await act(async () => root.unmount()) }
+})
+
+test('#516 compact panel lists UG with mode choices and keeps instructions behind the help button', async () => {
   const { root } = await mount()
   try {
-    const dialog = q('[role="dialog"]')
-    assert.equal(dialog.getAttribute('aria-modal'), 'true')
-    assert.equal(document.getElementById(dialog.getAttribute('aria-labelledby')).textContent, 'Manage Sources')
-    assert.ok(q('[data-testid="manage-source-ultimate-guitar"]'))
-    assert.match(q('[data-testid="manage-source-ultimate-guitar"]').textContent, /Search provider: results appear in GTAR/)
-    assert.deepEqual(qa('input[type="radio"]').map(radio => radio.checked), [true, false])
-    assert.match(dialog.textContent, /All enabled supported search providers/)
-    assert.match(dialog.textContent, /Primary provider only/)
-    assert.match(dialog.textContent, /Supported Song Sources/)
-    assert.match(dialog.textContent, /not an endorsement/)
-    assert.doesNotMatch(dialog.textContent, /Verified/i)
-    assert.ok(byLabel('Add WorshipChords'))
-    assert.equal(byLabel('Add Ultimate Guitar'), undefined)
+    assert.match(q('[data-testid="manage-source-ultimate-guitar"]').textContent, /Search/)
+    assert.deepEqual(qa('[role="radio"]').map(radio => radio.getAttribute('aria-checked')), ['true', 'false'])
+    assert.equal(q('[data-testid="online-sources-help"]'), null)
+    assert.doesNotMatch(q('[data-testid="online-sources-panel"]').textContent, /curated|endorsement|Verified|shortcuts only/i)
+    const help = byLabel('Help for sources')
+    assert.equal(help.getAttribute('aria-expanded'), 'false')
+    await click(help)
+    assert.equal(help.getAttribute('aria-expanded'), 'true')
+    assert.match(q('[data-testid="online-sources-help"]').textContent, /show results in GTAR/)
+    assert.match(q('[data-testid="online-sources-help"]').textContent, /open in your browser/)
+    await act(async () => { q('[data-testid="online-sources-help"]').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    assert.equal(q('[data-testid="online-sources-help"]'), null)
+    await click(help)
+    await click(help)
+    assert.equal(q('[data-testid="online-sources-help"]'), null)
   } finally { await act(async () => root.unmount()) }
-})
-
-test('#516 closed modal renders nothing and Escape or the close button close it', async () => {
-  const closedRender = await mount({ isOpen: false })
-  assert.equal(q('[role="dialog"]'), null)
-  await act(async () => closedRender.root.unmount())
-  const { root, calls } = await mount()
-  try {
-    await act(async () => { q('[role="dialog"]').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
-    assert.equal(calls.closed, 1)
-    await click(byLabel('Close Manage Sources'))
-    assert.equal(calls.closed, 2)
-    assert.equal(document.activeElement, byLabel('Close Manage Sources'))
-  } finally { await act(async () => root.unmount()) }
-})
-
-test('#516 global status explains when Online song sources is off', async () => {
-  const off = await mount({ onlineSourcesEnabled: false })
-  assert.match(q('[data-testid="manage-sources-global-status"]').textContent, /Off.*no online search runs.*Local search always works/)
-  await act(async () => off.root.unmount())
-  const on = await mount({ onlineSourcesEnabled: true })
-  assert.match(q('[data-testid="manage-sources-global-status"]').textContent, /On\./)
-  await act(async () => on.root.unmount())
 })
 
 test('#516 removing UG shows the empty state, persists, and can be re-added manually', async () => {
@@ -105,7 +108,6 @@ test('#516 removing UG shows the empty state, persists, and can be re-added manu
   try {
     await click(byLabel('Remove Ultimate Guitar'))
     assert.ok(q('[data-testid="manage-sources-empty"]'))
-    assert.match(q('[data-testid="manage-sources-empty"]').textContent, /Local search still works/)
     assert.deepEqual(stored().sources, [])
     assert.ok(byLabel('Add Ultimate Guitar'))
     await click(byLabel('Add Ultimate Guitar'))
@@ -114,7 +116,7 @@ test('#516 removing UG shows the empty state, persists, and can be re-added manu
   } finally { await act(async () => root.unmount()) }
 })
 
-test('#516 a saved empty list is not replaced by defaults when the panel opens again', async () => {
+test('#516 a saved empty list is not replaced by defaults when the row is opened again', async () => {
   const { root } = await mount({ seed: { version: 1, mode: 'all', sources: [] } })
   try {
     assert.ok(q('[data-testid="manage-sources-empty"]'))
@@ -122,26 +124,25 @@ test('#516 a saved empty list is not replaced by defaults when the panel opens a
   } finally { await act(async () => root.unmount()) }
 })
 
-test('#516 custom website shortcut: add, open link, edit and remove', async () => {
+test('#516 website link: add, open, edit and remove', async () => {
   const { root } = await mount()
   try {
+    assert.equal(q('[data-testid="manage-sources-form"]'), null, 'form hidden until Website is pressed')
     await addWebsite('Church Chords', 'chords.example.org/songs')
     assert.equal(stored().sources.at(-1).url, 'https://chords.example.org/songs')
+    assert.equal(q('[data-testid="manage-sources-form"]'), null, 'form closes after adding')
     const link = byLabel('Open Church Chords in a new tab')
     assert.equal(link.getAttribute('href'), 'https://chords.example.org/songs')
     assert.equal(link.getAttribute('target'), '_blank')
     assert.match(link.getAttribute('rel'), /noopener/)
     assert.match(link.getAttribute('rel'), /noreferrer/)
-    assert.match(q('[data-testid="manage-source-custom-2"]').textContent, /Website shortcut: opens in your browser/)
+    assert.match(q('[data-testid="manage-source-custom-2"]').textContent, /Link/)
 
     await click(byLabel('Edit Church Chords'))
-    assert.match(q('#manage-sources-custom-heading').textContent, /Edit website shortcut/)
-    assert.equal(qa('[data-testid="manage-sources-form"] input')[1].value, 'https://chords.example.org/songs')
-    await type(qa('[data-testid="manage-sources-form"] input')[0], 'Renamed Site')
+    assert.equal(byLabel('Website URL').value, 'https://chords.example.org/songs')
+    await type(byLabel('Name (optional)'), 'Renamed Site')
     await submitForm()
     assert.equal(stored().sources.at(-1).name, 'Renamed Site')
-    assert.match(q('#manage-sources-custom-heading').textContent, /Add custom website URL/)
-
     await click(byLabel('Remove Renamed Site'))
     assert.equal(stored().sources.length, 1)
   } finally { await act(async () => root.unmount()) }
@@ -154,8 +155,8 @@ test('#516 unsafe or invalid website URLs are rejected with an accessible error'
       await addWebsite('', bad)
       const alert = q('[role="alert"]')
       assert.ok(alert, `error for ${bad}`)
-      assert.equal(q('input[type="url"]').getAttribute('aria-invalid'), 'true')
-      assert.equal(q('input[type="url"]').getAttribute('aria-describedby'), alert.id)
+      assert.equal(byLabel('Website URL').getAttribute('aria-invalid'), 'true')
+      assert.equal(byLabel('Website URL').getAttribute('aria-describedby'), alert.id)
       assert.equal(stored(), null)
     }
     await addWebsite('', 'https://ok.example.org')
@@ -173,34 +174,34 @@ test('#516 priority buttons reorder deterministically and edges are disabled', a
     assert.equal(byLabel('Move Second down').disabled, true)
     await click(byLabel('Move Second up'))
     assert.deepEqual(stored().sources.map(source => source.name), ['Second', 'Ultimate Guitar'])
-    assert.deepEqual(qa('[data-testid^="manage-source-"]:not([data-testid="manage-sources-empty"])').map(li => li.getAttribute('data-testid')), ['manage-source-custom-2', 'manage-source-ultimate-guitar'])
+    assert.deepEqual(qa('[data-testid^="manage-source-custom"], [data-testid="manage-source-ultimate-guitar"]').map(li => li.getAttribute('data-testid')), ['manage-source-custom-2', 'manage-source-ultimate-guitar'])
     assert.equal(byLabel('Move Second up').disabled, true)
   } finally { await act(async () => root.unmount()) }
 })
 
-test('#516 enable toggle and search mode persist; primary badge marks the first enabled provider', async () => {
+test('#516 enable checkbox and search mode persist; Primary tag marks the first enabled search source', async () => {
   const { root } = await mount()
   try {
     await click(byLabel('Enable Ultimate Guitar'))
     assert.equal(stored().sources[0].enabled, false)
-    assert.match(q('[data-testid="manage-source-ultimate-guitar"]').textContent, /Disabled/)
-    assert.match(q('[data-testid="manage-sources-modal"]').textContent, /No search provider is enabled/)
     await click(byLabel('Enable Ultimate Guitar'))
-    await click(qa('input[type="radio"]')[1])
+    await click(qa('[role="radio"]')[1])
     assert.equal(stored().mode, 'primary')
+    assert.deepEqual(qa('[role="radio"]').map(radio => radio.getAttribute('aria-checked')), ['false', 'true'])
     assert.match(q('[data-testid="manage-source-ultimate-guitar"]').textContent, /Primary/)
-    await click(qa('input[type="radio"]')[0])
+    await click(qa('[role="radio"]')[0])
     assert.equal(stored().mode, 'all')
+    assert.match(q('[data-testid="manage-source-ultimate-guitar"]').textContent, /Search/)
   } finally { await act(async () => root.unmount()) }
 })
 
-test('#516 supported WorshipChords is added as an external shortcut, not a search provider', async () => {
+test('#516 supported WorshipChords is added as a link source, not a search provider', async () => {
   const { root } = await mount()
   try {
     await click(byLabel('Add WorshipChords'))
     const row = q('[data-testid="manage-source-worshipchords"]')
-    assert.match(row.textContent, /Website shortcut/)
-    assert.doesNotMatch(row.textContent, /Search provider/)
+    assert.match(row.textContent, /Link/)
+    assert.doesNotMatch(row.textContent, /Search/)
     assert.equal(stored().sources.at(-1).kind, 'shortcut')
     assert.equal(byLabel('Add WorshipChords'), undefined)
   } finally { await act(async () => root.unmount()) }
@@ -209,15 +210,15 @@ test('#516 supported WorshipChords is added as an external shortcut, not a searc
 test('#516 restore defaults needs a confirm step and only then resets list, order and mode', async () => {
   const { root } = await mount()
   try {
-    await click(qa('input[type="radio"]')[1])
+    await click(qa('[role="radio"]')[1])
     await addWebsite('Extra', 'extra.example.org')
     await click(byLabel('Remove Ultimate Guitar'))
-    await click(qa('button').find(button => button.textContent === 'Restore Defaults'))
+    await click(buttonText('Restore Defaults'))
     assert.ok(q('[role="group"][aria-label="Confirm restore defaults"]'))
-    await click(qa('button').find(button => button.textContent === 'Keep my list'))
+    await click(buttonText('Cancel'))
     assert.deepEqual(stored().sources.map(source => source.name), ['Extra'])
-    await click(qa('button').find(button => button.textContent === 'Restore Defaults'))
-    await click(qa('button').find(button => button.textContent === 'Restore defaults'))
+    await click(buttonText('Restore Defaults'))
+    await click(buttonText('Restore defaults'))
     assert.deepEqual(stored().sources.map(source => source.id), ['ultimate-guitar'])
     assert.equal(stored().mode, 'all')
   } finally { await act(async () => root.unmount()) }
@@ -227,23 +228,41 @@ test('#516 every interactive control has an accessible name and the status regio
   const { root } = await mount()
   try {
     await addWebsite('Named', 'named.example.org')
-    for (const el of qa('[role="dialog"] button, [role="dialog"] a, [role="dialog"] input')) {
+    await click(byLabel('Help for sources'))
+    for (const el of qa('[data-testid="online-sources-row"] button, [data-testid="online-sources-row"] a, [data-testid="online-sources-row"] input')) {
       const name = el.getAttribute('aria-label') || el.textContent.trim() || (el.labels && [...el.labels].map(label => label.textContent.trim()).join(''))
       assert.ok(name, `unnamed control: ${el.outerHTML.slice(0, 80)}`)
     }
     assert.equal(q('[data-testid="manage-sources-status"]').getAttribute('aria-live'), 'polite')
-    assert.match(q('[data-testid="manage-sources-status"]').textContent, /Website shortcut added/)
+    assert.match(q('[data-testid="manage-sources-status"]').textContent, /Website added/)
   } finally { await act(async () => root.unmount()) }
 })
 
-test('#516 Header exposes Manage Sources under Advanced Tools without a second Web Sources entry', () => {
+test('#516 online results show their source name on the right', async () => {
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  const result = (id, extra = {}) => ({ id, songName: 'Relentless', artistName: 'Hillsong United', type: 'Chords', version: 1, votes: 1, rating: 5, tabUrl: `https://example.com/${id}`, ...extra })
+  await act(async () => {
+    root.render(React.createElement(SearchResults, {
+      songs: [], setlists: [], isSearchingOnline: false,
+      online: [result('1', { providerId: 'ultimate-guitar', providerName: 'Ultimate Guitar' }), result('2')],
+      onSelectSong() {}, onSelectSetlist() {}, onPreviewOnline() {},
+    }))
+  })
+  try {
+    const labels = qa('[data-testid="online-result-source"]')
+    assert.deepEqual(labels.map(label => label.textContent), ['Ultimate Guitar'])
+    assert.equal(qa('button[aria-label^="Preview Relentless"]').length, 2)
+    assert.equal(byLabel('Preview Relentless online chords from Ultimate Guitar').contains(labels[0]), true)
+  } finally { await act(async () => root.unmount()) }
+})
+
+test('#516 Header uses one Online song sources row with no separate Manage Sources button', () => {
   const header = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
-  assert.match(header, /data-testid="settings-manage-sources"/)
-  assert.match(header, /<ManageSourcesModal[\s\S]*?onlineSourcesEnabled=\{onlineSourcesEnabled\}/)
-  assert.match(header, /showManageSources/)
-  assert.doesNotMatch(header, /data-testid="profile-web-sources"/)
-  const modal = fs.readFileSync(path.join(__dirname, '../src/components/ManageSourcesModal.tsx'), 'utf8')
-  assert.match(modal, /sm:max-w-lg/)
-  assert.match(modal, /overflow-y-auto/)
-  assert.match(modal, /min-h-11/)
+  assert.match(header, /<OnlineSourcesRow rowClass=\{popoverItem\} enabled=\{onlineSourcesEnabled\} onToggle=\{setOnlineSourcesEnabled\} \/>/)
+  assert.doesNotMatch(header, /settings-manage-sources|ManageSourcesModal|profile-web-sources/)
+  assert.equal(fs.existsSync(path.join(__dirname, '../src/components/ManageSourcesModal.tsx')), false)
+  const row = fs.readFileSync(path.join(__dirname, '../src/components/OnlineSourcesRow.tsx'), 'utf8')
+  assert.match(row, /pl-3 border-l-2 border-app-border\/60/)
 })

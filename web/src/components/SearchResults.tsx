@@ -54,9 +54,14 @@ export function SearchResults({
       Online{isSearchingOnline && <Loader2 aria-label="Searching online" className="w-3 h-3 animate-spin text-app-muted" />}
     </h2>}
     {shownOnline.map(item => <button type="button" key={`online-${item.id}`} className={actionClass}
-      aria-label={`Preview ${item.songName} online chords`} onClick={() => onPreviewOnline(item)}>
-      <span className="block font-semibold break-words">{item.songName}</span>
-      <span className="text-app-muted break-words">{item.artistName}{item.tonality ? ` · ${item.tonality}` : ''}</span>
+      aria-label={`Preview ${item.songName} online chords${item.providerName ? ` from ${item.providerName}` : ''}`} onClick={() => onPreviewOnline(item)}>
+      <span className="flex items-center justify-between gap-2">
+        <span className="min-w-0">
+          <span className="block font-semibold break-words">{item.songName}</span>
+          <span className="text-app-muted break-words">{item.artistName}{item.tonality ? ` · ${item.tonality}` : ''}</span>
+        </span>
+        {item.providerName && <span data-testid="online-result-source" className="shrink-0 text-[10px] text-app-muted">{item.providerName}</span>}
+      </span>
     </button>)}
     {truncated && <p className="px-3 py-1 text-xs text-app-muted">Showing up to {SEARCH_GROUP_LIMIT} of each. Refine your search for more.</p>}
     <div className="mt-2 border-t border-app-border pt-2">
