@@ -11,6 +11,9 @@ export const ONLINE_SOURCE_SETTINGS_VERSION = 1
 export const MAX_SOURCES = 24
 export const MAX_SOURCE_NAME_LENGTH = 60
 export const MAX_SOURCE_URL_LENGTH = 2048
+export const MAX_LINK_QUERY_LENGTH = 200
+export const SEARCH_URL_PLACEHOLDER = '{query}'
+const PLACEHOLDER_TOKEN = 'GTARQUERYPLACEHOLDER'
 
 export type SearchMode = 'all' | 'primary'
 
@@ -23,12 +26,17 @@ export interface ProviderSource {
   enabled: boolean
 }
 
-/** External website shortcut: opens in the browser, never searched by GTAR. */
+/**
+ * External website shortcut: opens in the browser, never searched by GTAR.
+ * An optional searchUrl (containing {query}) adds a "Search on <site>" link to the search
+ * dropdown; GTAR never requests that page, the browser opens it.
+ */
 export interface ShortcutSource {
   kind: 'shortcut'
   id: string
   name: string
   url: string
+  searchUrl?: string
   enabled: boolean
 }
 
@@ -46,16 +54,17 @@ export interface SupportedSource {
   kind: 'provider' | 'shortcut'
   providerId?: string
   url?: string
+  searchUrl?: string
   defaultEnabled: boolean
 }
 
 /**
- * Curated list, not an endorsement. WorshipChords stays an external shortcut until its
- * search URL, result retrieval and stability are proven against the GTAR search flow.
+ * Curated list, not an endorsement. WorshipChords stays an external link: its terms of use
+ * allow personal viewing only and forbid copying or mirroring, so GTAR never fetches its pages.
  */
 export const SUPPORTED_SOURCES: readonly SupportedSource[] = [
   { id: 'ultimate-guitar', name: 'Ultimate Guitar', kind: 'provider', providerId: 'ultimate-guitar', defaultEnabled: true },
-  { id: 'worshipchords', name: 'WorshipChords', kind: 'shortcut', url: 'https://www.worshipchords.com/', defaultEnabled: false },
+  { id: 'worshipchords', name: 'WorshipChords', kind: 'shortcut', url: 'https://worshipchords.com/', searchUrl: 'https://worshipchords.com/?s={query}', defaultEnabled: false },
 ]
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -66,7 +75,10 @@ type StorageWrite = Pick<Storage, 'setItem'>
 function entryFromSupported(source: SupportedSource): SourceEntry {
   return source.kind === 'provider'
     ? { kind: 'provider', id: source.id, name: source.name, providerId: source.providerId ?? source.id, enabled: true }
-    : { kind: 'shortcut', id: source.id, name: source.name, url: source.url ?? '', enabled: true }
+    : {
+        kind: 'shortcut', id: source.id, name: source.name, url: source.url ?? '',
+        ...(source.searchUrl ? { searchUrl: source.searchUrl } : {}), enabled: true,
+      }
 }
 
 export function createDefaultSettings(): OnlineSourceSettings {
@@ -102,6 +114,49 @@ export function validateSourceUrl(raw: unknown): Result<string> {
   return { ok: true, value: parsed.href }
 }
 
+/**
+ * Validates a search URL template: a normal http(s) address with {query} in the path, query or
+ * hash (never the host). Returns the template in its original {query} form.
+ */
+export function validateSearchUrlTemplate(raw: unknown): Result<string> {
+  if (typeof raw !== 'string' || !raw.trim()) return { ok: false, error: 'Search URL cannot be empty' }
+  const text = raw.trim()
+  if (!text.includes(SEARCH_URL_PLACEHOLDER)) return { ok: false, error: `Search URL must contain ${SEARCH_URL_PLACEHOLDER}` }
+  const checked = validateSourceUrl(text.split(SEARCH_URL_PLACEHOLDER).join(PLACEHOLDER_TOKEN))
+  if (!checked.ok) return checked
+  const parsed = new URL(checked.value)
+  if (parsed.hostname.toLowerCase().includes(PLACEHOLDER_TOKEN.toLowerCase()) || parsed.port.includes(PLACEHOLDER_TOKEN)) {
+    return { ok: false, error: `${SEARCH_URL_PLACEHOLDER} must not be part of the website name` }
+  }
+  const template = checked.value.split(PLACEHOLDER_TOKEN).join(SEARCH_URL_PLACEHOLDER)
+  if (template.length > MAX_SOURCE_URL_LENGTH) return { ok: false, error: 'URL is too long' }
+  return { ok: true, value: template }
+}
+
+/** Builds the browser URL for a search template, or null when the query is empty or the template is invalid. */
+export function buildSearchUrl(template: string, query: string): string | null {
+  const q = query.trim().slice(0, MAX_LINK_QUERY_LENGTH)
+  if (!q || !validateSearchUrlTemplate(template).ok) return null
+  return template.split(SEARCH_URL_PLACEHOLDER).join(encodeURIComponent(q))
+}
+
+export interface SearchLink { id: string; name: string; href: string }
+
+/** Enabled Link sources that can open a site search for this query, in list order. */
+export function getSearchLinks(settings: OnlineSourceSettings, query: string): SearchLink[] {
+  const links: SearchLink[] = []
+  for (const source of settings.sources) {
+    if (source.kind !== 'shortcut' || !source.enabled || !source.searchUrl) continue
+    const href = buildSearchUrl(source.searchUrl, query)
+    if (href) links.push({ id: source.id, name: source.name, href })
+  }
+  return links
+}
+
+function hostKey(url: string): string {
+  try { return new URL(url).hostname.toLowerCase().replace(/^www\./, '') } catch { return '' }
+}
+
 function cleanName(raw: unknown): string {
   return typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, MAX_SOURCE_NAME_LENGTH) : ''
 }
@@ -131,7 +186,16 @@ export function sanitizeSettings(raw: unknown): OnlineSourceSettings | null {
       const url = validateSourceUrl(entry.url)
       if (!url.ok) continue
       seen.add(id)
-      sources.push({ kind: 'shortcut', id, name, url: url.value, enabled })
+      const stored = validateSearchUrlTemplate(entry.searchUrl)
+      // A shortcut saved before search URLs existed gains the curated one, but only while it
+      // still points at the curated site.
+      const curated = SUPPORTED_SOURCES.find(source => source.id === id && source.kind === 'shortcut')
+      const searchUrl = stored.ok
+        ? stored.value
+        : entry.searchUrl === undefined && curated?.searchUrl && hostKey(curated.url ?? '') === hostKey(url.value)
+          ? curated.searchUrl
+          : undefined
+      sources.push({ kind: 'shortcut', id, name, url: url.value, ...(searchUrl ? { searchUrl } : {}), enabled })
     }
   }
   return { version: ONLINE_SOURCE_SETTINGS_VERSION, mode: input.mode === 'primary' ? 'primary' : 'all', sources }
@@ -169,24 +233,38 @@ function duplicateUrl(sources: SourceEntry[], url: string, ignoreId?: string): b
   return sources.some(source => source.kind === 'shortcut' && source.id !== ignoreId && source.url === url)
 }
 
-export function addShortcut(settings: OnlineSourceSettings, input: { name?: string; url: string }): Result<OnlineSourceSettings> {
+/** Empty or missing means no search link; anything else must be a valid template. */
+function resolveSearchUrl(raw: string | undefined): Result<string | undefined> {
+  if (raw === undefined || !raw.trim()) return { ok: true, value: undefined }
+  return validateSearchUrlTemplate(raw)
+}
+
+export function addShortcut(settings: OnlineSourceSettings, input: { name?: string; url: string; searchUrl?: string }): Result<OnlineSourceSettings> {
   if (settings.sources.length >= MAX_SOURCES) return { ok: false, error: 'Source list is full' }
   const url = validateSourceUrl(input.url)
   if (!url.ok) return url
+  const searchUrl = resolveSearchUrl(input.searchUrl)
+  if (!searchUrl.ok) return searchUrl
   if (duplicateUrl(settings.sources, url.value)) return { ok: false, error: 'That website is already in your list' }
   const name = cleanName(input.name) || new URL(url.value).hostname.replace(/^www\./, '')
-  const entry: ShortcutSource = { kind: 'shortcut', id: nextId('custom', settings.sources), name, url: url.value, enabled: true }
+  const entry: ShortcutSource = {
+    kind: 'shortcut', id: nextId('custom', settings.sources), name, url: url.value,
+    ...(searchUrl.value ? { searchUrl: searchUrl.value } : {}), enabled: true,
+  }
   return { ok: true, value: withSources(settings, [...settings.sources, entry]) }
 }
 
-export function updateShortcut(settings: OnlineSourceSettings, id: string, input: { name?: string; url: string }): Result<OnlineSourceSettings> {
+export function updateShortcut(settings: OnlineSourceSettings, id: string, input: { name?: string; url: string; searchUrl?: string }): Result<OnlineSourceSettings> {
   const current = settings.sources.find(source => source.id === id)
   if (!current || current.kind !== 'shortcut') return { ok: false, error: 'Shortcut not found' }
   const url = validateSourceUrl(input.url)
   if (!url.ok) return url
+  const searchUrl = resolveSearchUrl(input.searchUrl)
+  if (!searchUrl.ok) return searchUrl
   if (duplicateUrl(settings.sources, url.value, id)) return { ok: false, error: 'That website is already in your list' }
   const name = cleanName(input.name) || new URL(url.value).hostname.replace(/^www\./, '')
-  return { ok: true, value: withSources(settings, settings.sources.map(source => (source.id === id ? { ...current, name, url: url.value } : source))) }
+  const updated: ShortcutSource = { kind: 'shortcut', id: current.id, name, url: url.value, ...(searchUrl.value ? { searchUrl: searchUrl.value } : {}), enabled: current.enabled }
+  return { ok: true, value: withSources(settings, settings.sources.map(source => (source.id === id ? updated : source))) }
 }
 
 export function removeSource(settings: OnlineSourceSettings, id: string): OnlineSourceSettings {

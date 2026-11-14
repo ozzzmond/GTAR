@@ -54,7 +54,7 @@ import {
   type FetchedChordSheet,
 } from '../utils/onlineSearch'
 import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlineSources'
-import { useOnlineSourceSettings } from '../utils/onlineSourceSettings'
+import { getSearchLinks, useOnlineSourceSettings } from '../utils/onlineSourceSettings'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { OnlineSourcesRow } from './OnlineSourcesRow'
@@ -112,13 +112,10 @@ interface HeaderProps {
   searchQuery: string
   onSearchQueryChange: (query: string) => void
   onSelectSearchSong?: (songIndex: number) => void
-  onSearchWebExternal?: (query: string) => void
   onNavigateHome?: () => void
-  onOpenWebsiteUrlSource: () => void
   onOpenStageTools: () => void
   onToggleTheme: () => void
   onOpenStageSettings?: () => void
-  onOpenImportModal: () => void
   /** Library (songs including trash) for the Backup & Restore center's file card. */
   backupSongs?: ActiveSongState[]
   onImportAllSongs?: (songs: Array<Partial<ActiveSongState>>) => void
@@ -160,12 +157,9 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchQueryChange,
   onSelectSearchSong,
-  onSearchWebExternal,
   onNavigateHome,
-  onOpenWebsiteUrlSource,
   onOpenStageTools,
   onToggleTheme,
-  onOpenImportModal,
   backupSongs,
   onImportAllSongs,
   onOverlayChange,
@@ -543,6 +537,7 @@ export const Header: React.FC<HeaderProps> = ({
       isSearchingOnline={isSearchingOnline}
       isOffline={isOffline}
       onlineError={onlineError}
+      searchLinks={onlineSourcesEnabled ? getSearchLinks(onlineSourceSettings, searchQuery) : []}
       onSelectSong={(originalIdx) => {
         dismissResults()
         onSelectSearchSong?.(originalIdx)
@@ -558,12 +553,6 @@ export const Header: React.FC<HeaderProps> = ({
         }
       }}
       onPreviewOnline={(result) => { dismissResults(); setPreviewResult(result) }}
-      onOpenImport={() => { dismissResults(); onOpenImportModal() }}
-      onOpenSources={() => {
-        dismissResults()
-        if (onSearchWebExternal && searchQuery.trim()) onSearchWebExternal(searchQuery)
-        else onOpenWebsiteUrlSource()
-      }}
     />
   )
   const showResults = isSearchFocused && searchQuery.trim().length > 0

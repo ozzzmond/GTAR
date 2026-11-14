@@ -1698,19 +1698,13 @@ function LibraryApp() {
           onSelectSearchSong={(songIdx) => {
             navigateSafely(() => { handleSelectLibrarySong(songIdx); setActiveView('stage') })
           }}
-          onSearchWebExternal={(query) => {
-            setSearchQuery(query)
-            setIsWebsiteUrlModalOpen(true)
-          }}
           onNavigateHome={() => navigateSafely(handleNavigateHome)}
-          onOpenWebsiteUrlSource={() => setIsWebsiteUrlModalOpen(true)}
           onOpenStageTools={() => setIsStageToolsModalOpen(true)}
           onToggleTheme={() => setIsThemeModalOpen(true)}
           currentTheme={stageTheme}
           themeModeAssignments={themeAssignments}
           onToggleThemeMode={handleToggleThemeMode}
           customColors={customThemeColors}
-          onOpenImportModal={() => navigateSafely(() => setIsImportModalOpen(true))}
           backupSongs={backupDialogSongs}
           onImportAllSongs={handleImportAllSongs}
           onOverlayChange={setIsHeaderOverlayOpen}
