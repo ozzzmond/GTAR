@@ -133,7 +133,7 @@ test('DEV3_SECTION_NAVIGATION_ABSOLUTE_BOTTOM: Up from absolute bottom navigates
 
   // handlePrevSection uses raw targetScrollTop unclamped initially to prevent maxScroll collapsing
   assert.ok(
-    stageViewSource.includes('const targetScrollTop = Math.round(currentScrollTop + distanceFromTop - headerOffset)'),
+    stageViewSource.includes('const targetScrollTop = stageSectionScrollTop(currentScrollTop, elRect.top, containerRect.top, headerOffset)'),
     'Calculates unclamped targetScrollTop'
   )
   // Backward iteration looks for preceding target strictly scrolling upward

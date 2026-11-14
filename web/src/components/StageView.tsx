@@ -1,3 +1,4 @@
+import { stageSectionHeaderOffset, stageSectionScrollTop } from '../utils/liveLyricScroll'
 import { useAutoLiveLyrics } from '../utils/useAutoLiveLyrics'
 import { SetlistAutoFollowControl } from './SetlistAutoFollowControl'
 import { useSetlistAutoFollow } from '../utils/useSetlistAutoFollow'
@@ -603,6 +604,8 @@ export const StageView: React.FC<StageViewProps> = ({
   const liveScroll = useLiveLyricScroll(scrollContainerRef, {
     enabled: liveLyrics.confirmed, session: liveLyrics.verificationScope,
     slideKey: liveLyrics.slideKey, range: liveLyrics.scrollRange, speedScrolling: isAutoScrolling,
+    sectionMode: liveLyrics.automaticMode && isFullscreen && !autoFollow.state.paused,
+    section: liveLyrics.section ? { ...liveLyrics.section, offset: stageSectionHeaderOffset(inPerformanceMode, showStageOverlays) } : null,
     preservePause: autoFollow.state.mode === 'auto' && isFullscreen,
   })
 
@@ -930,12 +933,11 @@ export const StageView: React.FC<StageViewProps> = ({
     const containerRect = container.getBoundingClientRect()
     const currentScrollTop = container.scrollTop
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
-    const headerOffset = inPerformanceMode ? (showStageOverlays ? 56 : 24) : 16
+    const headerOffset = stageSectionHeaderOffset(inPerformanceMode, showStageOverlays)
 
     const targets = sectionEls.map((el) => {
       const elRect = el.getBoundingClientRect()
-      const distanceFromTop = elRect.top - containerRect.top
-      const targetScrollTop = Math.round(currentScrollTop + distanceFromTop - headerOffset)
+      const targetScrollTop = stageSectionScrollTop(currentScrollTop, elRect.top, containerRect.top, headerOffset)
       return { el, targetScrollTop }
     })
 
@@ -1007,12 +1009,11 @@ export const StageView: React.FC<StageViewProps> = ({
     const containerRect = container.getBoundingClientRect()
     const currentScrollTop = container.scrollTop
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
-    const headerOffset = inPerformanceMode ? (showStageOverlays ? 56 : 24) : 16
+    const headerOffset = stageSectionHeaderOffset(inPerformanceMode, showStageOverlays)
 
     const targets = sectionEls.map((el) => {
       const elRect = el.getBoundingClientRect()
-      const distanceFromTop = elRect.top - containerRect.top
-      const targetScrollTop = Math.round(currentScrollTop + distanceFromTop - headerOffset)
+      const targetScrollTop = stageSectionScrollTop(currentScrollTop, elRect.top, containerRect.top, headerOffset)
       return { el, targetScrollTop }
     })
 
@@ -2145,7 +2146,7 @@ export const StageView: React.FC<StageViewProps> = ({
       {/* =================================================================== */}
       {/* 2. MAIN SCROLLING CANVAS (Exact SongLinesColumn from Compose)        */}
       {/* =================================================================== */}
-      {isFullscreen && liveLyrics.confirmed && liveScroll.paused && (
+      {isFullscreen && liveLyrics.confirmed && liveScroll.paused && !liveLyrics.automaticMode && (
         <button type="button" onClick={liveScroll.controller.resume}
           disabled={isAutoScrolling || !liveLyrics.scrollRange}
           aria-label={isAutoScrolling ? 'Resume auto-scroll unavailable while speed scrolling' : !liveLyrics.scrollRange ? 'Resume auto-scroll unavailable without a unique lyric match' : 'Resume auto-scroll'}

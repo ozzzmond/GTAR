@@ -46,7 +46,8 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
   Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fsElement })
   Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
-  HTMLElement.prototype.scrollTo = function(options) { this.scrollTop = options.top ?? 0 }
+  const scrollMoves = []
+  HTMLElement.prototype.scrollTo = function(options) { scrollMoves.push(options.top); this.scrollTop = options.top ?? 0; this.dispatchEvent(new dom.window.Event('scroll')) }
   const { createRoot } = require('react-dom/client')
   const { StageView } = require('../src/components/StageView.tsx')
   const { StageErrorBoundary } = require('../src/components/StageErrorBoundary.tsx')
@@ -62,7 +63,7 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
   const entry = { manifest, checkAvailability: () => ({ available: true }), load: async () => ({ manifest, checkAvailability: () => ({ available: true }), activate: value => { ctx = value; return () => {} } }) }
   const host = new ExtensionHost([entry], { getItem: () => null, setItem() {} })
   await host.enable(manifest.id)
-  const songs = [1, 2, 3].map(id => ({ id, title: `Synthetic song ${id}`, artist: '', key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: id, rawContent: `{title: Synthetic song ${id}}\n[C]Unique lyric for song ${id}\n[G]Repeated refrain ${id}\n{comment: Chorus}\n[G]Repeated refrain ${id}\n[C]Shared setlist words`, format: 'CHORD_PRO', capo: '', bpm: '' }))
+  const songs = [1, 2, 3].map(id => ({ id, title: `Synthetic song ${id}`, artist: '', key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: id, rawContent: `{title: Synthetic song ${id}}\n{comment: Verse1}\n[C]Unique lyric for song ${id}\n[G]Another verse line ${id}\n[G]Repeated refrain ${id}\n{comment: Chorus}\n[G]Repeated refrain ${id}\n[C]Unique chorus ${id}\n{comment: Verse2}\n[D]Unique second verse ${id}\n{comment: Bridge}\n[A]Unique bridge ${id}\n[C]Shared setlist words`, format: 'CHORD_PRO', capo: '', bpm: '' }))
   const list = { id: 'active', name: 'QA', songs: songs.map((song, index) => ({ id: song.id, entryId: `entry-${index}`, position: index, title: song.title })) }
   const followSetlist = projectFollowSetlist('active', 'setlist', list, songs)
   const selections = [], transposes = []
@@ -89,6 +90,17 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
     const current = host.getFollowSnapshot()
     ctx.publishFollowSnapshot({ live: true, identityRevision: revision, presentation: current.presentation, current: { uuid: current.current.uuid, text }, currentReadIdentityRevision: sourceRevision, currentReadSequence: ++readSequence })
   })
+  const flushFrames = async () => act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(fn => fn(0)) })
+  const prepareGeometry = () => {
+    const container = document.querySelector('.overflow-y-auto')
+    Object.defineProperties(container, { scrollHeight: { configurable: true, value: 6000 }, clientHeight: { configurable: true, value: 600 } })
+    container.getBoundingClientRect = () => ({ top: 100 })
+    for (const el of container.querySelectorAll('[data-stage-line="true"]')) {
+      const top = Number(el.dataset.lineIndex) * 200
+      el.getBoundingClientRect = () => ({ top: 100 + top - container.scrollTop, bottom: 140 + top - container.scrollTop })
+    }
+    return container
+  }
   const highlighted = () => document.querySelectorAll('[data-live-lyric="true"]').length
   const healthy = () => assert.equal(boundary.current.state.hasError, false, JSON.stringify(errors))
   const emit = async (index, live = true, title = songs[index].title) => act(async () => ctx.publishFollowSnapshot({ live, identityRevision: ++revision, presentation: { uuid: `p-${index}-${title}`, title, slideIndex: 0 }, current: { uuid: `slide-${index}`, text: `Unique lyric for song ${index + 1}` } }))
@@ -109,11 +121,26 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
     assert.ok(pendingRead && !pendingRead.signal.aborted)
     await confirmFresh('Unique lyric for song 2', revision - 1)
     assert.equal(highlighted(), 0, 'wrong identity proof stays neutral')
+    const viewport = prepareGeometry(); viewport.scrollTop = 1000
     await confirmFresh('Unique lyric for song 2')
+    await flushFrames(); assert.equal(viewport.scrollTop, 0, 'verse header positioned at clamped top')
     assert.ok(highlighted() > 0, 'no per-song confirm click required')
     assert.equal(document.querySelector('[data-testid="live-lyrics-control"]').textContent.includes('Confirm this song'), false)
+    const sectionTop = (title, offset) => Number([...viewport.querySelectorAll('[data-stage-section="true"]')].find(el => el.dataset.sectionTitle === title).dataset.lineIndex) * 200 - offset
+    const moveTo = async (text, title, offset = 24) => { await confirmFresh(text); await flushFrames(); assert.equal(viewport.scrollTop, Math.max(0, sectionTop(title, offset))); healthy() }
+    await act(async () => viewport.dispatchEvent(new window.Event('wheel'))); viewport.scrollTop = 777
+    const beforeSameSection = scrollMoves.length
+    await confirmFresh('Another verse line 2'); await flushFrames()
+    assert.equal(viewport.scrollTop, 777); assert.equal(scrollMoves.length, beforeSameSection)
+    assert.equal([...document.querySelectorAll('button')].some(el => el.textContent === 'Resume auto-scroll'), false)
+    await moveTo('Unique chorus 2', 'Chorus', 56)
+    await moveTo('Unique second verse 2', 'Verse2')
+    await moveTo('Unique chorus 2', 'Chorus')
+    await moveTo('Unique bridge 2', 'Bridge')
+    await moveTo('Unique lyric for song 2', 'Verse1')
+    const beforeAmbiguous = scrollMoves.length
     await confirmFresh('Repeated refrain 2')
-    assert.equal(highlighted(), 2, 'duplicate chorus ranges highlight together')
+    assert.equal(highlighted(), 2, 'duplicate chorus ranges highlight together'); await flushFrames(); assert.equal(scrollMoves.length, beforeAmbiguous)
     await confirmFresh('Shared setlist words')
     assert.equal(highlighted(), 0, 'shared exact lyrics across distinct setlist songs remain neutral')
     await confirmFresh('Unique lyric for song 1')

@@ -1,3 +1,8 @@
+export interface LiveSectionTarget { readonly scope: object; readonly lineId: number; readonly offset: number }
+// Shared with the existing manual section controls.
+export const stageSectionHeaderOffset = (performance: boolean, overlays: boolean) => performance ? (overlays ? 56 : 24) : 16
+export const stageSectionScrollTop = (current: number, sectionTop: number, containerTop: number, offset: number) => Math.round(current + sectionTop - containerTop - offset)
+
 export interface LiveScrollInput {
   enabled: boolean
   session: object
@@ -5,6 +10,8 @@ export interface LiveScrollInput {
   range: readonly number[] | null
   speedScrolling: boolean
   preservePause?: boolean
+  sectionMode?: boolean
+  section?: LiveSectionTarget | null
 }
 
 export function liveLyricScrollTarget(scrollTop: number, scrollHeight: number, height: number, top: number, bottom: number): number | null {
@@ -27,6 +34,8 @@ export class LiveLyricScroller {
   private frame: number | null = null
   private expectedTop: number | null = null
   private paused = false
+  private lastSection: LiveSectionTarget | null = null
+  private sectionPending = false
   private listeners = new Set<() => void>()
   private request: (fn: FrameRequestCallback) => number
   private cancel: (id: number) => void
@@ -46,7 +55,8 @@ export class LiveLyricScroller {
     this.frame = null
   }
   pause = () => {
-    if (!this.input?.enabled) return
+    if (!this.input?.enabled && !this.input?.sectionMode) return
+    this.sectionPending = false
     this.cancelPending()
     this.setPaused(true)
   }
@@ -58,8 +68,18 @@ export class LiveLyricScroller {
   update(input: LiveScrollInput) {
     const previous = this.input
     this.input = input
-    const changed = !previous || previous.session !== input.session || previous.slideKey !== input.slideKey || previous.enabled !== input.enabled || previous.range !== input.range
+    const changed = !previous || previous.session !== input.session || previous.slideKey !== input.slideKey || previous.enabled !== input.enabled || previous.range !== input.range || previous.sectionMode !== input.sectionMode || previous.section?.scope !== input.section?.scope || previous.section?.lineId !== input.section?.lineId
     if (changed || input.speedScrolling) this.cancelPending()
+    if (!input.sectionMode) { this.lastSection = null; this.sectionPending = false }
+    if (input.sectionMode) {
+      if (!input.enabled || !input.range || !input.section) { this.cancelPending(); return }
+      const distinct = this.lastSection?.scope !== input.section.scope || this.lastSection?.lineId !== input.section.lineId
+      if (distinct) { this.lastSection = input.section; this.sectionPending = true }
+      if (input.speedScrolling) { this.pause(); return }
+      if (distinct) this.setPaused(false)
+      if (this.sectionPending && !this.paused) this.schedule()
+      return
+    }
     if (!input.enabled) { if (!input.preservePause) this.setPaused(false); return }
     if (previous?.session !== input.session && !input.preservePause) this.setPaused(false)
     if (input.speedScrolling) { this.pause(); return }
@@ -91,7 +111,19 @@ export class LiveLyricScroller {
       const origin = container.getBoundingClientRect().top + container.clientTop
       const top = container.scrollTop + rects[0].top - origin
       const bottom = container.scrollTop + Math.max(...rects.map(rect => rect.bottom)) - origin
-      const target = liveLyricScrollTarget(container.scrollTop, container.scrollHeight, container.clientHeight, top, bottom)
+      let target: number | null
+      if (input.sectionMode) {
+        if (!input.section || !this.sectionPending) return
+        const headers = container.querySelectorAll<HTMLElement>(`[data-stage-section="true"][data-line-index="${input.section.lineId}"]`)
+        if (headers.length !== 1 || container.clientHeight <= 0) return
+        const headerTop = headers[0].getBoundingClientRect().top
+        // A header in another column must not imply a guessed scroll position.
+        if (!Number.isFinite(headerTop) || headerTop > rects[0].top + 1) return
+        target = Math.max(0, Math.min(Math.max(0, container.scrollHeight - container.clientHeight),
+          stageSectionScrollTop(container.scrollTop, headerTop, container.getBoundingClientRect().top, input.section.offset)))
+        this.sectionPending = false
+        if (Math.abs(target - container.scrollTop) <= 1) return
+      } else target = liveLyricScrollTarget(container.scrollTop, container.scrollHeight, container.clientHeight, top, bottom)
       if (target === null) return
       this.expectedTop = target
       // Instant movement also respects reduced motion and cannot continue after user input.
@@ -134,6 +166,8 @@ export class LiveLyricScroller {
       container.ownerDocument.defaultView?.removeEventListener('keydown', key, true)
       this.container = null
       this.input = null
+      this.lastSection = null
+      this.sectionPending = false
       this.expectedTop = null
     }
   }

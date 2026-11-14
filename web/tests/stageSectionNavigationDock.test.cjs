@@ -147,6 +147,13 @@ Without any bracketed section headers
 // =========================================================================
 test('VIEWPORT_BASED_SECTION_RESOLUTION: StageView queries actual DOM viewport positions and computes targets', () => {
   const stageViewSource = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
+  const { stageSectionScrollTop, stageSectionHeaderOffset } = require('../src/utils/liveLyricScroll.ts')
+  assert.equal(stageSectionHeaderOffset(false, true), 16)
+  assert.equal(stageSectionHeaderOffset(true, false), 24)
+  assert.equal(stageSectionHeaderOffset(true, true), 56)
+  assert.equal(stageSectionScrollTop(3400, 950, 100, 56), 4194, 'manual controls retain an unclamped target at absolute bottom')
+  assert.equal(stageSectionScrollTop(200, 100.6, 100, 24), 177, 'relative viewport rounding is preserved')
+  assert.equal(stageSectionScrollTop(0, 100, 100, 16), -16, 'manual controls clamp after resolving preceding/next sections')
 
   assert.ok(
     stageViewSource.includes('container.querySelectorAll'),
@@ -157,11 +164,11 @@ test('VIEWPORT_BASED_SECTION_RESOLUTION: StageView queries actual DOM viewport p
     'Must query elements by data-stage-section="true"'
   )
   assert.ok(
-    stageViewSource.includes('elRect.top - containerRect.top'),
+    stageViewSource.includes('stageSectionScrollTop(currentScrollTop, elRect.top, containerRect.top, headerOffset)'),
     'Must resolve relative distance from current viewport'
   )
   assert.ok(
-    stageViewSource.includes('currentScrollTop + distanceFromTop - headerOffset'),
+    stageViewSource.includes('const headerOffset = stageSectionHeaderOffset(inPerformanceMode, showStageOverlays)'),
     'Must calculate target scroll top accounting for current scroll and active header offset'
   )
   assert.ok(

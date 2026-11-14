@@ -150,7 +150,7 @@ test('other programmatic Stage movement does not count as manual intent', t => {
 })
 
 
-test('Auto Follow preserves manual scroll pause across a neutral song transition and new verification until explicit Resume', t => {
+test('Explicit-Resume lyric-range policy preserves pause across neutral song transitions', t => {
   const f = fixture(t, [[0, 1200, 40], [1, 2400, 40]])
   f.update({ range: [0], preservePause: true }); f.flush()
   f.container.dispatchEvent(new f.dom.window.Event('wheel'))
@@ -164,4 +164,64 @@ test('Auto Follow preserves manual scroll pause across a neutral song transition
   assert.equal(f.moves.length, 2)
   assert.equal(f.container.scrollTop, 2220)
   assert.equal(f.outgoing, 0)
+})
+
+function sectionFixture(t) {
+  const f = fixture(t, [[1, 240, 40], [2, 320, 40], [4, 1240, 40], [6, 2240, 40], [8, 3240, 40]])
+  for (const [id, top] of [[0, 200], [3, 1200], [5, 2200], [7, 3200]]) {
+    const header = f.dom.window.document.createElement('div')
+    header.dataset.lineIndex = String(id); header.dataset.stageSection = 'true'
+    header.getBoundingClientRect = () => ({ top: 100 + top - f.container.scrollTop, bottom: 130 + top - f.container.scrollTop })
+    f.container.append(header)
+  }
+  const scope = {}
+  f.section = (lineId, range, extra = {}) => f.update({ sectionMode: true, section: { scope, lineId, offset: 56 }, range, ...extra })
+  return f
+}
+
+test('Auto section follow positions headers, handles forward/backward/nonlinear jumps and ignores same-section slides', t => {
+  const f = sectionFixture(t)
+  f.section(0, [1]); f.flush(); assert.equal(f.container.scrollTop, 144)
+  f.section(0, [2]); f.flush(); assert.equal(f.moves.length, 1)
+  f.section(3, [4]); f.flush(); assert.equal(f.container.scrollTop, 1144)
+  f.section(5, [6]); f.flush(); assert.equal(f.container.scrollTop, 2144)
+  f.section(3, [4]); f.flush(); assert.equal(f.container.scrollTop, 1144, 'verse2 to chorus backward')
+  f.section(7, [8]); f.flush(); f.section(0, [1]); f.flush()
+  assert.equal(f.container.scrollTop, 144, 'bridge to verse1 nonlinear')
+  assert.equal(f.outgoing, 0)
+})
+
+test('Auto manual yield survives neutral/same-section updates and releases only at a distinct confirmed section', t => {
+  const f = sectionFixture(t)
+  f.section(0, [1]); f.flush()
+  f.container.dispatchEvent(new f.dom.window.Event('wheel')); f.container.scrollTop = 700
+  f.update({ enabled: false, section: null, range: null, preservePause: true }); f.flush()
+  f.section(0, [2], { enabled: true }); f.flush()
+  assert.equal(f.controller.getPaused(), true); assert.equal(f.moves.length, 1)
+  f.section(3, [4]); f.flush()
+  assert.equal(f.controller.getPaused(), false); assert.equal(f.container.scrollTop, 1144)
+  assert.equal(f.moves.length, 2, 'no Resume call required')
+})
+
+test('Auto section pending work is canceled on ambiguity, lifecycle loss, manual input and competing speed owner', t => {
+  for (const change of [{ range: null, section: null }, { enabled: false }, { sectionMode: false, enabled: false }, { speedScrolling: true }]) {
+    const f = sectionFixture(t); f.section(0, [1]); f.update(change); f.flush()
+    assert.equal(f.moves.length, 0)
+  }
+  const f = sectionFixture(t); f.section(0, [1]); f.flush()
+  f.section(3, [4]); f.container.dispatchEvent(new f.dom.window.Event('wheel')); f.flush()
+  f.section(3, [4]); f.flush(); assert.equal(f.moves.length, 1, 'manual input cancels that transition')
+  f.section(5, [6]); f.flush(); assert.equal(f.moves.length, 2)
+  f.update({ sectionMode: false, enabled: false, section: null }); f.flush()
+  f.section(5, [6], { enabled: true }); f.flush(); assert.equal(f.controller.getPaused(), false)
+})
+
+test('Auto section requires exactly one header and unique highlighted geometry, with no lyric-range fallback', t => {
+  const f = sectionFixture(t)
+  f.section(99, [1]); f.flush(); assert.equal(f.moves.length, 0)
+  f.section(0, null); f.flush(); assert.equal(f.moves.length, 0)
+  f.section(3, [99]); f.flush(); assert.equal(f.moves.length, 0)
+  f.container.append(f.container.querySelector('[data-stage-section="true"]').cloneNode())
+  f.section(0, [1]); f.flush(); assert.equal(f.moves.length, 0)
+  f.update({ section: null, range: [1] }); f.flush(); assert.equal(f.moves.length, 0)
 })

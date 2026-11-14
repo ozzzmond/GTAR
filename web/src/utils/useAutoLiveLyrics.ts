@@ -42,7 +42,8 @@ export function useAutoLiveLyrics(manual: ReturnType<typeof useLiveLyrics>, song
     for (const [id, chart] of charts.result) if (id !== song.id && matchLiveLyricRanges(chart.lyrics, snapshot.current.text).length) return true
     return false
   }, [fresh, snapshot, charts, song.id])
-  if (!automaticMode) return { ...manual, automaticMode: false }
+  const sectionScope = useMemo(() => ({ context, selectedIndex, songId: song.id, chart: song.rawContent }), [context, selectedIndex, song.id, song.rawContent])
+  if (!automaticMode) return { ...manual, automaticMode: false, section: null }
   const confirmed = fresh && charts.consistent && !shared && manual.matchingRanges.length > 0
   const status = !eligible ? 'Auto lyrics neutral - waiting for a settled eligible song'
     : !fresh ? 'Auto lyrics neutral - checking fresh current slide'
@@ -50,7 +51,7 @@ export function useAutoLiveLyrics(manual: ReturnType<typeof useLiveLyrics>, song
     : !charts.consistent || shared ? 'Auto lyrics neutral - shared or ambiguous slide text'
     : !manual.matchingRanges.length ? 'Slide not matched'
     : 'Live lyrics on - automatic DEV checks'
-  return { ...manual, automaticMode: true, confirmed, canConfirm: false, status,
+  return { ...manual, section: confirmed && manual.sectionLineId !== null ? { scope: sectionScope, lineId: manual.sectionLineId } : null, automaticMode: true, confirmed, canConfirm: false, status,
     activeLineIds: confirmed ? manual.matchedLineIds : noLines,
     scrollRange: confirmed && manual.matchingRanges.length === 1 ? manual.matchingRanges[0] : null }
 }

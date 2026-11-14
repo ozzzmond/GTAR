@@ -5,7 +5,7 @@ export function LiveLyricsControl({ live, songTitle, onConfirmed, children }: { 
   if (!live.snapshot) return null
   return <details className="border border-app-border rounded-lg bg-app-surface text-app-text px-3 py-2 text-sm" data-testid="live-lyrics-control">
     <summary className="cursor-pointer min-h-11 flex items-center">ProPresenter · {live.status}</summary>
-    {live.automaticMode ? <p>Automatic lyric checks are active. Unverified or shared slide content stays neutral.</p> : live.confirmed ? <button type="button" className="ui-button min-h-11 px-3" onClick={live.stop}>Stop live lyrics</button> : <>
+    {live.automaticMode ? <p>Automatic lyric checks are active. Unverified or shared slide content stays neutral. Manual scrolling yields until the next confirmed section.</p> : live.confirmed ? <button type="button" className="ui-button min-h-11 px-3" onClick={live.stop}>Stop live lyrics</button> : <>
       <p>Confirm GTAR song “{songTitle}” and the observed presentation and current slide belong to the same song. This link lasts only for this fullscreen session.</p>
       <p className="mt-2 break-words">Presentation: {live.snapshot.presentation?.title ?? 'Unavailable'}</p>
       <p className="text-xs break-all">{live.snapshot.presentation?.uuid}</p>
