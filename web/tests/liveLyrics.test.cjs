@@ -13,7 +13,7 @@ Module._resolveFilename = function(request, parent, ...args) {
 }
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText, filename)
 const { parseGtarSong, splitSongLinesForColumns } = require('../src/utils/songParser.ts')
-const { projectLyrics, matchLiveLyrics, matchLiveLyricRanges, lyricTokens } = require('../src/utils/liveLyrics.ts')
+const { projectLyrics, matchLiveLyrics, matchLiveLyricRanges, lyricTokens, resolveLiveLyricSection } = require('../src/utils/liveLyrics.ts')
 const React = require('react'), { act } = React
 const { SongLineRenderer } = require('../src/components/SongLineRenderer.tsx')
 const { renderToStaticMarkup } = require('react-dom/server')
@@ -141,4 +141,37 @@ test('Stage wiring uses native fullscreen and all overlay/sync guards; provider 
   assert.match(stage, /isFullscreen && <LiveLyricsControl/)
   assert.match(app, /<ExtensionHostProvider><LibraryStartupReadyInner \/><\/ExtensionHostProvider>/)
   assert.match(app, /if \(isPresentationRoute\) \{\s*return <StagePresentationView \/>/)
+})
+
+test('section resolution uses global parsed header anchors only for one complete exact occurrence', () => {
+  const source = '{comment: Verse1}\nC       G\nFirst unique verse\n{comment: Chorus}\n[D]Unique chorus\n{comment: Verse2}\nSecond unique verse\n{comment: Bridge}\n[G]Unique bridge'
+  const parsed = parseGtarSong(source, 4), projection = projectLyrics(parsed.lines)
+  const before = JSON.stringify(parsed)
+  for (const [text, title] of [['First unique verse', 'Verse1'], ['Unique chorus', 'Chorus'], ['Second unique verse', 'Verse2'], ['Unique bridge', 'Bridge']]) {
+    const ranges = matchLiveLyricRanges(projection, text)
+    const section = resolveLiveLyricSection(projection, ranges)
+    assert.equal(parsed.lines[section].title, title)
+  }
+  const duplicate = projectLyrics(parseGtarSong(source + '\n{comment: Chorus repeat}\n[D]Unique chorus', 0).lines)
+  assert.equal(resolveLiveLyricSection(duplicate, matchLiveLyricRanges(duplicate, 'Unique chorus')), null)
+  const bare = projectLyrics(parseGtarSong('[C]No heading lyrics', 0).lines)
+  assert.equal(resolveLiveLyricSection(bare, matchLiveLyricRanges(bare, 'No heading lyrics')), null)
+  assert.equal(resolveLiveLyricSection(projection, []), null)
+  assert.equal(resolveLiveLyricSection(projection, [[999]]), null)
+  assert.equal(resolveLiveLyricSection(projection, [[projection[0].anchorId, projection[1].anchorId]]), null)
+  assert.equal(JSON.stringify(parsed), before)
+})
+
+test('repeated lyric ranges in one section resolve its header; empty repeat markers and cross-section duplicates do not choose occurrences', () => {
+  const source = '{comment: Verse1}\nOpening words\n{comment: Chorus}\n[C]One chorus refrain\nG       D\nOne chorus refrain\n{comment: Verse2}\nSecond verse words\n{comment: Repeat Chorus}\n{comment: Bridge}\nBridge words'
+  const parsed = parseGtarSong(source, 3), projection = projectLyrics(parsed.lines)
+  const ranges = matchLiveLyricRanges(projection, 'One chorus refrain')
+  assert.equal(ranges.length, 2)
+  assert.equal(parsed.lines[resolveLiveLyricSection(projection, ranges)].title, 'Chorus')
+  assert.equal(matchLiveLyricRanges(projection, 'Repeat Chorus').length, 0)
+  assert.equal(resolveLiveLyricSection(projection, [ranges[0], []]), null)
+  const two = projectLyrics(parseGtarSong(source + '\n{comment: Chorus2}\n[D]One chorus refrain', 0).lines)
+  assert.equal(resolveLiveLyricSection(two, matchLiveLyricRanges(two, 'One chorus refrain')), null)
+  const sameLabel = projectLyrics(parseGtarSong(source + '\n{comment: Chorus}\n[D]One chorus refrain', 0).lines)
+  assert.equal(resolveLiveLyricSection(sameLabel, matchLiveLyricRanges(sameLabel, 'One chorus refrain')), null, 'same label on distinct headers is still ambiguous')
 })

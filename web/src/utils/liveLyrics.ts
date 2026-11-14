@@ -53,3 +53,11 @@ export function matchLiveLyricRanges(projection: readonly LyricProjection[], tex
 export function matchLiveLyrics(projection: readonly LyricProjection[], text: string): ReadonlySet<number> {
   return new Set(matchLiveLyricRanges(projection, text).flat())
 }
+
+// Multiple exact occurrences can authorize a header only when every match belongs to that same parsed section.
+export function resolveLiveLyricSection(projection: readonly LyricProjection[], ranges: readonly (readonly number[])[]): number | null {
+  if (!ranges.length || ranges.some(range => !range.length)) return null
+  const lines = [...new Set(ranges.flat())].map(anchor => projection.find(line => line.anchorId === anchor))
+  const section = lines[0]?.sectionId
+  return section !== undefined && section >= 0 && lines.every(line => line?.sectionId === section) ? section : null
+}

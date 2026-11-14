@@ -80,7 +80,8 @@ function presentationIdentity(value: unknown): FollowObservation['presentation']
     typeof id.name !== 'string' || !id.name.trim() ||
     !Number.isSafeInteger(data.index) || Number(data.index) < 0 ||
     !Number.isSafeInteger(id.index) || Number(id.index) < 0) return null
-  return { uuid: id.uuid, title: id.name, slideIndex: Number(data.index) }
+  // Owner-observed UINT32_MAX means no usable slide index, not an occurrence.
+  return { uuid: id.uuid, title: id.name, slideIndex: Number(data.index) === 0xffffffff ? null : Number(data.index) }
 }
 export class SlideDedupe {
   private last?: string
@@ -105,6 +106,10 @@ export function activate(ctx: ExtensionContext) {
   let testResult = ''
   let disposed = false
   let generation = 0
+  let identityRevision = 0
+  let slideRevision = 0
+  let currentReadIdentityRevision: number | undefined
+  let currentReadSequence = 0
   let testController: AbortController | undefined
   let testTimer: ReturnType<typeof setTimeout> | undefined
   const connections = new Set<AbortController>()
@@ -116,7 +121,9 @@ export function activate(ctx: ExtensionContext) {
   const publish = () => {
     ctx.publishFollowSnapshot?.({
       live: fresh.every(Boolean) && live.every(Boolean) && !unexpected.some(Boolean) && !!identity && !!observedCurrent,
-      presentation: identity, current: observedCurrent,
+      presentation: identity, current: observedCurrent, identityRevision,
+      ...(currentReadSequence > 0 ? { currentReadSequence } : {}),
+      ...(currentReadIdentityRevision !== undefined ? { currentReadIdentityRevision } : {}),
     })
     ctx.setPanel({ fields: [
     { label: 'Status', value: status },
@@ -201,11 +208,15 @@ export function activate(ctx: ExtensionContext) {
           for (const frame of parser.push(part.value)) {
             if (index === 0) {
               const state = slides(frame)
+              slideRevision++
+              if (observedCurrent?.uuid !== state.current.uuid || observedCurrent?.text !== state.current.text) currentReadIdentityRevision = undefined
               observedCurrent = state.current.uuid ? state.current : null
               if (dedupe.accept(state)) displayed = state
             } else {
               presentation = presentationName(frame)
               identity = presentationIdentity(frame)
+              identityRevision++
+              currentReadIdentityRevision = undefined
             }
             failures = 0
             unexpected[index] = false
@@ -219,6 +230,7 @@ export function activate(ctx: ExtensionContext) {
           if (error instanceof UnexpectedResponse) unexpected[index] = true
           live[index] = false
           fresh.fill(false)
+          currentReadIdentityRevision = undefined
           identity = null
           observedCurrent = null
           updateStatus()
@@ -247,7 +259,7 @@ export function activate(ctx: ExtensionContext) {
     testTimer = undefined
     live.fill(false)
     fresh.fill(false)
-    identity = null; observedCurrent = null
+    identity = null; observedCurrent = null; currentReadIdentityRevision = undefined
     publish()
   }
   function restart() {
@@ -274,6 +286,44 @@ export function activate(ctx: ExtensionContext) {
     page.removeEventListener('visibilitychange', restart)
     ctx.signal.removeEventListener('abort', dispose)
   }
+  // One bounded GET on demand for Auto lyric activation, using the existing status boundary.
+  // It certifies fresh content in an unchanged observed context, not atomic slide membership.
+  async function readCurrentSlide(signal: AbortSignal) {
+    if (signal.aborted || disposed || page.hidden || !identity || !live.every(Boolean) || unexpected.some(Boolean)) return
+    const epoch = generation, revision = identityRevision, sourceSlideRevision = slideRevision
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
+    connections.add(controller)
+    const timeout = setTimeout(abort, 10000)
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      const response = await request(buildUrl(String(ctx.settings.read().host), paths[0]), controller.signal)
+      if (!response.ok || !response.body || !current(epoch) || signal.aborted || controller.signal.aborted) return
+      reader = response.body.getReader(); readers.add(reader)
+      const parser = new ObjectFrames()
+      while (current(epoch) && !signal.aborted && !controller.signal.aborted) {
+        const part = await reader.read()
+        if (part.done || !current(epoch) || signal.aborted || controller.signal.aborted || revision !== identityRevision || !live.every(Boolean) || unexpected.some(Boolean)) return
+        const states = parser.push(part.value).map(slides)
+        if (!states.length) continue
+        const state = states[states.length - 1]
+        if (!state.current.uuid || (slideRevision !== sourceSlideRevision && (observedCurrent?.uuid !== state.current.uuid || observedCurrent?.text !== state.current.text))) return
+        observedCurrent = state.current
+        currentReadIdentityRevision = revision
+        currentReadSequence++
+        publish()
+        return
+      }
+    } catch { /* Fail neutral; never log received content or alter stream health. */ }
+    finally {
+      clearTimeout(timeout); controller.abort(); connections.delete(controller)
+      signal.removeEventListener('abort', abort)
+      if (reader) { cancel(reader); readers.delete(reader) }
+    }
+  }
+  ctx.setCurrentSlideRead?.(readCurrentSlide)
+  ctx.setFollowRefresh?.(restart)
   page.addEventListener('visibilitychange', restart)
   ctx.signal.addEventListener('abort', dispose, { once: true })
   restart()

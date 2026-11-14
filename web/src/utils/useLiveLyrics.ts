@@ -1,7 +1,7 @@
 import { useContext, useMemo, useState, useSyncExternalStore } from 'react'
 import { ExtensionHostContext } from '../extensions/host/ExtensionHostContext'
 import { useOptionalGoogleAuth } from './authContext'
-import { matchLiveLyricRanges, projectLyrics } from './liveLyrics'
+import { matchLiveLyricRanges, projectLyrics, resolveLiveLyricSection } from './liveLyrics'
 import type { ActiveSongState, SongLine } from '../types/gtar'
 
 const emptySubscribe = () => () => {}
@@ -25,7 +25,8 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
   const confirmed = eligible && confirmation.scope === scope && confirmation.enabled
   const canConfirm = eligible && matches.size > 0
   const confirm = () => {
-    if (canConfirm && host?.getFollowSnapshot() === snapshot) setConfirmation({ scope, enabled: true })
+    if (canConfirm && host?.getFollowSnapshot() === snapshot) { setConfirmation({ scope, enabled: true }); return true }
+    return false
   }
   const stop = () => setConfirmation({ scope, enabled: false })
   const status = !snapshot?.live ? 'Waiting for fresh presentation and slide data'
@@ -33,5 +34,5 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
     : matches.size === 0 ? 'Slide not matched' : confirmed ? 'Live lyrics on · assisted session' : 'Live lyrics off'
   const scrollRange = confirmed && ranges.length === 1 ? ranges[0] : null
   const slideKey = JSON.stringify([snapshot?.current?.uuid, currentText])
-  return { scrollRange, slideKey, verificationScope: scope, activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
+  return { sectionLineId: resolveLiveLyricSection(projection, ranges), eligible, matchingRanges: ranges, matchedLineIds: matches, scrollRange, slideKey, verificationScope: scope, activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
 }

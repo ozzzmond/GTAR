@@ -27,11 +27,15 @@ export interface ExtensionPanel {
 }
 // Narrow, memory-only observation. Independent feeds are NOT asserted to be correlated.
 export interface FollowObservation {
+  // A fresh status GET completed with the observed identity unchanged; not atomic membership.
+  readonly currentReadIdentityRevision?: number
+  readonly currentReadSequence?: number
+  readonly identityRevision?: number
   readonly live: boolean
   readonly presentation: Readonly<{ uuid: string; title: string; slideIndex: number | null }> | null
   readonly current: Readonly<{ uuid: string; text: string }> | null
 }
-export interface FollowSnapshot extends FollowObservation { readonly session: number }
+export interface FollowSnapshot extends FollowObservation { readonly session: number; readonly connection: number; readonly identityRevision: number }
 export interface ExtensionContext {
   settings: { read(): ExtensionSettings; subscribe(listener: () => void): () => void }
   signal: AbortSignal
@@ -39,6 +43,8 @@ export interface ExtensionContext {
   log(message: string): void
   setPanel(panel: ExtensionPanel): void
   publishFollowSnapshot?(snapshot: FollowObservation): void
+  setFollowRefresh?(refresh: () => void): void
+  setCurrentSlideRead?(read: (signal: AbortSignal) => Promise<void>): void
 }
 // No events API in slice 1: event capabilities are refused until a consumer is approved.
 export interface ExtensionModule {

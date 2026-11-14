@@ -1,3 +1,5 @@
+import { projectFollowSetlist, type FollowSelection } from './utils/setlistAutoFollow'
+import { setlistAutoFollowDev } from './utils/setlistAutoFollowDev'
 import { ExtensionHostProvider } from './extensions/host/ExtensionHostProvider'
 import { sharedSongToActiveSong } from './utils/sharedSetlistLibrary'
 import { SetlistTrashConfirmation } from './components/SetlistTrashConfirmation'
@@ -56,7 +58,7 @@ import {
   clearStageSession,
   validateAndResolveStageSession,
 } from './utils/stageSession'
-import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
 import { DEFAULT_SAMPLE_SETLISTS, DEFAULT_SETLIST, EMPTY_LIBRARY_SONG, cloudSyncedSetlistIds, removeUnchangedSamples } from './data/defaultLibrary'
 import { checkRecovery } from './utils/recoveryNotice'
 import { Header } from './components/Header'
@@ -529,6 +531,10 @@ function LibraryApp() {
     })
   }, [activeSetlist, songs])
 
+  const followSetlist = useMemo(() => projectFollowSetlist(activeSetlistId, queueMode, activeSetlist, activeSetlistSongs), [activeSetlistId, queueMode, activeSetlist, activeSetlistSongs])
+  const [followManualRevision, setFollowManualRevision] = useState(0)
+  const [followOrigin, setFollowOrigin] = useState<{ context: typeof followSetlist; index: number } | null>(null)
+
   const isInSetlistMode =
     queueMode === 'setlist' && Boolean(activeSetlist) && activeSetlistSongs.length > 0
 
@@ -954,12 +960,14 @@ function LibraryApp() {
 
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
+    setFollowManualRevision(value => value + 1); setFollowOrigin(null)
     setActiveSongIndex(idx)
     setQueueMode('library')
   }
 
   // Select a song from a setlist (switches queue scope to active setlist)
   const handleSelectSetlistSong = (setlistId: string | number, songIdx: number) => {
+    setFollowManualRevision(value => value + 1); setFollowOrigin(null)
     setActiveSetlistId(setlistId)
     setActiveSetlistSongIndex(songIdx)
     setQueueMode('setlist')
@@ -1626,6 +1634,19 @@ function LibraryApp() {
     }
   }
 
+  const followBoundaryRef = useRef({ context: followSetlist, queueMode, activeView, activeSetlistId, index: activeSetlistSongIndex, manualRevision: followManualRevision, blocked: false })
+  useLayoutEffect(() => { followBoundaryRef.current = { context: followSetlist, queueMode, activeView, activeSetlistId, index: activeSetlistSongIndex, manualRevision: followManualRevision,
+    blocked: isSetlistDrawerOpen || isStageToolsModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen || isImportModalOpen || isHeaderKeyPickerOpen || isTvPresentationModalOpen || isHeaderOverlayOpen || recoveryDataOpen || isSetlistManagerOpen } })
+  const handleFollowSetlistEntry = (request: FollowSelection): boolean => {
+    const current = followBoundaryRef.current
+    if (!setlistAutoFollowDev || !document.fullscreenElement || document.hidden || current.activeView !== 'stage' || current.queueMode !== 'setlist' || current.blocked ||
+      !current.context || current.context !== request.context || current.activeSetlistId !== current.context.id || current.index !== request.fromIndex || current.manualRevision !== request.manualRevision ||
+      !current.context.entries[request.index]?.eligible || bandSync.getState().role !== 'OFF' || stageCast.isPresentationActive() || !request.isCurrent()) return false
+    setFollowOrigin({ context: current.context, index: request.index })
+    setActiveSetlistSongIndex(request.index)
+    return true
+  }
+
   return (
     <TagLibraryContext.Provider value={{ colors: tagColors, onColorChange: handleTagColor, onAddToTag: handleBulkAddToTag }}>
     {activeView === 'songbook' && <ExplorerDragDrop songs={songs} setlists={setlists} folders={folders}
@@ -1865,7 +1886,11 @@ function LibraryApp() {
               isInSetlistMode={isInSetlistMode}
               activeSetlistSongs={activeSetlistSongs}
               activeSetlistSongIndex={activeSetlistSongIndex}
-              onSelectSetlistSongIndex={setActiveSetlistSongIndex}
+              onSelectSetlistSongIndex={(index) => { setFollowManualRevision(value => value + 1); setFollowOrigin(null); setActiveSetlistSongIndex(index) }}
+              followSetlist={followSetlist}
+              followManualRevision={followManualRevision}
+              onFollowSetlistEntry={handleFollowSetlistEntry}
+              isProPresenterSelection={followOrigin?.context === followSetlist && followOrigin?.index === activeSetlistSongIndex}
               activeSetlistName={activeSetlist?.name}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
