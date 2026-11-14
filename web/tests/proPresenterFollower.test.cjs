@@ -101,12 +101,13 @@ function fixture(t, fetcher) {
     return { ok: true, body }
   })
   const controller = new AbortController()
+  let currentRead
   let panel, settings = { host: '192.168.1.2', port: 1025 }, settingsListener
   const reports = [], panels = [], snapshots = []
-  const ctx = { publishFollowSnapshot: value => snapshots.push(value), signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
+  const ctx = { setCurrentSlideRead: read => { currentRead = read }, publishFollowSnapshot: value => snapshots.push(value), signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
   const dispose = activate(ctx)
   t.after(dispose)
-  return { requests, streams, reports, panels, snapshots, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
+  return { readCurrent: signal => currentRead(signal), requests, streams, reports, panels, snapshots, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
     hide(value) { doc.hidden = value; doc.dispatchEvent(new Event('visibilitychange')) },
     settings(value) { settings = value; settingsListener() }, send(index, value) { streams[index].enqueue(bytes(JSON.stringify(value))) } }
 }
@@ -367,4 +368,37 @@ test('assisted snapshot retains validated identity/index and current only; edits
   f.send(1, { presentation_index: null }); await flush()
   assert.equal(f.snapshots.at(-1).live, false)
   f.hide(true); assert.equal(f.snapshots.at(-1).live, false)
+})
+
+
+test('automatic lyric read is bounded GET-only, validates fresh identity and cancels obsolete content', async t => {
+  const f = fixture(t); await flush()
+  f.send(0, state('old')); f.send(1, realPresentation); await flush()
+  const first = new AbortController(), read = f.readCurrent(first.signal); await flush()
+  assert.equal(f.requests.length, 3)
+  assert.equal(f.requests[2].url, buildUrl('192.168.1.2', paths[0]))
+  assert.equal(f.requests[2].options.method, 'GET')
+  assert.equal(f.requests[2].options.credentials, 'omit')
+  assert.equal(f.requests[2].options.cache, 'no-store')
+  f.send(2, state('fresh', 'next')); await read
+  assert.equal(f.snapshots.at(-1).current.uuid, 'fresh')
+  assert.equal(f.snapshots.at(-1).currentReadIdentityRevision, 1)
+  assert.equal(f.snapshots.at(-1).currentReadSequence, 1)
+  assert.ok(f.requests[2].options.signal.aborted)
+  const obsolete = f.readCurrent(new AbortController().signal); await flush()
+  f.send(1, { presentation_index: { index: 1, presentation_id: { uuid: '11111111-1111-4111-8111-111111111111', name: 'Other', index: 0 } } }); await flush()
+  f.send(3, state('obsolete')); await obsolete
+  assert.equal(f.snapshots.at(-1).currentReadIdentityRevision, undefined)
+  assert.equal(f.snapshots.at(-1).currentReadSequence, 1)
+  const raced = f.readCurrent(new AbortController().signal); await flush()
+  f.send(0, state('new-stream')); await flush(); f.send(4, state('old-response')); await raced
+  assert.equal(f.snapshots.at(-1).current.uuid, 'new-stream')
+  assert.equal(f.snapshots.at(-1).currentReadIdentityRevision, undefined)
+  const cancel = new AbortController(), canceled = f.readCurrent(cancel.signal); await flush()
+  cancel.abort(); f.send(5, state('canceled')); await canceled
+  assert.equal(f.snapshots.at(-1).current.uuid, 'new-stream')
+  assert.ok(f.requests[5].options.signal.aborted)
+  const last = f.readCurrent(new AbortController().signal); await flush(); f.hide(true); await last
+  assert.equal(f.snapshots.at(-1).live, false)
+  assert.equal(f.snapshots.at(-1).currentReadIdentityRevision, undefined)
 })

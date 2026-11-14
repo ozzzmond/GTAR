@@ -34,5 +34,5 @@ export function useLiveLyrics(song: ActiveSongState, lines: readonly SongLine[],
     : matches.size === 0 ? 'Slide not matched' : confirmed ? 'Live lyrics on · assisted session' : 'Live lyrics off'
   const scrollRange = confirmed && ranges.length === 1 ? ranges[0] : null
   const slideKey = JSON.stringify([snapshot?.current?.uuid, currentText])
-  return { scrollRange, slideKey, verificationScope: scope, activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
+  return { eligible, matchingRanges: ranges, matchedLineIds: matches, scrollRange, slideKey, verificationScope: scope, activeLineIds: confirmed ? matches : emptyIds, snapshot, confirmed, canConfirm, confirm, stop, status }
 }

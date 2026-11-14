@@ -8,6 +8,6 @@ export function SetlistAutoFollowControl({ follow }: { follow: ReturnType<typeof
       {follow.state.paused && <button type="button" className="ui-button min-h-11 px-3" disabled={!follow.available} onClick={follow.controller.resume}>Resume Auto Follow</button>}
       {follow.state.choices.map(entry => <button type="button" key={entry.entryId} className="ui-button min-h-11 px-3 block" onClick={() => follow.controller.choose(entry.index)}>Follow entry {entry.index + 1}: {entry.title}{entry.artist ? ` - ${entry.artist}` : ''}</button>)}
     </>}
-    <p className="text-xs text-app-muted">DEV: latest observed presentation; rapid transitions can briefly select the wrong song. Lyrics require separate same-song confirmation.</p>
+    <p className="text-xs text-app-muted">DEV: latest observed presentation; rapid transitions can briefly select the wrong song. Lyrics follow automatically only after fresh, unambiguous content checks.</p>
   </div>
 }

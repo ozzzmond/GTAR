@@ -62,7 +62,7 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
   const entry = { manifest, checkAvailability: () => ({ available: true }), load: async () => ({ manifest, checkAvailability: () => ({ available: true }), activate: value => { ctx = value; return () => {} } }) }
   const host = new ExtensionHost([entry], { getItem: () => null, setItem() {} })
   await host.enable(manifest.id)
-  const songs = [1, 2, 3].map(id => ({ id, title: `Synthetic song ${id}`, artist: '', key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: id, rawContent: `{title: Synthetic song ${id}}\n[C]A synthetic lyric line`, format: 'CHORD_PRO', capo: '', bpm: '' }))
+  const songs = [1, 2, 3].map(id => ({ id, title: `Synthetic song ${id}`, artist: '', key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: id, rawContent: `{title: Synthetic song ${id}}\n[C]Unique lyric for song ${id}\n[G]Repeated refrain ${id}\n{comment: Chorus}\n[G]Repeated refrain ${id}\n[C]Shared setlist words`, format: 'CHORD_PRO', capo: '', bpm: '' }))
   const list = { id: 'active', name: 'QA', songs: songs.map((song, index) => ({ id: song.id, entryId: `entry-${index}`, position: index, title: song.title })) }
   const followSetlist = projectFollowSetlist('active', 'setlist', list, songs)
   const selections = [], transposes = []
@@ -83,9 +83,15 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
         transposeOffset: songs[index].transposeOffset, onTransposeChange: (...args) => transposes.push(args),
       })))
   }
-  let revision = 0
+  let revision = 0, readSequence = 0, pendingRead
+  ctx.setCurrentSlideRead(signal => new Promise(resolve => { pendingRead = { signal, resolve, revision }; signal.addEventListener('abort', resolve, { once: true }) }))
+  const confirmFresh = async (text, sourceRevision = revision) => act(async () => {
+    const current = host.getFollowSnapshot()
+    ctx.publishFollowSnapshot({ live: true, identityRevision: revision, presentation: current.presentation, current: { uuid: current.current.uuid, text }, currentReadIdentityRevision: sourceRevision, currentReadSequence: ++readSequence })
+  })
+  const highlighted = () => document.querySelectorAll('[data-live-lyric="true"]').length
   const healthy = () => assert.equal(boundary.current.state.hasError, false, JSON.stringify(errors))
-  const emit = async (index, live = true, title = songs[index].title) => act(async () => ctx.publishFollowSnapshot({ live, identityRevision: ++revision, presentation: { uuid: `p-${index}-${title}`, title, slideIndex: 0 }, current: { uuid: `slide-${index}`, text: 'A synthetic lyric line' } }))
+  const emit = async (index, live = true, title = songs[index].title) => act(async () => ctx.publishFollowSnapshot({ live, identityRevision: ++revision, presentation: { uuid: `p-${index}-${title}`, title, slideIndex: 0 }, current: { uuid: `slide-${index}`, text: `Unique lyric for song ${index + 1}` } }))
   const tick = async () => act(async () => { const callbacks = [...pending.values()]; pending.clear(); callbacks.forEach(callback => callback()) })
   const fullscreen = async enabled => act(async () => { fsElement = enabled ? document.documentElement : null; document.dispatchEvent(new window.Event('fullscreenchange')) })
   const click = async text => act(async () => {
@@ -99,20 +105,33 @@ test('real StageView native-timer Auto Follow survives enable, navigation and li
     await click('Enable Auto Follow')
     await emit(1) // The real field failure also surfaced on the next layout/update.
     healthy(); await tick(); healthy(); assert.deepEqual(selections, [1])
+    assert.equal(highlighted(), 0, 'identity selection alone never highlights')
+    assert.ok(pendingRead && !pendingRead.signal.aborted)
+    await confirmFresh('Unique lyric for song 2', revision - 1)
+    assert.equal(highlighted(), 0, 'wrong identity proof stays neutral')
+    await confirmFresh('Unique lyric for song 2')
+    assert.ok(highlighted() > 0, 'no per-song confirm click required')
+    assert.equal(document.querySelector('[data-testid="live-lyrics-control"]').textContent.includes('Confirm this song'), false)
+    await confirmFresh('Repeated refrain 2')
+    assert.equal(highlighted(), 2, 'duplicate chorus ranges highlight together')
+    await confirmFresh('Shared setlist words')
+    assert.equal(highlighted(), 0, 'shared exact lyrics across distinct setlist songs remain neutral')
+    await confirmFresh('Unique lyric for song 1')
+    assert.equal(highlighted(), 0, 'wrong song content remains neutral')
     for (let i = 0; i < 3; i++) {
       await click('Use Assisted mode'); healthy()
-      await click('Enable Auto Follow'); await tick(); healthy()
+      await click('Enable Auto Follow'); await tick(); healthy(); assert.equal(highlighted(), 0, 'new activation cannot reuse an earlier read')
     }
-    for (const index of [2, 1, 0]) { await emit(index); await tick(); healthy() }
-    assert.deepEqual(selections, [1, 2, 1, 0])
-    await emit(1); await act(async () => manuallySelect(2)); await tick(); healthy()
-    assert.deepEqual(selections, [1, 2, 1, 0])
-    await click('Resume Auto Follow'); await tick(); healthy(); assert.equal(selections.at(-1), 1)
+    for (const index of [2, 0, 1, 0]) { await emit(index); assert.equal(highlighted(), 0); await tick(); healthy(); await confirmFresh(`Unique lyric for song ${index + 1}`); assert.ok(highlighted() > 0) }
+    assert.deepEqual(selections, [1, 2, 0, 1, 0])
+    await emit(0); await tick(); const obsoleteRead = pendingRead; await act(async () => manuallySelect(2)); assert.ok(obsoleteRead.signal.aborted); assert.equal(highlighted(), 0); await tick(); healthy()
+    assert.deepEqual(selections, [1, 2, 0, 1, 0])
+    await emit(1); await click('Resume Auto Follow'); await tick(); healthy(); assert.equal(selections.at(-1), 1)
     const count = selections.length
     await emit(0); await fullscreen(false); await tick(); healthy(); assert.equal(selections.length, count)
     await fullscreen(true); await emit(2); await tick(); healthy(); assert.equal(selections.length, count)
     await click('Resume Auto Follow'); await tick(); healthy(); assert.equal(selections.at(-1), 2)
-    await emit(0, false); await tick(); healthy()
+    await emit(0, false); await tick(); healthy(); assert.equal(highlighted(), 0)
     const disconnectedCount = selections.length
     await emit(1); await tick(); healthy(); assert.equal(selections.length, disconnectedCount)
     await click('Resume Auto Follow'); await tick(); healthy(); assert.equal(selections.at(-1), 1)

@@ -1,3 +1,4 @@
+import { useAutoLiveLyrics } from '../utils/useAutoLiveLyrics'
 import { SetlistAutoFollowControl } from './SetlistAutoFollowControl'
 import { useSetlistAutoFollow } from '../utils/useSetlistAutoFollow'
 import { setlistAutoFollowDev } from '../utils/setlistAutoFollowDev'
@@ -590,12 +591,14 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Parse song with native v1.0.42 parser and active transpose offset
   const parsedSong = useMemo(() => parseGtarSong(song.rawContent, transposeOffset), [song.rawContent, transposeOffset])
-  const liveLyrics = useLiveLyrics(song, parsedSong.lines, isFullscreen,
+  const manualLyrics = useLiveLyrics(song, parsedSong.lines, isFullscreen,
     isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive,
     JSON.stringify([queueMode, activeSongIndex, activeSetlistSongIndex]))
 
-  const autoFollow = useSetlistAutoFollow(liveLyrics.snapshot, followSetlist, activeSetlistSongIndex, followManualRevision,
+  const autoFollow = useSetlistAutoFollow(manualLyrics.snapshot, followSetlist, activeSetlistSongIndex, followManualRevision,
     isFullscreen, isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive, onFollowSetlistEntry)
+
+  const liveLyrics = useAutoLiveLyrics(manualLyrics, song, autoFollow, followSetlist, activeSetlistSongIndex)
 
   const liveScroll = useLiveLyricScroll(scrollContainerRef, {
     enabled: liveLyrics.confirmed, session: liveLyrics.verificationScope,

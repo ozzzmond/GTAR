@@ -22,6 +22,8 @@ export class ExtensionHost {
   private followConnection = 0
   private identityRevision = 0
   private sourceIdentityRevision: number | undefined
+  private currentSlideRead: ((signal: AbortSignal) => Promise<void>) | undefined
+  requestCurrentSlideRead = (signal: AbortSignal) => this.currentSlideRead?.(signal) ?? Promise.resolve()
   private followRefresh: (() => void) | undefined
   requestFollowRefresh = () => { this.followRefresh?.() }
   getFollowSnapshot = () => this.followSnapshot
@@ -36,6 +38,8 @@ export class ExtensionHost {
     this.sourceIdentityRevision = value?.identityRevision
     if (!value?.live || !previous?.live || value.presentation?.uuid !== previous.presentation?.uuid) this.followSession++
     this.followSnapshot = value ? Object.freeze({
+      ...(typeof value.currentReadSequence === 'number' && Number.isSafeInteger(value.currentReadSequence) && value.currentReadSequence > 0 ? { currentReadSequence: value.currentReadSequence } : {}),
+      ...(typeof value.currentReadIdentityRevision === 'number' && value.currentReadIdentityRevision === value.identityRevision ? { currentReadIdentityRevision: this.identityRevision } : {}),
       session: this.followSession, connection: this.followConnection, identityRevision: this.identityRevision, live: value.live,
       presentation: value.presentation ? Object.freeze({ uuid: value.presentation.uuid, title: value.presentation.title, slideIndex: value.presentation.slideIndex }) : null,
       current: value.current ? Object.freeze({ uuid: value.current.uuid, text: value.current.text }) : null,
@@ -83,7 +87,7 @@ export class ExtensionHost {
   }
   private stop(runtime: Runtime) {
     runtime.generation++
-    if (runtime.entry.manifest.id === 'propresenter-follower') { this.followRefresh = undefined; this.publishFollow(null) }
+    if (runtime.entry.manifest.id === 'propresenter-follower') { this.followRefresh = undefined; this.currentSlideRead = undefined; this.publishFollow(null) }
     runtime.controller?.abort()
     runtime.controller = undefined
     const dispose = runtime.dispose
@@ -145,6 +149,7 @@ export class ExtensionHost {
         },
         log: message => { if (current()) this.logSink(this.redact(runtime, message) ?? '') },
         ...(entry.manifest.id === 'propresenter-follower' ? {
+          setCurrentSlideRead: (read: (signal: AbortSignal) => Promise<void>) => { if (current()) this.currentSlideRead = signal => current() && !signal.aborted ? read(signal) : Promise.resolve() },
           setFollowRefresh: (refresh: () => void) => { if (current()) this.followRefresh = () => { if (current()) refresh() } },
           publishFollowSnapshot: (snapshot: FollowObservation) => {
             if (current()) this.publishFollow(snapshot)

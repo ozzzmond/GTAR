@@ -1,7 +1,7 @@
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { FollowSnapshot } from '../extensions/host/ExtensionHost'
 
-export interface FollowEntry { readonly index: number; readonly entryId: string; readonly songId: string | number; readonly title: string; readonly artist: string; readonly eligible: boolean }
+export interface FollowEntry { readonly index: number; readonly entryId: string; readonly songId: string | number; readonly title: string; readonly artist: string; readonly chart: string; readonly eligible: boolean }
 export interface FollowSetlist { readonly id: string | number; readonly entries: readonly FollowEntry[] }
 export interface FollowSelection {
   readonly context: FollowSetlist
@@ -19,7 +19,7 @@ export function projectFollowSetlist(activeId: string | number | null, queue: st
     const entryId = ref.entryId
     const unique = !!entryId && !ids.has(entryId)
     ids.add(entryId)
-    return { index, entryId, songId: ref.id, title: song.title, artist: song.artist ?? '',
+    return { index, entryId, songId: ref.id, title: song.title, artist: song.artist ?? '', chart: song.rawContent,
       eligible: unique && ref.id === song.id && !song.isMissing && !song.isDeleted }
   })
   if (ids.size !== projection.length || projection.some(entry => !entry.entryId)) return null
@@ -52,12 +52,13 @@ export interface AutoFollowInput {
   readonly select: (request: FollowSelection) => boolean
   readonly refresh: () => void
 }
-export interface AutoFollowState { readonly mode: 'assisted' | 'auto'; readonly paused: boolean; readonly status: string; readonly choices: readonly FollowEntry[] }
+export interface AutoLyricTarget { readonly context: FollowSetlist; readonly index: number; readonly songId: string | number; readonly connection: number; readonly identityRevision: number; readonly presentationUuid: string; readonly currentReadAfter: number }
+export interface AutoFollowState { readonly target: AutoLyricTarget | null; readonly mode: 'assisted' | 'auto'; readonly paused: boolean; readonly status: string; readonly choices: readonly FollowEntry[] }
 const SETTLE_MS = 300
 // DEV Option B: latest observed identity; settling is mitigation, not atomic correlation.
 export class SetlistAutoFollower {
   private input: AutoFollowInput | null = null
-  private state: AutoFollowState = { mode: 'assisted', paused: false, status: 'Assisted - manual song selection', choices: [] }
+  private state: AutoFollowState = { mode: 'assisted', paused: false, status: 'Assisted - manual song selection', choices: [], target: null }
   private listeners = new Set<() => void>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private generation = 0
@@ -69,9 +70,9 @@ export class SetlistAutoFollower {
   constructor(schedule: typeof setTimeout = globalThis.setTimeout.bind(globalThis), cancel: typeof clearTimeout = globalThis.clearTimeout.bind(globalThis)) { this.scheduleTimer = schedule; this.cancelTimer = cancel }
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn) } }
   getSnapshot = () => this.state
-  private publish(status: string, paused = this.state.paused, choices: readonly FollowEntry[] = []) {
-    if (this.state.status === status && this.state.paused === paused && !choices.length && !this.state.choices.length) return
-    this.state = { ...this.state, status, paused, choices }
+  private publish(status: string, paused = this.state.paused, choices: readonly FollowEntry[] = [], target: AutoLyricTarget | null = null) {
+    if (this.state.status === status && this.state.paused === paused && !choices.length && !this.state.choices.length && this.state.target === target) return
+    this.state = { ...this.state, status, paused, choices, target }
     for (const listener of this.listeners) listener()
   }
   private cancel() { this.generation++; if (this.timer !== undefined) this.cancelTimer(this.timer); this.timer = undefined }
@@ -120,7 +121,7 @@ export class SetlistAutoFollower {
   }
   assisted = () => {
     this.cancel(); this.links.clear(); this.expectedIndex = undefined
-    this.state = { mode: 'assisted', paused: false, status: 'Assisted - manual song selection', choices: [] }
+    this.state = { mode: 'assisted', paused: false, status: 'Assisted - manual song selection', choices: [], target: null }
     for (const listener of this.listeners) listener()
   }
   resume = () => {
@@ -152,8 +153,12 @@ export class SetlistAutoFollower {
     if (!this.current(input, generation)) return
     if (this.apply(input, index, generation)) {
       this.links.set(input.snapshot!.presentation!.uuid, input.context!.entries[index].songId)
-      this.publish('Following explicitly selected setlist entry - lyrics require confirmation', false)
+      this.publish('Following explicitly selected setlist entry - checking current lyrics', false, [], this.lyricTarget(input, index))
     }
+  }
+  private lyricTarget(input: AutoFollowInput, index: number): AutoLyricTarget {
+    return { context: input.context!, index, songId: input.context!.entries[index].songId,
+      connection: input.snapshot!.connection, identityRevision: input.snapshot!.identityRevision, presentationUuid: input.snapshot!.presentation!.uuid, currentReadAfter: input.snapshot!.currentReadSequence ?? 0 }
   }
   private apply(input: AutoFollowInput, index: number, generation: number) {
     if (!this.current(input, generation) || !input.context?.entries[index]?.eligible) return false
@@ -174,7 +179,7 @@ export class SetlistAutoFollower {
       const resolution = resolveSetlistPresentation(input.context!, input.selectedIndex, input.snapshot!.presentation!.title, this.links.get(input.snapshot!.presentation!.uuid))
       if (resolution.kind === 'absent') this.publish('Not in current setlist')
       else if (resolution.kind === 'ambiguous') this.publish('Choose a setlist entry for this presentation', false, resolution.choices)
-      else if (resolution.kind === 'target' && this.apply(input, resolution.index, generation)) this.publish('Following latest observed identity - lyrics require confirmation')
+      else if (resolution.kind === 'target' && this.apply(input, resolution.index, generation)) this.publish('Following latest observed identity - automatic lyric checks', false, [], this.lyricTarget(input, resolution.index))
     }, SETTLE_MS)
   }
   dispose = () => { this.cancel(); this.links.clear(); this.input = null; this.expectedIndex = undefined }
