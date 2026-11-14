@@ -253,6 +253,7 @@ New or renamed tests await a human choice of primary category.
 - [liveLyricScroll.test.cjs](liveLyricScroll.test.cjs)
 - [liveLyrics.test.cjs](liveLyrics.test.cjs)
 - [loggerCapture.test.cjs](loggerCapture.test.cjs)
+- [manageSourcesModal516.test.cjs](manageSourcesModal516.test.cjs)
 - [manualCloudBackup.test.cjs](manualCloudBackup.test.cjs)
 - [manualCloudBackupUi.test.cjs](manualCloudBackupUi.test.cjs)
 - [multiTagFoundation.test.cjs](multiTagFoundation.test.cjs)
