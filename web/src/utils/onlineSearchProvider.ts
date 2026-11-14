@@ -15,6 +15,7 @@ export interface OnlineChordResult {
   offlineExample?: boolean
   tonality?: string
   providerId?: string
+  providerName?: string
 }
 
 export type OnlineSearchResult = OnlineChordResult

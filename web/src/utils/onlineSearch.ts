@@ -127,7 +127,7 @@ export async function searchConfiguredSources(
         const key = `${provider.id}:${item.id}`
         if (seen.has(key)) continue
         seen.add(key)
-        results.push({ ...item, providerId: item.providerId ?? provider.id })
+        results.push({ ...item, providerId: item.providerId ?? provider.id, providerName: item.providerName ?? provider.name })
       }
       return
     }

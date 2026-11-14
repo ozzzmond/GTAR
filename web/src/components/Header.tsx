@@ -8,7 +8,6 @@ import { SearchResults } from './SearchResults'
 import {
   Search,
   X,
-  Globe,
   Palette,
   Wrench,
   Command,
@@ -58,6 +57,7 @@ import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlin
 import { useOnlineSourceSettings } from '../utils/onlineSourceSettings'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
+import { OnlineSourcesRow } from './OnlineSourcesRow'
 import { AboutModal } from './AboutModal'
 import { CloudSyncModal } from './CloudSyncModal'
 import { resolveThemePalette } from './ThemeModal'
@@ -348,23 +348,8 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="text-xs font-bold text-app-heading">Advanced Tools</span>
       </div>
 
-      {/* Online song sources: opt-in, off by default */}
-      <button
-        type="button"
-        role="menuitemcheckbox"
-        aria-checked={onlineSourcesEnabled}
-        data-testid="settings-online-sources"
-        onClick={() => setOnlineSourcesEnabled(!onlineSourcesEnabled)}
-        className={`${popoverItem} justify-between`}
-      >
-        <div className="flex items-center gap-2.5">
-          <Globe className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-          <span>Online song sources</span>
-        </div>
-        <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none bg-app-surface border border-app-border text-app-muted ui-secondary-text font-mono">
-          {onlineSourcesEnabled ? 'On' : 'Off'}
-        </span>
-      </button>
+      {/* Online song sources: opt-in, off by default; expands to the source list (#516) */}
+      <OnlineSourcesRow rowClass={popoverItem} enabled={onlineSourcesEnabled} onToggle={setOnlineSourcesEnabled} />
 
       {/* Extension registry rows (e.g. ProPresenter) */}
       <ExtensionRows host={extensionHost} rowClass={popoverItem} />

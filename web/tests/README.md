@@ -260,6 +260,7 @@ New or renamed tests await a human choice of primary category.
 - [nativeTooltipToPopover.test.cjs](nativeTooltipToPopover.test.cjs)
 - [onlineSourceSettings516.test.cjs](onlineSourceSettings516.test.cjs)
 - [onlineSourcesOptIn453.test.cjs](onlineSourcesOptIn453.test.cjs)
+- [onlineSourcesRow516.test.cjs](onlineSourcesRow516.test.cjs)
 - [onsongImport.test.cjs](onsongImport.test.cjs)
 - [previewBuildIdentity.test.cjs](previewBuildIdentity.test.cjs)
 - [proPresenterFollower.test.cjs](proPresenterFollower.test.cjs)

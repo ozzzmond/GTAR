@@ -174,6 +174,7 @@ test('#516 default settings return the Ultimate Guitar results unchanged and tag
   const outcome = await search.searchConfiguredSources('toxic', settings.createDefaultSettings(), { lookup: lookupOf([ug]) })
   assert.deepEqual(outcome.results.map(item => item.id), ['1', '2'])
   assert.ok(outcome.results.every(item => item.providerId === 'ultimate-guitar'))
+  assert.ok(outcome.results.every(item => item.providerName === 'ULTIMATE-GUITAR'))
   assert.deepEqual(outcome.errors, [])
   assert.deepEqual(outcome.searchedProviderIds, ['ultimate-guitar'])
 })
