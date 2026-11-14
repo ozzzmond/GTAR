@@ -692,3 +692,11 @@ body[data-explorer-drag-kind] [data-testid="music-explorer-drawer"] > div { poin
   .ui-song-card:focus-within .song-hover-rename,
   .ui-song-card:focus-within .song-hover-delete { opacity: 1; pointer-events: auto; }
 }
+
+/* Scoped amber cue follows the active theme's color-scheme. No marker or geometry changes.
+   Local foreground tokens keep both lyrics and chords readable on the colored surface. */
+[data-live-lyric="true"] {
+  background-color: light-dark(#fde68a, #854d0e);
+  --custom-stage-text: light-dark(#1c1917, #fffbeb);
+  --custom-stage-chord: light-dark(#78350f, #fde68a);
+}

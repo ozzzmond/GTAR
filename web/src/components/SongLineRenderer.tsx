@@ -14,6 +14,8 @@ export type StageLineSpacing = 'compact' | 'normal' | 'relaxed'
 
 export interface SongLineRendererProps {
   lines: SongLine[]
+  lineOffset?: number
+  activeLineIds?: ReadonlySet<number>
   fontSizePx: number
   fontFamily?: 'mono' | 'sans' | 'serif'
   onChordClick?: (chord: string, targetEl?: HTMLElement) => void
@@ -260,6 +262,8 @@ function renderInteractiveChordLine(
  */
 export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   lines,
+  lineOffset = 0,
+  activeLineIds,
   fontSizePx,
   fontFamily = 'mono',
   onChordClick,
@@ -283,7 +287,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   const isHighContrast = chordScale >= 1.2 && fontWeight === 'bold'
 
   const renderAnchored = (segments: ChordSegment[], key: number) => (
-    <div key={key} data-stage-line="true" data-line-index={key} className={`${fontClass} stage-anchored-line select-text`}
+    <div key={key} data-stage-line="true" data-line-index={key + lineOffset} data-live-lyric={activeLineIds?.has(key + lineOffset) || undefined} className={`${fontClass} stage-anchored-line select-text`}
       style={{ fontSize: fontSizePx, padding: spacing.chordProPadding, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start' }}>
       {chordLyricWords(segments).map((word, wordIndex) => (
         <span key={wordIndex} className="stage-anchored-word" style={{ display: 'inline-flex', maxWidth: '100%', minWidth: 0 }}>
@@ -316,7 +320,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
         if (line.type === 'LYRIC' && previous?.type === 'CHORD_ROW' && previous.isOverLyric) return null
         switch (line.type) {
           case 'EMPTY':
-            return <div key={idx} data-stage-line="true" data-line-index={idx} style={{ height: spacing.emptySpacerHeight }} />
+            return <div key={idx} data-stage-line="true" data-line-index={idx + lineOffset} style={{ height: spacing.emptySpacerHeight }} />
 
           case 'SECTION_HEADER':
             return (
@@ -325,7 +329,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                 data-stage-section="true"
                 data-section-title={line.title}
                 data-section-index={idx}
-                data-line-index={idx}
+                data-line-index={idx + lineOffset}
                 className={`${fontClass} stage-section-header select-none`}
                 style={{
                   fontSize: `${fontSizePx}px`, lineHeight: `${fontSizePx * spacing.lineHeightMultiplier}px`,
@@ -346,7 +350,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               <div
                 key={idx}
                 data-stage-line="true"
-                data-line-index={idx}
+                data-line-index={idx + lineOffset}
                 style={{
                   paddingTop: spacing.chordRowPt,
                   paddingBottom: spacing.chordRowPb,
@@ -373,7 +377,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
               <div
                 key={idx}
                 data-stage-line="true"
-                data-line-index={idx}
+                data-line-index={idx + lineOffset}
                 style={{
                   paddingTop: spacing.lyricRowPt,
                   paddingBottom: spacing.lyricRowPb,
@@ -385,6 +389,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   overflowWrap: 'break-word',
                   wordBreak: 'break-word',
                 }}
+                data-live-lyric={activeLineIds?.has(idx + lineOffset) || undefined}
                 className={`${fontClass} stage-lyric-text ${weightConfig.lyricClass} whitespace-pre-wrap select-text`}
               >
                 {line.lyrics}
@@ -399,7 +404,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                 <div
                   key={idx}
                   data-stage-line="true"
-                  data-line-index={idx}
+                  data-line-index={idx + lineOffset}
                   style={{
                     paddingTop: '1.5px',
                     paddingBottom: '1.5px',

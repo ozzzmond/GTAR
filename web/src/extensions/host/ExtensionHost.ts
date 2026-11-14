@@ -1,5 +1,5 @@
 import { CONTRACT_VERSION } from '../contract'
-import type { ExtensionContext, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
+import type { ExtensionContext, FollowObservation, FollowSnapshot, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
 import { extensionStorageKey, normalizeSettings, readExtension, validSetting } from './settings'
 import type { ExtensionStorage } from './settings'
 
@@ -15,6 +15,24 @@ interface Runtime {
 export class ExtensionHost {
   private runtimes = new Map<string, Runtime>()
   private listeners = new Set<() => void>()
+  private followListeners = new Set<() => void>()
+  private followSnapshot: FollowSnapshot | null = null
+  private followSession = 0
+  getFollowSnapshot = () => this.followSnapshot
+  subscribeFollow = (listener: () => void) => {
+    this.followListeners.add(listener)
+    return () => { this.followListeners.delete(listener) }
+  }
+  private publishFollow(value: FollowObservation | null) {
+    const previous = this.followSnapshot
+    if (!value?.live || !previous?.live || value.presentation?.uuid !== previous.presentation?.uuid) this.followSession++
+    this.followSnapshot = value ? Object.freeze({
+      session: this.followSession, live: value.live,
+      presentation: value.presentation ? Object.freeze({ uuid: value.presentation.uuid, title: value.presentation.title, slideIndex: value.presentation.slideIndex }) : null,
+      current: value.current ? Object.freeze({ uuid: value.current.uuid, text: value.current.text }) : null,
+    }) : null
+    for (const listener of this.followListeners) listener()
+  }
   readonly entries: readonly RegistryEntry[]
   private storage: ExtensionStorage
   private env: HostEnv
@@ -56,6 +74,7 @@ export class ExtensionHost {
   }
   private stop(runtime: Runtime) {
     runtime.generation++
+    if (runtime.entry.manifest.id === 'propresenter-follower') this.publishFollow(null)
     runtime.controller?.abort()
     runtime.controller = undefined
     const dispose = runtime.dispose
@@ -116,6 +135,11 @@ export class ExtensionHost {
           this.update(runtime, state, this.redact(runtime, message))
         },
         log: message => { if (current()) this.logSink(this.redact(runtime, message) ?? '') },
+        ...(entry.manifest.id === 'propresenter-follower' ? {
+          publishFollowSnapshot: (snapshot: FollowObservation) => {
+            if (current()) this.publishFollow(snapshot)
+          },
+        } : {}),
         setPanel: panel => {
           if (!current() || !entry.manifest.capabilities.includes('ui:panel')) return
           runtime.snapshot = { ...runtime.snapshot, panel }
@@ -149,6 +173,7 @@ export class ExtensionHost {
     const previous = runtime.snapshot
     runtime.snapshot = { ...previous, settings: normalizeSettings(runtime.entry.manifest, values) }
     if (!this.persist(runtime, ['starting', 'active', 'offline'].includes(previous.state))) { runtime.snapshot = previous; return false }
+    if (id === 'propresenter-follower') this.publishFollow(null)
     for (const listener of runtime.listeners) {
       try { listener() } catch { this.stop(runtime); this.persist(runtime, false); this.update(runtime, 'error', 'Extension settings listener failed'); break }
     }
@@ -158,5 +183,6 @@ export class ExtensionHost {
   dispose() {
     for (const runtime of this.runtimes.values()) { this.stop(runtime); this.update(runtime, 'disabled') }
     this.listeners.clear()
+    this.followListeners.clear()
   }
 }

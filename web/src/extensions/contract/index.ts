@@ -25,12 +25,20 @@ export interface ExtensionPanel {
   fields: readonly { label: string; value: string }[]
   actions: readonly { label: string; disabled?: boolean; run(): void }[]
 }
+// Narrow, memory-only observation. Independent feeds are NOT asserted to be correlated.
+export interface FollowObservation {
+  readonly live: boolean
+  readonly presentation: Readonly<{ uuid: string; title: string; slideIndex: number | null }> | null
+  readonly current: Readonly<{ uuid: string; text: string }> | null
+}
+export interface FollowSnapshot extends FollowObservation { readonly session: number }
 export interface ExtensionContext {
   settings: { read(): ExtensionSettings; subscribe(listener: () => void): () => void }
   signal: AbortSignal
   reportStatus(state: 'active' | 'offline' | 'error', message?: string): void
   log(message: string): void
   setPanel(panel: ExtensionPanel): void
+  publishFollowSnapshot?(snapshot: FollowObservation): void
 }
 // No events API in slice 1: event capabilities are refused until a consumer is approved.
 export interface ExtensionModule {
