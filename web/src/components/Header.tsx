@@ -49,11 +49,13 @@ import {
   formatPreviewIdentity,
 } from '../utils/headerFormatters'
 import {
-  searchOnlineChords,
+  searchConfiguredSources,
+  summarizeSearchErrors,
   type OnlineChordResult,
   type FetchedChordSheet,
 } from '../utils/onlineSearch'
 import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlineSources'
+import { useOnlineSourceSettings } from '../utils/onlineSourceSettings'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { AboutModal } from './AboutModal'
@@ -287,6 +289,7 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', keydown)
   }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal])
   const onlineSourcesEnabled = useOnlineSourcesEnabled()
+  const onlineSourceSettings = useOnlineSourceSettings()
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
   const [onlineError, setOnlineError] = useState<string | null>(null)
   const [isSearchingOnline, setIsSearchingOnline] = useState(false)
@@ -486,22 +489,28 @@ export const Header: React.FC<HeaderProps> = ({
 
     setIsSearchingOnline(true)
     setOnlineError(null)
+    let cancelled = false
     const timeout = setTimeout(() => {
-      searchOnlineChords(trimmed)
-        .then((res) => {
-          setOnlineResults(res)
-          setOnlineError(null)
+      searchConfiguredSources(trimmed, onlineSourceSettings)
+        .then((outcome) => {
+          if (cancelled) return
+          setOnlineResults(outcome.results)
+          setOnlineError(summarizeSearchErrors(outcome))
           setIsSearchingOnline(false)
         })
         .catch((err) => {
+          if (cancelled) return
           setOnlineResults([])
           setOnlineError(err instanceof Error ? err.message : 'Network error — unable to reach search service')
           setIsSearchingOnline(false)
         })
     }, 350)
 
-    return () => clearTimeout(timeout)
-  }, [searchQuery, onlineSourcesEnabled])
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [searchQuery, onlineSourcesEnabled, onlineSourceSettings])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
