@@ -253,3 +253,31 @@ test('switching through Assisted cannot bypass fresh-identity requirement after 
   f.emit(songs[1], 3); f.controller.enable(); f.flush()
   assert.deepEqual(f.selections, [2])
 })
+
+
+test('default browser timer APIs keep their global receiver through enable, cancellation and repeated mode changes', t => {
+  const f = fixture(t)
+  const pending = new Map(); let next = 0
+  t.mock.method(globalThis, 'setTimeout', function(callback, delay) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation')
+    const id = ++next; pending.set(id, { callback, delay }); return id
+  })
+  t.mock.method(globalThis, 'clearTimeout', function(id) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation')
+    pending.delete(id)
+  })
+  const controller = new SetlistAutoFollower()
+  t.after(controller.dispose)
+  controller.update(f.input)
+  for (let i = 0; i < 3; i++) {
+    controller.enable()
+    assert.equal(pending.size, 1)
+    assert.equal([...pending.values()][0].delay, 300)
+    controller.assisted()
+    assert.equal(pending.size, 0)
+  }
+  controller.enable()
+  controller.update({ ...f.input, fullscreen: false })
+  assert.equal(pending.size, 0)
+  assert.equal(controller.getSnapshot().paused, true)
+})

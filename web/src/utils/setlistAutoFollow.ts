@@ -66,7 +66,7 @@ export class SetlistAutoFollower {
   private links = new Map<string, string | number>()
   private scheduleTimer: typeof setTimeout
   private cancelTimer: typeof clearTimeout
-  constructor(schedule: typeof setTimeout = setTimeout, cancel: typeof clearTimeout = clearTimeout) { this.scheduleTimer = schedule; this.cancelTimer = cancel }
+  constructor(schedule: typeof setTimeout = globalThis.setTimeout.bind(globalThis), cancel: typeof clearTimeout = globalThis.clearTimeout.bind(globalThis)) { this.scheduleTimer = schedule; this.cancelTimer = cancel }
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn) } }
   getSnapshot = () => this.state
   private publish(status: string, paused = this.state.paused, choices: readonly FollowEntry[] = []) {
