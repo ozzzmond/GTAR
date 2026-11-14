@@ -182,12 +182,12 @@ test('SearchResults: online rows open the preview (one primary action), groups c
   const songs = Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, title: `Song ${i}`, artist: 'A', rawContent: '', originalIdx: i }))
   await render(SearchResults, { songs, setlists: [],
     online: [{ id: 'o1', songName: 'Web Tune', artistName: 'C' }], onSelectSong: noop, onSelectSetlist: noop,
-    onPreviewOnline: item => seen.push(item.id), onOpenImport: noop, onOpenSources: noop })
+    onPreviewOnline: item => seen.push(item.id) })
   assert.equal([...document.querySelectorAll('button')].filter(b => /^Song \d/.test(b.textContent)).length, 8)
   assert.match(document.body.textContent, /Showing up to 8 of each/)
   await click($('[aria-label="Preview Web Tune online chords"]'))
   assert.deepEqual(seen, ['o1'])
-  assert.match(document.body.textContent, /Browse external song sources/)
+  assert.doesNotMatch(document.body.textContent, /Browse external song sources|Preview & Import a chart/)
   assert.doesNotMatch(document.body.textContent, /Import$|Importing/)
 }))
 

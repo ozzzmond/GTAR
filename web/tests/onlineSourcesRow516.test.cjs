@@ -274,7 +274,7 @@ test('#516 search links render as a separate bottom section that opens in a new 
   const links = [{ id: 'worshipchords', name: 'WorshipChords', href: 'https://worshipchords.com/?s=relentless' }]
   await act(async () => {
     root.render(React.createElement(SearchResults, {
-      songs: [], setlists: [], online: [], searchLinks: links, onOpenImport() {}, onOpenSources() {},
+      songs: [], setlists: [], online: [], searchLinks: links,
       onSelectSong() {}, onSelectSetlist() {}, onPreviewOnline() {},
     }))
   })
@@ -288,9 +288,7 @@ test('#516 search links render as a separate bottom section that opens in a new 
     assert.match(rows[0].textContent, /Search on WorshipChords/)
     assert.match(rows[0].textContent, /opens in a new tab/)
     assert.equal(q('[data-testid="online-result-source"]'), null, 'not mixed into online results')
-    const section = rows[0].parentElement
-    assert.match(section.textContent, /Preview & Import a chart/)
-    assert.match(section.textContent, /Browse external song sources/)
+    assert.doesNotMatch(document.body.textContent, /Preview & Import a chart|Browse external song sources/)
   } finally { await act(async () => root.unmount()) }
 })
 
@@ -336,4 +334,12 @@ test('#516 added WorshipChords keeps its curated search URL', async () => {
     await click(byLabel('Add WorshipChords'))
     assert.equal(stored().sources.at(-1).searchUrl, 'https://worshipchords.com/?s={query}')
   } finally { await act(async () => root.unmount()) }
+})
+
+test('#516 search dropdown has no Import or Browse rows and Header no longer wires them', () => {
+  const results = fs.readFileSync(path.join(__dirname, '../src/components/SearchResults.tsx'), 'utf8')
+  const header = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
+  assert.doesNotMatch(results, /onOpenImport|onOpenSources|Browse external song sources|Import a chart/)
+  assert.doesNotMatch(header, /onOpenImport=|onOpenSources=|onSearchWebExternal|onOpenWebsiteUrlSource|onOpenImportModal/)
+  assert.match(results, /empty:hidden/, 'empty bottom block leaves no stray divider')
 })

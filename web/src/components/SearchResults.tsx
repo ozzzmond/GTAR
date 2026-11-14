@@ -19,8 +19,6 @@ export interface SearchResultsProps {
   onSelectSong: (originalIdx: number) => void
   onSelectSetlist: (setlist: WebSetlist) => void
   onPreviewOnline: (result: OnlineChordResult) => void
-  onOpenImport?: () => void
-  onOpenSources?: () => void
 }
 
 const actionClass = 'block w-full min-h-11 rounded-lg px-3 py-2 text-left text-xs text-app-text hover:bg-app-base focus-visible:outline-2 focus-visible:outline-app-action'
@@ -32,7 +30,7 @@ const headingClass = 'px-3 pt-2 text-xs font-bold text-app-heading flex items-ce
  */
 export function SearchResults({
   songs, setlists, online, isSearchingOnline, isOffline, onlineError, searchLinks = [],
-  onSelectSong, onSelectSetlist, onPreviewOnline, onOpenImport, onOpenSources,
+  onSelectSong, onSelectSetlist, onPreviewOnline,
 }: SearchResultsProps): React.ReactElement {
   const shownSongs = songs.slice(0, SEARCH_GROUP_LIMIT)
   const shownSetlists = setlists.slice(0, SEARCH_GROUP_LIMIT)
@@ -67,12 +65,10 @@ export function SearchResults({
       </span>
     </button>)}
     {truncated && <p className="px-3 py-1 text-xs text-app-muted">Showing up to {SEARCH_GROUP_LIMIT} of each. Refine your search for more.</p>}
-    <div className="mt-2 border-t border-app-border pt-2">
+    <div className="mt-2 border-t border-app-border pt-2 empty:hidden">
       {isOffline
         ? <p className="px-3 pb-2 text-xs text-app-muted">Offline: online results are unavailable. Local songs and setlists still work.</p>
         : onlineError && <p className="px-3 pb-2 text-xs text-status-error">{onlineError}</p>}
-      {onOpenImport && <button type="button" className={actionClass} onClick={onOpenImport}>Preview &amp; Import a chart</button>}
-      {onOpenSources && <button type="button" className={actionClass} onClick={onOpenSources}>Browse external song sources</button>}
       {searchLinks.map(link => <a key={link.id} href={link.href} target="_blank" rel="noopener noreferrer"
         data-testid="search-link-row" className={`${actionClass} flex items-center justify-between gap-2`}>
         <span className="min-w-0 break-words">Search on {link.name}</span>
