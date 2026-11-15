@@ -131,7 +131,6 @@ interface HeaderProps {
   activeSetlistSongs?: Array<{ title: string; artist?: string; key?: string }>
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
   onSelectSetlist?: (setlistId: string | number) => void
-  onPushSetlistToBandSync?: (setlistId?: string | number) => void
   onDirectImportOnlineSong?: (sheet: FetchedChordSheet, openStage?: boolean) => void
   onCloudRestore?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => void | Promise<void>
   onCloudMerge?: (songs: Array<Partial<ActiveSongState>>, setlists: WebSetlist[], folders?: SetlistFolder[]) => unknown

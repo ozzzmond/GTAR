@@ -125,27 +125,7 @@ test('Swipe committed refs: armed release uses the current committed gesture; di
 }))
 
 // Type-only protocol cleanup retains all established aliases and unknown-input guards.
-test('Band sync wire types preserve alias conversion, null rejection, incoming payloads and setlist wire content', () => {
-  const { bandSync } = require('../src/utils/bandSync.ts')
-  const received = []
-  const off = bandSync.onMessage(msg => received.push(msg))
-  try {
-    for (const input of [null, undefined, false, 42, 'invalid']) {
-      bandSync.handleWebSocketMessage(input)
-      bandSync.handleIncoming(input)
-    }
-    assert.equal(received.length, 0)
-    bandSync.handleWebSocketMessage({ type: 'SONG_CHANGE', title: 'Example', queueType: 'setlist', setlistIndex: 2, offset: 3, content: '[C]Hello' })
-    assert.deepEqual(received[0].payload, { title: 'Example', artist: '', queueType: 'SETLIST', queueIndex: 2, songIndex: 2, songTitle: 'Example', transposeOffset: 3, transpose: 3, scrollProgress: 0, rawContent: '[C]Hello', key: '', capo: '' })
-    bandSync.handleWebSocketMessage({ type: 'SETLIST_SYNC', setlistName: 'Gig', songs: [{ title: 'Example', rawContent: '[C]Hello' }] })
-    assert.equal(received[1].payload.songs[0].rawContent, '[C]Hello')
-    bandSync.handleIncoming({ type: 'SCROLL_SYNC', senderId: 'other-peer', role: 'HOST', payload: { scrollFraction: 0.5 }, timestamp: 1 })
-    assert.equal(received[2].payload.scrollFraction, 0.5)
-  } finally { off() }
-})
-
 const exampleSongs = ['Alpha', 'Beta', 'Gamma'].map((title, i) => ({ id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, title, artist: 'Artist', key: 'C', capo: '', bpm: '120', rawContent: '[C]Hello', format: 'CHORD_PRO', transposeOffset: 0 }))
-
 test('Stage navigation refs publish committed state, never a suspended transition', async () => harness(async h => {
   const { StageView } = require('../src/components/StageView.tsx')
   const selected = []
@@ -163,35 +143,3 @@ test('Stage navigation refs publish committed state, never a suspended transitio
   assert.deepEqual(selected, [1], 'navigation comes from committed Alpha, not suspended Beta')
 }))
 
-test('App band subscription uses the latest selected song without duplicate listeners or network requests', async () => harness(async h => {
-  // This regression exercises legacy sync only while the optional extension is explicitly ON.
-  const browserKeys = ['isSecureContext', 'WebSocket', 'location']
-  const browserPrevious = new Map(browserKeys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
-  for (const [key, value] of Object.entries({ isSecureContext: true, WebSocket: window.WebSocket, location: window.location })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
-  localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
-  const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
-  persistLibrary({ songs: exampleSongs, setlists: [] })
-  const { bandSync } = require('../src/utils/bandSync.ts')
-  const App = require('../src/App.tsx').default
-  const originalRole = bandSync.role
-  const originalFetch = global.fetch
-  let requests = 0
-  global.fetch = async () => { requests++; throw new Error('Unexpected network request') }
-  try {
-    await h.render(React.createElement(App))
-    const card = document.querySelector('[data-testid="song-card-1"]')
-    assert.ok(card)
-    await act(async () => card.click())
-    bandSync.role = 'CLIENT'
-    const listeners = bandSync.messageHandlers.size
-    await act(async () => bandSync.handleWebSocketMessage({ type: 'SONG', title: 'Beta', artist: 'Artist', transposeOffset: 4 }))
-    const songs = readPersistedLibrary().songs
-    assert.equal(songs.find(s => s.title === 'Beta').transposeOffset, 4)
-    assert.equal(songs.find(s => s.title === 'Alpha').transposeOffset, 0)
-    assert.equal(bandSync.messageHandlers.size, listeners)
-    assert.equal(requests, 0)
-  } finally {
-    await h.unmount(); bandSync.role = originalRole; global.fetch = originalFetch
-    for (const [key, descriptor] of browserPrevious) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
-  }
-}))

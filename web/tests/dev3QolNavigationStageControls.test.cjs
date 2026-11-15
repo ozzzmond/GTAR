@@ -21,7 +21,7 @@ const { DOCK_SIZE } = require('../src/components/StageControlDock.tsx')
 // =============================================================================
 // 2. HEADER UPPERBOX & STAGE VIEW ORDER (#333, #359, #434)
 // =============================================================================
-test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear present per #434; Stage follows Back -> Editor -> Band Sync', () => {
+test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear present per #434; Stage follows Back -> Editor -> Stage Tools', () => {
   const headerSource = fs.readFileSync(path.join(webDir, 'src/components/Header.tsx'), 'utf8')
   const stageSource = fs.readFileSync(path.join(webDir, 'src/components/StageView.tsx'), 'utf8')
 
@@ -43,13 +43,13 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear pres
   // Verify Stage Box ordering
   const backIdx = stageSource.indexOf('aria-label="Back"')
   const editorIdx = stageSource.indexOf('aria-label="Editor"')
-  const bandSyncIdx = stageSource.indexOf('aria-label={bandSyncEnabled ? "Band Sync" : "Stage Tools"}')
+  const bandSyncIdx = stageSource.indexOf('aria-label="Stage Tools"')
 
   assert.ok(backIdx !== -1, 'Back action must exist in StageView')
   assert.ok(editorIdx !== -1, 'Editor action must exist in StageView')
-  assert.ok(bandSyncIdx !== -1, 'Band Sync action must exist in StageView')
+  assert.ok(bandSyncIdx !== -1, 'Stage Tools action must exist in StageView')
   assert.ok(backIdx < editorIdx, 'Back must precede Editor')
-  assert.ok(editorIdx < bandSyncIdx, 'Editor must precede Band Sync')
+  assert.ok(editorIdx < bandSyncIdx, 'Editor must precede Stage Tools')
 
   // Home navigation preserved via the logo entry (#224: hover tooltip removed)
   assert.ok(headerSource.includes('onClick={onNavigateHome}'), 'Logo home entry preserved')

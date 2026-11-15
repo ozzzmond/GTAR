@@ -142,6 +142,6 @@ test('108-dev.3a: KeyPickerModal preserves musician-focused transpose tools and 
   assert.equal(stageSrc.includes('<KeyPickerModal\n        isOpen={isKeyPickerOpen}\n        onClose={() => setIsKeyPickerOpen(false)}\n        originalKey={effectiveBaseKey || \'C\'}\n        currentOffset={transposeOffset}\n        capoText='), false, 'StageView must not pass capoText to KeyPickerModal')
   assert.equal(appSrc.includes('capoText={currentSong.capo}'), false, 'App.tsx must not pass capoText to KeyPickerModal')
 
-  // StageView preserves song.capo in stage cast / metadata
-  assert.ok(stageSrc.includes('capo: song.capo'), 'StageView must preserve song.capo for broadcast/metadata')
+  // StageView never rewrites song.capo
+  assert.equal(/song\.capo\s*=[^=]/.test(stageSrc), false, 'StageView must not assign song.capo')
 })

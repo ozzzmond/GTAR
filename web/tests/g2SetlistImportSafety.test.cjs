@@ -10,8 +10,6 @@ const { parseBackupJson, normalizeBackupSong, createSingleSetlistPayload, create
 const { normalizeSongbookIds } = require('../src/utils/songbookFoundation.ts')
 const { mergeBackupLibrary, resolveSetlistSong } = require('../src/utils/setlistSongs.ts')
 const { mergeImportedSetlists, mergeImportedSetlistsWithReport } = require('../src/utils/importIdentity.ts')
-const { parseBandSetlist } = require('../src/utils/bandSetlistImport.ts')
-const { bandSync } = require('../src/utils/bandSync.ts')
 const { persistLibrary, LIBRARY_KEY } = require('../src/utils/syncJournal.ts')
 const song = normalizeBackupSong({ id: 'song-source', title: 'Song', artist: 'Artist', rawContent: '[G]Chart' })
 const list = { id: 'set-source', name: 'Gig', createdAt: 1, songs: [{ id: song.id, title: song.title, artist: song.artist }] }
@@ -21,81 +19,11 @@ function merge(existing, incoming) {
   const songs = mergeBackupLibrary(existing.songs, incoming.songs, incoming.setlists)
   return { songs: songs.songs, setlists: mergeImportedSetlists(existing.setlists, songs.setlists) }
 }
-const payload = { setlistId: list.id, setlistName: list.name, songs: [song] }
-function receive(existing, message = payload) { return merge(existing, parseBandSetlist(message, existing.songs)) }
 function storage() {
   const values = new Map()
   return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key),
     key: i => [...values.keys()][i] ?? null, get length() { return values.size } }
 }
-
-test('Band Sync wire preserves source IDs across broadcast and WebSocket reception', () => {
-  const sent = []
-  bandSync.role = 'HOST'
-  const original = bandSync.broadcastMessage
-  bandSync.broadcastMessage = (type, body) => sent.push({ type, body })
-  const messages = []
-  const handler = message => messages.push(message)
-  bandSync.messageHandlers.add(handler)
-  try {
-    bandSync.broadcastSetlist(list.name, [song], list.id)
-    bandSync.broadcastSetlist(list.name, [song], list.id)
-    for (const item of sent) bandSync.handleWebSocketMessage({ type: item.type, ...item.body })
-    assert.equal(messages.length, 2)
-    let result = { songs: [], setlists: [] }
-    for (const message of messages) result = receive(result, message.payload)
-    assert.deepEqual(result.setlists.map(item => item.id), [list.id])
-    assert.deepEqual(result.songs.map(item => item.id), [song.id])
-  } finally {
-    bandSync.broadcastMessage = original
-    bandSync.messageHandlers.delete(handler)
-    bandSync.role = 'OFF'
-  }
-})
-
-test('repeated reception including a reload never manufactures identities', () => {
-  const first = receive({ songs: [], setlists: [] })
-  const reloaded = normalizeSongbookIds(first.songs, first.setlists)
-  assert.deepEqual(receive(reloaded), first)
-})
-
-test('same source rename and stale sender keep the receiver setlist and report it; a conflicting song revision aborts', () => {
-  const before = JSON.stringify(library)
-  // #453 D6: a setlist that differs is skipped and named instead of aborting; the original is never replaced.
-  for (const incoming of [{ ...payload, setlistName: 'Renamed' }, { ...payload, songs: [] }]) {
-    const parsed = parseBandSetlist(incoming, library.songs)
-    const songs = mergeBackupLibrary(library.songs, parsed.songs, parsed.setlists)
-    const report = mergeImportedSetlistsWithReport(library.setlists, songs.setlists)
-    assert.deepEqual(report.skipped, [{ id: list.id, name: list.name }])
-    assert.deepEqual(report.setlists, library.setlists)
-    assert.deepEqual(receive(library, incoming), library)
-    assert.equal(JSON.stringify(library), before)
-  }
-  assert.throws(() => receive(library, { ...payload, songs: [{ ...song, rawContent: 'Stale chart' }] }), /revision conflict/)
-  assert.equal(JSON.stringify(library), before)
-})
-
-test('independent same-name lists survive; ambiguous legacy sender aborts', () => {
-  const result = receive({ songs: [song], setlists: [{ ...list, id: 'independent' }] })
-  assert.deepEqual(result.setlists.map(item => item.id), ['independent', list.id])
-  const before = JSON.stringify(result)
-  assert.throws(() => receive(result, { ...payload, setlistId: undefined }), /Stable ID required/)
-  assert.equal(JSON.stringify(result), before)
-})
-
-for (const deleted of [true, false]) test(`setlist and song lifecycle disagreement aborts in both directions: existing deleted=${deleted}`, () => {
-  const existing = { songs: [{ ...song, isDeleted: deleted }], setlists: [{ ...list, isDeleted: deleted }] }
-  const before = JSON.stringify(existing)
-  assert.throws(() => mergeImportedSetlists(existing.setlists, [{ ...list, isDeleted: !deleted }]), /lifecycle conflict/)
-  assert.throws(() => mergeBackupLibrary(existing.songs, [{ ...song, isDeleted: !deleted }], []), /lifecycle conflict/)
-  assert.equal(JSON.stringify(existing), before)
-})
-
-test('matching Band Sync tombstones remain deleted; incoming deleted transmission cannot activate', () => {
-  assert.throws(() => receive({ songs: [song], setlists: [{ ...list, isDeleted: true }] }), /lifecycle conflict/)
-  assert.throws(() => receive({ songs: [{ ...song, isDeleted: true }], setlists: [] }), /lifecycle conflict/)
-  assert.throws(() => receive(library, { ...payload, setlistDeleted: true }), /explicit resolution/)
-})
 
 test('numeric/string stable IDs survive normalization, merge and repeated import', () => {
   for (const id of [42, '42', 'legacy-id', '  legacy-id  ']) {
@@ -160,6 +88,11 @@ test('ordered legacy references preserve playback/export; malformed references r
   assert.equal(upgraded.setlists[0].songs[1].id, 'missing')
 })
 
+test('cross-library whitespace aliases abort instead of silently claiming existing records', () => {
+  assert.throws(() => mergeImportedSetlists([{ ...list, id: ' set-source ' }], [list]), /canonical ID collision/)
+  assert.throws(() => mergeBackupLibrary([{ ...song, id: ' song-source ' }], [song], []), /canonical ID collision/)
+})
+
 test('stale cross-tab merge rejects while retaining recovery snapshots and archive bytes', () => {
   const store = storage()
   persistLibrary(library, store)
@@ -170,76 +103,9 @@ test('stale cross-tab merge rejects while retaining recovery snapshots and archi
   persistLibrary(newer, store, { expectedRaw })
   const current = store.getItem(LIBRARY_KEY)
   const snapshot = store.getItem(RESTORE_SNAPSHOT_KEY)
-  const candidate = receive(library)
+  const candidate = merge(library, library)
   assert.throws(() => persistLibrary(candidate, store, { expectedRaw }), /another tab|newer|changed/i)
   assert.equal(store.getItem(LIBRARY_KEY), current)
   assert.equal(store.getItem(RESTORE_SNAPSHOT_KEY), snapshot)
   assert.equal(store.getItem('gtar_sync_recovery:original'), 'unique raw recovery bytes')
-})
-
-test('App receives consecutive messages before render without losing lists and rejects stale tab writes', async () => {
-  const browserPrevious = new Map(['isSecureContext', 'WebSocket', 'location'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
-  require.extensions['.png'] = module => { module.exports = '/logo.png' }
-  const { JSDOM } = require('jsdom')
-  const React = require('react')
-  const { act } = React
-  const { createRoot } = require('react-dom/client')
-  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' })
-  const saved = { window: global.window, document: global.document, localStorage: global.localStorage,
-    sessionStorage: global.sessionStorage, IS_REACT_ACT_ENVIRONMENT: global.IS_REACT_ACT_ENVIRONMENT }
-  Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
-    sessionStorage: dom.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true })
-  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
-  const componentNames = ['StageView', 'SongbookHomeView', 'Header']
-  const modules = componentNames.map(name => require(`../src/components/${name}.tsx`))
-  const originals = modules.map((module, index) => module[componentNames[index]])
-  modules.forEach((module, index) => { module[componentNames[index]] = () => null })
-  const root = createRoot(document.getElementById('root'))
-  const oldTimeout = global.setTimeout
-  const timers = new Set()
-  global.setTimeout = (fn, delay, ...args) => { const timer = oldTimeout(fn, delay, ...args); timers.add(timer); return timer }
-  try {
-    // Legacy reception is available only after explicit extension enablement.
-    for (const [key, value] of Object.entries({ isSecureContext: true, WebSocket: window.WebSocket, location: window.location })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
-    localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
-    persistLibrary(library, localStorage)
-    const App = require('../src/App.tsx').default
-    await act(async () => root.render(React.createElement(App)))
-    bandSync.role = 'CLIENT'
-    const send = body => bandSync.dispatchSyncMessage({ type: 'SETLIST_SYNC', payload: body, role: 'HOST', senderId: 'source', timestamp: 1 })
-    await act(async () => {
-      send({ ...payload, setlistId: 'independent-one' })
-      send({ ...payload, setlistId: 'independent-two' })
-      send({ ...payload, setlistId: 'independent-two' })
-    })
-    const stored = JSON.parse(localStorage.getItem(LIBRARY_KEY))
-    assert.deepEqual(stored.setlists.map(item => item.id), [list.id, 'independent-one', 'independent-two'])
-    assert.equal(stored.songs.length, 1)
-    const newer = { ...stored, setlists: [...stored.setlists, { ...list, id: 'newer-tab' }] }
-    persistLibrary(newer, localStorage)
-    const raw = localStorage.getItem(LIBRARY_KEY)
-    await act(async () => send({ ...payload, setlistId: 'stale-tab-import' }))
-    assert.equal(localStorage.getItem(LIBRARY_KEY), raw)
-    assert.match(document.body.textContent, /another tab|newer|changed/i)
-  } finally {
-    await act(async () => root.unmount())
-    bandSync.role = 'OFF'
-    for (const timer of timers) clearTimeout(timer)
-    global.setTimeout = oldTimeout
-    modules.forEach((module, index) => { module[componentNames[index]] = originals[index] })
-    Object.assign(global, saved)
-    for (const [key, descriptor] of browserPrevious) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
-    dom.window.close()
-  }
-})
-
-test('Band Sync keeps existing chart metadata, performance settings and recovery state', () => {
-  const local = { ...song, transposeOffset: 4, originalKey: 'G', tags: 'local', isFavorite: true, createdAt: 99 }
-  const result = receive({ songs: [local], setlists: [list] })
-  assert.deepEqual(result.songs, [local])
-})
-
-test('cross-library whitespace aliases abort instead of silently claiming existing records', () => {
-  assert.throws(() => mergeImportedSetlists([{ ...list, id: ' set-source ' }], [list]), /canonical ID collision/)
-  assert.throws(() => mergeBackupLibrary([{ ...song, id: ' song-source ' }], [song], []), /canonical ID collision/)
 })

@@ -2,7 +2,6 @@ import type { ExtensionPanel, StageSongEvent } from '../contract'
 import type { ReceiverSnapshot } from '../../utils/stageCast2Protocol'
 import type { BandSyncFollower } from '../../utils/bandSyncSync'
 import { BandSyncClient, normalizeRoomCodeInput } from '../../utils/bandSyncClient'
-import { bandSync } from '../../utils/bandSync'
 import { createBandSyncQr } from '../../utils/bandSyncQr'
 
 export interface StagePublication { event: StageSongEvent; content: ReceiverSnapshot }
@@ -51,10 +50,9 @@ export function activateBandSyncController(source: {
     const e = value.event
     client.publish({ ...e, notation: value.content.mode.notation }, { contentHash: e.contentHash, snapshot: value.content })
   }
-  const stopLegacy = bandSync.activate()
   const unsubscribe = source.subscribe(publish)
   source.setJoin(value => { code = value; void client.join(value) })
   void client.resume()
   publish(); render()
-  return () => { alive = false; source.setJoin(null); unsubscribe(); client.dispose(); stopLegacy(); source.applyRemote(null) }
+  return () => { alive = false; source.setJoin(null); unsubscribe(); client.dispose(); source.applyRemote(null) }
 }

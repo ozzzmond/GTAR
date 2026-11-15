@@ -66,7 +66,6 @@ test('StageView source contracts: song change resets scroll + pauses autoscroll,
   assert.ok(code.includes('isAnyOverlayActive'), 'StageView must compute isAnyOverlayActive')
   assert.ok(code.includes('isKeyPickerOpen'), 'isAnyOverlayActive must check isKeyPickerOpen')
   assert.ok(code.includes('selectedVoicing'), 'isAnyOverlayActive must check selectedVoicing')
-  assert.ok(code.includes('isBandSyncModalOpen'), 'isAnyOverlayActive must check isBandSyncModalOpen')
   assert.ok(code.includes('isSetlistDrawerOpen'), 'isAnyOverlayActive must check isSetlistDrawerOpen')
   assert.ok(code.includes('isStageSettingsModalOpen'), 'isAnyOverlayActive must check isStageSettingsModalOpen')
   assert.ok(code.includes('if (isAnyOverlayActive) {\n        return\n      }'), 'StageView must suppress shortcuts when an overlay is active')

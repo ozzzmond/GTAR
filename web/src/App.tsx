@@ -15,7 +15,6 @@ import { SetlistManager } from './components/SetlistManager'
 import { OPEN_RECOVERY_DATA_EVENT } from './utils/recoveryReview'
 import { isPresentationLocation } from './utils/presentationRoute'
 import { transposeContext } from './utils/songKeySemantics'
-import { parseBandSetlist } from './utils/bandSetlistImport'
 import {
   libraryRevision,
   loadedLibraryRevision,
@@ -51,7 +50,6 @@ import {
   loadThemeModeAssignments,
   isLightTheme,
 } from './utils/backupSettings'
-import { createSingleSetlistPayload } from './utils/jsonBackup'
 import { setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
   readStageSession,
@@ -86,11 +84,10 @@ import {
   applyThemeRuntime,
   hydrateThemeSettings,
 } from './components/ThemeModal'
-import { BandSyncModal } from './components/BandSyncModal'
+import { StageToolsModal } from './components/StageToolsModal'
 import { TvPresentationModal } from './components/TvPresentationModal'
 import { stageCast2Enabled } from './utils/stageCast2Local'
 import { stageCast } from './utils/stageCast'
-import { bandSync } from './utils/bandSync'
 import { detectSongKey } from './utils/songParser'
 import { canonicalSongKey } from './utils/musicalKey'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
@@ -830,144 +827,6 @@ function LibraryApp() {
     }
   }, [isInSetlistMode, activeSetlistSongs, activeSetlistSongIndex, activeSongIndex, bandRemote])
 
-  useEffect(() => {
-    if (!bandSyncEnabled) return
-    const unsub = bandSync.onMessage((msg) => {
-      if (bandSync.getRole() === 'CLIENT') {
-        if (msg.type === 'SONG_SYNC' && msg.payload) {
-          // Auto Route: immediately switch directly to Stage View without needing to open setlist drawer
-          setActiveView('stage')
-          setIsSetlistDrawerOpen(false)
-
-          const title: string = msg.payload.title || msg.payload.songTitle || ''
-          const artist: string = msg.payload.artist || ''
-          const queueType: string = (msg.payload.queueType || 'LIBRARY').toUpperCase()
-          const queueIndex: number =
-            msg.payload.queueIndex ?? msg.payload.setlistIndex ?? msg.payload.songIndex ?? 0
-          const transpose: number = msg.payload.transpose ?? msg.payload.transposeOffset ?? 0
-          const rawContent: string = msg.payload.rawContent || msg.payload.content || ''
-
-          const normTitle = title.trim().toLowerCase()
-          const normArtist = artist.trim().toLowerCase()
-
-          if (queueType === 'SETLIST') {
-            setQueueMode('setlist')
-            let matched = false
-
-            // Try matching in active setlist songs
-            if (activeSetlist && activeSetlistSongs.length > 0) {
-              const idx = activeSetlistSongs.findIndex(
-                (s) =>
-                  s.title.trim().toLowerCase() === normTitle &&
-                  (!normArtist || s.artist.trim().toLowerCase() === normArtist)
-              )
-              if (idx !== -1) {
-                setActiveSetlistSongIndex(idx)
-                matched = true
-              } else if (queueIndex >= 0 && queueIndex < activeSetlistSongs.length) {
-                setActiveSetlistSongIndex(queueIndex)
-                matched = true
-              }
-            }
-
-            // If not found in active setlist, check other setlists
-            if (!matched) {
-              for (const sl of setlists) {
-                const slIdx = sl.songs.findIndex(
-                  (s) =>
-                    s.title.trim().toLowerCase() === normTitle &&
-                    (!normArtist || (s.artist || '').trim().toLowerCase() === normArtist)
-                )
-                if (slIdx !== -1) {
-                  setActiveSetlistId(sl.id)
-                  setActiveSetlistSongIndex(slIdx)
-                  matched = true
-                  break
-                }
-              }
-            }
-
-            // If still not matched, check songs library
-            if (!matched) {
-              const libIdx = songs.findIndex(
-                (s) =>
-                  s.title.trim().toLowerCase() === normTitle &&
-                  (!normArtist || s.artist.trim().toLowerCase() === normArtist)
-              )
-              if (libIdx !== -1) {
-                setActiveSongIndex(libIdx)
-              } else {
-                const effectiveContent = rawContent || `{title: ${title || 'Synced Song'}}\n{artist: ${artist || ''}}\n\n[Verse]\n`
-                const newSong: ActiveSongState = {
-                  id: generateUUID(),
-                  title: title || 'Synced Song',
-                  artist: artist || '',
-                  key: canonicalSongKey(msg.payload.key || '') || detectSongKey(effectiveContent),
-                  capo: msg.payload.capo || 'No Capo',
-                  bpm: msg.payload.bpm || '120',
-                  format: msg.payload.format || 'CHORD_PRO',
-                  transposeOffset: transpose,
-                  rawContent: effectiveContent,
-                }
-                setSongs((prev) => [...prev, newSong])
-                setActiveSongIndex(songs.length)
-              }
-            }
-          } else {
-            // LIBRARY mode
-            setQueueMode('library')
-            const libIdx = songs.findIndex(
-              (s) =>
-                s.title.trim().toLowerCase() === normTitle &&
-                (!normArtist || s.artist.trim().toLowerCase() === normArtist)
-            )
-            if (libIdx !== -1) {
-              setActiveSongIndex(libIdx)
-            } else {
-              const effectiveContent = rawContent || `{title: ${title || 'Synced Song'}}\n{artist: ${artist || ''}}\n\n[Verse]\n`
-              const newSong: ActiveSongState = {
-                id: generateUUID(),
-                title: title || 'Synced Song',
-                artist: artist || '',
-                key: canonicalSongKey(msg.payload.key || '') || detectSongKey(effectiveContent),
-                capo: msg.payload.capo || 'No Capo',
-                bpm: msg.payload.bpm || '120',
-                format: msg.payload.format || 'CHORD_PRO',
-                transposeOffset: transpose,
-                rawContent: effectiveContent,
-              }
-              setSongs((prev) => [...prev, newSong])
-              setActiveSongIndex(songs.length)
-            }
-          }
-
-          if (typeof transpose === 'number') {
-            handleTransposeChange(transpose)
-          }
-        } else if (msg.type === 'SETLIST_SYNC' && msg.payload) {
-          try {
-            const parsed = parseBandSetlist(msg.payload, importStateRef.current.songs)
-            const kept = handleSmartMerge(parsed.songs, parsed.setlists).skippedSetlists[0]
-            // #453 D6: the Leader's queue is not shown as received when this device kept its own version.
-            if (kept) throw new Error(`Setlist "${kept.name}" was changed on this device; the Leader's version was not applied.`)
-            setActiveSetlistId(parsed.setlists[0].id)
-          } catch (error) {
-            setToastMessage(error instanceof Error ? error.message : 'Setlist reception aborted; resolve import conflict explicitly.')
-            return
-          }
-          setActiveSetlistSongIndex(0)
-          setQueueMode('setlist')
-          setActiveView('stage')
-
-          // Toast: "Received new setlist from Leader"
-          setToastMessage('Received new setlist from Leader')
-          setTimeout(() => setToastMessage(null), 5000)
-        }
-      }
-    })
-    return unsub
-  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge, importStateRef, setIsSetlistDrawerOpen, bandSyncEnabled])
-
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
     setFollowManualRevision(value => value + 1); setFollowOrigin(null)
@@ -1156,44 +1015,6 @@ function LibraryApp() {
       setWorkspaceSetlistId(null)
       setActiveView('songbook')
     })
-  }
-
-  // Band Leader Action: Push Setlist to Members
-  const handlePushSetlistToMembers = (
-    targetSetlistId?: string | number
-  ): { success: boolean; message: string } => {
-    if (!bandSyncEnabled) return { success: false, message: 'Band Sync is off' }
-    const targetSetlist = targetSetlistId
-      ? setlists.find((s) => String(s.id) === String(targetSetlistId)) || activeSetlist || setlists[0]
-      : activeSetlist || setlists[0]
-
-    if (bandSync.getState().role !== 'HOST') {
-      const msg = 'Followers cannot broadcast setlists. Only the Band Leader can push setlists.'
-      setToastMessage(msg)
-      setTimeout(() => setToastMessage(null), 4000)
-      return { success: false, message: msg }
-    }
-
-    if (!targetSetlist || targetSetlist.songs.length === 0) {
-      const msg = 'No setlist available to push. Please create or select a setlist first.'
-      setToastMessage(msg)
-      setTimeout(() => setToastMessage(null), 4000)
-      return { success: false, message: msg }
-    }
-
-    let payloadSongs: ActiveSongState[]
-    try { payloadSongs = createSingleSetlistPayload(targetSetlist, songs).setlist.songs }
-    catch (error) {
-      const message = error instanceof Error ? error.message : 'Setlist contains a missing song'
-      setToastMessage(message)
-      return { success: false, message }
-    }
-
-    bandSync.broadcastSetlist(targetSetlist.name, payloadSongs, targetSetlist.id)
-    const successMsg = `Pushed setlist '${targetSetlist.name}' (${payloadSongs.length} songs) to band members via BandSync!`
-    setToastMessage(successMsg)
-    setTimeout(() => setToastMessage(null), 4000)
-    return { success: true, message: successMsg }
   }
 
   // Import online chord sheet directly into songbook library
@@ -1652,7 +1473,7 @@ function LibraryApp() {
     const current = followBoundaryRef.current
     if (!setlistAutoFollowDev || !document.fullscreenElement || document.hidden || current.activeView !== 'stage' || current.queueMode !== 'setlist' || current.blocked ||
       !current.context || current.context !== request.context || current.activeSetlistId !== current.context.id || current.index !== request.fromIndex || current.manualRevision !== request.manualRevision ||
-      !current.context.entries[request.index]?.eligible || bandSync.getState().role !== 'OFF' || stageCast.isPresentationActive() || !request.isCurrent()) return false
+      !current.context.entries[request.index]?.eligible || stageCast.isPresentationActive() || !request.isCurrent()) return false
     setFollowOrigin({ context: current.context, index: request.index })
     setActiveSetlistSongIndex(request.index)
     return true
@@ -1731,7 +1552,6 @@ function LibraryApp() {
             setActiveView('stage')
           })}
           onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
-          onPushSetlistToBandSync={bandSyncEnabled ? handlePushSetlistToMembers : undefined}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
@@ -1969,15 +1789,10 @@ function LibraryApp() {
         existingSetlists={setlists}
       /></Suspense>}
 
-      {/* Stage Tools & Band Sync Modal */}
-      <BandSyncModal
+      {/* Stage Tools Modal */}
+      <StageToolsModal
         isOpen={isStageToolsModalOpen}
         onClose={() => setIsStageToolsModalOpen(false)}
-        bandSyncEnabled={bandSyncEnabled}
-        initialTab={bandSyncEnabled ? "sync" : "metronome"}
-        onPushSetlist={bandSyncEnabled ? handlePushSetlistToMembers : undefined}
-        activeSetlistName={activeSetlist?.name}
-        activeSetlistSongCount={activeSetlistSongs.length}
       />
 
       {/* Header Key Picker Modal */}
