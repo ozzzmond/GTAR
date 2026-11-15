@@ -85,3 +85,34 @@ Adds same-origin Pages transport/binding with owner approval, extension row and
 flag, leader/follower UI, code/QR, reconnect/visibility handling, core read-only
 events, transient follower overlay and device/network QA. No existing Band Sync
 or Stage Cast 2 integration is changed here.
+
+
+## Client (P1b)
+
+Implemented, default OFF: Advanced Tools Band Sync row, memory-only room client,
+song/transpose publication and read-only projected Stage overlay. The owner reports
+the DEV worker is deployed; this PR does not deploy the client or change that worker.
+While OFF there is no Band Sync subscription, channel, fetch or socket. The Stage
+toolbar remains available as Stage Tools (Metronome and Guitar Tuner); turning ON
+restores the Band Sync label/tab and enables the cloud panel in Advanced Tools.
+The legacy LAN engine remains for P5, with setup/disposal gated by this extension.
+Setlist push entry points are gated; cloud setlist/scroll/autoscroll, QR and reconnect
+polish are P1c. Voice/chat/request-song remain later phases.
+
+Leader credentials and tickets are memory-only, never logged or placed in URLs.
+Every reconnect obtains a fresh one-use ticket; retries back off to 30 seconds.
+Ping interval is 45 seconds. Gaps request HELLO/full SNAPSHOT; SESSION_ENDED is
+terminal. Disable aborts fetches, closes sockets, cancels timers, clears the overlay
+and drops credentials. The overlay renders an already-transposed chart once and
+never writes library songs, saved PERFORMANCE_KEY, ORIGINAL_KEY or CHART_KEY.
+
+The preview-only Pages service binding BANDSYNC_WORKER targets gtar-band-sync-dev.
+**Owner approval:** this config change is proposed in the draft PR for approval by
+merging. Production has no new binding. Without the binding, the Function returns
+503 DISABLED. Only the /bandsync-api prefix changes; request headers/body and the
+Upgrade response pass through the service binding.
+
+**UNVERIFIED — needs live DEV check:** CF-Connecting-IP preservation, Origin
+preservation, and the WebSocket upgrade through the Pages service binding.
+Device/network reconnect and iOS background behavior also need live DEV checks.
+Local fake-runtime/DOM checks are not evidence for these live transport properties.

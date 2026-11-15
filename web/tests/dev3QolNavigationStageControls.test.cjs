@@ -43,7 +43,7 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear pres
   // Verify Stage Box ordering
   const backIdx = stageSource.indexOf('aria-label="Back"')
   const editorIdx = stageSource.indexOf('aria-label="Editor"')
-  const bandSyncIdx = stageSource.indexOf('aria-label="Band Sync"')
+  const bandSyncIdx = stageSource.indexOf('aria-label={bandSyncEnabled ? "Band Sync" : "Stage Tools"}')
 
   assert.ok(backIdx !== -1, 'Back action must exist in StageView')
   assert.ok(editorIdx !== -1, 'Editor action must exist in StageView')

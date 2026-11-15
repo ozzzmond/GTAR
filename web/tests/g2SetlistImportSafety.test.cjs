@@ -178,6 +178,7 @@ test('stale cross-tab merge rejects while retaining recovery snapshots and archi
 })
 
 test('App receives consecutive messages before render without losing lists and rejects stale tab writes', async () => {
+  const browserPrevious = new Map(['isSecureContext', 'WebSocket', 'location'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   require.extensions['.png'] = module => { module.exports = '/logo.png' }
   const { JSDOM } = require('jsdom')
   const React = require('react')
@@ -198,6 +199,9 @@ test('App receives consecutive messages before render without losing lists and r
   const timers = new Set()
   global.setTimeout = (fn, delay, ...args) => { const timer = oldTimeout(fn, delay, ...args); timers.add(timer); return timer }
   try {
+    // Legacy reception is available only after explicit extension enablement.
+    for (const [key, value] of Object.entries({ isSecureContext: true, WebSocket: window.WebSocket, location: window.location })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
+    localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
     persistLibrary(library, localStorage)
     const App = require('../src/App.tsx').default
     await act(async () => root.render(React.createElement(App)))
@@ -224,6 +228,7 @@ test('App receives consecutive messages before render without losing lists and r
     global.setTimeout = oldTimeout
     modules.forEach((module, index) => { module[componentNames[index]] = originals[index] })
     Object.assign(global, saved)
+    for (const [key, descriptor] of browserPrevious) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
     dom.window.close()
   }
 })

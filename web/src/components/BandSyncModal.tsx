@@ -25,6 +25,7 @@ import {
 import { metronome, type MetronomeState } from '../utils/metronome'
 
 interface BandSyncModalProps {
+  bandSyncEnabled?: boolean
   isOpen: boolean
   onClose: () => void
   initialTab?: 'metronome' | 'tuner' | 'sync'
@@ -45,9 +46,10 @@ const GUITAR_STRINGS = [
 export const BandSyncModal: React.FC<BandSyncModalProps> = ({
   isOpen,
   onClose,
-  initialTab = 'sync',
+  initialTab = 'metronome',
+  bandSyncEnabled = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'metronome' | 'tuner' | 'sync'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'metronome' | 'tuner' | 'sync'>(bandSyncEnabled ? initialTab : 'metronome')
   const [syncState, setSyncState] = useState<BandSyncState>(() => bandSync.getState())
   const [metroState, setMetroState] = useState<MetronomeState>(() => metronome.getState())
   const [activeTuningString, setActiveTuningString] = useState<string | null>(null)
@@ -68,14 +70,15 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Modal-open reset preserves the requested tab on every reopen.
-    setActiveTab(initialTab)
-  }, [initialTab, isOpen])
+    setActiveTab(bandSyncEnabled ? initialTab : 'metronome')
+  }, [initialTab, isOpen, bandSyncEnabled])
 
   // Sync state subscription
   useEffect(() => {
+    if (!bandSyncEnabled) return
     const unsub = bandSync.subscribe((st) => setSyncState(st))
     return unsub
-  }, [])
+  }, [bandSyncEnabled])
 
   // Keep input in sync with external role changes
   useEffect(() => {
@@ -90,11 +93,11 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
   // Refresh recent leaders when modal opens or when connection status changes
   useEffect(() => {
-    if (isOpen || syncState.wsConnected) {
+    if (bandSyncEnabled && (isOpen || syncState.wsConnected)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Read external persisted history on open or connection change.
       setRecentLeaders(getRecentLeaders())
     }
-  }, [isOpen, syncState.wsConnected])
+  }, [isOpen, syncState.wsConnected, bandSyncEnabled])
 
   const handleConnect = (rawAddress: string) => {
     const clean = rawAddress.trim()
@@ -201,11 +204,11 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
         <div className="px-6 py-4 border-b border-app-border flex items-center justify-between bg-app-base/50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-app-action/20 border border-app-action/30 flex items-center justify-center text-app-action">
-              <Radio className="w-5 h-5" />
+              {bandSyncEnabled ? <Radio className="w-5 h-5" /> : <Gauge className="w-5 h-5" />}
             </div>
             <div>
-              <h2 className="text-base font-bold text-app-heading">STAGE TOOLS & SYNC</h2>
-              <p className="text-xs text-app-muted">Metronome, Guitar Tuner & Band Sync</p>
+              <h2 className="text-base font-bold text-app-heading">{bandSyncEnabled ? 'STAGE TOOLS & SYNC' : 'STAGE TOOLS'}</h2>
+              <p className="text-xs text-app-muted">{bandSyncEnabled ? 'Metronome, Guitar Tuner & Band Sync' : 'Metronome & Guitar Tuner'}</p>
             </div>
           </div>
           <button
@@ -219,7 +222,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
 
         {/* 3-Tab Segmented Switcher */}
         <div className="p-3 border-b border-app-border bg-app-base/30">
-          <div className="grid grid-cols-3 gap-1 bg-app-base p-1 rounded-xl border border-app-border">
+          <div className={`grid ${bandSyncEnabled ? 'grid-cols-3' : 'grid-cols-2'} gap-1 bg-app-base p-1 rounded-xl border border-app-border`}>
             <button
               type="button"
               onClick={() => setActiveTab('metronome')}
@@ -246,7 +249,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
               <span>Guitar Tuner</span>
             </button>
 
-            <button
+            {bandSyncEnabled && <button
               type="button"
               onClick={() => setActiveTab('sync')}
               className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
@@ -257,7 +260,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
             >
               <Wifi className="w-3.5 h-3.5" />
               <span>Band Sync</span>
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -386,7 +389,7 @@ export const BandSyncModal: React.FC<BandSyncModalProps> = ({
           )}
 
           {/* 3. BAND SYNC PANEL (MEMBER-ONLY CLIENT FOR WEB) */}
-          {activeTab === 'sync' && (
+          {bandSyncEnabled && activeTab === 'sync' && (
             <div className="space-y-4">
               {/* Mode Selector Pills: Sync Off | Band Member */}
               <div className="grid grid-cols-2 gap-2 p-1 bg-app-base rounded-xl border border-app-border">

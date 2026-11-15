@@ -22,6 +22,7 @@ export interface HostEnv { readonly capabilities: readonly Capability[] }
 export type ExtensionState = 'absent' | 'disabled' | 'unavailable' | 'starting' | 'active' | 'offline' | 'error'
 // Ephemeral panel data/actions; never persisted or connected to core state.
 export interface ExtensionPanel {
+  inputs?: readonly { label: string; value: string; maxLength: number; change(value: string): void }[]
   fields: readonly { label: string; value: string }[]
   actions: readonly { label: string; disabled?: boolean; run(): void }[]
 }
@@ -37,6 +38,8 @@ export interface FollowObservation {
 }
 export interface FollowSnapshot extends FollowObservation { readonly session: number; readonly connection: number; readonly identityRevision: number }
 export interface ExtensionContext {
+  /** Approved Band Sync transport only; no library or Stage control API. */
+  startBandSync?(): () => void
   settings: { read(): ExtensionSettings; subscribe(listener: () => void): () => void }
   signal: AbortSignal
   reportStatus(state: 'active' | 'offline' | 'error', message?: string): void
@@ -46,7 +49,11 @@ export interface ExtensionContext {
   setFollowRefresh?(refresh: () => void): void
   setCurrentSlideRead?(read: (signal: AbortSignal) => Promise<void>): void
 }
-// No events API in slice 1: event capabilities are refused until a consumer is approved.
+export interface StageSongEvent {
+  readonly songId: string | number | null; readonly contentHash: string; readonly displayTitle: string
+  readonly transposeOffset: number; readonly effectiveKey: string; readonly chordsVisible: boolean
+}
+// Only band-sync is approved for the read-only song/transpose publisher.
 export interface ExtensionModule {
   manifest: ExtensionManifest
   checkAvailability(env: HostEnv): Availability

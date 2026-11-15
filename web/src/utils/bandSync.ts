@@ -65,7 +65,8 @@ type MessageHandler = (msg: BandSyncMessage) => void
 /**
  * Automatically attempts to detect local machine LAN IP using WebRTC ICE candidates.
  */
-export async function detectLanIp(): Promise<string | null> {
+export async function detectLanIp(signal?: AbortSignal): Promise<string | null> {
+  if (signal?.aborted) return null
   if (typeof window === 'undefined') return null
   const legacyWindow = window as Window & { webkitRTCPeerConnection?: typeof RTCPeerConnection }
   const RTCPeer = window.RTCPeerConnection || legacyWindow.webkitRTCPeerConnection
@@ -76,9 +77,13 @@ export async function detectLanIp(): Promise<string | null> {
       const pc = new RTCPeer({ iceServers: [] })
       pc.createDataChannel('')
       let resolved = false
+      const timeout: { value?: ReturnType<typeof setTimeout> } = {}
+      const abort = () => finish(null)
       const finish = (ip: string | null) => {
         if (!resolved) {
           resolved = true
+          if (timeout.value !== undefined) clearTimeout(timeout.value)
+          signal?.removeEventListener('abort', abort)
           try {
             pc.close()
           } catch { /* Best-effort operation: failure must not interrupt the workflow. */ }
@@ -100,7 +105,8 @@ export async function detectLanIp(): Promise<string | null> {
         .then((offer: RTCSessionDescriptionInit) => pc.setLocalDescription(offer))
         .catch(() => finish(null))
 
-      setTimeout(() => finish(null), 1200)
+      timeout.value = setTimeout(() => finish(null), 1200)
+      signal?.addEventListener('abort', abort, { once: true })
     } catch {
       resolve(null)
     }
@@ -185,19 +191,31 @@ class BandSyncEngine {
   private customHostIp: string = ''
   private detectedLanIp: string = ''
 
-  constructor() {
+  public activate(): () => void {
+    let active = true
+    const controller = new AbortController()
     this.initChannel()
     if (typeof window !== 'undefined') {
       this.wsLeaderIp = localStorage.getItem('gtar_band_sync_leader_ip') || ''
       this.customHostIp = localStorage.getItem('gtar_band_sync_custom_host_ip') || ''
-      detectLanIp().then((ip) => {
-        if (ip) {
+      detectLanIp(controller.signal).then((ip) => {
+        if (active && ip) {
           this.detectedLanIp = ip
           this.notify()
         }
       })
     }
+    return () => {
+      active = false
+      controller.abort()
+      this.setRole('OFF')
+      this.channel?.close(); this.channel = null
+      if (this.storageListener && typeof window !== 'undefined') window.removeEventListener('storage', this.storageListener)
+      this.storageListener = undefined
+      this.knownPeers.clear()
+    }
   }
+  private storageListener?: (event: StorageEvent) => void
 
   public setCustomHostIp(ip: string) {
     this.customHostIp = ip.trim()
@@ -220,7 +238,7 @@ class BandSyncEngine {
     }
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('storage', (e) => {
+      this.storageListener = (e) => {
         if (e.key === 'gtar_storage_sync_event' && e.newValue) {
           try {
             const parsed = JSON.parse(e.newValue)
@@ -229,7 +247,8 @@ class BandSyncEngine {
             // ignore
           }
         }
-      })
+      }
+      window.addEventListener('storage', this.storageListener)
     }
   }
 

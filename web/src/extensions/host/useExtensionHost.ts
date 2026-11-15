@@ -9,7 +9,7 @@ export function useExtensionHost() {
   const [owned] = useState(() => inherited ? null : new ExtensionHost(registry, {
     getItem: key => localStorage.getItem(key),
     setItem: (key, value) => localStorage.setItem(key, value),
-  }, { capabilities: ['ui:panel', 'net:lan'] }, message => appLogger.debug('Extension', message)))
+  }, { capabilities: ['ui:panel', 'net:lan', 'net:https', 'events:song', 'events:transpose'] }, message => appLogger.debug('Extension', message)))
   const host = inherited ?? owned!
   useEffect(() => {
     if (inherited) return
