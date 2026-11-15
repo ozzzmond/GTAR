@@ -91,13 +91,17 @@ Same room socket for text chat (small). Voice memo uses the same room but its ow
 
 Band Sync would be the **first consumer of core events**. It needs song, transpose, setlist and scroll state from Stage, and needs `net:https` for the room connection. Following the Cast2 pattern (same-origin `/bandsync-api/*` through a Pages Function), no new CSP host is needed. Options: (a) approve a minimal read-only events seam now, for this consumer, or (b) keep a thin core state publisher for P1 and move behind the events API later. Recommendation: (a), kept to the four read-only events already named in #438, no control hooks. Followers are read-only but they do change the local view, so "apply remote state" is a core call through the host, not an extension writing core state.
 
+### Placement and visibility (OWNER 2026-11-15)
+
+Band Sync is an optional extension and lives in Advanced Tools as a registry row (default OFF, I7). When it is OFF, every Band Sync entry point disappears, not only the row's contents. CODE_OBSERVED entry points today: the "Band Sync" button in the Stage toolbar (`StageView.tsx`, `onOpenBandSync`, which opens `StageToolsModal` through `App.tsx`) and the setlist push to Band Sync (`onPushSetlistToBandSync` in `Header.tsx`). With the extension OFF the Stage preview shows no Band Sync icon, no listener runs and no connection opens. Check before P1b: the modal opened by that button is named "Stage Tools & Band Sync"; confirm what else it holds so hiding the button does not hide unrelated Stage tools. Existing users who relied on the always-visible button must turn the extension ON once; the row says so.
+
 ## 7. P1 recommendation
 
 Split P1 into two DRAFT PRs, both DEV only, both dormant until a flag is set:
 1. `bandSyncProtocol` (types, validators, reducer, tests) and `BandSyncHub` worker with a fake-runtime test like Cast2's, no UI.
-2. Client controller and extension row in Advanced Tools (leader/follower, QR and code, status, overlay key handling), replacing the 8765 path only behind the flag. Legacy code stays until P5.
+2. Client controller and extension row in Advanced Tools (leader/follower, QR and code, status, overlay key handling), replacing the 8765 path only behind the flag. Legacy code stays until P5. All Band Sync entry points (Stage toolbar button, setlist push) are shown only while the extension is ON and available.
 
-Acceptance for P1: leader to follower sync of song, key/transpose, setlist position, scroll and autoscroll; reconnect snapshot; room expiry; follower cannot control; disabled extension has no side effects (I2); Cast2 tests unchanged.
+Acceptance for P1: with the extension OFF there is no Band Sync icon in the Stage preview and no Band Sync listener or socket (test for I2); leader to follower sync of song, key/transpose, setlist position, scroll and autoscroll; reconnect snapshot; room expiry; follower cannot control; disabled extension has no side effects (I2); Cast2 tests unchanged.
 
 ## 8. Removal (P5, not before)
 
