@@ -550,3 +550,115 @@ test('Advanced Tools: ProPresenter uses matching switch toggle and interactive c
   host.dispose()
   dom.window.close()
 })
+
+test('Round 3: Dedicated configuration panels in Advanced Tools and minimal dock popover without misleading settings link', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://dev.example/' })
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window })
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document })
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: dom.window.localStorage })
+  Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, value: dom.window.HTMLElement })
+  Object.defineProperty(globalThis, 'Element', { configurable: true, value: dom.window.Element })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'Chrome/157', platform: 'Linux', maxTouchPoints: 0 } })
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+  const { createRoot } = require('react-dom/client')
+  const { ExtensionRows } = require('../src/extensions/host/ExtensionRows.tsx')
+  const { OnlineSourcesRow } = require('../src/components/OnlineSourcesRow.tsx')
+
+  // 1. LiveLyricsControl popover: no misleading settings link, no verbose DEV warnings
+  const root = createRoot(document.getElementById('root'))
+  const liveMock = {
+    status: 'Ready',
+    confirmed: false,
+    canConfirm: true,
+    confirm: () => true,
+    stop: () => {},
+    scrollRange: null,
+    activeLineIds: new Set(),
+    snapshot: null,
+  }
+
+  await act(async () => {
+    root.render(React.createElement(LiveLyricsControl, {
+      live: liveMock,
+      songTitle: 'Amazing Grace',
+      isOpen: true,
+    }))
+  })
+
+  const dockPopover = document.querySelector('[aria-label="ProPresenter controls"]')
+  assert.ok(dockPopover)
+  // F5 verified: No misleading "ProPresenter Settings" link
+  assert.equal(dockPopover.textContent.includes('ProPresenter Settings'), false)
+  // F4 verified: No verbose DEV warnings in the popover
+  assert.equal(dockPopover.textContent.includes('DEV:'), false)
+
+  // 2. OnlineSourcesRow: dedicated modal panel with backdrop and accessible dismissal
+  await act(async () => {
+    root.render(React.createElement(OnlineSourcesRow, {
+      rowClass: 'item',
+      enabled: true,
+      onToggle: () => {},
+    }))
+  })
+
+  // Initially closed
+  assert.equal(document.querySelector('[data-testid="online-sources-modal-backdrop"]'), null)
+  assert.equal(document.querySelector('[data-testid="online-sources-panel"]'), null)
+
+  // Click to open dedicated panel
+  const onlineExpand = document.querySelector('[data-testid="online-sources-expand"]')
+  assert.ok(onlineExpand)
+  await act(async () => {
+    onlineExpand.click()
+  })
+
+  const onlineBackdrop = document.querySelector('[data-testid="online-sources-modal-backdrop"]')
+  const onlinePanel = document.querySelector('[data-testid="online-sources-panel"]')
+  assert.ok(onlineBackdrop, 'Dedicated backdrop is rendered')
+  assert.ok(onlinePanel, 'Dedicated modal dialog is rendered')
+  assert.equal(onlinePanel.getAttribute('role'), 'dialog')
+  assert.equal(onlinePanel.getAttribute('aria-modal'), 'true')
+
+  // Escape key closes dedicated panel
+  await act(async () => {
+    window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  assert.equal(document.querySelector('[data-testid="online-sources-panel"]'), null)
+
+  // 3. ExtensionRows: dedicated modal panel with backdrop and accessible dismissal
+  const storage = mockStorage()
+  const host = new ExtensionHost(registry, storage, { capabilities: ['net:lan', 'ui:panel'] })
+  await host.start()
+
+  await act(async () => {
+    root.render(React.createElement(ExtensionRows, { host, rowClass: 'item' }))
+  })
+
+  assert.equal(document.querySelector('[data-testid="extension-propresenter-follower-modal-backdrop"]'), null)
+  assert.equal(document.querySelector('[data-testid="extension-propresenter-follower-panel"]'), null)
+
+  // Click expand to open dedicated ProPresenter panel
+  const ppExpand = document.querySelector('[data-testid="extension-propresenter-follower-expand"]')
+  assert.ok(ppExpand)
+  await act(async () => {
+    ppExpand.click()
+  })
+
+  const ppBackdrop = document.querySelector('[data-testid="extension-propresenter-follower-modal-backdrop"]')
+  const ppPanel = document.querySelector('[data-testid="extension-propresenter-follower-panel"]')
+  assert.ok(ppBackdrop, 'Dedicated ProPresenter backdrop is rendered')
+  assert.ok(ppPanel, 'Dedicated ProPresenter modal dialog is rendered')
+  assert.equal(ppPanel.getAttribute('role'), 'dialog')
+  assert.equal(ppPanel.getAttribute('aria-modal'), 'true')
+
+  // Escape key closes dedicated panel
+  await act(async () => {
+    window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  assert.equal(document.querySelector('[data-testid="extension-propresenter-follower-panel"]'), null)
+
+  root.unmount()
+  host.dispose()
+  dom.window.close()
+})

@@ -335,11 +335,15 @@ export const Header: React.FC<HeaderProps> = ({
       aria-label="Advanced Tools"
       data-testid="advanced-tools-popover"
       className="avatar-popover animate-scale-in max-h-[85vh] overflow-y-auto"
+      style={{ width: 'min(360px, calc(100vw - 24px))' }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="px-1 py-1.5 mb-2 border-b border-app-border/60 flex items-center gap-2">
-        <Wrench className="w-4 h-4 text-app-accent" aria-hidden="true" />
-        <span className="text-xs font-bold text-app-heading">Advanced Tools</span>
+      <div className="px-1.5 py-1.5 mb-2.5 border-b border-app-border/60 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Wrench className="w-4 h-4 text-app-accent" aria-hidden="true" />
+          <span className="text-xs font-bold text-app-heading">Advanced Tools</span>
+        </div>
+        <span className="text-[10px] text-app-muted font-medium">Integrations &amp; Sources</span>
       </div>
 
       {/* Online song sources: opt-in, off by default; expands to the source list (#516) */}

@@ -2438,7 +2438,6 @@ export const StageView: React.FC<StageViewProps> = ({
           isOpen={isPpPopoverOpen}
           onToggleOpen={setIsPpPopoverOpen}
           onClose={() => setIsPpPopoverOpen(false)}
-          onOpenSettings={() => setIsStageMenuOpen(true)}
           statusLevel={proPresenterStatus.level === 'disabled' ? 'red' : proPresenterStatus.level}
           statusLabel={proPresenterStatus.label}
           dockMode={showDock ? 'vertical' : 'horizontal'}

@@ -85,7 +85,7 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
               handleClose()
             }
           }}
-          className="mt-2 rounded-xl border border-app-border bg-app-surface shadow-2xl p-3 text-[11px] text-app-text space-y-2.5 animate-scale-in max-h-[72vh] overflow-y-auto select-none"
+          className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-xl border border-app-border bg-app-surface shadow-2xl p-3 text-[11px] text-app-text space-y-2.5 animate-scale-in max-h-[72vh] overflow-y-auto select-none z-50"
         >
           <div className="flex items-center justify-between border-b border-app-border/60 pb-2">
             <div className="flex items-center gap-1.5 min-w-0">

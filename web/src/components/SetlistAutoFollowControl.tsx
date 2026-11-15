@@ -47,9 +47,6 @@ export function SetlistAutoFollowControl({ follow }: { follow: ReturnType<typeof
           ))}
         </div>
       )}
-      <p className="text-[10px] text-app-muted leading-tight">
-        DEV: latest observed presentation; rapid transitions can briefly select the wrong song. Lyrics follow automatically only after fresh, unambiguous content checks.
-      </p>
     </div>
   )
 }

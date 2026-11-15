@@ -11,7 +11,6 @@ export interface LiveLyricsControlProps {
   isOpen?: boolean
   onToggleOpen?: (open: boolean) => void
   onClose?: () => void
-  onOpenSettings?: () => void
   statusLevel?: ProPresenterStatusLevel
   statusLabel?: string
   dockMode?: 'horizontal' | 'vertical'
@@ -29,7 +28,6 @@ export function LiveLyricsControl({
   isOpen = false,
   onToggleOpen,
   onClose,
-  onOpenSettings,
   statusLevel = 'green',
   dockMode = 'horizontal',
   dockPosition,
@@ -245,9 +243,6 @@ export function LiveLyricsControl({
         {/* Mode-specific actions */}
         {live.automaticMode ? (
           <div className="space-y-1">
-            <p className="text-[11px] text-app-muted">
-              Automatic lyric checks are active. Unverified or shared slide content stays neutral. Manual scrolling yields until the next confirmed section.
-            </p>
             {children}
           </div>
         ) : live.confirmed ? (
@@ -273,9 +268,7 @@ export function LiveLyricsControl({
           </div>
         ) : (
           <div className="space-y-1.5">
-            <p className="text-[11px]">
-              Confirm GTAR song “{songTitle}” and the observed presentation and current slide belong to the same song. This link lasts only for this fullscreen session.
-            </p>
+            <p className="text-[11px] text-app-muted">Link “{songTitle}” to presentation:</p>
             <button
               type="button"
               className="ui-button min-h-11 px-3 w-full font-medium disabled:opacity-50"
@@ -292,22 +285,8 @@ export function LiveLyricsControl({
 
         {/* Status text */}
         <p role="status" className="text-[10px] text-app-muted border-t border-app-border/30 pt-1.5">
-          {live.status}. Auto-scroll follows unique matches; manual scrolling pauses it.
+          {live.status}
         </p>
-
-        {/* Settings shortcut */}
-        {onOpenSettings && (
-          <button
-            type="button"
-            className="text-[11px] text-app-action hover:underline cursor-pointer block text-center w-full pt-1"
-            onClick={() => {
-              handleClose()
-              onOpenSettings()
-            }}
-          >
-            ProPresenter Settings
-          </button>
-        )}
       </div>
     </details>
   )

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Layers, ChevronDown, ChevronUp } from 'lucide-react'
+import { Layers, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { ContextualHelp } from '../../components/ContextualHelp'
 import type { ExtensionHost } from './ExtensionHost'
 
@@ -49,12 +49,26 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
     </span>
   )
 
+  React.useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open])
+
   const content = (
     <>
-      <Layers className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+      <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
+        <Layers className="w-4 h-4" aria-hidden="true" />
+      </div>
       <div className="flex-1 min-w-0 text-left">
-        <span className="block text-xs font-bold text-app-heading truncate">{manifest.name}</span>
-        <span className="block text-app-muted text-[10px] truncate">{manifest.summary}</span>
+        <span className="block text-xs sm:text-sm font-bold text-app-heading truncate">{manifest.name}</span>
+        <span className="block text-app-muted text-[10px] sm:text-[11px] truncate">{manifest.summary}</span>
       </div>
       {statusBadge}
       {open ? (
@@ -69,12 +83,14 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
   if (!entry.load || !availability.available) {
     return (
       <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 overflow-hidden mb-2">
-        <div className={`${rowClass.replace('cursor-pointer', '')} p-2.5 flex items-center justify-between`}>
+        <div className={`${rowClass.replace('cursor-pointer', '')} p-2.5 sm:p-3 flex items-center justify-between`}>
           <div className="flex flex-1 min-w-0 items-center gap-2.5">
-            <Layers className="w-4 h-4 text-app-muted shrink-0" aria-hidden="true" />
+            <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-border flex items-center justify-center text-app-muted shrink-0">
+              <Layers className="w-4 h-4" aria-hidden="true" />
+            </div>
             <div className="flex-1 min-w-0 text-left">
-              <span className="block text-xs font-bold text-app-heading truncate">{manifest.name}</span>
-              <span className="block text-app-muted text-[10px] truncate">{manifest.summary}</span>
+              <span className="block text-xs sm:text-sm font-bold text-app-heading truncate">{manifest.name}</span>
+              <span className="block text-app-muted text-[10px] sm:text-[11px] truncate">{manifest.summary}</span>
             </div>
             {statusBadge}
           </div>
@@ -85,7 +101,7 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
 
   return (
     <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 overflow-hidden mb-2">
-      <div className={`${rowClass.replace('cursor-pointer', '')} justify-between p-2.5`}>
+      <div className={`${rowClass.replace('cursor-pointer', '')} justify-between p-2.5 sm:p-3`}>
         <button
           type="button"
           data-testid={`extension-${id}-expand`}
@@ -99,7 +115,7 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
 
         {/* Master ON/OFF Switch */}
         <label
-          className="relative inline-flex items-center cursor-pointer min-w-[44px] min-h-[44px] justify-center select-none"
+          className="relative inline-flex items-center cursor-pointer min-w-[44px] min-h-[44px] justify-center select-none ml-2"
           aria-label={`Enable ${manifest.name}`}
         >
           <input
@@ -129,89 +145,120 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
 
       {open && (
         <div
-          id={`extension-${id}-panel`}
-          className="pl-3 border-l-2 border-app-border/60 my-1 space-y-3 p-2.5 bg-app-base/40 rounded-r-xl"
+          data-testid={`extension-${id}-modal-backdrop`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setOpen(false)
+          }}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
         >
-          {/* Panel Header with Contextual Help */}
-          <div className="flex items-center justify-between gap-2 border-b border-app-border/40 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-app-heading">{manifest.name}</span>
-              <span
-                className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
-                  snapshot.state === 'active'
-                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                    : snapshot.state === 'starting'
-                    ? 'bg-amber-400/15 text-amber-400 border-amber-400/30'
-                    : snapshot.state === 'offline'
-                    ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                    : 'bg-app-surface text-app-muted border-app-border'
-                }`}
-              >
-                {labels[snapshot.state]}
-              </span>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`extension-${id}-modal-title`}
+            id={`extension-${id}-panel`}
+            data-testid={`extension-${id}-panel`}
+            className="w-full max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-3.5 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
+                  <Layers className="w-4 h-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 id={`extension-${id}-modal-title`} className="font-extrabold text-sm sm:text-base tracking-wide text-app-heading">
+                    {manifest.name}
+                  </h2>
+                  <p className="text-[11px] text-app-muted">{manifest.summary}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                    snapshot.state === 'active'
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : snapshot.state === 'starting'
+                      ? 'bg-amber-400/15 text-amber-400 border-amber-400/30'
+                      : snapshot.state === 'offline'
+                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                      : 'bg-app-surface text-app-muted border-app-border'
+                  }`}
+                >
+                  {labels[snapshot.state]}
+                </span>
+
+                {id === 'propresenter-follower' && (
+                  <ContextualHelp
+                    id="propresenter-help"
+                    title="ProPresenter"
+                    buttonLabel="Help for ProPresenter"
+                    buttonTestId="propresenter-help-button"
+                    panelTestId="propresenter-help"
+                    quickSummary="Follow live lyrics and slides automatically from your ProPresenter presentation computer over the local network."
+                    topics={[
+                      {
+                        title: 'Status Indicators',
+                        defaultExpanded: true,
+                        content: (
+                          <div className="space-y-1">
+                            <p><strong className="text-emerald-400">Green:</strong> Connected and following slides in real time.</p>
+                            <p><strong className="text-amber-400">Yellow:</strong> Paused, manual override, or awaiting section resumption.</p>
+                            <p><strong className="text-rose-400">Red:</strong> Offline, disconnected, or connection error.</p>
+                          </div>
+                        ),
+                      },
+                      {
+                        title: 'Auto Follow',
+                        content: (
+                          <p>
+                            Auto Follow operates strictly within the active GTAR setlist to keep lyrics and slides aligned without jumping outside your planned songs.
+                          </p>
+                        ),
+                      },
+                      {
+                        title: 'Manual Override',
+                        content: (
+                          <p>
+                            Touching, scrolling, or jumping sections pauses automatic following without losing slide highlights. Tap Resume to re-align.
+                          </p>
+                        ),
+                      },
+                      {
+                        title: 'Resume',
+                        content: (
+                          <p>
+                            Tap Resume in the ProPresenter dock popover or advance to the next confirmed slide to re-engage following.
+                          </p>
+                        ),
+                      },
+                      {
+                        title: 'Setup & Connection',
+                        content: (
+                          <p>
+                            Enter your ProPresenter computer IP address and Port (1025). Ensure ProPresenter Network API is enabled. Check &quot;Remember last server&quot; to restore the verified address.
+                          </p>
+                        ),
+                      },
+                    ]}
+                  />
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close"
+                  className="w-9 h-9 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
-            {id === 'propresenter-follower' && (
-              <ContextualHelp
-                id="propresenter-help"
-                title="ProPresenter"
-                buttonLabel="Help for ProPresenter"
-                buttonTestId="propresenter-help-button"
-                panelTestId="propresenter-help"
-                quickSummary="Follow live lyrics and slides automatically from your ProPresenter presentation computer over the local network."
-                topics={[
-                  {
-                    title: 'Status Indicators',
-                    content: (
-                      <p>
-                        <strong className="text-app-heading">Indicators:</strong> Green = following live lyrics; Yellow = paused / manual override / awaiting resumption; Red = disconnected.
-                      </p>
-                    ),
-                  },
-                  {
-                    title: 'Auto Follow',
-                    content: (
-                      <p>
-                        <strong className="text-app-heading">Auto Follow:</strong> Operates strictly within the active GTAR setlist to keep lyrics and slides aligned.
-                      </p>
-                    ),
-                  },
-                  {
-                    title: 'Manual Override',
-                    content: (
-                      <p>
-                        <strong className="text-app-heading">Manual Override:</strong> Touching, scrolling, or jumping sections pauses automatic following without losing slide highlights.
-                      </p>
-                    ),
-                  },
-                  {
-                    title: 'Resuming Following',
-                    content: (
-                      <p>
-                        <strong className="text-app-heading">Resume:</strong> Tap Resume in the ProPresenter popover to re-align with the current slide.
-                      </p>
-                    ),
-                  },
-                  {
-                    title: 'Stopping Follower',
-                    content: (
-                      <p>
-                        <strong className="text-app-heading">Stop:</strong> Stops Live Lyrics and highlights for the current fullscreen session.
-                      </p>
-                    ),
-                  },
-                  {
-                    title: 'Network Setup & Troubleshooting',
-                    content: (
-                      <p>
-                        Enter your ProPresenter computer&apos;s IP address and Port (1025). Ensure ProPresenter Network is enabled in its settings and both devices are on the same Wi-Fi subnet. Tap &quot;Test connection&quot; below to verify communication.
-                      </p>
-                    ),
-                  },
-                ]}
-              />
-            )}
-          </div>
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+              <div className="pl-3 border-l-2 border-app-border/60 space-y-4">
 
           {snapshot.message && (
             <p className="text-xs text-app-muted px-1" role="status">
@@ -372,6 +419,9 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
               )}
             </div>
           )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
