@@ -8,7 +8,17 @@ interface Socket {
   onopen: (() => void) | null; onclose: (() => void) | null; onerror: (() => void) | null
   onmessage: ((event: { data: unknown }) => void) | null
 }
+/** One tab's room session (sessionStorage): survives a normal refresh, ends with the tab or when the room ends. */
+export interface BandSyncSessionStore { get(): string | null; set(value: string): void; remove(): void }
+const SESSION_KEY = 'gtar_band_sync_session_v1'
+const SESSION_MAX_AGE_MS = 6 * 60 * 60 * 1000
+const tabSessionStore = (): BandSyncSessionStore => ({
+  get: () => { try { return sessionStorage.getItem(SESSION_KEY) } catch { return null } },
+  set: value => { try { sessionStorage.setItem(SESSION_KEY, value) } catch { /* Storage unavailable: the room just will not survive a refresh. */ } },
+  remove: () => { try { sessionStorage.removeItem(SESSION_KEY) } catch { /* Best effort. */ } },
+})
 interface Runtime {
+  store?: BandSyncSessionStore
   fetch: typeof fetch; socket(url: string, protocols: string[]): Socket; origin: string; now(): number
   later(fn: () => void, ms: number): ReturnType<typeof setTimeout>
   cancel(timer: ReturnType<typeof setTimeout>): void
@@ -57,10 +67,16 @@ export class BandSyncClient {
   private forceContent = false
   constructor(changed: (view: BandSyncClientView) => void, runtime?: Runtime) {
     this.changed = changed
-    this.rt = runtime ?? { fetch: (...args) => fetch(...args), socket: (url, protocols) => new WebSocket(url, protocols) as unknown as Socket,
+    this.rt = runtime ?? { store: tabSessionStore(), fetch: (...args) => fetch(...args), socket: (url, protocols) => new WebSocket(url, protocols) as unknown as Socket,
       origin: location.origin, now: () => Date.now(), later: (fn, ms) => setTimeout(fn, ms), cancel: t => clearTimeout(t) }
   }
   getSnapshot = () => this.view
+  private persist() {
+    const { role, roomCode } = this.view
+    if (!role || !roomCode) return
+    this.rt.store?.set(JSON.stringify({ v: 1, role, roomCode, savedAt: this.rt.now(), ...(role === 'leader' ? { leaderCredential: this.credential } : {}) }))
+  }
+  private forget() { this.rt.store?.remove() }
   private update(patch: Partial<BandSyncClientView>) { this.view = { ...this.view, ...patch }; this.changed(this.view) }
   private timer(fn: () => void, ms: number) {
     const t = this.rt.later(() => { this.timers.delete(t); if (!this.disposed) fn() }, ms)
@@ -93,7 +109,7 @@ export class BandSyncClient {
   }
   async create(): Promise<void> {
     if (this.disposed) return
-    this.reset(); const generation = this.generation
+    this.forget(); this.reset(); const generation = this.generation
     this.update({ status: 'starting', role: 'leader', roomCode: '', follower: null, ended: false, message: undefined })
     try {
       const result = await this.post('/create', {})
@@ -101,6 +117,7 @@ export class BandSyncClient {
       if (!isRoomCode(result.roomCode) || typeof result.leaderCredential !== 'string' || !/^[a-f0-9]{64}$/.test(result.leaderCredential)) throw new Error('Invalid room response')
       this.credential = result.leaderCredential
       this.update({ roomCode: result.roomCode })
+      this.persist()
       await this.connect(generation)
     } catch (error) { if (generation === this.generation) this.update({ status: 'error', message: failureMessage(error, 'create') }) }
   }
@@ -108,8 +125,27 @@ export class BandSyncClient {
     if (this.disposed) return
     const roomCode = normalizeRoomCodeInput(code)
     if (!isRoomCode(roomCode)) { this.update({ status: 'error', message: 'Enter the 8-character code' }); return }
-    this.reset(); const generation = this.generation
+    this.forget(); this.reset(); const generation = this.generation
     this.update({ status: 'starting', role: 'follower', roomCode, follower: initialBandSyncState(roomCode), ended: false, message: undefined })
+    this.persist()
+    await this.connect(generation)
+  }
+  /** After a refresh in the same tab: rejoin the saved room (leader with its credential, follower by code). Invalid or old data is dropped. */
+  async resume(): Promise<void> {
+    if (this.disposed || this.view.role) return
+    const raw = this.rt.store?.get()
+    if (!raw) return
+    let saved: { v?: unknown; role?: unknown; roomCode?: unknown; savedAt?: unknown; leaderCredential?: unknown } | null
+    try { saved = JSON.parse(raw) } catch { saved = null }
+    const valid = !!saved && typeof saved === 'object' && saved.v === 1 && (saved.role === 'leader' || saved.role === 'follower') &&
+      isRoomCode(saved.roomCode) && typeof saved.savedAt === 'number' && this.rt.now() - saved.savedAt <= SESSION_MAX_AGE_MS &&
+      (saved.role === 'follower' || (typeof saved.leaderCredential === 'string' && /^[a-f0-9]{64}$/.test(saved.leaderCredential)))
+    if (!valid || !saved) { this.forget(); return }
+    const roomCode = saved.roomCode as string
+    this.reset(); const generation = this.generation
+    if (saved.role === 'leader') this.credential = saved.leaderCredential as string
+    this.update({ status: 'starting', role: saved.role as 'leader' | 'follower', roomCode,
+      follower: saved.role === 'follower' ? initialBandSyncState(roomCode) : null, ended: false, message: undefined })
     await this.connect(generation)
   }
   private async connect(generation: number): Promise<void> {
@@ -139,7 +175,7 @@ export class BandSyncClient {
       if (generation !== this.generation || this.disposed) return
       const message = failureMessage(error, this.view.role === 'leader' ? 'ticket' : 'join')
       if (error instanceof BandSyncHttpError && [403, 404].includes(error.status)) {
-        this.clearConnection()
+        this.clearConnection(); this.forget()
         this.update({ status: 'error', message, follower: null })
       } else this.retry(generation, message)
     }
@@ -185,7 +221,7 @@ export class BandSyncClient {
       const reduced = this.view.follower ? applyBandSyncMessage(this.view.follower, m) : null
       if (reduced?.error) return
       const follower = reduced?.state ?? null
-      this.reset(); this.update({ status: 'offline', ended: true, follower, role: null, roomCode: '', message: undefined }); return
+      this.forget(); this.reset(); this.update({ status: 'offline', ended: true, follower, role: null, roomCode: '', message: undefined }); return
     }
     if (this.view.role === 'leader') {
       if (m.type === 'NEED_CONTENT' && m.payload.contentHash === this.current?.content.contentHash) this.publishCurrent(true)
@@ -202,7 +238,7 @@ export class BandSyncClient {
     const leader = this.view.role === 'leader', roomCode = this.view.roomCode, leaderCredential = this.credential
     try { if (leader && roomCode && this.view.message !== 'Room not found or ended') await this.post('/end', { roomCode, leaderCredential }) }
     catch (error) { this.update({ status: 'error', message: failureMessage(error, 'end') }); return }
-    this.reset(); this.update({ status: 'offline', role: null, roomCode: '', follower: null, ended: true, message: undefined })
+    this.forget(); this.reset(); this.update({ status: 'offline', role: null, roomCode: '', follower: null, ended: true, message: undefined })
   }
-  dispose() { if (this.disposed) return; this.disposed = true; this.reset(); this.current = null; this.update({ status: 'offline', role: null, roomCode: '', follower: null, ended: true, message: undefined }) }
+  dispose() { if (this.disposed) return; this.disposed = true; this.forget(); this.reset(); this.current = null; this.update({ status: 'offline', role: null, roomCode: '', follower: null, ended: true, message: undefined }) }
 }
