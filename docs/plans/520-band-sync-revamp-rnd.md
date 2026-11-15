@@ -27,7 +27,8 @@ OWNER constraints: optional extension (#438), free, no login, leader pushes and 
 | Cast2 snapshots | Memory only. After eviction the hub marks PAIRED sessions DISCONNECTED and asks the controller for a fresh snapshot (`RESYNC_REQUIRED`). Every update carries a full projected chart (limit 256 KiB per message) | CODE_OBSERVED |
 | Cast2 sockets | Standard `server.accept()`, not the Hibernation API | CODE_OBSERVED |
 | Cast2 deploy | Separate worker `gtar-stage-cast2-dev` (SQLite DO class `StageCast2Hub`, D1 `gtar-db-dev` for optional sign-in), gated by `CAST2_MODE=reviewed-v1`, origin `https://dev.gtar-web.pages.dev`. Pages preview env has a DO binding to it. Only a Vite dev proxy for `/cast2-api` is visible in the repo | CODE_OBSERVED |
-| Cast2 routing in deployed DEV | How a browser reaches the worker from the deployed Pages origin (Pages Function, route, or direct URL) is not visible in the repo | UNVERIFIED |
+| Cast2 routing | Same origin. The browser calls `/cast2-api/*` and opens `wss://<same origin>/cast2-api/socket`. A Pages Function (`web/functions/cast2-api/[[path]].ts`) runs the Cast2 router and reaches the Durable Object through a binding `CAST2_HUB` (`script_name: gtar-stage-cast2-dev`) declared in the Pages preview env in `web/wrangler.jsonc`. The DO class itself lives in the separate worker, which must be deployed first | CODE_OBSERVED |
+| CSP | `connect-src` already contains `'self'`, `ws:` and `wss:` (`web/public/_headers`), so a same-origin or a `wss:` connection needs no new CSP entry | CODE_OBSERVED |
 | Free plan | Workers Free can create SQLite-backed Durable Objects. Free limits: 100,000 requests/day and 13,000 GB-s/day, reset 00:00 UTC; past a limit the operation fails. Incoming WebSocket messages count 1 request per 20; outgoing messages are free. A standard `accept()` socket is billed for duration the whole time it is connected; the Hibernation API avoids that while idle | DOC_CF |
 
 ## 2. Protocol (transport-agnostic)
@@ -88,7 +89,7 @@ Same room socket for text chat (small). Voice memo uses the same room but its ow
 
 ## 6. Extension contract fit (#438)
 
-Band Sync would be the **first consumer of core events**. It needs song, transpose, setlist and scroll state from Stage, and needs `net:https` (the worker host, which also needs a CSP `connect-src` entry that affects every user, so it is an owner-level decision). Options: (a) approve a minimal read-only events seam now, for this consumer, or (b) keep a thin core state publisher for P1 and move behind the events API later. Recommendation: (a), kept to the four read-only events already named in #438, no control hooks. Followers are read-only but they do change the local view, so "apply remote state" is a core call through the host, not an extension writing core state.
+Band Sync would be the **first consumer of core events**. It needs song, transpose, setlist and scroll state from Stage, and needs `net:https` for the room connection. Following the Cast2 pattern (same-origin `/bandsync-api/*` through a Pages Function), no new CSP host is needed. Options: (a) approve a minimal read-only events seam now, for this consumer, or (b) keep a thin core state publisher for P1 and move behind the events API later. Recommendation: (a), kept to the four read-only events already named in #438, no control hooks. Followers are read-only but they do change the local view, so "apply remote state" is a core call through the host, not an extension writing core state.
 
 ## 7. P1 recommendation
 
@@ -102,7 +103,9 @@ Acceptance for P1: leader to follower sync of song, key/transpose, setlist posit
 
 Android 8765 client, `detectLanIp`, recent-leaders list, the hardcoded sample IP in `BandSyncModal.tsx`, and their tests. Removal happens in the phase that replaces them.
 
-## 9. Owner decisions needed
+## 9. Owner decisions
+
+Owner answered 2026-11-15 in chat: B1 to B7 accepted as recommended. B8 clarified (see below, no change needed). B9 checked and answered from code. The worker-side deploy and the Pages binding still need explicit owner approval at implementation time.
 
 | ID | Question | Recommendation |
 |---|---|---|
@@ -113,9 +116,9 @@ Android 8765 client, `detectLanIp`, recent-leaders list, the hardcoded sample IP
 | B5 | Anonymous rooms only (code and QR), no login | Yes |
 | B6 | Starting limits in section 5 Q2 | Accept, tune in DEV |
 | B7 | P1 as two DRAFT PRs | Yes |
-| B8 | CSP `connect-src` addition for the worker host | Owner decision; affects all users |
-| B9 | How the browser reaches the worker (Pages Function proxy or direct URL) | Verify how Cast2 DEV does it first |
+| B8 | CSP `connect-src` change for the worker host | Not needed: `ws:`/`wss:` and `'self'` are already allowed, and B9 keeps the connection same-origin |
+| B9 | How the browser reaches the worker | Same origin, like Cast2: a Pages Function `/bandsync-api/[[path]]` plus a `BANDSYNC_HUB` DO binding in the Pages preview env. No direct worker URL |
 
 ## 10. Still unverified before P1 code
 
-Cast2 routing in deployed DEV; the join code length; iOS Safari background behavior; current free-plan numbers on the account dashboard; whether the church network blocks WebSockets.
+Whether WebSocket upgrades through the Pages Function behave on the church network and on iOS Safari (Cast2 uses the same path, but no field result is recorded here); the join code length; iOS Safari background behavior; current free-plan numbers on the account dashboard; whether the church network blocks WebSockets.
