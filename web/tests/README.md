@@ -229,6 +229,8 @@ New or renamed tests await a human choice of primary category.
 - [appStartVersionLog.test.cjs](appStartVersionLog.test.cjs)
 - [backupRestoreCenterMenu.test.cjs](backupRestoreCenterMenu.test.cjs)
 - [backupV2Scale.test.cjs](backupV2Scale.test.cjs)
+- [bandSyncHub520.test.cjs](bandSyncHub520.test.cjs)
+- [bandSyncProtocol520.test.cjs](bandSyncProtocol520.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [chordProSections.test.cjs](chordProSections.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)
