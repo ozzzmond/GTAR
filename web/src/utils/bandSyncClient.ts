@@ -21,7 +21,19 @@ export interface BandSyncClientView {
 /** Fixed text only: never retain or expose an error response body. */
 export class BandSyncHttpError extends Error {
   readonly status: number
-  constructor(status: number) { super('Room request failed'); this.status = status }
+  readonly networkOrSignIn: boolean
+  constructor(status: number, networkOrSignIn = false) { super('Room request failed'); this.status = status; this.networkOrSignIn = networkOrSignIn }
+}
+const networkMessage = 'Could not reach Band Sync (network or sign-in)'
+function failureMessage(error: unknown, operation: 'create' | 'join' | 'ticket' | 'end'): string {
+  if (!(error instanceof BandSyncHttpError)) return 'Band Sync error'
+  const status = error.status
+  if (error.networkOrSignIn || status === 0 || status === 401 || (status >= 300 && status < 400)) return networkMessage
+  if (status === 403 && operation === 'create') return 'Rejected by server'
+  if ([403, 404].includes(status) && ['join', 'ticket'].includes(operation)) return 'Room not found or ended'
+  if (status === 429) return 'Too many attempts, wait a minute'
+  if (status === 503) return 'Band Sync is unavailable'
+  return 'Band Sync error'
 }
 /** Created only by an activated extension. Credentials/tickets stay in this instance, never in URLs or logs. */
 export class BandSyncClient {
@@ -67,8 +79,13 @@ export class BandSyncClient {
     this.forceContent = false
   }
   private async post(path: string, value: unknown): Promise<Record<string, unknown>> {
-    const response = await this.rt.fetch('/bandsync-api' + path, { method: 'POST', credentials: 'omit',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), signal: this.lifetime.signal })
+    let response: Response
+    try {
+      // DEV Access needs same-origin cookies; the Pages Function strips them before reaching the worker.
+      response = await this.rt.fetch('/bandsync-api' + path, { method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), signal: this.lifetime.signal })
+    } catch { throw new BandSyncHttpError(0) }
+    if (response.redirected || ['opaque', 'opaqueredirect'].includes(response.type)) throw new BandSyncHttpError(response.status, true)
     if (!response.ok) throw new BandSyncHttpError(response.status)
     return await response.json() as Record<string, unknown>
   }
@@ -83,12 +100,12 @@ export class BandSyncClient {
       this.credential = result.leaderCredential
       this.update({ roomCode: result.roomCode })
       await this.connect(generation)
-    } catch { if (generation === this.generation) this.update({ status: 'error' }) }
+    } catch (error) { if (generation === this.generation) this.update({ status: 'error', message: failureMessage(error, 'create') }) }
   }
   async join(code: string): Promise<void> {
     if (this.disposed) return
     const roomCode = code.trim().toUpperCase()
-    if (!isRoomCode(roomCode)) { this.update({ status: 'error' }); return }
+    if (!isRoomCode(roomCode)) { this.update({ status: 'error', message: 'Band Sync error' }); return }
     this.reset(); const generation = this.generation
     this.update({ status: 'starting', role: 'follower', roomCode, follower: initialBandSyncState(roomCode), ended: false, message: undefined })
     await this.connect(generation)
@@ -107,7 +124,7 @@ export class BandSyncClient {
       const current = () => generation === this.generation && this.socket === socket && !this.disposed && !this.view.ended
       socket.onopen = () => {
         if (!current()) return
-        this.backoff = 1000; this.update({ status: 'active' })
+        this.backoff = 1000; this.update({ status: 'active', message: undefined })
         this.send('HELLO', { role: this.view.role })
         this.publishCurrent()
         const ping = () => { if (current()) { socket.send('ping'); this.timer(ping, BAND_SYNC_LIMITS.heartbeatMs) } }
@@ -118,16 +135,17 @@ export class BandSyncClient {
       socket.onerror = () => { if (current()) this.retry(generation) }
     } catch (error) {
       if (generation !== this.generation || this.disposed) return
+      const message = failureMessage(error, this.view.role === 'leader' ? 'ticket' : 'join')
       if (error instanceof BandSyncHttpError && [403, 404].includes(error.status)) {
         this.clearConnection()
-        this.update({ status: 'error', message: 'Room not found or ended', follower: null })
-      } else this.retry(generation)
+        this.update({ status: 'error', message, follower: null })
+      } else this.retry(generation, message)
     }
   }
-  private retry(generation: number) {
+  private retry(generation: number, message = networkMessage) {
     this.clearConnection()
     if (this.view.ended || this.disposed) return
-    this.update({ status: 'offline', follower: this.view.follower ? { ...reconnectBandSync(this.view.follower), leaderOnline: false } : null })
+    this.update({ status: 'offline', message, follower: this.view.follower ? { ...reconnectBandSync(this.view.follower), leaderOnline: false } : null })
     const delay = this.backoff; this.backoff = Math.min(30000, delay * 2)
     this.timer(() => { void this.connect(generation) }, delay)
   }
@@ -181,7 +199,7 @@ export class BandSyncClient {
   async end(): Promise<void> {
     const leader = this.view.role === 'leader', roomCode = this.view.roomCode, leaderCredential = this.credential
     try { if (leader && roomCode && this.view.message !== 'Room not found or ended') await this.post('/end', { roomCode, leaderCredential }) }
-    catch { this.update({ status: 'error' }); return }
+    catch (error) { this.update({ status: 'error', message: failureMessage(error, 'end') }); return }
     this.reset(); this.update({ status: 'offline', role: null, roomCode: '', follower: null, ended: true, message: undefined })
   }
   dispose() { if (this.disposed) return; this.disposed = true; this.reset(); this.current = null; this.update({ status: 'offline', role: null, roomCode: '', follower: null, ended: true, message: undefined }) }

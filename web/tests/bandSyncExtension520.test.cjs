@@ -39,7 +39,8 @@ async function ui(run, options = {}) {
     requestAnimationFrame: cb => setTimeout(() => cb(Date.now()), 16), cancelAnimationFrame: id => clearTimeout(id),
     isSecureContext: true, WebSocket: Socket, IS_REACT_ACT_ENVIRONMENT: true,
     fetch: async (url, init) => {
-      calls.push({ url, body: JSON.parse(init.body) })
+      calls.push({ url, body: JSON.parse(init.body), credentials: init.credentials })
+      if (options.response) return options.response(url, init)
       return Response.json(url.endsWith('/create') ? { roomCode: 'ABCDEFGH', leaderCredential: 'c'.repeat(64), expiresAt: Date.now() + 21600000 } :
         url.endsWith('/end') ? { ended: true } : { roomCode: 'ABCDEFGH', ticket: 'b'.repeat(64), expiresAt: Date.now() + 15000 })
     } })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
@@ -186,4 +187,18 @@ test('Stage publishes only setlist id/index/count and leader memory-only reload 
     assert.deepEqual(encoded, ['https://gtar.test/#bandsync=ABCDEFGH'])
     assert.equal(encoded.join('').includes('c'.repeat(64)), false); assert.equal(encoded.join('').includes('b'.repeat(64)), false)
   }, { stage: { queueMode: 'setlist', isInSetlistMode: true, activeSetlistId: 'setlist-test', activeSetlistName: 'Private setlist name', activeSetlistSongIndex: 1, activeSetlistSongs: [song, { ...song, id: 'other' }] } })
+})
+test('create failures display fixed panel Status text; cookies are same-origin and details never reach the panel/log', async () => {
+  for (const [response, expected] of [
+    [() => Response.json({ error: 'synthetic-private-body' }, { status: 403 }), 'Rejected by server'],
+    [() => Response.json({ error: 'synthetic-private-body' }, { status: 503 }), 'Band Sync is unavailable'],
+    [() => { throw new TypeError('synthetic-private-network-detail') }, 'Could not reach Band Sync (network or sign-in)'],
+  ]) await ui(async ({ turnOn, click, button, host, calls, sockets, logs }) => {
+    assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
+    await turnOn(); await click(button('Start room'))
+    assert.equal(host.getSnapshot('band-sync').panel.fields.find(f => f.label === 'Status').value, expected)
+    assert.ok(document.body.textContent.includes(expected)); assert.equal(calls[0].credentials, 'same-origin')
+    assert.equal(sockets.length, 0); assert.deepEqual(logs, [])
+    assert.equal(document.body.textContent.includes('synthetic-private'), false)
+  }, { response })
 })
