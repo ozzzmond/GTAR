@@ -112,7 +112,7 @@ test('leader panel starts room and publishes projected song + transpose without 
     await turnOn(); await click(button('Start room'))
     assert.equal(sockets.length, 1); await act(async () => sockets[0].open())
     // SHA-256 publisher may finish after the socket opens.
-    await act(async () => new Promise(resolve => setTimeout(resolve, 20)))
+    for (let i = 0; i < 100 && !(sockets[0].sent.some(m => m.type === 'STATE') && sockets[0].sent.some(m => m.type === 'CONTENT')); i++) await act(async () => new Promise(resolve => setTimeout(resolve, 20)))
     const frames = sockets[0].sent
     assert.ok(frames.some(m => m.type === 'STATE' && m.payload.state.transposeOffset === 3))
     const content = frames.find(m => m.type === 'CONTENT'); assert.ok(content)
