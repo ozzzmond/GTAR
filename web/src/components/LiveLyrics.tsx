@@ -128,12 +128,13 @@ export function LiveLyricsControl({
     <details
       ref={detailsRef}
       data-testid="live-lyrics-control"
+      open={isOpen}
       onToggle={(e) => {
         onToggleOpen?.(e.currentTarget.open)
       }}
-      className="fixed z-50 pointer-events-auto"
+      className="fixed inset-0 z-50 pointer-events-none"
     >
-      <summary className="sr-only cursor-pointer select-none">
+      <summary className="sr-only cursor-pointer select-none pointer-events-auto">
         ProPresenter · {live.status}
       </summary>
 
@@ -142,7 +143,7 @@ export function LiveLyricsControl({
         role="dialog"
         aria-label="ProPresenter controls"
         style={popoverStyle}
-        className="rounded-2xl border border-app-border bg-app-surface/95 backdrop-blur-md shadow-2xl p-3.5 text-app-text space-y-2.5 max-h-[82vh] overflow-y-auto text-xs select-none"
+        className="rounded-2xl border border-app-border bg-app-surface/95 backdrop-blur-md shadow-2xl p-3.5 text-app-text space-y-2.5 max-h-[82vh] overflow-y-auto text-xs select-none pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {

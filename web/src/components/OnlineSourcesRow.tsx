@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, CircleHelp, ExternalLink, Globe, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ExternalLink, Globe, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ContextualHelp } from './ContextualHelp'
 import {
   SUPPORTED_SOURCES,
   addShortcut,
@@ -41,7 +42,6 @@ const pill = 'text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-surfac
 export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, enabled, onToggle }) => {
   const settings = useOnlineSourceSettings()
   const [open, setOpen] = useState(false)
-  const [helpOpen, setHelpOpen] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
@@ -88,8 +88,8 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
   const remainingSupported = SUPPORTED_SOURCES.filter(supported => !settings.sources.some(source => source.id === supported.id))
 
   return (
-    <div data-testid="online-sources-row">
-      <div className={`${rowClass.replace('cursor-pointer', '')} justify-between`}>
+    <div data-testid="online-sources-row" className="rounded-xl border border-app-border/80 bg-app-surface/50 overflow-hidden mb-2">
+      <div className={`${rowClass.replace('cursor-pointer', '')} justify-between p-2.5`}>
         <button
           type="button"
           data-testid="online-sources-expand"
@@ -99,7 +99,15 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
           className="flex flex-1 min-w-0 min-h-11 items-center gap-2.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action rounded-lg"
         >
           <Globe className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-          <span className="flex-1">Online song sources</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-app-heading truncate">Online song sources</span>
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-surface text-app-muted border border-app-border">
+                {settings.sources.filter(s => s.enabled).length} active
+              </span>
+            </div>
+            <span className="block text-app-muted text-[10px] truncate">Search web providers &amp; custom link shortcuts</span>
+          </div>
           {open ? <ChevronUp className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />}
         </button>
         <button
@@ -118,37 +126,48 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
       </div>
 
       {open && (
-        <div id="online-sources-panel" data-testid="online-sources-panel" className="pl-3 border-l-2 border-app-border/60 my-1 space-y-2">
+        <div id="online-sources-panel" data-testid="online-sources-panel" className="pl-3 border-l-2 border-app-border/60 my-1 space-y-3 p-2 bg-app-base/40 rounded-r-xl">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-bold text-app-heading">Sources</span>
-            <button
-              type="button"
-              aria-label="Help for sources"
-              aria-expanded={helpOpen}
-              aria-controls="online-sources-help"
-              data-testid="online-sources-help-button"
-              onClick={() => setHelpOpen(value => !value)}
-              className={iconButton}
-            >
-              <CircleHelp className="w-4 h-4" aria-hidden="true" />
-            </button>
-          </div>
-
-          {helpOpen && (
-            <div
+            <ContextualHelp
               id="online-sources-help"
-              role="note"
-              data-testid="online-sources-help"
-              onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setHelpOpen(false) } }}
-              className="rounded-xl border border-app-border bg-app-surface p-2.5 text-[11px] text-app-text space-y-1.5"
-            >
-              <p><strong className="text-app-heading">Search</strong> sources show results in GTAR.</p>
-              <p><strong className="text-app-heading">Link</strong> sources only open in your browser.</p>
-              <p>A Link with a Search URL (use {'{query}'}) also adds a search link under your results.</p>
-              <p>Arrows set the order. Primary only uses the first enabled search source.</p>
-              <p>Removed sources stay removed until you add them again or restore defaults.</p>
-            </div>
-          )}
+              title="Online Sources"
+              buttonLabel="Help for sources"
+              buttonTestId="online-sources-help-button"
+              panelTestId="online-sources-help"
+              quickSummary="Configure online song providers and custom chord chart shortcuts for instant searching."
+              topics={[
+                {
+                  title: 'Search vs Link Sources',
+                  content: (
+                    <>
+                      <p><strong className="text-app-heading">Search</strong> sources show results in GTAR.</p>
+                      <p><strong className="text-app-heading">Link</strong> sources only open in your browser.</p>
+                      <p>A Link with a Search URL (use {'{query}'}) also adds a search link under your results.</p>
+                    </>
+                  ),
+                },
+                {
+                  title: 'Priority & Ordering',
+                  content: (
+                    <>
+                      <p>Arrows set the order. Primary only uses the first enabled search source.</p>
+                      <p>All sources searches every enabled provider at the same time.</p>
+                    </>
+                  ),
+                },
+                {
+                  title: 'Adding & Removing Sources',
+                  content: (
+                    <>
+                      <p>Tap &quot;+ Website&quot; to save custom song and chord website shortcuts.</p>
+                      <p>Removed sources stay removed until you add them again or restore defaults.</p>
+                    </>
+                  ),
+                },
+              ]}
+            />
+          </div>
 
           <div role="radiogroup" aria-label="Search mode" className="grid grid-cols-2 gap-1 rounded-xl border border-app-border bg-app-base p-1">
             {MODES.map(mode => (

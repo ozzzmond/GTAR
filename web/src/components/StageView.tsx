@@ -2263,24 +2263,6 @@ export const StageView: React.FC<StageViewProps> = ({
             </div>
           )}
 
-          {isFullscreen && <LiveLyricsControl
-            live={liveLyrics}
-            songTitle={song.title}
-            onConfirmed={autoFollow.controller.associateCurrent}
-            isOpen={isPpPopoverOpen}
-            onToggleOpen={setIsPpPopoverOpen}
-            onClose={() => setIsPpPopoverOpen(false)}
-            onOpenSettings={() => setIsStageMenuOpen(true)}
-            statusLevel={proPresenterStatus.level === 'disabled' ? 'red' : proPresenterStatus.level}
-            statusLabel={proPresenterStatus.label}
-            dockMode={showDock ? 'vertical' : 'horizontal'}
-            dockPosition={showDock ? readPersistedDockPosition() : undefined}
-            liveScrollPaused={liveScroll.paused}
-            onResumeScroll={liveScroll.controller.resume}
-            canResumeScroll={!isAutoScrolling && Boolean(liveLyrics.scrollRange)}
-          >
-            {setlistAutoFollowDev && <SetlistAutoFollowControl follow={autoFollow} />}
-          </LiveLyricsControl>}
           {/* Song Lines Rendering: Chart in a Card for Stage Preview */}
           <div className={!inPerformanceMode ? 'ui-song-card bg-app-surface rounded-2xl p-4 sm:p-6 border border-app-border shadow-xl overflow-x-auto min-h-[400px]' : ''}>
             {song.isMissing ? (
@@ -2444,6 +2426,29 @@ export const StageView: React.FC<StageViewProps> = ({
             <SkipForward className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {/* Live Lyrics Control Popover */}
+      {(isFullscreen || inPerformanceMode) && (
+        /* isFullscreen && <LiveLyricsControl */
+        <LiveLyricsControl
+          live={liveLyrics}
+          songTitle={song.title}
+          onConfirmed={autoFollow.controller.associateCurrent}
+          isOpen={isPpPopoverOpen}
+          onToggleOpen={setIsPpPopoverOpen}
+          onClose={() => setIsPpPopoverOpen(false)}
+          onOpenSettings={() => setIsStageMenuOpen(true)}
+          statusLevel={proPresenterStatus.level === 'disabled' ? 'red' : proPresenterStatus.level}
+          statusLabel={proPresenterStatus.label}
+          dockMode={showDock ? 'vertical' : 'horizontal'}
+          dockPosition={showDock ? readPersistedDockPosition() : undefined}
+          liveScrollPaused={liveScroll.paused}
+          onResumeScroll={liveScroll.controller.resume}
+          canResumeScroll={!isAutoScrolling && Boolean(liveLyrics.scrollRange)}
+        >
+          {setlistAutoFollowDev && <SetlistAutoFollowControl follow={autoFollow} />}
+        </LiveLyricsControl>
       )}
 
       {/* Draggable Minimal Stage Control Dock (Prev Section • Autoscroll FAB • Next Section) */}

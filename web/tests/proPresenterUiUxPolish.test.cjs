@@ -450,7 +450,103 @@ test('horizontal dock: PP control is hidden when ProPresenter is OFF, exposed wh
   assert.ok(ppBtn)
   assert.ok(ppBtn.textContent.includes('PP'))
 
+  // Clicking horizontal PP button opens the compact popover dialog
+  const control = document.querySelector('[data-testid="live-lyrics-control"]')
+  assert.ok(control)
+  assert.equal(control.open, false)
+
+  await act(async () => {
+    ppBtn.click()
+  })
+  assert.equal(control.open, true)
+  const popoverDialog = document.querySelector('[aria-label="ProPresenter controls"]')
+  assert.ok(popoverDialog)
+  assert.ok(popoverDialog.textContent.includes('ProPresenter'))
+
+  // Clicking PP button again toggles popover closed
+  await act(async () => {
+    ppBtn.click()
+  })
+  assert.equal(control.open, false)
+
   root.unmount()
   disabledHost.dispose()
+  dom.window.close()
+})
+
+test('Advanced Tools: ProPresenter uses matching switch toggle and interactive contextual help', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://dev.example/' })
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window })
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document })
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: dom.window.localStorage })
+  Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, value: dom.window.HTMLElement })
+  Object.defineProperty(globalThis, 'Element', { configurable: true, value: dom.window.Element })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'Chrome/157', platform: 'Linux', maxTouchPoints: 0 } })
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+  const { createRoot } = require('react-dom/client')
+  const { ExtensionRows } = require('../src/extensions/host/ExtensionRows.tsx')
+
+  const storage = mockStorage()
+  const host = new ExtensionHost(registry, storage, { capabilities: ['net:lan', 'ui:panel'] })
+  await host.start()
+
+  const root = createRoot(document.getElementById('root'))
+  await act(async () => {
+    root.render(React.createElement(ExtensionRows, { host, rowClass: 'text-app-heading' }))
+  })
+
+  const row = document.querySelector('[data-testid="extension-propresenter-follower"]')
+  assert.ok(row)
+
+  // Master switch toggle with role="switch" is present
+  const toggle = row.querySelector('[data-testid="settings-propresenter-follower-toggle"]')
+  assert.ok(toggle)
+  assert.equal(toggle.getAttribute('role'), 'switch')
+  assert.equal(toggle.checked, false)
+
+  // Toggling master switch enables ProPresenter
+  await act(async () => {
+    toggle.click()
+  })
+  assert.ok(['starting', 'active', 'offline'].includes(host.getSnapshot('propresenter-follower').state))
+  assert.equal(toggle.checked, true)
+
+  // Expand row to inspect panel
+  const expandBtn = row.querySelector('[data-testid="extension-propresenter-follower-expand"]')
+  assert.ok(expandBtn)
+  await act(async () => {
+    expandBtn.click()
+  })
+
+  // Panel does NOT render redundant nested checkbox
+  const panel = document.getElementById('extension-propresenter-follower-panel')
+  assert.ok(panel)
+  assert.equal(panel.querySelector('input[type="checkbox"][name="enable"]'), null)
+  assert.equal(panel.textContent.includes('Enable ProPresenter'), false)
+
+  // Contextual help is present and accessible
+  const helpBtn = document.querySelector('[data-testid="propresenter-help-button"]')
+  assert.ok(helpBtn)
+  assert.equal(document.querySelector('[data-testid="propresenter-help"]'), null)
+
+  await act(async () => {
+    helpBtn.click()
+  })
+  const helpPanel = document.querySelector('[data-testid="propresenter-help"]')
+  assert.ok(helpPanel)
+  assert.match(helpPanel.textContent, /Indicators/i)
+  assert.match(helpPanel.textContent, /Auto Follow/i)
+  assert.match(helpPanel.textContent, /Manual Override/i)
+  assert.match(helpPanel.textContent, /Resume/i)
+
+  // Escape key closes help
+  await act(async () => {
+    helpPanel.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  assert.equal(document.querySelector('[data-testid="propresenter-help"]'), null)
+
+  root.unmount()
+  host.dispose()
   dom.window.close()
 })
