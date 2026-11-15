@@ -34,7 +34,7 @@ export function activateBandSyncController(source: {
     source.panel({
       ...(qr && leader ? { qr: { label: 'Band Sync join QR', src: qr } } : {}),
       fields: [{ label: 'Status', value: view.message ?? view.status }, ...(view.roomCode ? [{ label: 'Room code', value: view.roomCode }] : []),
-        ...(leader ? [{ label: 'Room control', value: 'Reloading this page ends your control of the room; it expires on its own.' }] : []),
+        ...(leader ? [{ label: 'Room control', value: 'This tab controls the room and keeps it after a refresh. Closing the tab ends your control; the room expires on its own.' }] : []),
         ...(view.role === 'follower' ? [{ label: 'Leader', value: view.follower?.leaderOnline ? 'Leader online' : 'Leader offline' },
           { label: 'Song', value: state?.displayTitle ?? 'Waiting for song' }, { label: 'Key', value: state?.effectiveKey || '—' }] : [])],
       // maxLength leaves room for pasted spaces/dashes; the code itself is normalized and validated on join.
@@ -54,6 +54,7 @@ export function activateBandSyncController(source: {
   const stopLegacy = bandSync.activate()
   const unsubscribe = source.subscribe(publish)
   source.setJoin(value => { code = value; void client.join(value) })
+  void client.resume()
   publish(); render()
   return () => { alive = false; source.setJoin(null); unsubscribe(); client.dispose(); stopLegacy(); source.applyRemote(null) }
 }

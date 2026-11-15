@@ -182,3 +182,12 @@ Request tests do not prove these live transport properties.
 ## Join input (P1e)
 
 The room-code input ignores case, spaces and dashes (a pasted `abcd-efgh` becomes `ABCDEFGH`), asks mobile keyboards for capitals with autocorrect and spellcheck off, and Enter joins. "Join with code" is never greyed out: an invalid code shows "Enter the 8-character code" and makes no request.
+
+## P1f: refresh keeps the room, follower full screen
+
+- Session persistence: the room session (role, room code, savedAt, and the leader credential for the leader only) is kept in sessionStorage key `gtar_band_sync_session_v1`, per tab. Never localStorage, logs, URLs or QR. Max age 6 h (matches the room absolute limit).
+- On load with Band Sync ON, `client.resume()` validates the saved session. The leader requests a new ticket with its credential; the follower rejoins by room code. Nothing is created. Invalid, malformed, old or credential-less data is dropped without any request.
+- Cleared on end room, leave, 403/404 (room ended), SESSION_ENDED, dispose and when the extension is turned OFF. While OFF nothing is read or written.
+- Closing the tab ends this tab's control; the room expires on its own.
+- Follower view: Full screen toggle (fixed overlay plus Fullscreen API when available). View-only; Esc or the button exits. The same scroll viewport stays mounted so follow scroll keeps working.
+

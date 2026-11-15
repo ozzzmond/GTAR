@@ -55,6 +55,7 @@ async function ui(run, options = {}) {
   for (const name of Object.keys(originals)) bandSync[name] = function (...args) { subscriptions.push(name); return originals[name].apply(this, args) }
   const host = new ExtensionHost(registry, localStorage, { capabilities: caps }, message => logs.push(message))
   if (options.enabled) localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
+  if (options.session) sessionStorage.setItem('gtar_band_sync_session_v1', JSON.stringify(options.session))
   if (options.strictStart) { const first = host.start(); host.dispose(); await Promise.all([first, host.start()]) } else await host.start()
   const { StageView } = require('../src/components/StageView.tsx')
   const { BandSyncModal } = require('../src/components/BandSyncModal.tsx')
@@ -138,7 +139,7 @@ test('follower read-only overlay uses transposed chart once; disable clears it a
     const overlay = document.querySelector('[aria-label="Band Sync read-only view"]')
     assert.ok(overlay); assert.ok(overlay.textContent.includes('Leader song')); assert.ok(overlay.textContent.includes('Key: D'))
     assert.ok(overlay.textContent.includes('Remote'), overlay.textContent); assert.ok(overlay.textContent.includes('words'), overlay.textContent)
-    assert.equal(overlay.querySelectorAll('button,input,[role=button],[tabindex]').length, 0)
+    assert.equal(overlay.querySelectorAll('input,[role=button],[tabindex]').length, 0); assert.deepEqual([...overlay.querySelectorAll('button')].map(b => b.textContent.trim()), ['Full screen'])
     assert.equal(overlay.querySelector('.stage-chord-token').textContent, 'D')
     assert.ok(overlay.textContent.includes('Leader offline')); assert.equal(localStorage.getItem('fixture_library'), library); assert.equal(JSON.stringify(song), originalSong)
     const before = calls.length
@@ -182,7 +183,7 @@ test('Stage publishes only setlist id/index/count and leader memory-only reload 
     const state = sockets[0].sent.find(m => m.type === 'STATE').payload.state
     assert.deepEqual(state.setlist, { id: 'setlist-test', index: 1, count: 2 })
     assert.equal(JSON.stringify(sockets[0].sent).includes('Private setlist name'), false)
-    assert.match(host.getSnapshot('band-sync').panel.fields.find(f => f.label === 'Room control').value, /Reloading this page ends your control/)
+    assert.match(host.getSnapshot('band-sync').panel.fields.find(f => f.label === 'Room control').value, /keeps it after a refresh/)
     const qr = document.querySelector('img[alt="Band Sync join QR"]')
     assert.ok(qr); assert.match(qr.src, /^data:image\/png;base64,/)
     assert.deepEqual(encoded, ['https://gtar.test/#bandsync=ABCDEFGH'])
@@ -221,4 +222,25 @@ test('join input: normalizes typed codes, sets mobile keyboard attributes, Enter
     await act(async () => host.getSnapshot('band-sync').panel.inputs[0].submit())
     assert.equal(calls.at(-1).url, '/bandsync-api/join'); assert.equal(calls.at(-1).body.roomCode, 'ABCDEFGH'); assert.equal(sockets.length, 1)
   })
+})
+
+test('refresh keeps the room: extension ON resumes a saved leader or follower session; OFF does nothing', async () => {
+  const leader = { v: 1, role: 'leader', roomCode: 'ABCDEFGH', savedAt: Date.now(), leaderCredential: 'c'.repeat(64) }
+  await ui(async ({ calls, sockets }) => {
+    assert.deepEqual(calls.map(c => [c.url, c.body]), [['/bandsync-api/ticket', { roomCode: 'ABCDEFGH', leaderCredential: 'c'.repeat(64) }]])
+    assert.equal(sockets.length, 1); assert.equal(sessionStorage.getItem('gtar_band_sync_session_v1') !== null, true)
+  }, { enabled: true, session: leader })
+  await ui(async ({ calls, sockets }) => {
+    assert.deepEqual(calls.map(c => [c.url, c.body]), [['/bandsync-api/join', { roomCode: 'ABCDEFGH' }]]); assert.equal(sockets.length, 1)
+  }, { enabled: true, session: { v: 1, role: 'follower', roomCode: 'ABCDEFGH', savedAt: Date.now() } })
+  await ui(async ({ calls, sockets }) => {
+    assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
+  }, { session: leader })
+})
+test('turning the extension off ends and forgets the tab session', async () => {
+  await ui(async ({ host, calls }) => {
+    assert.equal(calls.length, 1); assert.ok(sessionStorage.getItem('gtar_band_sync_session_v1'))
+    await act(async () => host.disable('band-sync'))
+    assert.equal(sessionStorage.getItem('gtar_band_sync_session_v1'), null)
+  }, { enabled: true, session: { v: 1, role: 'follower', roomCode: 'ABCDEFGH', savedAt: Date.now() } })
 })
