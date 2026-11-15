@@ -7,6 +7,7 @@ import { readPersistedLibrary } from '../utils/syncJournal'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import type { ExportEnvironment } from '../utils/backupExport'
 import { DeviceBackupCard } from './DeviceBackupCard'
+import { BackupRestoreHelp } from './menuHelp'
 
 export interface CloudSyncModalProps {
   isOpen: boolean
@@ -87,16 +88,19 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
             <h2 className="font-extrabold text-sm sm:text-base tracking-wide">Backup &amp; Restore</h2>
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            disabled={fileBusy}
-            aria-label="Close"
-            className="w-9 h-9 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <X className="w-4 h-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <BackupRestoreHelp />
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onClose}
+              disabled={fileBusy}
+              aria-label="Close"
+              className="w-9 h-9 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div data-testid="cloud-sync-modal-body" className="p-5 space-y-4 overflow-y-auto flex-1">

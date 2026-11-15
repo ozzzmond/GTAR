@@ -63,8 +63,14 @@ const MENUS = [
   ['SongsLibraryHelp', { canImport: true, canCheckDuplicates: true }, 'Songs Help', ['Filters', 'Sort', 'Select', 'Import songs', 'Export songs', 'Check duplicates', 'Add Song']],
   ['SetlistsHelp', {}, 'Setlists Help', ['Sort', 'Manage', 'Share', 'Import Setlist', 'Export Setlist', 'Add new setlist', 'Inside a setlist']],
   ['SetlistManagerHelp', { showFolder: true }, 'Setlist Manager Help', ['Setlist', 'Folder', 'Play Setlist in Stage', 'Delete Setlist', 'Search Songs', 'Order']],
-  ['StagePreviewHelp', {}, 'Stage Preview Help', ['Back and Editor', 'Stage Tools', 'Key', 'Chords / NNS', 'Auto-scroll', 'Stage Options', 'Cast', 'Fullscreen']],
+  ['StagePreviewHelp', {}, 'Stage Preview Help', ['Editor', 'Stage Tools', 'Key', 'Chords / NNS', 'Auto-scroll', 'Stage Options', 'Cast', 'Fullscreen']],
   ['StageOptionsHelp', { showQuickJump: true }, 'Stage Options Help', ['Auto-Scroll Speed', 'Notation Mode', 'Text size and style', 'Layout and controls', 'Keep Screen Awake', 'Fullscreen Mode', 'TV & Second Screen', 'Setlist Quick-Jump']],
+  ['EditorHelp', {}, 'Editor Help', ['Save', 'Brackets []', 'Insert Section', 'Song Details', 'Sections vs Raw View', 'Undo and Redo', 'Clipboard tools', 'New Song']],
+  ['ThemeHelp', {}, 'Stage Color Theme Help', ['Theme selection', 'Light Mode', 'Dark Mode', 'Not Assigned', 'Customize This Theme', 'Save', 'Apply']],
+  ['ImportSongsHelp', {}, 'Import Songs Help', ['Supported formats', 'Folder import', 'OnSong files', 'Duplicate handling']],
+  ['ExportSongsHelp', {}, 'Export Songs Help', ['Export formats', 'Saved vs Transposed key', 'Song filtering', 'Bulk selection', 'Export action']],
+  ['BackupRestoreHelp', {}, 'Backup & Restore Help', ['Save backup file', 'Download backup', 'Copy backup', 'Restore from file', 'Merge vs Replace (Destructive)', 'Settings recovery']],
+  ['DebugLogsHelp', {}, 'Debug Logs Help', ['Severity filters', 'Copy All', 'Share', 'Download .log', 'Clear (Destructive)', 'Recovery Data']],
 ]
 
 test('every menu help is the ProPresenter help: same button, same portaled panel, one short topic per option', async () => {
@@ -310,10 +316,17 @@ test('Stage Options: help in the sheet header; Escape closes help before the she
   } finally { await unmount(root) }
 })
 
-test('help is wired into the Songs, Setlists and Stage Preview toolbars; About is untouched', () => {
+test('help is wired into toolbars and dialogs; About is untouched', () => {
   assert.match(read('components/SongbookHomeView.tsx'), /<SongsLibraryHelp canImport=\{Boolean\(onOpenImportSongs\)\} canCheckDuplicates=\{Boolean\(onTrashDuplicates\)\} \/>\s*<button\s+type="button"\s+data-testid="songs-library-menu-btn"/, 'Songs help sits beside the library menu')
   assert.match(read('components/SetlistWorkspace.tsx'), /<SetlistsHelp className="mr-0\.5" \/>/, 'Setlists help sits in the setlist toolbar')
   assert.match(read('components/StageView.tsx'), /<span className="hidden sm:inline">Stage Tools<\/span>\s*<\/button>\s*<StagePreviewHelp \/>/, 'Stage Preview help follows Stage Tools in the top bar')
+  assert.match(read('components/StageView.tsx'), /data-testid="toolbar-back"[\s\S]*?<\/div>[\s\S]*?<div[^>]*justify-end/, 'Back button aligned separately on the left while other controls group toward the right')
+  assert.match(read('components/DesktopEditor.tsx'), /<EditorHelp \/>/, 'Editor help sits in the editor header')
+  assert.match(read('components/ThemeModal.tsx'), /<ThemeHelp \/>/, 'Theme help sits in the Stage Color Theme header')
+  assert.match(read('components/ImportDialogModal.tsx'), /<ImportSongsHelp \/>/, 'Import songs help sits in the Import modal header')
+  assert.match(read('components/ExportSongsDialog.tsx'), /<ExportSongsHelp \/>/, 'Export songs help sits in the Export dialog header')
+  assert.match(read('components/CloudSyncModal.tsx'), /<BackupRestoreHelp \/>/, 'Backup & Restore help sits in the CloudSync modal header')
+  assert.match(read('components/DebugLogsModal.tsx'), /<DebugLogsHelp \/>/, 'Debug logs help sits in the DebugLogs modal header')
   assert.doesNotMatch(read('components/AboutModal.tsx'), /ContextualHelp|menuHelp/)
 })
 
@@ -330,4 +343,104 @@ test('"+ Add" wording is normalized to "Add" across rendered labels', () => {
   assert.match(read('components/SetlistWorkspace.tsx'), /aria-label="Add new setlist"[\s\S]{0,320}<span>Add new setlist<\/span>/)
   assert.match(read('components/WebsiteUrlSourceModal.tsx'), /<span>Add Custom Website URL<\/span>/)
   assert.match(read('components/MultiSongSetlistPicker.tsx'), /'Add Selected to Setlist'/)
+})
+
+test('Round 2: Stage Preview help separates Editor and Stage Tools without Back; toolbar groups right', async () => {
+  const root = await mount(React.createElement(help.StagePreviewHelp))
+  try {
+    const button = q('[data-testid="stage-preview-help-button"]')
+    await click(button)
+    const titles = topicTitles()
+    assert.ok(!titles.includes('Back'), 'Back button is not in help topics')
+    assert.ok(!titles.includes('Back and Editor'), 'Back and Editor combined topic is removed')
+    assert.ok(titles.includes('Editor'), 'Dedicated Editor topic is present')
+    assert.ok(titles.includes('Stage Tools'), 'Dedicated Stage Tools topic is present')
+  } finally { await unmount(root) }
+
+  // Inspect StageView.tsx toolbar markup
+  const stageSource = read('components/StageView.tsx')
+  assert.match(stageSource, /data-testid="toolbar-back"[\s\S]*?<\/div>[\s\S]*?<div[^>]*justify-end/)
+  assert.match(stageSource, /aria-label="Editor"[\s\S]*?aria-label="Stage Tools"[\s\S]*?<StagePreviewHelp \/>/)
+})
+
+test('Round 2: Destructive-operation warnings and clear topic coverage in new dialog help', async () => {
+  // Backup & Restore
+  let root = await mount(React.createElement(help.BackupRestoreHelp))
+  try {
+    await click(q('[data-testid="backup-restore-help-button"]'))
+    const titles = topicTitles()
+    assert.ok(titles.includes('Save backup file'))
+    assert.ok(titles.includes('Download backup'))
+    assert.ok(titles.includes('Copy backup'))
+    assert.ok(titles.includes('Restore from file'))
+    assert.ok(titles.includes('Merge vs Replace (Destructive)'))
+    const replaceTopic = [...panel().querySelectorAll('details')].find(d => d.querySelector('summary').textContent === 'Merge vs Replace (Destructive)')
+    assert.match(replaceTopic.textContent, /Replace overwrites what is on this device/)
+  } finally { await unmount(root) }
+
+  // Debug Logs
+  root = await mount(React.createElement(help.DebugLogsHelp))
+  try {
+    await click(q('[data-testid="debug-logs-help-button"]'))
+    const titles = topicTitles()
+    assert.ok(titles.includes('Severity filters'))
+    assert.ok(titles.includes('Copy All'))
+    assert.ok(titles.includes('Share'))
+    assert.ok(titles.includes('Download .log'))
+    assert.ok(titles.includes('Clear (Destructive)'))
+    assert.ok(titles.includes('Recovery Data'))
+    const clearTopic = [...panel().querySelectorAll('details')].find(d => d.querySelector('summary').textContent === 'Clear (Destructive)')
+    assert.match(clearTopic.textContent, /Permanently deletes all recorded debug logs/)
+  } finally { await unmount(root) }
+
+  // Theme Help
+  root = await mount(React.createElement(help.ThemeHelp))
+  try {
+    await click(q('[data-testid="theme-help-button"]'))
+    const titles = topicTitles()
+    assert.ok(titles.includes('Theme selection'))
+    assert.ok(titles.includes('Light Mode'))
+    assert.ok(titles.includes('Dark Mode'))
+    assert.ok(titles.includes('Not Assigned'))
+    assert.ok(titles.includes('Customize This Theme'))
+    assert.ok(titles.includes('Save'))
+    assert.ok(titles.includes('Apply'))
+  } finally { await unmount(root) }
+
+  // Import Songs Help & Export Songs Help
+  root = await mount(React.createElement(help.ImportSongsHelp))
+  try {
+    await click(q('[data-testid="import-songs-help-button"]'))
+    const titles = topicTitles()
+    assert.ok(titles.includes('Supported formats'))
+    assert.ok(titles.includes('Folder import'))
+    assert.ok(titles.includes('OnSong files'))
+    assert.ok(titles.includes('Duplicate handling'))
+  } finally { await unmount(root) }
+
+  root = await mount(React.createElement(help.ExportSongsHelp))
+  try {
+    await click(q('[data-testid="export-songs-help-button"]'))
+    const titles = topicTitles()
+    assert.ok(titles.includes('Export formats'))
+    assert.ok(titles.includes('Saved vs Transposed key'))
+    assert.ok(titles.includes('Song filtering'))
+    assert.ok(titles.includes('Bulk selection'))
+    assert.ok(titles.includes('Export action'))
+  } finally { await unmount(root) }
+
+  // Editor Help
+  root = await mount(React.createElement(help.EditorHelp))
+  try {
+    await click(q('[data-testid="editor-help-button"]'))
+    const titles = topicTitles()
+    assert.ok(titles.includes('Save'))
+    assert.ok(titles.includes('Brackets []'))
+    assert.ok(titles.includes('Insert Section'))
+    assert.ok(titles.includes('Song Details'))
+    assert.ok(titles.includes('Sections vs Raw View'))
+    assert.ok(titles.includes('Undo and Redo'))
+    assert.ok(titles.includes('Clipboard tools'))
+    assert.ok(titles.includes('New Song'))
+  } finally { await unmount(root) }
 })

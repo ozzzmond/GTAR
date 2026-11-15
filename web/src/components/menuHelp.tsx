@@ -143,7 +143,7 @@ export const StagePreviewHelp: React.FC<MenuHelpProps> = (props) => (
     panelTestId="stage-preview-help"
     quickSummary="The performance view of a song. These are its toolbar controls."
     topics={topics([
-      ['Back and Editor', 'Back returns to where you came from. Editor opens this song for editing.'],
+      ['Editor', 'Opens this song in the editor to make changes to chords and lyrics.'],
       ['Stage Tools', 'Opens the metronome and guitar tuner.'],
       ['Key', 'Shows the key you are playing in. Tap it to transpose or reset. The chords change on screen; the chart text is not rewritten.'],
       ['Chords / NNS', 'Switches between chord letters and Nashville numbers. Numbers need the song\'s key. On phones this is in Stage Options.'],
@@ -151,6 +151,120 @@ export const StagePreviewHelp: React.FC<MenuHelpProps> = (props) => (
       ['Stage Options', 'Text size, layout, notation, screen wake and TV settings.'],
       ['Cast', 'Shows the chart on a TV or second screen. Tap again to stop presenting.'],
       ['Fullscreen', 'Hides the toolbars for distraction-free reading. Tap the screen to bring the controls back.'],
+    ])}
+  />
+)
+
+export const EditorHelp: React.FC<MenuHelpProps> = (props) => (
+  <ContextualHelp
+    {...props}
+    id="editor-help"
+    title="Editor"
+    buttonTestId="editor-help-button"
+    panelTestId="editor-help"
+    quickSummary="Edit song text, chords, sections and metadata."
+    topics={topics([
+      ['Save', 'Saves changes to the song and updates device storage (Ctrl+S). The indicator shows whether edits are saved.'],
+      ['Brackets []', 'Wraps the selected text in square brackets for chords, or inserts empty brackets if nothing is selected.'],
+      ['Insert Section', 'Adds section markers such as [Intro], [Verse], [Chorus], [Bridge], [Solo] or [Outro] at the cursor.'],
+      ['Song Details', 'Opens the metadata panel to set key, tempo, time signature, capo, artist and tags.'],
+      ['Sections vs Raw View', 'Sections View organizes the song into collapsible blocks. Raw Text View shows the full plain-text ChordPro file.'],
+      ['Undo and Redo', 'Steps backward or forward through recent text and metadata changes.'],
+      ['Clipboard tools', 'Paste, Copy, Select All and Clear provide quick actions for the editor text.'],
+      ['New Song', 'Starts a blank song template with standard ChordPro metadata headers.'],
+    ])}
+  />
+)
+
+export const ThemeHelp: React.FC<MenuHelpProps> = (props) => (
+  <ContextualHelp
+    {...props}
+    id="stage-color-theme-help"
+    title="Stage Color Theme"
+    buttonTestId="theme-help-button"
+    panelTestId="theme-help"
+    quickSummary="Select, assign and customize color themes for Stage and the app."
+    topics={topics([
+      ['Theme selection', 'Tap any preset or custom theme card to choose it. The active theme is highlighted with a checkmark.'],
+      ['Light Mode', 'Assigns this theme to the sun icon in the header. Tapping the header sun/moon button switches to your assigned light theme.'],
+      ['Dark Mode', 'Assigns this theme to the moon icon in the header. Tapping the header sun/moon button switches to your assigned dark theme.'],
+      ['Not Assigned', 'Removes this theme from the quick light/dark toggle so the header button does not cycle to it.'],
+      ['Customize This Theme', 'Creates an editable copy of a preset where you can adjust colors and typography. Restore Factory Theme resets it.'],
+      ['Save', 'Permanently saves your selected theme, custom colors, and mode assignments to device storage.'],
+      ['Apply', 'Applies the selected theme immediately to preview it across the app without closing the dialog.'],
+    ])}
+  />
+)
+
+export const ImportSongsHelp: React.FC<MenuHelpProps> = (props) => (
+  <ContextualHelp
+    {...props}
+    id="import-songs-help"
+    title="Import Songs"
+    buttonTestId="import-songs-help-button"
+    panelTestId="import-songs-help"
+    quickSummary="Bring song files or folders into your Songbook."
+    topics={topics([
+      ['Supported formats', 'ChordPro (.pro, .cho, .chopro, .crd), text chord sheets (.txt), and OnSong (.onsong) files.'],
+      ['Folder import', 'Imports all supported song files found inside a chosen folder in one step.'],
+      ['OnSong files', 'OnSong files are converted to ChordPro format with an instant preview to review before saving.'],
+      ['Duplicate handling', 'Imported songs are added to your library. Existing songs are preserved without silent overwriting.'],
+    ])}
+  />
+)
+
+export const ExportSongsHelp: React.FC<MenuHelpProps> = (props) => (
+  <ContextualHelp
+    {...props}
+    id="export-songs-help"
+    title="Export Songs"
+    buttonTestId="export-songs-help-button"
+    panelTestId="export-songs-help"
+    quickSummary="Export songs as ChordPro text or printable PDF."
+    topics={topics([
+      ['Export formats', 'TXT exports ChordPro text with multiple songs separated by {new_song}. PDF opens the print view to save or print formatted charts.'],
+      ['Saved vs Transposed key', 'For PDF export, choose Saved key for the original stored key, or Current transposed key for your active stage transposition.'],
+      ['Song filtering', 'Type in Filter songs to quickly find songs by title or artist.'],
+      ['Bulk selection', 'Use Select shown to select all currently filtered songs, or Clear to deselect everything.'],
+      ['Export action', 'Downloads the TXT file or opens your browser print dialog to save as PDF. Only selected songs are included.'],
+    ])}
+  />
+)
+
+export const BackupRestoreHelp: React.FC<MenuHelpProps> = (props) => (
+  <ContextualHelp
+    {...props}
+    id="backup-restore-help"
+    title="Backup & Restore"
+    buttonTestId="backup-restore-help-button"
+    panelTestId="backup-restore-help"
+    quickSummary="Save full library backups or restore from an existing backup file."
+    topics={topics([
+      ['Save backup file', 'Creates a complete, verified backup of your songs, setlists, folders, tag colors and settings, and opens your system share sheet to save it.'],
+      ['Download backup', 'Saves the backup file directly to your browser’s default Downloads folder without opening the share sheet.'],
+      ['Copy backup', 'Copies the full backup text to the clipboard so you can paste it into an email, notes app or text file.'],
+      ['Restore from file', 'Reads a GTAR backup file and shows a preview before anything changes. You choose whether to merge or replace.'],
+      ['Merge vs Replace (Destructive)', 'Merge adds new songs and updates setlists while keeping your existing library safe. Replace overwrites what is on this device with the backup contents. Always download a fresh backup before restoring or replacing.'],
+      ['Settings recovery', 'If a restore is interrupted or you need to revert settings, GTAR keeps a recovery snapshot of your previous settings so you can undo or put them back.'],
+    ])}
+  />
+)
+
+export const DebugLogsHelp: React.FC<MenuHelpProps> = (props) => (
+  <ContextualHelp
+    {...props}
+    id="debug-logs-help"
+    title="Debug Logs"
+    buttonTestId="debug-logs-help-button"
+    panelTestId="debug-logs-help"
+    quickSummary="Technical logs and crash diagnostics recorded on this device."
+    topics={topics([
+      ['Severity filters', 'Filter the log viewer by severity: ALL, ERROR, WARN, INFO, or DEBUG to isolate problems.'],
+      ['Copy All', 'Copies the complete diagnostic log history to your clipboard so you can paste it into an issue report or message.'],
+      ['Share', 'Opens your device share sheet to send the debug log file via email, messaging or air-drop.'],
+      ['Download .log', 'Saves the full log history as a .log text file to your device Downloads folder.'],
+      ['Clear (Destructive)', 'Permanently deletes all recorded debug logs from memory. This cannot be undone. Confirmation is required.'],
+      ['Recovery Data', 'Shows emergency local backup copies kept on this device. You can download or restore older versions if needed.'],
     ])}
   />
 )

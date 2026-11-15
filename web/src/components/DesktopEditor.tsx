@@ -26,6 +26,7 @@ import {
   Redo2,
 } from 'lucide-react'
 import { EditorToolbarButton } from './EditorToolbarButton'
+import { EditorHelp } from './menuHelp'
 import { ChordProCodeEditor } from './ChordProCodeEditor'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
@@ -1039,6 +1040,9 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               </span>
             </div>
           </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <EditorHelp />
         </div>
       </div>
 

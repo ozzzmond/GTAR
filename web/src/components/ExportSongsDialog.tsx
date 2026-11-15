@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Download } from 'lucide-react'
 import type { ActiveSongState } from '../types/gtar'
 import { downloadText, printSongs, songsToTxt, type ExportKeyMode } from '../utils/songExport'
+import { ExportSongsHelp } from './menuHelp'
 
 interface Props {
   songs: ActiveSongState[]
@@ -50,7 +51,10 @@ export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
     <div className="p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h2 id="export-songs-title" className="font-bold flex items-center gap-2"><Download className="w-5 h-5 text-app-action" />Export songs</h2>
-        <button type="button" onClick={onClose} aria-label="Close export" className="p-2 rounded-lg hover:bg-app-base"><X className="w-4 h-4" /></button>
+        <div className="flex items-center gap-2 shrink-0">
+          <ExportSongsHelp />
+          <button type="button" onClick={onClose} aria-label="Close export" className="p-2 rounded-lg hover:bg-app-base"><X className="w-4 h-4" /></button>
+        </div>
       </div>
       <fieldset className="flex flex-wrap gap-4 text-sm">
         <legend className="sr-only">Format</legend>

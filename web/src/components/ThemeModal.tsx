@@ -25,6 +25,7 @@ import {
   PlaySquare,
 } from 'lucide-react'
 import { CustomPaletteEditor } from './CustomPaletteEditor'
+import { ThemeHelp } from './menuHelp'
 import { presetToCustomPalette } from '../utils/customPaletteJson'
 export { CustomPaletteEditor }
 export { presetToCustomPalette }
@@ -845,14 +846,17 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                 <p className="text-[11px] ui-muted-text text-app-muted">Live Performance & Full-Theme Customization</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleCancel}
-              aria-label="Close without saving"
-              className="p-1.5 rounded-lg ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <ThemeHelp />
+              <button
+                type="button"
+                onClick={handleCancel}
+                aria-label="Close without saving"
+                className="p-1.5 rounded-lg ui-muted-text text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Modal Body */}

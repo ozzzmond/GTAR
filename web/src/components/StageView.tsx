@@ -1896,7 +1896,7 @@ export const StageView: React.FC<StageViewProps> = ({
           inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'opacity-100'
         }`}
       >
-        {/* Left Side: Back, Editor, Band Sync */}
+        {/* Left Side: Back */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
@@ -1908,6 +1908,10 @@ export const StageView: React.FC<StageViewProps> = ({
             <ArrowLeft className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Back</span>
           </button>
+        </div>
+
+        {/* Right Side: Editor, Stage Tools, Help, Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
           <button
             type="button"
             onClick={onOpenEditor}
@@ -1927,10 +1931,6 @@ export const StageView: React.FC<StageViewProps> = ({
             <span className="hidden sm:inline">Stage Tools</span>
           </button>
           <StagePreviewHelp />
-        </div>
-
-        {/* Right Side: Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
           {/* Key Chip (Tapping opens KeyPickerModal) */}
           <button
             type="button"
@@ -2054,7 +2054,7 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="ui-button min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl border border-app-border bg-app-base text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+            className="ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 w-11 sm:w-9 h-11 sm:h-9 rounded-lg border border-app-border bg-app-base text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
             aria-label={
               iosPwa || iosOnly
                 ? isDistractionFree
