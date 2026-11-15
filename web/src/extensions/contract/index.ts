@@ -45,6 +45,7 @@ export interface ExtensionContext {
   publishFollowSnapshot?(snapshot: FollowObservation): void
   setFollowRefresh?(refresh: () => void): void
   setCurrentSlideRead?(read: (signal: AbortSignal) => Promise<void>): void
+  recordSuccessfulConnection?(host: string): void
 }
 // No events API in slice 1: event capabilities are refused until a consumer is approved.
 export interface ExtensionModule {

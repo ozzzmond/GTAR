@@ -35,8 +35,10 @@ import {
   FileEdit,
   Radio,
 } from 'lucide-react'
-import { StageControlDock } from './StageControlDock'
+import { StageControlDock, readPersistedDockPosition } from './StageControlDock'
 import { StageOptionsSheet } from './StageOptionsSheet'
+import { useExtensionHost } from '../extensions/host/useExtensionHost'
+import { getProPresenterStatus } from '../utils/proPresenterStorage'
 import { STAGE_CONTROLS_AUTO_HIDE_KEY } from '../utils/syncJournal'
 import { formatTransposeOffset } from '../utils/chordTransposer'
 import { navigateBack } from '../utils/viewHistory'
@@ -608,6 +610,24 @@ export const StageView: React.FC<StageViewProps> = ({
     section: liveLyrics.section ? { ...liveLyrics.section, offset: stageSectionHeaderOffset(inPerformanceMode, showStageOverlays) } : null,
     preservePause: autoFollow.state.mode === 'auto' && isFullscreen,
   })
+
+  const extensionHost = useExtensionHost()
+  const proPresenterSnapshot = React.useSyncExternalStore(
+    extensionHost.subscribe,
+    () => extensionHost.getSnapshot('propresenter-follower'),
+    () => extensionHost.getSnapshot('propresenter-follower')
+  )
+  const isProPresenterMasterEnabled = ['starting', 'active', 'offline'].includes(proPresenterSnapshot.state)
+  const [isPpPopoverOpen, setIsPpPopoverOpen] = useState(false)
+
+  const proPresenterStatus = useMemo(() => getProPresenterStatus({
+    enabled: isProPresenterMasterEnabled,
+    hostState: proPresenterSnapshot.state,
+    liveSnapshot: manualLyrics.snapshot,
+    autoFollowState: autoFollow.state,
+    liveConfirmed: liveLyrics.confirmed,
+    liveScrollPaused: liveScroll.paused,
+  }), [isProPresenterMasterEnabled, proPresenterSnapshot.state, manualLyrics.snapshot, autoFollow.state, liveLyrics.confirmed, liveScroll.paused])
 
   // Band Sync subscriptions
   useEffect(() => {
@@ -2243,7 +2263,22 @@ export const StageView: React.FC<StageViewProps> = ({
             </div>
           )}
 
-          {isFullscreen && <LiveLyricsControl live={liveLyrics} songTitle={song.title} onConfirmed={autoFollow.controller.associateCurrent}>
+          {isFullscreen && <LiveLyricsControl
+            live={liveLyrics}
+            songTitle={song.title}
+            onConfirmed={autoFollow.controller.associateCurrent}
+            isOpen={isPpPopoverOpen}
+            onToggleOpen={setIsPpPopoverOpen}
+            onClose={() => setIsPpPopoverOpen(false)}
+            onOpenSettings={() => setIsStageMenuOpen(true)}
+            statusLevel={proPresenterStatus.level === 'disabled' ? 'red' : proPresenterStatus.level}
+            statusLabel={proPresenterStatus.label}
+            dockMode={showDock ? 'vertical' : 'horizontal'}
+            dockPosition={showDock ? readPersistedDockPosition() : undefined}
+            liveScrollPaused={liveScroll.paused}
+            onResumeScroll={liveScroll.controller.resume}
+            canResumeScroll={!isAutoScrolling && Boolean(liveLyrics.scrollRange)}
+          >
             {setlistAutoFollowDev && <SetlistAutoFollowControl follow={autoFollow} />}
           </LiveLyricsControl>}
           {/* Song Lines Rendering: Chart in a Card for Stage Preview */}
@@ -2426,6 +2461,11 @@ export const StageView: React.FC<StageViewProps> = ({
           canNextSection={sectionHeaders.length > 0 && canNextSection}
           visible={inPerformanceMode ? (!controlsAutoHide || showStageOverlays) : true}
           onUserInteraction={triggerOverlaysShow}
+          showProPresenter={isProPresenterMasterEnabled}
+          proPresenterStatusLevel={proPresenterStatus.level === 'disabled' ? undefined : proPresenterStatus.level}
+          proPresenterStatusLabel={proPresenterStatus.label}
+          onToggleProPresenter={() => setIsPpPopoverOpen((prev) => !prev)}
+          isProPresenterOpen={isPpPopoverOpen}
         />
       )}
 
@@ -2539,6 +2579,39 @@ export const StageView: React.FC<StageViewProps> = ({
             >
               <ChevronDown className="w-6 h-6 stroke-[2.5]" />
             </button>
+
+            {/* ProPresenter Follower Button */}
+            {isProPresenterMasterEnabled && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerOverlaysShow()
+                  setIsPpPopoverOpen((prev) => !prev)
+                }}
+                aria-expanded={isPpPopoverOpen}
+                aria-haspopup="dialog"
+                aria-label={proPresenterStatus.label}
+                data-testid="stage-bottom-propresenter-btn"
+                className="p-3 min-w-[44px] min-h-[44px] rounded-2xl active:scale-95 flex items-center justify-center gap-1.5 transition-all border text-app-text hover:text-app-action cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--custom-dock-btn-bg, var(--custom-control-button-bg, #1e293b))',
+                  borderColor: 'var(--custom-dock-border, var(--custom-card-border, #334155))',
+                }}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    proPresenterStatus.level === 'green'
+                      ? 'bg-emerald-500'
+                      : proPresenterStatus.level === 'yellow'
+                      ? 'bg-amber-400'
+                      : 'bg-rose-500'
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="font-mono font-bold text-xs tracking-tight">PP</span>
+                <span className="sr-only">{proPresenterStatus.label}</span>
+              </button>
+            )}
           </div>
         </nav>
       )}

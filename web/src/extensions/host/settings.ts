@@ -25,7 +25,17 @@ export function normalizeSettings(manifest: ExtensionManifest, raw: unknown): Ex
 export function readExtension(manifest: ExtensionManifest, storage: ExtensionStorage) {
   try {
     const raw = JSON.parse(storage.getItem(extensionStorageKey(manifest.id)) ?? '{}')
-    return { enabled: raw?.enabled === true, settings: normalizeSettings(manifest, raw?.settings), writable: true }
+    let rawSettings = raw?.settings
+    if (manifest.id === 'propresenter-follower') {
+      const remember = raw?.rememberLastServer === true
+      const rememberedHost = typeof raw?.rememberedHost === 'string' ? raw.rememberedHost : ''
+      if (!remember) {
+        rawSettings = { ...rawSettings, host: '' }
+      } else if (rememberedHost) {
+        rawSettings = { ...rawSettings, host: rememberedHost }
+      }
+    }
+    return { enabled: raw?.enabled === true, settings: normalizeSettings(manifest, rawSettings), writable: true }
   } catch {
     return { enabled: false, settings: normalizeSettings(manifest, null), writable: false }
   }

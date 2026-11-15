@@ -81,7 +81,13 @@ export class ExtensionHost {
   }
   private persist(runtime: Runtime, enabled: boolean): boolean {
     try {
-      this.storage.setItem(extensionStorageKey(runtime.entry.manifest.id), JSON.stringify({ enabled, settings: runtime.snapshot.settings }))
+      const key = extensionStorageKey(runtime.entry.manifest.id)
+      let existing: Record<string, unknown> = {}
+      try {
+        const raw = this.storage.getItem(key)
+        if (raw) existing = JSON.parse(raw)
+      } catch { /* ignore */ }
+      this.storage.setItem(key, JSON.stringify({ ...existing, enabled, settings: runtime.snapshot.settings }))
       return true
     } catch { return false }
   }
@@ -108,7 +114,13 @@ export class ExtensionHost {
     if (!runtime || ['starting', 'active', 'offline'].includes(runtime.snapshot.state)) return
     const { entry } = runtime
     const saved = readExtension(entry.manifest, this.storage)
-    runtime.snapshot = { ...runtime.snapshot, settings: saved.settings }
+    const activeHost = runtime.snapshot.settings.host
+    runtime.snapshot = {
+      ...runtime.snapshot,
+      settings: (activeHost && entry.manifest.id === 'propresenter-follower')
+        ? runtime.snapshot.settings
+        : saved.settings
+    }
     let generation = runtime.generation
     try {
       if (!saved.writable) { this.update(runtime, 'disabled', 'Device storage is unavailable'); return }
@@ -154,6 +166,9 @@ export class ExtensionHost {
           publishFollowSnapshot: (snapshot: FollowObservation) => {
             if (current()) this.publishFollow(snapshot)
           },
+          recordSuccessfulConnection: (host: string) => {
+            if (current()) this.recordSuccessfulConnection(entry.manifest.id, host)
+          },
         } : {}),
         setPanel: panel => {
           if (!current() || !entry.manifest.capabilities.includes('ui:panel')) return
@@ -194,6 +209,41 @@ export class ExtensionHost {
     }
     for (const listener of this.listeners) listener()
     return true
+  }
+  getRememberLastServer(id: string): boolean {
+    try {
+      const raw = this.storage.getItem(extensionStorageKey(id))
+      return raw ? JSON.parse(raw).rememberLastServer === true : false
+    } catch { return false }
+  }
+  setRememberLastServer(id: string, remember: boolean): void {
+    try {
+      const key = extensionStorageKey(id)
+      const raw = this.storage.getItem(key)
+      const data = raw ? JSON.parse(raw) : {}
+      data.rememberLastServer = remember
+      if (!remember) {
+        delete data.rememberedHost
+      }
+      this.storage.setItem(key, JSON.stringify(data))
+    } catch { /* ignore */ }
+  }
+  getRememberedHost(id: string): string {
+    try {
+      const raw = this.storage.getItem(extensionStorageKey(id))
+      return raw && JSON.parse(raw).rememberLastServer ? String(JSON.parse(raw).rememberedHost ?? '') : ''
+    } catch { return '' }
+  }
+  recordSuccessfulConnection(id: string, host: string): void {
+    try {
+      const key = extensionStorageKey(id)
+      const raw = this.storage.getItem(key)
+      const data = raw ? JSON.parse(raw) : {}
+      if (data.rememberLastServer && host && typeof host === 'string') {
+        data.rememberedHost = host
+        this.storage.setItem(key, JSON.stringify(data))
+      }
+    } catch { /* ignore */ }
   }
   dispose() {
     for (const runtime of this.runtimes.values()) { this.stop(runtime); this.update(runtime, 'disabled') }
