@@ -178,3 +178,7 @@ The extension remains default OFF. No deployment or configuration change is made
 UNVERIFIED — needs live DEV check: CF-Connecting-IP and Origin survival across the
 service binding, WebSocket upgrade through it, and iOS Safari. Local sanitized
 Request tests do not prove these live transport properties.
+
+## Join input (P1e)
+
+The room-code input ignores case, spaces and dashes (a pasted `abcd-efgh` becomes `ABCDEFGH`), asks mobile keyboards for capitals with autocorrect and spellcheck off, and Enter joins. "Join with code" is never greyed out: an invalid code shows "Enter the 8-character code" and makes no request.

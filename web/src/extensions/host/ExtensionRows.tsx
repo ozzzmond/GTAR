@@ -304,7 +304,12 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
                   value={input.value}
                   maxLength={input.maxLength}
                   autoComplete="off"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="go"
                   onChange={event => input.change(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter' && input.submit) { event.preventDefault(); input.submit() } }}
                 />
               </label>
             ))}
