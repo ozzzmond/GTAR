@@ -1,10 +1,11 @@
 import type { useSetlistAutoFollow } from '../utils/useSetlistAutoFollow'
+import { conciseProPresenterStatus } from '../utils/proPresenterStorage'
 
 export function SetlistAutoFollowControl({ follow }: { follow: ReturnType<typeof useSetlistAutoFollow> }) {
   return (
-    <div className="mt-2 border-t border-app-border/40 pt-2 space-y-1.5" data-testid="setlist-auto-follow">
+    <div className="space-y-1.5" data-testid="setlist-auto-follow">
       <p className="text-xs font-medium text-app-heading" role="status">
-        {follow.state.status}
+        {conciseProPresenterStatus(follow.state.status)}
       </p>
       {follow.state.mode === 'assisted' ? (
         <button
@@ -13,7 +14,7 @@ export function SetlistAutoFollowControl({ follow }: { follow: ReturnType<typeof
           disabled={!follow.available}
           onClick={follow.controller.enable}
         >
-          Enable Auto Follow - current setlist only
+          Enable Auto Follow
         </button>
       ) : (
         <div className="space-y-1.5">

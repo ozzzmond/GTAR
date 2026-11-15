@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronRight, ExternalLink, Globe, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { AppModal, AppModalSection } from './AppModal'
 import { ContextualHelp } from './ContextualHelp'
+import { launcherRow } from './advancedToolsRow'
 import {
   SUPPORTED_SOURCES,
   addShortcut,
@@ -35,8 +36,10 @@ const MODES: Array<{ value: SearchMode; label: string }> = [
 ]
 
 const iconButton = 'relative flex w-9 h-9 shrink-0 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer before:absolute before:-inset-1 before:content-[\'\'] focus-visible:outline-2 focus-visible:outline-app-action'
-const smallAction = 'min-h-11 px-3 rounded-xl border border-app-border bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action'
-const fieldClass = 'w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-sm text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action'
+const actionBase = 'px-3 rounded-xl border border-app-border bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action'
+const smallAction = `min-h-10 ${actionBase}`
+const footerAction = `min-h-11 ${actionBase}`
+const fieldClass = 'w-full min-h-10 bg-app-base border border-app-border rounded-xl px-3 py-1.5 text-sm text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action'
 const pill = 'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-surface text-app-muted ui-secondary-text border border-app-border'
 
 /**
@@ -48,8 +51,8 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
   const [open, setOpen] = useState(false)
 
   return (
-    <div data-testid="online-sources-row" className="rounded-xl border border-app-border/80 bg-app-surface/50 mb-2">
-      <div className={`${rowClass.replace('cursor-pointer', '')} justify-between p-2.5 sm:p-3`}>
+    <div data-testid="online-sources-row" className="mb-1.5 last:mb-0">
+      <div className={`${launcherRow(rowClass)} justify-between`}>
         <button
           type="button"
           data-testid="online-sources-expand"
@@ -141,11 +144,11 @@ export const OnlineSourcesDialog: React.FC<OnlineSourcesDialogProps> = ({ onClos
 
   const restore = confirmRestore ? (
     <div className="mr-auto flex flex-wrap items-center gap-1.5" role="group" aria-label="Confirm restore defaults">
-      <button type="button" className={smallAction} onClick={() => { save(restoreDefaultSettings(), 'Defaults restored.'); resetForm(); setConfirmRestore(false) }}>Restore defaults</button>
+      <button type="button" className={footerAction} onClick={() => { save(restoreDefaultSettings(), 'Defaults restored.'); resetForm(); setConfirmRestore(false) }}>Restore defaults</button>
       <button type="button" className="min-h-11 rounded-xl px-3 text-xs text-app-muted hover:text-app-heading cursor-pointer" onClick={() => setConfirmRestore(false)}>Cancel</button>
     </div>
   ) : (
-    <button type="button" onClick={() => setConfirmRestore(true)} className={`${smallAction} mr-auto`}>
+    <button type="button" onClick={() => setConfirmRestore(true)} className={`${footerAction} mr-auto`}>
       <RotateCcw className="w-4 h-4" aria-hidden="true" />
       <span>Restore Defaults</span>
     </button>
@@ -206,19 +209,19 @@ export const OnlineSourcesDialog: React.FC<OnlineSourcesDialogProps> = ({ onClos
     >
       <AppModalSection title="Search mode">
         <div role="radiogroup" aria-label="Search mode" className="grid grid-cols-2 gap-1 rounded-xl border border-app-border bg-app-base p-1">
-    {MODES.map(mode => (
-      <button
-        key={mode.value}
-        type="button"
-        role="radio"
-        aria-checked={settings.mode === mode.value}
-        onClick={() => save(setSearchMode(settings, mode.value))}
-        className={`min-h-11 rounded-lg px-2 text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action ${settings.mode === mode.value ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-heading'}`}
-      >
-        {mode.label}
-      </button>
-    ))}
-  </div>
+          {MODES.map(mode => (
+            <button
+              key={mode.value}
+              type="button"
+              role="radio"
+              aria-checked={settings.mode === mode.value}
+              onClick={() => save(setSearchMode(settings, mode.value))}
+              className={`min-h-10 rounded-lg px-2 text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action ${settings.mode === mode.value ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-heading'}`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
       </AppModalSection>
 
       <AppModalSection title="Sources">
@@ -227,9 +230,9 @@ export const OnlineSourcesDialog: React.FC<OnlineSourcesDialogProps> = ({ onClos
         ) : (
           <ul data-testid="manage-sources-list" className="space-y-1.5">
             {settings.sources.map((source, index) => (
-              <li key={source.id} data-testid={`manage-source-${source.id}`} className="rounded-xl border border-app-border bg-app-base px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <label className="flex min-h-11 flex-1 min-w-0 items-center gap-2 cursor-pointer text-sm font-semibold text-app-heading">
+              <li key={source.id} data-testid={`manage-source-${source.id}`} className={`flex flex-wrap items-center gap-x-2 rounded-xl border pl-3 pr-1.5 py-1 ${source.enabled ? 'border-app-border bg-app-base' : 'border-app-border/60 bg-app-base/50'}`}>
+                <div className="flex flex-1 min-w-[9rem] items-center gap-2">
+                  <label className="flex min-h-10 flex-1 min-w-0 items-center gap-2 cursor-pointer text-sm font-semibold text-app-heading">
                     <input
                       type="checkbox"
                       checked={source.enabled}
@@ -241,7 +244,7 @@ export const OnlineSourcesDialog: React.FC<OnlineSourcesDialogProps> = ({ onClos
                   </label>
                   <span className={pill}>{source.kind === 'provider' ? (settings.mode === 'primary' && source.id === firstEnabledProviderId ? 'Primary' : 'Search') : 'Link'}</span>
                 </div>
-                <div className="flex items-center justify-end gap-1.5">
+                <div className="flex items-center gap-1 ml-auto">
                   <button type="button" className={iconButton} disabled={index === 0} onClick={() => save(moveSource(settings, source.id, -1), `${source.name} moved up.`)} aria-label={`Move ${source.name} up`}>
                     <ArrowUp className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -291,7 +294,7 @@ export const OnlineSourcesDialog: React.FC<OnlineSourcesDialogProps> = ({ onClos
         </div>
 
         {formOpen && (
-          <form onSubmit={submitForm} noValidate className="space-y-2" data-testid="manage-sources-form" aria-label={editingId ? 'Edit website' : 'Add website'}>
+          <form onSubmit={submitForm} noValidate className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="manage-sources-form" aria-label={editingId ? 'Edit website' : 'Add website'}>
             <input type="text" aria-label="Name (optional)" value={formName} maxLength={60} onChange={event => setFormName(event.target.value)} placeholder="Name (optional)" className={fieldClass} />
             <input
               type="url"
@@ -313,12 +316,12 @@ export const OnlineSourcesDialog: React.FC<OnlineSourcesDialogProps> = ({ onClos
               maxLength={2048}
               onChange={event => { setFormSearchUrl(event.target.value); if (formError) setFormError(null) }}
               placeholder="Search URL, e.g. https://example.com/?s={query}"
-              className={fieldClass}
+              className={`${fieldClass} sm:col-span-2`}
             />
-            {formError && <p id="online-sources-form-error" role="alert" className="text-xs text-status-error">{formError}</p>}
-            <div className="flex justify-end gap-1.5">
-              <button type="button" onClick={resetForm} className="min-h-11 rounded-xl px-3 text-xs text-app-muted hover:text-app-heading cursor-pointer">Cancel</button>
-              <button type="submit" className="min-h-11 rounded-xl bg-app-action px-4 text-xs font-bold text-app-on-action cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action">{editingId ? 'Save' : 'Add'}</button>
+            {formError && <p id="online-sources-form-error" role="alert" className="text-xs text-status-error sm:col-span-2">{formError}</p>}
+            <div className="flex justify-end gap-1.5 sm:col-span-2">
+              <button type="button" onClick={resetForm} className="min-h-10 rounded-xl px-3 text-xs text-app-muted hover:text-app-heading cursor-pointer">Cancel</button>
+              <button type="submit" className="min-h-10 rounded-xl bg-app-action px-4 text-xs font-bold text-app-on-action cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action">{editingId ? 'Save' : 'Add'}</button>
             </div>
           </form>
         )}

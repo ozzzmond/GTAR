@@ -83,3 +83,11 @@ export function getProPresenterStatus({
     detail: 'Connected to ProPresenter. Confirm song to start Live Lyrics.',
   }
 }
+
+/**
+ * Short on-stage form of a ProPresenter status line: the headline before its technical detail
+ * ("Live lyrics on - automatic DEV checks" becomes "Live lyrics on"). Display only.
+ */
+export function conciseProPresenterStatus(status: string): string {
+  return status.split(/ [-\u00b7] /)[0].trim() || status
+}

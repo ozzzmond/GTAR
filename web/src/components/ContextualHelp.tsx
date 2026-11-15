@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { CircleHelp, X, ChevronDown } from 'lucide-react'
 
 export interface HelpTopic {
@@ -16,6 +17,8 @@ export interface ContextualHelpProps {
   topics: HelpTopic[]
   quickSummary?: string
   className?: string
+  /** Side the panel opens on when both fit. 'above' keeps it off the controls under the button. */
+  prefer?: 'below' | 'above'
 }
 
 export const ContextualHelp: React.FC<ContextualHelpProps> = ({
@@ -27,9 +30,28 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
   topics,
   quickSummary,
   className = '',
+  prefer = 'below',
 }) => {
   const [open, setOpen] = useState(false)
+  const [placement, setPlacement] = useState<React.CSSProperties>({})
   const panelRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  // The panel is portaled to <body> and pinned to the button, so no dialog, popover or scroll
+  // container can clip it; it opens on the roomier side and never leaves the viewport.
+  const place = useCallback(() => {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const margin = 12, gap = 8
+    const vw = window.innerWidth, vh = window.innerHeight
+    const width = Math.min(320, vw - margin * 2)
+    const left = Math.max(margin, Math.min(rect.right - width, vw - margin - width))
+    const below = vh - rect.bottom - gap - margin, above = rect.top - gap - margin
+    const openBelow = prefer === 'above' ? above < 260 && below >= above : below >= 260 || below >= above
+    setPlacement(openBelow
+      ? { left, width, top: rect.bottom + gap, maxHeight: Math.max(120, below) }
+      : { left, width, bottom: vh - rect.top + gap, maxHeight: Math.max(120, above) })
+  }, [prefer])
 
   const handleClose = useCallback(() => {
     setOpen(false)
@@ -46,18 +68,21 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
     }
 
     const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (panelRef.current && !panelRef.current.contains(target) && !buttonRef.current?.contains(target)) {
         handleClose()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('resize', place)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('resize', place)
     }
-  }, [open, handleClose])
+  }, [open, handleClose, place])
 
   return (
     <div className={`relative inline-block ${className}`}>
@@ -67,25 +92,29 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
         aria-expanded={open}
         aria-controls={id}
         data-testid={buttonTestId}
-        onClick={() => setOpen((prev) => !prev)}
+        ref={buttonRef}
+        onClick={() => { if (!open) place(); setOpen((prev) => !prev) }}
         className="relative flex w-8 h-8 shrink-0 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action select-none"
       >
         <CircleHelp className="w-4 h-4" aria-hidden="true" />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={panelRef}
           id={id}
           role="note"
+          data-contextual-help=""
           data-testid={panelTestId}
+          style={placement}
+          onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               e.stopPropagation()
               handleClose()
             }
           }}
-          className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-xl border border-app-border bg-app-surface shadow-2xl p-3 text-[11px] text-app-text space-y-2.5 animate-scale-in max-h-[72vh] overflow-y-auto select-none z-50"
+          className="fixed z-[120] rounded-xl border border-app-border bg-app-surface shadow-2xl p-3 text-[11px] text-app-text space-y-2.5 animate-scale-in overflow-y-auto overscroll-contain select-none"
         >
           <div className="flex items-center justify-between border-b border-app-border/60 pb-2">
             <div className="flex items-center gap-1.5 min-w-0">
@@ -123,7 +152,8 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
               </details>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

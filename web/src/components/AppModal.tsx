@@ -44,10 +44,12 @@ export const AppModal: React.FC<AppModalProps> = ({
       if (!dialog) return
       if (event.key === 'Escape') {
         // An open contextual help panel takes Escape first.
-        if (dialog.querySelector('[role="note"]')) return
+        if (document.querySelector('[data-contextual-help]')) return
         event.preventDefault()
         onCloseRef.current()
       } else if (event.key === 'Tab') {
+        // Focus inside an open contextual help panel (portaled next to the dialog) is left alone.
+        if (document.activeElement?.closest('[data-contextual-help]')) return
         const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)]
         if (items.length === 0) return
         const first = items[0], last = items[items.length - 1]
@@ -79,17 +81,16 @@ export const AppModal: React.FC<AppModalProps> = ({
         aria-labelledby={titleId}
         id={panelId}
         data-testid={testId}
-        className="w-full max-w-lg min-h-[min(26rem,90dvh)] max-h-[90dvh] rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl flex flex-col"
+        className="w-full max-w-lg max-h-[90dvh] rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl flex flex-col"
       >
-        <div data-app-modal="header" className="relative z-10 shrink-0 px-5 py-3.5 border-b border-app-border/80 flex items-center justify-between gap-3 bg-app-base/60 rounded-t-2xl">
+        <div data-app-modal="header" className="relative z-10 shrink-0 px-4 sm:px-5 py-3 border-b border-app-border/80 flex items-center justify-between gap-3 bg-app-base/60 rounded-t-2xl">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 shrink-0 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
               {icon}
             </div>
             <h2 id={titleId} className="font-extrabold text-sm sm:text-base tracking-wide text-app-heading">{title}</h2>
           </div>
-          {/* Help panels drop below the header; cap them so they stay inside the viewport. */}
-          <div className="flex items-center gap-2 shrink-0 [&_[role=note]]:max-h-[calc(50dvh+5rem)]">
+          <div className="flex items-center gap-2 shrink-0">
             {headerActions}
             <button
               ref={closeButtonRef}
@@ -103,11 +104,11 @@ export const AppModal: React.FC<AppModalProps> = ({
           </div>
         </div>
 
-        <div data-app-modal="body" className="p-5 space-y-6 overflow-y-auto overscroll-contain flex-1 min-h-0 text-sm">
+        <div data-app-modal="body" className="px-4 sm:px-5 py-4 space-y-4 overflow-y-auto overscroll-contain flex-1 min-h-0 text-sm">
           {children}
         </div>
 
-        <div data-app-modal="footer" className="shrink-0 px-5 py-3.5 border-t border-app-border/80 bg-app-base/60 flex flex-wrap items-center justify-end gap-2 rounded-b-2xl">
+        <div data-app-modal="footer" className="shrink-0 px-4 sm:px-5 py-3 border-t border-app-border/80 bg-app-base/60 flex flex-wrap items-center justify-end gap-2 rounded-b-2xl">
           {footerActions}
           <button
             type="button"
@@ -126,7 +127,7 @@ export const AppModal: React.FC<AppModalProps> = ({
 
 /** A titled group of settings inside an AppModal body. */
 export const AppModalSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <section className="space-y-2.5">
+  <section className="space-y-2">
     <h3 className="text-[11px] font-bold uppercase tracking-wider text-app-muted">{title}</h3>
     {children}
   </section>

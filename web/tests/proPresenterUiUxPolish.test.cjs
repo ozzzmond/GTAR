@@ -224,13 +224,13 @@ test('compact popover: help guide opens and dismisses with Escape, close button,
   // Help button opens help guide
   const helpBtn = document.querySelector('[data-testid="propresenter-help-button"]')
   assert.ok(helpBtn)
-  assert.equal(document.querySelector('[data-testid="propresenter-help-guide"]'), null)
+  assert.equal(document.querySelector('[data-testid="propresenter-help"]'), null)
 
   await act(async () => {
     helpBtn.click()
   })
 
-  const helpGuide = document.querySelector('[data-testid="propresenter-help-guide"]')
+  const helpGuide = document.querySelector('[data-testid="propresenter-help"]')
   assert.ok(helpGuide)
   assert.match(helpGuide.textContent, /Auto Follow/i)
   assert.match(helpGuide.textContent, /Manual Override/i)
@@ -240,7 +240,7 @@ test('compact popover: help guide opens and dismisses with Escape, close button,
   await act(async () => {
     helpGuide.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   })
-  assert.equal(document.querySelector('[data-testid="propresenter-help-guide"]'), null)
+  assert.equal(document.querySelector('[data-testid="propresenter-help"]'), null)
 
   // Close button triggers onClose
   const closeBtn = document.querySelector('[data-testid="propresenter-close-button"]')

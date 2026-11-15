@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
-import { CircleHelp, X } from 'lucide-react'
+import React, { useEffect, useRef, useCallback, type ReactNode } from 'react'
+import { X } from 'lucide-react'
+import { ProPresenterHelp } from './ProPresenterHelp'
+import { conciseProPresenterStatus } from '../utils/proPresenterStorage'
 import type { useLiveLyrics } from '../utils/useLiveLyrics'
 import type { ProPresenterStatusLevel } from '../utils/proPresenterStorage'
 
@@ -37,7 +39,6 @@ export function LiveLyricsControl({
 }: LiveLyricsControlProps) {
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-  const [helpOpen, setHelpOpen] = useState(false)
 
   // Sync open state when controlled via prop
   useEffect(() => {
@@ -62,6 +63,7 @@ export function LiveLyricsControl({
         detailsRef.current?.open &&
         popoverRef.current &&
         !popoverRef.current.contains(target) &&
+        !target?.closest('[data-contextual-help]') &&
         !target?.closest('[data-testid="stage-bottom-propresenter-btn"]') &&
         !target?.closest('[data-testid="stage-vertical-propresenter-btn"]')
       ) {
@@ -70,7 +72,8 @@ export function LiveLyricsControl({
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && detailsRef.current?.open) {
+      // An open help panel takes Escape first.
+      if (e.key === 'Escape' && detailsRef.current?.open && !document.querySelector('[data-contextual-help]')) {
         handleClose()
       }
     }
@@ -141,10 +144,10 @@ export function LiveLyricsControl({
         role="dialog"
         aria-label="ProPresenter controls"
         style={popoverStyle}
-        className="rounded-2xl border border-app-border bg-app-surface/95 backdrop-blur-md shadow-2xl p-3.5 text-app-text space-y-2.5 max-h-[82vh] overflow-y-auto text-xs select-none pointer-events-auto"
+        className="rounded-2xl border border-app-border bg-app-surface/95 backdrop-blur-md shadow-2xl p-3 text-app-text space-y-2 max-h-[82vh] overflow-y-auto text-xs select-none pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
+          if (e.key === 'Escape' && !document.querySelector('[data-contextual-help]')) {
             e.stopPropagation()
             handleClose()
           }
@@ -160,24 +163,7 @@ export function LiveLyricsControl({
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label="Help for ProPresenter"
-              aria-expanded={helpOpen}
-              aria-controls="propresenter-help-guide"
-              data-testid="propresenter-help-button"
-              onClick={() => setHelpOpen((prev) => !prev)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setHelpOpen((prev) => !prev)
-                }
-              }}
-              className="flex w-7 h-7 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action cursor-pointer select-none"
-            >
-              <CircleHelp className="w-3.5 h-3.5" aria-hidden="true" />
-            </span>
+            <ProPresenterHelp id="propresenter-stage-help" prefer="above" />
             <span
               role="button"
               tabIndex={0}
@@ -190,45 +176,16 @@ export function LiveLyricsControl({
                   handleClose()
                 }
               }}
-              className="flex w-7 h-7 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action cursor-pointer select-none"
+              className="flex w-8 h-8 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action cursor-pointer select-none"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />
             </span>
           </div>
         </div>
 
-        {/* Contextual Help Guide */}
-        {helpOpen && (
-          <div
-            id="propresenter-help-guide"
-            role="note"
-            data-testid="propresenter-help-guide"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation()
-                setHelpOpen(false)
-              }
-            }}
-            className="rounded-xl border border-app-border bg-app-base/90 p-2.5 text-[11px] text-app-text space-y-1.5 animate-scale-in"
-          >
-            <p>
-              <strong className="text-app-heading">Indicators:</strong> Green = following live; Yellow = paused / manual override / awaiting resumption; Red = disconnected.
-            </p>
-            <p>
-              <strong className="text-app-heading">Auto Follow:</strong> Operates strictly within your active GTAR setlist to keep lyrics and slides aligned.
-            </p>
-            <p>
-              <strong className="text-app-heading">Manual Override:</strong> Scrolling or jumping sections pauses follow. Tap Resume or move to the next verified section to re-engage.
-            </p>
-            <p>
-              <strong className="text-app-heading">Stop:</strong> Ends Live Lyrics for this session.
-            </p>
-          </div>
-        )}
-
         {/* Current presentation & slide info */}
         {live.snapshot && (
-          <div className="rounded-xl bg-app-base/60 border border-app-border/40 p-2 space-y-1">
+          <div className="rounded-xl bg-app-base/60 border border-app-border/40 px-2.5 py-1.5 space-y-0.5">
             <div className="font-semibold text-app-heading truncate text-xs">
               {live.snapshot.presentation?.title ?? 'No presentation detected'}
             </div>
@@ -268,24 +225,24 @@ export function LiveLyricsControl({
           </div>
         ) : (
           <div className="space-y-1.5">
-            <p className="text-[11px] text-app-muted">Link “{songTitle}” to presentation:</p>
             <button
               type="button"
               className="ui-button min-h-11 px-3 w-full font-medium disabled:opacity-50"
               disabled={!live.canConfirm}
+              aria-label={`Confirm same song: ${songTitle}`}
               onClick={() => {
                 if (live.confirm()) onConfirmed?.()
               }}
             >
-              Confirm same song · enable highlights
+              Confirm same song
             </button>
             {children}
           </div>
         )}
 
         {/* Status text */}
-        <p role="status" className="text-[10px] text-app-muted border-t border-app-border/30 pt-1.5">
-          {live.status}
+        <p role="status" className="text-[11px] text-app-muted">
+          {conciseProPresenterStatus(live.status)}
         </p>
       </div>
     </details>

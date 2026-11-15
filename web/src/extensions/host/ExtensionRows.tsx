@@ -1,7 +1,8 @@
 import React from 'react'
 import { Layers, ChevronRight } from 'lucide-react'
 import { AppModal, AppModalSection } from '../../components/AppModal'
-import { ContextualHelp } from '../../components/ContextualHelp'
+import { ProPresenterHelp } from '../../components/ProPresenterHelp'
+import { launcherRow } from '../../components/advancedToolsRow'
 import type { ExtensionHost } from './ExtensionHost'
 
 const labels = {
@@ -60,8 +61,8 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
   // Manifest-only or unavailable entries are informational text, with no dead button or toggle.
   if (!entry.load || !availability.available) {
     return (
-      <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 mb-2">
-        <div className={`${rowClass.replace('cursor-pointer', '')} p-2.5 sm:p-3 flex items-center justify-between`}>
+      <div data-testid={`extension-${id}`} className="mb-1.5 last:mb-0">
+        <div className={`${launcherRow(rowClass)} flex items-center justify-between`}>
           <div className="flex flex-1 min-w-0 items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-border flex items-center justify-center text-app-muted shrink-0">
               <Layers className="w-4 h-4" aria-hidden="true" />
@@ -78,8 +79,8 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
   }
 
   return (
-    <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 mb-2">
-      <div className={`${rowClass.replace('cursor-pointer', '')} justify-between p-2.5 sm:p-3`}>
+    <div data-testid={`extension-${id}`} className="mb-1.5 last:mb-0">
+      <div className={`${launcherRow(rowClass)} justify-between`}>
         <button
           type="button"
           data-testid={`extension-${id}-expand`}
@@ -171,59 +172,7 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
         <>
           <span className={`${stateBadge(snapshot.state)} rounded-full px-2`}>{labels[snapshot.state]}</span>
           {id === 'propresenter-follower' && (
-            <ContextualHelp
-              id="propresenter-help"
-              title="ProPresenter"
-              buttonLabel="Help for ProPresenter"
-              buttonTestId="propresenter-help-button"
-              panelTestId="propresenter-help"
-              quickSummary="Follow live lyrics and slides automatically from your ProPresenter presentation computer over the local network."
-              topics={[
-                {
-                  title: 'Status Indicators',
-                  defaultExpanded: true,
-                  content: (
-                    <div className="space-y-1">
-                      <p><strong className="text-emerald-400">Green:</strong> Connected and following slides in real time.</p>
-                      <p><strong className="text-amber-400">Yellow:</strong> Paused, manual override, or awaiting section resumption.</p>
-                      <p><strong className="text-rose-400">Red:</strong> Offline, disconnected, or connection error.</p>
-                    </div>
-                  ),
-                },
-                {
-                  title: 'Auto Follow',
-                  content: (
-                    <p>
-                      Auto Follow operates strictly within the active GTAR setlist to keep lyrics and slides aligned without jumping outside your planned songs.
-                    </p>
-                  ),
-                },
-                {
-                  title: 'Manual Override',
-                  content: (
-                    <p>
-                      Touching, scrolling, or jumping sections pauses automatic following without losing slide highlights. Tap Resume to re-align.
-                    </p>
-                  ),
-                },
-                {
-                  title: 'Resume',
-                  content: (
-                    <p>
-                      Tap Resume in the ProPresenter dock popover or advance to the next confirmed slide to re-engage following.
-                    </p>
-                  ),
-                },
-                {
-                  title: 'Setup & Connection',
-                  content: (
-                    <p>
-                      Enter your ProPresenter computer IP address and Port (1025). Ensure ProPresenter Network API is enabled. Check &quot;Remember last server&quot; to restore the verified address.
-                    </p>
-                  ),
-                },
-              ]}
-            />
+            <ProPresenterHelp />
           )}
         </>
       }
@@ -255,17 +204,17 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
             : 'Settings could not be saved. Check values and device storage.'
         )
       }}
-      className="space-y-4"
+      className="space-y-3"
     >
       {manifest.settings.map(field => (
-        <div key={field.key} className="space-y-1">
+        <div key={field.key} className="space-y-0.5">
           <label className="block text-sm font-semibold text-app-heading">
             {field.label}
             {field.type === 'select' ? (
               <select
                 name={field.key}
                 defaultValue={String(snapshot.settings[field.key])}
-                className="w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-sm font-normal text-app-heading focus:outline-none focus:border-app-action mt-1"
+                className="w-full min-h-10 bg-app-base border border-app-border rounded-xl px-3 py-1.5 text-sm font-normal text-app-heading focus:outline-none focus:border-app-action mt-1"
               >
                 {field.options.map(option => (
                   <option key={option.value} value={option.value}>
@@ -302,7 +251,7 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
                 {...(('max' in field || field.type === 'port')
                   ? { max: field.type === 'port' ? Math.min(65535, field.max ?? 65535) : field.max }
                   : {})}
-                className={`w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-sm font-normal text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action mt-1 ${
+                className={`w-full min-h-10 bg-app-base border border-app-border rounded-xl px-3 py-1.5 text-sm font-normal text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action mt-1 ${
                   'readOnly' in field && field.readOnly ? 'opacity-70 cursor-not-allowed' : ''
                 }`}
               />
@@ -310,7 +259,7 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
           </label>
 
           {field.key === 'host' && id === 'propresenter-follower' && (
-            <label className="flex items-center gap-2 min-h-11 text-sm text-app-heading cursor-pointer select-none">
+            <label className="flex items-center gap-2 min-h-10 text-sm text-app-heading cursor-pointer select-none">
               <input
                 type="checkbox"
                 name="rememberLastServer"
@@ -343,39 +292,31 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
 
       {snapshot.panel && (
         <AppModalSection title="Status">
-    {/* Status & Live Monitoring Panel */}
-          <div
-        aria-label={`${manifest.name} follower`}
-        className="space-y-3 text-sm text-app-heading"
-      >
-        <div className="space-y-2.5">
-          {snapshot.panel.fields.map(field => (
-            <div key={field.label}>
-              <div className="text-[10px] uppercase font-mono tracking-wider text-app-muted">
-                {field.label}
-              </div>
-              <p className="whitespace-pre-wrap break-words font-medium text-app-heading">
-                {field.value}
-              </p>
+          <div aria-label={`${manifest.name} follower`} className="space-y-2 text-sm text-app-heading">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+              {snapshot.panel.fields.map(field => (
+                <React.Fragment key={field.label}>
+                  <div className="text-xs text-app-muted pt-0.5">{field.label}</div>
+                  <div className="whitespace-pre-wrap break-words font-medium text-app-heading">{field.value}</div>
+                </React.Fragment>
+              ))}
             </div>
-          ))}
-        </div>
-        {snapshot.panel.actions.length > 0 && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {snapshot.panel.actions.map(action => (
-              <button
-                key={action.label}
-                type="button"
-                disabled={action.disabled}
-                onClick={action.run}
-                className="min-h-11 px-3.5 rounded-xl border border-app-border bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
-              >
-                {action.label}
-              </button>
-            ))}
+            {snapshot.panel.actions.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {snapshot.panel.actions.map(action => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    disabled={action.disabled}
+                    onClick={action.run}
+                    className="min-h-10 px-3 rounded-xl border border-app-border bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
         </AppModalSection>
       )}
     </AppModal>

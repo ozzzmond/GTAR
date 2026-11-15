@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
-for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText, filename)
+for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, filename)
 const { JSDOM } = require('jsdom')
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://gtar.app/' })
 Object.assign(global, { window: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, Node: dom.window.Node, Event: dom.window.Event, IS_REACT_ACT_ENVIRONMENT: true, isSecureContext: true, FormData: dom.window.FormData })
@@ -72,7 +72,7 @@ function assertLayout(panel, title) {
   assert.ok(header.querySelector('svg') && header.querySelector('h2') && header.querySelector('button[aria-label="Close"]'), 'header has icon, title and close')
   assert.ok(header.classList.contains('shrink-0') && footer.classList.contains('shrink-0'), 'header and footer never scroll away')
   assert.ok(body.classList.contains('overflow-y-auto') && body.classList.contains('overscroll-contain') && body.classList.contains('min-h-0'), 'body is the one scroll region')
-  assert.equal(panel.querySelectorAll('.overflow-y-auto').length - panel.querySelectorAll('[role="note"].overflow-y-auto').length, 1, 'single scrollable content region')
+  assert.equal(panel.querySelectorAll('.overflow-y-auto').length, 1, 'single scrollable content region')
   // Tablet and desktop: full width up to max-w-lg, never taller than the viewport, 12px+ gutter.
   for (const cls of ['w-full', 'max-w-lg', 'max-h-[90dvh]', 'flex', 'flex-col']) assert.ok(panel.classList.contains(cls), `card ${cls}`)
   assert.ok([...footer.querySelectorAll('button')].some(button => button.textContent.trim() === 'Close'), 'footer Close')
@@ -192,9 +192,14 @@ for (const [name, launcher, panelId] of [
       // Escape closes the help panel first, then the dialog.
       const help = panel().querySelector('[data-app-modal="header"] button[aria-expanded]')
       await click(help)
-      assert.ok(panel().querySelector('[role="note"]'))
+      const helpPanel = q('[data-contextual-help]')
+      assert.ok(helpPanel.parentElement === document.body, 'help is portaled, so the dialog cannot clip it')
+      assert.equal(helpPanel.style.position || 'fixed', 'fixed')
+      helpPanel.querySelector('summary').focus()
+      await key('Tab')
+      assert.ok(helpPanel.contains(document.activeElement), 'focus may stay in the open help panel')
       await key('Escape')
-      assert.equal(panel().querySelector('[role="note"]'), null, 'Escape closes help first')
+      assert.equal(q('[data-contextual-help]'), null, 'Escape closes help first')
       assert.ok(panel(), 'dialog survives the help Escape')
       await key('Escape')
       assert.equal(panel(), null, 'Escape closes the dialog')
@@ -234,7 +239,6 @@ test('dialogs are mounted by Header at app level and share the Backup & Restore 
   assert.match(shell, /createPortal\([\s\S]*document\.body,\s*\)/)
   for (const cls of [
     'fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in',
-    'px-5 py-3.5 border-b border-app-border/80 flex items-center justify-between',
     'w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action',
     'font-extrabold text-sm sm:text-base tracking-wide',
     'min-h-11 px-4 py-2 rounded-xl bg-app-base hover:bg-app-surface border border-app-border text-app-heading text-xs font-bold',
@@ -244,4 +248,67 @@ test('dialogs are mounted by Header at app level and share the Backup & Restore 
     assert.match(source, /<AppModal\b/)
     assert.doesNotMatch(source, /fixed inset-0|pl-3 border-l-2/, `${file}: no inline overlay or nested indentation rule`)
   }
+})
+
+// Round 5: one ProPresenter help for settings and Stage View, and a lean Stage View popover.
+test('ProPresenter help is one shared component for settings and the Stage View popover', async () => {
+  const read = file => fs.readFileSync(path.join(__dirname, '../src', file), 'utf8')
+  for (const file of ['components/LiveLyrics.tsx', 'extensions/host/ExtensionRows.tsx']) {
+    const source = read(file)
+    assert.match(source, /<ProPresenterHelp\b/, `${file} uses the shared help`)
+    assert.doesNotMatch(source, /ContextualHelp|topics=|Manual Override|propresenter-help-guide/, `${file} has no second help implementation or copy`)
+  }
+  const { LiveLyricsControl } = require('../src/components/LiveLyrics.tsx')
+  const { SetlistAutoFollowControl } = require('../src/components/SetlistAutoFollowControl.tsx')
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  let closed = 0
+  const live = { status: 'Live lyrics on - automatic DEV checks', automaticMode: true, confirmed: true, canConfirm: false, confirm: () => true, stop: noop,
+    snapshot: { presentation: { uuid: 'p', title: 'Great Are You Lord' }, current: { uuid: 's', text: 'It is Your breath' } } }
+  const follow = { available: true, controller: { enable: noop, assisted: noop, resume: noop, choose: noop },
+    state: { mode: 'auto', paused: true, choices: [], target: null, status: 'Manual selection - Resume Auto Follow' } }
+  await act(async () => root.render(React.createElement(LiveLyricsControl, { live, songTitle: 'Great Are You Lord', isOpen: true, onClose: () => { closed++ } },
+    React.createElement(SetlistAutoFollowControl, { follow }))))
+  try {
+    const popover = q('[aria-label="ProPresenter controls"]')
+    // Lean main panel: current song, short status, contextual actions; no technical or DEV prose.
+    assert.match(popover.textContent, /Great Are You Lord/)
+    assert.deepEqual([...popover.querySelectorAll('[role="status"]')].map(el => el.textContent), ['Manual selection', 'Live lyrics on'])
+    assert.doesNotMatch(popover.textContent, /DEV|current setlist only|enable highlights|to presentation|identity/)
+    assert.deepEqual([...popover.querySelectorAll('button')].map(button => button.textContent.trim()).filter(Boolean), ['Use Assisted mode', 'Resume Auto Follow'])
+
+    // Same interactive help as settings, opened above the fullscreen popover without clipping.
+    const helpButton = popover.querySelector('[data-testid="propresenter-help-button"]')
+    assert.equal(helpButton.tagName, 'BUTTON')
+    assert.equal(helpButton.getAttribute('aria-expanded'), 'false')
+    await click(helpButton)
+    const help = q('[data-testid="propresenter-help"]')
+    assert.ok(help.parentElement === document.body && !popover.contains(help), 'help is not inside the scrolling popover')
+    assert.ok(help.classList.contains('fixed') && help.classList.contains('z-[120]'))
+    assert.deepEqual([...help.querySelectorAll('summary')].map(el => el.textContent), ['Status Indicators', 'Auto Follow', 'Manual Override', 'Resume', 'Stop', 'Setup & Connection'])
+    assert.equal(help.querySelectorAll('details[open]').length, 1, 'accordion: only the first topic starts expanded')
+    await act(async () => { help.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true })) })
+    assert.ok(q('[data-testid="propresenter-help"]') && closed === 0, 'using the help does not dismiss the popover')
+    // Escape pressed with focus on the help button, as a keyboard user would.
+    await act(async () => { helpButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    assert.equal(q('[data-testid="propresenter-help"]'), null, 'Escape closes help first')
+    assert.equal(closed, 0, 'popover survives the help Escape')
+    await click(helpButton)
+    await act(async () => { popover.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true })) })
+    assert.equal(q('[data-testid="propresenter-help"]'), null, 'outside click closes help')
+    assert.equal(closed, 0)
+    await key('Escape')
+    assert.equal(closed, 1, 'Escape then closes the popover')
+  } finally { await act(async () => root.unmount()) }
+})
+
+test('status lines are shortened for display only', () => {
+  const { conciseProPresenterStatus } = require('../src/utils/proPresenterStorage.ts')
+  assert.equal(conciseProPresenterStatus('Live lyrics on · assisted session'), 'Live lyrics on')
+  assert.equal(conciseProPresenterStatus('Auto Follow paused - fresh identity and Resume required'), 'Auto Follow paused')
+  assert.equal(conciseProPresenterStatus('Not in current setlist'), 'Not in current setlist')
+  assert.equal(conciseProPresenterStatus('Slide not matched'), 'Slide not matched')
+  const follow = fs.readFileSync(path.join(__dirname, '../src/utils/setlistAutoFollow.ts'), 'utf8')
+  assert.match(follow, /Assisted - manual song selection/, 'state machine wording is untouched')
 })

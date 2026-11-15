@@ -89,7 +89,7 @@ test('fullscreen assisted session follows current only, clears stale matches, re
   const root = createRoot(document.getElementById('root'))
   const render = async () => act(async () => root.render(React.createElement(ExtensionHostContext.Provider, { value: host }, React.createElement(AuthContext.Provider, { value: { session: { user: { sub: account } } } }, React.createElement(Harness)))))
   const emit = async value => act(async () => ctx.publishFollowSnapshot(value))
-  const confirm = async () => act(async () => { document.querySelector('button').click() })
+  const confirm = async () => act(async () => { [...document.querySelectorAll('button')].find(button => button.textContent.includes('Confirm same song')).click() })
   const count = () => document.querySelectorAll('[data-live-lyric="true"]').length
   try {
     await emit(snapshot); await render()
