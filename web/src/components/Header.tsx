@@ -1,4 +1,4 @@
-import { ExtensionRows } from '../extensions/host/ExtensionRows'
+import { ExtensionRows, ExtensionSettingsDialog } from '../extensions/host/ExtensionRows'
 import { useExtensionHost } from '../extensions/host/useExtensionHost'
 import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
@@ -57,7 +57,7 @@ import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlin
 import { getSearchLinks, useOnlineSourceSettings } from '../utils/onlineSourceSettings'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
-import { OnlineSourcesRow } from './OnlineSourcesRow'
+import { OnlineSourcesDialog, OnlineSourcesRow } from './OnlineSourcesRow'
 import { AboutModal } from './AboutModal'
 import { CloudSyncModal } from './CloudSyncModal'
 import { resolveThemePalette } from './ThemeModal'
@@ -190,6 +190,11 @@ export const Header: React.FC<HeaderProps> = ({
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showAdvancedToolsMenu, setShowAdvancedToolsMenu] = useState(false)
+  // Advanced Tools dialog: 'online-sources' or an extension id. Held here so it outlives the popover.
+  const [advancedToolsDialog, setAdvancedToolsDialog] = useState<string | null>(null)
+  const openAdvancedToolsDialog = (dialog: string) => { setShowAdvancedToolsMenu(false); setAdvancedToolsDialog(dialog) }
+  const openOnlineSourcesDialog = () => openAdvancedToolsDialog('online-sources')
+  const closeAdvancedToolsDialog = () => setAdvancedToolsDialog(null)
 
   const effectiveTheme: ThemeMode = currentTheme ||
     (typeof localStorage !== 'undefined' ? (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null) : null) ||
@@ -264,7 +269,7 @@ export const Header: React.FC<HeaderProps> = ({
   useEffect(() => { if (mobileSearchOpen) searchInputRef.current?.focus({ preventScroll: true }) }, [mobileSearchOpen])
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (shortcutsBlocked || showBackupRestoreModal || showDebugLogsModal || showAboutModal) return
+      if (shortcutsBlocked || showBackupRestoreModal || showDebugLogsModal || showAboutModal || advancedToolsDialog) return
       const target = event.target instanceof HTMLElement ? event.target : null
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         if (target?.closest('dialog, [role=dialog]') || target?.id === 'multi-song-search-input') return
@@ -281,7 +286,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal])
+  }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal, advancedToolsDialog])
   const onlineSourcesEnabled = useOnlineSourcesEnabled()
   const onlineSourceSettings = useOnlineSourceSettings()
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
@@ -296,7 +301,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Header dialog overlay blocks Stage keyboard/pedal shortcuts
   const showCloudSyncModal = showBackupRestoreModal
-  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal || showAboutModal
+  const headerOverlayOpen = showCloudSyncModal || showDebugLogsModal || showAboutModal || advancedToolsDialog !== null
   const overlayCallback = useRef(onOverlayChange)
   useEffect(() => { overlayCallback.current = onOverlayChange }, [onOverlayChange])
   useEffect(() => { overlayCallback.current?.(headerOverlayOpen) }, [headerOverlayOpen])
@@ -346,11 +351,11 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="text-[10px] text-app-muted font-medium">Integrations &amp; Sources</span>
       </div>
 
-      {/* Online song sources: opt-in, off by default; expands to the source list (#516) */}
-      <OnlineSourcesRow rowClass={popoverItem} enabled={onlineSourcesEnabled} onToggle={setOnlineSourcesEnabled} />
+      {/* Online song sources: opt-in, off by default; the row opens its app-level dialog (#516) */}
+      <OnlineSourcesRow rowClass={popoverItem} enabled={onlineSourcesEnabled} onToggle={setOnlineSourcesEnabled} onOpenDialog={openOnlineSourcesDialog} />
 
       {/* Extension registry rows (e.g. ProPresenter) */}
-      <ExtensionRows host={extensionHost} rowClass={popoverItem} />
+      <ExtensionRows host={extensionHost} rowClass={popoverItem} onOpenDialog={openAdvancedToolsDialog} />
     </div>
   )
 
@@ -891,6 +896,14 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={showAboutModal}
         onClose={() => setShowAboutModal(false)}
       />
+
+      {/* Advanced Tools dialogs: app-level, independent of the Advanced Tools popover */}
+      {advancedToolsDialog === 'online-sources' && (
+        <OnlineSourcesDialog onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
+      )}
+      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && (
+        <ExtensionSettingsDialog host={extensionHost} id={advancedToolsDialog} onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
+      )}
 
       {/* Backup & Restore Modal */}
       <CloudSyncModal

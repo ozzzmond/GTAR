@@ -1,5 +1,6 @@
 import React from 'react'
-import { Layers, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { Layers, ChevronRight } from 'lucide-react'
+import { AppModal, AppModalSection } from '../../components/AppModal'
 import { ContextualHelp } from '../../components/ContextualHelp'
 import type { ExtensionHost } from './ExtensionHost'
 
@@ -13,84 +14,61 @@ const labels = {
   error: 'Error',
 }
 
-export function ExtensionRows({ host, rowClass }: { host: ExtensionHost; rowClass: string }) {
+const stateBadge = (state: keyof typeof labels) =>
+  `text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+    state === 'active'
+      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+      : state === 'starting'
+      ? 'bg-amber-400/15 text-amber-400 border-amber-400/30'
+      : state === 'offline'
+      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+      : 'bg-app-surface text-app-muted border-app-border'
+  }`
+
+function useExtensionSnapshot(host: ExtensionHost, id: string) {
+  return React.useSyncExternalStore(host.subscribe, () => host.getSnapshot(id), () => host.getSnapshot(id))
+}
+
+interface ExtensionRowsProps {
+  host: ExtensionHost
+  rowClass: string
+  /** Opens the app-level settings dialog owned by the caller. Without it each row owns its dialog. */
+  onOpenDialog?: (id: string) => void
+}
+
+export function ExtensionRows({ host, rowClass, onOpenDialog }: ExtensionRowsProps) {
   return host.entries.map(entry => (
-    <ExtensionRow key={entry.manifest.id} host={host} id={entry.manifest.id} rowClass={rowClass} />
+    <ExtensionRow key={entry.manifest.id} host={host} id={entry.manifest.id} rowClass={rowClass} onOpenDialog={onOpenDialog} />
   ))
 }
 
-function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string; rowClass: string }) {
+/** Launcher row: the row opens the settings dialog, the switch only turns the extension on or off. */
+function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps & { id: string }) {
   const entry = host.entries.find(e => e.manifest.id === id)!
-  const snapshot = React.useSyncExternalStore(
-    host.subscribe,
-    () => host.getSnapshot(id),
-    () => host.getSnapshot(id)
-  )
+  const snapshot = useExtensionSnapshot(host, id)
   const [open, setOpen] = React.useState(false)
-  const [error, setError] = React.useState('')
-  const [rememberServer, setRememberServer] = React.useState(() => host.getRememberLastServer(id))
   const manifest = entry.manifest
   const availability = entry.checkAvailability({ capabilities: ['ui:panel', 'net:lan'] })
   const isEnabled = ['starting', 'active', 'offline'].includes(snapshot.state)
 
   const statusBadge = (
-    <span
-      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
-        snapshot.state === 'active'
-          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-          : snapshot.state === 'starting'
-          ? 'bg-amber-400/15 text-amber-400 border-amber-400/30'
-          : snapshot.state === 'offline'
-          ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-          : 'bg-app-surface text-app-muted border-app-border'
-      }`}
-    >
+    <span className={`${stateBadge(snapshot.state)} shrink-0`}>
       {!availability.available ? availability.reason : entry.load ? labels[snapshot.state] : 'Not yet available'}
     </span>
-  )
-
-  React.useEffect(() => {
-    if (!open) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setOpen(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open])
-
-  const content = (
-    <>
-      <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
-        <Layers className="w-4 h-4" aria-hidden="true" />
-      </div>
-      <div className="flex-1 min-w-0 text-left">
-        <span className="block text-xs sm:text-sm font-bold text-app-heading truncate">{manifest.name}</span>
-        <span className="block text-app-muted text-[10px] sm:text-[11px] truncate">{manifest.summary}</span>
-      </div>
-      {statusBadge}
-      {open ? (
-        <ChevronUp className="w-3.5 h-3.5 text-app-muted shrink-0 ml-1.5" aria-hidden="true" />
-      ) : (
-        <ChevronDown className="w-3.5 h-3.5 text-app-muted shrink-0 ml-1.5" aria-hidden="true" />
-      )}
-    </>
   )
 
   // Manifest-only or unavailable entries are informational text, with no dead button or toggle.
   if (!entry.load || !availability.available) {
     return (
-      <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 overflow-hidden mb-2">
+      <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 mb-2">
         <div className={`${rowClass.replace('cursor-pointer', '')} p-2.5 sm:p-3 flex items-center justify-between`}>
           <div className="flex flex-1 min-w-0 items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-border flex items-center justify-center text-app-muted shrink-0">
               <Layers className="w-4 h-4" aria-hidden="true" />
             </div>
             <div className="flex-1 min-w-0 text-left">
-              <span className="block text-xs sm:text-sm font-bold text-app-heading truncate">{manifest.name}</span>
-              <span className="block text-app-muted text-[10px] sm:text-[11px] truncate">{manifest.summary}</span>
+              <span className="block text-xs sm:text-sm font-bold text-app-heading">{manifest.name}</span>
+              <span className="block text-app-muted text-[10px] sm:text-[11px]">{manifest.summary}</span>
             </div>
             {statusBadge}
           </div>
@@ -100,17 +78,24 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
   }
 
   return (
-    <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 overflow-hidden mb-2">
+    <div data-testid={`extension-${id}`} className="rounded-xl border border-app-border/80 bg-app-surface/50 mb-2">
       <div className={`${rowClass.replace('cursor-pointer', '')} justify-between p-2.5 sm:p-3`}>
         <button
           type="button"
           data-testid={`extension-${id}-expand`}
           className="flex flex-1 min-w-0 min-h-11 items-center gap-2.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action rounded-lg"
+          aria-haspopup="dialog"
           aria-expanded={open}
-          aria-controls={`extension-${id}-panel`}
-          onClick={() => setOpen(!open)}
+          onClick={() => (onOpenDialog ? onOpenDialog(id) : setOpen(!open))}
         >
-          {content}
+          <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
+            <Layers className="w-4 h-4" aria-hidden="true" />
+          </div>
+          <div className="flex flex-1 min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-xs sm:text-sm font-bold text-app-heading">{manifest.name}</span>
+            {statusBadge}
+          </div>
+          <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
         </button>
 
         {/* Master ON/OFF Switch */}
@@ -142,288 +127,257 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
           </span>
         </label>
       </div>
-
-      {open && (
-        <div
-          data-testid={`extension-${id}-modal-backdrop`}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
-          }}
-          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`extension-${id}-modal-title`}
-            id={`extension-${id}-panel`}
-            data-testid={`extension-${id}-panel`}
-            className="w-full max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="px-5 py-3.5 border-b border-app-border/80 flex items-center justify-between bg-app-base/60">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
-                  <Layers className="w-4 h-4" aria-hidden="true" />
-                </div>
-                <div>
-                  <h2 id={`extension-${id}-modal-title`} className="font-extrabold text-sm sm:text-base tracking-wide text-app-heading">
-                    {manifest.name}
-                  </h2>
-                  <p className="text-[11px] text-app-muted">{manifest.summary}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span
-                  className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                    snapshot.state === 'active'
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                      : snapshot.state === 'starting'
-                      ? 'bg-amber-400/15 text-amber-400 border-amber-400/30'
-                      : snapshot.state === 'offline'
-                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                      : 'bg-app-surface text-app-muted border-app-border'
-                  }`}
-                >
-                  {labels[snapshot.state]}
-                </span>
-
-                {id === 'propresenter-follower' && (
-                  <ContextualHelp
-                    id="propresenter-help"
-                    title="ProPresenter"
-                    buttonLabel="Help for ProPresenter"
-                    buttonTestId="propresenter-help-button"
-                    panelTestId="propresenter-help"
-                    quickSummary="Follow live lyrics and slides automatically from your ProPresenter presentation computer over the local network."
-                    topics={[
-                      {
-                        title: 'Status Indicators',
-                        defaultExpanded: true,
-                        content: (
-                          <div className="space-y-1">
-                            <p><strong className="text-emerald-400">Green:</strong> Connected and following slides in real time.</p>
-                            <p><strong className="text-amber-400">Yellow:</strong> Paused, manual override, or awaiting section resumption.</p>
-                            <p><strong className="text-rose-400">Red:</strong> Offline, disconnected, or connection error.</p>
-                          </div>
-                        ),
-                      },
-                      {
-                        title: 'Auto Follow',
-                        content: (
-                          <p>
-                            Auto Follow operates strictly within the active GTAR setlist to keep lyrics and slides aligned without jumping outside your planned songs.
-                          </p>
-                        ),
-                      },
-                      {
-                        title: 'Manual Override',
-                        content: (
-                          <p>
-                            Touching, scrolling, or jumping sections pauses automatic following without losing slide highlights. Tap Resume to re-align.
-                          </p>
-                        ),
-                      },
-                      {
-                        title: 'Resume',
-                        content: (
-                          <p>
-                            Tap Resume in the ProPresenter dock popover or advance to the next confirmed slide to re-engage following.
-                          </p>
-                        ),
-                      },
-                      {
-                        title: 'Setup & Connection',
-                        content: (
-                          <p>
-                            Enter your ProPresenter computer IP address and Port (1025). Ensure ProPresenter Network API is enabled. Check &quot;Remember last server&quot; to restore the verified address.
-                          </p>
-                        ),
-                      },
-                    ]}
-                  />
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Close"
-                  className="w-9 h-9 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
-              <div className="pl-3 border-l-2 border-app-border/60 space-y-4">
-
-          {snapshot.message && (
-            <p className="text-xs text-app-muted px-1" role="status">
-              {snapshot.message}
-            </p>
-          )}
-
-          {/* Settings Form */}
-          <form
-            onSubmit={event => {
-              event.preventDefault()
-              const data = new FormData(event.currentTarget)
-              const values = Object.fromEntries(
-                manifest.settings.map(field => [
-                  field.key,
-                  field.type === 'boolean'
-                    ? data.has(field.key)
-                    : field.type === 'number' || field.type === 'port'
-                    ? Number(data.get(field.key))
-                    : String(data.get(field.key) ?? ''),
-                ])
-              )
-              setError(
-                host.saveSettings(id, values)
-                  ? ''
-                  : 'Settings could not be saved. Check values and device storage.'
-              )
-            }}
-            className="space-y-2.5"
-          >
-            {manifest.settings.map(field => (
-              <div key={field.key} className="space-y-1">
-                <label className="block text-xs font-semibold text-app-heading">
-                  {field.label}
-                  {field.type === 'select' ? (
-                    <select
-                      name={field.key}
-                      defaultValue={String(snapshot.settings[field.key])}
-                      className="w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-xs text-app-heading focus:outline-none focus:border-app-action mt-1"
-                    >
-                      {field.options.map(option => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field.type === 'boolean' ? (
-                    <span className="flex items-center gap-2 mt-1">
-                      <input
-                        name={field.key}
-                        type="checkbox"
-                        defaultChecked={Boolean(snapshot.settings[field.key])}
-                        className="h-4 w-4 rounded border-app-border accent-app-action"
-                      />
-                    </span>
-                  ) : (
-                    <input
-                      name={field.key}
-                      type={
-                        field.type === 'secret'
-                          ? 'password'
-                          : field.type === 'number' || field.type === 'port'
-                          ? 'number'
-                          : 'text'
-                      }
-                      defaultValue={String(snapshot.settings[field.key])}
-                      autoComplete="off"
-                      placeholder={field.key === 'host' ? 'e.g. 192.168.1.100 or propresenter.local' : ''}
-                      readOnly={'readOnly' in field && field.readOnly}
-                      {...(('min' in field || field.type === 'port')
-                        ? { min: field.type === 'port' ? Math.max(1, field.min ?? 1) : field.min }
-                        : {})}
-                      {...(('max' in field || field.type === 'port')
-                        ? { max: field.type === 'port' ? Math.min(65535, field.max ?? 65535) : field.max }
-                        : {})}
-                      className={`w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-xs text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action mt-1 ${
-                        'readOnly' in field && field.readOnly ? 'opacity-70 cursor-not-allowed' : ''
-                      }`}
-                    />
-                  )}
-                </label>
-
-                {field.key === 'host' && id === 'propresenter-follower' && (
-                  <label className="flex items-center gap-2 mt-1.5 text-xs text-app-muted cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      name="rememberLastServer"
-                      data-testid="propresenter-remember-server"
-                      checked={rememberServer}
-                      onChange={e => {
-                        const next = e.target.checked
-                        setRememberServer(next)
-                        host.setRememberLastServer(id, next)
-                      }}
-                      className="h-4 w-4 rounded border-app-border accent-app-action"
-                    />
-                    <span>Remember last server</span>
-                  </label>
-                )}
-
-                {'note' in field && (
-                  <span className="block text-[10px] text-app-muted mt-0.5">{field.note}</span>
-                )}
-              </div>
-            ))}
-
-            {manifest.settings.length > 0 && (
-              <div className="pt-1">
-                <button
-                  type="submit"
-                  data-testid="propresenter-save-settings"
-                  className="min-h-11 px-4 rounded-xl bg-app-action text-app-on-action font-semibold text-xs flex items-center justify-center cursor-pointer hover:bg-app-action/90 focus-visible:outline-2 focus-visible:outline-app-action"
-                >
-                  Save settings
-                </button>
-              </div>
-            )}
-
-            {error && (
-              <p role="alert" className="text-xs text-status-error px-1">
-                {error}
-              </p>
-            )}
-          </form>
-
-          {/* Status & Live Monitoring Panel */}
-          {snapshot.panel && (
-            <div
-              aria-label={`${manifest.name} follower`}
-              className="rounded-xl border border-app-border bg-app-surface p-3 space-y-2 text-xs text-app-heading"
-            >
-              <div className="space-y-1.5">
-                {snapshot.panel.fields.map(field => (
-                  <div key={field.label}>
-                    <div className="text-[10px] uppercase font-mono tracking-wider text-app-muted">
-                      {field.label}
-                    </div>
-                    <p className="whitespace-pre-wrap break-words font-medium text-app-heading">
-                      {field.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              {snapshot.panel.actions.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-app-border/40">
-                  {snapshot.panel.actions.map(action => (
-                    <button
-                      key={action.label}
-                      type="button"
-                      disabled={action.disabled}
-                      onClick={action.run}
-                      className="min-h-11 px-3.5 rounded-xl border border-app-border bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {!onOpenDialog && open && <ExtensionSettingsDialog host={host} id={id} onClose={() => setOpen(false)} />}
     </div>
+  )
+}
+
+interface ExtensionSettingsDialogProps {
+  host: ExtensionHost
+  id: string
+  onClose: () => void
+  returnFocusRef?: React.RefObject<HTMLElement | null>
+}
+
+/** Extension settings (e.g. ProPresenter) as an application-level dialog; mounted only while open. */
+export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: ExtensionSettingsDialogProps) {
+  const manifest = host.entries.find(e => e.manifest.id === id)!.manifest
+  const snapshot = useExtensionSnapshot(host, id)
+  const [error, setError] = React.useState('')
+  const [rememberServer, setRememberServer] = React.useState(() => host.getRememberLastServer(id))
+  const formId = `extension-${id}-settings-form`
+
+  return (
+    <AppModal
+      onClose={onClose}
+      title={manifest.name}
+      titleId={`extension-${id}-modal-title`}
+      icon={<Layers className="w-4 h-4" aria-hidden="true" />}
+      panelId={`extension-${id}-panel`}
+      testId={`extension-${id}-panel`}
+      backdropTestId={`extension-${id}-modal-backdrop`}
+      returnFocusRef={returnFocusRef}
+      footerActions={manifest.settings.length > 0 && (
+        <button
+          type="submit"
+          form={formId}
+          data-testid="propresenter-save-settings"
+          className="min-h-11 px-4 rounded-xl bg-app-action text-app-on-action font-bold text-xs flex items-center justify-center cursor-pointer hover:bg-app-action/90 focus-visible:outline-2 focus-visible:outline-app-action"
+        >
+          Save Settings
+        </button>
+      )}
+      headerActions={
+        <>
+          <span className={`${stateBadge(snapshot.state)} rounded-full px-2`}>{labels[snapshot.state]}</span>
+          {id === 'propresenter-follower' && (
+            <ContextualHelp
+              id="propresenter-help"
+              title="ProPresenter"
+              buttonLabel="Help for ProPresenter"
+              buttonTestId="propresenter-help-button"
+              panelTestId="propresenter-help"
+              quickSummary="Follow live lyrics and slides automatically from your ProPresenter presentation computer over the local network."
+              topics={[
+                {
+                  title: 'Status Indicators',
+                  defaultExpanded: true,
+                  content: (
+                    <div className="space-y-1">
+                      <p><strong className="text-emerald-400">Green:</strong> Connected and following slides in real time.</p>
+                      <p><strong className="text-amber-400">Yellow:</strong> Paused, manual override, or awaiting section resumption.</p>
+                      <p><strong className="text-rose-400">Red:</strong> Offline, disconnected, or connection error.</p>
+                    </div>
+                  ),
+                },
+                {
+                  title: 'Auto Follow',
+                  content: (
+                    <p>
+                      Auto Follow operates strictly within the active GTAR setlist to keep lyrics and slides aligned without jumping outside your planned songs.
+                    </p>
+                  ),
+                },
+                {
+                  title: 'Manual Override',
+                  content: (
+                    <p>
+                      Touching, scrolling, or jumping sections pauses automatic following without losing slide highlights. Tap Resume to re-align.
+                    </p>
+                  ),
+                },
+                {
+                  title: 'Resume',
+                  content: (
+                    <p>
+                      Tap Resume in the ProPresenter dock popover or advance to the next confirmed slide to re-engage following.
+                    </p>
+                  ),
+                },
+                {
+                  title: 'Setup & Connection',
+                  content: (
+                    <p>
+                      Enter your ProPresenter computer IP address and Port (1025). Ensure ProPresenter Network API is enabled. Check &quot;Remember last server&quot; to restore the verified address.
+                    </p>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </>
+      }
+    >
+      <AppModalSection title="Connection">
+        {snapshot.message && (
+          <p className="text-xs text-app-muted" role="status">
+            {snapshot.message}
+          </p>
+        )}
+    <form
+      id={formId}
+      onSubmit={event => {
+        event.preventDefault()
+        const data = new FormData(event.currentTarget)
+        const values = Object.fromEntries(
+          manifest.settings.map(field => [
+            field.key,
+            field.type === 'boolean'
+              ? data.has(field.key)
+              : field.type === 'number' || field.type === 'port'
+              ? Number(data.get(field.key))
+              : String(data.get(field.key) ?? ''),
+          ])
+        )
+        setError(
+          host.saveSettings(id, values)
+            ? ''
+            : 'Settings could not be saved. Check values and device storage.'
+        )
+      }}
+      className="space-y-4"
+    >
+      {manifest.settings.map(field => (
+        <div key={field.key} className="space-y-1">
+          <label className="block text-sm font-semibold text-app-heading">
+            {field.label}
+            {field.type === 'select' ? (
+              <select
+                name={field.key}
+                defaultValue={String(snapshot.settings[field.key])}
+                className="w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-sm font-normal text-app-heading focus:outline-none focus:border-app-action mt-1"
+              >
+                {field.options.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : field.type === 'boolean' ? (
+              <span className="flex items-center gap-2 mt-1">
+                <input
+                  name={field.key}
+                  type="checkbox"
+                  defaultChecked={Boolean(snapshot.settings[field.key])}
+                  className="h-4 w-4 rounded border-app-border accent-app-action"
+                />
+              </span>
+            ) : (
+              <input
+                name={field.key}
+                type={
+                  field.type === 'secret'
+                    ? 'password'
+                    : field.type === 'number' || field.type === 'port'
+                    ? 'number'
+                    : 'text'
+                }
+                defaultValue={String(snapshot.settings[field.key])}
+                autoComplete="off"
+                placeholder={field.key === 'host' ? 'e.g. 192.168.1.100 or propresenter.local' : ''}
+                readOnly={'readOnly' in field && field.readOnly}
+                {...(('min' in field || field.type === 'port')
+                  ? { min: field.type === 'port' ? Math.max(1, field.min ?? 1) : field.min }
+                  : {})}
+                {...(('max' in field || field.type === 'port')
+                  ? { max: field.type === 'port' ? Math.min(65535, field.max ?? 65535) : field.max }
+                  : {})}
+                className={`w-full min-h-11 bg-app-base border border-app-border rounded-xl px-3 py-2 text-sm font-normal text-app-heading placeholder-app-muted/60 focus:outline-none focus:border-app-action mt-1 ${
+                  'readOnly' in field && field.readOnly ? 'opacity-70 cursor-not-allowed' : ''
+                }`}
+              />
+            )}
+          </label>
+
+          {field.key === 'host' && id === 'propresenter-follower' && (
+            <label className="flex items-center gap-2 min-h-11 text-sm text-app-heading cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="rememberLastServer"
+                data-testid="propresenter-remember-server"
+                checked={rememberServer}
+                onChange={e => {
+                  const next = e.target.checked
+                  setRememberServer(next)
+                  host.setRememberLastServer(id, next)
+                }}
+                className="h-4 w-4 rounded border-app-border accent-app-action"
+              />
+              <span>Remember Last Server</span>
+            </label>
+          )}
+
+          {'note' in field && (
+            <span className="block text-xs text-app-muted">{field.note}</span>
+          )}
+        </div>
+      ))}
+
+      {error && (
+        <p role="alert" className="text-xs text-status-error">
+          {error}
+        </p>
+      )}
+    </form>
+      </AppModalSection>
+
+      {snapshot.panel && (
+        <AppModalSection title="Status">
+    {/* Status & Live Monitoring Panel */}
+          <div
+        aria-label={`${manifest.name} follower`}
+        className="space-y-3 text-sm text-app-heading"
+      >
+        <div className="space-y-2.5">
+          {snapshot.panel.fields.map(field => (
+            <div key={field.label}>
+              <div className="text-[10px] uppercase font-mono tracking-wider text-app-muted">
+                {field.label}
+              </div>
+              <p className="whitespace-pre-wrap break-words font-medium text-app-heading">
+                {field.value}
+              </p>
+            </div>
+          ))}
+        </div>
+        {snapshot.panel.actions.length > 0 && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {snapshot.panel.actions.map(action => (
+              <button
+                key={action.label}
+                type="button"
+                disabled={action.disabled}
+                onClick={action.run}
+                className="min-h-11 px-3.5 rounded-xl border border-app-border bg-app-base hover:bg-app-surface text-app-heading text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+        </AppModalSection>
+      )}
+    </AppModal>
   )
 }

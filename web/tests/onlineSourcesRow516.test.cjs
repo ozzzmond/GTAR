@@ -260,11 +260,11 @@ test('#516 online results show their source name on the right', async () => {
 
 test('#516 Header uses one Online song sources row with no separate Manage Sources button', () => {
   const header = fs.readFileSync(path.join(__dirname, '../src/components/Header.tsx'), 'utf8')
-  assert.match(header, /<OnlineSourcesRow rowClass=\{popoverItem\} enabled=\{onlineSourcesEnabled\} onToggle=\{setOnlineSourcesEnabled\} \/>/)
+  assert.match(header, /<OnlineSourcesRow rowClass=\{popoverItem\} enabled=\{onlineSourcesEnabled\} onToggle=\{setOnlineSourcesEnabled\} onOpenDialog=\{openOnlineSourcesDialog\} \/>/)
   assert.doesNotMatch(header, /settings-manage-sources|ManageSourcesModal|profile-web-sources/)
   assert.equal(fs.existsSync(path.join(__dirname, '../src/components/ManageSourcesModal.tsx')), false)
   const row = fs.readFileSync(path.join(__dirname, '../src/components/OnlineSourcesRow.tsx'), 'utf8')
-  assert.match(row, /pl-3 border-l-2 border-app-border\/60/)
+  assert.match(row, /<AppModalSection title="Sources">/)
 })
 
 test('#516 search links render as a separate bottom section that opens in a new tab', async () => {

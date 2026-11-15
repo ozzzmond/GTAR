@@ -224,6 +224,7 @@ New or renamed tests await a human choice of primary category.
 <!-- test-catalog:UNCLASSIFIED:start -->
 - [aboutModal.test.cjs](aboutModal.test.cjs)
 - [advancedChordProEditor416.test.cjs](advancedChordProEditor416.test.cjs)
+- [advancedToolsDialogs528.test.cjs](advancedToolsDialogs528.test.cjs)
 - [anonymousSetlistSharing433.test.cjs](anonymousSetlistSharing433.test.cjs)
 - [appModalsReducer.test.cjs](appModalsReducer.test.cjs)
 - [appStartVersionLog.test.cjs](appStartVersionLog.test.cjs)
