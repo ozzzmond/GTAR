@@ -35,6 +35,7 @@
       ]
     },
     "preview": {
+      "services": [{ "binding": "BANDSYNC_WORKER", "service": "gtar-band-sync-dev" }],
       "compatibility_flags": [
         "nodejs_compat"
       ],

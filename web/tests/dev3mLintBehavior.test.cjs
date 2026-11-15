@@ -164,6 +164,11 @@ test('Stage navigation refs publish committed state, never a suspended transitio
 }))
 
 test('App band subscription uses the latest selected song without duplicate listeners or network requests', async () => harness(async h => {
+  // This regression exercises legacy sync only while the optional extension is explicitly ON.
+  const browserKeys = ['isSecureContext', 'WebSocket', 'location']
+  const browserPrevious = new Map(browserKeys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+  for (const [key, value] of Object.entries({ isSecureContext: true, WebSocket: window.WebSocket, location: window.location })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
+  localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
   const { persistLibrary, readPersistedLibrary } = require('../src/utils/syncJournal.ts')
   persistLibrary({ songs: exampleSongs, setlists: [] })
   const { bandSync } = require('../src/utils/bandSync.ts')
@@ -185,5 +190,8 @@ test('App band subscription uses the latest selected song without duplicate list
     assert.equal(songs.find(s => s.title === 'Alpha').transposeOffset, 0)
     assert.equal(bandSync.messageHandlers.size, listeners)
     assert.equal(requests, 0)
-  } finally { await h.unmount(); bandSync.role = originalRole; global.fetch = originalFetch }
+  } finally {
+    await h.unmount(); bandSync.role = originalRole; global.fetch = originalFetch
+    for (const [key, descriptor] of browserPrevious) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
+  }
 }))

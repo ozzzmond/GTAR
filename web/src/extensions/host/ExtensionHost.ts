@@ -3,6 +3,11 @@ import { CONTRACT_VERSION } from '../contract'
 import type { ExtensionContext, FollowObservation, FollowSnapshot, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
 import { extensionStorageKey, normalizeSettings, readExtension, validSetting } from './settings'
 import type { ExtensionStorage } from './settings'
+import { activateBandSyncController } from './bandSyncController'
+import type { StagePublication } from './bandSyncController'
+import type { ReceiverSnapshot } from '../../utils/stageCast2Protocol'
+import { validateReceiverSnapshot } from '../../utils/stageCast2Protocol'
+import type { BandSyncFollower } from '../../utils/bandSyncSync'
 
 export interface ExtensionSnapshot { state: ExtensionState; message?: string; settings: ExtensionSettings; panel?: ExtensionPanel }
 interface Runtime {
@@ -14,6 +19,30 @@ interface Runtime {
   listeners: Set<() => void>
 }
 export class ExtensionHost {
+  private bandListeners = new Set<() => void>()
+  private bandRemoteListeners = new Set<() => void>()
+  private bandStage: StagePublication | null = null
+  private bandRemote: BandSyncFollower | null = null
+  private bandRevision = 0
+  isBandSyncActive = () => ['active', 'offline'].includes(this.getSnapshot('band-sync').state)
+  getBandRemote = () => this.bandRemote
+  subscribeBandRemote = (listener: () => void) => { this.bandRemoteListeners.add(listener); return () => { this.bandRemoteListeners.delete(listener) } }
+  private applyBandRemote(view: BandSyncFollower | null) {
+    this.bandRemote = view
+    for (const listener of this.bandRemoteListeners) listener()
+  }
+  async publishBandStage(content: ReceiverSnapshot) {
+    if (!this.isBandSyncActive() || this.bandRemote) return
+    const revision = ++this.bandRevision, checked = validateReceiverSnapshot(content)
+    if (!checked.ok) return
+    const snapshot = checked.value
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(snapshot)))
+    if (revision !== this.bandRevision || !this.isBandSyncActive()) return
+    const contentHash = Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')
+    this.bandStage = { event: Object.freeze({ songId: snapshot.songId, contentHash, displayTitle: snapshot.displayTitle,
+      transposeOffset: snapshot.transpose.offset, effectiveKey: snapshot.transpose.effectiveKey, chordsVisible: snapshot.chordsVisible }), content: snapshot }
+    for (const listener of this.bandListeners) listener()
+  }
   private runtimes = new Map<string, Runtime>()
   private listeners = new Set<() => void>()
   private followListeners = new Set<() => void>()
@@ -87,6 +116,7 @@ export class ExtensionHost {
   }
   private stop(runtime: Runtime) {
     runtime.generation++
+    if (runtime.entry.manifest.id === 'band-sync') { this.bandRevision++; this.bandStage = null; this.applyBandRemote(null) }
     if (runtime.entry.manifest.id === 'propresenter-follower') { this.followRefresh = undefined; this.currentSlideRead = undefined; this.publishFollow(null) }
     runtime.controller?.abort()
     runtime.controller = undefined
@@ -113,7 +143,8 @@ export class ExtensionHost {
     try {
       if (!saved.writable) { this.update(runtime, 'disabled', 'Device storage is unavailable'); return }
       if (!entry.load) { this.update(runtime, 'unavailable', 'Not yet available'); return }
-      if (entry.manifest.contractVersion !== CONTRACT_VERSION || entry.manifest.capabilities.some(cap => cap.startsWith('events:') || !this.env.capabilities.includes(cap))) {
+      if (entry.manifest.contractVersion !== CONTRACT_VERSION || entry.manifest.capabilities.some(cap =>
+        (cap.startsWith('events:') && !(entry.manifest.id === 'band-sync' && ['events:song', 'events:transpose'].includes(cap))) || !this.env.capabilities.includes(cap))) {
         this.update(runtime, 'unavailable', 'Not available on this device/browser'); return
       }
       const availability = entry.checkAvailability(this.env)
@@ -133,6 +164,12 @@ export class ExtensionHost {
       }
       const current = () => generation === runtime.generation && !controller.signal.aborted
       const ctx: ExtensionContext = {
+        ...(entry.manifest.id === 'band-sync' ? { startBandSync: () => current() ? activateBandSyncController({
+          read: () => this.bandStage,
+          subscribe: listener => { this.bandListeners.add(listener); return () => { this.bandListeners.delete(listener) } },
+          applyRemote: view => { if (current()) this.applyBandRemote(view) },
+          panel: panel => { if (current()) { runtime.snapshot = { ...runtime.snapshot, panel }; for (const listener of this.listeners) listener() } },
+        }) : () => {} } : {}),
         signal: controller.signal,
         settings: {
           read: () => runtime.snapshot.settings,

@@ -43,6 +43,7 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
         {error && <p role="alert" className="text-xs text-app-muted">{error}</p>}
       </form>
       {snapshot.panel && <div aria-label={`${manifest.name} follower`} className="space-y-1 text-xs text-app-heading">
+        {snapshot.panel.inputs?.map(input => <label key={input.label} className="block">{input.label}<input aria-label={input.label} className={rowClass} value={input.value} maxLength={input.maxLength} autoComplete="off" onChange={event => input.change(event.target.value)} /></label>)}
         {snapshot.panel.fields.map(field => <div key={field.label}><span className="text-app-muted">{field.label}</span><p className="whitespace-pre-wrap break-words">{field.value}</p></div>)}
         {snapshot.panel.actions.map(action => <button key={action.label} type="button" className={rowClass} disabled={action.disabled} onClick={action.run}>{action.label}</button>)}
       </div>}
