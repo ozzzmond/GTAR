@@ -3,6 +3,14 @@ import { CONTRACT_VERSION } from '../contract'
 import type { ExtensionContext, FollowObservation, FollowSnapshot, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
 import { extensionStorageKey, normalizeSettings, readExtension, validSetting } from './settings'
 import type { ExtensionStorage } from './settings'
+import { activateBandSyncController } from './bandSyncController'
+import type { StagePublication } from './bandSyncController'
+import type { ReceiverSnapshot } from '../../utils/stageCast2Protocol'
+import { validateReceiverSnapshot } from '../../utils/stageCast2Protocol'
+import type { BandSyncFollower } from '../../utils/bandSyncSync'
+import type { StageSyncPosition } from '../contract'
+import { BandSyncPublicationGate } from '../../utils/bandSyncPublication'
+import { consumeBandSyncHash } from '../../utils/bandSyncQr'
 
 export interface ExtensionSnapshot { state: ExtensionState; message?: string; settings: ExtensionSettings; panel?: ExtensionPanel }
 interface Runtime {
@@ -14,6 +22,58 @@ interface Runtime {
   listeners: Set<() => void>
 }
 export class ExtensionHost {
+  private bandListeners = new Set<() => void>()
+  private bandRemoteListeners = new Set<() => void>()
+  private bandStage: StagePublication | null = null
+  private bandRemote: BandSyncFollower | null = null
+  private bandRevision = 0
+  private bandLeader = false
+  private bandJoin: ((code: string) => void) | null = null
+  private bandJoinCode: string | null = null
+  private bandGate = new BandSyncPublicationGate()
+  private bandPosition: StageSyncPosition = { lineIndex: 0, scrollFraction: 0, autoscroll: { on: false, speed: 10 }, setlist: { id: null, index: 0, count: 0 } }
+  isBandSyncLeader = () => this.bandLeader
+  private setBandLeader(leader: boolean) {
+    if (this.bandLeader === leader) return
+    this.bandLeader = leader
+    if (!leader) this.bandGate.clear()
+    for (const listener of this.listeners) listener()
+  }
+  private emitBandStage() {
+    if (!this.isBandSyncActive() || !this.bandLeader) return
+    this.bandGate.publish(() => { if (this.isBandSyncActive() && this.bandLeader) for (const listener of this.bandListeners) listener() })
+  }
+  publishBandPosition(position: StageSyncPosition) {
+    if (!this.isBandSyncActive() || !this.bandLeader) return
+    const { lineIndex, scrollFraction, autoscroll, setlist } = position
+    if (!Number.isSafeInteger(lineIndex) || lineIndex < 0 || lineIndex > 2047 || !Number.isFinite(scrollFraction) ||
+      scrollFraction < 0 || scrollFraction > 1 || typeof autoscroll.on !== 'boolean' || !Number.isFinite(autoscroll.speed) ||
+      !Number.isSafeInteger(setlist.index) || !Number.isSafeInteger(setlist.count) || setlist.index < 0 || setlist.count < 0 ||
+      setlist.index >= Math.max(1, setlist.count) || (setlist.id === null) !== (setlist.count === 0) || (setlist.id !== null && (typeof setlist.id !== 'string' || !setlist.id || setlist.id.length > 128))) return
+    this.bandPosition = Object.freeze({ lineIndex, scrollFraction, autoscroll: Object.freeze({ on: autoscroll.on, speed: Math.min(150, Math.max(10, autoscroll.speed)) }),
+      setlist: Object.freeze({ id: setlist.id, index: setlist.index, count: setlist.count }) })
+    if (this.bandStage) this.bandStage = { ...this.bandStage, event: Object.freeze({ ...this.bandStage.event, ...this.bandPosition }) }
+    this.emitBandStage()
+  }
+  isBandSyncActive = () => ['active', 'offline'].includes(this.getSnapshot('band-sync').state)
+  getBandRemote = () => this.bandRemote
+  subscribeBandRemote = (listener: () => void) => { this.bandRemoteListeners.add(listener); return () => { this.bandRemoteListeners.delete(listener) } }
+  private applyBandRemote(view: BandSyncFollower | null) {
+    this.bandRemote = view
+    for (const listener of this.bandRemoteListeners) listener()
+  }
+  async publishBandStage(content: ReceiverSnapshot) {
+    if (!this.isBandSyncActive() || this.bandRemote) return
+    const revision = ++this.bandRevision, checked = validateReceiverSnapshot(content)
+    if (!checked.ok) return
+    const snapshot = checked.value
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(snapshot)))
+    if (revision !== this.bandRevision || !this.isBandSyncActive()) return
+    const contentHash = Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')
+    this.bandStage = { event: Object.freeze({ ...this.bandPosition, songId: snapshot.songId, contentHash, displayTitle: snapshot.displayTitle,
+      transposeOffset: snapshot.transpose.offset, effectiveKey: snapshot.transpose.effectiveKey, chordsVisible: snapshot.chordsVisible }), content: snapshot }
+    this.emitBandStage()
+  }
   private runtimes = new Map<string, Runtime>()
   private listeners = new Set<() => void>()
   private followListeners = new Set<() => void>()
@@ -74,9 +134,15 @@ export class ExtensionHost {
     await Promise.all(this.entries.map(async entry => {
       const runtime = this.runtimes.get(entry.manifest.id)!
       const saved = readExtension(entry.manifest, this.storage)
+      const joinCode = entry.manifest.id === 'band-sync' && typeof window !== 'undefined'
+        ? consumeBandSyncHash(window.location, window.history, saved.enabled) : null
+      if (joinCode) this.bandJoinCode = joinCode
       runtime.snapshot = { ...runtime.snapshot, settings: saved.settings }
       if (saved.enabled) await this.enable(entry.manifest.id)
       else this.update(runtime, 'disabled')
+      if (entry.manifest.id === 'band-sync' && this.isBandSyncActive() && this.bandJoinCode && this.bandJoin) {
+        const code = this.bandJoinCode; this.bandJoinCode = null; this.bandJoin(code)
+      }
     }))
   }
   private persist(runtime: Runtime, enabled: boolean): boolean {
@@ -93,6 +159,7 @@ export class ExtensionHost {
   }
   private stop(runtime: Runtime) {
     runtime.generation++
+    if (runtime.entry.manifest.id === 'band-sync') { this.bandRevision++; this.bandStage = null; this.bandJoin = null; this.setBandLeader(false); this.bandGate.clear(); this.applyBandRemote(null) }
     if (runtime.entry.manifest.id === 'propresenter-follower') { this.followRefresh = undefined; this.currentSlideRead = undefined; this.publishFollow(null) }
     runtime.controller?.abort()
     runtime.controller = undefined
@@ -103,6 +170,7 @@ export class ExtensionHost {
     runtime.snapshot = { ...runtime.snapshot, panel: undefined }
   }
   disable(id: string) {
+    if (id === 'band-sync') this.bandJoinCode = null
     const runtime = this.runtimes.get(id)
     if (!runtime) return
     this.stop(runtime)
@@ -125,7 +193,8 @@ export class ExtensionHost {
     try {
       if (!saved.writable) { this.update(runtime, 'disabled', 'Device storage is unavailable'); return }
       if (!entry.load) { this.update(runtime, 'unavailable', 'Not yet available'); return }
-      if (entry.manifest.contractVersion !== CONTRACT_VERSION || entry.manifest.capabilities.some(cap => cap.startsWith('events:') || !this.env.capabilities.includes(cap))) {
+      if (entry.manifest.contractVersion !== CONTRACT_VERSION || entry.manifest.capabilities.some(cap =>
+        (cap.startsWith('events:') && !(entry.manifest.id === 'band-sync' && ['events:song', 'events:transpose', 'events:section', 'events:setlist'].includes(cap))) || !this.env.capabilities.includes(cap))) {
         this.update(runtime, 'unavailable', 'Not available on this device/browser'); return
       }
       const availability = entry.checkAvailability(this.env)
@@ -145,6 +214,14 @@ export class ExtensionHost {
       }
       const current = () => generation === runtime.generation && !controller.signal.aborted
       const ctx: ExtensionContext = {
+        ...(entry.manifest.id === 'band-sync' ? { startBandSync: () => current() ? activateBandSyncController({
+          setLeader: leader => { if (current()) this.setBandLeader(leader) },
+          setJoin: handler => { if (current()) this.bandJoin = handler },
+          read: () => this.bandStage,
+          subscribe: listener => { this.bandListeners.add(listener); return () => { this.bandListeners.delete(listener) } },
+          applyRemote: view => { if (current()) this.applyBandRemote(view) },
+          panel: panel => { if (current()) { runtime.snapshot = { ...runtime.snapshot, panel }; for (const listener of this.listeners) listener() } },
+        }) : () => {} } : {}),
         signal: controller.signal,
         settings: {
           read: () => runtime.snapshot.settings,

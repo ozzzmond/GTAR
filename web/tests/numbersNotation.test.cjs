@@ -196,13 +196,13 @@ test('TEST:NUMBERS_NOT_CLICKABLE and CHORD_MODE_EXISTING_CLICK_BEHAVIOR_PRESERVE
   // Verify that in numbers mode:
   // 1. onClick is set to undefined
   assert.ok(
-    rendererSrc.includes('onClick={isNumbersMode ? undefined : () => onChordClick?.('),
+    rendererSrc.includes('const interactive = !readOnly && !isNumbersMode') && rendererSrc.includes('onClick={!interactive ? undefined : () => onChordClick?.('),
     'SongLineRenderer must suppress onClick handler on chord tokens when in numbers mode'
   )
 
   // 2. Class has cursor-default instead of cursor-pointer
   assert.ok(
-    rendererSrc.includes("className={`stage-chord-token ${isNumbersMode ? 'stage-number-token cursor-default' : 'cursor-pointer'} select-none`}"),
+    rendererSrc.includes("className={`stage-chord-token ${isNumbersMode ? 'stage-number-token cursor-default' : readOnly ? 'cursor-default' : 'cursor-pointer'} select-none`}"),
     'SongLineRenderer must use cursor-default for numbers mode and cursor-pointer for chords mode'
   )
 

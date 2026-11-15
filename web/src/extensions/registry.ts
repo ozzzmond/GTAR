@@ -1,4 +1,5 @@
 import type { Availability, RegistryEntry } from './contract'
+import { bandSyncAvailability, bandSyncManifest } from './band-sync/manifest'
 
 export function proPresenterAvailability(): Availability {
   const nav = globalThis.navigator
@@ -22,4 +23,7 @@ export const registry: readonly RegistryEntry[] = [{
     const { activate } = await import('./propresenter-follower')
     return { manifest, checkAvailability: proPresenterAvailability, activate }
   },
+}, {
+  manifest: bandSyncManifest, checkAvailability: bandSyncAvailability,
+  load: async () => ({ manifest: bandSyncManifest, checkAvailability: bandSyncAvailability, activate: (await import('./band-sync')).activate }),
 }]

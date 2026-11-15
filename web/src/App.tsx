@@ -1,3 +1,4 @@
+import { useBandSyncGate } from './extensions/host/useBandSyncGate'
 import { projectFollowSetlist, type FollowSelection } from './utils/setlistAutoFollow'
 import { setlistAutoFollowDev } from './utils/setlistAutoFollowDev'
 import { ExtensionHostProvider } from './extensions/host/ExtensionHostProvider'
@@ -239,6 +240,7 @@ function LibraryStartupReadyInner() {
 }
 
 function LibraryApp() {
+  const { active: bandSyncEnabled, remote: bandRemote } = useBandSyncGate()
   const [recoveryDataOpen, setRecoveryDataOpen] = useState(false)
   // #303: Backup & Restore center / debug logs are owned by the header; Stage shortcuts pause while they are open.
   const [isHeaderOverlayOpen, setIsHeaderOverlayOpen] = useState(false)
@@ -330,6 +332,12 @@ function LibraryApp() {
   const [activeView, setActiveView] = useState<'songbook' | 'editor' | 'stage' | 'trash'>(
     initialStageSession.isValid ? initialStageSession.view : 'songbook'
   )
+  useEffect(() => {
+    if (bandRemote && bandSyncEnabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- A host-mediated remote session opens its transient Stage view.
+      setActiveView('stage')
+    }
+  }, [bandRemote, bandSyncEnabled])
 
   // DEV.5a: mirror view changes into browser history (Back semantics, no hardcoded route).
   const viewFromHistoryRef = useRef(false)
@@ -806,6 +814,7 @@ function LibraryApp() {
   // Band Sync: listen to leader song sync events when client
   // Transpose handler
   const handleTransposeChange = useCallback((newOffset: number) => {
+    if (bandRemote) return
     if (!Number.isSafeInteger(newOffset) || newOffset < -11 || newOffset > 11) return
     if (isInSetlistMode) {
       const target = activeSetlistSongs[activeSetlistSongIndex]
@@ -819,9 +828,10 @@ function LibraryApp() {
         prev.map((s, idx) => (idx === activeSongIndex ? { ...s, transposeOffset: newOffset } : s))
       )
     }
-  }, [isInSetlistMode, activeSetlistSongs, activeSetlistSongIndex, activeSongIndex])
+  }, [isInSetlistMode, activeSetlistSongs, activeSetlistSongIndex, activeSongIndex, bandRemote])
 
   useEffect(() => {
+    if (!bandSyncEnabled) return
     const unsub = bandSync.onMessage((msg) => {
       if (bandSync.getRole() === 'CLIENT') {
         if (msg.type === 'SONG_SYNC' && msg.payload) {
@@ -956,7 +966,7 @@ function LibraryApp() {
       }
     })
     return unsub
-  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge, importStateRef, setIsSetlistDrawerOpen])
+  }, [songs, activeSetlist, activeSetlistSongs, setlists, deletedSongs, handleTransposeChange, handleSmartMerge, importStateRef, setIsSetlistDrawerOpen, bandSyncEnabled])
 
   // Select a song from library (switches queue scope to full library)
   const handleSelectLibrarySong = (idx: number) => {
@@ -1152,6 +1162,7 @@ function LibraryApp() {
   const handlePushSetlistToMembers = (
     targetSetlistId?: string | number
   ): { success: boolean; message: string } => {
+    if (!bandSyncEnabled) return { success: false, message: 'Band Sync is off' }
     const targetSetlist = targetSetlistId
       ? setlists.find((s) => String(s.id) === String(targetSetlistId)) || activeSetlist || setlists[0]
       : activeSetlist || setlists[0]
@@ -1720,7 +1731,7 @@ function LibraryApp() {
             setActiveView('stage')
           })}
           onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
-          onPushSetlistToBandSync={handlePushSetlistToMembers}
+          onPushSetlistToBandSync={bandSyncEnabled ? handlePushSetlistToMembers : undefined}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
           onOpenCast={handleTogglePresentation}
           isCastActive={isCastActive}
@@ -1886,6 +1897,7 @@ function LibraryApp() {
               onFollowSetlistEntry={handleFollowSetlistEntry}
               isProPresenterSelection={followOrigin?.context === followSetlist && followOrigin?.index === activeSetlistSongIndex}
               activeSetlistName={activeSetlist?.name}
+              activeSetlistId={activeSetlist?.id ?? null}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
               onOpenSetlistDrawer={
@@ -1961,8 +1973,9 @@ function LibraryApp() {
       <BandSyncModal
         isOpen={isStageToolsModalOpen}
         onClose={() => setIsStageToolsModalOpen(false)}
-        initialTab="sync"
-        onPushSetlist={handlePushSetlistToMembers}
+        bandSyncEnabled={bandSyncEnabled}
+        initialTab={bandSyncEnabled ? "sync" : "metronome"}
+        onPushSetlist={bandSyncEnabled ? handlePushSetlistToMembers : undefined}
         activeSetlistName={activeSetlist?.name}
         activeSetlistSongCount={activeSetlistSongs.length}
       />

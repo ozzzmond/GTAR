@@ -79,14 +79,14 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
   }
 
   return (
-    <div data-testid={`extension-${id}`} className="mb-1.5 last:mb-0">
-      <div className={`${launcherRow(rowClass)} justify-between`}>
+    <div data-testid={`extension-${id}`} className={`${launcherRow(rowClass)} justify-between mb-1.5 last:mb-0`}>
         <button
           type="button"
           data-testid={`extension-${id}-expand`}
           className="flex flex-1 min-w-0 min-h-11 items-center gap-2.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action rounded-lg"
           aria-haspopup="dialog"
           aria-expanded={open}
+          aria-describedby={`extension-${id}-summary`}
           onClick={() => (onOpenDialog ? onOpenDialog(id) : setOpen(!open))}
         >
           <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
@@ -127,7 +127,8 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
             />
           </span>
         </label>
-      </div>
+        {/* The summary describes the launcher to assistive tech; the row itself shows name and state only. */}
+        <span id={`extension-${id}-summary`} className="sr-only">{manifest.summary}</span>
       {!onOpenDialog && open && <ExtensionSettingsDialog host={host} id={id} onClose={() => setOpen(false)} />}
     </div>
   )
@@ -177,7 +178,7 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
         </>
       }
     >
-      <AppModalSection title="Connection">
+      {(manifest.settings.length > 0 || snapshot.message) && <AppModalSection title="Connection">
         {snapshot.message && (
           <p className="text-xs text-app-muted" role="status">
             {snapshot.message}
@@ -288,11 +289,25 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
         </p>
       )}
     </form>
-      </AppModalSection>
+      </AppModalSection>}
 
       {snapshot.panel && (
         <AppModalSection title="Status">
           <div aria-label={`${manifest.name} follower`} className="space-y-2 text-sm text-app-heading">
+            {snapshot.panel.qr && <img src={snapshot.panel.qr.src} alt={snapshot.panel.qr.label} width={280} height={280} className="max-w-full" />}
+            {snapshot.panel.inputs?.map(input => (
+              <label key={input.label} className="block text-sm font-semibold text-app-heading">
+                {input.label}
+                <input
+                  aria-label={input.label}
+                  className="w-full min-h-10 bg-app-base border border-app-border rounded-xl px-3 py-1.5 text-sm font-normal text-app-heading focus:outline-none focus:border-app-action mt-1"
+                  value={input.value}
+                  maxLength={input.maxLength}
+                  autoComplete="off"
+                  onChange={event => input.change(event.target.value)}
+                />
+              </label>
+            ))}
             <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
               {snapshot.panel.fields.map(field => (
                 <React.Fragment key={field.label}>

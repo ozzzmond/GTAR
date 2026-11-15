@@ -1,3 +1,6 @@
+import { useBandSyncGate } from '../extensions/host/useBandSyncGate'
+import { projectCast2Presentation } from '../utils/stageCast2Projection'
+import { BandSyncRemoteView } from './BandSyncRemoteView'
 import { stageSectionHeaderOffset, stageSectionScrollTop } from '../utils/liveLyricScroll'
 import { useAutoLiveLyrics } from '../utils/useAutoLiveLyrics'
 import { SetlistAutoFollowControl } from './SetlistAutoFollowControl'
@@ -88,6 +91,7 @@ interface StageViewProps {
   activeSetlistSongIndex?: number
   onSelectSetlistSongIndex?: (index: number) => void
   activeSetlistName?: string
+  activeSetlistId?: string | number | null
   setlists?: WebSetlist[]
   onSelectSetlist?: (setlistId: string | number) => void
   onOpenSetlistDrawer?: () => void
@@ -150,6 +154,7 @@ export const StageView: React.FC<StageViewProps> = ({
   activeSetlistSongIndex = 0,
   onSelectSetlistSongIndex,
   activeSetlistName,
+  activeSetlistId = null,
   onOpenSetlistDrawer,
   isSetlistDrawerOpen = false,
   isStageSettingsModalOpen = false,
@@ -165,6 +170,7 @@ export const StageView: React.FC<StageViewProps> = ({
   onBack,
   onPerformanceModeChange,
 }) => {
+  const { host: bandHost, active: bandSyncEnabled, leader: bandLeader, remote: bandRemote } = useBandSyncGate()
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
   // Stage view configuration & controls (matching Jetpack Compose SongViewerScreen.kt)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
@@ -531,6 +537,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Track whether any modal, drawer, or dialog overlay is active
   const isAnyOverlayActive = Boolean(
+    bandRemote ||
     isKeyPickerOpen ||
     selectedVoicing ||
     selectedChordName ||
@@ -583,14 +590,14 @@ export const StageView: React.FC<StageViewProps> = ({
         accumulatedScrollRef.current = targetScrollTop
         const fraction = maxScroll > 0 ? targetScrollTop / maxScroll : 0
         stageCast.broadcastScroll(targetScrollTop, fraction)
-        if (syncState.role === 'HOST' && maxScroll > 0) {
+        if (bandSyncEnabled && syncState.role === 'HOST' && maxScroll > 0) {
           bandSync.broadcastScroll(fraction, targetScrollTop)
         }
       }
     }
     // Clean up anchor after reflow resolution
     fontResizeAnchorRef.current = null
-  }, [fontSizePx, syncState.role])
+  }, [fontSizePx, syncState.role, bandSyncEnabled])
 
   // Parse song with native v1.0.42 parser and active transpose offset
   const parsedSong = useMemo(() => parseGtarSong(song.rawContent, transposeOffset), [song.rawContent, transposeOffset])
@@ -631,12 +638,14 @@ export const StageView: React.FC<StageViewProps> = ({
 
   // Band Sync subscriptions
   useEffect(() => {
+    if (!bandSyncEnabled) return
     const unsub = bandSync.subscribe((st) => setSyncState(st))
     return unsub
-  }, [])
+  }, [bandSyncEnabled])
 
   // Listen to incoming messages for Band Member (Client)
   useEffect(() => {
+    if (!bandSyncEnabled) return
     const unsubMsg = bandSync.onMessage((msg) => {
       if (syncState.role === 'CLIENT') {
         if (msg.type === 'SONG_SYNC' && msg.payload) {
@@ -698,11 +707,11 @@ export const StageView: React.FC<StageViewProps> = ({
       }
     })
     return unsubMsg
-  }, [syncState.role, onTransposeChange])
+  }, [syncState.role, onTransposeChange, bandSyncEnabled])
 
   // Broadcast song change when role is HOST
   useEffect(() => {
-    if (syncState.role === 'HOST') {
+    if (bandSyncEnabled && syncState.role === 'HOST') {
       const container = scrollContainerRef.current
       const maxScroll = container ? container.scrollHeight - container.clientHeight : 1
       const progress = container && maxScroll > 0 ? container.scrollTop / maxScroll : 0
@@ -731,6 +740,7 @@ export const StageView: React.FC<StageViewProps> = ({
     song.capo,
     transposeOffset,
     syncState.role,
+    bandSyncEnabled,
   ])
 
   // Metronome sync with song BPM
@@ -828,6 +838,22 @@ export const StageView: React.FC<StageViewProps> = ({
   // Broadcast scroll position to Stage Cast teleprompter & BandSync when HOST.
   // Also keeps the sub-pixel accumulator in sync after a user manually drags
   // the scroll position (e.g. touch-scroll during autoscroll pause).
+  const publishBandPosition = useCallback((lineIndex: number, scrollFraction: number) => {
+    if (!bandSyncEnabled || !bandLeader) return
+    const count = isInSetlistMode && activeSetlistId !== null ? activeSetlistSongs.length : 0
+    bandHost.publishBandPosition({ lineIndex, scrollFraction: Math.min(1, Math.max(0, scrollFraction)),
+      autoscroll: { on: isAutoScrolling, speed: scrollSpeed },
+      setlist: { id: count ? String(activeSetlistId) : null, index: count ? Math.min(count - 1, Math.max(0, activeSetlistSongIndex)) : 0, count } })
+  }, [bandHost, bandSyncEnabled, bandLeader, isInSetlistMode, activeSetlistId, activeSetlistSongs.length, activeSetlistSongIndex, isAutoScrolling, scrollSpeed])
+  const bandLineIndex = useRef(0)
+  const bandSongId = useRef(song.id)
+  useEffect(() => {
+    if (!bandSyncEnabled || !bandLeader) return
+    if (bandSongId.current !== song.id) { bandLineIndex.current = 0; bandSongId.current = song.id }
+    const viewport = scrollContainerRef.current
+    const max = viewport ? viewport.scrollHeight - viewport.clientHeight : 0
+    publishBandPosition(bandLineIndex.current, max > 0 && viewport ? viewport.scrollTop / max : 0)
+  }, [publishBandPosition, song.id, bandSyncEnabled, bandLeader])
   const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const isLiveLyricScroll = liveScroll.controller.handleScroll()
     const target = e.currentTarget
@@ -879,9 +905,13 @@ export const StageView: React.FC<StageViewProps> = ({
         activeLineIndex = parseInt(rawIdx, 10)
       }
     }
+    if (Number.isSafeInteger(activeLineIndex) && activeLineIndex >= 0) {
+      bandLineIndex.current = activeLineIndex
+      publishBandPosition(activeLineIndex, fraction)
+    }
     stageCast.broadcastScroll(target.scrollTop, fraction, activeLineIndex)
 
-    if (syncState.role === 'HOST') {
+    if (bandSyncEnabled && syncState.role === 'HOST') {
       if (maxScroll > 0) {
         bandSync.broadcastScroll(fraction, target.scrollTop)
       }
@@ -918,10 +948,10 @@ export const StageView: React.FC<StageViewProps> = ({
       // immediately when the FAB touch-end event propagates to the scroll container.
       autoScrollStartedAtRef.current = performance.now()
     }
-    if (syncState.role === 'HOST') {
+    if (bandSyncEnabled && syncState.role === 'HOST') {
       bandSync.broadcastAutoScroll(nextVal, scrollSpeed)
     }
-  }, [isAutoScrolling, syncState.role, scrollSpeed, liveScroll.controller])
+  }, [isAutoScrolling, syncState.role, scrollSpeed, liveScroll.controller, bandSyncEnabled])
 
   // Adjust scroll speed and broadcast if HOST
   const handleAdjustSpeed = useCallback((newSpeed: number) => {
@@ -930,10 +960,10 @@ export const StageView: React.FC<StageViewProps> = ({
     if (typeof window !== 'undefined') {
       localStorage.setItem(SETTINGS_KEYS.scrollSpeed, String(clamped))
     }
-    if (syncState.role === 'HOST') {
+    if (bandSyncEnabled && syncState.role === 'HOST') {
       bandSync.broadcastAutoScroll(isAutoScrolling, clamped)
     }
-  }, [isAutoScrolling, syncState.role])
+  }, [isAutoScrolling, syncState.role, bandSyncEnabled])
 
   // Structural sections in document order matching Android SongParser.kt
   const sectionHeaders = useMemo(() => {
@@ -1587,6 +1617,7 @@ export const StageView: React.FC<StageViewProps> = ({
     handleToggleAutoScroll,
     handleAdjustSpeed,
     isAnyOverlayActive,
+    bandRemote,
     captureFontResizeAnchor,
   ])
 
@@ -1636,6 +1667,12 @@ export const StageView: React.FC<StageViewProps> = ({
   const keyContext = transposeContext(song, transposeOffset)
   const effectivePerformanceKey = keyContext.performanceKey
   const effectiveKey = effectivePerformanceKey
+  useEffect(() => {
+    if (!bandSyncEnabled || bandRemote) return
+    const content = projectCast2Presentation({ song, transposeOffset, effectiveKey, isTwoColumn, notation, fontSizePx, fontStyle },
+      { lineIndex: 0, scrollTop: 0, scrollFraction: 0, chordsVisible: true })
+    if (content.ok) void bandHost.publishBandStage(content.value)
+  }, [bandHost, bandSyncEnabled, bandRemote, song, transposeOffset, effectiveKey, isTwoColumn, notation, fontSizePx, fontStyle])
   const offsetStr = formatTransposeOffset(keyContext.displayOffset)
   void offsetStr
 
@@ -1825,6 +1862,8 @@ export const StageView: React.FC<StageViewProps> = ({
     setIsSpeedPromptOpen(false)
   }
 
+  if (bandSyncEnabled && bandRemote) return <BandSyncRemoteView view={bandRemote} />
+
   return (
     <div className="flex-1 flex flex-col bg-app-base select-none relative overflow-hidden"
       style={{ height: inPerformanceMode ? '100vh' : 'calc(100vh - 4rem)' }}
@@ -2010,11 +2049,11 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             onClick={onOpenBandSync}
-            aria-label="Band Sync"
+            aria-label={bandSyncEnabled ? "Band Sync" : "Stage Tools"}
             className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
-            <Radio className="w-4 h-4 shrink-0" />
-            <span className="hidden sm:inline">Band Sync</span>
+            <span aria-hidden="true">{bandSyncEnabled ? <Radio className="w-4 h-4 shrink-0" /> : <Gauge className="w-4 h-4 shrink-0" />}</span>
+            <span className="hidden sm:inline">{bandSyncEnabled ? "Band Sync" : "Stage Tools"}</span>
           </button>
         </div>
 
@@ -2769,7 +2808,8 @@ export const StageView: React.FC<StageViewProps> = ({
       <BandSyncModal
         isOpen={isBandSyncModalOpen}
         onClose={() => setIsBandSyncModalOpen(false)}
-        initialTab="sync"
+        bandSyncEnabled={bandSyncEnabled}
+        initialTab={bandSyncEnabled ? "sync" : "metronome"}
       />
 
       {/* Secondary TV Browser Pairing & AirPlay Modal */}

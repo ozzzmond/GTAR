@@ -139,7 +139,7 @@ test('unreadable or unwritable storage stays disabled without loading code', asy
 })
 
 test('production registry denies unsupported devices without loading its lazy connector', async () => {
-  assert.deepEqual(registry.map(entry => entry.manifest.id), ['propresenter-follower'])
+  assert.deepEqual(registry.map(entry => entry.manifest.id), ['propresenter-follower', 'band-sync'])
   const data = storage(), host = new ExtensionHost(registry, data)
   await host.start(); await host.enable('propresenter-follower')
   assert.equal(host.getSnapshot('propresenter-follower').state, 'unavailable')
