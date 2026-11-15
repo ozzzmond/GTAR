@@ -52,9 +52,15 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
   const availability = entry.checkAvailability({ capabilities: ['ui:panel', 'net:lan'] })
   const isEnabled = ['starting', 'active', 'offline'].includes(snapshot.state)
 
-  const statusBadge = (
+  const statusBadge = !availability.available ? (
+    // Short visible badge; the full reason is read by screen readers instead.
+    <span data-testid={`extension-${id}-unavailable`} className="shrink-0 whitespace-nowrap text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border bg-rose-500/15 text-rose-400 border-rose-500/30">
+      <span aria-hidden="true">N/A</span>
+      <span className="sr-only">{availability.reason}</span>
+    </span>
+  ) : (
     <span className={`${stateBadge(snapshot.state)} shrink-0`}>
-      {!availability.available ? availability.reason : entry.load ? labels[snapshot.state] : 'Not yet available'}
+      {entry.load ? labels[snapshot.state] : 'Not yet available'}
     </span>
   )
 

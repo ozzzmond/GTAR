@@ -345,7 +345,14 @@ test('launcher shows a status pill only for what the switch cannot say; switch s
       assert.equal(toggle(id).checked, checked)
       assert.equal(toggle(id).closest('label').getAttribute('aria-label'), `Enable Tool ${id}`)
     }
-    assert.match(q('[data-testid="extension-blocked"]').textContent, /Not available on this device\/browser/, 'availability warning kept')
+    // Round 8: compact red N/A badge; the full reason stays for screen readers, with no title tooltip.
+    const badge = q('[data-testid="extension-blocked-unavailable"]')
+    assert.deepEqual(visibleText(badge), ['N/A'])
+    assert.equal(badge.querySelector('[aria-hidden="true"]').textContent, 'N/A')
+    assert.equal(badge.querySelector('.sr-only').textContent, 'Not available on this device/browser')
+    for (const cls of ['text-rose-400', 'bg-rose-500/15', 'border-rose-500/30', 'whitespace-nowrap', 'shrink-0']) assert.ok(badge.classList.contains(cls), cls)
+    assert.equal(q('[data-testid="extension-blocked"]').querySelector('[title]'), null, 'no title tooltip')
+    assert.match(q('[data-testid="extension-blocked"]').textContent, /Tool blocked.*Hint.*Not available on this device\/browser/, 'name, summary and full reason kept')
     assert.equal(q('[data-testid="extension-blocked"]').querySelector('[role="switch"]'), null)
     const rows = fs.readFileSync(path.join(__dirname, '../src/extensions/host/ExtensionRows.tsx'), 'utf8')
     assert.match(rows, /\(snapshot\.state === 'starting' \|\| snapshot\.state === 'offline' \|\| snapshot\.state === 'error'\) && statusBadge/, 'starting, offline and error still show a pill')
