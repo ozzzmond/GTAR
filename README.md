@@ -6,13 +6,13 @@ This is the **original, legacy GTAR project**. Its maintained application is the
 
 ## Features
 
-- **Songbook and chart editing:** Create and edit ChordPro charts with a live preview, organize songs, and transpose chords for performance.
-- **Setlists:** Build ordered sets from your songbook and move between songs on stage.
-- **Stage view:** Read charts in a dedicated performance view with adjustable text size, themes, section navigation, and autoscroll.
-- **Keep screen awake:** Enable Screen Wake Lock on supported browsers to help prevent screen timeouts during performance.
-- **External display:** Open a presentation window on supported desktop browsers for a second screen or HDMI display. TV presentation options depend on the browser and available connection mode.
-- **Local-first PWA:** Keep songs and setlists in browser storage on the device, with no mandatory login for the local songbook. The built app caches its application files for offline use after an initial online load; online services still require a connection.
-- **Backup and import:** Export device backups and restore or import supported files, including compatible legacy Android backups.
+- **Songbook:** Create, edit, search, and organize songs in your local library.
+- **ChordPro Editor:** Edit chord charts with live previews, transposition, and structured song sections.
+- **Setlist Manager:** Create and organize ordered setlists for rehearsal and performance.
+- **Stage View:** Display lyrics and chords with performance-focused navigation, adjustable text, and autoscroll.
+- **Advanced Tools:** Extend GTAR through a modular extension system for optional tools and integrations. Availability depends on the tool, device, and browser.
+- **Local-First & Offline PWA:** Store songs and setlists locally and use supported features offline after an initial online load. Online services still require a connection.
+- **Backup & Restore:** Export, import, and restore supported songbook and setlist data, including compatible legacy Android backups.
 
 ## Basic usage and installation
 
