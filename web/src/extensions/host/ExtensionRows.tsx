@@ -44,7 +44,7 @@ function ExtensionRow({ host, id, rowClass }: { host: ExtensionHost; id: string;
       </form>
       {snapshot.panel && <div aria-label={`${manifest.name} follower`} className="space-y-1 text-xs text-app-heading">
         {snapshot.panel.qr && <img src={snapshot.panel.qr.src} alt={snapshot.panel.qr.label} width={280} height={280} className="max-w-full" />}
-        {snapshot.panel.inputs?.map(input => <label key={input.label} className="block">{input.label}<input aria-label={input.label} className={rowClass} value={input.value} maxLength={input.maxLength} autoComplete="off" onChange={event => input.change(event.target.value)} /></label>)}
+        {snapshot.panel.inputs?.map(input => <label key={input.label} className="block">{input.label}<input aria-label={input.label} className={rowClass} value={input.value} maxLength={input.maxLength} autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} enterKeyHint="go" onChange={event => input.change(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && input.submit) { event.preventDefault(); input.submit() } }} /></label>)}
         {snapshot.panel.fields.map(field => <div key={field.label}><span className="text-app-muted">{field.label}</span><p className="whitespace-pre-wrap break-words">{field.value}</p></div>)}
         {snapshot.panel.actions.map(action => <button key={action.label} type="button" className={rowClass} disabled={action.disabled} onClick={action.run}>{action.label}</button>)}
       </div>}

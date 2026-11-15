@@ -1,7 +1,7 @@
 import type { ExtensionPanel, StageSongEvent } from '../contract'
 import type { ReceiverSnapshot } from '../../utils/stageCast2Protocol'
 import type { BandSyncFollower } from '../../utils/bandSyncSync'
-import { BandSyncClient } from '../../utils/bandSyncClient'
+import { BandSyncClient, normalizeRoomCodeInput } from '../../utils/bandSyncClient'
 import { bandSync } from '../../utils/bandSync'
 import { createBandSyncQr } from '../../utils/bandSyncQr'
 
@@ -37,10 +37,11 @@ export function activateBandSyncController(source: {
         ...(leader ? [{ label: 'Room control', value: 'Reloading this page ends your control of the room; it expires on its own.' }] : []),
         ...(view.role === 'follower' ? [{ label: 'Leader', value: view.follower?.leaderOnline ? 'Leader online' : 'Leader offline' },
           { label: 'Song', value: state?.displayTitle ?? 'Waiting for song' }, { label: 'Key', value: state?.effectiveKey || '—' }] : [])],
-      inputs: view.role ? [] : [{ label: 'Room code', value: code, maxLength: 8, change: value => { code = value.toUpperCase(); render() } }],
+      // maxLength leaves room for pasted spaces/dashes; the code itself is normalized and validated on join.
+      inputs: view.role ? [] : [{ label: 'Room code', value: code, maxLength: 12, change: value => { code = normalizeRoomCodeInput(value); render() }, submit: () => { void client.join(code) } }],
       actions: view.role ? [{ label: leader ? 'End room' : 'Leave room', run: () => { void client.end() } }] : [
         { label: 'Start room', run: () => { void client.create() } },
-        { label: 'Join with code', disabled: code.length !== 8, run: () => { void client.join(code) } },
+        { label: 'Join with code', run: () => { void client.join(code) } },
       ],
     })
   }

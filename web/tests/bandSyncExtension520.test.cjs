@@ -20,7 +20,7 @@ const song = { id: 'local', title: 'Local song', artist: '', key: 'C', capo: '',
 const caps = ['net:https', 'ui:panel', 'events:song', 'events:transpose', 'events:section', 'events:setlist']
 async function ui(run, options = {}) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test/' + (options.hash ?? ''), pretendToBeVisual: true })
-  const keys = ['window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage', 'HTMLElement', 'Node', 'CustomEvent',
+  const keys = ['window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement', 'Node', 'CustomEvent',
     'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'isSecureContext', 'WebSocket', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
   const previous = new Map(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   const sockets = [], calls = [], subscriptions = [], logs = []
@@ -34,7 +34,8 @@ async function ui(run, options = {}) {
   }
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
     location: dom.window.location, localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage,
-    HTMLElement: dom.window.HTMLElement, Node: dom.window.Node, CustomEvent: dom.window.CustomEvent,
+    HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
+    HTMLSelectElement: dom.window.HTMLSelectElement, Node: dom.window.Node, CustomEvent: dom.window.CustomEvent,
     ResizeObserver: class { observe() {} disconnect() {} unobserve() {} },
     requestAnimationFrame: cb => setTimeout(() => cb(Date.now()), 16), cancelAnimationFrame: id => clearTimeout(id),
     isSecureContext: true, WebSocket: Socket, IS_REACT_ACT_ENVIRONMENT: true,
@@ -201,4 +202,23 @@ test('create failures display fixed panel Status text; cookies are same-origin a
     assert.equal(sockets.length, 0); assert.deepEqual(logs, [])
     assert.equal(document.body.textContent.includes('synthetic-private'), false)
   }, { response })
+})
+test('join input: normalizes typed codes, sets mobile keyboard attributes, Enter handler submits, button stays enabled, invalid code shows a message without network', async () => {
+  await ui(async ({ host, turnOn, click, button, sockets, calls }) => {
+    await turnOn()
+    const field = () => document.querySelector('input[aria-label="Room code"]')
+    assert.equal(field().getAttribute('autocapitalize'), 'characters'); assert.equal(field().getAttribute('autocorrect'), 'off')
+    assert.equal(field().getAttribute('spellcheck'), 'false'); assert.equal(field().getAttribute('enterkeyhint'), 'go')
+    assert.equal(button('Join with code').disabled, false)
+    await click(button('Join with code'))
+    assert.ok(document.body.textContent.includes('Enter the 8-character code'))
+    assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
+    await act(async () => host.getSnapshot('band-sync').panel.inputs[0].change(' abcd-efgh '))
+    assert.equal(field().value, 'ABCDEFGH')
+    // React loads before this harness installs a DOM, so synthetic keydown is unavailable here: exercise the submit action and guard the handler source.
+    const rows = fs.readFileSync(require.resolve('../src/extensions/host/ExtensionRows.tsx'), 'utf8')
+    assert.match(rows, /event\.key === 'Enter' && input\.submit\) \{ event\.preventDefault\(\); input\.submit\(\)/)
+    await act(async () => host.getSnapshot('band-sync').panel.inputs[0].submit())
+    assert.equal(calls.at(-1).url, '/bandsync-api/join'); assert.equal(calls.at(-1).body.roomCode, 'ABCDEFGH'); assert.equal(sockets.length, 1)
+  })
 })

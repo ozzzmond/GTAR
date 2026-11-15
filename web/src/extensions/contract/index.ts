@@ -23,7 +23,7 @@ export type ExtensionState = 'absent' | 'disabled' | 'unavailable' | 'starting' 
 // Ephemeral panel data/actions; never persisted or connected to core state.
 export interface ExtensionPanel {
   qr?: { label: string; src: string }
-  inputs?: readonly { label: string; value: string; maxLength: number; change(value: string): void }[]
+  inputs?: readonly { label: string; value: string; maxLength: number; change(value: string): void; submit?(): void }[]
   fields: readonly { label: string; value: string }[]
   actions: readonly { label: string; disabled?: boolean; run(): void }[]
 }

@@ -18,6 +18,8 @@ export interface BandSyncClientView {
   status: 'starting' | 'active' | 'offline' | 'error'; role: 'leader' | 'follower' | null
   roomCode: string; follower: BandSyncFollower | null; ended: boolean
 }
+/** Typed or pasted codes: ignore case, spaces and dashes. Validity is still decided by isRoomCode. */
+export const normalizeRoomCodeInput = (value: string): string => value.toUpperCase().replace(/[\s-]/g, '')
 /** Fixed text only: never retain or expose an error response body. */
 export class BandSyncHttpError extends Error {
   readonly status: number
@@ -104,8 +106,8 @@ export class BandSyncClient {
   }
   async join(code: string): Promise<void> {
     if (this.disposed) return
-    const roomCode = code.trim().toUpperCase()
-    if (!isRoomCode(roomCode)) { this.update({ status: 'error', message: 'Band Sync error' }); return }
+    const roomCode = normalizeRoomCodeInput(code)
+    if (!isRoomCode(roomCode)) { this.update({ status: 'error', message: 'Enter the 8-character code' }); return }
     this.reset(); const generation = this.generation
     this.update({ status: 'starting', role: 'follower', roomCode, follower: initialBandSyncState(roomCode), ended: false, message: undefined })
     await this.connect(generation)
