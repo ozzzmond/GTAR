@@ -117,6 +117,11 @@ export interface StageControlDockProps {
   canNextSection?: boolean
   visible?: boolean
   onUserInteraction?: () => void
+  showProPresenter?: boolean
+  proPresenterStatusLevel?: 'green' | 'yellow' | 'red'
+  proPresenterStatusLabel?: string
+  onToggleProPresenter?: () => void
+  isProPresenterOpen?: boolean
 }
 
 export const StageControlDock: React.FC<StageControlDockProps> = ({
@@ -129,6 +134,11 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
   canNextSection = true,
   visible = true,
   onUserInteraction,
+  showProPresenter = false,
+  proPresenterStatusLevel = 'green',
+  proPresenterStatusLabel,
+  onToggleProPresenter,
+  isProPresenterOpen = false,
 }) => {
   const [position, setPosition] = useState<DockPosition>(() => {
     return readPersistedDockPosition()
@@ -144,7 +154,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
     isDragging: boolean
     isLongPress: boolean
     timer: ReturnType<typeof setTimeout> | null
-    target: 'autoscroll' | 'prev' | 'next' | 'dock'
+    target: 'autoscroll' | 'prev' | 'next' | 'dock' | 'propresenter'
   } | null>(null)
 
   const dockRef = useRef<HTMLDivElement>(null)
@@ -170,7 +180,7 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
   // Universal pointer start handler for buttons and drag cluster
   const handlePointerStart = useCallback((
     e: React.PointerEvent,
-    target: 'autoscroll' | 'prev' | 'next' | 'dock'
+    target: 'autoscroll' | 'prev' | 'next' | 'dock' | 'propresenter'
   ) => {
     // Only primary button initiates drag/gestures
     if (e.button !== 0) return
@@ -299,8 +309,10 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
       onPrevSection()
     } else if (target === 'next' && canNextSection) {
       onNextSection()
+    } else if (target === 'propresenter') {
+      onToggleProPresenter?.()
     }
-  }, [position, canPrevSection, canNextSection, onToggleAutoScroll, onPrevSection, onNextSection, onUserInteraction])
+  }, [position, canPrevSection, canNextSection, onToggleAutoScroll, onPrevSection, onNextSection, onToggleProPresenter, onUserInteraction])
 
   // Double-tap or double-click to reset to safe default position
   const handleResetDefaultPosition = useCallback((e: React.MouseEvent) => {
@@ -400,6 +412,34 @@ export const StageControlDock: React.FC<StageControlDockProps> = ({
       >
         <ChevronDown className="w-8 h-8 stroke-[3]" />
       </button>
+
+      {/* ProPresenter Follower Button */}
+      {showProPresenter && (
+        <button
+          type="button"
+          onPointerDown={(e) => handlePointerStart(e, 'propresenter')}
+          onPointerUp={handlePointerEnd}
+          onPointerCancel={handlePointerEnd}
+          aria-expanded={isProPresenterOpen}
+          aria-haspopup="dialog"
+          aria-label={proPresenterStatusLabel || 'ProPresenter'}
+          data-testid="stage-vertical-propresenter-btn"
+          className="w-14 h-14 min-w-[56px] min-h-[56px] rounded-full flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer select-none active:scale-90 bg-app-base/90 border border-app-border text-app-text hover:text-app-action hover:border-app-action/60 shadow-md"
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              proPresenterStatusLevel === 'green'
+                ? 'bg-emerald-500'
+                : proPresenterStatusLevel === 'yellow'
+                ? 'bg-amber-400'
+                : 'bg-rose-500'
+            }`}
+            aria-hidden="true"
+          />
+          <span className="font-mono font-bold text-[11px] leading-tight">PP</span>
+          <span className="sr-only">{proPresenterStatusLabel || 'ProPresenter'}</span>
+        </button>
+      )}
     </div>
   )
 }

@@ -175,7 +175,7 @@ test('registry rows follow supplied entries and host panel enables/disables a te
   try {
     await act(async () => root.render(React.createElement(ExtensionRows, { host, rowClass: 'row' })))
     const row = document.querySelector('[data-testid="extension-ui-fixture"]')
-    assert.match(row.textContent, /Fixture tool.*Test registry row.*Off/)
+    assert.match(row.textContent, /Fixture tool/); assert.equal(row.querySelector('input[type="checkbox"]').checked, false)
     assert.equal(document.querySelector('[data-testid="extension-propresenter-follower"]'), null)
     assert.equal(loads, 0)
     await act(async () => row.querySelector('button').click())

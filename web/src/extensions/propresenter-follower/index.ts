@@ -140,6 +140,9 @@ export function activate(ctx: ExtensionContext) {
   const current = (epoch: number) => !disposed && !page.hidden && generation === epoch
   const updateStatus = () => {
     const healthy = live.every(Boolean) && !unexpected.some(Boolean)
+    if (healthy) {
+      ctx.recordSuccessfulConnection?.(String(ctx.settings.read().host))
+    }
     status = unexpected.some(Boolean) ? unexpectedMessage : healthy ? 'Live' : 'Stale / Offline'
     ctx.reportStatus(healthy ? 'active' : 'offline', status)
     publish()
@@ -169,7 +172,9 @@ export function activate(ctx: ExtensionContext) {
         const frames = parser.push(part.value)
         if (frames.length) {
           for (const frame of frames) slides(frame)
-          unexpected[0] = false; testResult = 'Connected'; break
+          unexpected[0] = false; testResult = 'Connected';
+          ctx.recordSuccessfulConnection?.(String(ctx.settings.read().host))
+          break
         }
       }
     } catch (error) {

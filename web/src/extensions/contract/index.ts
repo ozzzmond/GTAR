@@ -49,6 +49,7 @@ export interface ExtensionContext {
   publishFollowSnapshot?(snapshot: FollowObservation): void
   setFollowRefresh?(refresh: () => void): void
   setCurrentSlideRead?(read: (signal: AbortSignal) => Promise<void>): void
+  recordSuccessfulConnection?(host: string): void
 }
 export interface StageSyncPosition {
   readonly lineIndex: number; readonly scrollFraction: number
