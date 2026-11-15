@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Pencil, Play, Plus, Share2, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Pencil, Play, Share2, Trash2, Upload } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { DropdownPortal } from './DropdownPortal'
+import { SetlistsHelp } from './menuHelp'
 import { SwipeableActionCard } from './SwipeableActionCard'
 
 /**
@@ -205,6 +206,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               </>
             )}
             <div className={`${openSetlist ? 'row-start-1' : 'row-start-2'} col-start-2 justify-self-end flex items-center gap-1.5`}>
+                <SetlistsHelp className="mr-0.5" />
                 {!openSetlist && menu.onShareAll && (
                   <button
                     type="button"
@@ -391,7 +393,6 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 onClick={handleNewSetlist}
                 className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" />
                 <span>Add new setlist</span>
               </button>
             )}

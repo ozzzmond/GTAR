@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Globe, ExternalLink, Plus, X, Music, Check } from 'lucide-react'
+import { Globe, ExternalLink, X, Music, Check } from 'lucide-react'
 
 interface WebsiteUrlSourceModalProps {
   isOpen: boolean
@@ -254,8 +254,7 @@ export const WebsiteUrlSourceModal: React.FC<WebsiteUrlSourceModalProps> = ({
               onClick={() => setShowAddForm(true)}
               className="w-full py-2.5 rounded-xl border border-dashed border-app-action/50 text-app-action text-xs font-bold hover:bg-app-action/10 transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
-              <Plus className="w-4 h-4" />
-              <span>+ Add Custom Website URL</span>
+              <span>Add Custom Website URL</span>
             </button>
           )}
         </div>

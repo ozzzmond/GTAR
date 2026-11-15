@@ -1,6 +1,7 @@
 import { useBandSyncGate } from '../extensions/host/useBandSyncGate'
 import { projectCast2Presentation } from '../utils/stageCast2Projection'
 import { BandSyncRemoteView } from './BandSyncRemoteView'
+import { StagePreviewHelp } from './menuHelp'
 import { stageSectionHeaderOffset, stageSectionScrollTop } from '../utils/liveLyricScroll'
 import { useAutoLiveLyrics } from '../utils/useAutoLiveLyrics'
 import { SetlistAutoFollowControl } from './SetlistAutoFollowControl'
@@ -1925,6 +1926,7 @@ export const StageView: React.FC<StageViewProps> = ({
             <span aria-hidden="true"><Gauge className="w-4 h-4 shrink-0" /></span>
             <span className="hidden sm:inline">Stage Tools</span>
           </button>
+          <StagePreviewHelp />
         </div>
 
         {/* Right Side: Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}

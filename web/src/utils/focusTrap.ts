@@ -19,6 +19,8 @@ export function trapTab(event: TabEvent, container: HTMLElement | null): boolean
   event.stopPropagation()
   const items = focusableIn(container)
   const active = document.activeElement as HTMLElement | null
+  // Focus inside an open contextual help panel (portaled next to the dialog) is left alone.
+  if (active?.closest('[data-contextual-help]')) return true
   if (items.length === 0) { event.preventDefault(); return true }
   const first = items[0]
   const last = items[items.length - 1]

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronRight, ExternalLink, Globe, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { AppModal, AppModalSection } from './AppModal'
 import { ContextualHelp } from './ContextualHelp'
-import { launcherRow } from './advancedToolsRow'
+import { launcherButton, launcherIcon, launcherRow, launcherSwitch } from './advancedToolsRow'
 import {
   SUPPORTED_SOURCES,
   addShortcut,
@@ -50,7 +50,7 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
   const [open, setOpen] = useState(false)
 
   return (
-    <div data-testid="online-sources-row" className="mb-1.5 last:mb-0">
+    <div data-testid="online-sources-row" className="mb-2 last:mb-0">
       <div className={`${launcherRow(rowClass)} justify-between`}>
         <button
           type="button"
@@ -58,14 +58,10 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => (onOpenDialog ? onOpenDialog() : setOpen(value => !value))}
-          className="flex flex-1 min-w-0 min-h-11 items-center gap-2.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action rounded-lg"
+          className={launcherButton}
         >
-          <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
-            <Globe className="w-4 h-4" aria-hidden="true" />
-          </div>
-          <div className="flex flex-1 min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="text-xs sm:text-sm font-bold text-app-heading">Online Song Sources</span>
-          </div>
+          <Globe className={launcherIcon} aria-hidden="true" />
+          <span className="flex-1 min-w-0">Online Song Sources</span>
           <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
         </button>
         <button
@@ -75,7 +71,7 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
           aria-label="Online song sources"
           data-testid="settings-online-sources"
           onClick={() => onToggle(!enabled)}
-          className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent ml-2"
+          className={`${launcherSwitch} rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent`}
         >
           <span className={`block w-11 h-6 rounded-full transition-colors relative p-0.5 border ${enabled ? 'bg-app-action border-app-action' : 'bg-app-button border-app-border'}`}>
             <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />

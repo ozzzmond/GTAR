@@ -5,6 +5,7 @@ import { DuplicateReviewDialog } from './DuplicateReviewDialog'
 import { ExportSongsDialog } from './ExportSongsDialog'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { DropdownPortal } from './DropdownPortal'
+import { SongsLibraryHelp } from './menuHelp'
 import { SetlistWorkspace, type SetlistWorkspaceScope } from './SetlistWorkspace'
 import type { ExplorerTarget } from './MusicExplorerNav'
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
@@ -1022,7 +1023,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 </button>
             )}
             {(onOpenImportSongs || onTrashDuplicates) && (
-              <>
+              <div className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto flex items-center gap-2 shrink-0`}>
+                <SongsLibraryHelp canImport={Boolean(onOpenImportSongs)} canCheckDuplicates={Boolean(onTrashDuplicates)} />
                 <button
                   type="button"
                   data-testid="songs-library-menu-btn"
@@ -1034,7 +1036,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     closeAllMenus()
                     setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
                   }}
-                  className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 rounded-lg border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0`}
+                  className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 rounded-lg border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -1062,7 +1064,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     )}
                   </div>
                 </DropdownPortal>
-              </>
+              </div>
             )}
           </div>
         )}
@@ -1164,7 +1166,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <div className="flex items-center gap-1.5 shrink-0">
             <button type="button" data-testid="songs-add-song" onClick={onNewSong}
               className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
-              <Plus className="w-3.5 h-3.5" />
               <span>Add Song</span>
             </button>
           </div>

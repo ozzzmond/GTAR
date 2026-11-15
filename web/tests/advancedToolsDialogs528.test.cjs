@@ -368,11 +368,11 @@ test('Advanced Tools menu is shifted to stay inside a narrow viewport and left a
   }
   try {
     // [viewport width, wrench right edge] measured in Chromium; expected menu edges keep 12px gutters.
-    for (const [width, wrenchRight, shift] of [[320, 260, 48], [360, 300, 48], [390, 330, 48], [430, 370, 22], [820, 752, 0], [1440, 1372, 0]]) {
+    for (const [width, wrenchRight, shift] of [[320, 260, 48], [360, 300, 32], [390, 330, 2], [430, 370, 0], [820, 752, 0], [1440, 1372, 0]]) {
       setViewport(width, wrenchRight)
       if (popover()) await click(wrench())
       await click(wrench())
-      const menuWidth = Math.min(380, width - 24)
+      const menuWidth = Math.min(320, width - 24)
       assert.equal(popover().style.right, shift ? `-${shift}px` : '0px', `${width}px: shift`)
       const right = wrenchRight + shift, left = right - menuWidth
       assert.ok(left >= 12 && right <= width - 12, `${width}px: menu spans ${left}..${right}, inside the viewport`)
@@ -380,7 +380,7 @@ test('Advanced Tools menu is shifted to stay inside a narrow viewport and left a
     // Rotating or resizing while open re-places the menu.
     setViewport(390, 330)
     await act(async () => { window.dispatchEvent(new window.Event('resize')) })
-    assert.equal(popover().style.right, '-48px')
-    assert.match(popover().style.width, /^min\(380px, /)
+    assert.equal(popover().style.right, '-2px')
+    assert.match(popover().style.width, /^min\(320px, /)
   } finally { Object.defineProperty(window, 'innerWidth', { configurable: true, value: realWidth }); await act(async () => root.unmount()) }
 })

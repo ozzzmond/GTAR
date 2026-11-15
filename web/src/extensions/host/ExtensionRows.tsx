@@ -2,7 +2,8 @@ import React from 'react'
 import { Layers, ChevronRight } from 'lucide-react'
 import { AppModal, AppModalSection } from '../../components/AppModal'
 import { ProPresenterHelp } from '../../components/ProPresenterHelp'
-import { launcherRow } from '../../components/advancedToolsRow'
+import { flatRow, launcherButton, launcherIcon, launcherRow, launcherSwitch } from '../../components/advancedToolsRow'
+import { BandSyncHelp } from '../../components/menuHelp'
 import type { ExtensionHost } from './ExtensionHost'
 
 const labels = {
@@ -67,15 +68,13 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
   // Manifest-only or unavailable entries are informational text, with no dead button or toggle.
   if (!entry.load || !availability.available) {
     return (
-      <div data-testid={`extension-${id}`} className="mb-1.5 last:mb-0">
-        <div className={`${launcherRow(rowClass)} flex items-center justify-between`}>
+      <div data-testid={`extension-${id}`} className="mb-2 last:mb-0">
+        <div className={`${flatRow(rowClass)} justify-between`}>
           <div className="flex flex-1 min-w-0 items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-app-surface border border-app-border flex items-center justify-center text-app-muted shrink-0">
-              <Layers className="w-4 h-4" aria-hidden="true" />
-            </div>
+            <Layers className="w-4 h-4 text-app-muted shrink-0" aria-hidden="true" />
             <div className="flex-1 min-w-0 text-left">
-              <span className="block text-xs sm:text-sm font-bold text-app-heading">{manifest.name}</span>
-              <span className="block text-app-muted text-[10px] sm:text-[11px]">{manifest.summary}</span>
+              <span className="block">{manifest.name}</span>
+              <span className="block text-app-muted text-[10px] font-normal">{manifest.summary}</span>
             </div>
             {statusBadge}
           </div>
@@ -85,20 +84,18 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
   }
 
   return (
-    <div data-testid={`extension-${id}`} className={`${launcherRow(rowClass)} justify-between mb-1.5 last:mb-0`}>
+    <div data-testid={`extension-${id}`} className={`${launcherRow(rowClass)} justify-between mb-2 last:mb-0`}>
         <button
           type="button"
           data-testid={`extension-${id}-expand`}
-          className="flex flex-1 min-w-0 min-h-11 items-center gap-2.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action rounded-lg"
+          className={launcherButton}
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => (onOpenDialog ? onOpenDialog(id) : setOpen(!open))}
         >
-          <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
-            <Layers className="w-4 h-4" aria-hidden="true" />
-          </div>
+          <Layers className={launcherIcon} aria-hidden="true" />
           <div className="flex flex-1 min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="text-xs sm:text-sm font-bold text-app-heading">{manifest.name}</span>
+            <span>{manifest.name}</span>
             {/* The switch already says on or off; a pill appears only for what it cannot say. */}
             {(snapshot.state === 'starting' || snapshot.state === 'offline' || snapshot.state === 'error') && statusBadge}
           </div>
@@ -109,7 +106,7 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
 
         {/* Master ON/OFF Switch */}
         <label
-          className="relative inline-flex items-center cursor-pointer min-w-[44px] min-h-[44px] justify-center select-none ml-2"
+          className={`relative ${launcherSwitch}`}
           aria-label={`Enable ${manifest.name}`}
         >
           <input
@@ -181,6 +178,7 @@ export function ExtensionSettingsDialog({ host, id, onClose, returnFocusRef }: E
           {id === 'propresenter-follower' && (
             <ProPresenterHelp />
           )}
+          {id === 'band-sync' && <BandSyncHelp />}
         </>
       }
     >

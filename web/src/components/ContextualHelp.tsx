@@ -60,10 +60,13 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
   useEffect(() => {
     if (!open) return
 
+    // Capture phase: an open help panel takes Escape before the menu, sheet or dialog hosting it,
+    // and focus goes back to the help button.
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
         handleClose()
+        buttonRef.current?.focus({ preventScroll: true })
       }
     }
 
@@ -74,11 +77,11 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
     window.addEventListener('pointerdown', handlePointerDown)
     window.addEventListener('resize', place)
     return () => {
-      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keydown', handleKeyDown, true)
       window.removeEventListener('pointerdown', handlePointerDown)
       window.removeEventListener('resize', place)
     }
@@ -94,7 +97,7 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
         data-testid={buttonTestId}
         ref={buttonRef}
         onClick={() => { if (!open) place(); setOpen((prev) => !prev) }}
-        className="relative flex w-8 h-8 shrink-0 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action select-none"
+        className="relative flex w-8 h-8 shrink-0 items-center justify-center rounded-lg border border-app-border bg-app-base text-app-muted hover:text-app-heading hover:border-app-action cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action select-none before:absolute before:-inset-1.5 before:content-['']"
       >
         <CircleHelp className="w-4 h-4" aria-hidden="true" />
       </button>
