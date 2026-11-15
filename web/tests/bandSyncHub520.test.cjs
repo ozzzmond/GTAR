@@ -32,12 +32,12 @@ const content = () => ({ contentHash: 'a'.repeat(64), snapshot: { songId: 'song'
   position: { lineIndex: 0 }, scroll: { top: 0, fraction: 0 }, mode: { columns: 1, notation: 'chords' } } })
 const envelope = (type, payload, role = 'leader', sequence = 1) => ({ version: 1, roomCode: 'ABCDEFGH', direction: role === 'leader' ? 'LEADER_TO_SERVER' : 'FOLLOWER_TO_SERVER',
   type, payload, sequence, timestamp: 0 })
-function fixture(existing) {
+function fixture(existing, env = existing?.env || {}) {
   const storage = existing?.storage || new Storage(), sockets = existing?.sockets || [], clock = existing?.clock || { now: 1000000 }
   const ctx = { storage, acceptWebSocket: s => sockets.push(s), getWebSockets: () => sockets,
     setWebSocketAutoResponse: pair => { ctx.auto = pair } }
   const runtime = { now: () => clock.now, heartbeat: () => ({ request: 'ping', response: 'pong' }), upgrade: () => ({ server: new Socket(), response: new Response(null, { status: 200 }) }) }
-  const hub = new BandSyncHub(ctx, {}, runtime)
+  const hub = new BandSyncHub(ctx, env, runtime)
   const call = async (path, data = {}) => {
     const response = await hub.fetch(new Request('https://internal' + path, { method: 'POST', body: JSON.stringify(data) }))
     return { status: response.status, ...await response.json() }
@@ -50,7 +50,7 @@ function fixture(existing) {
   }
   const connect = async (s, role = 'leader') => { const t = await ticket(s, role); assert.equal(t.status, 200); const u = await upgrade(t.ticket); assert.equal(u.status, 200); return u.socket }
   const send = (socket, type, payload, seq, role = socket.a.role) => hub.webSocketMessage(socket, JSON.stringify(envelope(type, payload, role, seq)))
-  return { hub, ctx, storage, sockets, clock, call, create, ticket, upgrade, connect, send }
+  return { hub, ctx, storage, sockets, clock, call, create, ticket, upgrade, connect, send, env }
 }
 test('room code: 32 nonambiguous symbols, cryptographic generation; stored leader secret hash only', async () => {
   assert.equal(ROOM_ALPHABET.length, 32); assert.equal(new Set(ROOM_ALPHABET).size, 32)
@@ -97,20 +97,19 @@ test('pending join tickets cannot bypass follower cap at socket upgrade', async 
   for (const ticket of tickets.slice(0, 12)) assert.equal((await f.upgrade(ticket)).status, 200)
   assert.equal((await f.upgrade(tickets[12])).status, 409)
 })
-test('five bad credentials/tickets lock room durably and clear chart and live sockets', async () => {
-  for (const type of ['credential', 'ticket', 'join']) {
-    const f = fixture(), s = await f.create(), leader = await f.connect(s), follower = await f.connect(s, 'follower')
-    await f.send(leader, 'STATE', { state: state() }, 1); await f.send(leader, 'CONTENT', content(), 2)
-    for (let i = 0; i < 5; i++) {
-      const status = type === 'ticket' ? (await f.upgrade('f'.repeat(64))).status :
-        (await f.call(type === 'join' ? '/join' : '/ticket', type === 'join' ? { roomCode: s.roomCode, extra: true } : { roomCode: s.roomCode, leaderCredential: 'f'.repeat(64) })).status
-      assert.equal(status, 403)
-    }
-    assert.equal(follower.sent.at(-1).type, 'SESSION_ENDED'); assert.equal(follower.sent.at(-1).payload.reason, 'LOCKED')
-    assert.equal(leader.closed, true); assert.equal(follower.closed, true); assert.equal(f.storage.data.has('room'), false)
-    assert.ok(!JSON.stringify([...f.storage.data]).includes('Ephemeral chart'))
-    assert.equal((await fixture(f).ticket(s)).status, 403); assert.equal((await fixture(f).create()).status, 409)
+test('failed credentials, joins and tickets never mutate room state, chart or live sockets', async () => {
+  const f = fixture(), s = await f.create(), leader = await f.connect(s), follower = await f.connect(s, 'follower')
+  await f.send(leader, 'STATE', { state: state() }, 1); await f.send(leader, 'CONTENT', content(), 2)
+  const before = structuredClone(f.storage.data.get('room')), frames = follower.sent.length, alarm = f.storage.alarm
+  for (let i = 0; i < 50; i++) {
+    assert.equal((await f.call(i % 2 ? '/end' : '/ticket', { roomCode: s.roomCode, leaderCredential: 'f'.repeat(64) })).status, 403)
+    assert.equal((await f.call('/join', { roomCode: s.roomCode, extra: true })).status, 403)
+    assert.equal((await f.upgrade('f'.repeat(64))).status, 403)
   }
+  assert.deepEqual(f.storage.data.get('room'), before); assert.equal(f.storage.alarm, alarm)
+  assert.equal(leader.closed, false); assert.equal(follower.closed, false); assert.equal(follower.sent.length, frames)
+  assert.deepEqual(f.storage.data.get('room').content, content())
+  assert.equal((await fixture(f).ticket(s)).status, 200)
 })
 test('idle and absolute expiry alarms erase chart; activity cannot extend absolute deadline', async () => {
   for (const absolute of [false, true]) {
@@ -204,7 +203,7 @@ function directoryFixture() {
 }
 test('directory per-IP admission, global cap, ticket routing one-use/expiry and bounded cleanup', async () => {
   const f = directoryFixture(), client = await digest('test-client'), rooms = []
-  for (let i = 0; i < L.createsPerMinute; i++) rooms.push(await f.call('/create', { client }))
+  for (let i = 0; i < 2; i++) rooms.push(await f.call('/create', { client }))
   assert.equal((await f.call('/create', { client })).status, 429)
   const t = { roomCode: rooms[0].roomCode, hash: 'a'.repeat(64) }
   assert.equal((await f.call('/register', t)).status, 200)
@@ -257,7 +256,7 @@ test('gateway + directory + room: anonymous create/join/reconnect/end without UI
   const env = { BANDSYNC_MODE: 'reviewed-v1', BANDSYNC_ORIGIN: 'https://gtar.test',
     BANDSYNC_DIRECTORY: { idFromName: n => n, get: () => directory.d },
     BANDSYNC_HUB: { idFromName: n => n, get: code => {
-      if (!rooms.has(code)) rooms.set(code, fixture())
+      if (!rooms.has(code)) rooms.set(code, fixture(undefined, env))
       return rooms.get(code).hub
     } } }
   const call = async (path, payload) => {
@@ -270,7 +269,7 @@ test('gateway + directory + room: anonymous create/join/reconnect/end without UI
   const s = await call('/create', {}), scope = { roomCode: s.roomCode, leaderCredential: s.leaderCredential }
   const connect = async t => {
     const response = await worker.fetch(new Request('https://worker.test/socket', { headers: {
-      Origin: 'https://gtar.test', Upgrade: 'websocket', 'Sec-WebSocket-Protocol': `bandsync, ticket.${t.ticket}`,
+      Origin: 'https://gtar.test', 'CF-Connecting-IP': 'test-client', Upgrade: 'websocket', 'Sec-WebSocket-Protocol': `bandsync, ticket.${t.ticket}`,
     } }), env)
     assert.equal(response.status, 200)
     return rooms.get(s.roomCode).sockets.at(-1)
@@ -284,4 +283,109 @@ test('gateway + directory + room: anonymous create/join/reconnect/end without UI
   assert.deepEqual(reconnected.sent[0].payload.content, content())
   await call('/end', scope)
   assert.equal(follower.sent.at(-1).payload.reason, 'LEADER_ENDED'); assert.equal(reconnected.closed, true)
+  assert.equal(directory.storage.data.get('directory').rooms.length, 0)
+})
+
+function gatewayFixture() {
+  const directory = directoryFixture(), rooms = new Map(), calls = { hub: 0, release: 0 }
+  const env = { BANDSYNC_MODE: 'reviewed-v1', BANDSYNC_ORIGIN: 'https://gtar.test',
+    BANDSYNC_DIRECTORY: { idFromName: n => n, get: () => ({ fetch: r => {
+      if (new URL(r.url).pathname === '/release') calls.release++
+      return directory.d.fetch(r)
+    } }) },
+    BANDSYNC_HUB: { idFromName: n => n, get: code => {
+      if (!rooms.has(code)) rooms.set(code, fixture(undefined, env))
+      return { fetch: r => { calls.hub++; return rooms.get(code).hub.fetch(r) } }
+    } } }
+  const post = (path, payload = {}, ip = 'leader-client') => worker.fetch(new Request('https://worker.test' + path, {
+    method: 'POST', headers: { Origin: 'https://gtar.test', 'CF-Connecting-IP': ip }, body: JSON.stringify(payload),
+  }), env)
+  const connect = async (ticket, ip = 'leader-client') => {
+    const response = await worker.fetch(new Request('https://worker.test/socket', { headers: {
+      Origin: 'https://gtar.test', 'CF-Connecting-IP': ip, Upgrade: 'websocket', 'Sec-WebSocket-Protocol': `bandsync, ticket.${ticket.ticket}`,
+    } }), env)
+    assert.equal(response.status, 200); return rooms.get(ticket.roomCode).sockets.at(-1)
+  }
+  return { directory, rooms, calls, env, post, connect }
+}
+test('50 wrong credentials only throttle the attacking client; room/chart/leader survive', async () => {
+  const g = gatewayFixture(), s = await (await g.post('/create')).json(), scope = { roomCode: s.roomCode, leaderCredential: s.leaderCredential }
+  const leader = await g.connect(await (await g.post('/ticket', scope)).json())
+  const follower = await g.connect(await (await g.post('/join', { roomCode: s.roomCode })).json())
+  const f = g.rooms.get(s.roomCode)
+  for (const [i, type] of ['STATE', 'CONTENT'].entries()) await f.hub.webSocketMessage(leader, JSON.stringify({
+    ...envelope(type, type === 'STATE' ? { state: state() } : content(), 'leader', i + 1), roomCode: s.roomCode,
+  }))
+  const before = structuredClone(f.storage.data.get('room')), hubBefore = g.calls.hub, frames = follower.sent.length
+  for (let i = 0; i < 50; i++) {
+    const response = await g.post(i % 2 ? '/end' : '/ticket', { ...scope, leaderCredential: 'f'.repeat(64) }, 'attacker-client')
+    assert.equal(response.status, i < 20 ? 403 : 429)
+  }
+  assert.equal(g.calls.hub - hubBefore, 20)
+  assert.deepEqual(f.storage.data.get('room'), before); assert.equal(follower.sent.length, frames)
+  assert.equal(leader.closed, false); assert.equal(follower.closed, false)
+  assert.equal((await g.post('/join', { roomCode: s.roomCode }, 'another-client')).status, 200)
+  assert.equal((await g.post('/ticket', scope)).status, 200)
+  // Failure budget expires independently of room lifetime.
+  assert.equal((await g.directory.call('/attempt', { client: await digest('attacker-client') })).status, 429)
+  g.directory.clock.now += 60000
+  assert.equal((await g.post('/ticket', scope, 'attacker-client')).status, 200)
+  assert.equal((await g.post('/end', scope)).status, 200)
+})
+test('directory failure reservations bound concurrent guesses, refund successes once, and isolate clients', async () => {
+  const f = directoryFixture(), client = await digest('attacker'), other = await digest('other')
+  const reservations = await Promise.all(Array.from({ length: 50 }, () => f.call('/attempt', { client })))
+  assert.equal(reservations.filter(r => r.status === 200).length, 20)
+  assert.equal(reservations.filter(r => r.status === 429).length, 30)
+  assert.equal((await f.call('/attempt', { client: other })).status, 200)
+  const result = { client, attemptId: reservations[0].attemptId, failed: false }
+  await f.call('/result', result); await f.call('/result', result)
+  assert.equal((await f.call('/attempt', { client })).status, 200)
+  assert.equal((await f.call('/attempt', { client })).status, 429)
+  const restarted = new BandSyncDirectory({ storage: f.storage }, {}, { now: () => f.clock.now })
+  const denied = await restarted.fetch(new Request('https://internal/attempt', { method: 'POST', body: JSON.stringify({ client }) }))
+  assert.equal(denied.status, 429)
+})
+test('live room cap is two per client, cannot fill global capacity; release is idempotent and frees routes', async () => {
+  const f = directoryFixture(), client = await digest('creator'), rooms = []
+  for (let i = 0; i < 2; i++) rooms.push(await f.call('/create', { client }))
+  for (let i = 0; i < 50; i++) assert.equal((await f.call('/create', { client })).status, 429)
+  f.clock.now += 60000
+  assert.equal((await f.call('/create', { client })).status, 429)
+  for (let i = 2; i < 32; i++) assert.equal((await f.call('/create', { client: await digest('other-' + i) })).status, 200)
+  assert.equal((await f.call('/create', { client: await digest('overflow') })).status, 429)
+  const hash = 'a'.repeat(64)
+  await f.call('/register', { roomCode: rooms[0].roomCode, hash })
+  for (let i = 0; i < 2; i++) assert.equal((await f.call('/release', { roomCode: rooms[0].roomCode })).status, 200)
+  assert.equal((await f.call('/resolve', { hash })).status, 403)
+  assert.equal((await f.call('/create', { client })).status, 200)
+  assert.equal((await f.call('/create', { client: await digest('overflow') })).status, 429)
+})
+test('five creates per minute still enforced after rooms end and release', async () => {
+  const f = directoryFixture(), client = await digest('creator')
+  for (let i = 0; i < 5; i++) {
+    const room = await f.call('/create', { client }); assert.equal(room.status, 200)
+    await f.call('/release', { roomCode: room.roomCode })
+  }
+  assert.equal((await f.call('/create', { client })).status, 429)
+  f.clock.now += 60000; assert.equal((await f.call('/create', { client })).status, 200)
+})
+test('end and expiry release directory slot through hub without worker; /end also releases through worker', async () => {
+  for (const reason of ['http', 'bye', 'idle', 'absolute']) {
+    const g = gatewayFixture(), s = await (await g.post('/create')).json(), f = g.rooms.get(s.roomCode)
+    assert.equal(g.directory.storage.data.get('directory').rooms.length, 1)
+    if (reason === 'http') {
+      assert.equal((await g.post('/end', { roomCode: s.roomCode, leaderCredential: s.leaderCredential })).status, 200)
+      assert.equal(g.calls.release, 2)
+    } else if (reason === 'bye') {
+      const leader = await g.connect(await (await g.post('/ticket', { roomCode: s.roomCode, leaderCredential: s.leaderCredential })).json())
+      await f.hub.webSocketMessage(leader, JSON.stringify({ ...envelope('BYE', {}), roomCode: s.roomCode }))
+    } else {
+      f.clock.now += reason === 'idle' ? L.idleMs : L.lifetimeMs
+      await f.hub.alarm()
+    }
+    assert.ok(g.calls.release >= 1)
+    assert.equal(g.directory.storage.data.get('directory').rooms.length, 0)
+    assert.equal((await g.post('/create')).status, 200)
+  }
 })

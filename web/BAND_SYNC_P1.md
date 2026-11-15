@@ -8,8 +8,8 @@ service, database binding, or deployment is included.
 
 The gateway requires an exact HTTPS origin from `BANDSYNC_ORIGIN`, rejects cookies
 and query strings, and constructs fresh internal headers. Caller authorization,
-cookies, internal headers and raw IP addresses never reach a room. Only create
-admission sees a SHA-256 IP digest. Room codes grant follower access; a separate
+cookies, internal headers and raw IP addresses never reach a room. Directory
+admission and failed-attempt budgets use a SHA-256 IP digest. Room codes grant follower access; a separate
 256-bit leader credential grants control. Only its SHA-256 hash is stored.
 One-use 256-bit tickets expire after 15 seconds and travel in
 `Sec-WebSocket-Protocol: bandsync, ticket.<64hex>`; only `bandsync` is selected.
@@ -37,7 +37,7 @@ direction and an exact allowlisted payload. Text is display text, never HTML.
 | CONTENT | leader/server | contentHash + validated Cast2 ReceiverSnapshot |
 | NEED_CONTENT | follower/server | contentHash; cache reply or request to leader |
 | BYE | leader/follower | empty; leader ends room, follower leaves |
-| SESSION_ENDED | server | fixed LEADER_ENDED, EXPIRED or LOCKED reason |
+| SESSION_ENDED | server | LEADER_ENDED or EXPIRED (LOCKED remains a reserved wire value, never emitted) |
 | ERROR | server | fixed protocol error code |
 
 REQUEST_SONG, CHAT and VOICE_MEMO are unknown message types in P1.
@@ -55,8 +55,12 @@ publishes `leaderOnline=false`; valid leader reconnect replaces the prior leader
 ## Limits
 
 Eight symbols from `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (40 bits); cryptographic
-rejection sampling. Twelve followers, one leader; five bad room/ticket attempts
-end and lock the room. Thirty messages/second/socket; STATE fan-out at most four
+rejection sampling. Twelve followers, one leader. Failed joins, tickets and leader
+credentials return 403 without changing the room, chart, expiry or live sockets;
+they never lock or end a room. Directory admission reserves a client-local budget
+before each hub call: 20 failures/minute, then 429 for that hashed IP only.
+Concurrent in-flight attempts also count until settled; successful requests refund
+their reservation once. Other clients retain independent budgets. Thirty messages/second/socket; STATE fan-out at most four
 per second, latest pending state wins. STATE <=4 KiB encoded. CONTENT uses
 CAST2_LIMITS: 256 KiB snapshot validation, 2048 lines, 8192 chars per line field;
 the source projection's 128 Ki-char source cap remains a P1b publisher boundary.
@@ -66,9 +70,14 @@ metadata; at most 32 outstanding tickets per room. No chart history is retained.
 STATE numeric bounds: TRANSPOSE_OFFSET -11..11, lineIndex 0..2047,
 scrollFraction 0..1, autoscroll speed 0..1000; setlist index is zero-based and
 below count (empty setlist uses index=count=0).
-Directory: 32 room reservations, five creates/IP/minute, 512 IP buckets,
-1024 short-lived ticket routes. Conservative six-hour admission leases can count
-ended/idle-expired rooms until their lease expires; capacity fails closed.
+Directory: 32 live-room reservations, at most two per hashed IP, five
+creates/IP/minute, 512 create buckets and 512 failure buckets, 1024 short-lived
+ticket routes. Internal `/release` removes the room reservation and its ticket
+routes idempotently. The hub releases on leader end (HTTP or BYE) and on idle or
+absolute expiry; the worker also releases after successful `/end`. Directory
+six-hour leases independently reclaim reservations if a release call fails;
+capacity fails closed until release or lease expiry. The live-room cap does not
+reset with the per-minute create counter.
 
 ## P1b
 

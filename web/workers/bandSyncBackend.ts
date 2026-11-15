@@ -47,8 +47,10 @@ export const socketTicket = (r: Request): string => {
   return match[1]
 }
 interface Ticket { hash: string; role: 'leader' | 'follower'; expires: number }
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } }
+export const BAND_SYNC_ADMISSION = Object.freeze({ failuresPerMinute: 20, liveRoomsPerClient: 2 })
 interface Room {
-  roomCode: string; leaderHash: string; created: number; touched: number; attempts: number
+  roomCode: string; leaderHash: string; created: number; touched: number
   sequence: number; state: BandSyncState | null; content: BandSyncContent | null
   pending: BandSyncState | null; lastStateAt: number; tickets: Ticket[]
 }
@@ -60,8 +62,10 @@ export class BandSyncHub {
   private failed = false
   private ctx: Context
   private clock: Runtime
-  constructor(ctx: Context, _env?: unknown, clock: Runtime = rt) {
+  private directory?: Namespace
+  constructor(ctx: Context, env?: { BANDSYNC_DIRECTORY?: Namespace }, clock: Runtime = rt) {
     this.ctx = ctx; this.clock = clock
+    this.directory = env?.BANDSYNC_DIRECTORY
     ctx.setWebSocketAutoResponse(clock.heartbeat())
     this.tail = ctx.storage.get<Room>('room').then(r => { this.room = r }).catch(() => { this.failed = true })
   }
@@ -78,10 +82,11 @@ export class BandSyncHub {
       if (this.failed) throw new Denial('UNAVAILABLE', 503)
       try {
         if (this.room && this.expired()) await this.end('EXPIRED')
-        let value: T
+        let value: T, denied = false
         try { value = await fn() }
+        catch (e) { denied = e instanceof Denial && e.status === 403; throw e }
         finally {
-          if (this.room) {
+          if (this.room && !denied) {
             await this.ctx.storage.put('room', this.room)
             await this.ctx.storage.setAlarm(Math.min(this.room.created + L.lifetimeMs, this.room.touched + L.idleMs,
               this.room.pending ? this.room.lastStateAt + L.stateIntervalMs : Infinity))
@@ -124,16 +129,21 @@ export class BandSyncHub {
     this.advance()
     for (const s of this.sockets('follower')) this.send(s, 'STATE', { state: r.state })
   }
-  private async end(reason: 'LEADER_ENDED' | 'EXPIRED' | 'LOCKED'): Promise<void> {
+  private async end(reason: 'LEADER_ENDED' | 'EXPIRED'): Promise<void> {
+    const roomCode = this.requireRoom().roomCode
     this.advance()
     for (const s of this.sockets()) { this.send(s, 'SESSION_ENDED', { reason }); this.close(s, reason) }
     this.room = undefined
     await this.ctx.storage.deleteAll()
     await this.ctx.storage.put('used', true)
-  }
-  private async bad(): Promise<never> {
-    if (++this.requireRoom().attempts >= L.attempts) await this.end('LOCKED')
-    throw new Denial()
+    // The directory's absolute lease remains the fallback if this internal release fails.
+    if (this.directory) {
+      try {
+        await this.directory.get(this.directory.idFromName('directory')).fetch(new Request('https://directory.internal/release', {
+          method: 'POST', body: JSON.stringify({ roomCode }),
+        }))
+      } catch { /* Ending/expiry must still clear the chart when the directory is unavailable. */ }
+    }
   }
   private async ticket(role: Ticket['role']): Promise<Response> {
     const r = this.requireRoom(), now = this.clock.now()
@@ -150,9 +160,9 @@ export class BandSyncHub {
       if (url.pathname === '/socket' && request.method === 'GET') {
         const r = this.requireRoom()
         let token: string
-        try { token = socketTicket(request) } catch { return this.bad() }
+        try { token = socketTicket(request) } catch { throw new Denial() }
         const h = await digest(token), t = r.tickets.find(t => t.hash === h)
-        if (!t || t.expires <= this.clock.now()) return this.bad()
+        if (!t || t.expires <= this.clock.now()) throw new Denial()
         r.tickets = r.tickets.filter(x => x !== t)
         if (t.role === 'follower' && this.sockets('follower').length >= L.followers) throw new Denial('ROOM_FULL', 409)
         // Burn ticket durably before upgrading or replacing the old leader.
@@ -173,20 +183,20 @@ export class BandSyncHub {
         if (this.room || await this.ctx.storage.get('used')) throw new Denial('ROOM_EXISTS', 409)
         const credential = bandSecret(), now = this.clock.now()
         this.room = { roomCode: p.roomCode, leaderHash: await digest(credential), created: now, touched: now,
-          attempts: 0, sequence: 1, state: null, content: null, pending: null, lastStateAt: 0, tickets: [] }
+          sequence: 1, state: null, content: null, pending: null, lastStateAt: 0, tickets: [] }
         // Tombstone prevents old credentials/tickets from ever reaching a reused room code.
         await this.ctx.storage.put('used', true)
         return reply({ roomCode: p.roomCode, leaderCredential: credential, expiresAt: now + L.lifetimeMs })
       }
       const r = this.requireRoom()
-      if (p.roomCode !== r.roomCode) return this.bad()
+      if (p.roomCode !== r.roomCode) throw new Denial()
       if (url.pathname === '/join') {
-        if (!shape(p, ['roomCode'])) return this.bad()
+        if (!shape(p, ['roomCode'])) throw new Denial()
         if (this.sockets('follower').length >= L.followers) throw new Denial('ROOM_FULL', 409)
         return this.ticket('follower')
       }
       if (!['/ticket', '/end'].includes(url.pathname)) throw new Denial('INVALID_REQUEST', 400)
-      if (!shape(p, ['roomCode', 'leaderCredential']) || !secretShape(p.leaderCredential) || await digest(p.leaderCredential) !== r.leaderHash) return this.bad()
+      if (!shape(p, ['roomCode', 'leaderCredential']) || !secretShape(p.leaderCredential) || await digest(p.leaderCredential) !== r.leaderHash) throw new Denial()
       if (url.pathname === '/end') { await this.end('LEADER_ENDED'); return reply({ ended: true }) }
       return this.ticket('leader')
     }) } catch (e) { return reply({ error: e instanceof Denial ? e.code : 'UNAVAILABLE' }, e instanceof Denial ? e.status : 503) }
@@ -254,11 +264,12 @@ export class BandSyncHub {
 }
 
 interface DirectoryData {
-  rooms: { code: string; expires: number }[]
+  rooms: { code: string; expires: number; client: string }[]
   clients: { hash: string; count: number; window: number }[]
   tickets: { hash: string; roomCode: string; expires: number }[]
+  failures: { hash: string; count: number; window: number; pending: string[] }[]
 }
-/** Admission and short-lived socket routing only; conservative room leases last at most six hours. */
+/** Bounded admission, client-local failed attempts, slot release and short-lived socket routing. */
 export class BandSyncDirectory {
   private tail: Promise<unknown> = Promise.resolve()
   private ctx: { storage: Storage }
@@ -267,20 +278,42 @@ export class BandSyncDirectory {
   async fetch(request: Request): Promise<Response> {
     const work = this.tail.then(async () => {
       const p = await body(request), path = new URL(request.url).pathname, now = this.now()
-      const d = await this.ctx.storage.get<DirectoryData>('directory') || { rooms: [], clients: [], tickets: [] }
+      const d = await this.ctx.storage.get<DirectoryData>('directory') || { rooms: [], clients: [], tickets: [], failures: [] }
+      d.failures = (d.failures || []).filter(c => c.window + 60000 > now)
       d.rooms = d.rooms.filter(r => r.expires > now); d.clients = d.clients.filter(c => c.window + 60000 > now); d.tickets = d.tickets.filter(t => t.expires > now)
       let result: unknown
-      if (path === '/create' && shape(p, ['client']) && secretShape(p.client)) {
+      if (path === '/attempt' && shape(p, ['client']) && secretShape(p.client)) {
+        let c = d.failures.find(c => c.hash === p.client)
+        if (!c) {
+          if (d.failures.length >= L.directoryBuckets) throw new Denial('LIMIT', 429)
+          c = { hash: p.client, count: 0, window: now, pending: [] }; d.failures.push(c)
+        }
+        if (c.count >= BAND_SYNC_ADMISSION.failuresPerMinute) throw new Denial('LIMIT', 429)
+        // Reserve before the hub call, so concurrent guesses cannot pass the same budget check.
+        const attemptId = bandSecret(); c.count++; c.pending.push(attemptId); result = { attemptId }
+      } else if (path === '/result' && shape(p, ['client', 'attemptId', 'failed']) && secretShape(p.client) && secretShape(p.attemptId) && typeof p.failed === 'boolean') {
+        const c = d.failures.find(c => c.hash === p.client)
+        if (c?.pending.includes(p.attemptId)) {
+          c.pending = c.pending.filter(id => id !== p.attemptId)
+          if (!p.failed) c.count--
+        }
+        result = { ok: true }
+      } else if (path === '/release' && shape(p, ['roomCode']) && isRoomCode(p.roomCode)) {
+        d.rooms = d.rooms.filter(r => r.code !== p.roomCode)
+        d.tickets = d.tickets.filter(t => t.roomCode !== p.roomCode)
+        result = { ok: true }
+      } else if (path === '/create' && shape(p, ['client']) && secretShape(p.client)) {
         let c = d.clients.find(c => c.hash === p.client)
         if (!c) {
           if (d.clients.length >= L.directoryBuckets) throw new Denial('LIMIT', 429)
           c = { hash: p.client, count: 0, window: now }; d.clients.push(c)
         }
-        if (c.count >= L.createsPerMinute || d.rooms.length >= L.rooms) throw new Denial('LIMIT', 429)
+        if (c.count >= L.createsPerMinute || d.rooms.length >= L.rooms ||
+          d.rooms.filter(r => r.client === p.client).length >= BAND_SYNC_ADMISSION.liveRoomsPerClient) throw new Denial('LIMIT', 429)
         c.count++
         let code: string
         do { code = generateRoomCode() } while (d.rooms.some(r => r.code === code))
-        d.rooms.push({ code, expires: now + L.lifetimeMs }); result = { roomCode: code }
+        d.rooms.push({ code, expires: now + L.lifetimeMs, client: p.client }); result = { roomCode: code }
       } else if (path === '/register' && shape(p, ['roomCode', 'hash']) && isRoomCode(p.roomCode) && secretShape(p.hash) && d.rooms.some(r => r.code === p.roomCode)) {
         if (d.tickets.length >= L.rooms * L.tickets) throw new Denial('LIMIT', 429)
         d.tickets.push({ roomCode: p.roomCode, hash: p.hash, expires: now + L.ticketMs }); result = { ok: true }
@@ -301,8 +334,9 @@ export class BandSyncDirectory {
       const d = await this.ctx.storage.get<DirectoryData>('directory')
       if (!d) return
       const now = this.now()
+      d.failures = (d.failures || []).filter(c => c.window + 60000 > now)
       d.rooms = d.rooms.filter(r => r.expires > now); d.tickets = d.tickets.filter(t => t.expires > now); d.clients = d.clients.filter(c => c.window + 60000 > now)
-      if (!d.rooms.length && !d.clients.length && !d.tickets.length) await this.ctx.storage.deleteAll()
+      if (!d.rooms.length && !d.clients.length && !d.tickets.length && !d.failures.length) await this.ctx.storage.deleteAll()
       else { await this.ctx.storage.put('directory', d); await this.ctx.storage.setAlarm(now + L.lifetimeMs) }
     })
     this.tail = work.catch(() => { /* A later alarm can retry cleanup. */ })
