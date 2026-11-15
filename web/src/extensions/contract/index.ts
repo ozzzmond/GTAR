@@ -22,6 +22,7 @@ export interface HostEnv { readonly capabilities: readonly Capability[] }
 export type ExtensionState = 'absent' | 'disabled' | 'unavailable' | 'starting' | 'active' | 'offline' | 'error'
 // Ephemeral panel data/actions; never persisted or connected to core state.
 export interface ExtensionPanel {
+  qr?: { label: string; src: string }
   inputs?: readonly { label: string; value: string; maxLength: number; change(value: string): void }[]
   fields: readonly { label: string; value: string }[]
   actions: readonly { label: string; disabled?: boolean; run(): void }[]
@@ -49,7 +50,12 @@ export interface ExtensionContext {
   setFollowRefresh?(refresh: () => void): void
   setCurrentSlideRead?(read: (signal: AbortSignal) => Promise<void>): void
 }
-export interface StageSongEvent {
+export interface StageSyncPosition {
+  readonly lineIndex: number; readonly scrollFraction: number
+  readonly autoscroll: Readonly<{ on: boolean; speed: number }>
+  readonly setlist: Readonly<{ id: string | null; index: number; count: number }>
+}
+export interface StageSongEvent extends StageSyncPosition {
   readonly songId: string | number | null; readonly contentHash: string; readonly displayTitle: string
   readonly transposeOffset: number; readonly effectiveKey: string; readonly chordsVisible: boolean
 }

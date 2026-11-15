@@ -17,9 +17,9 @@ const { bandSyncAvailability } = require('../src/extensions/band-sync/manifest.t
 const { useBandSyncGate } = require('../src/extensions/host/useBandSyncGate.ts')
 const song = { id: 'local', title: 'Local song', artist: '', key: 'C', capo: '', bpm: '', transposeOffset: 3,
   format: 'CHORDPRO', rawContent: '{title: Local song}\n{key: C}\n{original_key: C}\n[C]Local words' }
-const caps = ['net:https', 'ui:panel', 'events:song', 'events:transpose']
-async function ui(run) {
-  const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test', pretendToBeVisual: true })
+const caps = ['net:https', 'ui:panel', 'events:song', 'events:transpose', 'events:section', 'events:setlist']
+async function ui(run, options = {}) {
+  const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test/' + (options.hash ?? ''), pretendToBeVisual: true })
   const keys = ['window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage', 'HTMLElement', 'Node', 'CustomEvent',
     'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'isSecureContext', 'WebSocket', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
   const previous = new Map(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
@@ -52,13 +52,14 @@ async function ui(run) {
   const originals = { subscribe: bandSync.subscribe, onMessage: bandSync.onMessage }
   for (const name of Object.keys(originals)) bandSync[name] = function (...args) { subscriptions.push(name); return originals[name].apply(this, args) }
   const host = new ExtensionHost(registry, localStorage, { capabilities: caps }, message => logs.push(message))
-  await host.start()
+  if (options.enabled) localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
+  if (options.strictStart) { const first = host.start(); host.dispose(); await Promise.all([first, host.start()]) } else await host.start()
   const { StageView } = require('../src/components/StageView.tsx')
   const { BandSyncModal } = require('../src/components/BandSyncModal.tsx')
   function Harness() {
     const [open, setOpen] = React.useState(false), gate = useBandSyncGate()
     return React.createElement(React.Fragment, null,
-      React.createElement(StageView, { song, songs: [song], activeSongIndex: 0, onSelectSongIndex() {}, transposeOffset: 3, onTransposeChange() {}, onOpenBandSync: () => setOpen(true) }),
+      React.createElement(StageView, { song, songs: [song], activeSongIndex: 0, onSelectSongIndex() {}, transposeOffset: 3, onTransposeChange() {}, onOpenBandSync: () => setOpen(true), ...options.stage }),
       React.createElement(BandSyncModal, { isOpen: open, onClose: () => setOpen(false), bandSyncEnabled: gate.active, initialTab: gate.active ? 'sync' : 'metronome' }),
       React.createElement(ExtensionRows, { host, rowClass: 'p-2' }))
   }
@@ -157,4 +158,32 @@ test('only band-sync can activate event capabilities; availability requires secu
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
   assert.ok(app.includes('onPushSetlistToBandSync={bandSyncEnabled ? handlePushSetlistToMembers : undefined}'))
   assert.ok(app.includes("if (!bandSyncEnabled) return { success: false, message: 'Band Sync is off' }"))
+})
+test('QR hash OFF is scrubbed with zero transport and never joins after a later enable; ON joins once', async () => {
+  await ui(async ({ calls, sockets, turnOn, dom }) => {
+    assert.equal(dom.window.location.hash, ''); assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
+    await turnOn(); assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
+  }, { hash: '#bandsync=ABCDEFGH' })
+  await ui(async ({ calls, sockets, dom, host }) => {
+    assert.equal(dom.window.location.hash, '')
+    assert.deepEqual(calls.map(c => c.url), ['/bandsync-api/join'])
+    assert.deepEqual(calls[0].body, { roomCode: 'ABCDEFGH' }); assert.equal(sockets.length, 1)
+    assert.equal(host.getSnapshot('band-sync').state, 'active')
+  }, { hash: '#bandsync=ABCDEFGH', enabled: true, strictStart: true })
+})
+test('Stage publishes only setlist id/index/count and leader memory-only reload notice; QR contains no secrets', async t => {
+  const encoded = []
+  t.mock.method(require('qrcode'), 'toDataURL', async value => { encoded.push(value); return 'data:image/png;base64,cXJ0ZXN0' })
+  await ui(async ({ turnOn, click, button, sockets, host }) => {
+    await turnOn(); await click(button('Start room')); await act(async () => sockets[0].open())
+    await act(async () => new Promise(resolve => setTimeout(resolve, 20)))
+    const state = sockets[0].sent.find(m => m.type === 'STATE').payload.state
+    assert.deepEqual(state.setlist, { id: 'setlist-test', index: 1, count: 2 })
+    assert.equal(JSON.stringify(sockets[0].sent).includes('Private setlist name'), false)
+    assert.match(host.getSnapshot('band-sync').panel.fields.find(f => f.label === 'Room control').value, /Reloading this page ends your control/)
+    const qr = document.querySelector('img[alt="Band Sync join QR"]')
+    assert.ok(qr); assert.match(qr.src, /^data:image\/png;base64,/)
+    assert.deepEqual(encoded, ['https://gtar.test/#bandsync=ABCDEFGH'])
+    assert.equal(encoded.join('').includes('c'.repeat(64)), false); assert.equal(encoded.join('').includes('b'.repeat(64)), false)
+  }, { stage: { queueMode: 'setlist', isInSetlistMode: true, activeSetlistId: 'setlist-test', activeSetlistName: 'Private setlist name', activeSetlistSongIndex: 1, activeSetlistSongs: [song, { ...song, id: 'other' }] } })
 })

@@ -116,3 +116,44 @@ Upgrade response pass through the service binding.
 preservation, and the WebSocket upgrade through the Pages service binding.
 Device/network reconnect and iOS background behavior also need live DEV checks.
 Local fake-runtime/DOM checks are not evidence for these live transport properties.
+
+
+## P1c
+
+Implemented behind the same default-OFF extension: leader scroll/line anchor,
+autoscroll and setlist position; follower scrolling/autoscroll and read-only
+“Song N of M”; room-code-only QR links. This PR deploys nothing. A source gate
+and client guard cap STATE at four per second. Line changes publish immediately
+when a slot is free; during a burst the newest line/fraction uses the next slot
+(within 250 ms). Position changes never resend CONTENT. The existing projection
+hash changes only with chart/presentation content, not scroll or setlist position.
+
+The follower normally uses scrollFraction; a line anchor corrects viewport/wrapping
+divergence beyond one screen. Geometry is read once per STATE, not every animation
+frame. Local autoscroll uses pixels/second clamped to 10–150, matching the effective
+legacy Stage control handler. Offline, stop, leave and disable cancel animation.
+Manual scrolling is allowed; the next leader STATE re-syncs without a prompt.
+Only setlist id/index/count travels; names and song lists stay on the leader.
+
+Ticket expiry belongs to the server, independent of phone clock. Failed socket
+opens get a fresh ticket. HTTP 403/404 from join/ticket stops automatic retries
+with “Room not found or ended”; Leave permits a new attempt. Network/5xx failures
+keep bounded backoff. Error bodies are neither read nor displayed. Leader
+credentials stay memory-only: reloading loses control and the room expires itself.
+No credential recovery or sessionStorage is added.
+
+A QR carries only {origin}/#bandsync=ROOMCODE. The parser requires same origin,
+root path, no query/credentials and exactly one valid bandsync hash key. The host
+scrubs that hash before activation; OFF discards it with no network activity and
+ON joins once, including the React development setup/cleanup cycle. In-app camera
+scan is skipped: TvQrScanner hardcodes the TV parser and TV/PIN prompts, so it
+cannot be reused as-is without changing Cast2 behavior. Typed codes and opening
+the QR link with a phone's native camera remain available.
+
+Still NOT done: chat, voice memo, request-song, setlist content transfer, leader
+credential recovery and legacy LAN removal (P5).
+
+UNVERIFIED — needs live DEV check: scroll/autoscroll feel on real devices, QR scan
+with a phone camera, iOS Safari WebSocket/background/reconnect behavior, and
+CF-Connecting-IP/Origin plus WebSocket upgrade through the Pages service binding.
+Local fake-clock/DOM checks do not mark these live properties PASS.

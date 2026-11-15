@@ -89,6 +89,7 @@ interface StageViewProps {
   activeSetlistSongIndex?: number
   onSelectSetlistSongIndex?: (index: number) => void
   activeSetlistName?: string
+  activeSetlistId?: string | number | null
   setlists?: WebSetlist[]
   onSelectSetlist?: (setlistId: string | number) => void
   onOpenSetlistDrawer?: () => void
@@ -151,6 +152,7 @@ export const StageView: React.FC<StageViewProps> = ({
   activeSetlistSongIndex = 0,
   onSelectSetlistSongIndex,
   activeSetlistName,
+  activeSetlistId = null,
   onOpenSetlistDrawer,
   isSetlistDrawerOpen = false,
   isStageSettingsModalOpen = false,
@@ -166,7 +168,7 @@ export const StageView: React.FC<StageViewProps> = ({
   onBack,
   onPerformanceModeChange,
 }) => {
-  const { host: bandHost, active: bandSyncEnabled, remote: bandRemote } = useBandSyncGate()
+  const { host: bandHost, active: bandSyncEnabled, leader: bandLeader, remote: bandRemote } = useBandSyncGate()
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
   // Stage view configuration & controls (matching Jetpack Compose SongViewerScreen.kt)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
@@ -816,6 +818,22 @@ export const StageView: React.FC<StageViewProps> = ({
   // Broadcast scroll position to Stage Cast teleprompter & BandSync when HOST.
   // Also keeps the sub-pixel accumulator in sync after a user manually drags
   // the scroll position (e.g. touch-scroll during autoscroll pause).
+  const publishBandPosition = useCallback((lineIndex: number, scrollFraction: number) => {
+    if (!bandSyncEnabled || !bandLeader) return
+    const count = isInSetlistMode && activeSetlistId !== null ? activeSetlistSongs.length : 0
+    bandHost.publishBandPosition({ lineIndex, scrollFraction: Math.min(1, Math.max(0, scrollFraction)),
+      autoscroll: { on: isAutoScrolling, speed: scrollSpeed },
+      setlist: { id: count ? String(activeSetlistId) : null, index: count ? Math.min(count - 1, Math.max(0, activeSetlistSongIndex)) : 0, count } })
+  }, [bandHost, bandSyncEnabled, bandLeader, isInSetlistMode, activeSetlistId, activeSetlistSongs.length, activeSetlistSongIndex, isAutoScrolling, scrollSpeed])
+  const bandLineIndex = useRef(0)
+  const bandSongId = useRef(song.id)
+  useEffect(() => {
+    if (!bandSyncEnabled || !bandLeader) return
+    if (bandSongId.current !== song.id) { bandLineIndex.current = 0; bandSongId.current = song.id }
+    const viewport = scrollContainerRef.current
+    const max = viewport ? viewport.scrollHeight - viewport.clientHeight : 0
+    publishBandPosition(bandLineIndex.current, max > 0 && viewport ? viewport.scrollTop / max : 0)
+  }, [publishBandPosition, song.id, bandSyncEnabled, bandLeader])
   const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const isLiveLyricScroll = liveScroll.controller.handleScroll()
     const target = e.currentTarget
@@ -866,6 +884,10 @@ export const StageView: React.FC<StageViewProps> = ({
       if (rawIdx !== null) {
         activeLineIndex = parseInt(rawIdx, 10)
       }
+    }
+    if (Number.isSafeInteger(activeLineIndex) && activeLineIndex >= 0) {
+      bandLineIndex.current = activeLineIndex
+      publishBandPosition(activeLineIndex, fraction)
     }
     stageCast.broadcastScroll(target.scrollTop, fraction, activeLineIndex)
 

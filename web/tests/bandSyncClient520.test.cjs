@@ -76,13 +76,14 @@ test('follower join, gap requests HELLO full snapshot, content demand and termin
   s.drop(); assert.equal(f.timers.size, 0)
   f.client.dispose()
 })
-test('expired ticket retried once; reconnect gets fresh ticket and snapshot; backoff capped at 30s', async () => {
+test('phone clock 60s ahead still connects; reconnect gets fresh ticket and snapshot; backoff capped at 30s', async () => {
   let attempts = 0
   const f = fixture(url => url.endsWith('/join') && ++attempts === 1 ? Response.json({ ticket, roomCode: 'ABCDEFGH', expiresAt: 100000 }) : null)
-  await f.client.join('ABCDEFGH'); assert.equal(f.calls.length, 2)
+  f.clock.now = 160000 // The server ticket timestamp is 60 seconds behind this phone.
+  await f.client.join('ABCDEFGH'); assert.equal(f.calls.length, 1)
   const s = f.sockets[0]; s.open(); s.receive(message('SNAPSHOT', { state: state(), content: content(), leaderOnline: true }))
   s.drop(); assert.equal(f.client.getSnapshot().follower.awaitingSnapshot, true); await f.tick(1000)
-  assert.equal(f.calls.length, 3); const next = f.sockets.at(-1); next.open()
+  assert.equal(f.calls.length, 2); const next = f.sockets.at(-1); next.open()
   next.receive(message('SNAPSHOT', { state: state(), content: content(), leaderOnline: true }))
   assert.equal(f.client.getSnapshot().follower.awaitingSnapshot, false); f.client.dispose()
   const g = fixture(() => { throw Error('network') }); await g.client.join('ABCDEFGH')
