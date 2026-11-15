@@ -52,7 +52,7 @@ test('construction dormant; leader create/ticket/STATE/CONTENT/end; memory-only 
     f.client.publish(state(), content()); assert.equal(s.sent.filter(m => m.type === 'CONTENT').length, 1)
     s.receive(message('NEED_CONTENT', { contentHash: hash })); assert.equal(s.sent.filter(m => m.type === 'CONTENT').length, 2)
     await f.tick(45000); assert.equal(s.sent.at(-1), 'ping')
-    assert.equal(f.calls.every(c => c.credentials === 'omit' && !c.url.includes(credential)), true)
+    assert.equal(f.calls.every(c => c.credentials === 'same-origin' && !c.url.includes(credential)), true)
     assert.ok(!JSON.stringify(f.client.getSnapshot()).includes(credential)); assert.equal(logs.length, 0)
     await f.client.end(); assert.equal(f.calls.at(-1).url, '/bandsync-api/end'); assert.equal(s.closed, true); assert.equal(f.timers.size, 0)
     f.client.dispose(); assert.equal(f.client.getSnapshot().roomCode, '')
@@ -98,19 +98,72 @@ test('disable cancels pending fetch and late success cannot construct a socket',
   release(Response.json({ roomCode: 'ABCDEFGH', leaderCredential: credential })); await pending
   assert.equal(f.sockets.length, 0); assert.equal(f.timers.size, 0); assert.equal(f.calls.length, 1)
 })
-test('Pages proxy is disabled without binding; forwards HTTP and Upgrade unchanged except route prefix', async () => {
+test('Pages proxy is disabled without binding; only allowlisted HTTP and Upgrade headers reach the worker', async () => {
   const absent = await onRequest({ request: new Request('https://gtar.test/bandsync-api/create'), env: {} })
   assert.equal(absent.status, 503); assert.deepEqual(await absent.json(), { error: 'DISABLED' })
   for (const upgrade of [false, true]) {
     let seen
+    const allowed = { Origin: 'https://gtar.test', 'CF-Connecting-IP': 'test-client', 'Content-Type': 'application/json', Accept: 'application/json',
+      ...(upgrade ? { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Key': 'dGVzdC1rZXk=', 'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Protocol': `bandsync, ticket.${ticket}`, 'Sec-WebSocket-Extensions': 'permessage-deflate' } : {}) }
     const request = new Request(`https://gtar.test/bandsync-api/${upgrade ? 'socket' : 'create'}`, { method: upgrade ? 'GET' : 'POST',
-      headers: { Origin: 'https://gtar.test', 'CF-Connecting-IP': 'test-client', ...(upgrade ? { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': `bandsync, ticket.${ticket}` } : {}) },
+      headers: { ...allowed, Cookie: 'CF_Authorization=test-access-cookie; app=test-cookie', Authorization: 'Bearer test-authorization',
+        'Proxy-Authorization': 'Basic test-proxy', 'Cf-Access-Jwt-Assertion': 'test-assertion', 'Cf-Access-Client-Id': 'test-id',
+        'CF-Access-Client-Secret': 'test-client-secret', 'Cf-Access-Authenticated-User-Email': 'test@example.invalid',
+        'X-Untrusted': 'test-untrusted', 'X-Band-Client': 'forged-client' },
       ...(!upgrade ? { body: '{}' } : {}) })
     const expected = Response.json({ ok: true })
     assert.equal(await onRequest({ request, env: { BANDSYNC_WORKER: { fetch: r => { seen = r; return Promise.resolve(expected) } } } }), expected)
-    assert.equal(new URL(seen.url).pathname, upgrade ? '/socket' : '/create'); assert.deepEqual([...seen.headers], [...request.headers])
+    assert.equal(new URL(seen.url).pathname, upgrade ? '/socket' : '/create'); assert.deepEqual([...seen.headers], [...new Headers(allowed)])
+    assert.equal(seen.headers.has('Cookie'), false); assert.equal(seen.headers.has('Authorization'), false)
+    assert.equal(seen.headers.has('Proxy-Authorization'), false); assert.equal([...seen.headers.keys()].some(k => k.startsWith('cf-access-')), false)
     if (!upgrade) assert.equal(await seen.text(), '{}')
   }
   const config = JSON.parse(fs.readFileSync(require.resolve('../wrangler.jsonc'), 'utf8'))
   assert.deepEqual(config.env.preview.services, [{ binding: 'BANDSYNC_WORKER', service: 'gtar-band-sync-dev' }]); assert.equal(config.env.production.services, undefined)
+})
+test('create/join/ticket status table shows fixed errors without reading bodies, headers or logging secrets', async () => {
+  const networkMessage = 'Could not reach Band Sync (network or sign-in)'
+  const rows = [
+    { status: 401, message: networkMessage }, { status: 302, message: networkMessage },
+    { status: 200, redirected: true, message: networkMessage },
+    { status: 0, type: 'opaque', message: networkMessage }, { status: 0, type: 'opaqueredirect', message: networkMessage },
+    { network: true, message: networkMessage },
+    { status: 403 }, { status: 404 },
+    { status: 429, message: 'Too many attempts, wait a minute' }, { status: 503, message: 'Band Sync is unavailable' },
+    { status: 418, message: 'Band Sync error' }, { status: 500, message: 'Band Sync error' },
+  ]
+  const logs = [], methods = ['log', 'info', 'warn', 'error', 'debug'], original = Object.fromEntries(methods.map(k => [k, console[k]]))
+  for (const method of methods) console[method] = (...args) => logs.push(args)
+  try {
+    for (const operation of ['create', 'join', 'ticket']) for (const row of rows) {
+      let bodyReads = 0
+      const f = fixture(url => {
+        if (!url.endsWith('/' + operation)) return null
+        if (row.network) throw new TypeError('synthetic-private-network-detail')
+        return { ok: row.status === 200, status: row.status, type: row.type ?? 'basic', redirected: row.redirected ?? false,
+          headers: { get() { throw Error('Headers must not be read') } },
+          json() { bodyReads++; throw Error('synthetic-private-response-body') } }
+      })
+      try {
+        if (operation === 'join') await f.client.join('ABCDEFGH'); else await f.client.create()
+        const expected = row.message ?? (row.status === 403 && operation === 'create' ? 'Rejected by server' :
+          ['join', 'ticket'].includes(operation) ? 'Room not found or ended' : 'Band Sync error')
+        assert.equal(f.client.getSnapshot().message, expected, `${operation}/${row.status ?? 'network'}`)
+        assert.equal(bodyReads, 0)
+        assert.equal(f.calls.every(c => c.credentials === 'same-origin'), true)
+        assert.equal(f.sockets.length, 0)
+        assert.doesNotMatch(JSON.stringify(f.client.getSnapshot()), /synthetic-private|test-access-cookie/)
+      } finally { f.client.dispose() }
+    }
+    assert.deepEqual(logs, [])
+  } finally { for (const method of methods) console[method] = original[method] }
+})
+test('transient failure message clears when a fresh socket opens successfully', async () => {
+  let requests = 0
+  const f = fixture(url => url.endsWith('/join') && ++requests === 1 ? Response.json({ error: 'synthetic-private-body' }, { status: 503 }) : null)
+  await f.client.join('ABCDEFGH'); assert.equal(f.client.getSnapshot().message, 'Band Sync is unavailable')
+  await f.tick(1000); f.sockets[0].open()
+  assert.equal(f.client.getSnapshot().status, 'active'); assert.equal(f.client.getSnapshot().message, undefined)
+  f.client.dispose()
 })

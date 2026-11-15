@@ -157,3 +157,24 @@ UNVERIFIED — needs live DEV check: scroll/autoscroll feel on real devices, QR sc
 with a phone camera, iOS Safari WebSocket/background/reconnect behavior, and
 CF-Connecting-IP/Origin plus WebSocket upgrade through the Pages service binding.
 Local fake-clock/DOM checks do not mark these live properties PASS.
+
+
+## P1d
+
+The browser sends same-origin credentials so DEV Cloudflare Access can authorize
+requests to /bandsync-api without redirecting a valid signed-in page to its login
+site. The Pages Function then creates a transport-header allowlist: Cookie,
+Authorization, Proxy-Authorization, every Cf-Access-* header and other unlisted
+headers never reach the Band Sync worker. Cookie stripping is verified by tests
+for HTTP and WebSocket Upgrade requests. The worker's Cookie rejection remains
+unchanged as defense in depth.
+
+Create/join/ticket failures show fixed plain Status text based only on HTTP status
+or a network/redirect marker. Error bodies and headers are not read or logged;
+network and Access redirect failures use the network-or-sign-in message. Existing
+retry/terminal behavior remains; successful connection clears a previous error.
+The extension remains default OFF. No deployment or configuration change is made.
+
+UNVERIFIED — needs live DEV check: CF-Connecting-IP and Origin survival across the
+service binding, WebSocket upgrade through it, and iOS Safari. Local sanitized
+Request tests do not prove these live transport properties.
