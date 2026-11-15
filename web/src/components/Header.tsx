@@ -3,7 +3,7 @@ import { useExtensionHost } from '../extensions/host/useExtensionHost'
 import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { SearchResults } from './SearchResults'
 import {
   Search,
@@ -190,6 +190,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showAboutModal, setShowAboutModal] = useState(false)
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showAdvancedToolsMenu, setShowAdvancedToolsMenu] = useState(false)
+  const [advancedToolsShift, setAdvancedToolsShift] = useState(0)
   // Advanced Tools dialog: 'online-sources' or an extension id. Held here so it outlives the popover.
   const [advancedToolsDialog, setAdvancedToolsDialog] = useState<string | null>(null)
   const openAdvancedToolsDialog = (dialog: string) => { setShowAdvancedToolsMenu(false); setAdvancedToolsDialog(dialog) }
@@ -340,7 +341,7 @@ export const Header: React.FC<HeaderProps> = ({
       aria-label="Advanced Tools"
       data-testid="advanced-tools-popover"
       className="avatar-popover animate-scale-in max-h-[85vh] overflow-y-auto"
-      style={{ width: 'min(380px, calc(100vw - 24px))' }}
+      style={{ width: 'min(380px, calc(100vw - 24px))', right: -advancedToolsShift }}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="px-1.5 pb-1.5 mb-2 border-b border-app-border/60 flex items-center justify-between">
@@ -422,6 +423,22 @@ export const Header: React.FC<HeaderProps> = ({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showSettingsMenu])
+
+  // The Advanced Tools menu hangs from the wrench's right edge. The wrench is not the last header
+  // button, so on a phone the menu would run off the left edge; slide it right just enough to keep
+  // a 12px gutter. Its width (min(380px, 100vw - 24px)) always fits between the gutters.
+  const placeAdvancedToolsMenu = useCallback(() => {
+    const anchor = advancedToolsContainerRef.current?.getBoundingClientRect()
+    if (!anchor) return
+    const gutter = 12
+    const width = Math.min(380, window.innerWidth - gutter * 2)
+    setAdvancedToolsShift(Math.max(0, Math.round(gutter - (anchor.right - width))))
+  }, [])
+  useEffect(() => {
+    if (!showAdvancedToolsMenu) return
+    window.addEventListener('resize', placeAdvancedToolsMenu)
+    return () => window.removeEventListener('resize', placeAdvancedToolsMenu)
+  }, [showAdvancedToolsMenu, placeAdvancedToolsMenu])
 
   useEffect(() => {
     if (!showAdvancedToolsMenu) return
@@ -707,7 +724,7 @@ export const Header: React.FC<HeaderProps> = ({
               aria-haspopup="menu"
               aria-expanded={showAdvancedToolsMenu}
               data-testid="header-advanced-tools"
-              onClick={() => setShowAdvancedToolsMenu(!showAdvancedToolsMenu)}
+              onClick={() => { if (!showAdvancedToolsMenu) placeAdvancedToolsMenu(); setShowAdvancedToolsMenu(!showAdvancedToolsMenu) }}
               className="relative w-9 h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
             >
               <Wrench className="w-5 h-5 text-app-action header-neutral-icon" aria-hidden="true" />

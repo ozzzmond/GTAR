@@ -47,7 +47,6 @@ const pill = 'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-app-surfa
  * or off; the row itself opens the Online Song Sources dialog.
  */
 export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, enabled, onToggle, onOpenDialog }) => {
-  const settings = useOnlineSourceSettings()
   const [open, setOpen] = useState(false)
 
   return (
@@ -66,7 +65,6 @@ export const OnlineSourcesRow: React.FC<OnlineSourcesRowProps> = ({ rowClass, en
           </div>
           <div className="flex flex-1 min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="text-xs sm:text-sm font-bold text-app-heading">Online Song Sources</span>
-            <span className={pill}>{settings.sources.filter(s => s.enabled).length} active</span>
           </div>
           <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
         </button>

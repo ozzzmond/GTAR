@@ -86,7 +86,6 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
           className="flex flex-1 min-w-0 min-h-11 items-center gap-2.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action rounded-lg"
           aria-haspopup="dialog"
           aria-expanded={open}
-          aria-describedby={`extension-${id}-summary`}
           onClick={() => (onOpenDialog ? onOpenDialog(id) : setOpen(!open))}
         >
           <div className="w-8 h-8 rounded-lg bg-app-action/15 border border-app-action/30 flex items-center justify-center text-app-action shrink-0">
@@ -94,8 +93,11 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
           </div>
           <div className="flex flex-1 min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="text-xs sm:text-sm font-bold text-app-heading">{manifest.name}</span>
-            {statusBadge}
+            {/* The switch already says on or off; a pill appears only for what it cannot say. */}
+            {(snapshot.state === 'starting' || snapshot.state === 'offline' || snapshot.state === 'error') && statusBadge}
           </div>
+          {/* Read to assistive tech with the name; the row itself shows the name only. */}
+          <span className="sr-only">{manifest.summary}</span>
           <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
         </button>
 
@@ -127,8 +129,6 @@ function ExtensionRow({ host, id, rowClass, onOpenDialog }: ExtensionRowsProps &
             />
           </span>
         </label>
-        {/* The summary describes the launcher to assistive tech; the row itself shows name and state only. */}
-        <span id={`extension-${id}-summary`} className="sr-only">{manifest.summary}</span>
       {!onOpenDialog && open && <ExtensionSettingsDialog host={host} id={id} onClose={() => setOpen(false)} />}
     </div>
   )

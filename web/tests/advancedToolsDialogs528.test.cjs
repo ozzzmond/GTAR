@@ -39,6 +39,8 @@ const props = { activeView: 'songbook', song, searchQuery: '', onViewChange: noo
 const q = selector => document.querySelector(selector)
 const click = el => act(async () => { el.click() })
 const key = (name, init = {}) => act(async () => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init })) })
+/** Text a sighted user sees in an element: its leaf spans, minus screen-reader-only ones. */
+const visibleText = el => [...el.querySelectorAll('span')].filter(span => !span.classList.contains('sr-only') && !span.children.length).map(span => span.textContent)
 const wrench = () => q('[data-testid="header-advanced-tools"]')
 const popover = () => q('[data-testid="advanced-tools-popover"]')
 
@@ -89,7 +91,7 @@ test('Online Song Sources: launcher closes the dropdown and opens an independent
     assert.equal(q('[data-testid="online-sources-panel"]'), null, 'toggle does not open the dialog')
     assert.ok(popover(), 'toggle leaves the dropdown open')
     assert.equal(popover().querySelector('[role="dialog"], form, [data-testid="manage-sources-list"]'), null, 'no nested configuration form in the launcher')
-    assert.match(q('[data-testid="online-sources-expand"]').textContent, /^Online Song Sources\d+ active$/)
+    assert.equal(q('[data-testid="online-sources-expand"]').textContent, 'Online Song Sources', 'no redundant "N active" pill beside the switch')
 
     await openFromLauncher('online-sources-expand')
     assert.equal(popover(), null, 'dropdown dismissed')
@@ -124,7 +126,7 @@ test('ProPresenter: launcher closes the dropdown, dialog keeps Host, Port, Remem
   try {
     await click(wrench())
     const row = q('[data-testid="extension-propresenter-follower"]')
-    assert.match(q('[data-testid="extension-propresenter-follower-expand"]').textContent, /^ProPresenterOff$/, 'full name, no technical subtitle')
+    assert.deepEqual(visibleText(q('[data-testid="extension-propresenter-follower-expand"]')), ['ProPresenter'], 'full name, no visible subtitle, no redundant Off pill')
     const toggle = row.querySelector('[data-testid="settings-propresenter-follower-toggle"]')
     assert.equal(toggle.getAttribute('role'), 'switch')
     await click(toggle)
@@ -311,4 +313,67 @@ test('status lines are shortened for display only', () => {
   assert.equal(conciseProPresenterStatus('Slide not matched'), 'Slide not matched')
   const follow = fs.readFileSync(path.join(__dirname, '../src/utils/setlistAutoFollow.ts'), 'utf8')
   assert.match(follow, /Assisted - manual song selection/, 'state machine wording is untouched')
+})
+
+// Round 7: no pill that only repeats the switch, and the menu stays inside a phone viewport.
+test('launcher shows a status pill only for what the switch cannot say; switch state stays accessible', async () => {
+  const { ExtensionRows } = require('../src/extensions/host/ExtensionRows.tsx')
+  const manifest = id => ({ id, name: `Tool ${id}`, summary: 'Hint', version: '1', contractVersion: 1, capabilities: [], settings: [] })
+  const ok = () => ({ available: true })
+  const entries = [
+    { manifest: manifest('on'), checkAvailability: ok, load: async () => ({ manifest: manifest('on'), checkAvailability: ok, activate: () => () => {} }) },
+    { manifest: manifest('off'), checkAvailability: ok, load: async () => ({ manifest: manifest('off'), checkAvailability: ok, activate: () => () => {} }) },
+    { manifest: manifest('down'), checkAvailability: ok, load: async () => ({ manifest: manifest('down'), checkAvailability: ok, activate: api => { api.setStatus?.('offline'); return () => {} } }) },
+    { manifest: manifest('blocked'), checkAvailability: () => ({ available: false, reason: 'Not available on this device/browser' }), load: async () => { throw new Error('unused') } },
+  ]
+  localStorage.clear()
+  const host = new ExtensionHost(entries, localStorage)
+  await host.start()
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  await act(async () => root.render(React.createElement(ExtensionRows, { host, rowClass: 'row' })))
+  try {
+    const launcher = id => q(`[data-testid="extension-${id}-expand"]`), toggle = id => q(`[data-testid="settings-${id}-toggle"]`)
+    await click(toggle('on'))
+    assert.equal(host.getSnapshot('on').state, 'active')
+    assert.deepEqual(visibleText(launcher('on')), ['Tool on'], 'no "On" pill')
+    assert.deepEqual(visibleText(launcher('off')), ['Tool off'], 'no "Off" pill')
+    assert.equal(launcher('on').querySelector('.sr-only').textContent, 'Hint', 'summary still reaches assistive tech')
+    for (const [id, checked] of [['on', true], ['off', false]]) {
+      assert.equal(toggle(id).getAttribute('role'), 'switch')
+      assert.equal(toggle(id).checked, checked)
+      assert.equal(toggle(id).closest('label').getAttribute('aria-label'), `Enable Tool ${id}`)
+    }
+    assert.match(q('[data-testid="extension-blocked"]').textContent, /Not available on this device\/browser/, 'availability warning kept')
+    assert.equal(q('[data-testid="extension-blocked"]').querySelector('[role="switch"]'), null)
+    const rows = fs.readFileSync(path.join(__dirname, '../src/extensions/host/ExtensionRows.tsx'), 'utf8')
+    assert.match(rows, /\(snapshot\.state === 'starting' \|\| snapshot\.state === 'offline' \|\| snapshot\.state === 'error'\) && statusBadge/, 'starting, offline and error still show a pill')
+  } finally { await act(async () => root.unmount()); host.dispose() }
+})
+
+test('Advanced Tools menu is shifted to stay inside a narrow viewport and left alone on wide ones', async () => {
+  const root = await mountHeader()
+  const realWidth = window.innerWidth
+  const setViewport = (width, wrenchRight) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    wrench().parentElement.getBoundingClientRect = () => ({ left: wrenchRight - 36, right: wrenchRight, top: 12, bottom: 48, width: 36, height: 36 })
+  }
+  try {
+    // [viewport width, wrench right edge] measured in Chromium; expected menu edges keep 12px gutters.
+    for (const [width, wrenchRight, shift] of [[320, 260, 48], [360, 300, 48], [390, 330, 48], [430, 370, 22], [820, 752, 0], [1440, 1372, 0]]) {
+      setViewport(width, wrenchRight)
+      if (popover()) await click(wrench())
+      await click(wrench())
+      const menuWidth = Math.min(380, width - 24)
+      assert.equal(popover().style.right, shift ? `-${shift}px` : '0px', `${width}px: shift`)
+      const right = wrenchRight + shift, left = right - menuWidth
+      assert.ok(left >= 12 && right <= width - 12, `${width}px: menu spans ${left}..${right}, inside the viewport`)
+    }
+    // Rotating or resizing while open re-places the menu.
+    setViewport(390, 330)
+    await act(async () => { window.dispatchEvent(new window.Event('resize')) })
+    assert.equal(popover().style.right, '-48px')
+    assert.match(popover().style.width, /^min\(380px, /)
+  } finally { Object.defineProperty(window, 'innerWidth', { configurable: true, value: realWidth }); await act(async () => root.unmount()) }
 })
