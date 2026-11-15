@@ -121,8 +121,5 @@ test('Reserved status text preserves meaning and contrast without new configurab
     const l1=luminance(fg),l2=luminance(bg)
     assert.ok((Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05)>=4.5,role)
   }
-  const sync=source('components/BandSyncModal.tsx')
-  assert.ok(sync.includes("? 'bg-amber-400 animate-ping'"))
-  assert.ok(sync.includes('text-status-warning'))
   assert.ok(!paletteJson.CANONICAL_CUSTOM_PALETTE_FIELDS.some(field=>field.startsWith('status')))
 })

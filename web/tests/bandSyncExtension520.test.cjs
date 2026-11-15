@@ -50,20 +50,17 @@ async function ui(run, options = {}) {
   dom.window.HTMLElement.prototype.scrollTo = function () {}
   localStorage.setItem('fixture_library', JSON.stringify([song]))
   const library = localStorage.getItem('fixture_library'), originalSong = JSON.stringify(song)
-  const { bandSync } = require('../src/utils/bandSync.ts')
-  const originals = { subscribe: bandSync.subscribe, onMessage: bandSync.onMessage }
-  for (const name of Object.keys(originals)) bandSync[name] = function (...args) { subscriptions.push(name); return originals[name].apply(this, args) }
   const host = new ExtensionHost(registry, localStorage, { capabilities: caps }, message => logs.push(message))
   if (options.enabled) localStorage.setItem('gtar_ext_band-sync_v1', JSON.stringify({ enabled: true, settings: {} }))
   if (options.session) sessionStorage.setItem('gtar_band_sync_session_v1', JSON.stringify(options.session))
   if (options.strictStart) { const first = host.start(); host.dispose(); await Promise.all([first, host.start()]) } else await host.start()
   const { StageView } = require('../src/components/StageView.tsx')
-  const { BandSyncModal } = require('../src/components/BandSyncModal.tsx')
+  const { StageToolsModal } = require('../src/components/StageToolsModal.tsx')
   function Harness() {
-    const [open, setOpen] = React.useState(false), gate = useBandSyncGate()
+    const [open, setOpen] = React.useState(false)
     return React.createElement(React.Fragment, null,
       React.createElement(StageView, { song, songs: [song], activeSongIndex: 0, onSelectSongIndex() {}, transposeOffset: 3, onTransposeChange() {}, onOpenBandSync: () => setOpen(true), ...options.stage }),
-      React.createElement(BandSyncModal, { isOpen: open, onClose: () => setOpen(false), bandSyncEnabled: gate.active, initialTab: gate.active ? 'sync' : 'metronome' }),
+      React.createElement(StageToolsModal, { isOpen: open, onClose: () => setOpen(false) }),
       React.createElement(ExtensionRows, { host, rowClass: 'p-2' }))
   }
   const root = createRoot(document.getElementById('root'))
@@ -78,18 +75,18 @@ async function ui(run, options = {}) {
   try { await run({ host, sockets, calls, subscriptions, logs, root, click, button, turnOn, library, originalSong, dom }) }
   finally {
     await act(async () => { host.dispose(); root.unmount() })
-    for (const [name, fn] of Object.entries(originals)) bandSync[name] = fn
     dom.window.close()
     for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
   }
 }
-test('OFF has no Band Sync toolbar/tab/push/listener/network; Stage Tools retains metronome/tuner; ON/OFF persists', async () => {
+test('Stage Tools button/modal is the same ON or OFF (metronome/tuner only); OFF has no listener/network; ON/OFF persists', async () => {
   await ui(async ({ host, calls, sockets, subscriptions, click, button, turnOn }) => {
     assert.equal(host.getSnapshot('band-sync').state, 'disabled')
     assert.ok(document.querySelector('[data-testid="extension-band-sync"]'))
     assert.ok(document.body.textContent.includes('Turn on to see Band Sync on Stage.'))
     assert.equal(document.querySelector('[aria-label="Band Sync"]'), null)
     assert.ok(document.querySelector('[aria-label="Stage Tools"]'))
+    assert.equal(document.querySelector('[aria-label="Stage Tools"]').textContent.trim(), 'Stage Tools')
     assert.equal(button('Push setlist to Band Sync'), undefined)
     await click(document.querySelector('[aria-label="Stage Tools"]'))
     assert.ok(button('Metronome')); await click(button('Guitar Tuner'))
@@ -97,12 +94,15 @@ test('OFF has no Band Sync toolbar/tab/push/listener/network; Stage Tools retain
     assert.equal(button('Band Sync'), undefined)
     assert.equal(calls.length, 0); assert.equal(sockets.length, 0); assert.deepEqual(subscriptions, [])
     await turnOn()
-    assert.ok(document.querySelector('[aria-label="Band Sync"]')); assert.ok(button('Band Sync'))
+    assert.equal(document.querySelector('[aria-label="Band Sync"]'), null); assert.ok(document.querySelector('[aria-label="Stage Tools"]'))
+    await click(document.querySelector('[aria-label="Stage Tools"]')); assert.ok(button('Metronome')); assert.ok(button('Guitar Tuner')); assert.equal(button('Band Sync'), undefined)
+    assert.ok(document.body.textContent.includes('STAGE TOOLS')); assert.equal(document.body.textContent.includes('Sync & '), false)
+    await click([...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Close'))
     assert.equal(JSON.parse(localStorage.getItem('gtar_ext_band-sync_v1')).enabled, true)
     assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
     await act(async () => host.disable('band-sync'))
     assert.equal(JSON.parse(localStorage.getItem('gtar_ext_band-sync_v1')).enabled, false)
-    assert.equal(button('Band Sync'), undefined); assert.ok(button('Metronome')); assert.ok(button('Guitar Tuner'))
+    assert.equal(button('Band Sync'), undefined); assert.ok(document.querySelector('[aria-label="Stage Tools"]'))
     const restored = new ExtensionHost(registry, localStorage, { capabilities: caps }); await restored.start()
     assert.equal(restored.getSnapshot('band-sync').state, 'disabled'); restored.dispose()
   })
@@ -159,8 +159,8 @@ test('only band-sync can activate event capabilities; availability requires secu
   assert.equal(bandSyncAvailability().available, false)
   if (prior) Object.defineProperty(globalThis, 'isSecureContext', prior); else delete globalThis.isSecureContext
   const app = fs.readFileSync(require.resolve('../src/App.tsx'), 'utf8')
-  assert.ok(app.includes('onPushSetlistToBandSync={bandSyncEnabled ? handlePushSetlistToMembers : undefined}'))
-  assert.ok(app.includes("if (!bandSyncEnabled) return { success: false, message: 'Band Sync is off' }"))
+  for (const legacy of ['handlePushSetlistToMembers', 'onPushSetlistToBandSync', 'utils/bandSync\'', 'BandSyncModal', 'bandSync.onMessage']) assert.equal(app.includes(legacy), false, legacy)
+  for (const gone of ['bandSync.ts', 'bandSyncAddress.ts', 'bandSetlistImport.ts', '../components/BandSyncModal.tsx']) assert.equal(fs.existsSync(require.resolve('../src/App.tsx').replace(/App\.tsx$/, gone)), false, gone)
 })
 test('QR hash OFF is scrubbed with zero transport and never joins after a later enable; ON joins once', async () => {
   await ui(async ({ calls, sockets, turnOn, dom }) => {

@@ -67,9 +67,9 @@ test('fullscreen assisted session follows current only, clears stale matches, re
   const { useLiveLyrics } = require('../src/utils/useLiveLyrics.ts')
   const { LiveLyricsControl } = require('../src/components/LiveLyrics.tsx')
   const { AuthContext } = require('../src/utils/authContext.ts')
-  const { bandSync } = require('../src/utils/bandSync.ts'), { stageCast } = require('../src/utils/stageCast.ts')
+  const { stageCast } = require('../src/utils/stageCast.ts')
   const outgoing = []
-  for (const [object, method] of [[bandSync, 'broadcastScroll'], [bandSync, 'broadcastSong'], [stageCast, 'broadcastScroll'], [stageCast, 'broadcastState']]) t.mock.method(object, method, (...args) => outgoing.push(args))
+  for (const [object, method] of [[stageCast, 'broadcastScroll'], [stageCast, 'broadcastState']]) t.mock.method(object, method, (...args) => outgoing.push(args))
   const writes = [], logs = []
   let ctx
   const manifest = { id: 'propresenter-follower', name: 'Fixture', version: '1', contractVersion: 1, summary: '', settings: [], capabilities: [] }
@@ -137,7 +137,7 @@ test('Stage wiring uses native fullscreen and all overlay/sync guards; provider 
   const stage = fs.readFileSync(path.resolve(__dirname, '../src/components/StageView.tsx'), 'utf8')
   const app = fs.readFileSync(path.resolve(__dirname, '../src/App.tsx'), 'utf8')
   assert.match(stage, /useLiveLyrics\(song, parsedSong.lines, isFullscreen,/)
-  assert.match(stage, /isAnyOverlayActive \|\| syncState.role !== 'OFF' \|\| isCastActive/)
+  assert.match(stage, /isAnyOverlayActive \|\| isCastActive/)
   assert.match(stage, /isFullscreen && <LiveLyricsControl/)
   assert.match(app, /<ExtensionHostProvider><LibraryStartupReadyInner \/><\/ExtensionHostProvider>/)
   assert.match(app, /if \(isPresentationRoute\) \{\s*return <StagePresentationView \/>/)

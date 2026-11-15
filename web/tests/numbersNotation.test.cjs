@@ -179,11 +179,6 @@ Some lyrics here`
 test('TEST:NOTATION_PREFERENCE_DEVICE_LOCAL_AND_NOT_CLOUD_SYNCED', () => {
   assert.equal(NOTATION_STORAGE_KEY, 'gtar_stage_notation')
 
-  // Verify BandSync state model does not include notation preference
-  const { bandSync } = require('../src/utils/bandSync.ts')
-  const syncState = bandSync.getState()
-  assert.equal(syncState.notation, undefined, 'BandSyncState must not include device-local notation preference')
-
   // Verify backupSettings keys do not include gtar_stage_notation in cloud-synced schema
   const { SETTINGS_KEYS } = require('../src/utils/backupSettings.ts')
   assert.equal(Object.values(SETTINGS_KEYS).includes('gtar_stage_notation'), false, 'gtar_stage_notation must not be a cloud backup setting key')

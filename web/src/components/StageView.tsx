@@ -36,7 +36,6 @@ import {
   Gauge,
   ArrowLeft,
   FileEdit,
-  Radio,
 } from 'lucide-react'
 import { StageControlDock, readPersistedDockPosition } from './StageControlDock'
 import { StageOptionsSheet } from './StageOptionsSheet'
@@ -52,7 +51,6 @@ import {
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
 import { formatTempoLabel } from '../utils/chordProMetadata'
 import { metronome } from '../utils/metronome'
-import { bandSync, type BandSyncState } from '../utils/bandSync'
 import { stageCast } from '../utils/stageCast'
 import type { ChordVoicing } from '../utils/chordDictionary'
 
@@ -70,7 +68,6 @@ import {
 import { KeyPickerModal } from './KeyPickerModal'
 import { FretboardDiagramModal } from './FretboardDiagramModal'
 import { ChordQuickPreview, type ChordQuickPreviewAnchor } from './ChordQuickPreview'
-import { BandSyncModal } from './BandSyncModal'
 import { TvPresentationModal } from './TvPresentationModal'
 import { stageCast2Enabled } from '../utils/stageCast2Local'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
@@ -484,7 +481,6 @@ export const StageView: React.FC<StageViewProps> = ({
   }, [])
   const [isSpeedPromptOpen, setIsSpeedPromptOpen] = useState(false)
   const [speedInputText, setSpeedInputText] = useState('35')
-  const [isBandSyncModalOpen, setIsBandSyncModalOpen] = useState(false)
   const [isTvPresentationModalOpen, setIsTvPresentationModalOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.includes('cast2='))
   // Stage floating options menu (replaces top HUD)
   const [isStageMenuOpen, setIsStageMenuOpen] = useState(false)
@@ -541,7 +537,6 @@ export const StageView: React.FC<StageViewProps> = ({
     isKeyPickerOpen ||
     selectedVoicing ||
     selectedChordName ||
-    isBandSyncModalOpen ||
     isTvPresentationModalOpen ||
     isStageMenuOpen ||
     isSpeedPromptOpen ||
@@ -549,9 +544,6 @@ export const StageView: React.FC<StageViewProps> = ({
     isStageSettingsModalOpen ||
     isAnyModalOpen
   )
-
-  // Band Sync State
-  const [syncState, setSyncState] = useState<BandSyncState>(() => bandSync.getState())
 
   // Stage Cast Active Presentation State
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
@@ -590,23 +582,20 @@ export const StageView: React.FC<StageViewProps> = ({
         accumulatedScrollRef.current = targetScrollTop
         const fraction = maxScroll > 0 ? targetScrollTop / maxScroll : 0
         stageCast.broadcastScroll(targetScrollTop, fraction)
-        if (bandSyncEnabled && syncState.role === 'HOST' && maxScroll > 0) {
-          bandSync.broadcastScroll(fraction, targetScrollTop)
-        }
       }
     }
     // Clean up anchor after reflow resolution
     fontResizeAnchorRef.current = null
-  }, [fontSizePx, syncState.role, bandSyncEnabled])
+  }, [fontSizePx])
 
   // Parse song with native v1.0.42 parser and active transpose offset
   const parsedSong = useMemo(() => parseGtarSong(song.rawContent, transposeOffset), [song.rawContent, transposeOffset])
   const manualLyrics = useLiveLyrics(song, parsedSong.lines, isFullscreen,
-    isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive,
+    isAnyOverlayActive || isCastActive,
     JSON.stringify([queueMode, activeSongIndex, activeSetlistSongIndex]))
 
   const autoFollow = useSetlistAutoFollow(manualLyrics.snapshot, followSetlist, activeSetlistSongIndex, followManualRevision,
-    isFullscreen, isAnyOverlayActive || syncState.role !== 'OFF' || isCastActive, onFollowSetlistEntry)
+    isFullscreen, isAnyOverlayActive || isCastActive, onFollowSetlistEntry)
 
   const liveLyrics = useAutoLiveLyrics(manualLyrics, song, autoFollow, followSetlist, activeSetlistSongIndex)
 
@@ -635,113 +624,6 @@ export const StageView: React.FC<StageViewProps> = ({
     liveConfirmed: liveLyrics.confirmed,
     liveScrollPaused: liveScroll.paused,
   }), [isProPresenterMasterEnabled, proPresenterSnapshot.state, manualLyrics.snapshot, autoFollow.state, liveLyrics.confirmed, liveScroll.paused])
-
-  // Band Sync subscriptions
-  useEffect(() => {
-    if (!bandSyncEnabled) return
-    const unsub = bandSync.subscribe((st) => setSyncState(st))
-    return unsub
-  }, [bandSyncEnabled])
-
-  // Listen to incoming messages for Band Member (Client)
-  useEffect(() => {
-    if (!bandSyncEnabled) return
-    const unsubMsg = bandSync.onMessage((msg) => {
-      if (syncState.role === 'CLIENT') {
-        if (msg.type === 'SONG_SYNC' && msg.payload) {
-          if (typeof msg.payload.transposeOffset === 'number') {
-            onTransposeChange(msg.payload.transposeOffset)
-          }
-          if (typeof msg.payload.scrollProgress === 'number') {
-            const fraction = msg.payload.scrollProgress
-            const container = scrollContainerRef.current
-            if (container) {
-              const maxScroll = container.scrollHeight - container.clientHeight
-              if (maxScroll > 0) {
-                container.scrollTo({
-                  top: fraction * maxScroll,
-                  behavior: 'smooth',
-                })
-              }
-            }
-            if (typeof window !== 'undefined') {
-              const winMax = document.documentElement.scrollHeight - window.innerHeight
-              if (winMax > 0) {
-                window.scrollTo({ top: fraction * winMax, behavior: 'smooth' })
-              }
-            }
-          }
-        } else if (msg.type === 'SCROLL_SYNC' && msg.payload) {
-          const fraction =
-            typeof msg.payload.scrollFraction === 'number'
-              ? msg.payload.scrollFraction
-              : typeof msg.payload.scrollProgress === 'number'
-              ? msg.payload.scrollProgress
-              : typeof msg.payload.scroll === 'number'
-              ? msg.payload.scroll
-              : 0
-
-          const container = scrollContainerRef.current
-          if (container) {
-            const maxScroll = container.scrollHeight - container.clientHeight
-            if (maxScroll > 0) {
-              const targetTop =
-                msg.payload.scrollTop !== undefined && msg.payload.scrollTop > 0
-                  ? msg.payload.scrollTop
-                  : fraction * maxScroll
-              container.scrollTo({ top: targetTop, behavior: 'smooth' })
-            }
-          }
-          if (typeof window !== 'undefined') {
-            const winMax = document.documentElement.scrollHeight - window.innerHeight
-            if (winMax > 0) {
-              window.scrollTo({ top: fraction * winMax, behavior: 'smooth' })
-            }
-          }
-        } else if (msg.type === 'AUTOSCROLL_SYNC' && msg.payload) {
-          setIsAutoScrolling(Boolean(msg.payload.isAutoScrolling))
-          if (msg.payload.scrollSpeed) {
-            setScrollSpeed(msg.payload.scrollSpeed)
-          }
-        }
-      }
-    })
-    return unsubMsg
-  }, [syncState.role, onTransposeChange, bandSyncEnabled])
-
-  // Broadcast song change when role is HOST
-  useEffect(() => {
-    if (bandSyncEnabled && syncState.role === 'HOST') {
-      const container = scrollContainerRef.current
-      const maxScroll = container ? container.scrollHeight - container.clientHeight : 1
-      const progress = container && maxScroll > 0 ? container.scrollTop / maxScroll : 0
-      bandSync.broadcastSong(
-        isInSetlistMode ? activeSetlistSongIndex : activeSongIndex,
-        song.title,
-        transposeOffset,
-        {
-          artist: song.artist,
-          queueType: isInSetlistMode ? 'SETLIST' : 'LIBRARY',
-          scrollProgress: progress,
-          rawContent: song.rawContent,
-          key: song.key,
-          capo: song.capo,
-        }
-      )
-    }
-  }, [
-    activeSongIndex,
-    activeSetlistSongIndex,
-    isInSetlistMode,
-    song.title,
-    song.artist,
-    song.rawContent,
-    song.key,
-    song.capo,
-    transposeOffset,
-    syncState.role,
-    bandSyncEnabled,
-  ])
 
   // Metronome sync with song BPM
   useEffect(() => {
@@ -911,11 +793,6 @@ export const StageView: React.FC<StageViewProps> = ({
     }
     stageCast.broadcastScroll(target.scrollTop, fraction, activeLineIndex)
 
-    if (bandSyncEnabled && syncState.role === 'HOST') {
-      if (maxScroll > 0) {
-        bandSync.broadcastScroll(fraction, target.scrollTop)
-      }
-    }
   }
 
   // Touch-cancel guard: stop autoscroll when the user deliberately drags the
@@ -948,10 +825,7 @@ export const StageView: React.FC<StageViewProps> = ({
       // immediately when the FAB touch-end event propagates to the scroll container.
       autoScrollStartedAtRef.current = performance.now()
     }
-    if (bandSyncEnabled && syncState.role === 'HOST') {
-      bandSync.broadcastAutoScroll(nextVal, scrollSpeed)
-    }
-  }, [isAutoScrolling, syncState.role, scrollSpeed, liveScroll.controller, bandSyncEnabled])
+  }, [isAutoScrolling, liveScroll.controller])
 
   // Adjust scroll speed and broadcast if HOST
   const handleAdjustSpeed = useCallback((newSpeed: number) => {
@@ -960,10 +834,7 @@ export const StageView: React.FC<StageViewProps> = ({
     if (typeof window !== 'undefined') {
       localStorage.setItem(SETTINGS_KEYS.scrollSpeed, String(clamped))
     }
-    if (bandSyncEnabled && syncState.role === 'HOST') {
-      bandSync.broadcastAutoScroll(isAutoScrolling, clamped)
-    }
-  }, [isAutoScrolling, syncState.role, bandSyncEnabled])
+  }, [])
 
   // Structural sections in document order matching Android SongParser.kt
   const sectionHeaders = useMemo(() => {
@@ -1609,7 +1480,6 @@ export const StageView: React.FC<StageViewProps> = ({
     onSelectSetlistSongIndex,
     isAutoScrolling,
     scrollSpeed,
-    syncState.role,
     handleNextSong,
     handlePrevSong,
     handleNextSection,
@@ -2049,11 +1919,11 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             onClick={onOpenBandSync}
-            aria-label={bandSyncEnabled ? "Band Sync" : "Stage Tools"}
+            aria-label="Stage Tools"
             className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
           >
-            <span aria-hidden="true">{bandSyncEnabled ? <Radio className="w-4 h-4 shrink-0" /> : <Gauge className="w-4 h-4 shrink-0" />}</span>
-            <span className="hidden sm:inline">{bandSyncEnabled ? "Band Sync" : "Stage Tools"}</span>
+            <span aria-hidden="true"><Gauge className="w-4 h-4 shrink-0" /></span>
+            <span className="hidden sm:inline">Stage Tools</span>
           </button>
         </div>
 
@@ -2804,19 +2674,10 @@ export const StageView: React.FC<StageViewProps> = ({
         onReset={() => onTransposeChange(keyContext.resetOffset)}
       />
 
-      {/* Stage Tools & Band Sync Modal */}
-      <BandSyncModal
-        isOpen={isBandSyncModalOpen}
-        onClose={() => setIsBandSyncModalOpen(false)}
-        bandSyncEnabled={bandSyncEnabled}
-        initialTab={bandSyncEnabled ? "sync" : "metronome"}
-      />
-
       {/* Secondary TV Browser Pairing & AirPlay Modal */}
       <TvPresentationModal
         isOpen={isTvPresentationModalOpen}
         onClose={() => setIsTvPresentationModalOpen(false)}
-        detectedLanIp={syncState.detectedLanIp || syncState.customHostIp}
       />
     </div>
   )

@@ -191,3 +191,9 @@ The room-code input ignores case, spaces and dashes (a pasted `abcd-efgh` become
 - Closing the tab ends this tab's control; the room expires on its own.
 - Follower view: Full screen toggle (fixed overlay plus Fullscreen API when available). View-only; Esc or the button exits. The same scroll viewport stays mounted so follow scroll keeps working.
 
+## P1g: legacy LAN path removed, Stage Tools
+
+- Removed the Android LAN (ws://...:8765) Band Sync path: `utils/bandSync.ts`, `bandSyncAddress.ts`, `bandSetlistImport.ts`, the HOST/CLIENT broadcast and receive code in StageView/App, setlist push, and the legacy "Band Sync" tab with its recent-leaders history.
+- Stage preview toolbar button is always "Stage Tools" (Gauge icon, same as the Metronome tab). The modal is `StageToolsModal` with Metronome and Guitar Tuner only. Rooms are created and joined from Advanced Tools only.
+- Not carried over (future work): setlist content transfer, chat, voice memo, request-song.
+

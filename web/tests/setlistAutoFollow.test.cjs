@@ -155,7 +155,7 @@ test('App selection boundary and Stage origin guards preserve queue and prevent 
   assert.doesNotMatch(handler, /setQueueMode|setActiveSetlistId|handleSelectLibrarySong|setSongs|TransposeChange/)
   assert.match(stage, /if \(!isProPresenterSelection\) stageCast.broadcastScroll\(0, 0, 0\)/)
   assert.match(stage, /if \(isProPresenterSelection && !isCastActive\) return\s*stageCast.broadcastState/)
-  assert.match(handler, /bandSync.getState\(\).role !== 'OFF'/)
+  assert.doesNotMatch(handler, /bandSync/)
   assert.match(handler, /stageCast.isPresentationActive\(\)/)
 })
 
