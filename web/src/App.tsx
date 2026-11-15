@@ -1897,6 +1897,7 @@ function LibraryApp() {
               onFollowSetlistEntry={handleFollowSetlistEntry}
               isProPresenterSelection={followOrigin?.context === followSetlist && followOrigin?.index === activeSetlistSongIndex}
               activeSetlistName={activeSetlist?.name}
+              activeSetlistId={activeSetlist?.id ?? null}
               setlists={setlists}
               onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
               onOpenSetlistDrawer={
