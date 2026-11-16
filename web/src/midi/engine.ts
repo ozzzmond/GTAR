@@ -3,15 +3,16 @@
  * Loaded with import() only while MIDI is ON (see ./loader). Access is requested without SysEx
  * and nothing is ever sent to a device.
  *
- * A received message is parsed, then either captured by Learn or, when it is a new press of a
+ * Only the chosen device (default: all) is listened to, and a channel filter (default: all)
+ * drops every other channel first. A received message is parsed, then either captured by Learn or, when it is a new press of a
  * mapped input inside the limits, sent to Stage through stageCommands.run() with one of the
  * nine action ids. Nothing else in the app is reached from here.
  */
 import { stageCommands } from '../utils/stageCommands'
 import { createMidiLimits } from './limits'
-import { findMidiAction, learnableMidiInput, type MidiInput, type MidiMappings } from './mapping'
-import { parseMidiMessage } from './message'
-import { MIDI_DEVICE_TEXT_MAX, readMidiSettings, subscribeMidiSettings } from './settings'
+import { findMidiAction, learnableMidiInput, type MidiInput, type MidiMappings, type MidiMonitorEntry } from './mapping'
+import { midiChannelAllows, parseMidiMessage } from './message'
+import { MIDI_DEVICE_TEXT_MAX, findMidiDevice, readMidiSettings, sameMidiDevice, subscribeMidiSettings, type MidiDeviceChoice } from './settings'
 import type { MidiSnapshot, MidiStartMode, MidiState } from './loader'
 
 export interface MidiEngineOptions {
@@ -33,14 +34,17 @@ export interface MidiEngine {
    * listener waits no action fires. Returns the cancel; stopping or restarting cancels too.
    */
   learn(listener: (input: MidiInput) => void): () => void
+  /**
+   * Input monitor: every input that counts and passes the channel filter also goes to
+   * `listener`, until the cancel. Watching changes nothing about Learn or what fires.
+   */
+  monitor(listener: (entry: MidiMonitorEntry) => void): () => void
   getSnapshot(): MidiSnapshot
 }
 
-/** Shown as plain text only; never parsed, never used as HTML. */
-function deviceName(port: MIDIInput): string {
-  const name = typeof port.name === 'string' ? port.name.trim().slice(0, MIDI_DEVICE_TEXT_MAX) : ''
-  return name || 'MIDI device'
-}
+/** Device text is plain text only, cut to MIDI_DEVICE_TEXT_MAX; never parsed, never used as HTML. */
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim().slice(0, MIDI_DEVICE_TEXT_MAX) : '')
+const deviceName = (port: MIDIInput): string => text(port.name) || 'MIDI device'
 
 const isDenied = (error: unknown) => {
   const name = (error as { name?: unknown } | null)?.name
@@ -54,16 +58,22 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
   let generation = 0
   let access: MIDIAccess | null = null
   const listened = new Map<string, MIDIInput>()
-  let snapshot: MidiSnapshot = { state: 'off', devices: [] }
+  let snapshot: MidiSnapshot = { state: 'off', devices: [], inputs: [] }
   const limits = createMidiLimits({ now: options.now })
   /** The saved mappings, read at start and after every settings change; never per message. */
   let mappings: MidiMappings = {}
   let unsubscribe: (() => void) | null = null
+  /** The saved device choice and channel filter, read with the mappings. */
+  let device: 'all' | MidiDeviceChoice = 'all'
+  let channel: 'all' | number = 'all'
   let learner: ((input: MidiInput) => void) | null = null
+  let watcher: ((entry: MidiMonitorEntry) => void) | null = null
 
-  const set = (state: MidiState, devices: string[] = []) => {
-    if (state === snapshot.state && devices.length === snapshot.devices.length && devices.every((name, index) => name === snapshot.devices[index])) return
-    snapshot = { state, devices }
+  const set = (state: MidiState, devices: string[] = [], inputs: MidiDeviceChoice[] = []) => {
+    const next: MidiSnapshot = { state, devices, inputs }
+    // A few short strings, compared only when the status may have changed; never per message.
+    if (JSON.stringify(next) === JSON.stringify(snapshot)) return
+    snapshot = next
     try { options.onChange(snapshot) } catch { /* A failing subscriber must not break the engine. */ }
   }
 
@@ -77,6 +87,7 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
     for (const port of listened.values()) release(port, true)
     listened.clear()
     learner = null
+    watcher = null
     limits.reset()
     unsubscribe?.()
     unsubscribe = null
@@ -99,9 +110,15 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
   }
 
   /** One parsed message: Learn takes it, or a new press of a mapped input moves Stage once. */
-  const receive = (portId: string, data: unknown) => {
+  const receive = (portId: string, port: MIDIInput, data: unknown) => {
     const message = parseMidiMessage(data)
-    if (!message) return
+    // The channel filter comes first: another channel reaches neither Learn, play nor the monitor.
+    if (!message || !midiChannelAllows(channel, message)) return
+    if (watcher) {
+      const seen = learnableMidiInput(message)
+      // The monitor only watches: whatever it does, the lines below run the same.
+      if (seen) try { watcher({ input: seen, value: message.value, device: deviceName(port) }) } catch { /* A failing monitor must not change what fires. */ }
+    }
     // Followed in every mode, so a pedal held down through Learn fires nothing afterwards.
     const pressed = limits.press(portId, message)
     if (learner) {
@@ -118,26 +135,63 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
     if (action && limits.allow(pressed)) stageCommands.run(action)
   }
 
-  /** Listens to every connected input once and forgets the ones that went away. */
+  /**
+   * Listens once to every connected input the device choice means (all of them, or the one
+   * chosen device) and forgets the rest. A chosen device that is missing leaves nothing
+   * listened to: another device is never used in its place.
+   */
   const refresh = (run: number) => {
     if (run !== generation || !access) return
     const present = new Map<string, MIDIInput>()
     access.inputs.forEach(port => { if (port.state !== 'disconnected') present.set(port.id, port) })
+    // An id that could not be saved as a choice is not offered as one.
+    const inputs = [...present].filter(([id]) => typeof id === 'string' && id.length > 0 && id.length <= MIDI_DEVICE_TEXT_MAX)
+      .map(([id, port]) => ({ id, name: text(port.name), manufacturer: text(port.manufacturer) }))
+    let wanted = present
+    if (device !== 'all') {
+      const match = findMidiDevice(device, inputs)
+      wanted = new Map(match ? [[match.id, present.get(match.id)!]] : [])
+    }
     for (const [id, port] of [...listened]) {
-      if (present.get(id) === port) continue
-      release(port, false)
+      if (wanted.get(id) === port) continue
+      // Still plugged in but no longer the choice: its port is closed as well.
+      release(port, present.get(id) === port)
       listened.delete(id)
       limits.portDisconnected(id)
     }
-    for (const [id, port] of present) {
+    for (const [id, port] of wanted) {
       if (listened.has(id)) continue
       // A property, not addEventListener: one port can never hold two GTAR listeners.
-      port.onmidimessage = guard(run, (event: MIDIMessageEvent) => receive(id, event.data))
+      port.onmidimessage = guard(run, (event: MIDIMessageEvent) => receive(id, port, event.data))
       listened.set(id, port)
       // Starts the settle time: a power-up burst from this port is ignored.
       limits.portConnected(id)
     }
-    set(listened.size > 0 ? 'connected' : 'no-device', [...listened.values()].map(deviceName))
+    set(listened.size > 0 ? 'connected' : 'no-device', [...listened.values()].map(deviceName), inputs)
+  }
+
+  /**
+   * Settings changed, in this tab or another. Device changed: detach all ports, attach the new
+   * choice, clear press state. Channel changed: clear press state. Mappings are just re-read.
+   */
+  const follow = (run: number) => {
+    const next = readMidiSettings()
+    mappings = next.mappings
+    const deviceChanged = !sameMidiDevice(device, next.device)
+    const channelChanged = channel !== next.channel
+    device = next.device
+    channel = next.channel
+    if (!deviceChanged && !channelChanged) return
+    const before = [...listened.values()]
+    if (deviceChanged) {
+      for (const port of before) release(port, false)
+      listened.clear()
+    }
+    limits.reset()
+    if (!deviceChanged) return
+    refresh(run)
+    // Closed only after the new choice is attached, so a port that stays in use is never closed.
+    for (const port of before) if (![...listened.values()].includes(port)) release(port, true)
   }
 
   const permissionState = async (): Promise<string> => {
@@ -178,9 +232,8 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
     start(mode) {
       const run = ++generation
       detach()
-      const load = () => { mappings = readMidiSettings().mappings }
-      load()
-      unsubscribe = subscribeMidiSettings(load)
+      ;({ mappings, device, channel } = readMidiSettings())
+      unsubscribe = subscribeMidiSettings(guard(run, () => follow(run)))
       set('starting')
       void open(run, mode)
     },
@@ -193,6 +246,10 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
     learn(listener) {
       learner = listener
       return () => { if (learner === listener) learner = null }
+    },
+    monitor(listener) {
+      watcher = listener
+      return () => { if (watcher === listener) watcher = null }
     },
     getSnapshot: () => snapshot,
   }

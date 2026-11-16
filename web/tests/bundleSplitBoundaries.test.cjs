@@ -98,9 +98,9 @@ test('MIDI moves Stage through one door: the engine calls stageCommands.run(), a
   for (const file of ['components/StageView.tsx', 'utils/stageCommands.ts', 'components/StageToolRows.tsx', 'stageTools/settings.ts']) {
     assert.doesNotMatch(read(`src/${file}`), /from\s+['"][^'"]*\/midi(\/|['"])|requestMIDIAccess|onmidimessage/, `${file} has no MIDI code`)
   }
-  // The loader hands the engine a status callback only; Learn is the one other thing it passes on.
+  // The loader hands the engine a status callback only; Learn and the input monitor are the only other things it passes on.
   assert.equal(read('src/midi/loader.ts').match(/createMidiEngine\(\{ onChange: [^}]+\} \}\)/)?.length, 1, 'the engine is created with a status callback only')
-  assert.deepEqual(code(path.join(midiDir, 'loader.ts')).match(/engine\??\.\w+\(/g).sort(), ['engine.learn(', 'engine.start(', 'engine?.stop('])
+  assert.deepEqual(code(path.join(midiDir, 'loader.ts')).match(/engine\??\.\w+\(/g).sort(), ['engine.learn(', 'engine.monitor(', 'engine.start(', 'engine?.stop('])
   // Mappings are changed in one place, through the Slice 1 functions.
   const dialog = code(path.join(midiDir, 'MidiDialog.tsx'))
   for (const used of ['assignMidiMapping(', 'clearMidiMapping(', 'resetMidiMappings(', 'writeMidiSettings(']) assert.ok(dialog.includes(used), `the dialog uses ${used}`)

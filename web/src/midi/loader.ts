@@ -6,9 +6,9 @@
  */
 import { useSyncExternalStore } from 'react'
 import { isIosDevice } from '../utils/iosDevice'
-import { readMidiSettings, subscribeMidiSettings, writeMidiSettings } from './settings'
+import { readMidiSettings, subscribeMidiSettings, writeMidiSettings, type MidiDeviceChoice } from './settings'
 import type { MidiEngine } from './engine'
-import type { MidiInput } from './mapping'
+import type { MidiInput, MidiMonitorEntry } from './mapping'
 
 export type MidiState = 'off' | 'starting' | 'allow' | 'blocked' | 'no-device' | 'connected' | 'error' | 'unavailable'
 
@@ -16,6 +16,8 @@ export interface MidiSnapshot {
   readonly state: MidiState
   /** Names of the inputs being listened to: plain text, cut to MIDI_DEVICE_TEXT_MAX. */
   readonly devices: readonly string[]
+  /** Every connected input, listened to or not, for the device choice. Names may be empty. */
+  readonly inputs: readonly MidiDeviceChoice[]
 }
 
 /** 'ask' may show the browser prompt (a tap). 'quiet' connects only when access is already granted. */
@@ -34,7 +36,7 @@ export function midiAvailability(): MidiAvailability {
     ? { available: true } : { available: false, reason: 'Not available on this device/browser' }
 }
 
-const only = (state: MidiState): MidiSnapshot => ({ state, devices: [] })
+const only = (state: MidiState): MidiSnapshot => ({ state, devices: [], inputs: [] })
 const OFF = only('off'), STARTING = only('starting'), ERROR = only('error'), UNAVAILABLE = only('unavailable')
 
 let snapshot = OFF
@@ -46,7 +48,8 @@ let engine: MidiEngine | null = null
 const listeners = new Set<() => void>()
 
 function publish(next: MidiSnapshot): void {
-  if (next.state === snapshot.state && next.devices.length === snapshot.devices.length && next.devices.every((name, index) => name === snapshot.devices[index])) return
+  // Snapshots are a few short strings and change only with the status, never per message.
+  if (JSON.stringify(next) === JSON.stringify(snapshot)) return
   snapshot = next
   for (const listener of [...listeners]) {
     try { listener() } catch { /* One failing subscriber must not stop the others. */ }
@@ -119,6 +122,15 @@ export function startMidi(): () => void {
  */
 export function learnMidiInput(listener: (input: MidiInput) => void): () => void {
   return wanted && engine ? engine.learn(listener) : () => {}
+}
+
+/**
+ * Input monitor: every input that counts goes to `listener` until the returned cancel is called.
+ * It only watches; what fires on Stage is the same with or without it. Does nothing while MIDI
+ * is off; switching MIDI off ends it.
+ */
+export function monitorMidiInput(listener: (entry: MidiMonitorEntry) => void): () => void {
+  return wanted && engine ? engine.monitor(listener) : () => {}
 }
 
 export function getMidiSnapshot(): MidiSnapshot {

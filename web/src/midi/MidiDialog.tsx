@@ -1,19 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Music, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronRight, Music, RotateCcw } from 'lucide-react'
 import { AppModal, AppModalSection } from '../components/AppModal'
 import { MIDI_ACTIONS, midiActionLabel, type MidiActionId } from './actions'
 import { MidiHelp } from './MidiHelp'
 import { MidiPill } from './MidiRow'
-import { learnMidiInput, retryMidi, setMidiEnabled, useMidiSnapshot, type MidiSnapshot, type MidiState } from './loader'
-import { assignMidiMapping, clearMidiMapping, midiInputLabel, resetMidiMappings, type MidiInput, type MidiMappings } from './mapping'
-import { readMidiSettings, subscribeMidiSettings, writeMidiSettings } from './settings'
+import { learnMidiInput, monitorMidiInput, retryMidi, setMidiEnabled, useMidiSnapshot, type MidiSnapshot, type MidiState } from './loader'
+import { MIDI_MONITOR_LINES, assignMidiMapping, clearMidiMapping, midiInputLabel, midiMonitorLabel, resetMidiMappings, type MidiInput, type MidiMappings } from './mapping'
+import { findMidiDevice, readMidiSettings, subscribeMidiSettings, writeMidiSettings, type MidiDeviceChoice, type MidiSettingsV1 } from './settings'
 
 /** Learn gives up after this long without an input that counts. A starting value, to be tuned in QA. */
 export const MIDI_LEARN_TIMEOUT_MS = 10_000
 
 const SAVE_FAILED = 'Could not save on this device.'
 
-function statusText({ state, devices }: MidiSnapshot): string {
+/** Device names are shown as text nodes: plain text, never HTML. */
+const nameOf = (device: MidiDeviceChoice): string => device.name || 'MIDI device'
+
+function statusText({ state, devices }: MidiSnapshot, waitingFor: MidiDeviceChoice | null): string {
+  // The chosen device is missing. GTAR waits for it and never switches to another one by itself.
+  if (waitingFor) return `Waiting for ${nameOf(waitingFor)}.`
   switch (state) {
     case 'off': return 'MIDI is off. Turn it on to use a pedal or controller.'
     case 'starting': return 'Looking for MIDI devices…'
@@ -42,18 +47,23 @@ type LearnPhase =
 
 const IDLE: LearnPhase = { kind: 'idle' }
 
-/** The saved mappings, re-read after every change in this tab or another one. */
-function useMidiMappings(): MidiMappings {
-  const [mappings, setMappings] = useState(() => readMidiSettings().mappings)
-  useEffect(() => subscribeMidiSettings(() => setMappings(readMidiSettings().mappings)), [])
-  return mappings
+/** The saved settings, re-read after every change in this tab or another one. */
+function useMidiSettings(): MidiSettingsV1 {
+  const [settings, setSettings] = useState(() => readMidiSettings())
+  useEffect(() => subscribeMidiSettings(() => setSettings(readMidiSettings())), [])
+  return settings
 }
 
-/** Stores the mappings next to the other saved choices. False when this device could not save. */
-const saveMappings = (mappings: MidiMappings): boolean => writeMidiSettings({ ...readMidiSettings(), mappings })
+/** Stores one choice next to the other saved ones. False when this device could not save. */
+const save = (change: Partial<Pick<MidiSettingsV1, 'device' | 'channel' | 'mappings'>>): boolean => writeMidiSettings({ ...readMidiSettings(), ...change })
+const saveMappings = (mappings: MidiMappings): boolean => save({ mappings })
+
+const CHANNELS = Array.from({ length: 16 }, (_, index) => index + 1)
 
 const button = 'min-h-11 min-w-11 px-3 rounded-xl border border-app-border bg-app-base text-app-heading text-xs font-semibold flex items-center justify-center cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action'
 const liveButton = `${button} hover:bg-app-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-app-base`
+const select = 'w-full min-h-11 min-w-11 bg-app-base border border-app-border rounded-xl px-3 py-1.5 text-sm font-normal text-app-heading cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action'
+const fieldLabel = 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 text-sm text-app-heading'
 const quietButton = 'min-h-11 min-w-11 px-3 rounded-xl text-xs text-app-muted hover:text-app-heading flex items-center justify-center cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action'
 
 interface MidiDialogProps {
@@ -61,17 +71,29 @@ interface MidiDialogProps {
   returnFocusRef?: React.RefObject<HTMLElement | null>
 }
 
-/** MIDI as an application-level dialog; mounted only while open. Connection, the nine actions with Learn and Clear, and Reset. */
+/**
+ * MIDI as an application-level dialog; mounted only while open, so Advanced starts collapsed and
+ * the input monitor starts empty every time. Connection with the device choice, the nine actions
+ * with Learn and Clear, Advanced (channel filter and input monitor), and Reset.
+ */
 export const MidiDialog: React.FC<MidiDialogProps> = ({ onClose, returnFocusRef }) => {
   const snapshot = useMidiSnapshot()
-  const mappings = useMidiMappings()
-  const action = ACTIONS[snapshot.state]
+  const settings = useMidiSettings()
+  const { mappings, device, channel } = settings
   const connected = snapshot.state === 'connected'
+  /** The connected input the saved choice means, if any; the select shows it as chosen. */
+  const chosen = device === 'all' ? null : findMidiDevice(device, snapshot.inputs)
+  const waitingFor = device !== 'all' && snapshot.state === 'no-device' ? device : null
+  const action = waitingFor ? { label: 'Use all devices', run: () => chooseDevice('all') } : ACTIONS[snapshot.state]
 
   const [phase, setPhase] = useState<LearnPhase>(IDLE)
   /** The last Learn, Clear or Reset result. `action` says which row shows it; 'all' is the footer. */
   const [note, setNote] = useState<{ action: MidiActionId | 'all'; text: string } | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  /** The input monitor: memory only, newest first. Never stored, logged or sent anywhere. */
+  const [monitor, setMonitor] = useState<{ key: number; text: string }[]>([])
+  const monitorKey = useRef(0)
   const learnButtons = useRef<Partial<Record<MidiActionId, HTMLButtonElement | null>>>({})
   const resetButton = useRef<HTMLButtonElement>(null)
   /** Where focus goes once a button that held it has left the screen. */
@@ -79,6 +101,26 @@ export const MidiDialog: React.FC<MidiDialogProps> = ({ onClose, returnFocusRef 
 
   // Learn ends when MIDI is switched off or the device goes away; the status line says why.
   if (!connected && phase.kind === 'learning') setPhase(IDLE)
+  // The monitor is emptied when MIDI turns off (and by closing Advanced or the dialog).
+  if (snapshot.state === 'off' && monitor.length > 0) setMonitor([])
+
+  const saved = (ok: boolean) => setNote(ok ? null : { action: 'all', text: SAVE_FAILED })
+  function chooseDevice(id: string) {
+    const input = snapshot.inputs.find(candidate => candidate.id === id)
+    // Saved by id, with name and manufacturer as the fallback for an id that does not last.
+    if (id === 'all' || input) saved(save({ device: input ?? 'all' }))
+  }
+  const chooseChannel = (value: string) => saved(save({ channel: value === 'all' ? 'all' : Number(value) }))
+  const toggleAdvanced = () => { setMonitor([]); setAdvancedOpen(open => !open) }
+
+  // The monitor runs only while Advanced is open and a device is connected. It only watches.
+  useEffect(() => {
+    if (!advancedOpen || !connected) return
+    return monitorMidiInput(entry => {
+      const line = { key: ++monitorKey.current, text: midiMonitorLabel(entry) }
+      setMonitor(lines => [line, ...lines].slice(0, MIDI_MONITOR_LINES))
+    })
+  }, [advancedOpen, connected])
 
   const finish = (target: MidiActionId, input: MidiInput, replace: boolean) => {
     const result = assignMidiMapping(readMidiSettings().mappings, target, input, { replace })
@@ -180,7 +222,7 @@ export const MidiDialog: React.FC<MidiDialogProps> = ({ onClose, returnFocusRef 
     >
       <AppModalSection title="Connection">
         {/* The device name is rendered as a text node: plain text, never HTML. */}
-        <p role="status" aria-live="polite" data-testid="midi-status" className="text-sm text-app-heading break-words">{statusText(snapshot)}</p>
+        <p role="status" aria-live="polite" data-testid="midi-status" className="text-sm text-app-heading break-words">{statusText(snapshot, waitingFor)}</p>
         {action && (
           <button
             type="button"
@@ -191,6 +233,19 @@ export const MidiDialog: React.FC<MidiDialogProps> = ({ onClose, returnFocusRef 
             {action.label}
           </button>
         )}
+        <label className={fieldLabel}>
+          <span>Listen to</span>
+          <select
+            data-testid="midi-device"
+            value={device === 'all' ? 'all' : chosen ? chosen.id : 'missing'}
+            onChange={event => chooseDevice(event.target.value)}
+            className={select}
+          >
+            <option value="all">All devices</option>
+            {snapshot.inputs.map(input => <option key={input.id} value={input.id}>{nameOf(input)}</option>)}
+            {device !== 'all' && !chosen && <option value="missing">{nameOf(device)} (not connected)</option>}
+          </select>
+        </label>
       </AppModalSection>
 
       <AppModalSection title="Actions">
@@ -237,6 +292,41 @@ export const MidiDialog: React.FC<MidiDialogProps> = ({ onClose, returnFocusRef 
           })}
         </ul>
       </AppModalSection>
+
+      <section className="space-y-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-wider text-app-muted">
+          <button
+            type="button"
+            data-testid="midi-advanced-toggle"
+            aria-expanded={advancedOpen}
+            aria-controls={advancedOpen ? 'midi-advanced' : undefined}
+            onClick={toggleAdvanced}
+            className="w-full min-h-11 min-w-11 -mx-1 px-1 rounded-xl flex items-center gap-1.5 uppercase tracking-wider font-bold text-left hover:text-app-heading cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action"
+          >
+            {advancedOpen ? <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />}
+            <span>Advanced</span>
+          </button>
+        </h3>
+        {advancedOpen && (
+          <div id="midi-advanced" data-testid="midi-advanced" className="space-y-2">
+            <label className={fieldLabel}>
+              <span>Channel</span>
+              <select data-testid="midi-channel" value={String(channel)} onChange={event => chooseChannel(event.target.value)} className={select}>
+                <option value="all">All channels</option>
+                {CHANNELS.map(number => <option key={number} value={number}>{number}</option>)}
+              </select>
+            </label>
+            {/* Not a live region: it would talk over the player. Lines are text nodes, with no animation. */}
+            <div role="group" aria-labelledby="midi-monitor-title" className="space-y-1">
+              <p id="midi-monitor-title" className="text-sm text-app-heading">Input monitor</p>
+              <ul data-testid="midi-monitor" className="text-xs font-mono text-app-heading break-words space-y-0.5">
+                {monitor.map(line => <li key={line.key}>{line.text}</li>)}
+              </ul>
+              <p data-testid="midi-monitor-caption" className="text-xs text-app-muted">Shows the last {MIDI_MONITOR_LINES} inputs. Nothing is saved.</p>
+            </div>
+          </div>
+        )}
+      </section>
     </AppModal>
   )
 }

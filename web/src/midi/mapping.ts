@@ -41,15 +41,35 @@ export function sameMidiInput(a: MidiInput, b: MidiInput): boolean {
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
 
+const inputName = (input: MidiInput): string =>
+  input.type === 'note' ? `Note ${input.number} (${NOTE_NAMES[input.number % 12]}${Math.floor(input.number / 12) - 1})`
+    : input.type === 'cc' ? `CC ${input.number}`
+    : `Program ${input.number}`
+
 /**
  * On-screen text for an input, with numbers as the controller sends them:
  * "Note 60 (C4) · Ch 1", "CC 64 · Ch 1" or "Program 5 · Ch 1". C4 is note 60, as in the Tuner.
  */
 export function midiInputLabel(input: MidiInput): string {
-  const what = input.type === 'note' ? `Note ${input.number} (${NOTE_NAMES[input.number % 12]}${Math.floor(input.number / 12) - 1})`
-    : input.type === 'cc' ? `CC ${input.number}`
-    : `Program ${input.number}`
-  return `${what} · Ch ${input.channel}`
+  return `${inputName(input)} · Ch ${input.channel}`
+}
+
+/** One input as the monitor sees it. Lives in memory only; never stored, logged or sent. */
+export interface MidiMonitorEntry {
+  input: MidiInput
+  /** Controller value 0–127; only shown for a Control Change. */
+  value: number
+  /** Device name: plain text, already cut to MIDI_DEVICE_TEXT_MAX. */
+  device: string
+}
+
+/** How many inputs the monitor keeps, newest first. */
+export const MIDI_MONITOR_LINES = 5
+
+/** One monitor line: "CC 64 · value 127 · Ch 1 · FS-1-WL" or "Note 60 (C4) · Ch 1 · FS-1-WL". */
+export function midiMonitorLabel({ input, value, device }: MidiMonitorEntry): string {
+  const what = input.type === 'cc' ? `${inputName(input)} · value ${value}` : inputName(input)
+  return `${what} · Ch ${input.channel} · ${device}`
 }
 
 /** Stable text key for an input, for maps and sets. */

@@ -10,7 +10,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
   fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env', '({DEV:false})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename)
 
 const { createMidiEngine } = require('../src/midi/engine.ts')
-const { fakeInput, fakeAccess, fakeNavigator, domError, deferred, settle, listenerCount } = require('./helpers/fakeMidi.cjs')
+const { brief, fakeInput, fakeAccess, fakeNavigator, domError, deferred, settle, listenerCount } = require('./helpers/fakeMidi.cjs')
 
 /** An engine on a fake navigator; `states` records every status it reports. */
 function setup(navOptions = {}, engineOptions = {}) {
@@ -25,7 +25,7 @@ test('off until started: creating the engine asks nothing and listens to nothing
   const pedal = fakeInput('p1', 'FS-1-WL')
   const { nav, engine, states, access } = setup({ access: fakeAccess([pedal]) })
   await settle()
-  assert.deepEqual(engine.getSnapshot(), { state: 'off', devices: [] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'off', devices: [] })
   assert.deepEqual([nav.requests.length, nav.queries.length, listenerCount(access), states.length], [0, 0, 0, 0])
   assert.equal(access.onstatechange, null)
 })
@@ -37,7 +37,7 @@ test('ask: Starting, then Connected with one listener per port, and SysEx is nev
   assert.equal(state(engine), 'starting', 'Starting until the browser answers')
   await settle()
   assert.deepEqual(states, ['starting', 'connected'])
-  assert.deepEqual(engine.getSnapshot(), { state: 'connected', devices: ['FS-1-WL', 'Keystation'] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'connected', devices: ['FS-1-WL', 'Keystation'] })
   assert.equal(listenerCount(access), 2)
   assert.deepEqual([pedal.sets, keys.sets], [1, 1])
   assert.equal(typeof access.onstatechange, 'function')
@@ -71,16 +71,16 @@ test('no inputs is No device; hot-plug in is Connected; out is No device; back i
   const { engine, states, access } = setup()
   engine.start('ask')
   await settle()
-  assert.deepEqual(engine.getSnapshot(), { state: 'no-device', devices: [] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'no-device', devices: [] })
   assert.equal(typeof access.onstatechange, 'function', 'still waiting for a device')
 
   const pedal = fakeInput('p1', 'FS-1-WL')
   access.plug(pedal)
-  assert.deepEqual(engine.getSnapshot(), { state: 'connected', devices: ['FS-1-WL'] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'connected', devices: ['FS-1-WL'] })
   assert.equal(listenerCount(access), 1)
 
   access.unplug(pedal)
-  assert.deepEqual(engine.getSnapshot(), { state: 'no-device', devices: [] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'no-device', devices: [] })
   assert.equal(pedal.onmidimessage, null, 'a disconnected port keeps no listener')
 
   access.plug(pedal)
@@ -103,7 +103,7 @@ test('two devices: one going away leaves the other connected; repeated statechan
   assert.deepEqual(states, ['starting', 'connected'], 'an unchanged status is not reported again')
 
   access.unplug(keys)
-  assert.deepEqual(engine.getSnapshot(), { state: 'connected', devices: ['FS-1-WL'] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'connected', devices: ['FS-1-WL'] })
   assert.deepEqual([pedal.onmidimessage !== null, keys.onmidimessage], [true, null])
 
   // A replaced port object under the same id is listened to instead of the old one.
@@ -148,7 +148,7 @@ test('stop: no listener, ports closed, statechange removed, access dropped', asy
   engine.start('ask')
   await settle()
   engine.stop()
-  assert.deepEqual(engine.getSnapshot(), { state: 'off', devices: [] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'off', devices: [] })
   assert.equal(listenerCount(access), 0)
   assert.deepEqual([pedal.closes, keys.closes, access.onstatechange], [1, 1, null])
   access.plug(fakeInput('p3', 'Late'))
@@ -179,7 +179,7 @@ test('a late answer after OFF or a restart is ignored', async () => {
   await settle()
   slow.resolve(access)
   await settle()
-  assert.deepEqual(engine.getSnapshot(), { state: 'connected', devices: ['Keystation'] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'connected', devices: ['Keystation'] })
   assert.deepEqual([listenerCount(access), listenerCount(fresh)], [0, 1])
 
   const lateDenied = deferred()
@@ -219,7 +219,7 @@ test('a statechange callback that throws sets Error and detaches', async () => {
   const handler = access.onstatechange
   access.inputs = { forEach() { throw new Error('broken port list') } }
   assert.doesNotThrow(() => handler({ port: pedal }))
-  assert.deepEqual(engine.getSnapshot(), { state: 'error', devices: [] })
+  assert.deepEqual(brief(engine.getSnapshot()), { state: 'error', devices: [] })
   assert.deepEqual([pedal.onmidimessage, pedal.closes, access.onstatechange], [null, 1, null])
   assert.deepEqual(states, ['starting', 'connected', 'error'])
   assert.doesNotThrow(() => handler({ port: pedal }), 'the old handler is dead')

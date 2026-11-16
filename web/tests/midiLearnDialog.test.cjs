@@ -54,7 +54,7 @@ async function open({ mappings, navOptions, on = true } = {}) {
 test('Actions: the nine actions, always in the design order, each Not set with Learn and no Clear', async () => {
   const { close } = await open()
   try {
-    assert.deepEqual([...panel().querySelectorAll('h3')].map(heading => heading.textContent), ['Connection', 'Actions'])
+    assert.deepEqual([...panel().querySelectorAll('h3')].map(heading => heading.textContent), ['Connection', 'Actions', 'Advanced'])
     const rows = [...panel().querySelectorAll('[data-testid="midi-actions"] > li')]
     assert.deepEqual(rows.map(item => item.getAttribute('data-testid')), IDS.map(id => `midi-action-${id}`))
     assert.deepEqual(rows.map(item => item.firstElementChild.textContent), ACTIONS.map(([, label]) => label))
@@ -66,8 +66,8 @@ test('Actions: the nine actions, always in the design order, each Not set with L
       assert.equal(message(id), '')
     }
     assert.deepEqual(footerButtons(), ['Reset', 'Close'], 'one Reset, in the footer')
-    assert.equal(panel().querySelectorAll('select, input, textarea, [role="switch"], details, form').length, 0, 'no second switch; device and channel choice come later')
-    assert.doesNotMatch(panel().textContent, /Advanced|Listen to|Channel|monitor/i, 'nothing from the Advanced slice')
+    assert.equal(panel().querySelectorAll('input, textarea, [role="switch"], details, form').length, 0, 'no second switch')
+    assert.doesNotMatch(panel().textContent, /Channel|monitor/i, 'Advanced is collapsed')
   } finally { await close() }
 })
 

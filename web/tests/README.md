@@ -265,6 +265,8 @@ New or renamed tests await a human choice of primary category.
 - [manualCloudBackupUi.test.cjs](manualCloudBackupUi.test.cjs)
 - [metronomeEngine.test.cjs](metronomeEngine.test.cjs)
 - [midiActionAllowlist.test.cjs](midiActionAllowlist.test.cjs)
+- [midiAdvancedDialog.test.cjs](midiAdvancedDialog.test.cjs)
+- [midiAdvancedEngine.test.cjs](midiAdvancedEngine.test.cjs)
 - [midiAdvancedToolsRow.test.cjs](midiAdvancedToolsRow.test.cjs)
 - [midiDialog.test.cjs](midiDialog.test.cjs)
 - [midiDispatch.test.cjs](midiDispatch.test.cjs)

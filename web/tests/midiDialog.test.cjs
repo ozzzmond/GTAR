@@ -1,6 +1,7 @@
 // #536: the MIDI dialog frame and its Connection section. Status line and context button per
 // state, the same modal pattern as ProPresenter, Esc and focus return, the one "?" help, and
-// nothing from the Advanced slice. The Actions section (Learn, Clear, Reset) is covered in
+// Advanced collapsed. The Advanced slice (device choice, channel filter, input monitor) is covered
+// in midiAdvancedDialog.test.cjs. The Actions section (Learn, Clear, Reset) is covered in
 // midiLearnDialog.test.cjs. Real Header, fake MIDIAccess, no real device.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -50,14 +51,15 @@ test('status line, context button and header pill for every state', async () => 
   }
 })
 
-test('Connection and Actions in every state; no Advanced, device or channel choice, or input monitor yet', async () => {
+test('Connection, Actions and a collapsed Advanced in every state; the device choice is the only select', async () => {
   for (const [state, navOptions, leftOn] of STATES) {
     const { close } = await openIn(state, navOptions, leftOn)
     try {
-      assert.deepEqual([...panel().querySelectorAll('h3')].map(heading => heading.textContent), ['Connection', 'Actions'], state)
-      assert.equal(panel().querySelectorAll('select, input, textarea, [role="switch"], details, form').length, 0, `${state}: no second switch and no choices`)
-      assert.equal(panel().querySelectorAll('[data-app-modal="body"] [aria-expanded]').length, 0, `${state}: nothing in the body expands`)
-      assert.doesNotMatch(panel().textContent, /Advanced|Listen to|Channel|monitor/i, state)
+      assert.deepEqual([...panel().querySelectorAll('h3')].map(heading => heading.textContent), ['Connection', 'Actions', 'Advanced'], state)
+      assert.equal(panel().querySelectorAll('input, textarea, [role="switch"], details, form').length, 0, `${state}: no second switch`)
+      assert.deepEqual([...panel().querySelectorAll('select')].map(select => select.getAttribute('data-testid')), ['midi-device'], `${state}: the device choice only`)
+      assert.deepEqual([...panel().querySelectorAll('[data-app-modal="body"] [aria-expanded]')].map(el => el.getAttribute('aria-expanded')), ['false'], `${state}: Advanced is collapsed`)
+      assert.doesNotMatch(panel().textContent, /Channel|monitor/i, `${state}: nothing from inside Advanced`)
       const footer = [...panel().querySelectorAll('[data-app-modal="footer"] button')].map(button => button.textContent.trim())
       assert.deepEqual(footer, ['Reset', 'Close'], `${state}: the footer has Reset and Close`)
       const section = panel().querySelector('[data-testid="midi-status"]').parentElement
@@ -176,7 +178,7 @@ test('keyboard: Tab stays inside the dialog and the context button works from th
   try {
     // MIDI is off here, so the nine Learn buttons are disabled and out of the tab order.
     const focusable = [...panel().querySelectorAll('button:not([disabled])')]
-    assert.deepEqual(focusable.map(button => button.getAttribute('data-testid') ?? button.getAttribute('aria-label')), ['midi-help-button', 'Close', 'midi-status-action', 'midi-reset', 'midi-panel-close'], 'tab order follows the screen')
+    assert.deepEqual(focusable.map(button => button.getAttribute('data-testid') ?? button.getAttribute('aria-label')), ['midi-help-button', 'Close', 'midi-status-action', 'midi-advanced-toggle', 'midi-reset', 'midi-panel-close'], 'tab order follows the screen')
     focusable.at(-1).focus()
     await key('Tab')
     assert.equal(document.activeElement, focusable[0], 'Tab wraps to the first control')
