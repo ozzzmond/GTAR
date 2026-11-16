@@ -444,3 +444,46 @@ test('Round 2: Destructive-operation warnings and clear topic coverage in new di
     assert.ok(titles.includes('New Song'))
   } finally { await unmount(root) }
 })
+
+test('ExportSongsDialog: help button opens contextual help inside the dialog, Escape closes help first, dialog remains open', async () => {
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
+  const { ExportSongsDialog } = require('../src/components/ExportSongsDialog.tsx')
+  let closed = false
+  const root = await mount(React.createElement(ExportSongsDialog, {
+    songs: [
+      { id: '1', title: 'Amazing Grace', rawContent: '{title: Amazing Grace}\n[G]Amazing [C]grace' },
+      { id: '2', title: 'How Great Thou Art', rawContent: '{title: How Great Thou Art}\n[G]O Lord my God' },
+    ],
+    onClose() { closed = true },
+  }))
+  try {
+    const dialogEl = q('[data-testid="export-songs-dialog"]')
+    assert.ok(dialogEl, 'ExportSongsDialog is mounted')
+    const helpBtn = q('[data-testid="export-songs-help-button"]')
+    assert.ok(helpBtn, 'help button exists inside ExportSongsDialog')
+
+    // Open help
+    await click(helpBtn)
+    const helpPanel = q('[data-contextual-help]')
+    assert.ok(helpPanel, 'help panel is open')
+    assert.equal(helpPanel.parentElement, dialogEl, 'help panel is portaled inside the native <dialog> to avoid inertness')
+
+    // Check topics
+    const titles = topicTitles()
+    assert.deepEqual(titles, ['Export formats', 'Saved vs Transposed key', 'Song filtering', 'Bulk selection', 'Export action'])
+
+    // Escape closes help while dialog remains open
+    await key('Escape')
+    assert.equal(q('[data-contextual-help]'), null, 'help is dismissed on Escape')
+    assert.equal(closed, false, 'dialog remains open after first Escape')
+    assert.equal(document.activeElement, helpBtn, 'focus restored to help button')
+
+    // Native cancel closes dialog when help is closed
+    dialogEl.dispatchEvent(new window.Event('cancel', { bubbles: true, cancelable: true }))
+    assert.equal(closed, true, 'dialog closes on cancel when help is not active')
+  } finally {
+    await unmount(root)
+  }
+})
+

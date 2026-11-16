@@ -222,11 +222,11 @@ export const ExportSongsHelp: React.FC<MenuHelpProps> = (props) => (
     panelTestId="export-songs-help"
     quickSummary="Export songs as ChordPro text or printable PDF."
     topics={topics([
-      ['Export formats', 'TXT exports ChordPro text with multiple songs separated by {new_song}. PDF opens the print view to save or print formatted charts.'],
-      ['Saved vs Transposed key', 'For PDF export, choose Saved key for the original stored key, or Current transposed key for your active stage transposition.'],
-      ['Song filtering', 'Type in Filter songs to quickly find songs by title or artist.'],
-      ['Bulk selection', 'Use Select shown to select all currently filtered songs, or Clear to deselect everything.'],
-      ['Export action', 'Downloads the TXT file or opens your browser print dialog to save as PDF. Only selected songs are included.'],
+      ['Export formats', 'TXT downloads ChordPro text with multiple songs separated by {new_song}. PDF opens formatted charts in the print view to save as PDF or print on paper.'],
+      ['Saved vs Transposed key', 'For PDF export, choose Saved key to print original stored charts, or Current transposed key to print songs in your active stage performance pitch.'],
+      ['Song filtering', 'Type keywords into Filter songs to search by title or artist. Filtering narrows what is shown without clearing your existing song selections.'],
+      ['Bulk selection', 'Tap any song row to pick it. Use Select shown to choose all currently filtered songs at once, or Clear to deselect every song.'],
+      ['Export action', 'Downloads the TXT file or opens your browser print dialog. If PDF print fails to open, check pop-up blockers. Only selected songs are exported.'],
     ])}
   />
 )
