@@ -62,4 +62,7 @@ const engineLoaded = () => Object.keys(require.cache).some(file => /[\\/]src[\\/
 /** Forgets every loaded web/src/midi module, so the next require starts with MIDI off and no engine. */
 const forgetMidiModules = () => { for (const file of Object.keys(require.cache)) if (/[\\/]src[\\/]midi[\\/]/.test(file)) delete require.cache[file] }
 
-module.exports = { CHROME_DESKTOP, fakeInput, fakeAccess, fakeNavigator, domError, deferred, settle, listenerCount, engineLoaded, forgetMidiModules }
+/** The status and the listened names of a snapshot, without the device list of the Slice 5 choice. */
+const brief = ({ state, devices }) => ({ state, devices })
+
+module.exports = { brief, CHROME_DESKTOP, fakeInput, fakeAccess, fakeNavigator, domError, deferred, settle, listenerCount, engineLoaded, forgetMidiModules }

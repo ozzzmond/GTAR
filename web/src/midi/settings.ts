@@ -28,6 +28,25 @@ export interface MidiSettingsV1 {
   mappings: MidiMappings
 }
 
+/** True when two saved device choices are the same choice. */
+export function sameMidiDevice(a: 'all' | MidiDeviceChoice, b: 'all' | MidiDeviceChoice): boolean {
+  if (a === 'all' || b === 'all') return a === b
+  return a.id === b.id && a.name === b.name && a.manufacturer === b.manufacturer
+}
+
+/**
+ * The connected input a saved choice means: the one with its id, or, when that id is gone (ids
+ * are not guaranteed to last), the only input with the same name and manufacturer. Null means
+ * the device is missing; another device is never picked in its place.
+ */
+export function findMidiDevice(choice: MidiDeviceChoice, inputs: readonly MidiDeviceChoice[]): MidiDeviceChoice | null {
+  const byId = inputs.find(input => input.id === choice.id)
+  if (byId) return byId
+  if (!choice.name) return null
+  const alike = inputs.filter(input => input.name === choice.name && input.manufacturer === choice.manufacturer)
+  return alike.length === 1 ? alike[0] : null
+}
+
 export type MidiSettingsStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 export function defaultMidiSettings(): MidiSettingsV1 {
