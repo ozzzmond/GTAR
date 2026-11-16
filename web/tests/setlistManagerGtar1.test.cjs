@@ -59,6 +59,7 @@ const $$ = sel => [...document.querySelectorAll(sel)]
 const options = () => $$('[role="option"]')
 const optionTitles = () => options().map(el => el.querySelector('[data-testid="picker-option-title"]').textContent.trim())
 const button = text => $$('button').find(b => b.textContent.includes(text))
+const renameButton = () => $('button[aria-label="Rename setlist"]')
 async function click(el) { assert.ok(el, 'control exists'); await act(async () => el.click()) }
 async function type(el, value) {
   assert.ok(el, 'input exists')
@@ -247,23 +248,36 @@ function managerProps(overrides = {}) {
   return { props, calls }
 }
 
-test('MANAGER_LAYOUT: header bar, name + Rename, Delete, Play in Stage, picker button, Add Shortcut row, ordered list, no folder select', async () => {
+// #418: every control keeps a 44px target; the shared help button gets there with an invisible hit area.
+const TOUCH_TARGET = /min-h-11|w-11 h-11|before:-inset-1\.5/
+
+test('MANAGER_LAYOUT: header bar, name + pencil Rename, Delete, Play in Stage, Search Songs as the only add route, ordered list, no folder select', async () => {
   const { props } = managerProps()
   await mount(SetlistManager, props)
   const dialog = $('[role="dialog"][aria-label="Setlist Manager"]')
   assert.ok(dialog)
   assert.ok($('[data-testid="setlist-manager-header"]'))
   assert.match($('[data-testid="setlist-manager-name"]').textContent, /Sunday AM/)
-  for (const label of ['Rename', 'Delete Setlist', 'Play Setlist in Stage', 'Search Multi-Songs', '+ Add Shortcut']) assert.ok(button(label), label)
-  assert.equal(button('Search Multi-Songs').getAttribute('aria-keyshortcuts'), 'Control+K')
-  assert.ok($('[data-testid="setlist-manager-shortcut-select"]'))
+  for (const label of ['Delete Setlist', 'Play Setlist in Stage', 'Search Songs']) assert.ok(button(label), label)
+  // #418: Rename is a pencil icon with an accessible name, not a text button.
+  assert.ok(renameButton(), 'pencil Rename button')
+  assert.equal(renameButton().textContent, '', 'Rename shows no text')
+  assert.ok(renameButton().querySelector('svg[aria-hidden="true"]'), 'Rename shows an icon')
+  // #418: Search Songs is the only add-song launcher; the dropdown, Add Shortcut and the Ctrl+K badge are gone.
+  const launcher = button('Search Songs')
+  assert.equal(launcher.textContent, 'Search Songs')
+  assert.equal(launcher.getAttribute('aria-keyshortcuts'), 'Control+K', 'the shortcut itself stays')
+  assert.equal(dialog.querySelector('kbd'), null, 'no visible shortcut badge')
+  assert.equal($('[data-testid="setlist-manager-shortcut-select"]'), null)
+  assert.doesNotMatch(dialog.textContent, /Add Shortcut|Search Multi-Songs|Select a song to add|Ctrl\+K/)
+  assert.deepEqual($$('[role="dialog"] select').map(el => el.dataset.testid), ['setlist-manager-select'], 'the setlist selector is the only dropdown')
   assert.doesNotMatch(dialog.textContent, /Folder/)
   const rows = $$('[data-testid^="setlist-manager-entry-"]').filter(el => /entry-\d+$/.test(el.dataset.testid))
   assert.equal(rows.length, 3)
   assert.match(rows[0].textContent, /^1.*Hallelujah.*Leonard Cohen/)
   assert.match(rows[1].textContent, /Song missing/)
   assert.match(rows[2].textContent, /Hotel California/)
-  for (const b of $$('[role="dialog"] button')) assert.match(b.className, /min-h-11|w-11 h-11/, `44px target: ${b.textContent || b.getAttribute('aria-label')}`)
+  for (const b of $$('[role="dialog"] button')) assert.match(b.className, TOUCH_TARGET, `44px target: ${b.textContent || b.getAttribute('aria-label')}`)
 })
 
 test('MANAGER_EMPTY: empty setlist shows the empty state and no Play button', async () => {
@@ -276,7 +290,7 @@ test('MANAGER_EMPTY: empty setlist shows the empty state and no Play button', as
 test('MANAGER_ACTIONS: rename, delete (confirmed), reorder, remove, play call the guarded handlers', async () => {
   const { props, calls } = managerProps()
   await mount(SetlistManager, props)
-  await click(button('Rename'))
+  await click(renameButton())
   await type($('[data-testid="setlist-manager-rename-input"]'), '  Sunday PM ')
   await click(button('Save'))
   await click($('[data-testid="setlist-manager-entry-0-down"]'))
@@ -294,24 +308,26 @@ test('MANAGER_ACTIONS: rename, delete (confirmed), reorder, remove, play call th
   ])
 })
 
-test('MANAGER_ADD_SHORTCUT: Add Shortcut adds one song through the same add handler', async () => {
+test('MANAGER_SINGLE_ADD_ROUTE: songs are added only through Search Songs; members are marked and cannot be added twice', async () => {
   const { props, calls } = managerProps()
   await mount(SetlistManager, props)
-  const select = $('[data-testid="setlist-manager-shortcut-select"]')
-  const values = [...select.options].map(o => o.value)
-  assert.ok(!values.includes('song-2'), 'songs already in the setlist are not offered')
-  await act(async () => {
-    select.value = 'song-3'
-    select.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-  })
-  await click(button('+ Add Shortcut'))
-  assert.deepEqual(calls, [['add', 'sl-1', ['song-3']]])
+  await click(button('Search Songs'))
+  const row = text => options().find(el => el.textContent.includes(text))
+  const member = row('Leonard Cohen')
+  assert.equal(member.getAttribute('aria-disabled'), 'true')
+  assert.match(member.textContent, /In setlist/)
+  assert.equal(member.querySelector('input[type="checkbox"]'), null, 'a member row offers no checkbox')
+  await click(member)
+  assert.match($('[data-testid="picker-selected-count"]').textContent, /^0 songs selected/, 'a member cannot be selected')
+  await click(button('Select all matching'))
+  await click(button('Add 2 Selected Songs'))
+  assert.deepEqual(calls, [['add', 'sl-1', ['song-1', 'song-3']]], 'only non-members, in list order, in one call')
 })
 
 test('MANAGER_PICKER: picker adds N songs in one call and reports success', async () => {
   const { props, calls } = managerProps()
   await mount(SetlistManager, props)
-  await click(button('Search Multi-Songs'))
+  await click(button('Search Songs'))
   const row = text => options().find(el => el.textContent.includes(text))
   await click(row('Jeff Buckley'))
   await click(row('Amazing Grace'))
@@ -334,7 +350,7 @@ test('MANAGER_SHORTCUT: Ctrl+K opens the picker except while typing, blocked (St
   await key(window, { key: 'k', ctrlKey: true })
   assert.ok(picker(), 'Ctrl+K reopens')
   await click($('[aria-label^="Close search picker"]'))
-  await click(button('Rename'))
+  await click(renameButton())
   await key($('[data-testid="setlist-manager-rename-input"]'), { key: 'k', ctrlKey: true })
   assert.equal(picker(), null, 'ignored while typing in another field')
   await click(button('Cancel'))
@@ -379,7 +395,7 @@ test('MANAGER_FOCUS: Tab and Shift+Tab wrap inside the manager, the picker and t
   await key(items[0], { key: 'Tab', shiftKey: true })
   assert.equal(document.activeElement, items.at(-1), 'Shift+Tab on first wraps to last')
 
-  await click(button('Search Multi-Songs'))
+  await click(button('Search Songs'))
   const pickerSel = '[role="dialog"][aria-label="Multi-song search picker"]'
   items = focusables(pickerSel)
   items.at(-1).focus()
@@ -401,18 +417,18 @@ test('MANAGER_FOCUS: Tab and Shift+Tab wrap inside the manager, the picker and t
 test('MANAGER_FOCUS: Escape closes only the topmost layer (rename → delete → picker → manager)', async () => {
   const { props, calls } = managerProps()
   await mount(SetlistManager, props)
-  await click(button('Rename'))
+  await click(renameButton())
   await key($('[data-testid="setlist-manager-rename-input"]'), { key: 'Escape' })
   assert.equal($('[data-testid="setlist-manager-rename-input"]'), null, 'rename edit closed')
   assert.ok(managerDialog(), 'manager still open')
-  assert.equal(document.activeElement, button('Rename'))
+  assert.equal(document.activeElement, renameButton())
 
   await click(button('Delete Setlist'))
   await key(document.activeElement, { key: 'Escape' })
   assert.equal($('[role="alertdialog"]'), null, 'delete confirm closed')
   assert.equal(document.activeElement, button('Delete Setlist'))
 
-  await click(button('Search Multi-Songs'))
+  await click(button('Search Songs'))
   const firstOption = $('[role="option"]')
   firstOption.focus()
   await key(firstOption, { key: 'Escape' })

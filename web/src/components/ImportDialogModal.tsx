@@ -8,6 +8,7 @@ import { extractDirectives } from '../utils/chordSheetParser'
 import { parseBackupJson } from '../utils/jsonBackup'
 import { isOnSongFile, looksLikeArchive, onsongToChordPro, SONG_FILE_EXTENSIONS } from '../utils/onsongImport'
 import { splitTxtSongs } from '../utils/songExport'
+import { ImportSongsHelp } from './menuHelp'
 
 interface ImportDialogModalProps {
   isOpen: boolean
@@ -272,13 +273,16 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
               <h2 className="text-base font-bold text-app-heading">Import Songs</h2>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <ImportSongsHelp />
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

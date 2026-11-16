@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Check, Music, Plus, Search, X } from 'lucide-react'
+import { AlertCircle, Check, Music, Search, X } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { parseSearchPhrases, songMatchesPhrase } from '../utils/setlistPickerSearch'
 import { formatTempoLabel } from '../utils/chordProMetadata'
@@ -24,6 +24,7 @@ const songKey = (song: ActiveSongState) => String(song.id)
 
 const touch = 'min-h-11 sm:min-h-9'
 const iconButton = 'w-11 h-11 sm:w-9 sm:h-9 shrink-0 rounded-xl flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base transition-colors cursor-pointer'
+const footerButton = 'min-h-11 sm:min-h-10 px-4 rounded-xl border text-xs font-bold flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
 const plural = (n: number) => `${n} ${n === 1 ? 'song' : 'songs'}`
 
 export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
@@ -149,14 +150,14 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
         aria-label="Multi-song search picker"
         className="w-full h-full sm:h-auto sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl border-app-border sm:border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col"
       >
-        <div className="px-3 sm:px-4 py-1 border-b border-app-border/80 flex items-center justify-between gap-2 bg-app-base/60">
+        <div className="px-4 py-2 border-b border-app-border/80 flex items-center justify-between gap-3 bg-app-base/60">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 shrink-0 rounded-xl bg-app-action/20 border border-app-action/40 flex items-center justify-center text-app-action">
               <Search className="w-4 h-4" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <h2 className="font-extrabold text-sm sm:text-base tracking-wide">Search Songs to Add</h2>
-              <p className="text-[11px] text-app-muted truncate">
+              <h2 className="font-extrabold text-sm sm:text-base tracking-wide leading-tight">Search Songs</h2>
+              <p className="text-[11px] leading-tight text-app-muted truncate">
                 Add songs to <strong className="text-app-text">{currentSetlist.name}</strong> in one action
               </p>
             </div>
@@ -166,15 +167,17 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
           </button>
         </div>
 
-        <div className="p-3 sm:p-4 space-y-2 flex flex-col flex-1 min-h-0">
+        <div className="px-4 pt-3 pb-3 flex flex-col gap-2 flex-1 min-h-0">
           <div className="space-y-1.5">
             <label htmlFor="multi-song-search-input" className="block text-xs font-semibold text-app-heading">
               Search title, artist, key or tag
             </label>
+            {/* One field owns the border and focus ring (header search convention); the input inside is bare. */}
             <div
               onClick={() => inputRef.current?.focus()}
-              className="min-h-11 sm:min-h-9 w-full bg-app-base border border-app-border rounded-xl px-2 py-0 flex flex-wrap items-center gap-1.5 focus-within:border-app-action cursor-text"
+              className="header-search-box min-h-11 w-full bg-app-base border border-app-border rounded-xl pl-3 pr-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 cursor-text transition-colors focus-within:border-app-accent focus-within:ring-2 focus-within:ring-app-accent/20"
             >
+              <Search className="w-4 h-4 shrink-0 text-app-muted" aria-hidden="true" />
               {selectedSongsInOrder.map(song => (
                 <span key={songKey(song)} className="inline-flex items-center gap-1 bg-app-action/15 border border-app-action/40 text-app-action text-xs pl-2 rounded-lg font-semibold">
                   <Music className="w-3 h-3" aria-hidden="true" />
@@ -199,25 +202,28 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
                 onChange={e => { setInputValue(e.target.value); setActiveHighlightIndex(-1) }}
                 onKeyDown={handleInputKeyDown}
                 placeholder="e.g. Goodness of God, key:G, artist:Bethel"
-                className="flex-1 min-w-[140px] min-h-11 sm:min-h-9 bg-transparent text-sm text-app-text placeholder:text-app-muted/70 focus:outline-none px-1"
+                className="header-search-input flex-1 min-w-[140px] min-h-11 sm:min-h-9 p-0 border-0 bg-transparent text-sm text-app-text placeholder:text-app-muted/70 focus:outline-none focus:ring-0 shadow-none [&::-webkit-search-cancel-button]:appearance-none"
               />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 text-xs">
             <span aria-live="polite" data-testid="picker-selected-count" className="font-semibold text-app-heading">
               {plural(count)} selected <span className="text-app-muted font-normal">({filteredSongs.length} matching)</span>
             </span>
-            {filteredSongs.length > 0 && (
-              <button type="button" onClick={selectAllMatching} className={`${touch} px-2 text-app-link hover:underline font-semibold cursor-pointer`}>
-                Select all matching
-              </button>
-            )}
-            {count > 0 && (
-              <button type="button" onClick={() => setSelectedSongIds([])} className={`${touch} px-2 text-app-muted hover:text-status-error cursor-pointer`}>
-                Clear
-              </button>
-            )}
+            {/* Pulled out by the buttons' own padding so their text lines up with the list edge. */}
+            <div className="flex items-center -mr-2">
+              {count > 0 && (
+                <button type="button" onClick={() => setSelectedSongIds([])} className={`${touch} px-2 text-app-muted hover:text-status-error cursor-pointer`}>
+                  Clear
+                </button>
+              )}
+              {filteredSongs.length > 0 && (
+                <button type="button" onClick={selectAllMatching} className={`${touch} px-2 text-app-link hover:underline font-semibold cursor-pointer`}>
+                  Select all matching
+                </button>
+              )}
+            </div>
           </div>
 
           {errorMessage && (
@@ -228,7 +234,7 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
           )}
 
           <div role="listbox" aria-multiselectable="true" aria-label="Available songs"
-            className="flex-1 min-h-0 sm:max-h-80 overflow-y-auto space-y-1 rounded-xl border border-app-border/60 bg-app-base/60 p-1">
+            className="flex-1 min-h-0 sm:max-h-80 overflow-y-auto overscroll-contain space-y-1 rounded-xl border border-app-border bg-app-base/60 p-1">
             {songs.length === 0 ? (
               <div className="py-8 text-center text-app-muted text-xs">
                 <Music className="w-6 h-6 mx-auto mb-2 opacity-50" aria-hidden="true" />
@@ -255,52 +261,53 @@ export const MultiSongSetlistPicker: React.FC<MultiSongSetlistPickerProps> = ({
                   tabIndex={already ? -1 : 0}
                   onClick={() => toggle(id)}
                   onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(id) } }}
-                  className={`min-h-11 px-2 py-1.5 sm:py-1 rounded-xl border flex items-center gap-2 select-none transition-colors ${
-                    already ? 'opacity-60 cursor-not-allowed bg-app-base border-app-border/60'
+                  className={`min-h-11 pl-2.5 pr-2 py-1.5 rounded-lg border flex items-center gap-2.5 select-none transition-colors ${
+                    already ? 'cursor-not-allowed border-transparent text-app-muted'
                       : isSelected ? 'bg-app-action/15 border-app-action/60 cursor-pointer'
                         : highlighted ? 'bg-app-surface border-app-action/40 cursor-pointer'
-                          : 'bg-app-base hover:bg-app-surface border-app-border/60 cursor-pointer'
+                          : 'border-transparent hover:bg-app-surface cursor-pointer'
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    tabIndex={-1}
-                    readOnly
-                    checked={isSelected || already}
-                    disabled={already}
-                    aria-hidden="true"
-                    className="w-5 h-5 shrink-0 accent-app-action pointer-events-none"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span data-testid="picker-option-title" className="font-bold text-app-heading text-sm break-words">{song.title}</span>
-                      {already && (
-                        <span className="shrink-0 text-[10px] bg-app-accent/15 text-app-accent border border-app-accent/30 rounded px-1.5 font-medium">
-                          In setlist
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-app-muted flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                  {/* Only selectable rows get a checkbox; a song already in the setlist shows a plain tick. */}
+                  <span className="w-5 h-5 shrink-0 flex items-center justify-center">
+                    {already ? <Check className="w-4 h-4 text-app-muted" aria-hidden="true" /> : (
+                      <input
+                        type="checkbox"
+                        tabIndex={-1}
+                        readOnly
+                        checked={isSelected}
+                        aria-hidden="true"
+                        className="w-[18px] h-[18px] accent-app-action pointer-events-none"
+                      />
+                    )}
+                  </span>
+                  <div className={`min-w-0 flex-1 ${already ? 'opacity-70' : ''}`}>
+                    <div data-testid="picker-option-title" className="font-bold text-app-heading text-sm leading-snug break-words">{song.title}</div>
+                    <div className="text-[11px] leading-snug text-app-muted flex flex-wrap items-center gap-x-2 min-w-0">
                       <span className="truncate">{song.artist || 'Unknown Artist'}</span>
                       {song.key && <span className="font-mono text-app-accent shrink-0 font-semibold">Key: {song.key}</span>}
                       {song.bpm && String(song.bpm).trim() && <span className="shrink-0">{formatTempoLabel(song.bpm)}</span>}
                     </div>
                   </div>
-                  {isSelected && <Check className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />}
+                  {already && (
+                    <span className="shrink-0 text-[10px] leading-5 bg-app-accent/15 text-app-accent border border-app-accent/30 rounded px-1.5 font-semibold">
+                      In setlist
+                    </span>
+                  )}
                 </div>
               )
             })}
           </div>
         </div>
 
-        <div className="px-3 sm:px-4 py-2 border-t border-app-border/80 bg-app-base/60 flex items-center justify-end gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="px-4 py-2 border-t border-app-border/80 bg-app-base/60 flex items-center justify-end gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <button type="button" onClick={close} disabled={isSubmitting}
-            className="min-h-11 sm:min-h-9 py-1.5 px-3 rounded-lg bg-app-base hover:bg-app-border text-app-heading border border-app-border text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            className={`${footerButton} bg-app-base hover:bg-app-border text-app-heading border-app-border`}>
             Cancel
           </button>
           <button type="button" onClick={() => void addSelected()} disabled={count === 0 || isSubmitting}
-            className="min-h-11 sm:min-h-9 py-1.5 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-extrabold text-xs flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-            {isSubmitting ? <span>Adding to setlist...</span> : <><Plus className="w-4 h-4" aria-hidden="true" /><span>{addLabel}</span></>}
+            className={`${footerButton} flex-1 sm:flex-none bg-app-action hover:brightness-110 text-app-on-action border-app-action shadow-md`}>
+            {isSubmitting ? 'Adding to setlist...' : addLabel}
           </button>
         </div>
       </div>

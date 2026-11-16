@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, ListMusic, Play, Search, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ListMusic, Pencil, Play, Search, Trash2, X } from 'lucide-react'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { trapTab } from '../utils/focusTrap'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
+import { SetlistManagerHelp } from './menuHelp'
 import { dangerButton as baseDangerButton, primaryButton as basePrimaryButton, secondaryButton as baseSecondaryButton, sectionCard as baseSectionCard, sectionLabel } from './backupCenterUi'
 
 /**
@@ -43,6 +44,7 @@ const dangerButton = compactButton(baseDangerButton)
 const sectionCard = baseSectionCard.replace('p-4 sm:p-5', 'p-3').replace('space-y-3.5', 'space-y-2')
 const iconButton = 'w-11 h-11 sm:w-9 sm:h-9 shrink-0 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed'
 const inlineButton = secondaryButton.replace('flex items-center', 'inline-flex items-center')
+const addSongsButton = primaryButton.replace('w-full ', 'shrink-0 ')
 const field = 'min-h-11 sm:min-h-9 bg-app-base border border-app-border rounded-lg px-3 text-sm text-app-text focus:outline-none focus:border-app-action'
 const plural = (n: number) => `${n} ${n === 1 ? 'song' : 'songs'}`
 
@@ -74,7 +76,6 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
   )
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState('')
-  const [shortcutSongId, setShortcutSongId] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [isPickerOpen, setIsPickerOpen] = useState(false)
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
@@ -100,8 +101,6 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
     }
   }), [current, songs, songIndex])
   const firstPlayable = entries.findIndex(entry => entry.available)
-  const memberIds = useMemo(() => new Set((current?.songs || []).filter(ref => ref.id !== undefined).map(ref => String(ref.id))), [current])
-  const shortcutOptions = useMemo(() => activeSongs.filter(song => !memberIds.has(String(song.id))), [activeSongs, memberIds])
 
   useEffect(() => () => { if (statusTimer.current) clearTimeout(statusTimer.current) }, [])
 
@@ -183,12 +182,6 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
     if (!name || name === current.name) { closeRename(); return }
     if (report(onRenameSetlist(current.id, name), `Renamed to "${name}"`)) closeRename()
   }
-  const handleAddShortcut = async () => {
-    if (!current || !shortcutSongId) return
-    const song = activeSongs.find(s => String(s.id) === shortcutSongId)
-    if (!song || song.id === undefined) return
-    if (report(await onAddSongs(current.id, [song.id]), `Added "${song.title}" to setlist`)) setShortcutSongId('')
-  }
   const handlePickerAdd = async (picked: ActiveSongState[]) => {
     if (!current) return false
     const ids = picked.map(s => s.id).filter((id): id is string | number => id !== undefined)
@@ -218,7 +211,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
           if (trapTab(e, dialogRef.current)) return
           if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); onClose() }
         }}
-        className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:rounded-2xl border-app-border sm:border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col"
+        className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl border-app-border sm:border bg-app-surface text-app-heading shadow-2xl overflow-hidden flex flex-col"
       >
         <div data-testid="setlist-manager-header" className="px-3 sm:px-4 py-1 border-b border-app-border/80 flex items-center justify-between gap-2 bg-app-base/60">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -227,28 +220,16 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
             </div>
             <h2 ref={titleRef} tabIndex={-1} data-testid="setlist-manager-title" className="font-extrabold text-sm sm:text-base tracking-wide">Setlist Manager</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close Setlist Manager"
-            className="w-11 h-11 sm:w-9 sm:h-9 -mr-2 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer">
-            <X className="w-4 h-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <SetlistManagerHelp showFolder={Boolean(current && onSetlistFolderChange)} />
+            <button type="button" onClick={onClose} aria-label="Close Setlist Manager"
+              className="w-11 h-11 sm:w-9 sm:h-9 -mr-2 rounded-xl hover:bg-app-base flex items-center justify-center text-app-muted hover:text-app-heading transition-colors cursor-pointer">
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
-        {current && onSetlistFolderChange && (
-          <div className="px-3 sm:px-4 pt-2 flex flex-wrap items-center gap-2">
-            <label className="text-xs text-app-muted flex items-center">Folder
-              <select
-                aria-label="Setlist folder"
-                value={current.folderId ?? ''}
-                className={`${field} ml-2 max-w-full`}
-                onChange={event => report(onSetlistFolderChange(current.id, event.target.value || null), 'Folder saved')}
-              >
-                <option value="">Unfiled</option>
-                {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-              </select>
-            </label>
-          </div>
-        )}
-        <div className="p-3 sm:p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+        <div className="p-3 space-y-2 overflow-y-auto flex-1 min-h-0">
           {!current ? (
             <div data-testid="setlist-manager-no-setlists" className={`${sectionCard} text-center text-xs text-app-muted py-6`}>
               No setlists yet. Create one from the Music Explorer.
@@ -260,20 +241,6 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                   <label htmlFor="setlist-manager-select" className={sectionLabel}>Setlist</label>
                   <span className="text-[11px] text-app-muted">{plural(entries.length)}</span>
                 </div>
-                {setlists.length > 1 && (
-                  <select
-                    id="setlist-manager-select"
-                    data-testid="setlist-manager-select"
-                    value={String(current.id)}
-                    onChange={e => {
-                      const next = setlists.find(sl => String(sl.id) === e.target.value)
-                      if (next) { setEditingName(false); setConfirmDelete(false); setStatus(null); onSelectSetlist(next.id) }
-                    }}
-                    className={`${field} w-full`}
-                  >
-                    {setlists.map(sl => <option key={sl.id} value={String(sl.id)}>{sl.name}</option>)}
-                  </select>
-                )}
                 {editingName ? (
                   <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); handleRename() }}>
                     <input
@@ -289,9 +256,43 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                     <button type="button" onClick={closeRename} className={inlineButton}>Cancel</button>
                   </form>
                 ) : (
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 data-testid="setlist-manager-name" className="ui-primary-text text-base font-bold text-app-heading break-words min-w-0">{current.name}</h3>
-                    <button ref={renameButtonRef} type="button" onClick={() => { setNameInput(current.name); setEditingName(true) }} className={inlineButton}>Rename</button>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <div className="flex flex-1 min-w-[12rem] items-center gap-2">
+                      {setlists.length > 1 && (
+                        <select
+                          id="setlist-manager-select"
+                          data-testid="setlist-manager-select"
+                          value={String(current.id)}
+                          onChange={e => {
+                            const next = setlists.find(sl => String(sl.id) === e.target.value)
+                            if (next) { setConfirmDelete(false); setStatus(null); onSelectSetlist(next.id) }
+                          }}
+                          className={`${field} flex-1 min-w-0 font-semibold text-app-heading`}
+                        >
+                          {setlists.map(sl => <option key={sl.id} value={String(sl.id)}>{sl.name}</option>)}
+                        </select>
+                      )}
+                      {/* With several setlists the selector already shows the name; the heading stays for assistive tech. */}
+                      <h3 data-testid="setlist-manager-name" className={setlists.length > 1 ? 'sr-only' : 'ui-primary-text flex-1 min-w-0 text-sm font-bold text-app-heading break-words'}>{current.name}</h3>
+                      <button ref={renameButtonRef} type="button" aria-label="Rename setlist" data-testid="setlist-manager-rename"
+                        onClick={() => { setNameInput(current.name); setEditingName(true) }} className={iconButton}>
+                        <Pencil className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                    {onSetlistFolderChange && (
+                      <label className="flex items-center gap-2 text-xs text-app-muted min-w-0">
+                        <span className="shrink-0">Folder</span>
+                        <select
+                          aria-label="Setlist folder"
+                          value={current.folderId ?? ''}
+                          className={`${field} min-w-0 max-w-[12rem]`}
+                          onChange={event => report(onSetlistFolderChange(current.id, event.target.value || null), 'Folder saved')}
+                        >
+                          <option value="">Unfiled</option>
+                          {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                        </select>
+                      </label>
+                    )}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
@@ -309,36 +310,20 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
               </div>
 
               <div className={sectionCard}>
-                <span className={sectionLabel}>Add songs</span>
-                <button
-                  ref={searchTriggerRef}
-                  type="button"
-                  onClick={() => setIsPickerOpen(open => !open)}
-                  aria-expanded={isPickerOpen}
-                  aria-keyshortcuts="Control+K"
-                  className={primaryButton}
-                >
-                  <Search className="w-4 h-4" aria-hidden="true" />
-                  <span>Search Multi-Songs</span>
-                  <kbd className="hidden sm:inline-block font-mono text-[10px] bg-app-base/20 px-1.5 py-0.5 rounded">Ctrl+K</kbd>
-                </button>
-                <div className="flex items-center gap-2">
-                  <select
-                    data-testid="setlist-manager-shortcut-select"
-                    aria-label="Song to add"
-                    value={shortcutSongId}
-                    onChange={e => setShortcutSongId(e.target.value)}
-                    className={`${field} flex-1 min-w-0`}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={sectionLabel}>Order</span>
+                  {/* The one way to add songs here. Ctrl+K still opens it; the launcher shows no shortcut badge. */}
+                  <button
+                    ref={searchTriggerRef}
+                    type="button"
+                    onClick={() => setIsPickerOpen(open => !open)}
+                    aria-expanded={isPickerOpen}
+                    aria-keyshortcuts="Control+K"
+                    data-testid="setlist-manager-search-songs"
+                    className={addSongsButton}
                   >
-                    <option value="">Select a song to add…</option>
-                    {shortcutOptions.map(song => (
-                      <option key={String(song.id)} value={String(song.id)}>
-                        {song.title}{song.artist ? ` — ${song.artist}` : ''}{song.key ? ` (${song.key})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" disabled={!shortcutSongId} onClick={() => void handleAddShortcut()} className={secondaryButton}>
-                    + Add Shortcut
+                    <Search className="w-4 h-4" aria-hidden="true" />
+                    <span>Search Songs</span>
                   </button>
                 </div>
                 {status && (
@@ -347,26 +332,22 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
                     {status.text}
                   </p>
                 )}
-              </div>
-
-              <div className={sectionCard}>
-                <span className={sectionLabel}>Order</span>
                 {entries.length === 0 ? (
-                  <div data-testid="setlist-manager-empty" className="py-8 text-center text-xs text-app-muted rounded-xl border border-dashed border-app-border">
-                    This setlist has no songs yet. Search songs above to add some.
+                  <div data-testid="setlist-manager-empty" className="py-5 text-center text-xs text-app-muted rounded-xl border border-dashed border-app-border">
+                    This setlist has no songs yet. Use Search Songs to add some.
                   </div>
                 ) : (
-                  <ol className="space-y-1.5">
+                  <ol className="space-y-1">
                     {entries.map((entry, index) => (
                       <li
                         key={current.songs[index].entryId ?? `${current.id}_${index}`}
                         data-testid={`setlist-manager-entry-${index}`}
-                        className={`ui-song-card p-1.5 sm:px-2 rounded-xl border flex items-center justify-between gap-2 ${
+                        className={`ui-song-card py-1 pl-2 pr-1 sm:pr-1.5 rounded-xl border flex items-center justify-between gap-2 ${
                           entry.available ? 'bg-app-song border-app-border' : 'bg-app-surface border-app-border opacity-60'
                         }`}
                       >
                         <div className="flex flex-1 items-center gap-2 min-w-0">
-                          <span className="w-4 shrink-0 text-center text-xs font-mono font-bold text-app-muted">{index + 1}</span>
+                          <span className="w-5 shrink-0 text-center text-xs font-mono font-bold text-app-muted">{index + 1}</span>
                           <div className="min-w-0">
                             <div className="ui-primary-text text-sm font-bold text-app-heading line-clamp-2 break-words">{entry.title}</div>
                             <div className="ui-secondary-text text-[11px] text-app-muted flex flex-wrap items-center gap-x-2 min-w-0">

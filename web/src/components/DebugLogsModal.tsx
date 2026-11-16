@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { appLogger, type LogEntry, type LogLevel } from '../utils/logger'
 import { RecoveryDataCard } from './RecoveryDataCard'
+import { DebugLogsHelp } from './menuHelp'
 
 interface DebugLogsModalProps {
   isOpen: boolean
@@ -113,14 +114,17 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer"
-            aria-label="Close dialog"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <DebugLogsHelp />
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+              aria-label="Close dialog"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Action Toolbar */}

@@ -86,7 +86,7 @@ async function click(el) { assert.ok(el, 'control exists'); await act(async () =
 async function openManagerPicker() {
   await act(async () => home.onManageSetlist(home.setlists[0]))
   assert.ok($('[role="dialog"][aria-label="Setlist Manager"]'), 'DEV manage opens the Setlist Manager')
-  await click(button('Search Multi-Songs'))
+  await click(button('Search Songs'))
 }
 
 test('#346 workspace swipe delete: cancel preserves saved content; confirm soft-deletes through the existing manager handler', async () => {
@@ -247,7 +247,7 @@ test('DEV: rename, reorder, remove and delete persist through the guarded path',
   localStorage.setItem('gtar_library_v1', JSON.stringify(twoSongs))
   await mountApp('http://localhost/', { keepStorage: true })
   await act(async () => home.onOpenSetlistManager(null))
-  await click(button('Rename'))
+  await click($('button[aria-label="Rename setlist"]'))
   const input = $('[data-testid="setlist-manager-rename-input"]')
   await act(async () => {
     Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, 'Sunday PM')

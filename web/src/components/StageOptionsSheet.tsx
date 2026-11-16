@@ -23,6 +23,7 @@ import {
   FONT_FAMILY_PRESETS,
   type WakeLockStatus,
 } from '../constants/stageOptionsPresets'
+import { StageOptionsHelp } from './menuHelp'
 export type { WakeLockStatus }
 
 export interface StageOptionsSheetProps {
@@ -155,14 +156,17 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
             <Sliders className="w-4 h-4 text-app-accent" />
             <h2 className="text-sm font-bold text-app-heading tracking-tight">Stage Options</h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close options"
-            className="min-w-11 min-h-11 sm:min-w-9 sm:min-h-9 p-1 flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-surface rounded-lg transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <StageOptionsHelp showQuickJump={Boolean(queueSongs && queueSongs.length > 1)} />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close options"
+              className="min-w-11 min-h-11 sm:min-w-9 sm:min-h-9 p-1 flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-surface rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content */}
