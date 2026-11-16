@@ -2,6 +2,7 @@ import { useBandSyncGate } from './extensions/host/useBandSyncGate'
 import { projectFollowSetlist, type FollowSelection } from './utils/setlistAutoFollow'
 import { setlistAutoFollowDev } from './utils/setlistAutoFollowDev'
 import { ExtensionHostProvider } from './extensions/host/ExtensionHostProvider'
+import { startMidi } from './midi/loader'
 import { sharedSongToActiveSong } from './utils/sharedSetlistLibrary'
 import { SetlistTrashConfirmation } from './components/SetlistTrashConfirmation'
 import { ExplorerDragDrop } from './components/ExplorerDragDrop'
@@ -177,6 +178,8 @@ function LibraryStartupReadyInner() {
   const [repairPreview, setRepairPreview] = useState<DanglingReferenceRepair | null>(null)
   const [repairError, setRepairError] = useState<string | null>(null)
   const [status, setStatus] = useState(() => { performStorageHousekeeping(); return checkRecovery() })
+  // #536: MIDI left ON reconnects here without a prompt; with MIDI off this loads and asks nothing.
+  useEffect(() => startMidi(), [])
   useEffect(() => {
     // #300: with large IndexedDB libraries a full recovery review per save is costly; coalesce bursts of saves.
     let timer: ReturnType<typeof setTimeout> | null = null

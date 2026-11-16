@@ -50,6 +50,7 @@ export const AdvancedToolsHelp: React.FC<MenuHelpProps & { extensions: Array<{ i
     topics={topics([
       ['Online Song Sources', 'Lets the search bar also look for chord charts on the websites you choose. It stays off until you switch it on; your searches are then sent to those sites.'],
       ...stageTools.map((name): Entry => [name, `Adds a ${name} button to the Stage toolbar. Switching it off also stops it.`]),
+      ['MIDI', 'Connects a MIDI pedal or controller. It stays off until you switch it on. Open the row to see whether a device is connected.'],
       ...extensions.map(({ id, name, summary }): Entry => [name, EXTENSION_HELP[id] ?? summary]),
       ['Status labels', 'Starting, Offline or Error appear beside a tool that needs attention. N/A means this device or browser cannot run it.'],
     ])}

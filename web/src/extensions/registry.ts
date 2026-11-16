@@ -1,11 +1,10 @@
 import type { Availability, RegistryEntry } from './contract'
 import { bandSyncAvailability, bandSyncManifest } from './band-sync/manifest'
+import { isIosDevice } from '../utils/iosDevice'
 
 export function proPresenterAvailability(): Availability {
   const nav = globalThis.navigator
-  const ua = nav?.userAgent ?? ''
-  const ios = /iPad|iPhone|iPod/i.test(ua) || (/Macintosh|MacIntel/i.test(`${ua} ${nav?.platform}`) && (nav?.maxTouchPoints ?? 0) > 1)
-  return !ios && /(?:Chrome|Chromium)\/\d+/.test(ua) && globalThis.isSecureContext === true &&
+  return !isIosDevice(nav) && /(?:Chrome|Chromium)\/\d+/.test(nav?.userAgent ?? '') && globalThis.isSecureContext === true &&
     typeof globalThis.fetch === 'function' && typeof globalThis.ReadableStream === 'function'
     ? { available: true } : { available: false, reason: 'Not available on this device/browser' }
 }

@@ -58,7 +58,7 @@ const headerProps = { activeView: 'songbook', song, searchQuery: '', onViewChang
 
 const MENUS = [
   ['SettingsHelp', { showInstall: true }, 'Settings Help', ['Theme', 'Backup & Restore', 'Debug Logs', 'Trash', 'Install App (PWA)']],
-  ['AdvancedToolsHelp', { stageTools: ['Metronome', 'Tuner'], extensions: registry.map(entry => entry.manifest) }, 'Advanced Tools Help', ['Online Song Sources', 'Metronome', 'Tuner', ...registry.map(entry => entry.manifest.name), 'Status labels']],
+  ['AdvancedToolsHelp', { stageTools: ['Metronome', 'Tuner'], extensions: registry.map(entry => entry.manifest) }, 'Advanced Tools Help', ['Online Song Sources', 'Metronome', 'Tuner', 'MIDI', ...registry.map(entry => entry.manifest.name), 'Status labels']],
   ['BandSyncHelp', {}, 'Band Sync Help', ['Start room', 'Join with code', 'Leave or End room', 'Status', 'On / Off switch']],
   ['SongsLibraryHelp', { canImport: true, canCheckDuplicates: true }, 'Songs Help', ['Filters', 'Sort', 'Select', 'Import songs', 'Export songs', 'Check duplicates', 'Add Song']],
   ['SetlistsHelp', {}, 'Setlists Help', ['Sort', 'Manage', 'Share', 'Import Setlist', 'Export Setlist', 'Add new setlist', 'Inside a setlist']],
@@ -186,7 +186,7 @@ test('Advanced Tools: Settings visual language, help in the header, toggles and 
     }
 
     await click(popover.querySelector('[data-testid="advanced-tools-help-button"]'))
-    assert.deepEqual(topicTitles(), ['Online Song Sources', 'Metronome', 'Tuner', ...registry.map(entry => entry.manifest.name), 'Status labels'])
+    assert.deepEqual(topicTitles(), ['Online Song Sources', 'Metronome', 'Tuner', 'MIDI', ...registry.map(entry => entry.manifest.name), 'Status labels'])
     await key('Escape')
     assert.ok(q('[data-testid="advanced-tools-popover"]'), 'menu survives the help Escape')
 

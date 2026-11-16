@@ -59,6 +59,8 @@ import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { OnlineSourcesDialog, OnlineSourcesRow } from './OnlineSourcesRow'
 import { StageToolRows } from './StageToolRows'
+import { MidiRow } from '../midi/MidiRow'
+import { MidiDialog } from '../midi/MidiDialog'
 import { STAGE_TOOLS } from '../stageTools/registry'
 import { AboutModal } from './AboutModal'
 import { AdvancedToolsHelp, SettingsHelp } from './menuHelp'
@@ -193,7 +195,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showAdvancedToolsMenu, setShowAdvancedToolsMenu] = useState(false)
   const [advancedToolsShift, setAdvancedToolsShift] = useState(0)
-  // Advanced Tools dialog: 'online-sources' or an extension id. Held here so it outlives the popover.
+  // Advanced Tools dialog: 'online-sources', 'midi' or an extension id. Held here so it outlives the popover.
   const [advancedToolsDialog, setAdvancedToolsDialog] = useState<string | null>(null)
   const openAdvancedToolsDialog = (dialog: string) => { setShowAdvancedToolsMenu(false); setAdvancedToolsDialog(dialog) }
   const openOnlineSourcesDialog = () => openAdvancedToolsDialog('online-sources')
@@ -361,6 +363,9 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Stage tools: each switch puts that tool's button on the Stage toolbar */}
       <StageToolRows rowClass={popoverItem} />
+
+      {/* MIDI: off by default; the row opens its app-level dialog (#536) */}
+      <MidiRow rowClass={popoverItem} onOpenDialog={() => openAdvancedToolsDialog('midi')} />
 
       {/* Extension registry rows (e.g. ProPresenter) */}
       <ExtensionRows host={extensionHost} rowClass={popoverItem} onOpenDialog={openAdvancedToolsDialog} />
@@ -930,7 +935,10 @@ export const Header: React.FC<HeaderProps> = ({
       {advancedToolsDialog === 'online-sources' && (
         <OnlineSourcesDialog onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
       )}
-      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && (
+      {advancedToolsDialog === 'midi' && (
+        <MidiDialog onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
+      )}
+      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && advancedToolsDialog !== 'midi' && (
         <ExtensionSettingsDialog host={extensionHost} id={advancedToolsDialog} onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
       )}
 
