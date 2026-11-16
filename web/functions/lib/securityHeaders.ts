@@ -9,7 +9,7 @@
  * - Referrer-Policy: strict-origin-when-cross-origin
  * - X-Frame-Options: DENY (GTAR does not permit third-party iframe embedding)
  * - Content-Security-Policy (#160: enforced after DEV field QA on Firefox, Edge and iPhone, 2026-10-24)
- * - Permissions-Policy (restrict unused browser APIs while preserving camera, clipboard, fullscreen, wake-lock)
+ * - Permissions-Policy (restrict unused browser APIs while preserving camera, clipboard, fullscreen, wake-lock, and same-origin microphone for the Tuner)
  */
 
 export const STATIC_SECURITY_HEADERS: Record<string, string> = {
@@ -17,7 +17,7 @@ export const STATIC_SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
   'Permissions-Policy':
-    'camera=(self), clipboard-read=(self), clipboard-write=(self), fullscreen=(self), screen-wake-lock=(self), geolocation=(), microphone=(), payment=(), usb=(), interest-cohort=()',
+    'camera=(self), clipboard-read=(self), clipboard-write=(self), fullscreen=(self), screen-wake-lock=(self), geolocation=(), microphone=(self), payment=(), usb=(), interest-cohort=()',
   'Content-Security-Policy':
     "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com https://accounts.google.com https://ssl.gstatic.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com ws: wss: http://*:1025/v1/status/slide http://*:1025/v1/presentation/slide_index http://*:1025/v1/presentation/active; frame-src https://accounts.google.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:; manifest-src 'self'",
 }

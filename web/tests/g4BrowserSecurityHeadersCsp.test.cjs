@@ -103,6 +103,43 @@ function createMockDb(users = [], shares = new Map(), songbooks = new Map()) {
 // ---------------------------------------------------------------------------
 // 1. Static Headers & Cloudflare Pages Configuration
 // ---------------------------------------------------------------------------
+// The complete Permissions-Policy. Anything not listed here (midi, a new feature, a wildcard,
+// another origin) fails the exact comparison below.
+const EXPECTED_PERMISSIONS_POLICY = new Map([
+  ['camera', '(self)'],
+  ['clipboard-read', '(self)'],
+  ['clipboard-write', '(self)'],
+  ['fullscreen', '(self)'],
+  ['screen-wake-lock', '(self)'],
+  ['geolocation', '()'],
+  ['microphone', '(self)'],
+  ['payment', '()'],
+  ['usb', '()'],
+  ['interest-cohort', '()'],
+])
+
+function parsePermissionsPolicy(value) {
+  const directives = new Map()
+  for (const part of value.split(',')) {
+    const trimmed = part.trim()
+    const eq = trimmed.indexOf('=')
+    assert.ok(eq > 0, `Malformed Permissions-Policy directive: "${trimmed}"`)
+    const feature = trimmed.slice(0, eq)
+    assert.ok(!directives.has(feature), `Duplicate Permissions-Policy directive: ${feature}`)
+    directives.set(feature, trimmed.slice(eq + 1))
+  }
+  return directives
+}
+
+function assertExactPermissionsPolicy(value, source) {
+  const directives = parsePermissionsPolicy(value)
+  // #534: the Tuner needs the mic on GTAR's own origin and nowhere else.
+  assert.equal(directives.get('microphone'), '(self)', `${source}: microphone must be exactly (self)`)
+  assert.doesNotMatch(value, /microphone=[^,]*(\*|https?:|"|src)/, `${source}: microphone must not allow a wildcard or any other origin`)
+  assert.doesNotMatch(value, /\*/, `${source}: no Permissions-Policy directive may use a wildcard`)
+  assert.deepEqual([...directives].sort(), [...EXPECTED_PERMISSIONS_POLICY].sort(), `${source}: Permissions-Policy must match the expected directives exactly`)
+}
+
 test('1. STATIC_HEADERS_FILE_COVERAGE: Cloudflare Pages _headers definition integrity', () => {
   const headersPath = path.resolve(__dirname, '../public/_headers')
   assert.ok(fs.existsSync(headersPath), 'web/public/_headers must exist')
@@ -126,9 +163,12 @@ test('1. STATIC_HEADERS_FILE_COVERAGE: Cloudflare Pages _headers definition inte
   assert.ok(perm.includes('fullscreen=(self)'), 'Must allow fullscreen for stage teleprompter')
   assert.ok(perm.includes('screen-wake-lock=(self)'), 'Must allow screen-wake-lock for stage mode')
   assert.ok(perm.includes('geolocation=()'), 'Must restrict geolocation')
-  assert.ok(perm.includes('microphone=()'), 'Must restrict microphone')
+  assert.ok(perm.includes('microphone=(self)'), 'Must allow the microphone for the GTAR origin (Tuner, #534)')
+  assert.ok(!perm.includes('microphone=()'), 'An empty microphone allowlist blocks the Tuner on every origin, GTAR included')
+  assertExactPermissionsPolicy(perm, 'public/_headers')
   assert.ok(perm.includes('payment=()'), 'Must restrict payment')
   assert.ok(perm.includes('usb=()'), 'Must restrict usb')
+  assert.ok(perm.includes('interest-cohort=()'), 'Must restrict interest-cohort')
 
   // #160: CSP is enforced (DEV field QA 2026-10-24); no Report-Only copy remains
   assert.equal(globalHeaders['Content-Security-Policy-Report-Only'], undefined, 'Report-Only header replaced by the enforced policy')
@@ -477,4 +517,27 @@ test('#160: the enforced CSP is identical in public/_headers and the Functions s
     assert.ok(connectSources.includes(candidate), `missing issue#415 candidate source ${candidate}`)
   }
   assert.ok(!connectSources.includes('http:'), 'no blanket http: source')
+})
+
+test('#534: Permissions-Policy is identical in public/_headers and the Functions security headers, and allows the microphone for the GTAR origin only', () => {
+  const rules = parseHeadersFile(fs.readFileSync(path.resolve(__dirname, '../public/_headers'), 'utf8'))
+  const filePolicy = rules.get('/*')['Permissions-Policy']
+  const { STATIC_SECURITY_HEADERS: H, API_SECURITY_HEADERS: A } = require('../functions/lib/securityHeaders.ts')
+
+  assert.equal(filePolicy, H['Permissions-Policy'], 'both header sources must send the same Permissions-Policy')
+  assertExactPermissionsPolicy(filePolicy, 'public/_headers')
+  assertExactPermissionsPolicy(H['Permissions-Policy'], 'functions/lib/securityHeaders.ts')
+  assert.equal(A['Permissions-Policy'], undefined, 'API responses carry no Permissions-Policy of their own')
+
+  // The policy is set once, on the global rule: no narrower rule may override it.
+  for (const [route, headers] of rules) {
+    if (route !== '/*') assert.equal(headers['Permissions-Policy'], undefined, `${route} must not override Permissions-Policy`)
+  }
+
+  // The guard itself rejects a wildcard, another origin, an empty allowlist and an added directive.
+  const withMic = (allowlist) => filePolicy.replace('microphone=(self)', `microphone=${allowlist}`)
+  for (const bad of ['*', '(*)', '()', '(self "https://example.com")', '("https://example.com")', '(src)']) {
+    assert.throws(() => assertExactPermissionsPolicy(withMic(bad), 'mutated'), `microphone=${bad} must be rejected`)
+  }
+  assert.throws(() => assertExactPermissionsPolicy(`${filePolicy}, midi=(self)`, 'mutated'), 'an added directive must be rejected')
 })

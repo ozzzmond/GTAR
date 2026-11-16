@@ -57,14 +57,14 @@ clipboard-write=(self),
 fullscreen=(self),
 screen-wake-lock=(self),
 geolocation=(),
-microphone=(),
+microphone=(self),
 payment=(),
 usb=(),
 interest-cohort=()
 ```
 
-- **Allowed (`(self)`)**: Camera (QR code scanner), Clipboard read/write (copy/paste chords, setlist share links, backup JSON), Fullscreen (Stage presentation mode), Screen Wake Lock (preventing device sleep during live performances).
-- **Restricted (`()`)**: Geolocation, Microphone (audio is output-only via Web Audio API for metronome), Payment, USB, and FLoC tracking.
+- **Allowed (`(self)`)**: Camera (QR code scanner), Clipboard read/write (copy/paste chords, setlist share links, backup JSON), Fullscreen (Stage presentation mode), Screen Wake Lock (preventing device sleep during live performances), Microphone (Tuner pitch detection, GTAR origin only, #534).
+- **Restricted (`()`)**: Geolocation, Payment, USB, and FLoC tracking.
 
 ---
 
