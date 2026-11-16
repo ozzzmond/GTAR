@@ -99,6 +99,8 @@ const StageToolPanel: React.FC<StageToolPanelProps> = ({ tool, anchor, onClose }
           <tool.Icon className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
           <h2 className="text-sm font-bold text-app-heading truncate">{tool.name}</h2>
         </div>
+        <div className="flex shrink-0 items-center">
+          {tool.Help && <tool.Help prefer="below" />}
         <button
           type="button"
           onClick={() => onClose(true)}
@@ -107,6 +109,7 @@ const StageToolPanel: React.FC<StageToolPanelProps> = ({ tool, anchor, onClose }
         >
           <X className="w-4 h-4" aria-hidden="true" />
         </button>
+        </div>
       </div>
       <div className="p-4">
         <tool.Panel />
