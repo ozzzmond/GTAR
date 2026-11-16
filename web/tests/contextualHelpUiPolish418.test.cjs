@@ -468,6 +468,9 @@ test('ExportSongsDialog: help button opens contextual help inside the dialog, Es
     const helpPanel = q('[data-contextual-help]')
     assert.ok(helpPanel, 'help panel is open')
     assert.equal(helpPanel.parentElement, dialogEl, 'help panel is portaled inside the native <dialog> to avoid inertness')
+    assert.ok(helpPanel.classList.contains('absolute'), 'help panel uses absolute positioning relative to the dialog')
+    assert.ok(helpPanel.classList.contains('z-[120]'), 'help panel stacks above dialog content')
+    assert.ok(dialogEl.classList.contains('relative'), 'dialog container is relatively positioned')
 
     // Check topics
     const titles = topicTitles()
@@ -478,6 +481,15 @@ test('ExportSongsDialog: help button opens contextual help inside the dialog, Es
     assert.equal(q('[data-contextual-help]'), null, 'help is dismissed on Escape')
     assert.equal(closed, false, 'dialog remains open after first Escape')
     assert.equal(document.activeElement, helpBtn, 'focus restored to help button')
+
+    // Re-open and verify outside click inside dialog closes help without closing dialog
+    await click(helpBtn)
+    assert.ok(q('[data-contextual-help]'), 'help re-opened')
+    await act(async () => {
+      dialogEl.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+    })
+    assert.equal(q('[data-contextual-help]'), null, 'outside click dismissed help')
+    assert.equal(closed, false, 'dialog remains open after outside click dismissal')
 
     // Native cancel closes dialog when help is closed
     dialogEl.dispatchEvent(new window.Event('cancel', { bubbles: true, cancelable: true }))

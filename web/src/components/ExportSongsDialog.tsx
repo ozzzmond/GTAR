@@ -70,7 +70,7 @@ export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
       }}
       aria-labelledby="export-songs-title"
       data-testid="export-songs-dialog"
-      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/70 backdrop-blur-sm flex flex-col max-h-[90vh] animate-fade-in select-none"
+      className="relative m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-app-border bg-app-surface text-app-heading p-0 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm flex flex-col max-h-[90vh] animate-fade-in select-none"
     >
       {/* Header */}
       <div className="px-5 py-4 border-b border-app-border flex items-center justify-between bg-app-base/70 rounded-t-2xl">

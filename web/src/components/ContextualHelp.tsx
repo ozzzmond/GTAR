@@ -34,24 +34,45 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
 }) => {
   const [open, setOpen] = useState(false)
   const [placement, setPlacement] = useState<React.CSSProperties>({})
+  const [inDialog, setInDialog] = useState(false)
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
-  // The panel is portaled to <body> and pinned to the button, so no dialog, popover or scroll
-  // container can clip it; it opens on the roomier side and never leaves the viewport.
+  // The panel is portaled to <dialog> when inside a native dialog (keeping it in the browser top-layer),
+  // or to <body> when in menus/pages, pinned to the button so it never leaves the viewport or dialog bounds.
   const place = useCallback(() => {
-    const rect = buttonRef.current?.getBoundingClientRect()
-    if (!rect) return
+    const btn = buttonRef.current
+    if (!btn) return
+    const targetDialog = btn.closest('dialog')
     const margin = 12, gap = 8
-    const vw = window.innerWidth, vh = window.innerHeight
-    const width = Math.min(320, vw - margin * 2)
-    const left = Math.max(margin, Math.min(rect.right - width, vw - margin - width))
-    const below = vh - rect.bottom - gap - margin, above = rect.top - gap - margin
-    const openBelow = prefer === 'above' ? above < 260 && below >= above : below >= 260 || below >= above
-    setPlacement(openBelow
-      ? { left, width, top: rect.bottom + gap, maxHeight: Math.max(120, below) }
-      : { left, width, bottom: vh - rect.top + gap, maxHeight: Math.max(120, above) })
+
+    if (targetDialog) {
+      const dialogRect = targetDialog.getBoundingClientRect()
+      const rect = btn.getBoundingClientRect()
+      const width = Math.min(320, Math.max(180, dialogRect.width - margin * 2))
+      const top = Math.max(margin, rect.bottom - dialogRect.top + gap)
+      const right = Math.max(margin, dialogRect.right - rect.right)
+      const maxHeight = Math.max(120, dialogRect.height - top - margin)
+      setInDialog(true)
+      setPlacement({
+        top,
+        right,
+        width,
+        maxHeight,
+      })
+    } else {
+      const rect = btn.getBoundingClientRect()
+      const vw = window.innerWidth, vh = window.innerHeight
+      const width = Math.min(320, vw - margin * 2)
+      const left = Math.max(margin, Math.min(rect.right - width, vw - margin - width))
+      const below = vh - rect.bottom - gap - margin, above = rect.top - gap - margin
+      const openBelow = prefer === 'above' ? above < 260 && below >= above : below >= 260 || below >= above
+      setInDialog(false)
+      setPlacement(openBelow
+        ? { left, width, top: rect.bottom + gap, maxHeight: Math.max(120, below) }
+        : { left, width, bottom: vh - rect.top + gap, maxHeight: Math.max(120, above) })
+    }
   }, [prefer])
 
   const handleClose = useCallback(() => {
@@ -62,6 +83,7 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
     if (!open) return
     const target = buttonRef.current?.closest('dialog') || (typeof document !== 'undefined' ? document.body : null)
     setPortalTarget(prev => (prev === target ? prev : target))
+    setInDialog(!!buttonRef.current?.closest('dialog'))
 
     // Capture phase: an open help panel takes Escape before the menu, sheet or dialog hosting it,
     // and focus goes back to the help button.
@@ -75,8 +97,8 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
     }
 
     const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as Node
-      if (panelRef.current && !panelRef.current.contains(target) && !buttonRef.current?.contains(target)) {
+      const target = e.target
+      if (target instanceof Node && panelRef.current && !panelRef.current.contains(target) && !buttonRef.current?.contains(target)) {
         handleClose()
       }
     }
@@ -103,7 +125,9 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
         onClick={() => {
           if (!open) {
             place()
-            setPortalTarget(buttonRef.current?.closest('dialog') || (typeof document !== 'undefined' ? document.body : null))
+            const target = buttonRef.current?.closest('dialog') || (typeof document !== 'undefined' ? document.body : null)
+            setPortalTarget(target)
+            setInDialog(!!buttonRef.current?.closest('dialog'))
           }
           setOpen((prev) => !prev)
         }}
@@ -129,7 +153,7 @@ export const ContextualHelp: React.FC<ContextualHelpProps> = ({
               buttonRef.current?.focus({ preventScroll: true })
             }
           }}
-          className="fixed z-[120] rounded-xl border border-app-border bg-app-surface shadow-2xl p-3 text-[11px] text-app-text space-y-2.5 animate-scale-in overflow-y-auto overscroll-contain select-none"
+          className={`${inDialog ? 'absolute' : 'fixed'} z-[120] rounded-xl border border-app-border bg-app-surface shadow-2xl p-3 text-[11px] text-app-text space-y-2.5 animate-scale-in overflow-y-auto overscroll-contain select-none`}
         >
           <div className="flex items-center justify-between border-b border-app-border/60 pb-2">
             <div className="flex items-center gap-1.5 min-w-0">
