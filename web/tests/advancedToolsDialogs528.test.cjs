@@ -35,7 +35,7 @@ const { registry } = require('../src/extensions/registry.ts')
 const noop = () => {}
 const song = { id: 's1', title: 'A', rawContent: 'C' }
 const props = { activeView: 'songbook', song, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop,
-  onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, backupSongs: [song] }
+  onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, backupSongs: [song] }
 const q = selector => document.querySelector(selector)
 const click = el => act(async () => { el.click() })
 const key = (name, init = {}) => act(async () => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init })) })

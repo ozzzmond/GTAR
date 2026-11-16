@@ -22,7 +22,6 @@ interface StageSettingsModalProps {
   onSelectFontStyle: (style: SongFontStyleOption) => void
   isTwoColumn: boolean
   onToggleTwoColumn: (enabled: boolean) => void
-  onOpenStageTools: () => void
   onToggleTheme: () => void
   onExportAllData?: () => void
   onOpenBackupRestoreModal?: () => void

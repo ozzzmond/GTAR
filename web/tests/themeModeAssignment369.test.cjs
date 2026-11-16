@@ -179,7 +179,6 @@ test('Header mode toggle displays accurate mode state, label, and invokes switch
     searchQuery: '',
     onSearchQueryChange() {},
     onOpenWebsiteUrlSource() {},
-    onOpenStageTools() {},
     onToggleTheme() {},
     onOpenImportModal() {},
     themeModeAssignments: assignments,

@@ -38,7 +38,7 @@ test('Cloudflare feature preview header shows build SHA on desktop and mobile wi
     const { Header } = require('../src/components/Header.tsx')
     const html = renderToStaticMarkup(React.createElement(Header, {
       activeView: 'songbook', onViewChange() {}, song: { id: 1, title: 'Test', rawContent: '', format: 'PLAIN' },
-      searchQuery: '', onSearchQueryChange() {}, onOpenWebsiteUrlSource() {}, onOpenStageTools() {},
+      searchQuery: '', onSearchQueryChange() {}, onOpenWebsiteUrlSource() {},
       onToggleTheme() {}, onOpenStageSettings() {}, onOpenImportModal() {}, onOpenBackupRestoreModal() {},
     }))
     const headerDom = new JSDOM(html)

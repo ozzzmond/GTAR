@@ -39,7 +39,7 @@ const EXTENSION_HELP: Record<string, string> = {
   'band-sync': 'Keeps the band on the leader\'s song, key and place in the chart. Switch it on, then open the row to start a room or join one.',
 }
 
-export const AdvancedToolsHelp: React.FC<MenuHelpProps & { extensions: Array<{ id: string; name: string; summary: string }> }> = ({ extensions, ...rest }) => (
+export const AdvancedToolsHelp: React.FC<MenuHelpProps & { extensions: Array<{ id: string; name: string; summary: string }>; stageTools?: string[] }> = ({ extensions, stageTools = [], ...rest }) => (
   <ContextualHelp
     {...rest}
     id="advanced-tools-help"
@@ -49,6 +49,7 @@ export const AdvancedToolsHelp: React.FC<MenuHelpProps & { extensions: Array<{ i
     quickSummary="Optional integrations and song sources. Tap a row for its settings; the switch only turns it on or off."
     topics={topics([
       ['Online Song Sources', 'Lets the search bar also look for chord charts on the websites you choose. It stays off until you switch it on; your searches are then sent to those sites.'],
+      ...stageTools.map((name): Entry => [name, `Adds a ${name} button to the Stage toolbar. Switching it off also stops it.`]),
       ...extensions.map(({ id, name, summary }): Entry => [name, EXTENSION_HELP[id] ?? summary]),
       ['Status labels', 'Starting, Offline or Error appear beside a tool that needs attention. N/A means this device or browser cannot run it.'],
     ])}
@@ -144,7 +145,7 @@ export const StagePreviewHelp: React.FC<MenuHelpProps> = (props) => (
     quickSummary="The performance view of a song. These are its toolbar controls."
     topics={topics([
       ['Editor', 'Opens this song in the editor to make changes to chords and lyrics.'],
-      ['Stage Tools', 'Opens the metronome and guitar tuner.'],
+      ['Metronome and Tuner', 'Switch them on in Advanced Tools. Each one then gets its own button here.'],
       ['Key', 'Shows the key you are playing in. Tap it to transpose or reset. The chords change on screen; the chart text is not rewritten.'],
       ['Chords / NNS', 'Switches between chord letters and Nashville numbers. Numbers need the song\'s key. On phones this is in Stage Options.'],
       ['Auto-scroll', 'Starts or pauses automatic scrolling. The number is the speed; change it in Stage Options.'],

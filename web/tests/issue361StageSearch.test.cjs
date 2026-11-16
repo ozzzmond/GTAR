@@ -26,7 +26,7 @@ const song = (title, id) => ({ id, title, artist: 'Artist', key: 'G', transposeO
 
 function headerProps(extra = {}) {
   return { activeView: 'stage', onViewChange: noop, song: song('Alpha', 'one'), searchQuery: '',
-    onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop,
+    onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onToggleTheme: noop,
     onOpenStageSettings: noop, onOpenImportModal: noop, ...extra }
 }
 

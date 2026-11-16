@@ -54,16 +54,16 @@ const unmount = root => act(async () => root.unmount())
 
 const noop = () => {}
 const song = { id: 's1', title: 'A', rawContent: 'C' }
-const headerProps = { activeView: 'songbook', song, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenStageTools: noop, onToggleTheme: noop, backupSongs: [song] }
+const headerProps = { activeView: 'songbook', song, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onToggleTheme: noop, backupSongs: [song] }
 
 const MENUS = [
   ['SettingsHelp', { showInstall: true }, 'Settings Help', ['Theme', 'Backup & Restore', 'Debug Logs', 'Trash', 'Install App (PWA)']],
-  ['AdvancedToolsHelp', { extensions: registry.map(entry => entry.manifest) }, 'Advanced Tools Help', ['Online Song Sources', ...registry.map(entry => entry.manifest.name), 'Status labels']],
+  ['AdvancedToolsHelp', { stageTools: ['Metronome', 'Tuner'], extensions: registry.map(entry => entry.manifest) }, 'Advanced Tools Help', ['Online Song Sources', 'Metronome', 'Tuner', ...registry.map(entry => entry.manifest.name), 'Status labels']],
   ['BandSyncHelp', {}, 'Band Sync Help', ['Start room', 'Join with code', 'Leave or End room', 'Status', 'On / Off switch']],
   ['SongsLibraryHelp', { canImport: true, canCheckDuplicates: true }, 'Songs Help', ['Filters', 'Sort', 'Select', 'Import songs', 'Export songs', 'Check duplicates', 'Add Song']],
   ['SetlistsHelp', {}, 'Setlists Help', ['Sort', 'Manage', 'Share', 'Import Setlist', 'Export Setlist', 'Add new setlist', 'Inside a setlist']],
   ['SetlistManagerHelp', { showFolder: true }, 'Setlist Manager Help', ['Setlist', 'Folder', 'Play Setlist in Stage', 'Delete Setlist', 'Search Songs', 'Order']],
-  ['StagePreviewHelp', {}, 'Stage Preview Help', ['Editor', 'Stage Tools', 'Key', 'Chords / NNS', 'Auto-scroll', 'Stage Options', 'Cast', 'Fullscreen']],
+  ['StagePreviewHelp', {}, 'Stage Preview Help', ['Editor', 'Metronome and Tuner', 'Key', 'Chords / NNS', 'Auto-scroll', 'Stage Options', 'Cast', 'Fullscreen']],
   ['StageOptionsHelp', { showQuickJump: true }, 'Stage Options Help', ['Auto-Scroll Speed', 'Notation Mode', 'Text size and style', 'Layout and controls', 'Keep Screen Awake', 'Fullscreen Mode', 'TV & Second Screen', 'Setlist Quick-Jump']],
   ['EditorHelp', {}, 'Editor Help', ['Save', 'Brackets []', 'Insert Section', 'Song Details', 'Sections vs Raw View', 'Undo and Redo', 'Clipboard tools', 'New Song']],
   ['ThemeHelp', {}, 'Stage Color Theme Help', ['Theme selection', 'Light Mode', 'Dark Mode', 'Not Assigned', 'Customize This Theme', 'Save', 'Apply']],
@@ -186,7 +186,7 @@ test('Advanced Tools: Settings visual language, help in the header, toggles and 
     }
 
     await click(popover.querySelector('[data-testid="advanced-tools-help-button"]'))
-    assert.deepEqual(topicTitles(), ['Online Song Sources', ...registry.map(entry => entry.manifest.name), 'Status labels'])
+    assert.deepEqual(topicTitles(), ['Online Song Sources', 'Metronome', 'Tuner', ...registry.map(entry => entry.manifest.name), 'Status labels'])
     await key('Escape')
     assert.ok(q('[data-testid="advanced-tools-popover"]'), 'menu survives the help Escape')
 
@@ -319,7 +319,7 @@ test('Stage Options: help in the sheet header; Escape closes help before the she
 test('help is wired into toolbars and dialogs; About is untouched', () => {
   assert.match(read('components/SongbookHomeView.tsx'), /<SongsLibraryHelp canImport=\{Boolean\(onOpenImportSongs\)\} canCheckDuplicates=\{Boolean\(onTrashDuplicates\)\} \/>\s*<button\s+type="button"\s+data-testid="songs-library-menu-btn"/, 'Songs help sits beside the library menu')
   assert.match(read('components/SetlistWorkspace.tsx'), /<SetlistsHelp className="mr-0\.5" \/>/, 'Setlists help sits in the setlist toolbar')
-  assert.match(read('components/StageView.tsx'), /<span className="hidden sm:inline">Stage Tools<\/span>\s*<\/button>\s*<StagePreviewHelp \/>/, 'Stage Preview help follows Stage Tools in the top bar')
+  assert.match(read('components/StageView.tsx'), /<StageToolButtons [^\n]*\/>\s*<StagePreviewHelp \/>/, 'Stage Preview help follows the Metronome and Tuner buttons in the top bar')
   assert.match(read('components/StageView.tsx'), /data-testid="toolbar-back"[\s\S]*?<\/div>[\s\S]*?<div[^>]*justify-end/, 'Back button aligned separately on the left while other controls group toward the right')
   assert.match(read('components/DesktopEditor.tsx'), /<EditorHelp \/>/, 'Editor help sits in the editor header')
   assert.match(read('components/ThemeModal.tsx'), /<ThemeHelp \/>/, 'Theme help sits in the Stage Color Theme header')
@@ -345,7 +345,7 @@ test('"+ Add" wording is normalized to "Add" across rendered labels', () => {
   assert.match(read('components/MultiSongSetlistPicker.tsx'), /'Add Selected to Setlist'/)
 })
 
-test('Round 2: Stage Preview help separates Editor and Stage Tools without Back; toolbar groups right', async () => {
+test('Round 2: Stage Preview help separates Editor and Metronome/Tuner without Back; toolbar groups right', async () => {
   const root = await mount(React.createElement(help.StagePreviewHelp))
   try {
     const button = q('[data-testid="stage-preview-help-button"]')
@@ -354,13 +354,15 @@ test('Round 2: Stage Preview help separates Editor and Stage Tools without Back;
     assert.ok(!titles.includes('Back'), 'Back button is not in help topics')
     assert.ok(!titles.includes('Back and Editor'), 'Back and Editor combined topic is removed')
     assert.ok(titles.includes('Editor'), 'Dedicated Editor topic is present')
-    assert.ok(titles.includes('Stage Tools'), 'Dedicated Stage Tools topic is present')
+    assert.ok(titles.includes('Metronome and Tuner'), 'Dedicated Metronome and Tuner topic is present')
+    assert.ok(!titles.includes('Stage Tools'), 'Stage Tools topic is retired')
   } finally { await unmount(root) }
 
   // Inspect StageView.tsx toolbar markup
   const stageSource = read('components/StageView.tsx')
   assert.match(stageSource, /data-testid="toolbar-back"[\s\S]*?<\/div>[\s\S]*?<div[^>]*justify-end/)
-  assert.match(stageSource, /aria-label="Editor"[\s\S]*?aria-label="Stage Tools"[\s\S]*?<StagePreviewHelp \/>/)
+  assert.match(stageSource, /aria-label="Editor"[\s\S]*?<StageToolButtons [\s\S]*?<StagePreviewHelp \/>/)
+  assert.doesNotMatch(stageSource, /Stage Tools|onOpenBandSync/)
 })
 
 test('Round 2: Destructive-operation warnings and clear topic coverage in new dialog help', async () => {
