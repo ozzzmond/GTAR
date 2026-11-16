@@ -54,7 +54,6 @@ function baseHeaderProps(calls = []) {
     onSearchQueryChange: noop,
     onNavigateHome: () => calls.push('home'),
     onOpenWebsiteUrlSource: () => calls.push('sources'),
-    onOpenStageTools: noop,
     onToggleTheme: noop,
     onOpenStageSettings: noop,
     onOpenImportModal: noop,

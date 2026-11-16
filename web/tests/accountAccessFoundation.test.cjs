@@ -489,7 +489,6 @@ test('TARGETED: HEADER_SETTINGS_GEAR_PRESERVED and obsolete account badges retir
             searchQuery: '',
             onSearchQueryChange: () => {},
             onOpenWebsiteUrlSource: () => {},
-            onOpenStageTools: () => {},
             onToggleTheme: () => {},
             onOpenStageSettings: () => {},
             onOpenImportModal: () => {},

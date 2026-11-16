@@ -34,7 +34,7 @@ const { openBackupCenter } = require('../src/utils/backupCenter.ts')
 const noop = () => {}
 const songs = [{ id: 's1', title: 'A', rawContent: 'C' }]
 const props = { activeView: 'songbook', song: songs[0], searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop,
-  onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, backupSongs: songs }
+  onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, backupSongs: songs }
 const buttonTexts = el => [...el.querySelectorAll('button')].map(b => b.textContent.trim())
 
 async function mountHeader(options = {}) {

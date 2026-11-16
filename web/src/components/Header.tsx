@@ -58,6 +58,8 @@ import { getSearchLinks, useOnlineSourceSettings } from '../utils/onlineSourceSe
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { OnlineSourcesDialog, OnlineSourcesRow } from './OnlineSourcesRow'
+import { StageToolRows } from './StageToolRows'
+import { STAGE_TOOLS } from '../stageTools/registry'
 import { AboutModal } from './AboutModal'
 import { AdvancedToolsHelp, SettingsHelp } from './menuHelp'
 import { CloudSyncModal } from './CloudSyncModal'
@@ -117,7 +119,6 @@ interface HeaderProps {
   onSearchQueryChange: (query: string) => void
   onSelectSearchSong?: (songIndex: number) => void
   onNavigateHome?: () => void
-  onOpenStageTools: () => void
   onToggleTheme: () => void
   onOpenStageSettings?: () => void
   /** Library (songs including trash) for the Backup & Restore center's file card. */
@@ -161,7 +162,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSearchQueryChange,
   onSelectSearchSong,
   onNavigateHome,
-  onOpenStageTools,
   onToggleTheme,
   backupSongs,
   onImportAllSongs,
@@ -185,7 +185,6 @@ export const Header: React.FC<HeaderProps> = ({
   customColors,
 }) => {
   void activeView
-  void onOpenStageTools
   void onOpenCast
   void isCastActive
   const [showBackupRestoreModal, setShowBackupRestoreModal] = useState(false)
@@ -354,11 +353,14 @@ export const Header: React.FC<HeaderProps> = ({
           <Wrench className="w-4 h-4 text-app-accent shrink-0" aria-hidden="true" />
           <span className="text-xs font-bold text-app-heading">Advanced Tools</span>
         </div>
-        <AdvancedToolsHelp extensions={extensionHost.entries.map(entry => entry.manifest)} />
+        <AdvancedToolsHelp stageTools={STAGE_TOOLS.map(tool => tool.name)} extensions={extensionHost.entries.map(entry => entry.manifest)} />
       </div>
 
       {/* Online song sources: opt-in, off by default; the row opens its app-level dialog (#516) */}
       <OnlineSourcesRow rowClass={popoverItem} enabled={onlineSourcesEnabled} onToggle={setOnlineSourcesEnabled} onOpenDialog={openOnlineSourcesDialog} />
+
+      {/* Stage tools: each switch puts that tool's button on the Stage toolbar */}
+      <StageToolRows rowClass={popoverItem} />
 
       {/* Extension registry rows (e.g. ProPresenter) */}
       <ExtensionRows host={extensionHost} rowClass={popoverItem} onOpenDialog={openAdvancedToolsDialog} />

@@ -30,7 +30,7 @@ async function harness(run) {
   let root = createRoot(document.getElementById('root')), mounted = true
   const unmount = async () => { if (mounted) { await act(async () => root.unmount()); mounted = false } }
   const render = element => act(async () => root.render(element))
-  const props = { isOpen: true, onClose() {}, fontStyle: 'mono', onSelectFontStyle() {}, isTwoColumn: false, onToggleTwoColumn() {}, onOpenStageTools() {}, onToggleTheme() {} }
+  const props = { isOpen: true, onClose() {}, fontStyle: 'mono', onSelectFontStyle() {}, isTwoColumn: false, onToggleTwoColumn() {}, onToggleTheme() {} }
   const mountSettings = () => render(React.createElement(React.StrictMode, null, React.createElement(StageSettingsModal, props)))
   const toggle = () => act(async () => {
     const label = [...document.querySelectorAll('div')].find(el => el.textContent.trim() === 'Keep screen awake during performance')

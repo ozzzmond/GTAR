@@ -97,7 +97,7 @@ test('Real header roles resolve independently from body, with neutral icons scop
   const root = createRoot(document.getElementById('root'))
   try {
     const noop = () => {}
-    const props = { activeView: 'editor', song: {}, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, onOpenBackupRestoreModal: noop }
+    const props = { activeView: 'editor', song: {}, searchQuery: '', onViewChange: noop, onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop, onOpenBackupRestoreModal: noop }
     env.isDevEnv = true
     await act(async () => root.render(React.createElement(Header, props)))
 

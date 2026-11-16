@@ -87,7 +87,7 @@ test('sidebar: drag edge resizes by keyboard with min/max clamp, width and colla
 function headerProps(calls, extra = {}) {
   const log = name => () => calls.push(name)
   return { activeView: 'songbook', onViewChange: view => calls.push(`view:${view}`), song: { id: 'one', title: 'One', rawContent: '' },
-    searchQuery: '', onSearchQueryChange: noop, onOpenWebsiteUrlSource: log('sources'), onOpenStageTools: log('band-sync'),
+    searchQuery: '', onSearchQueryChange: noop, onOpenWebsiteUrlSource: log('sources'),
     onToggleTheme: log('theme'), onOpenStageSettings: log('stage-settings'), onOpenImportModal: log('import'),
     onOpenCast: log('cast'), onNewSong: log('new-song'), onOpenSection: section => calls.push(`section:${section}`),
     activeSection: 'songs', deletedSongsCount: 2, ...extra }

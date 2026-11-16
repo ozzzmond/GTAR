@@ -206,7 +206,6 @@ test('TOOLBAR ALIGNMENT: 8 primary controls, 44px targets, canonical order, CSS 
       activeView: 'songbook',
       onViewChange() {},
       onOpenWebsiteUrlSource() {},
-      onOpenStageTools() {},
       onToggleTheme() {},
       onOpenStageSettings() {},
       onOpenImportModal() {},

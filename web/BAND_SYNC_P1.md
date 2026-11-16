@@ -197,3 +197,8 @@ The room-code input ignores case, spaces and dashes (a pasted `abcd-efgh` become
 - Stage preview toolbar button is always "Stage Tools" (Gauge icon, same as the Metronome tab). The modal is `StageToolsModal` with Metronome and Guitar Tuner only. Rooms are created and joined from Advanced Tools only.
 - Not carried over (future work): setlist content transfer, chat, voice memo, request-song.
 
+
+## Stage Tools split (#534, #535 shell)
+
+- `StageToolsModal`, the "Stage Tools" toolbar button and the `onOpenBandSync` wiring are removed; the P1g notes above describe the earlier state. Band Sync never used that button: rooms are still created and joined from Advanced Tools only.
+- Metronome and Tuner are separate Stage tools (`src/stageTools/registry.ts`), each with its own Advanced Tools switch (default OFF, saved on the device), toolbar button and compact panel.

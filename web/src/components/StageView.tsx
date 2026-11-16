@@ -52,6 +52,7 @@ import {
 import { parseGtarSong, splitSongLinesForColumns } from '../utils/songParser'
 import { formatTempoLabel } from '../utils/chordProMetadata'
 import { metronome } from '../utils/metronome'
+import { StageToolButtons } from './StageToolButtons'
 import { stageCast } from '../utils/stageCast'
 import type { ChordVoicing } from '../utils/chordDictionary'
 
@@ -103,7 +104,6 @@ interface StageViewProps {
   isTwoColumn?: boolean
   onToggleTwoColumn?: (enabled: boolean) => void
   onOpenEditor?: () => void
-  onOpenBandSync?: () => void
   onBack?: () => void
   /** Called whenever the stage enters or exits "performance mode" (fullscreen or focus). */
   onPerformanceModeChange?: (isActive: boolean) => void
@@ -164,7 +164,6 @@ export const StageView: React.FC<StageViewProps> = ({
   isTwoColumn: externalIsTwoColumn,
   onToggleTwoColumn: externalOnToggleTwoColumn,
   onOpenEditor,
-  onOpenBandSync,
   onBack,
   onPerformanceModeChange,
 }) => {
@@ -1910,7 +1909,7 @@ export const StageView: React.FC<StageViewProps> = ({
           </button>
         </div>
 
-        {/* Right Side: Editor, Stage Tools, Help, Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}
+        {/* Right Side: Editor, Metronome/Tuner (when switched on), Help, Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
           <button
             type="button"
@@ -1921,15 +1920,7 @@ export const StageView: React.FC<StageViewProps> = ({
             <FileEdit className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Editor</span>
           </button>
-          <button
-            type="button"
-            onClick={onOpenBandSync}
-            aria-label="Stage Tools"
-            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
-          >
-            <span aria-hidden="true"><Gauge className="w-4 h-4 shrink-0" /></span>
-            <span className="hidden sm:inline">Stage Tools</span>
-          </button>
+          <StageToolButtons hidden={inPerformanceMode} buttonClass="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer" />
           <StagePreviewHelp />
           {/* Key Chip (Tapping opens KeyPickerModal) */}
           <button

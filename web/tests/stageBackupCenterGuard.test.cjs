@@ -38,7 +38,7 @@ function Harness({ onSelect }) {
   const [index, setIndex] = React.useState(1)
   return React.createElement(React.Fragment, null,
     React.createElement(Header, { activeView: 'stage', song: songs[index], searchQuery: '', onViewChange: noop, onSearchQueryChange: noop,
-      onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop,
+      onOpenWebsiteUrlSource: noop, onToggleTheme: noop, onOpenStageSettings: noop, onOpenImportModal: noop,
       backupSongs: songs, onOverlayChange: setHeaderOverlay }),
     React.createElement(StageView, { song: songs[index], songs, activeSongIndex: index, onSelectSongIndex: i => { onSelect(i); setIndex(i) },
       onOpenSetlistDrawer: noop, transposeOffset: 0, onTransposeChange: noop, isAnyModalOpen: headerOverlay }))

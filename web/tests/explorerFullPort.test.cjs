@@ -104,7 +104,7 @@ test('compact Header opens Explorer in Stage and expands search with Ctrl/Cmd+K 
   const noop = () => {}
   let opened = 0
   const props = { activeView: 'songbook', onViewChange: noop, song: { id: 'one', title: 'One', rawContent: '' }, searchQuery: '',
-    onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop,
+    onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onToggleTheme: noop,
     onOpenStageSettings: noop, onOpenImportModal: noop, onOpenSetlistDrawer: () => opened++ }
   await render(Header, props)
   const input = () => document.getElementById('search-input')
@@ -185,7 +185,7 @@ test('Header removes obsolete cloud button and avoids background network request
   global.fetch = async (url, options) => { requests.push([url, options?.method]); return new Response(JSON.stringify({ success: true })) }
   const noop = () => {}
   const props = { activeView: 'songbook', song: library.songs[0], searchQuery: '', onViewChange: noop,
-    onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onOpenStageTools: noop, onToggleTheme: noop,
+    onSearchQueryChange: noop, onOpenWebsiteUrlSource: noop, onToggleTheme: noop,
     onOpenStageSettings: noop, onOpenImportModal: noop }
   const renderAccount = async id => act(async () => root.render(React.createElement(AuthContext.Provider,
     { value: { session: id ? { token: 'test', user: { id } } : null, role: 'USER', accessStatus: 'active' } }, React.createElement(Header, props))))

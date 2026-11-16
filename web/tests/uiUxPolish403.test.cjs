@@ -312,7 +312,6 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
       searchQuery: '',
       onSearchQueryChange: () => {},
       onOpenWebsiteUrlSource: () => {},
-      onOpenStageTools: () => {},
       onToggleTheme: () => {},
       onOpenImportModal: () => {},
     }

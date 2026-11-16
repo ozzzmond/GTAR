@@ -168,7 +168,6 @@ test('PWA_MANIFEST_AND_INSTALL: manifest has explicit scope and id, Header respo
     onSearchChange: () => {},
     onOpenSongbook: () => {},
     onOpenSetlists: () => {},
-    onOpenStageTools: () => {},
     onOpenStageSettings: () => {},
   }
 

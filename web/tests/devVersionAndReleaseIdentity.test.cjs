@@ -777,7 +777,6 @@ test('STEP_8.3: Header layout renders DEV branding without redundant version, di
       searchQuery: '',
       onSearchQueryChange: () => {},
       onOpenWebsiteUrlSource: () => {},
-      onOpenStageTools: () => {},
       onToggleTheme: () => {},
       onOpenStageSettings: () => {},
       onOpenImportModal: () => {},

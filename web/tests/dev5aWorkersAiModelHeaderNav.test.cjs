@@ -62,7 +62,7 @@ function renderHeader(props = {}) {
     root.render(React.createElement(Header, {
       activeView: 'songbook',
       onViewChange(v) { viewChanges.push(v) },
-      onOpenWebsiteUrlSource() {}, onOpenStageTools() {}, onToggleTheme() {}, onOpenStageSettings() {},
+      onOpenWebsiteUrlSource() {}, onToggleTheme() {}, onOpenStageSettings() {},
       onOpenImportModal() {}, onOpenBackupRestoreModal() {}, searchQuery: '', onSearchQueryChange() {},
       ...props,
     }))

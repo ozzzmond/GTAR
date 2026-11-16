@@ -84,7 +84,6 @@ import {
   applyThemeRuntime,
   hydrateThemeSettings,
 } from './components/ThemeModal'
-import { StageToolsModal } from './components/StageToolsModal'
 import { TvPresentationModal } from './components/TvPresentationModal'
 import { stageCast2Enabled } from './utils/stageCast2Local'
 import { stageCast } from './utils/stageCast'
@@ -558,7 +557,6 @@ function LibraryApp() {
   // Stays mounted after first open so the dialog keeps its state across opens, as before.
   const [importDialogMounted, setImportDialogMounted] = useState(false)
   if (isImportModalOpen && !importDialogMounted) setImportDialogMounted(true)
-  const [isStageToolsModalOpen, setIsStageToolsModalOpen] = modals.stageTools
   const [isThemeModalOpen, setIsThemeModalOpen] = modals.theme
   const [isHeaderKeyPickerOpen, setIsHeaderKeyPickerOpen] = modals.headerKeyPicker
 
@@ -1468,7 +1466,7 @@ function LibraryApp() {
 
   const followBoundaryRef = useRef({ context: followSetlist, queueMode, activeView, activeSetlistId, index: activeSetlistSongIndex, manualRevision: followManualRevision, blocked: false })
   useLayoutEffect(() => { followBoundaryRef.current = { context: followSetlist, queueMode, activeView, activeSetlistId, index: activeSetlistSongIndex, manualRevision: followManualRevision,
-    blocked: isSetlistDrawerOpen || isStageToolsModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen || isImportModalOpen || isHeaderKeyPickerOpen || isTvPresentationModalOpen || isHeaderOverlayOpen || recoveryDataOpen || isSetlistManagerOpen } })
+    blocked: isSetlistDrawerOpen || isThemeModalOpen || isWebsiteUrlModalOpen || isImportModalOpen || isHeaderKeyPickerOpen || isTvPresentationModalOpen || isHeaderOverlayOpen || recoveryDataOpen || isSetlistManagerOpen } })
   const handleFollowSetlistEntry = (request: FollowSelection): boolean => {
     const current = followBoundaryRef.current
     if (!setlistAutoFollowDev || !document.fullscreenElement || document.hidden || current.activeView !== 'stage' || current.queueMode !== 'setlist' || current.blocked ||
@@ -1531,7 +1529,6 @@ function LibraryApp() {
             navigateSafely(() => { handleSelectLibrarySong(songIdx); setActiveView('stage') })
           }}
           onNavigateHome={() => navigateSafely(handleNavigateHome)}
-          onOpenStageTools={() => setIsStageToolsModalOpen(true)}
           onToggleTheme={() => setIsThemeModalOpen(true)}
           currentTheme={stageTheme}
           themeModeAssignments={themeAssignments}
@@ -1542,7 +1539,7 @@ function LibraryApp() {
           onOverlayChange={setIsHeaderOverlayOpen}
           onOpenSetlistDrawer={() => navigateSafely(() => { setIsSetlistDrawerOpen(true) })}
           isExplorerOpen={isSetlistDrawerOpen}
-          shortcutsBlocked={isSetlistDrawerOpen || isSetlistManagerOpen || isImportModalOpen || isStageToolsModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen}
+          shortcutsBlocked={isSetlistDrawerOpen || isSetlistManagerOpen || isImportModalOpen || isThemeModalOpen || isWebsiteUrlModalOpen}
           setlists={setlists}
           activeSetlistId={activeSetlistId}
           activeSetlistName={activeSetlist?.name}
@@ -1728,7 +1725,6 @@ function LibraryApp() {
               isSetlistDrawerOpen={isSetlistDrawerOpen}
               isAnyModalOpen={
                 isSetlistDrawerOpen ||
-                isStageToolsModalOpen ||
                 isThemeModalOpen ||
                 isWebsiteUrlModalOpen ||
                 isImportModalOpen ||
@@ -1746,7 +1742,6 @@ function LibraryApp() {
               onSelectFontStyle={setFontStyle}
               isTwoColumn={isTwoColumn}
               onToggleTwoColumn={setIsTwoColumn}
-              onOpenBandSync={() => setIsStageToolsModalOpen(true)}
               onPerformanceModeChange={setIsStagePerformanceMode}
             />
           </StageErrorBoundary>
@@ -1789,11 +1784,6 @@ function LibraryApp() {
         existingSetlists={setlists}
       /></Suspense>}
 
-      {/* Stage Tools Modal */}
-      <StageToolsModal
-        isOpen={isStageToolsModalOpen}
-        onClose={() => setIsStageToolsModalOpen(false)}
-      />
 
       {/* Header Key Picker Modal */}
       <KeyPickerModal

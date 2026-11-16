@@ -20,7 +20,7 @@ const song = { id: 'local', title: 'Local song', artist: '', key: 'C', capo: '',
 const caps = ['net:https', 'ui:panel', 'events:song', 'events:transpose', 'events:section', 'events:setlist']
 async function ui(run, options = {}) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://gtar.test/' + (options.hash ?? ''), pretendToBeVisual: true })
-  const keys = ['window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement', 'Node', 'CustomEvent',
+  const keys = ['window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement', 'Node', 'CustomEvent', 'Event',
     'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'isSecureContext', 'WebSocket', 'fetch', 'IS_REACT_ACT_ENVIRONMENT']
   const previous = new Map(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   const sockets = [], calls = [], subscriptions = [], logs = []
@@ -35,7 +35,7 @@ async function ui(run, options = {}) {
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
     location: dom.window.location, localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage,
     HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
-    HTMLSelectElement: dom.window.HTMLSelectElement, Node: dom.window.Node, CustomEvent: dom.window.CustomEvent,
+    HTMLSelectElement: dom.window.HTMLSelectElement, Node: dom.window.Node, CustomEvent: dom.window.CustomEvent, Event: dom.window.Event,
     ResizeObserver: class { observe() {} disconnect() {} unobserve() {} },
     requestAnimationFrame: cb => setTimeout(() => cb(Date.now()), 16), cancelAnimationFrame: id => clearTimeout(id),
     isSecureContext: true, WebSocket: Socket, IS_REACT_ACT_ENVIRONMENT: true,
@@ -55,12 +55,11 @@ async function ui(run, options = {}) {
   if (options.session) sessionStorage.setItem('gtar_band_sync_session_v1', JSON.stringify(options.session))
   if (options.strictStart) { const first = host.start(); host.dispose(); await Promise.all([first, host.start()]) } else await host.start()
   const { StageView } = require('../src/components/StageView.tsx')
-  const { StageToolsModal } = require('../src/components/StageToolsModal.tsx')
+  const { StageToolRows } = require('../src/components/StageToolRows.tsx')
   function Harness() {
-    const [open, setOpen] = React.useState(false)
     return React.createElement(React.Fragment, null,
-      React.createElement(StageView, { song, songs: [song], activeSongIndex: 0, onSelectSongIndex() {}, transposeOffset: 3, onTransposeChange() {}, onOpenBandSync: () => setOpen(true), ...options.stage }),
-      React.createElement(StageToolsModal, { isOpen: open, onClose: () => setOpen(false) }),
+      React.createElement(StageView, { song, songs: [song], activeSongIndex: 0, onSelectSongIndex() {}, transposeOffset: 3, onTransposeChange() {}, ...options.stage }),
+      React.createElement(StageToolRows, { rowClass: 'p-2' }),
       React.createElement(ExtensionRows, { host, rowClass: 'p-2' }))
   }
   const root = createRoot(document.getElementById('root'))
@@ -79,30 +78,35 @@ async function ui(run, options = {}) {
     for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
   }
 }
-test('Stage Tools button/modal is the same ON or OFF (metronome/tuner only); OFF has no listener/network; ON/OFF persists', async () => {
+test('Stage Tools button/modal is retired; Metronome and Tuner are the same with Band Sync ON or OFF; OFF has no listener/network; ON/OFF persists', async () => {
   await ui(async ({ host, calls, sockets, subscriptions, click, button, turnOn }) => {
+    const tool = id => document.querySelector(`[data-testid="stage-tool-${id}"]`)
+    const toolSwitch = id => document.querySelector(`[data-testid="settings-stage-tool-${id}"]`)
     assert.equal(host.getSnapshot('band-sync').state, 'disabled')
     assert.ok(document.querySelector('[data-testid="extension-band-sync"]'))
     assert.ok(document.body.textContent.includes('Turn on to see Band Sync on Stage.'))
     assert.equal(document.querySelector('[aria-label="Band Sync"]'), null)
-    assert.ok(document.querySelector('[aria-label="Stage Tools"]'))
-    assert.equal(document.querySelector('[aria-label="Stage Tools"]').textContent.trim(), 'Stage Tools')
+    assert.equal(document.querySelector('[aria-label="Stage Tools"]'), null)
+    assert.equal(document.body.textContent.includes('Stage Tools'), false); assert.equal(document.body.textContent.includes('STAGE TOOLS'), false)
+    assert.equal(tool('metronome'), null); assert.equal(tool('tuner'), null)
     assert.equal(button('Push setlist to Band Sync'), undefined)
-    await click(document.querySelector('[aria-label="Stage Tools"]'))
-    assert.ok(button('Metronome')); await click(button('Guitar Tuner'))
+    await click(toolSwitch('metronome')); await click(toolSwitch('tuner'))
+    assert.equal(tool('metronome').textContent.trim(), 'Metronome'); await click(tool('tuner'))
     assert.ok(document.body.textContent.includes('E2 (6th)'))
     assert.equal(button('Band Sync'), undefined)
     assert.equal(calls.length, 0); assert.equal(sockets.length, 0); assert.deepEqual(subscriptions, [])
     await turnOn()
-    assert.equal(document.querySelector('[aria-label="Band Sync"]'), null); assert.ok(document.querySelector('[aria-label="Stage Tools"]'))
-    await click(document.querySelector('[aria-label="Stage Tools"]')); assert.ok(button('Metronome')); assert.ok(button('Guitar Tuner')); assert.equal(button('Band Sync'), undefined)
-    assert.ok(document.body.textContent.includes('STAGE TOOLS')); assert.equal(document.body.textContent.includes('Sync & '), false)
-    await click([...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Close'))
+    assert.equal(document.querySelector('[aria-label="Band Sync"]'), null); assert.equal(document.querySelector('[aria-label="Stage Tools"]'), null)
+    assert.ok(tool('metronome')); assert.ok(tool('tuner')); assert.ok(document.body.textContent.includes('E2 (6th)'), 'Tuner panel is untouched by Band Sync')
+    await click(tool('metronome')); assert.ok(button('Tap')); assert.equal(button('Band Sync'), undefined)
+    assert.equal(document.body.textContent.includes('Sync & '), false)
+    await click(document.querySelector('[aria-label="Close Metronome"]'))
     assert.equal(JSON.parse(localStorage.getItem('gtar_ext_band-sync_v1')).enabled, true)
     assert.equal(calls.length, 0); assert.equal(sockets.length, 0)
     await act(async () => host.disable('band-sync'))
     assert.equal(JSON.parse(localStorage.getItem('gtar_ext_band-sync_v1')).enabled, false)
-    assert.equal(button('Band Sync'), undefined); assert.ok(document.querySelector('[aria-label="Stage Tools"]'))
+    assert.equal(button('Band Sync'), undefined); assert.ok(tool('metronome')); assert.ok(tool('tuner'))
+    await click(toolSwitch('metronome')); await click(toolSwitch('tuner'))
     const restored = new ExtensionHost(registry, localStorage, { capabilities: caps }); await restored.start()
     assert.equal(restored.getSnapshot('band-sync').state, 'disabled'); restored.dispose()
   })
