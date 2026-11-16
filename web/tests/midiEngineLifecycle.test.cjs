@@ -233,22 +233,8 @@ test('a statechange callback that throws sets Error and detaches', async () => {
   assert.equal(state(engine), 'connected')
 })
 
-test('a message callback that throws sets Error and detaches; a failing status subscriber does not', async () => {
-  const pedal = fakeInput('p1', 'FS-1-WL'), keys = fakeInput('p2', 'Keystation')
-  const seen = []
-  const { engine, access } = setup({ access: fakeAccess([pedal, keys]) }, { onMessage: (portId, data) => { seen.push([portId, [...data]]); if (data[0] === 0xff) throw new Error('bad sink') } })
-  engine.start('ask')
-  await settle()
-  const stale = pedal.onmidimessage
-  pedal.send([0xb0, 64, 127])
-  assert.deepEqual(seen, [['p1', [0xb0, 64, 127]]])
-  assert.equal(state(engine), 'connected')
-  assert.doesNotThrow(() => keys.send([0xff]))
-  assert.equal(state(engine), 'error')
-  assert.deepEqual([listenerCount(access), access.onstatechange, pedal.closes, keys.closes], [0, null, 1, 1])
-  stale({ data: Uint8Array.from([0x90, 60, 100]) })
-  assert.equal(seen.length, 2, 'a listener from the failed run delivers nothing')
-
+test('an error while attaching is Error, not a crash; a failing status subscriber does not break the engine', async () => {
+  // A Stage handler that throws while a press is dispatched is covered in midiDispatch.test.cjs.
   const broken = fakeInput('p3', 'Broken')
   Object.defineProperty(broken, 'state', { get() { throw new Error('port getter') } })
   const attach = setup({ access: fakeAccess([broken]) })
@@ -262,7 +248,7 @@ test('a message callback that throws sets Error and detaches; a failing status s
   assert.equal(loud.getSnapshot().state, 'connected')
 })
 
-test('without a sink a message goes nowhere: nothing is dispatched in this slice', async () => {
+test('with nothing mapped a message goes nowhere, and a bad one is not an error', async () => {
   const pedal = fakeInput('p1', 'FS-1-WL')
   const { engine, states } = setup({ access: fakeAccess([pedal]) })
   engine.start('ask')

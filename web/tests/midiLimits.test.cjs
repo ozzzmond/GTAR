@@ -197,6 +197,25 @@ test('settle: nothing fires for 500 ms after a port connects', () => {
   assert.deepEqual(limits.press('p', program(5)), { type: 'pc', channel: 1, number: 5 })
 })
 
+test('settling() says whether a port is still inside its settle time (Learn skips such a port)', () => {
+  const { limits, tick } = fake()
+  assert.equal(limits.settling('p'), false, 'a port that never connected here is not settling')
+  limits.portConnected('p')
+  assert.equal(limits.settling('p'), true)
+  assert.equal(limits.settling('other'), false, 'per port')
+  tick(499)
+  assert.equal(limits.settling('p'), true)
+  tick(1)
+  assert.equal(limits.settling('p'), false)
+  limits.portConnected('p')
+  assert.equal(limits.settling('p'), true, 'a reconnect starts it again')
+  limits.portDisconnected('p')
+  assert.equal(limits.settling('p'), false)
+  limits.portConnected('p')
+  limits.reset()
+  assert.equal(limits.settling('p'), false)
+})
+
 test('settle: a control reported down at power-up must come back up before it can fire', () => {
   const { limits, tick } = fake()
   limits.portConnected('p')

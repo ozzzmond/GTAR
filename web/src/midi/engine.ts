@@ -1,21 +1,26 @@
 /**
- * MIDI engine (#536 Slice 3): one MIDIAccess, one statechange handler, one map of listened
- * ports. Loaded with import() only while MIDI is ON (see ./loader). Access is requested without
- * SysEx and nothing is ever sent to a device.
+ * MIDI engine (#536): one MIDIAccess, one statechange handler, one map of listened ports.
+ * Loaded with import() only while MIDI is ON (see ./loader). Access is requested without SysEx
+ * and nothing is ever sent to a device.
  *
- * This slice only connects. A received message goes to the optional onMessage sink, which
- * nothing provides yet, so MIDI cannot move Stage.
+ * A received message is parsed, then either captured by Learn or, when it is a new press of a
+ * mapped input inside the limits, sent to Stage through stageCommands.run() with one of the
+ * nine action ids. Nothing else in the app is reached from here.
  */
-import { MIDI_DEVICE_TEXT_MAX } from './settings'
+import { stageCommands } from '../utils/stageCommands'
+import { createMidiLimits } from './limits'
+import { findMidiAction, learnableMidiInput, type MidiInput, type MidiMappings } from './mapping'
+import { parseMidiMessage } from './message'
+import { MIDI_DEVICE_TEXT_MAX, readMidiSettings, subscribeMidiSettings } from './settings'
 import type { MidiSnapshot, MidiStartMode, MidiState } from './loader'
 
 export interface MidiEngineOptions {
   /** Called with every new status. */
   onChange(snapshot: MidiSnapshot): void
-  /** Bytes of one message from a listened port. Not wired in this slice. */
-  onMessage?: (portId: string, data: Uint8Array) => void
   /** Defaults to the browser's navigator. Tests pass a fake. */
   navigator?: Pick<Navigator, 'requestMIDIAccess' | 'permissions'>
+  /** Monotonic clock in milliseconds for the press limits. Tests pass a fake clock. */
+  now?: () => number
 }
 
 export interface MidiEngine {
@@ -23,6 +28,11 @@ export interface MidiEngine {
   start(mode: MidiStartMode): void
   /** Clears every listener, closes the ports and drops the access object. */
   stop(): void
+  /**
+   * Learn: the next input that counts goes to `listener`, once, and never to Stage. While a
+   * listener waits no action fires. Returns the cancel; stopping or restarting cancels too.
+   */
+  learn(listener: (input: MidiInput) => void): () => void
   getSnapshot(): MidiSnapshot
 }
 
@@ -45,6 +55,11 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
   let access: MIDIAccess | null = null
   const listened = new Map<string, MIDIInput>()
   let snapshot: MidiSnapshot = { state: 'off', devices: [] }
+  const limits = createMidiLimits({ now: options.now })
+  /** The saved mappings, read at start and after every settings change; never per message. */
+  let mappings: MidiMappings = {}
+  let unsubscribe: (() => void) | null = null
+  let learner: ((input: MidiInput) => void) | null = null
 
   const set = (state: MidiState, devices: string[] = []) => {
     if (state === snapshot.state && devices.length === snapshot.devices.length && devices.every((name, index) => name === snapshot.devices[index])) return
@@ -61,6 +76,10 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
   const detach = () => {
     for (const port of listened.values()) release(port, true)
     listened.clear()
+    learner = null
+    limits.reset()
+    unsubscribe?.()
+    unsubscribe = null
     if (access) {
       try { access.onstatechange = null } catch { /* Best effort: the access object is dropped next. */ }
     }
@@ -79,6 +98,26 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
     try { callback(...args) } catch { fail() }
   }
 
+  /** One parsed message: Learn takes it, or a new press of a mapped input moves Stage once. */
+  const receive = (portId: string, data: unknown) => {
+    const message = parseMidiMessage(data)
+    if (!message) return
+    // Followed in every mode, so a pedal held down through Learn fires nothing afterwards.
+    const pressed = limits.press(portId, message)
+    if (learner) {
+      const input = limits.settling(portId) ? null : learnableMidiInput(message)
+      if (!input) return
+      const capture = learner
+      learner = null
+      capture(input)
+      return
+    }
+    if (!pressed) return
+    // findMidiAction can only return one of the nine action ids; stageCommands checks it again.
+    const action = findMidiAction(mappings, pressed)
+    if (action && limits.allow(pressed)) stageCommands.run(action)
+  }
+
   /** Listens to every connected input once and forgets the ones that went away. */
   const refresh = (run: number) => {
     if (run !== generation || !access) return
@@ -88,12 +127,15 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
       if (present.get(id) === port) continue
       release(port, false)
       listened.delete(id)
+      limits.portDisconnected(id)
     }
     for (const [id, port] of present) {
       if (listened.has(id)) continue
       // A property, not addEventListener: one port can never hold two GTAR listeners.
-      port.onmidimessage = guard(run, (event: MIDIMessageEvent) => { if (event.data) options.onMessage?.(id, event.data) })
+      port.onmidimessage = guard(run, (event: MIDIMessageEvent) => receive(id, event.data))
       listened.set(id, port)
+      // Starts the settle time: a power-up burst from this port is ignored.
+      limits.portConnected(id)
     }
     set(listened.size > 0 ? 'connected' : 'no-device', [...listened.values()].map(deviceName))
   }
@@ -136,13 +178,21 @@ export function createMidiEngine(options: MidiEngineOptions): MidiEngine {
     start(mode) {
       const run = ++generation
       detach()
+      const load = () => { mappings = readMidiSettings().mappings }
+      load()
+      unsubscribe = subscribeMidiSettings(load)
       set('starting')
       void open(run, mode)
     },
     stop() {
       generation++
       detach()
+      mappings = {}
       set('off')
+    },
+    learn(listener) {
+      learner = listener
+      return () => { if (learner === listener) learner = null }
     },
     getSnapshot: () => snapshot,
   }

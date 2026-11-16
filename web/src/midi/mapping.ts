@@ -39,6 +39,19 @@ export function sameMidiInput(a: MidiInput, b: MidiInput): boolean {
   return a.type === b.type && a.channel === b.channel && a.number === b.number
 }
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
+
+/**
+ * On-screen text for an input, with numbers as the controller sends them:
+ * "Note 60 (C4) · Ch 1", "CC 64 · Ch 1" or "Program 5 · Ch 1". C4 is note 60, as in the Tuner.
+ */
+export function midiInputLabel(input: MidiInput): string {
+  const what = input.type === 'note' ? `Note ${input.number} (${NOTE_NAMES[input.number % 12]}${Math.floor(input.number / 12) - 1})`
+    : input.type === 'cc' ? `CC ${input.number}`
+    : `Program ${input.number}`
+  return `${what} · Ch ${input.channel}`
+}
+
 /** Stable text key for an input, for maps and sets. */
 export function midiInputKey(input: MidiInput): string {
   return `${input.type}:${input.channel}:${input.number}`

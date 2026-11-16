@@ -4,6 +4,8 @@ import { X } from 'lucide-react'
 
 export interface AppModalProps {
   onClose: () => void
+  /** Offered Escape before it closes the dialog; return true when the key was used for something else. */
+  onEscape?: () => boolean
   title: string
   /** Id of the heading; the dialog is named by it. */
   titleId: string
@@ -28,12 +30,13 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * never clipped or re-anchored by the menu that launched it and stays mounted after that menu closes.
  */
 export const AppModal: React.FC<AppModalProps> = ({
-  onClose, title, titleId, icon, headerActions, footerActions, panelId, testId, backdropTestId, returnFocusRef, children,
+  onClose, onEscape, title, titleId, icon, headerActions, footerActions, panelId, testId, backdropTestId, returnFocusRef, children,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
-  useEffect(() => { onCloseRef.current = onClose }, [onClose])
+  const onEscapeRef = useRef(onEscape)
+  useEffect(() => { onCloseRef.current = onClose; onEscapeRef.current = onEscape }, [onClose, onEscape])
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -46,6 +49,7 @@ export const AppModal: React.FC<AppModalProps> = ({
         // An open contextual help panel takes Escape first.
         if (document.querySelector('[data-contextual-help]')) return
         event.preventDefault()
+        if (onEscapeRef.current?.()) return
         onCloseRef.current()
       } else if (event.key === 'Tab') {
         // Focus inside an open contextual help panel (portaled next to the dialog) is left alone.

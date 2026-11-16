@@ -1,6 +1,6 @@
 // #536 Slice 2: the Stage command seam. The keyboard listener, the on-screen buttons and the
 // stageCommands registry all end in the same StageView handlers, behind the same guards.
-// No MIDI here: this slice only names the paths a later caller will use.
+// The last test drives the seam from the MIDI engine (#536 Slice 4), its first outside caller.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -371,4 +371,105 @@ test('App keeps the transpose range and Band Sync follower rules the step relies
   const handler = app.match(/const handleTransposeChange = useCallback\(\(newOffset: number\) => \{[\s\S]*?\n {2}\}, \[/)?.[0] ?? ''
   assert.match(handler, /if \(bandRemote\) return\n\s+if \(!Number\.isSafeInteger\(newOffset\) \|\| newOffset < -11 \|\| newOffset > 11\) return/)
   assert.match(app, /onTransposeChange=\{handleTransposeChange\}/)
+})
+
+// #536 Slice 4: the first outside caller. A MIDI pedal goes engine → stageCommands.run() → the
+// same StageView handlers, behind the same guards. Fake MIDIAccess and fake clock; no device.
+test('a MIDI pedal reaches the same Stage paths, one step per press, and the same guards block it', async () => {
+  const { fakeInput, fakeAccess, fakeNavigator, settle } = require('./helpers/fakeMidi.cjs')
+  const mappings = Object.fromEntries(NINE.map((id, index) => [id, { type: 'cc', channel: 1, number: 20 + index }]))
+  /** Stage with MIDI on and one pedal whose nine switches are mapped to the nine actions. */
+  const pedalStage = (run, props) => stage(async tools => {
+    const { createMidiEngine } = require('../src/midi/engine.ts')
+    const { writeMidiSettings } = require('../src/midi/settings.ts')
+    assert.equal(writeMidiSettings({ version: 1, enabled: true, device: 'all', channel: 'all', mappings }), true)
+    const clock = { at: 0 }
+    const pedal = fakeInput('p1', 'FS-1-WL')
+    const engine = createMidiEngine({ navigator: fakeNavigator({ access: fakeAccess([pedal]) }), now: () => clock.at, onChange: noop })
+    engine.start('ask')
+    await act(async () => { await settle() })
+    assert.equal(engine.getSnapshot().state, 'connected')
+    clock.at += 500
+    const send = (id, value) => act(async () => pedal.send([0xb0, 20 + NINE.indexOf(id), value]))
+    /** One full press: down, then up 200 ms later. */
+    const step = async id => { await send(id, 127); clock.at += 200; await send(id, 0) }
+    try { await run({ ...tools, send, step, engine, tick: ms => { clock.at += ms } }) } finally { engine.stop() }
+  }, props)
+
+  await pedalStage(async ({ step, send, tick, command, autoscrolling, selected, scrolls, transposed, layout, unmount }) => {
+    scrolls.length = 0
+    await step('scrollDown')
+    await step('scrollUp')
+    assert.deepEqual(scrolls, [{ by: { top: 80, behavior: 'smooth' } }, { by: { top: -80, behavior: 'smooth' } }], 'the same 80 px nudge as the arrow keys')
+
+    await step('toggleAutoScroll')
+    assert.equal(autoscrolling(), true)
+    await step('toggleAutoScroll')
+    assert.equal(autoscrolling(), false, 'each press flips it, like the on-screen button')
+
+    await step('transposeUp')
+    await step('transposeDown')
+    assert.deepEqual(transposed, [1, -1], 'the same stored TRANSPOSE_OFFSET the buttons send')
+
+    // Holding does nothing more; releasing does nothing.
+    scrolls.length = 0
+    await send('scrollDown', 127)
+    for (let i = 0; i < 10; i++) { tick(300); await send('scrollDown', 127) }
+    await send('scrollDown', 0)
+    assert.equal(scrolls.length, 1)
+
+    // Sections: the pedal lands on the same target as the command the PageDown and PageUp keys use.
+    const target = async move => { scrolls.length = 0; await move(); tick(200); return scrolls.filter(entry => entry.to).map(entry => entry.to) }
+    const next = await target(() => command('nextSection'))
+    assert.equal(next.length, 1)
+    assert.deepEqual(await target(() => step('nextSection')), next)
+    layout.scrollTop = 800
+    const previous = await target(() => command('prevSection'))
+    assert.equal(previous.length, 1)
+    assert.deepEqual(await target(() => step('prevSection')), previous)
+    layout.scrollTop = 0
+
+    // Song changes keep the slide lock and the 250 ms guard: a bouncing switch moves one song.
+    await send('nextSong', 127); await send('nextSong', 0); await send('nextSong', 127); await send('nextSong', 0)
+    await wait(SLIDE_MS)
+    assert.deepEqual(selected, [1])
+    tick(1000)
+    await step('prevSong')
+    await wait(SLIDE_MS)
+    assert.deepEqual(selected, [1], 'nothing before the first song')
+
+    // Stage is gone (songbook, editor, trash): the pedal does nothing and nothing breaks.
+    await unmount()
+    tick(1000)
+    scrolls.length = 0
+    for (const id of NINE) { await step(id); tick(200) }
+    assert.deepEqual([scrolls, transposed.length, selected], [[], 2, [1]])
+  })
+
+  // An open dialog (the MIDI dialog included), a drawer or a Band Sync follower blocks the pedal like the keyboard.
+  await pedalStage(async ({ step, tick, render, engine, autoscrolling, selected, scrolls, transposed }) => {
+    scrolls.length = 0
+    for (const id of NINE) { await step(id); tick(200) }
+    await wait(SLIDE_MS)
+    assert.equal(autoscrolling(), false)
+    assert.deepEqual([selected, scrolls, transposed], [[], [], []])
+    assert.equal(engine.getSnapshot().state, 'connected', 'blocked is not an error')
+    await render({ isAnyModalOpen: false })
+    tick(1000)
+    await step('scrollDown')
+    assert.equal(scrolls.length, 1, 'the pedal works again once the dialog is closed')
+  }, { isAnyModalOpen: true })
+
+  // Typing in a field: the pedal waits, as the keys do.
+  await pedalStage(async ({ dom, step, tick, scrolls }) => {
+    const field = dom.window.document.getElementById('outside-field')
+    await act(async () => field.focus())
+    scrolls.length = 0
+    await step('scrollDown')
+    assert.equal(scrolls.length, 0)
+    await act(async () => field.blur())
+    tick(1000)
+    await step('scrollDown')
+    assert.equal(scrolls.length, 1)
+  })
 })
