@@ -31,7 +31,8 @@ export const MidiHelp: React.FC = () => (
             <p>Tap <strong>Learn</strong> next to an action, then press the pedal or button for it. It needs a connected device and waits 10 seconds.</p>
             <p>One pedal or button does one action. If it is already used, choose Replace or Cancel.</p>
             <p><strong>Clear</strong> unsets one action. <strong>Reset</strong> unsets all of them.</p>
-            <p>One press is one step. Holding or releasing a pedal does nothing more. Set a latching footswitch to momentary.</p>
+            <p>One press is one step. Holding or releasing a pedal does nothing more.</p>
+            <p>A latching pedal sends on for one press and off for the next, so it acts on every second press. Set it to momentary.</p>
           </div>
         ),
       },
@@ -48,12 +49,17 @@ export const MidiHelp: React.FC = () => (
       {
         title: 'Devices',
         defaultExpanded: false,
-        content: <p>USB and Bluetooth controllers work when your device shows them to the browser. Pair a Bluetooth controller in your device settings first.</p>,
+        content: (
+          <div className="space-y-1">
+            <p><strong>USB:</strong> plug the controller in, then switch MIDI on.</p>
+            <p><strong>Bluetooth:</strong> pair the controller in your phone or computer&apos;s Bluetooth settings first. Some browsers list it only after it is connected. If it does not show, switch the controller on and tap Check again.</p>
+          </div>
+        ),
       },
       {
         title: 'Where it works',
         defaultExpanded: false,
-        content: <p>Chrome on Android, and Chrome or Edge on a computer. It is not available on iPhone, iPad, Safari or Firefox.</p>,
+        content: <p>Chrome on Android, and Chrome or Edge on a computer. MIDI is not available on iPhone and iPad, or in Safari. Firefox shows N/A until it is tested.</p>,
       },
     ]}
   />

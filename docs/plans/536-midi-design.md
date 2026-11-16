@@ -450,3 +450,41 @@ All five were answered by the owner on 2026-11-16 (**OWNER** lines below). None 
 3. **Transpose by pedal.** It changes the song's saved TRANSPOSE_OFFSET like the on-screen buttons. OK as is? Recommended: yes; it is never mapped by default. **OWNER: allowed; never mapped by default.**
 4. **Firefox desktop.** Listed as supported but with its own permission step, untested. Show the switch (best effort) or N/A until tested? Recommended: N/A until tested. **OWNER: N/A until tested.**
 5. **Stage indicator.** Show a small "MIDI" mark on the Stage toolbar while connected, or keep Stage unchanged? Recommended: unchanged in v1. **OWNER: no MIDI indicator on the Stage toolbar in v1.**
+
+## 10. Status
+
+As of 2026-11-16, `origin/dev` at `9ac312c4e3ae0389c0e76a7f7e477fc69559a87a`. The sections above are the design as approved and are left as written; this section records what shipped.
+
+**Merged into `dev`**
+
+| Slice | Content | PR |
+|---|---|---|
+| Design | This document | #544 |
+| P2 | Stage command seam | #547 |
+| P1 | Core logic, not wired | #548 |
+| P3 | Engine, Advanced Tools row, status dialog | #549 |
+| P4 | Learn, mappings, Stage dispatch | #550 |
+| P5 | Device choice, channel filter, input monitor | #551 |
+| P6 | Close-out: help notes and this section. No behavior change | this PR |
+
+**Owner device QA.** The owner reported QA passed on the Cloudflare previews for P3, P4 and P5, with no defects. The numbers in section 4 (150 ms debounce, 8 actions per second, 500 ms settle) and the nine actions are therefore unchanged.
+
+**Deviations from this document, accepted by the owner**
+
+- `web/src/midi/loader.ts` was added (not in 2.5). It holds the switch, the status store and the only `import()` of the engine.
+- P3: the dialog header pill shows "Off" while MIDI is off. The Advanced Tools row shows no pill when off, as in 1.1.
+- `AppModal` gained an optional `onEscape`, so Esc cancels a waiting Learn or its Replace question before it closes the dialog.
+- Learn skips input from a port that is still inside its 500 ms settle time.
+- The input monitor shows only inputs Learn would capture (after the channel filter), not every message.
+- A chosen device whose id changed is found by name and maker only when exactly one connected input matches; otherwise GTAR waits for it.
+
+**Owner answers.** The five answers in section 9 stand unchanged. Firefox (desktop and Android) shows N/A.
+
+**Still UNVERIFIED on real hardware**
+
+- iPhone and iPad N/A rows (Q7).
+- Firefox N/A rows (Q8) and Firefox MIDI behavior (U11).
+- Edge (Q5, Q6, U10).
+- Installed PWA (U7, check 9).
+- E-ink Paper theme (1.4).
+- Screen readers (1.4).
