@@ -443,8 +443,10 @@ Each slice is its own later draft PR into `dev`, in this order.
 
 ## 9. Open questions for the owner
 
-1. **Latching footswitches.** Some pedals send "on" for one press and "off" for the next. With press-only detection they act on every second press. Add an "every press" option per mapping in v1, or ask players to set the pedal to momentary? Recommended: momentary only in v1; decide after Q1–Q3.
-2. **Scroll step.** Scroll up/down by pedal moves 80 px, the same as the arrow keys. Keep that, or use a bigger step for feet (for example half a screen)? Recommended: keep 80 px in v1 so nothing new is invented; revisit after QA.
-3. **Transpose by pedal.** It changes the song's saved TRANSPOSE_OFFSET like the on-screen buttons. OK as is? Recommended: yes; it is never mapped by default.
-4. **Firefox desktop.** Listed as supported but with its own permission step, untested. Show the switch (best effort) or N/A until tested? Recommended: N/A until tested.
-5. **Stage indicator.** Show a small "MIDI" mark on the Stage toolbar while connected, or keep Stage unchanged? Recommended: unchanged in v1.
+All five were answered by the owner on 2026-11-16 (**OWNER** lines below). None remain open.
+
+1. **Latching footswitches.** Some pedals send "on" for one press and "off" for the next. With press-only detection they act on every second press. Add an "every press" option per mapping in v1, or ask players to set the pedal to momentary? Recommended: momentary only in v1; decide after Q1–Q3. **OWNER: momentary only in v1; no per-mapping option.**
+2. **Scroll step.** Scroll up/down by pedal moves 80 px, the same as the arrow keys. Keep that, or use a bigger step for feet (for example half a screen)? Recommended: keep 80 px in v1 so nothing new is invented; revisit after QA. **OWNER: 80 px, the same as the arrow keys.**
+3. **Transpose by pedal.** It changes the song's saved TRANSPOSE_OFFSET like the on-screen buttons. OK as is? Recommended: yes; it is never mapped by default. **OWNER: allowed; never mapped by default.**
+4. **Firefox desktop.** Listed as supported but with its own permission step, untested. Show the switch (best effort) or N/A until tested? Recommended: N/A until tested. **OWNER: N/A until tested.**
+5. **Stage indicator.** Show a small "MIDI" mark on the Stage toolbar while connected, or keep Stage unchanged? Recommended: unchanged in v1. **OWNER: no MIDI indicator on the Stage toolbar in v1.**
