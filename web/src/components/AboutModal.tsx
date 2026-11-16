@@ -164,6 +164,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
+              <p data-testid="about-metronome-credit" className="pt-1 border-t border-app-border/40 text-[10px] text-app-muted">Metronome design based on Split Metronome by akojep</p>
             </div>
           </div>
         </div>
