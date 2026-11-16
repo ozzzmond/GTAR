@@ -54,6 +54,17 @@ test('learnableMidiInput: note on, CC at 64 or more, and program change are capt
   assert.deepEqual(Object.keys(learn(0xb0, 64, 127)).sort(), ['channel', 'number', 'type'], 'the captured input carries no value')
 })
 
+test('midiInputLabel: on-screen text with numbers as sent and note names at C4 = 60', () => {
+  assert.equal(mapping.midiInputLabel(note(60)), 'Note 60 (C4) · Ch 1')
+  assert.equal(mapping.midiInputLabel(cc(64)), 'CC 64 · Ch 1')
+  assert.equal(mapping.midiInputLabel(pc(5)), 'Program 5 · Ch 1')
+  assert.equal(mapping.midiInputLabel(note(69, 16)), 'Note 69 (A4) · Ch 16')
+  assert.equal(mapping.midiInputLabel(note(0)), 'Note 0 (C-1) · Ch 1')
+  assert.equal(mapping.midiInputLabel(note(127)), 'Note 127 (G9) · Ch 1')
+  assert.equal(mapping.midiInputLabel(note(70)), 'Note 70 (A#4) · Ch 1', 'sharps, as the Tuner spells them')
+  assert.equal(mapping.midiInputLabel(pc(0, 9)), 'Program 0 · Ch 9', 'zero-based, as the controller sends it')
+})
+
 test('lookup by type, channel and number', () => {
   const mappings = { nextSong: cc(64), prevSong: note(60), toggleAutoScroll: pc(5, 2) }
   assert.equal(mapping.findMidiAction(mappings, cc(64)), 'nextSong')

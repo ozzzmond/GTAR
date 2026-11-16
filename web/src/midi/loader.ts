@@ -1,5 +1,5 @@
 /**
- * MIDI switch, status store and lazy engine loader (#536 Slice 3). This is the only file that
+ * MIDI switch, status store and lazy engine loader (#536). This is the only file that
  * reaches ./engine, and only through import() while MIDI is ON: with MIDI off no engine code is
  * loaded, no access is requested and no listener exists. If the engine cannot load, the status
  * is Error and the rest of the app works as before.
@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react'
 import { isIosDevice } from '../utils/iosDevice'
 import { readMidiSettings, subscribeMidiSettings, writeMidiSettings } from './settings'
 import type { MidiEngine } from './engine'
+import type { MidiInput } from './mapping'
 
 export type MidiState = 'off' | 'starting' | 'allow' | 'blocked' | 'no-device' | 'connected' | 'error' | 'unavailable'
 
@@ -92,15 +93,32 @@ export function retryMidi(): void {
 
 /**
  * App start: if MIDI was left ON, connect without a prompt when access is already granted
- * (otherwise the status is Allow or Blocked). Also follows the switch from another tab.
+ * (otherwise the status is Allow or Blocked). Also follows the switch from another tab, and
+ * detaches while the page is put away (pagehide), reattaching on return if MIDI is still ON.
  * Returns the cleanup, which detaches without changing the saved choice.
  */
 export function startMidi(): () => void {
   if (!midiAvailability().available) return () => {}
   const sync = () => apply(readMidiSettings().enabled, 'quiet')
+  const putAway = () => apply(false, 'quiet')
   sync()
   const unsubscribe = subscribeMidiSettings(sync)
-  return () => { unsubscribe(); apply(false, 'quiet') }
+  window.addEventListener('pagehide', putAway)
+  window.addEventListener('pageshow', sync)
+  return () => {
+    unsubscribe()
+    window.removeEventListener('pagehide', putAway)
+    window.removeEventListener('pageshow', sync)
+    apply(false, 'quiet')
+  }
+}
+
+/**
+ * Learn: the next pedal or button press goes to `listener`, once, instead of to Stage. Returns
+ * the cancel. Does nothing while MIDI is off; switching MIDI off cancels a waiting Learn.
+ */
+export function learnMidiInput(listener: (input: MidiInput) => void): () => void {
+  return wanted && engine ? engine.learn(listener) : () => {}
 }
 
 export function getMidiSnapshot(): MidiSnapshot {

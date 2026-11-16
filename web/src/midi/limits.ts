@@ -33,6 +33,8 @@ export interface MidiLimits {
   portConnected(portId: string): void
   /** A port went away: forget its settle time and press state. */
   portDisconnected(portId: string): void
+  /** True while input from this port is still ignored after it connected. */
+  settling(portId: string): boolean
   /** Press detection. Note Off, a Control Change below 64 and a held control return null. */
   press(portId: string, message: MidiMessage): MidiInput | null
   /** Debounce and burst cap for a mapped press. True means fire now; the fire is recorded. */
@@ -63,6 +65,8 @@ export function createMidiLimits(options: MidiLimitOptions = {}): MidiLimits {
     return held
   }
 
+  const settling = (portId: string) => now() < (settleUntil.get(portId) ?? -Infinity)
+
   return {
     portConnected(portId) {
       settleUntil.set(portId, now() + settleMs)
@@ -74,8 +78,9 @@ export function createMidiLimits(options: MidiLimitOptions = {}): MidiLimits {
       heldControls.delete(portId)
     },
 
+    settling,
+
     press(portId, message) {
-      const settling = now() < (settleUntil.get(portId) ?? -Infinity)
       if (message.type === 'cc') {
         // The control's position is followed even while settling, so a pedal that reports
         // "down" at power-up does not fire on its next message; it must come back up first.
@@ -84,9 +89,9 @@ export function createMidiLimits(options: MidiLimitOptions = {}): MidiLimits {
         if (message.value < MIDI_CC_PRESS_THRESHOLD) { held.delete(control); return null }
         if (held.has(control)) return null
         held.add(control)
-        return settling ? null : { type: 'cc', channel: message.channel, number: message.number }
+        return settling(portId) ? null : { type: 'cc', channel: message.channel, number: message.number }
       }
-      if (settling) return null
+      if (settling(portId)) return null
       if (message.type === 'noteOn') return { type: 'note', channel: message.channel, number: message.number }
       if (message.type === 'pc') return { type: 'pc', channel: message.channel, number: message.number }
       return null

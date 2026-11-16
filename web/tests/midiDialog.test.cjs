@@ -1,6 +1,7 @@
-// #536 Slice 3: the status-only MIDI dialog. Status line and context button per state, the same
-// modal pattern as ProPresenter, Esc and focus return, the one "?" help, and nothing from later
-// slices (no Actions, Learn, Advanced or mappings). Real Header, fake MIDIAccess, no real device.
+// #536: the MIDI dialog frame and its Connection section. Status line and context button per
+// state, the same modal pattern as ProPresenter, Esc and focus return, the one "?" help, and
+// nothing from the Advanced slice. The Actions section (Learn, Clear, Reset) is covered in
+// midiLearnDialog.test.cjs. Real Header, fake MIDIAccess, no real device.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const h = require('./helpers/midiHeaderHarness.cjs')
@@ -49,18 +50,19 @@ test('status line, context button and header pill for every state', async () => 
   }
 })
 
-test('status-only: one Connection section, no Actions, Learn, Clear, Reset, Advanced, device or channel choice', async () => {
+test('Connection and Actions in every state; no Advanced, device or channel choice, or input monitor yet', async () => {
   for (const [state, navOptions, leftOn] of STATES) {
     const { close } = await openIn(state, navOptions, leftOn)
     try {
-      assert.deepEqual([...panel().querySelectorAll('h3')].map(heading => heading.textContent), ['Connection'], state)
+      assert.deepEqual([...panel().querySelectorAll('h3')].map(heading => heading.textContent), ['Connection', 'Actions'], state)
       assert.equal(panel().querySelectorAll('select, input, textarea, [role="switch"], details, form').length, 0, `${state}: no second switch and no choices`)
       assert.equal(panel().querySelectorAll('[data-app-modal="body"] [aria-expanded]').length, 0, `${state}: nothing in the body expands`)
-      assert.doesNotMatch(panel().textContent, /Learn|Clear|Reset|Advanced|Actions|Not set|Next song|Listen to|Channel|monitor/i, state)
+      assert.doesNotMatch(panel().textContent, /Advanced|Listen to|Channel|monitor/i, state)
       const footer = [...panel().querySelectorAll('[data-app-modal="footer"] button')].map(button => button.textContent.trim())
-      assert.deepEqual(footer, ['Close'], `${state}: the footer has Close only`)
-      const body = [...panel().querySelectorAll('[data-app-modal="body"] button')].map(button => button.textContent.trim())
-      assert.ok(body.length <= 1, `${state}: at most the one context button in the body`)
+      assert.deepEqual(footer, ['Reset', 'Close'], `${state}: the footer has Reset and Close`)
+      const section = panel().querySelector('[data-testid="midi-status"]').parentElement
+      assert.ok(section.querySelectorAll('button').length <= 1, `${state}: at most the one context button under the status line`)
+      assert.equal(panel().querySelectorAll('[data-testid^="midi-learn-"]:not([data-testid^="midi-learn-status-"])').length, 9, `${state}: nine Learn buttons`)
     } finally { await close() }
   }
 })
@@ -172,8 +174,9 @@ test('Esc closes and focus returns to the Advanced Tools button; the footer Clos
 test('keyboard: Tab stays inside the dialog and the context button works from the keyboard', async () => {
   const { close } = await openIn('off', { access: fakeAccess([pedal()]) }, false)
   try {
-    const focusable = [...panel().querySelectorAll('button')]
-    assert.deepEqual(focusable.map(button => button.getAttribute('data-testid') ?? button.getAttribute('aria-label')), ['midi-help-button', 'Close', 'midi-status-action', 'midi-panel-close'], 'tab order follows the screen')
+    // MIDI is off here, so the nine Learn buttons are disabled and out of the tab order.
+    const focusable = [...panel().querySelectorAll('button:not([disabled])')]
+    assert.deepEqual(focusable.map(button => button.getAttribute('data-testid') ?? button.getAttribute('aria-label')), ['midi-help-button', 'Close', 'midi-status-action', 'midi-reset', 'midi-panel-close'], 'tab order follows the screen')
     focusable.at(-1).focus()
     await key('Tab')
     assert.equal(document.activeElement, focusable[0], 'Tab wraps to the first control')
@@ -190,7 +193,7 @@ test('status line is a polite live region; MIDI controls are 44px; only theme to
     try {
       assert.equal(status().getAttribute('role'), 'status')
       assert.equal(status().getAttribute('aria-live'), 'polite')
-      assert.equal(panel().querySelectorAll('[aria-live]').length, 1, 'one live region')
+      for (const region of panel().querySelectorAll('[aria-live]')) assert.equal(region.getAttribute('aria-live'), 'polite', 'every live region is polite')
       if (action()) for (const cls of ['min-h-11', 'min-w-11']) assert.ok(action().classList.contains(cls), `${state}: button ${cls}`)
       assert.ok(panel().querySelector('[data-testid="midi-panel-close"]').classList.contains('min-h-11'))
       const body = panel().querySelector('[data-app-modal="body"]')
@@ -221,9 +224,12 @@ test('help: one "?" in the header opens the MIDI help; Esc closes the help first
     await click(button)
     const help = q('[data-testid="midi-help"]')
     assert.ok(help)
-    assert.match(help.textContent, /does not control Stage yet/, 'the help says what this version does not do')
+    assert.match(help.textContent, /lets it control Stage\. Nothing is set until you teach it with Learn\./)
+    assert.match(help.textContent, /Replace or Cancel/)
+    assert.match(help.textContent, /Holding or releasing a pedal does nothing more/)
+    assert.match(help.textContent, /does nothing while a dialog or menu is open, or while you follow a Band Sync leader/)
     assert.match(help.textContent, /not available on iPhone, iPad, Safari or Firefox/)
-    assert.doesNotMatch(help.textContent, /Learn|mapping|seamless|powerful|effortless|!/i, 'short plain text')
+    assert.doesNotMatch(help.textContent, /seamless|powerful|effortless|!/i, 'short plain text')
     await key('Escape')
     assert.equal(q('[data-testid="midi-help"]'), null)
     assert.ok(panel(), 'the dialog stays open')

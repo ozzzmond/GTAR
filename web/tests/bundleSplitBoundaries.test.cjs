@@ -27,9 +27,9 @@ test('chord voicing catalog is lazy in StageView; only its type is imported stat
   assert.match(stage, /import\('\.\.\/utils\/chordDictionary'\)/)
 })
 
-// #536 Slice 3: MIDI is wired in behind its switch. The engine (the only file that touches Web
-// MIDI) is reached through one dynamic import() in the loader, so it stays out of the startup
-// chunks and is not loaded while MIDI is off. MIDI cannot move Stage yet.
+// #536: MIDI is wired in behind its switch. The engine (the only file that touches Web MIDI, and
+// the only one that reaches Stage) is loaded through one dynamic import() in the loader, so it
+// stays out of the startup chunks and is not loaded while MIDI is off.
 test('MIDI engine is lazy: only the loader imports web/src/midi/engine, and only dynamically', () => {
   const root = path.join(__dirname, '..', 'src')
   const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
@@ -70,7 +70,8 @@ test('MIDI engine is lazy: only the loader imports web/src/midi/engine, and only
   }
   const engine = code(path.join(midiDir, 'engine.ts'))
   assert.equal(engine.match(/requestMIDIAccess\(([^)]*)\)/)?.[1], '', 'access is requested with no options')
-  assert.deepEqual(specifiers(path.join(midiDir, 'engine.ts')).sort(), ['./loader', './settings'], 'the engine imports its settings constants and loader types only')
+  assert.deepEqual(specifiers(path.join(midiDir, 'engine.ts')).sort(), ['../utils/stageCommands', './limits', './loader', './mapping', './message', './settings'],
+    'the engine imports the Stage command seam, its own siblings and loader types only')
   assert.match(engine, /^import type \{[^}]+\} from '\.\/loader'$/m)
 
   // The Slice 1 logic stays pure: siblings only.
@@ -80,21 +81,33 @@ test('MIDI engine is lazy: only the loader imports web/src/midi/engine, and only
   }
 })
 
-test('MIDI cannot move Stage in this slice: no stageCommands, nothing in StageView, no dispatch', () => {
+test('MIDI moves Stage through one door: the engine calls stageCommands.run(), and nothing else in MIDI reaches Stage', () => {
   const root = path.join(__dirname, '..', 'src')
   const midiDir = path.join(root, 'midi')
   const code = file => fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '')
   for (const name of fs.readdirSync(midiDir)) {
     const source = code(path.join(midiDir, name))
-    assert.doesNotMatch(source, /stageCommands|runStageCommand|StageView/, `${name} does not reach Stage`)
-    if (!['mapping.ts', 'limits.ts', 'settings.ts'].includes(name)) assert.doesNotMatch(source, /from '\.\/(actions|mapping|limits|message)'/, `${name} uses no mapping or dispatch logic yet`)
+    assert.doesNotMatch(source, /runStageCommand|registerStageCommandRunner|StageView/, `${name} does not reach into Stage`)
+    if (name !== 'engine.ts') assert.doesNotMatch(source, /stageCommands/, `${name} cannot move Stage`)
+    // Press limits and message parsing run in the lazy engine only; the dialog and row only show and edit mappings.
+    if (!['engine.ts', 'limits.ts', 'mapping.ts'].includes(name)) assert.doesNotMatch(source, /from '\.\/(limits|message)'/, `${name} does not handle MIDI messages`)
   }
+  const engine = code(path.join(midiDir, 'engine.ts'))
+  assert.deepEqual(engine.match(/stageCommands\.\w+\(/g), ['stageCommands.run('], 'one call, and only to run()')
+  assert.match(engine, /^import \{ stageCommands \} from '\.\.\/utils\/stageCommands'$/m, 'the engine takes the runner entry only, not the registry')
   for (const file of ['components/StageView.tsx', 'utils/stageCommands.ts', 'components/StageToolRows.tsx', 'stageTools/settings.ts']) {
     assert.doesNotMatch(read(`src/${file}`), /from\s+['"][^'"]*\/midi(\/|['"])|requestMIDIAccess|onmidimessage/, `${file} has no MIDI code`)
   }
-  // Nothing is given the engine's message sink, so a received message goes nowhere.
-  assert.doesNotMatch(code(path.join(midiDir, 'loader.ts')), /onMessage/)
+  // The loader hands the engine a status callback only; Learn is the one other thing it passes on.
   assert.equal(read('src/midi/loader.ts').match(/createMidiEngine\(\{ onChange: [^}]+\} \}\)/)?.length, 1, 'the engine is created with a status callback only')
+  assert.deepEqual(code(path.join(midiDir, 'loader.ts')).match(/engine\??\.\w+\(/g).sort(), ['engine.learn(', 'engine.start(', 'engine?.stop('])
+  // Mappings are changed in one place, through the Slice 1 functions.
+  const dialog = code(path.join(midiDir, 'MidiDialog.tsx'))
+  for (const used of ['assignMidiMapping(', 'clearMidiMapping(', 'resetMidiMappings(', 'writeMidiSettings(']) assert.ok(dialog.includes(used), `the dialog uses ${used}`)
+  for (const name of fs.readdirSync(midiDir).filter(name => !['MidiDialog.tsx', 'mapping.ts', 'settings.ts', 'loader.ts'].includes(name))) {
+    assert.doesNotMatch(code(path.join(midiDir, name)), /assignMidiMapping|clearMidiMapping|resetMidiMappings|writeMidiSettings/, `${name} never changes a mapping`)
+  }
+  assert.doesNotMatch(code(path.join(midiDir, 'loader.ts')), /assignMidiMapping|clearMidiMapping|resetMidiMappings/)
 })
 
 test('MIDI settings stay local: the key is not in backups or cloud sync, and headers are untouched', () => {

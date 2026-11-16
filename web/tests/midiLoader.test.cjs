@@ -1,4 +1,4 @@
-// #536 Slice 3: the MIDI switch, status store and lazy engine loader. OFF loads nothing and asks
+// #536: the MIDI switch, status store and lazy engine loader. OFF loads nothing and asks
 // nothing; N/A detection; the saved switch; app start reconnects without a prompt; an engine that
 // cannot load leaves the app working. Fake MIDIAccess, no real device.
 const { test } = require('node:test')
@@ -108,6 +108,81 @@ test('app start with MIDI left ON and access granted: reconnects without a new p
   assert.equal(midi.getMidiSnapshot().state, 'off')
   assert.equal(listenerCount(access), 0)
   assert.equal(saved().enabled, true)
+})
+
+test('page put away (pagehide): detaches as for OFF and keeps the saved choice; on return it reattaches without a prompt', async () => {
+  localStorage.clear()
+  leftOn()
+  const pedal = fakeInput('p1', 'FS-1-WL')
+  const { nav, midi, access } = page({ access: fakeAccess([pedal]), permission: 'granted' }, { keep: true })
+  const stop = midi.startMidi()
+  await settle()
+  assert.equal(midi.getMidiSnapshot().state, 'connected')
+  const learned = []
+  midi.learnMidiInput(input => learned.push(input))
+
+  window.dispatchEvent(new window.Event('pagehide'))
+  assert.equal(midi.getMidiSnapshot().state, 'off')
+  assert.deepEqual([listenerCount(access), access.onstatechange, pedal.closes], [0, null, 1])
+  assert.equal(saved().enabled, true, 'the saved choice is untouched')
+
+  window.dispatchEvent(new window.Event('pageshow'))
+  await settle()
+  assert.deepEqual(midi.getMidiSnapshot(), { state: 'connected', devices: ['FS-1-WL'] })
+  assert.deepEqual([listenerCount(access), pedal.sets], [1, 2], 'attached once')
+  assert.equal(nav.queries.length, 2, 'quiet: the permission is checked, the player is not asked')
+  pedal.send([0x90, 60, 100])
+  assert.deepEqual(learned, [], 'a Learn from before the page was put away is gone')
+
+  // The first pageshow of a page view, with MIDI already running, starts nothing twice.
+  window.dispatchEvent(new window.Event('pageshow'))
+  await settle()
+  assert.deepEqual([nav.requests.length, pedal.sets], [2, 2])
+
+  // Switched off: coming back does not turn it on. After the cleanup the events do nothing.
+  midi.setMidiEnabled(false)
+  window.dispatchEvent(new window.Event('pagehide'))
+  window.dispatchEvent(new window.Event('pageshow'))
+  await settle()
+  assert.equal(midi.getMidiSnapshot().state, 'off')
+  midi.setMidiEnabled(true)
+  await settle()
+  stop()
+  window.dispatchEvent(new window.Event('pageshow'))
+  await settle()
+  assert.equal(midi.getMidiSnapshot().state, 'off', 'no listener left behind by the cleanup')
+  assert.equal(listenerCount(access), 0)
+  midi.setMidiEnabled(false)
+})
+
+test('Learn through the loader: nothing while MIDI is off; one capture while connected', async () => {
+  const pedal = fakeInput('p1', 'FS-1-WL')
+  const { midi } = page({ access: fakeAccess([pedal]) })
+  const learned = []
+  const cancelOff = midi.learnMidiInput(input => learned.push(input))
+  assert.equal(typeof cancelOff, 'function')
+  assert.doesNotThrow(cancelOff)
+  assert.equal(engineLoaded(), false, 'Learn never loads the engine')
+
+  const realNow = performance.now
+  let at = 1000
+  performance.now = () => at
+  try {
+    midi.setMidiEnabled(true)
+    await settle()
+    at += 500
+    const cancel = midi.learnMidiInput(input => learned.push(input))
+    pedal.send([0xb0, 64, 127])
+    pedal.send([0x90, 60, 100])
+    assert.deepEqual(learned, [{ type: 'cc', channel: 1, number: 64 }])
+    cancel()
+
+    midi.learnMidiInput(input => learned.push(input))
+    midi.setMidiEnabled(false)
+    assert.doesNotThrow(() => pedal.send([0x90, 61, 100]))
+    assert.equal(learned.length, 1, 'MIDI off ends Learn')
+    assert.equal(typeof midi.learnMidiInput(() => learned.push('off'))(), 'undefined', 'off again: a no-op cancel')
+  } finally { performance.now = realNow; midi.setMidiEnabled(false) }
 })
 
 test('app start with MIDI left ON and no grant: Allow or Blocked, the browser is not asked until a tap', async () => {
