@@ -257,8 +257,33 @@ test('touch targets and reduced motion: 44px controls, no animation on the panel
       assert.match(toggle(id).className, /min-w-\[44px\] min-h-\[44px\]/)
       await click(toggle(id)); await click(icon(id))
       assert.match(icon(id).className, /min-h-11 min-w-11/)
-      for (const control of panel(id).querySelectorAll('button, input')) assert.match(control.className, /min-h-11/, `${id}: ${control.getAttribute('aria-label') ?? control.textContent}`)
+      for (const control of panel(id).querySelectorAll('button, input')) {
+        // The shared "?" button is 32px with a -inset-1.5 hit area, which reaches 44px.
+        const pattern = control.getAttribute('data-testid') === `${id}-help-button` ? /before:-inset-1\.5/ : /min-h-11/
+        assert.match(control.className, pattern, `${id}: ${control.getAttribute('aria-label') ?? control.textContent}`)
+      }
       assert.doesNotMatch(panel(id).innerHTML, /animate-/, 'nothing to animate under reduced motion')
+    }
+  })
+})
+
+test('help: each tool panel has its own "?" next to Close; it opens a help dialog and Escape closes only the help', async () => {
+  await ui(async ({ toggle, icon, panel, click, key, q }) => {
+    await click(toggle('metronome')); await click(toggle('tuner'))
+    for (const [id, title] of [['metronome', 'Metronome'], ['tuner', 'Tuner']]) {
+      await click(icon(id))
+      const help = q(`[data-testid="${id}-help-button"]`)
+      assert.ok(help, `${id} panel has a help button`)
+      assert.ok(panel(id).contains(help), 'the "?" sits inside the panel header')
+      assert.equal(q(`[data-testid="${id === 'tuner' ? 'metronome' : 'tuner'}-help-button"]`), null, 'only its own help')
+      await click(help)
+      const popup = q(`[data-testid="${id}-help"]`)
+      assert.ok(popup, `${id} help opens`)
+      assert.match(popup.textContent, new RegExp(title))
+      await key(document.body, 'Escape')
+      assert.equal(q(`[data-testid="${id}-help"]`), null, 'Escape closes the help')
+      assert.ok(panel(id), 'the panel stays open after closing the help')
+      await click(q(`[aria-label="Close ${title}"]`))
     }
   })
 })

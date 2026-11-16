@@ -14,6 +14,8 @@ export interface StageTool {
   Icon: LucideIcon
   /** Panel body. The shell supplies the frame, the header and Close. */
   Panel: ComponentType
+  /** Optional "?" help, shown in the panel header next to Close. */
+  Help?: ComponentType<{ prefer?: 'below' | 'above' }>
   /** Releases everything the tool holds (sound, microphone). Runs when it is switched OFF. */
   stop(): void
 }
