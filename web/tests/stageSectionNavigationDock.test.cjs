@@ -360,8 +360,11 @@ test('EXISTING_STAGE_CONTINUITY_REGRESSION: PageUp/PageDown section shortcuts, L
   assert.ok(stageViewSource.includes("e.code === 'Space'"), 'Spacebar shortcut preserved')
 
   // Transpose steppers translate displayed semitones to bounded stored offsets.
-  assert.ok(stageViewSource.includes('onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))'), 'Transpose down preserved')
-  assert.ok(stageViewSource.includes('onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))'), 'Transpose up preserved')
+  // #536: the four steppers share handleTransposeStep, which keeps the same displayed-to-stored translation.
+  assert.ok(stageViewSource.includes('onTransposeChange(context.toStoredOffset(context.displayOffset + step))'), 'Transpose step translation preserved')
+  assert.ok(stageViewSource.includes('const context = transposeContext(song, transposeOffset)'), 'Transpose step uses the song key context')
+  assert.equal(stageViewSource.split('onClick={() => handleTransposeStep(-1)}').length - 1, 2, 'Transpose down preserved on both steppers')
+  assert.equal(stageViewSource.split('onClick={() => handleTransposeStep(1)}').length - 1, 2, 'Transpose up preserved on both steppers')
 
   // Setlist drawer & pill
   assert.ok(stageViewSource.includes('onOpenSetlistDrawer()'), 'Setlist drawer action preserved')

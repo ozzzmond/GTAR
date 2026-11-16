@@ -282,21 +282,28 @@ test('PAGEUP_PAGEDOWN_SECTION_NAVIGATION: Repurposed PageUp/PageDown navigates s
   const stageViewPath = path.resolve(__dirname, '../src/components/StageView.tsx')
   const code = fs.readFileSync(stageViewPath, 'utf8').replace(/\r\n/g, '\n')
 
+  // #536: each key routes through the Stage command seam, and each command calls the same handler as before.
   // Verify PageUp/PageDown section routing
-  assert.ok(code.includes("if (e.key === 'PageDown') {\n        e.preventDefault()\n        handleNextSection()\n        return\n      }"), 'PageDown must call handleNextSection with preventDefault')
-  assert.ok(code.includes("if (e.key === 'PageUp') {\n        e.preventDefault()\n        handlePrevSection()\n        return\n      }"), 'PageUp must call handlePrevSection with preventDefault')
+  assert.ok(code.includes("if (e.key === 'PageDown') {\n        e.preventDefault()\n        runStageCommand('nextSection', e.target)\n        return\n      }"), 'PageDown must run nextSection with preventDefault')
+  assert.ok(code.includes("case 'nextSection': handleNextSection(); return true"), 'nextSection must call handleNextSection')
+  assert.ok(code.includes("if (e.key === 'PageUp') {\n        e.preventDefault()\n        runStageCommand('prevSection', e.target)\n        return\n      }"), 'PageUp must run prevSection with preventDefault')
+  assert.ok(code.includes("case 'prevSection': handlePrevSection(); return true"), 'prevSection must call handlePrevSection')
 
   // Verify no PageUp/PageDown song navigation remains
-  const songNavBlock = code.match(/\/\/ ArrowRight or 'n':[\s\S]*?handlePrevSong\(\)\s*return\s*\}/)?.[0] || ''
+  const songNavBlock = code.match(/\/\/ ArrowRight or 'n':[\s\S]*?runStageCommand\('prevSong', e\.target\)\s*return\s*\}/)?.[0] || ''
+  assert.ok(songNavBlock.includes("runStageCommand('nextSong', e.target)"), 'Song navigation block must be found')
   assert.ok(!songNavBlock.includes('PageDown'), 'Song navigation block must not bind PageDown')
   assert.ok(!songNavBlock.includes('PageUp'), 'Song navigation block must not bind PageUp')
 
   // Verify ArrowRight / n and ArrowLeft / p remain mapped to songs
-  assert.ok(code.includes("if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {\n        e.preventDefault()\n        handleNextSong()\n        return\n      }"), 'ArrowRight/n/N must advance song')
-  assert.ok(code.includes("if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {\n        e.preventDefault()\n        handlePrevSong()\n        return\n      }"), 'ArrowLeft/p/P must retreat song')
+  assert.ok(code.includes("if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {\n        e.preventDefault()\n        runStageCommand('nextSong', e.target)\n        return\n      }"), 'ArrowRight/n/N must advance song')
+  assert.ok(code.includes("case 'nextSong': handleNextSong(); return true"), 'nextSong must call handleNextSong')
+  assert.ok(code.includes("if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {\n        e.preventDefault()\n        runStageCommand('prevSong', e.target)\n        return\n      }"), 'ArrowLeft/p/P must retreat song')
+  assert.ok(code.includes("case 'prevSong': handlePrevSong(); return true"), 'prevSong must call handlePrevSong')
 
   // Verify Space remains autoscroll toggle
-  assert.ok(code.includes("if (e.code === 'Space' || e.key === ' ') {\n        e.preventDefault()\n        handleToggleAutoScroll()\n        return\n      }"), 'Space must toggle autoscroll')
+  assert.ok(code.includes("if (e.code === 'Space' || e.key === ' ') {\n        e.preventDefault()\n        runStageCommand('toggleAutoScroll', e.target)\n        return\n      }"), 'Space must toggle autoscroll')
+  assert.ok(code.includes("case 'toggleAutoScroll': handleToggleAutoScroll(); return true"), 'toggleAutoScroll must call handleToggleAutoScroll')
 
   // Verify ArrowUp / ArrowDown remain normal vertical scroll
   assert.ok(code.includes("if (e.key === 'ArrowUp') {\n        e.preventDefault()"), 'ArrowUp must prevent default and handle vertical scroll/speed')
