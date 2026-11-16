@@ -1,13 +1,7 @@
-/** Reference tones for the Tuner: one string sounds at a time until it is tapped again or stopped. */
-export const GUITAR_STRINGS = [
-  { name: 'E2 (6th)', freq: 82.41 },
-  { name: 'A2 (5th)', freq: 110.0 },
-  { name: 'D3 (4th)', freq: 146.83 },
-  { name: 'G3 (3rd)', freq: 196.0 },
-  { name: 'B3 (2nd)', freq: 246.94 },
-  { name: 'E4 (1st)', freq: 329.63 },
-] as const
-
+/**
+ * Reference tones for the Tuner: one string sounds at a time until it is tapped again or stopped.
+ * Frequencies come from the preset data (tunerPresets.ts, tunerMath.ts), never hardcoded here.
+ */
 class TunerTone {
   private audioCtx: AudioContext | null = null
   private osc: OscillatorNode | null = null

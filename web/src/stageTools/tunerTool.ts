@@ -1,5 +1,6 @@
 import { Guitar } from 'lucide-react'
 import { TunerPanel } from '../components/TunerPanel'
+import { tunerMic } from '../utils/tunerEngine'
 import { tunerTone } from '../utils/tunerTone'
 import type { StageTool } from './types'
 
@@ -8,5 +9,8 @@ export const tunerTool: StageTool = {
   name: 'Tuner',
   Icon: Guitar,
   Panel: TunerPanel,
-  stop: () => tunerTone.release(),
+  stop: () => {
+    tunerMic.stop()
+    tunerTone.release()
+  },
 }
