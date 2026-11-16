@@ -263,6 +263,7 @@ New or renamed tests await a human choice of primary category.
 - [loggerCapture.test.cjs](loggerCapture.test.cjs)
 - [manualCloudBackup.test.cjs](manualCloudBackup.test.cjs)
 - [manualCloudBackupUi.test.cjs](manualCloudBackupUi.test.cjs)
+- [metronomeEngine.test.cjs](metronomeEngine.test.cjs)
 - [multiTagFoundation.test.cjs](multiTagFoundation.test.cjs)
 - [musicExplorerDrawer.test.cjs](musicExplorerDrawer.test.cjs)
 - [nativeTooltipToPopover.test.cjs](nativeTooltipToPopover.test.cjs)
