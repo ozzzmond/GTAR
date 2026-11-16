@@ -304,6 +304,7 @@ New or renamed tests await a human choice of primary category.
 - [stageCast2Resilience.test.cjs](stageCast2Resilience.test.cjs)
 - [stageCast2Runtime.test.cjs](stageCast2Runtime.test.cjs)
 - [stageCast2Ui.test.cjs](stageCast2Ui.test.cjs)
+- [stageCommandSeam.test.cjs](stageCommandSeam.test.cjs)
 - [stagePreviewGtar1.test.cjs](stagePreviewGtar1.test.cjs)
 - [stageToolsSplit.test.cjs](stageToolsSplit.test.cjs)
 - [storageQuotaRecovery.test.cjs](storageQuotaRecovery.test.cjs)

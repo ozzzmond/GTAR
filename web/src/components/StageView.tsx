@@ -54,6 +54,7 @@ import { formatTempoLabel } from '../utils/chordProMetadata'
 import { metronome } from '../utils/metronome'
 import { StageToolButtons } from './StageToolButtons'
 import { stageCast } from '../utils/stageCast'
+import { registerStageCommandRunner, type StageCommand } from '../utils/stageCommands'
 import type { ChordVoicing } from '../utils/chordDictionary'
 
 // The voicing catalog (~270 KB of chord data) loads in its own chunk, preloaded when Stage mounts (#85).
@@ -136,6 +137,12 @@ export const LINE_SPACING_OPTIONS: { value: StageLineSpacing; label: string }[] 
   { value: 'normal', label: 'Normal' },
   { value: 'relaxed', label: 'Relaxed' },
 ]
+
+/** Stage commands never fire while the player is typing in a field (same rule as the keyboard listener). */
+const isTypingTarget = (target: EventTarget | null): boolean =>
+  target instanceof HTMLInputElement ||
+  target instanceof HTMLTextAreaElement ||
+  Boolean((target as HTMLElement | null)?.isContentEditable)
 
 export const StageView: React.FC<StageViewProps> = ({
   song,
@@ -1122,6 +1129,48 @@ export const StageView: React.FC<StageViewProps> = ({
   const handlePrevSong = useCallback(() => triggerSongSlide('prev'), [triggerSongSlide])
   const handleNextSong = useCallback(() => triggerSongSlide('next'), [triggerSongSlide])
 
+  // Manual scroll nudge: one arrow-key step (80 px).
+  const handleNudgeScroll = useCallback((direction: 'up' | 'down') => {
+    scrollContainerRef.current?.scrollBy({ top: direction === 'up' ? -80 : 80, behavior: 'smooth' })
+  }, [])
+
+  // One semitone from the displayed offset. The key context is recomputed on press (same pure
+  // function as keyContext below) so this callback only changes with the song or its offset.
+  const handleTransposeStep = useCallback((step: 1 | -1) => {
+    const context = transposeContext(song, transposeOffset)
+    onTransposeChange(context.toStoredOffset(context.displayOffset + step))
+  }, [song, transposeOffset, onTransposeChange])
+
+  // Stage command seam (#536): the keyboard listener and utils/stageCommands both end here, so
+  // every route passes the same typing and overlay guards and reaches the same handlers.
+  const runStageCommand = useCallback((command: StageCommand, target: EventTarget | null = document.activeElement): boolean => {
+    if (isTypingTarget(target) || isAnyOverlayActive) return false
+    switch (command) {
+      case 'nextSong': handleNextSong(); return true
+      case 'prevSong': handlePrevSong(); return true
+      case 'nextSection': handleNextSection(); return true
+      case 'prevSection': handlePrevSection(); return true
+      case 'toggleAutoScroll': handleToggleAutoScroll(); return true
+      case 'scrollUp': handleNudgeScroll('up'); return true
+      case 'scrollDown': handleNudgeScroll('down'); return true
+      case 'transposeUp': handleTransposeStep(1); return true
+      case 'transposeDown': handleTransposeStep(-1); return true
+      default: return false
+    }
+  }, [
+    isAnyOverlayActive,
+    handleNextSong,
+    handlePrevSong,
+    handleNextSection,
+    handlePrevSection,
+    handleToggleAutoScroll,
+    handleNudgeScroll,
+    handleTransposeStep,
+  ])
+
+  // Registered while Stage is mounted; removed on unmount so outside callers get false.
+  useEffect(() => registerStageCommandRunner(runStageCommand), [runStageCommand])
+
   // Pinch-to-Zoom & Interactive Touch Drag Physics Gesture Listener
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1406,34 +1455,34 @@ export const StageView: React.FC<StageViewProps> = ({
       // Spacebar: Toggle Auto-Scroll (Play / Pause)
       if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault()
-        handleToggleAutoScroll()
+        runStageCommand('toggleAutoScroll', e.target)
         return
       }
 
       // ArrowRight or 'n': Next song in setlist or library
       if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {
         e.preventDefault()
-        handleNextSong()
+        runStageCommand('nextSong', e.target)
         return
       }
 
       // ArrowLeft or 'p': Previous song in setlist or library
       if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {
         e.preventDefault()
-        handlePrevSong()
+        runStageCommand('prevSong', e.target)
         return
       }
 
       // PageUp / PageDown: Navigate structural sections; prevents browser default scroll
       if (e.key === 'PageDown') {
         e.preventDefault()
-        handleNextSection()
+        runStageCommand('nextSection', e.target)
         return
       }
 
       if (e.key === 'PageUp') {
         e.preventDefault()
-        handlePrevSection()
+        runStageCommand('prevSection', e.target)
         return
       }
 
@@ -1442,8 +1491,8 @@ export const StageView: React.FC<StageViewProps> = ({
         e.preventDefault()
         if (e.shiftKey) {
           handleAdjustSpeed(Math.min(180, scrollSpeed + 5))
-        } else if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollBy({ top: -80, behavior: 'smooth' })
+        } else {
+          runStageCommand('scrollUp', e.target)
         }
         return
       }
@@ -1453,8 +1502,8 @@ export const StageView: React.FC<StageViewProps> = ({
         e.preventDefault()
         if (e.shiftKey) {
           handleAdjustSpeed(Math.max(5, scrollSpeed - 5))
-        } else if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollBy({ top: 80, behavior: 'smooth' })
+        } else {
+          runStageCommand('scrollDown', e.target)
         }
         return
       }
@@ -1487,6 +1536,7 @@ export const StageView: React.FC<StageViewProps> = ({
     handleToggleAutoScroll,
     handleAdjustSpeed,
     isAnyOverlayActive,
+    runStageCommand,
     bandRemote,
     captureFontResizeAnchor,
   ])
@@ -1952,7 +2002,7 @@ export const StageView: React.FC<StageViewProps> = ({
           )}
           <button
             type="button"
-            onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
+            onClick={() => handleTransposeStep(-1)}
             className="sr-only"
             aria-label="Step Key Down (-1 semitone)"
           >
@@ -1960,7 +2010,7 @@ export const StageView: React.FC<StageViewProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
+            onClick={() => handleTransposeStep(1)}
             className="sr-only"
             aria-label="Step Key Up (+1 semitone)"
           >
@@ -2416,7 +2466,7 @@ export const StageView: React.FC<StageViewProps> = ({
             {/* Transpose - */}
             <button
               type="button"
-              onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset - 1))}
+              onClick={() => handleTransposeStep(-1)}
               aria-label="Transpose down one semitone"
               data-testid="stage-bottom-transpose-down-btn"
               className="p-3 min-w-[44px] min-h-[44px] rounded-2xl active:scale-95 flex items-center justify-center transition-all border text-app-text hover:text-app-action"
@@ -2454,7 +2504,7 @@ export const StageView: React.FC<StageViewProps> = ({
             {/* Transpose + */}
             <button
               type="button"
-              onClick={() => onTransposeChange(keyContext.toStoredOffset(keyContext.displayOffset + 1))}
+              onClick={() => handleTransposeStep(1)}
               aria-label="Transpose up one semitone"
               data-testid="stage-bottom-transpose-up-btn"
               className="p-3 min-w-[44px] min-h-[44px] rounded-2xl active:scale-95 flex items-center justify-center transition-all border text-app-text hover:text-app-action"
