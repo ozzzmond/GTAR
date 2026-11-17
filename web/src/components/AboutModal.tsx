@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { X, Info, ExternalLink, ShieldCheck, HardDrive } from 'lucide-react'
 import {
   GTAR_APP_VERSION,
@@ -13,12 +13,46 @@ import {
   formatPreviewIdentity,
 } from '../utils/headerFormatters'
 import { isDevEnv } from '../utils/env'
+import { checkForUpdates, describeUpdateCheck } from '../utils/pwaUpdate'
 import devMascot from '../assets/bebegirl1-transparent.png'
 import prodMascot from '../assets/bebeboy-transparent.png'
 
 interface AboutModalProps {
   isOpen: boolean
   onClose: () => void
+}
+
+// Mounted only while About is open, so a past result is never shown again later.
+const AboutUpdateCheck: React.FC = () => {
+  const [checking, setChecking] = useState(false)
+  const [message, setMessage] = useState('')
+
+  const handleCheck = async () => {
+    setChecking(true)
+    setMessage('Checking…')
+    try {
+      setMessage(describeUpdateCheck(await checkForUpdates()))
+    } catch {
+      setMessage(describeUpdateCheck({ status: 'failed' }))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="col-span-2 pt-2 border-t border-app-border/40 flex items-center justify-between gap-3 font-sans">
+      <span data-testid="about-update-status" role="status" aria-live="polite" className="text-app-text min-w-0">{message}</span>
+      <button
+        type="button"
+        data-testid="about-check-updates"
+        onClick={handleCheck}
+        disabled={checking}
+        className="min-h-11 shrink-0 px-3 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-default"
+      >
+        Check for updates
+      </button>
+    </div>
+  )
 }
 
 export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
@@ -132,6 +166,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
                   <span className="text-app-heading block text-[10px] truncate">{formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}</span>
                 </div>
               )}
+              <AboutUpdateCheck />
             </div>
           </div>
 
