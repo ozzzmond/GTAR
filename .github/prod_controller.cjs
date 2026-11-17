@@ -61,6 +61,7 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   must(controllerRef === 'refs/heads/main', 'Dispatch reviewed main controller only')
   must(/^[0-9a-f]{40}$/.test(expectedSha), 'expected_sha must be full lowercase SHA')
   const parsed = parseDevTag(tag)
+  must(parsed.promotable, 'NON_PROMOTABLE: dev.0 is a baseline stamp, not a promotion checkpoint')
   must(parsed.prodTag !== ABANDONED_PROD.tag && expectedSha !== ABANDONED_PROD.sha, 'Abandoned PROD release cannot be reused; new identity required')
   const checkpoint = inspectCheckpoint(root, tag)
   must(checkpoint.promotable !== false, 'Checkpoint metadata mismatch is not promotable')
@@ -72,7 +73,7 @@ function plan(root, tag, expectedSha, controllerRef, controllerSha) {
   must(mainSha !== expectedSha, 'main already equals checkpoint')
   git('merge-base', '--is-ancestor', mainSha, expectedSha)
   const tags = git('tag', '--list').split('\n').filter(Boolean)
-  const devTags = tags.flatMap(t => { try { return [parseDevTag(t)] } catch { return [] } })
+  const devTags = tags.flatMap(t => { try { const p = parseDevTag(t); return p.promotable ? [p] : [] } catch { return [] } })
     .sort((a, b) => compareDevTags(b, a))
   must(devTags[0]?.tag === tag, `Not latest canonical DEV (numeric tags only): latest ${devTags[0]?.tag}; candidate ${tag} maps to ${parsed.prodTag}`)
   must(!tags.includes(parsed.prodTag), 'PROD tag collision; never overwrite')
@@ -270,6 +271,7 @@ function classify(refs, p) {
   return 'AMBIGUOUS_REFS_MANUAL_REVIEW'
 }
 function promote(root, p, runner = spawnSync, inspect = remoteRefs) {
+  must(parseDevTag(p.tag).promotable, 'NON_PROMOTABLE: dev.0 baseline cannot be promoted')
   const before = inspect(root)
   must(before['refs/heads/main'] === p.mainSha && before['refs/heads/dev'] === p.sha && !before[`refs/tags/${p.prodTag}`], 'Refs stale before push')
   // pre-push receives server-advertised old SHA; git receive-pack CAS rejects a later race.
@@ -313,6 +315,8 @@ async function main(mode, e = process.env) {
     }
     emit({ state: 'PROD_PROMOTED_BUT_UNVERIFIED', reason: last }); throw new Error(last)
   }
+  // Reject a baseline before refresh can mutate local release refs.
+  must(parseDevTag(e.DEV_TAG).promotable, 'NON_PROMOTABLE: dev.0 baseline cannot be promoted')
   refresh(root)
   const p = plan(root, e.DEV_TAG, e.EXPECTED_SHA, e.CONTROLLER_REF, e.CONTROLLER_SHA)
   const refs = scopedRefs(remoteRefs(root), p)

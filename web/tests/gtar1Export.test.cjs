@@ -7,7 +7,7 @@ const E = require('../scripts/gtar1-export.cjs')
 test('GTAR PROD v1.2.N maps to GTAR1 v1.0.N and rejects everything else', () => {
   assert.deepEqual(E.mapSourceTag('v1.2.0'), { sourceTag: 'v1.2.0', gtar1Tag: 'v1.0.0', version: '1.0.0' })
   assert.equal(E.mapSourceTag('v1.2.17').gtar1Tag, 'v1.0.17')
-  for (const bad of ['v1.1.141', 'v1.2.01', 'v1.2.0-dev.1', 'v1.1.0-dev.1', '1.2.0', 'v1.3.0', '', undefined]) {
+  for (const bad of ['v1.1.141', 'v1.2.01', 'v1.2.0-dev.1', 'v1.1.0-dev.1', 'v1.1.4-dev.0', '1.2.0', 'v1.3.0', '', undefined]) {
     assert.throws(() => E.mapSourceTag(bad), /canonical GTAR PROD tag/, String(bad))
   }
 })

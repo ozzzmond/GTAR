@@ -68,7 +68,7 @@ function resolveReleaseIdentity(root, env = process.env, gitOverride) {
   // never change origin or trust its URL; only numeric R2 DEV tags may refresh.
   fetchReleaseTags(git, CANONICAL_REPOSITORY)
   const tags = git('tag', '--points-at', 'HEAD').split('\n')
-  const candidates = tags.flatMap(t => { try { const p = parseDevTag(t); return HISTORICAL_TAG_EXCEPTIONS[t] ? [] : [p] } catch { return [] } })
+  const candidates = tags.flatMap(t => { try { const p = parseDevTag(t); return !p.promotable || HISTORICAL_TAG_EXCEPTIONS[t] ? [] : [p] } catch { return [] } })
   if (candidates.length !== 1) throw new Error('Build requires one exact clean DEV checkpoint tag')
   const checkpoint = inspectCheckpoint(root, candidates[0].tag)
   const selected = production ? [checkpoint.tag, checkpoint.prodTag] : [checkpoint.tag]
@@ -91,7 +91,7 @@ function selectCandidate(candidates, headSha, env, getTagSha) {
       if (tagSha === headSha) {
         return {
           tag: p.tag,
-          promotable: !HISTORICAL_TAG_EXCEPTIONS[p.tag]
+          promotable: p.promotable && !HISTORICAL_TAG_EXCEPTIONS[p.tag]
         }
       }
     } catch {}
@@ -101,7 +101,7 @@ function selectCandidate(candidates, headSha, env, getTagSha) {
   if (candidates.length === 0) return null
 
   const selected = [...candidates].sort((a, b) => compareDevTags(b, a))[0]
-  return { tag: selected.tag, promotable: !HISTORICAL_TAG_EXCEPTIONS[selected.tag] }
+  return { tag: selected.tag, promotable: selected.promotable && !HISTORICAL_TAG_EXCEPTIONS[selected.tag] }
 }
 
 function resolveDevIdentity(root, env = process.env, gitOverride) {
