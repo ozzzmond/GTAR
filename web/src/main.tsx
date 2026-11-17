@@ -16,6 +16,7 @@ const App = lazy(() => import('./App.tsx'))
 
 import { isDevEnv } from './utils/env'
 import { requestDurableStorage } from './utils/syncJournal'
+import { isStageActive } from './utils/pwaUpdate'
 
 // #204 S2: capture starts before sign-in, so sign-in and One Tap problems (#132) are recorded.
 // Logs stay on this device. Off (the default) records only warnings and errors.
@@ -112,25 +113,23 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     immediate: true,
     onNeedReload() {
       // Protect active stage session: never force reload while user is on stage
-      const isStageActive =
-        window.location.pathname.includes('/stage') ||
-        window.location.search.includes('view=present') ||
-        window.location.hash.includes('present') ||
-        Boolean((window as unknown as { __GTAR_STAGE_ACTIVE__?: boolean }).__GTAR_STAGE_ACTIVE__)
-
-      if (isStageActive) {
+      if (isStageActive()) {
         return
       }
 
       // Do not force an unprompted window reload during an active session.
       // The updated service worker is already installed and activated in the background;
       // subsequent normal app starts or manual navigations will use the updated build.
+      // The only reload is the user's own "Check for updates" in About (utils/pwaUpdate.ts).
     },
     onRegisteredSW(_swScriptUrl, registration) {
       if (registration) {
         // Periodically check for updates (every hour)
         setInterval(() => {
-          registration.update().catch(() => { })
+          registration.update().catch((error: unknown) => {
+            // Kept in the device log so a blocked update (offline, sign-in redirect) is visible.
+            console.warn('GTAR Service Worker update check failed:', error)
+          })
         }, 60 * 60 * 1000)
       }
     },

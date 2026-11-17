@@ -77,6 +77,39 @@ test('AboutModal renders application identity, dynamic version metadata, and loc
   }
 })
 
+test('AboutModal: Check for updates shows a result and a reopened dialog starts clean', async () => {
+  const container = document.getElementById('root')
+  container.innerHTML = ''
+  const root = createRoot(container)
+  const originalFetch = global.fetch
+  let fetches = 0
+  global.fetch = async () => { fetches++; throw new Error('unexpected fetch') }
+  const render = isOpen => act(async () => { root.render(React.createElement(AboutModal, { isOpen, onClose: () => {} })) })
+  try {
+    await render(true)
+    const button = () => document.querySelector('[data-testid="about-check-updates"]')
+    const status = () => document.querySelector('[data-testid="about-update-status"]')
+    assert.equal(document.querySelectorAll('[data-testid="about-check-updates"]').length, 1)
+    assert.equal(button().textContent.trim(), 'Check for updates')
+    assert.equal(status().getAttribute('role'), 'status')
+    assert.equal(status().textContent, '')
+
+    // jsdom has no service worker and this build has no release.json: nothing to check against.
+    await act(async () => { button().click() })
+    assert.equal(status().textContent, 'Update check is not available here.')
+    assert.equal(button().disabled, false)
+    assert.equal(fetches, 0, 'a build without release.json must not fetch it')
+    assert.doesNotMatch(status().textContent, /up to date/i)
+
+    await render(false)
+    await render(true)
+    assert.equal(status().textContent, '', 'an old result must not be shown after reopening')
+  } finally {
+    global.fetch = originalFetch
+    await act(async () => root.unmount())
+  }
+})
+
 test('AboutModal dismisses on Escape key and backdrop click', async () => {
   const container = document.getElementById('root')
   container.innerHTML = ''
