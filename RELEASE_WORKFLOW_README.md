@@ -342,6 +342,21 @@ rollout snapshots are not deployment instructions. A dry run performs gates only
 Real promotion requires separate explicit human authorization, exact-SHA validation,
 native environment approval, fresh checks and verified Pages deployment.
 
+If a promotion's Git refs were advanced but verification reports
+`PROD_PROMOTED_BUT_UNVERIFIED`, treat it as **not independently verified**, even
+when Cloudflare's dashboard and the app show the new version. Do not replay
+promotion, recreate or move tags, roll back, or declare PASS. Preserve the run's
+job log and inspect its sanitized `stage`, `category`, and `detail` fields:
+`github-environment`/`github-policy` (GitHub API), `cloudflare-project`/
+`cloudflare-deployment` (Cloudflare API), `runtime-release` (immutable Pages
+`release.json`), `runtime-identity` (release metadata), or `git-refs`.
+`TRANSPORT` does not prove Cloudflare Access/Zero Trust interference; compare
+the endpoint and safe network cause before deciding remediation. Any separate
+read-only recovery verification must use the original approved SHA, PROD tag,
+promotion timestamp and canonical Cloudflare deployment, preserve all strict
+proof gates, and require owner review. Never initiate a second promotion just
+to retry verification.
+
 Hotfix rule: before promotion use the next numeric DEV iteration. After
 promotion use the advisory `nextDevTag` in a separately reviewed metadata PR.
 For example, `v1.1.0-dev.2` and `v1.1.1-dev.1` both map to `v1.2.2`; latest
