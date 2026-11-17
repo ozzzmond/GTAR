@@ -97,7 +97,7 @@ test('every menu help is the ProPresenter help: same button, same portaled panel
     ids.add(panel().id)
     assert.equal(panel().className, panelClass, `${name}: same popover`)
     assert.ok(panel().parentElement === document.body, `${name}: portaled, so no menu can clip it`)
-    assert.match(panel().textContent, new RegExp(`^${title.replace(/[()&]/g, '\\$&')}`))
+    assert.match(panel().textContent, new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
     assert.deepEqual(topicTitles(), expected, `${name}: one topic per option`)
     const topics = [...panel().querySelectorAll('details')]
     assert.deepEqual(topics.map(topic => topic.open), topics.map((_, index) => index === 0), `${name}: only the first topic starts open`)
