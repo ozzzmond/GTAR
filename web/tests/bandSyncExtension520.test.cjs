@@ -183,7 +183,7 @@ test('Stage publishes only setlist id/index/count and leader memory-only reload 
   t.mock.method(require('qrcode'), 'toDataURL', async value => { encoded.push(value); return 'data:image/png;base64,cXJ0ZXN0' })
   await ui(async ({ turnOn, click, button, sockets, host }) => {
     await turnOn(); await click(button('Start room')); await act(async () => sockets[0].open())
-    await act(async () => new Promise(resolve => setTimeout(resolve, 20)))
+    for (let i = 0; i < 100 && !sockets[0].sent.some(m => m.type === 'STATE'); i++) await act(async () => new Promise(resolve => setTimeout(resolve, 20)))
     const state = sockets[0].sent.find(m => m.type === 'STATE').payload.state
     assert.deepEqual(state.setlist, { id: 'setlist-test', index: 1, count: 2 })
     assert.equal(JSON.stringify(sockets[0].sent).includes('Private setlist name'), false)
