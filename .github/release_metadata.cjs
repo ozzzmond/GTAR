@@ -10,6 +10,8 @@ const R2_CHECKPOINT = Object.freeze({
   tag: 'v1.0.145-dev.3', prodTag: 'v1.2.0', nextDevTag: 'v1.1.0-dev.1',
 })
 
+// promotable=true means a positive iteration; checkpoint metadata and all release
+// gates must still pass. Baselines return false and have no PROD identity.
 function parseDevTag(tag) {
   const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.(0|[1-9]\d*)$/.exec(tag)
   if (!match || match[0] !== tag) throw new Error('Invalid canonical DEV tag')
