@@ -8,6 +8,25 @@ const repository = require('./release_repository.cjs')
 const { ABANDONED_PROD } = require('./release_identity.cjs')
 const gitAt = root => (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const must = (ok, message) => { if (!ok) throw new Error(message) }
+const SAFE_TRANSPORT_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'])
+function classifyVerificationFailure(stage, error) {
+  const allowed = new Set(['github-environment', 'github-policy', 'cloudflare-project', 'cloudflare-deployment', 'runtime-release', 'runtime-identity', 'git-refs', 'deployment-contract'])
+  const safeStage = allowed.has(stage) ? stage : 'deployment-contract'
+  const status = error?.httpStatus
+  if (Number.isInteger(status) && status >= 300 && status <= 599) {
+    return { stage: safeStage, category: status === 429 || status >= 500 ? 'HTTP_TRANSIENT' : 'HTTP_DENIED', detail: `HTTP_${status}` }
+  }
+  if (error?.redirectBlocked === true) return { stage: safeStage, category: 'REDIRECT_BLOCKED', detail: 'REDIRECT' }
+  if (error instanceof TypeError || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    const code = error?.cause?.code
+    return { stage: safeStage, category: 'TRANSPORT', detail: SAFE_TRANSPORT_CODES.has(code) ? code : 'UNKNOWN' }
+  }
+  return { stage: safeStage, category: 'CONTRACT', detail: 'CHECK_FAILED' }
+}
+async function verifyStage(stage, operation) {
+  try { return await operation() }
+  catch (error) { error.verificationStage = stage; throw error }
+}
 
 // One reviewed migration state; these pins are never inputs or package-derived PROD identity.
 const LEGACY_PROD = Object.freeze({
@@ -142,21 +161,27 @@ function deploymentProof(p, d, sha, after) {
 }
 async function getJson(url, token, cloudflare = false) {
   must(token, 'Required read/push credential missing')
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000), redirect: 'error' })
-  must(response.ok, `Read API HTTP ${response.status}`)
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000), redirect: 'manual' })
+  if (!response.ok) {
+    const error = new Error('Read API HTTP failure')
+    if (response.status >= 300 && response.status < 400) error.redirectBlocked = true
+    else error.httpStatus = response.status
+    throw error
+  }
   const data = await response.json()
   if (cloudflare) { must(data.success === true, 'Cloudflare read API unsuccessful'); return data.result }
   return data
 }
-async function externalGate(e, fetcher = getJson) {
+async function externalGate(e, fetcher = getJson, withStages = false) {
   must(e.GITHUB_REPOSITORY_ID === String(repository.id), 'GITHUB_REPOSITORY_ID missing/mismatched')
   const base = `https://api.github.com/repos/${e.GITHUB_REPOSITORY}`
-  const env = await fetcher(`${base}/environments/gtar-production`, e.APPROVAL_READ_TOKEN)
-  const policies = await fetcher(`${base}/environments/gtar-production/deployment-branch-policies`, e.APPROVAL_READ_TOKEN)
+  const read = (stage, ...args) => withStages ? verifyStage(stage, () => fetcher(...args)) : fetcher(...args)
+  const env = await read('github-environment', `${base}/environments/gtar-production`, e.APPROVAL_READ_TOKEN)
+  const policies = await read('github-policy', `${base}/environments/gtar-production/deployment-branch-policies`, e.APPROVAL_READ_TOKEN)
   approvalContract(env, policies)
   must(/^[0-9a-f]{32}$/.test(e.CF_ACCOUNT_ID || ''), 'CF_ACCOUNT_ID missing/invalid')
   const cf = `https://api.cloudflare.com/client/v4/accounts/${e.CF_ACCOUNT_ID}/pages/projects/gtar-web`
-  const project = await fetcher(cf, e.CF_PAGES_READ_TOKEN, true)
+  const project = await read('cloudflare-project', cf, e.CF_PAGES_READ_TOKEN, true)
   projectContract(project)
   const protection = createHash('sha256').update(JSON.stringify({ env, policies, project: { id: project.id, name: project.name, production_branch: project.production_branch, source: project.source, build_config: project.build_config, d1: project.deployment_configs?.production?.d1_databases } })).digest('hex')
   return { project, cf, protection }
@@ -293,25 +318,40 @@ function emit(values) {
 async function main(mode, e = process.env) {
   const root = process.cwd()
   if (mode === 'verify') {
-    let last = 'No trusted fresh production signal'
+    let last = { stage: 'deployment-contract', category: 'CONTRACT', detail: 'NO_SIGNAL' }
     for (let n = 0; n < 40; n++) {
       try {
-        const { project, cf } = await externalGate(e)
+        const { project, cf } = await externalGate(e, getJson, true)
         const d = project.canonical_deployment
-        deploymentProof(project, d || {}, e.EXPECTED_SHA, e.PROMOTION_STARTED)
-        const exact = await getJson(`${cf}/deployments/${encodeURIComponent(d.id)}`, e.CF_PAGES_READ_TOKEN, true)
-        const proof = deploymentProof(project, exact, e.EXPECTED_SHA, e.PROMOTION_STARTED)
-        must(/^https:\/\/[0-9a-f]{8}\.gtar-web\.pages\.dev$/.test(exact.url || ''), 'Noncanonical immutable deployment URL')
-        const runtimeResponse = await fetch(`${exact.url}/release.json`, { redirect: 'error', signal: AbortSignal.timeout(20000) })
-        must(runtimeResponse.ok, 'Deployed runtime release identity unavailable')
-        runtimeProof(await runtimeResponse.json(), e.EXPECTED_SHA, e.PROD_TAG)
-        const refs = remoteRefs(root)
-        must(refs['refs/heads/main'] === e.EXPECTED_SHA && refs[`refs/tags/${e.PROD_TAG}`] === e.EXPECTED_SHA, 'Production refs changed during verification')
+        await verifyStage('deployment-contract', () => deploymentProof(project, d || {}, e.EXPECTED_SHA, e.PROMOTION_STARTED))
+        const exact = await verifyStage('cloudflare-deployment', () => getJson(`${cf}/deployments/${encodeURIComponent(d.id)}`, e.CF_PAGES_READ_TOKEN, true))
+        const proof = await verifyStage('deployment-contract', () => deploymentProof(project, exact, e.EXPECTED_SHA, e.PROMOTION_STARTED))
+        await verifyStage('runtime-release', () => must(/^https:\/\/[0-9a-f]{8}\.gtar-web\.pages\.dev$/.test(exact.url || ''), 'Noncanonical immutable deployment URL'))
+        const runtimeResponse = await verifyStage('runtime-release', async () => {
+          const response = await fetch(`${exact.url}/release.json`, { redirect: 'manual', signal: AbortSignal.timeout(20000) })
+          if (!response.ok) {
+            const error = new Error('Runtime HTTP failure')
+            if (response.status >= 300 && response.status < 400) error.redirectBlocked = true
+            else error.httpStatus = response.status
+            throw error
+          }
+          return response
+        })
+        const identity = await verifyStage('runtime-release', () => runtimeResponse.json())
+        await verifyStage('runtime-identity', () => runtimeProof(identity, e.EXPECTED_SHA, e.PROD_TAG))
+        await verifyStage('git-refs', () => {
+          const refs = remoteRefs(root)
+          must(refs['refs/heads/main'] === e.EXPECTED_SHA && refs[`refs/tags/${e.PROD_TAG}`] === e.EXPECTED_SHA, 'Production refs changed during verification')
+        })
         emit({ state: 'VERIFIED_PROD', ...proof }); return
-      } catch (error) { last = error.message }
+      } catch (error) {
+        last = classifyVerificationFailure(error.verificationStage, error)
+        // Bounded, sanitized progress: no raw exceptions, URLs, headers or tokens.
+        if (n === 0 || (n + 1) % 10 === 0) console.log(JSON.stringify({ verification_attempt: n + 1, ...last }))
+      }
       if (n < 39) await new Promise(r => setTimeout(r, 15000))
     }
-    emit({ state: 'PROD_PROMOTED_BUT_UNVERIFIED', reason: last }); throw new Error(last)
+    emit({ state: 'PROD_PROMOTED_BUT_UNVERIFIED', attempts: 40, ...last }); throw new Error(`Verification failed: ${last.stage}/${last.category}/${last.detail}`)
   }
   refresh(root)
   const p = plan(root, e.DEV_TAG, e.EXPECTED_SHA, e.CONTROLLER_REF, e.CONTROLLER_SHA)
@@ -330,4 +370,4 @@ async function main(mode, e = process.env) {
   must(result.state === 'PROD_PROMOTED_BUT_UNVERIFIED', result.state)
 }
 if (require.main === module) main(process.argv[2]).catch(error => { emit({ error: error.message }); process.exitCode = 1 })
-module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, scopedRefs, snapshotContract, refresh, freshContract, migrationCheckpoint, readD1Migrations, d1Readiness, main }
+module.exports = { plan, abandonedBaseline, legacyReconciliation, runtimeContract, approvalContract, projectContract, deploymentProof, classify, promote, externalGate, runtimeProof, scopedRefs, snapshotContract, refresh, freshContract, migrationCheckpoint, readD1Migrations, d1Readiness, main, classifyVerificationFailure }
