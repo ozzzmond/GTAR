@@ -16,6 +16,11 @@ const DENY = [
   'README.md', 'LICENSE', 'LICENSE.md',
   'web/tests/', 'web/docs/', 'web/GOOGLE_SYNC.md', 'web/LEGACY_IMPORT_COMPATIBILITY.md',
   'web/wrangler.stage-cast2-dev.jsonc',
+  'web/wrangler.band-sync-dev.jsonc',
+  'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts',
+  'web/BAND_SYNC_P1.md', // Internal deployment notes name GTAR's worker.
+  'web/scripts/gtar1-export.cjs', // Owner-only exporter carries GTAR identifier guards.
+
   'web/scripts/migrate-dev-remote.cjs', // hard-codes GTAR's dev D1 name and UUID
 ]
 const DENY_PATTERNS = [/^web\/STAGE_CAST2_.*\.md$/, /(^|\/)\.dev\.vars/, /(^|\/)\.env(\..*)?$/]
@@ -189,6 +194,7 @@ function patchWrangler(text, ids) {
         return { ...db, database_name: rename[0], database_id: ids[rename[1]] }
       })
     }
+    delete node.services
     delete node.durable_objects
     if (node.vars) delete node.vars.CAST2_ORIGIN
     // GTAR1 ships no online song source: the UG proxy kill switch is forced on in every environment (#453).
@@ -198,7 +204,7 @@ function patchWrangler(text, ids) {
   fix(json)
   for (const env of Object.values(json.env || {})) fix(env)
   const out = JSON.stringify(json, null, 2) + '\n'
-  for (const bad of [...sourceIds, 'gtar-db-', 'gtar-stage-cast2', 'gtar-web']) {
+  for (const bad of [...sourceIds, 'gtar-db-', 'gtar-stage-cast2', 'gtar-web', 'gtar-band-sync']) {
     if (bad && out.includes(bad)) throw new Error(`GTAR identifier ${bad} still present in wrangler.jsonc`)
   }
   return out

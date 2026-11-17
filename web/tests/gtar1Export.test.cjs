@@ -153,3 +153,35 @@ test('demo reset module is generated with a seed-content version and is wired on
   assert.ok(out.includes('await gtar1DemoReady') && out.includes("from './data/gtar1DemoReset'"))
   assert.throws(() => E.patchMainDemoReset('nothing'), /needs review/)
 })
+
+test('Band Sync wiring is stripped from root and every environment and leaks fail closed', () => {
+  const ids = { prod: '11111111-1111-4111-8111-111111111111', dev: '22222222-2222-4222-8222-222222222222' }
+  const node = () => ({ services: [{ binding: 'BANDSYNC_WORKER', service: 'gtar-band-sync-dev' }] })
+  const source = { ...node(), env: { preview: node(), production: node(), custom: node() } }
+  const out = JSON.parse(E.patchWrangler(JSON.stringify(source), ids))
+  for (const n of [out, ...Object.values(out.env)]) assert.ok(!Object.hasOwn(n, 'services'))
+  assert.throws(() => E.patchWrangler(JSON.stringify({ vars: { LEFTOVER: 'gtar-band-sync-dev' } }), ids), /GTAR identifier gtar-band-sync/)
+})
+
+test('Band Sync deployment files cannot enter the snapshot file set', () => {
+  for (const file of ['web/wrangler.band-sync-dev.jsonc', 'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts']) {
+    assert.ok(E.isExcluded(file), file)
+  }
+})
+
+test('snapshot omits Band Sync deployment files and worker identifiers', () => {
+  const repo = path.join(__dirname, '../..')
+  const out = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'gtar1-band-sync-'))
+  try {
+    const included = require('node:child_process').execFileSync('git', ['ls-files', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(f => f && !E.isExcluded(f))
+    E.writeSnapshot(repo, out, { ...E.mapSourceTag('v1.2.3'), sha: 'a'.repeat(40), included }, {
+      prod: '11111111-1111-4111-8111-111111111111', dev: '22222222-2222-4222-8222-222222222222',
+    })
+    for (const f of ['web/wrangler.band-sync-dev.jsonc', 'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts']) {
+      assert.ok(!fs.existsSync(path.join(out, f)), f)
+    }
+    const config = fs.readFileSync(path.join(out, 'web/wrangler.jsonc'), 'utf8')
+    assert.ok(!config.includes('gtar-band-sync'))
+    assert.ok(!config.includes('"services"'))
+  } finally { fs.rmSync(out, { recursive: true, force: true }) }
+})
