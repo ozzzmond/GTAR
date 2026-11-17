@@ -287,6 +287,7 @@ New or renamed tests await a human choice of primary category.
 - [previewBuildIdentity.test.cjs](previewBuildIdentity.test.cjs)
 - [proPresenterFollower.test.cjs](proPresenterFollower.test.cjs)
 - [proPresenterUiUxPolish.test.cjs](proPresenterUiUxPolish.test.cjs)
+- [pwaUpdateCheck.test.cjs](pwaUpdateCheck.test.cjs)
 - [qaBackupFixtureScale.test.cjs](qaBackupFixtureScale.test.cjs)
 - [r2VersionBootstrap.test.cjs](r2VersionBootstrap.test.cjs)
 - [recoveryArchivesIdb.test.cjs](recoveryArchivesIdb.test.cjs)
