@@ -75,9 +75,9 @@ test('STEP_6.2: Exact clean numeric DEV tag resolves exact version and promotabl
   assert.equal(parsed3.base, 130)
   assert.equal(parsed3.iteration, 3)
   assert.equal(Object.hasOwn(parsed3, 'suffix'), false)
-  assert.equal(Object.hasOwn(parsed3, 'promotable'), false)
+  assert.equal(parsed3.promotable, true)
   assert.equal(parsed3.prodTag, 'v1.1.133')
-  assert.equal(parsed3.nextDevTag, 'v1.0.133-dev.1')
+  assert.equal(parsed3.nextDevTag, 'v1.0.133-dev.0')
 
   const gitMock = (...args) => {
     const cmd = args.join(' ')
@@ -155,17 +155,17 @@ test('STEP_6.5: Missing Git metadata returns deterministic fallback with UNVERIF
 test('STEP_6.6: PROD tag identity and arithmetic: v1.0.130-dev.3 -> v1.1.133', () => {
   const p1 = parseDevTag('v1.0.130-dev.1')
   assert.equal(p1.prodTag, 'v1.1.131')
-  assert.equal(p1.nextDevTag, 'v1.0.131-dev.1')
+  assert.equal(p1.nextDevTag, 'v1.0.131-dev.0')
 
   const p2 = parseDevTag('v1.0.130-dev.2')
   assert.equal(p2.prodTag, 'v1.1.132')
 
   const p3 = parseDevTag('v1.0.130-dev.3')
   assert.equal(p3.prodTag, 'v1.1.133')
-  assert.equal(p3.nextDevTag, 'v1.0.133-dev.1')
+  assert.equal(p3.nextDevTag, 'v1.0.133-dev.0')
 
   assert.throws(() => parseDevTag('v1.0.0-dev.1'))
-  assert.throws(() => parseDevTag('v1.0.130-dev.0'))
+  assert.equal(parseDevTag('v1.0.130-dev.0').promotable, false)
   assert.throws(() => parseDevTag('v1.0.0130-dev.1'))
   assert.throws(() => parseDevTag('v1.1.130'))
 })
@@ -271,9 +271,9 @@ test('STEP_6.11: Future clean DEV.3 tag passes inspectCheckpoint and CLI release
   const checkpoint = relMeta.inspectCheckpoint(repo, 'v1.0.130-dev.3')
   assert.equal(checkpoint.sha, headSha)
   assert.equal(checkpoint.tag, 'v1.0.130-dev.3')
-  assert.equal(checkpoint.promotable, undefined)
+  assert.equal(checkpoint.promotable, true)
   assert.equal(checkpoint.prodTag, 'v1.1.133')
-  assert.equal(checkpoint.nextDevTag, 'v1.0.133-dev.1')
+  assert.equal(checkpoint.nextDevTag, 'v1.0.133-dev.0')
 })
 
 // STEP_6.12: Future DEV.3 rejected mismatches fail closed

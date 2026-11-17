@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Canonical DEV tag to validate and build
+        description: Canonical DEV tag to validate and build (dev.0 never promotable)
         required: true
         type: string
 

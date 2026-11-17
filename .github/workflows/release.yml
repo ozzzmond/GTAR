@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dev_tag:
-        description: Exact clean numeric canonical DEV checkpoint
+        description: Exact clean numeric DEV checkpoint (dev.1+; dev.0 rejected)
         required: true
         type: string
       expected_sha:
@@ -162,6 +162,6 @@ jobs:
             exit 0
           fi
           STATE="${VERIFY_STATE:-${PROMOTE_STATE:-BLOCKED_NOT_PROMOTED}}"
-          echo "STATE:$STATE|PROD:${PROD_TAG:-unknown}|NEXT_DEV_ADVISORY:${NEXT_DEV:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          echo "STATE:$STATE|PROD:${PROD_TAG:-unknown}|NEXT_DEV_BASELINE_ADVISORY:${NEXT_DEV:-unknown}" >> "$GITHUB_STEP_SUMMARY"
           echo 'No automatic rollback, retry, source rewrite or DEV baseline change.' >> "$GITHUB_STEP_SUMMARY"
           [ "$STATE" = VERIFIED_PROD ]
