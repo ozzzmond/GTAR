@@ -380,7 +380,8 @@ export default defineConfig(({ mode }) => {
             '**/*.{js,css,html,ico,png,jpg,jpeg,svg,gif,webp,json,woff,woff2,ttf,eot,otf,mp3,wav,webmanifest}',
           ],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          // /cdn-cgi/ is Cloudflare (Access sign-in); it must reach the network, not cached index.html.
+          navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,

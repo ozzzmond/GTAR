@@ -321,6 +321,7 @@ New or renamed tests await a human choice of primary category.
 - [stagePreviewGtar1.test.cjs](stagePreviewGtar1.test.cjs)
 - [stageToolsSplit.test.cjs](stageToolsSplit.test.cjs)
 - [storageQuotaRecovery.test.cjs](storageQuotaRecovery.test.cjs)
+- [swPrecacheGate.test.cjs](swPrecacheGate.test.cjs)
 - [swipeRenameTouchBehavior.test.cjs](swipeRenameTouchBehavior.test.cjs)
 - [syncCenterLayout.test.cjs](syncCenterLayout.test.cjs)
 - [tagControlsColors.test.cjs](tagControlsColors.test.cjs)
