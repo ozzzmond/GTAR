@@ -1,9 +1,12 @@
 # GTAR GitHub preview contract
 
 GitHub tags are the version source of truth. Canonical DEV tags are
-`v1.0.<positive-base>-dev.<positive-iteration>`
-(historical scheme) and `v1.1.<nonnegative-base>-dev.<positive-iteration>`
+`v1.0.<positive-base>-dev.<nonnegative-iteration>`
+(historical scheme) and `v1.1.<nonnegative-base>-dev.<nonnegative-iteration>`
 (R2 scheme; base zero is valid).
+Iteration zero is a NON_PROMOTABLE baseline stamp with no computed PROD tag.
+It normally has no Git tag; stray dev.0 tags are ignored by promotion selection.
+Positive iterations remain potentially promotable under all existing gates.
 Neither numeric component may contain leading zeroes. Only numeric DEV tags are accepted. Production tags are rejected by preview validation.
 
 Pushes of `v1.0.*-dev.*` and `v1.1.*-dev.*` tags trigger preview validation. Manual dispatch requires
@@ -18,7 +21,7 @@ node .github/release_metadata.cjs --tag "$REQUESTED_TAG"
 The helper requires the exact tag to exist, its peeled commit to equal HEAD,
 and `web/package.json` version to equal the tag without its leading `v`. Only after all checks pass does it print and append to `GITHUB_ENV`:
 `RELEASE_TAG`, `RELEASE_TITLE` (`GTAR <tag>`), `IS_PRERELEASE=true`, and
-`IS_PROMOTABLE` (`false` only for the pinned legacy metadata exception). The artifact name is exactly `RELEASE_TAG`.
+`IS_PROMOTABLE` (`false` for dev.0 and the pinned legacy metadata exception). The artifact name is exactly `RELEASE_TAG`.
 
 This flow creates build artifacts only. It does not tag, push branches, deploy,
 or promote to production. No stage environment is included. The separate production planner below is fail-closed. Existing application versions and historical GitHub tags are unchanged.
@@ -47,7 +50,7 @@ All gate failures exit nonzero before production mutation.
 ### Exact source and approval gates
 
 Required inputs are the exact DEV tag and full lowercase SHA. Gates require a
-clean numeric tag, latest numeric DEV, exact dev tip,
+clean numeric tag, latest positive-iteration numeric DEV, exact dev tip,
 consistent package/lock/DEV/auth source stamps, computed PROD above the canonical
 baseline, absent PROD tag, baseline ancestry, main ancestry, and unchanged
 controller/main since dispatch. Legacy app-v/web-v tags do not establish baseline.
@@ -55,7 +58,7 @@ Baseline identity accepts a legacy tagged PROD package or the new exact-source
 DEV/tag-derived identity contract. The only legacy discrepancy exception is the
 exact pinned one-time reconciliation in [release history](docs/release-history.md#historical-reviewed-baseline-after-abandoned-v11122); all other discrepancies still block.
 The checkpoint must contain the reviewed release identity helper/parser bytes and
-Vite/runtime integration. Next DEV is an advisory output only.
+Vite/runtime integration. Next DEV is an advisory baseline string only, not a Git tag.
 
 Configure GitHub **Settings → Environments → gtar-production** before execution:
 required human reviewer **ozzzmond** (GitHub User ID `17817198`), **Prevent
@@ -322,7 +325,9 @@ Prepare changes through a dedicated PR against `dev`. Before merge, keep
 and the authCore release stamp equal to the intended DEV tag without `v`.
 Run the repository checks before a human creates the tag at the accepted merge
 SHA. Preview validation retains exact tag/HEAD and package-version checks.
-Bump version metadata on `dev`, merge, then tag that merge SHA; the tag must match `web/package.json`.
+For a positive-iteration checkpoint, bump metadata on `dev`, merge, then tag
+that merge SHA; the tag must match `web/package.json`. A dev.0 baseline metadata
+PR is merged without a tag.
 
 Historical checkpoint notes: [release history](docs/release-history.md).
 
@@ -357,21 +362,26 @@ promotion use the advisory `nextDevTag` in a separately reviewed metadata PR.
 For example, `v1.1.0-dev.2` and `v1.1.1-dev.1` both map to `v1.2.2`; latest
 numeric DEV and create-only PROD collision gates reject identity reuse.
 
-After `VERIFIED_PROD`, separately review a dev metadata PR for advisory next DEV,
-validate/merge it, then manually create its tag under the existing policy.
+After `VERIFIED_PROD`, separately review and merge a metadata PR for the advisory
+dev.0 baseline without tagging. Start new work at dev.1 or later; only an
+accepted positive-iteration checkpoint may be tagged for promotion.
+Example: PROD v1.2.4 -> baseline v1.1.4-dev.0 -> v1.1.4-dev.1 (PROD v1.2.5)
+-> v1.1.4-dev.2 (PROD v1.2.6). This tooling change does not bump current stamps.
+No data migration is required.
 
 ## R2 version scheme and owner-only controller bootstrap (#439)
 
 The provisional final old-scheme checkpoint is **v1.0.145-dev.3** (T).
 No final checkpoint SHA has been selected and no tag is created by this change.
 Only this exact clean tag maps to PROD **v1.2.0**, with advisory next DEV
-**v1.1.0-dev.1**. It requires direct committed T metadata. A different accepted checkpoint name requires a reviewed tooling change
+**v1.1.0-dev.0** (baseline string). The immutable R2 constant retains its
+historical nextDevTag; the parser returns current dev.0 advice. T requires direct committed T metadata. A different accepted checkpoint name requires a reviewed tooling change
 and matching trusted-controller installation before tagging. PROD tags remain create-only.
 
 Historical v1.0 DEV mappings remain v1.1.(base + iteration), except T. New
-v1.1.B-dev.N maps to v1.2.(B + N), next DEV v1.1.(B + N)-dev.1. B may be zero;
-N must be positive. For example v1.1.0-dev.1 gives v1.2.1 and next
-v1.1.1-dev.1. Arithmetic must be safe integers without leading zeroes.
+v1.1.B-dev.N maps to v1.2.(B + N), next baseline v1.1.(B + N)-dev.0. B may be zero;
+N must be positive to compute PROD; N=0 has no PROD mapping. For example v1.1.0-dev.1 gives v1.2.1 and next
+v1.1.1-dev.0. Arithmetic must be safe integers without leading zeroes.
 DEV ordering compares scheme minor, base and iteration; PROD ordering compares minor then patch. Thus v1.2.0
 exceeds historical v1.1.145 despite its smaller patch. The R2 mapping remains
 permanent for runtime identity and baseline reconciliation, not a reusable
@@ -413,13 +423,13 @@ Required sequence (each live action needs its existing separate authorization):
    code merge invalidates that acceptance; stop and select a new reviewed
    checkpoint without moving/reusing T.
 6. Dispatch the trusted main B workflow with T, expected_sha=C and dry_run=true.
-   Require prod_tag=v1.2.0 and next_dev_tag=v1.1.0-dev.1. Dry run performs readiness
+   Require prod_tag=v1.2.0 and next_dev_tag=v1.1.0-dev.0. Dry run performs readiness
    gates only. A real run requires separate owner authorization, exact-C Web
    validation, native environment approval and all fresh post-approval checks.
 7. Existing atomic non-force promotion advances main B -> C and creates v1.2.0
    at C together. Require new exact-SHA Pages production proof and release.json.
-   Only after VERIFIED_PROD review a separate metadata PR for 1.1.0-dev.1 and
-   separately authorize its manual checkpoint tag. Never pre-stamp this version.
+   Only after VERIFIED_PROD review a separate metadata PR for baseline 1.1.0-dev.0 without a tag.
+   A later dev.1+ checkpoint needs separate manual tag authorization. Never pre-stamp this version.
 
 Stop on unexpected branch/tag drift, wrong/moved checkpoint, collision, helper
 byte mismatch, missing B ancestry, main already at C, unverified bootstrap build
