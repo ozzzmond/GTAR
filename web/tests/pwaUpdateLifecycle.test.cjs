@@ -87,7 +87,10 @@ test('PWA SW: registerSW provides onNeedReload stage guard without unprompted re
   assert.ok(mainCode.includes('isStageActive'), 'onNeedReload must guard active stage presence')
   // #562: the Stage checks moved unchanged to utils/pwaUpdate.ts so About reuses them; main.tsx calls them.
   assert.ok(mainCode.includes("import { isStageActive } from './utils/pwaUpdate'"), 'main.tsx must use the shared Stage guard')
-  assert.match(mainCode, /onNeedReload\(\) \{\s*(?:\/\/[^\n]*\s*)*if \(isStageActive\(\)\) \{\s*return\s*\}/, 'onNeedReload must return first while Stage is active')
+  // Linear check (no nested quantifiers): the first statement in onNeedReload, comments skipped, is the Stage early return.
+  const needReloadBody = mainCode.slice(mainCode.indexOf('onNeedReload() {') + 'onNeedReload() {'.length)
+  const firstStatements = needReloadBody.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//')).slice(0, 3).join(' ')
+  assert.ok(firstStatements.startsWith('if (isStageActive()) { return }'), 'onNeedReload must return first while Stage is active')
   assert.ok(fs.readFileSync(path.join(webRoot, 'src/utils/pwaUpdate.ts'), 'utf8').includes('__GTAR_STAGE_ACTIVE__'), 'the shared Stage guard must check __GTAR_STAGE_ACTIVE__')
   assert.equal(mainCode.includes('window.location.reload()'), false, 'onNeedReload must never force unconditional window reload')
   assert.equal(/location\s*\.\s*reload/.test(mainCode), false, 'main.tsx must not reload the page in any form')
