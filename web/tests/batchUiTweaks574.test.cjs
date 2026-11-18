@@ -43,8 +43,8 @@ test('1_TV_SYNC: TV Sync row in Advanced Tools with explicit ON/OFF toggle and d
   const { TvSyncRow } = require('../src/components/TvSyncRow.tsx')
   const { isTvSyncEnabled, setTvSyncEnabled } = require('../src/utils/tvSyncSettings.ts')
 
-  // Default is OFF
-  assert.equal(isTvSyncEnabled(), false)
+  // Default is ON (preserves existing GTAR Stage Preview behavior)
+  assert.equal(isTvSyncEnabled(), true)
 
   let dialogOpened = false
   const root = createRoot(document.getElementById('root'))
@@ -58,9 +58,14 @@ test('1_TV_SYNC: TV Sync row in Advanced Tools with explicit ON/OFF toggle and d
   const toggle = document.querySelector('[data-testid="settings-tv-sync"]')
   assert.ok(toggle, 'TV Sync switch toggle exists')
   assert.equal(toggle.getAttribute('role'), 'switch')
-  assert.equal(toggle.getAttribute('aria-checked'), 'false')
+  assert.equal(toggle.getAttribute('aria-checked'), 'true')
 
-  // Clicking toggle turns TV Sync ON
+  // Clicking toggle turns TV Sync OFF
+  await act(async () => { toggle.click() })
+  assert.equal(isTvSyncEnabled(), false)
+  assert.equal(localStorage.getItem('gtar_tv_sync'), '0')
+
+  // Clicking toggle again turns TV Sync ON
   await act(async () => { toggle.click() })
   assert.equal(isTvSyncEnabled(), true)
   assert.equal(localStorage.getItem('gtar_tv_sync'), '1')
@@ -79,6 +84,16 @@ test('1_TV_SYNC: TV Sync row in Advanced Tools with explicit ON/OFF toggle and d
   // Verify duplicate TV link is avoided in StageOptionsSheet
   const stageOptionsSource = read('components/StageOptionsSheet.tsx')
   assert.doesNotMatch(stageOptionsSource, /TV & Second Screen/, 'Duplicate Pair / Cast link removed from StageOptionsSheet')
+
+  // Verify StageView conditionally renders Cast button based on tvSyncEnabled
+  const stageViewSource = read('components/StageView.tsx')
+  assert.match(stageViewSource, /useTvSyncEnabled/, 'StageView observes tvSyncEnabled')
+  assert.match(stageViewSource, /tvSyncEnabled &&[\s\S]*?handleTogglePresentation/, 'Cast button hidden when tvSyncEnabled is false')
+  assert.match(stageViewSource, /!tvSyncEnabled && isCastActive[\s\S]*?stopPresentation/, 'StageView cleans up presentation when TV Sync disabled')
+
+  // Verify TvPresentationOptions observes tvSyncEnabled
+  const tvOptionsSource = read('components/TvPresentationOptions.tsx')
+  assert.match(tvOptionsSource, /!cast2LocalEnabled \|\| !tvSyncEnabled/, 'TvPresentationOptions hidden when tvSyncEnabled is false')
 
   await act(async () => root.unmount())
 })
@@ -99,17 +114,21 @@ test('2_FULLSCREEN_THEME: Dark/Light mode toggle inside fullscreen options besid
 })
 
 test('3_STICKY_HEADERS: Music Explorer and second-row headers are sticky with z-index hierarchy', () => {
+  const cssSource = read('index.css')
+  assert.match(cssSource, /--app-header-height:\s*57px;/, 'CSS defines --app-header-height token')
+
   const explorerSource = read('components/ExplorerNavigation.tsx')
-  assert.match(explorerSource, /sticky top-0 z-20/, 'Music Explorer sidebar is sticky at z-20')
+  assert.match(explorerSource, /sticky top-\[var\(--app-header-height[^\]]*\)\] z-20/, 'Music Explorer sidebar is sticky at z-20')
 
   const songbookSource = read('components/SongbookHomeView.tsx')
-  assert.match(songbookSource, /data-testid="songbook-filter-bar"[\s\S]*?sticky top-0 z-30/, 'Songbook filter bar is sticky at z-30')
+  assert.match(songbookSource, /data-testid="songbook-filter-bar"[\s\S]*?sticky top-\[var\(--app-header-height[^\]]*\)\] z-30/, 'Songbook filter bar is sticky at z-30')
 
   const setlistSource = read('components/SetlistWorkspace.tsx')
-  assert.match(setlistSource, /data-testid="setlist-filter-bar"[\s\S]*?sticky top-0 z-30/, 'Setlist filter bar is sticky at z-30')
+  assert.match(setlistSource, /data-testid="setlist-filter-bar"[\s\S]*?sticky top-\[var\(--app-header-height[^\]]*\)\] z-30/, 'Setlist filter bar is sticky at z-30')
 
   const headerSource = read('components/Header.tsx')
   assert.match(headerSource, /sticky top-0 z-40/, 'Global Header is sticky at z-40')
+  assert.match(headerSource, /--app-header-height/, 'Header updates --app-header-height dynamically')
 })
 
 test('4_CONTROL_HEIGHT: Applicable layout controls standardized to 42px', () => {
@@ -118,6 +137,20 @@ test('4_CONTROL_HEIGHT: Applicable layout controls standardized to 42px', () => 
     songbookSource,
     /data-testid="songs-add-song"[\s\S]*?min-h-\[42px\] h-\[42px\]/,
     'Add Song button standardized to 42px'
+  )
+
+  const explorerNavSource = read('components/MusicExplorerNav.tsx')
+  assert.match(
+    explorerNavSource,
+    /itemBase =[\s\S]*?min-h-\[42px\] h-\[42px\]/,
+    'Music Explorer navigation items standardized to 42px'
+  )
+
+  const folderTreeSource = read('components/ExplorerFolderTree.tsx')
+  assert.match(
+    folderTreeSource,
+    /min-h-\[42px\] h-\[42px\] min-w-0 flex-1/,
+    'Music Explorer folder tree items standardized to 42px'
   )
 })
 

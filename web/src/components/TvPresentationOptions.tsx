@@ -1,6 +1,7 @@
 import React, { useSyncExternalStore } from 'react'
 import { stageCast2Controller } from '../utils/stageCast2Controller'
 import { cast2LocalEnabled } from '../utils/stageCast2Local'
+import { useTvSyncEnabled } from '../utils/tvSyncSettings'
 
 void React
 
@@ -23,8 +24,9 @@ const MAX_TV_FONT_SIZE = 56
 export function TvPresentationOptions() {
   const chords = useSyncExternalStore(subscribe, getChords, getChords)
   const tvFontSize = useSyncExternalStore(subscribe, getTvFontSize, () => DEFAULT_TV_FONT_SIZE)
+  const tvSyncEnabled = useTvSyncEnabled()
 
-  if (!cast2LocalEnabled) return null
+  if (!cast2LocalEnabled || !tvSyncEnabled) return null
 
   const handleStepSize = (delta: number) => {
     stageCast2Controller.setTvFontSize(tvFontSize + delta)

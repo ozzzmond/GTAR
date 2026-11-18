@@ -12,6 +12,7 @@ import { useLiveLyricScroll } from '../utils/useLiveLyricScroll'
 import { LiveLyricsControl } from './LiveLyrics'
 import { useLiveLyrics } from '../utils/useLiveLyrics'
 import { TvPresentationOptions } from './TvPresentationOptions'
+import { useTvSyncEnabled } from '../utils/tvSyncSettings'
 import { transposeContext } from '../utils/songKeySemantics'
 import {
   SETTINGS_KEYS,
@@ -585,9 +586,16 @@ export const StageView: React.FC<StageViewProps> = ({
   )
 
   // Stage Cast Active Presentation State
+  const tvSyncEnabled = useTvSyncEnabled()
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
   const [canPrevSection, setCanPrevSection] = useState(false)
   const [canNextSection, setCanNextSection] = useState(true)
+
+  useEffect(() => {
+    if (!tvSyncEnabled && isCastActive) {
+      stageCast.stopPresentation()
+    }
+  }, [tvSyncEnabled, isCastActive])
 
   useEffect(() => {
     const unsubscribe = stageCast.subscribeSessionState((active) => {
@@ -2121,28 +2129,30 @@ export const StageView: React.FC<StageViewProps> = ({
             <Sliders className="w-4 h-4" />
           </button>
 
-          {/* Cast button (stays in this second toolbar row) */}
-          <button
-            type="button"
-            onClick={handleTogglePresentation}
-            className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
-              isCastActive
-                ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
-                : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
-            }`}
-            aria-label={
-              isCastActive
-                ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
-                : 'Cast / Pop-out Screen (Open distraction-free fullscreen teleprompter on secondary monitor or TV)'
-            }
-          >
-            <Cast className="w-4 h-4" />
-            {isCastActive && (
-              <span className="hidden xl:inline text-[10px] font-mono font-bold uppercase tracking-wider">
-                Stop
-              </span>
-            )}
-          </button>
+          {/* Cast button (stays in this second toolbar row when TV Sync is enabled) */}
+          {tvSyncEnabled && (
+            <button
+              type="button"
+              onClick={handleTogglePresentation}
+              className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
+                isCastActive
+                  ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
+                  : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
+              }`}
+              aria-label={
+                isCastActive
+                  ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
+                  : 'Cast / Pop-out Screen (Open distraction-free fullscreen teleprompter on secondary monitor or TV)'
+              }
+            >
+              <Cast className="w-4 h-4" />
+              {isCastActive && (
+                <span className="hidden xl:inline text-[10px] font-mono font-bold uppercase tracking-wider">
+                  Stop
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Fullscreen toggle (The ONLY GTAR control kept in that row: one click on/off) */}
           <button

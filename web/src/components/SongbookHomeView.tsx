@@ -631,7 +631,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   return (
-    <div data-testid="songbook-canvas" className="songbook-ui explorer-canvas flex-1 flex flex-col min-w-0 w-full overflow-y-auto bg-app-base select-none">
+    <div data-testid="songbook-canvas" className="songbook-ui explorer-canvas flex-1 flex flex-col min-w-0 w-full overflow-x-clip bg-app-base select-none">
       {membershipSong && <SongSetlistDialog
         song={membershipSong}
         setlists={activeSetlists}
@@ -948,7 +948,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       {/* 1. Breadcrumbs & scope bar (GTAR1 filter bar) */}
       {!isSetlistContext && (
-      <div data-testid="songbook-filter-bar" className="ui-filter-bar sticky top-0 z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:flex-wrap sm:justify-between sm:gap-y-2">
+      <div data-testid="songbook-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:flex-wrap sm:justify-between sm:gap-y-2">
         <nav aria-label="Breadcrumb" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
           {breadcrumbItems.map((item, idx) => (
             <React.Fragment key={idx}>
@@ -1114,7 +1114,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         </div>
       )}
 
-      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
       {isSetlistContext ? (
         <>
           <input
@@ -1161,7 +1160,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           />
         </>
       ) : (
-      <>
+      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
       {isDuplicateReviewOpen && onTrashDuplicates && (
         <DuplicateReviewDialog songs={songs} setlists={setlists} onTrashDuplicates={onTrashDuplicates}
           onClose={() => setIsDuplicateReviewOpen(false)} />
@@ -1731,9 +1730,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
         )}
       </section>
-      </>
-      )}
       </div>
+      )}
     </div>
   )
 }

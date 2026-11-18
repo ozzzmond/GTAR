@@ -1,22 +1,34 @@
 import { useSyncExternalStore } from 'react'
+import { stageCast } from './stageCast'
+import { stageCast2Controller } from './stageCast2Controller'
 
 export const TV_SYNC_KEY = 'gtar_tv_sync'
 export const TV_SYNC_CHANGED = 'gtar-tv-sync-changed'
 
 export function isTvSyncEnabled(storage: Pick<Storage, 'getItem'> | null = safeStorage()): boolean {
   try {
-    return storage?.getItem(TV_SYNC_KEY) === '1'
+    const val = storage?.getItem(TV_SYNC_KEY)
+    if (val === '0') return false
+    if (val === '1') return true
+    return true
   } catch {
-    return false
+    return true
   }
 }
 
 export function setTvSyncEnabled(enabled: boolean, storage: Pick<Storage, 'setItem' | 'removeItem'> | null = safeStorage()): void {
   try {
-    if (enabled) storage?.setItem(TV_SYNC_KEY, '1')
-    else storage?.removeItem(TV_SYNC_KEY)
+    storage?.setItem(TV_SYNC_KEY, enabled ? '1' : '0')
   } catch {
     /* Storage can be unavailable; the choice then applies to this page view only. */
+  }
+  if (!enabled) {
+    try {
+      stageCast.stopPresentation()
+      stageCast2Controller.end()
+    } catch {
+      /* Best-effort operation: failure must not interrupt the workflow. */
+    }
   }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(TV_SYNC_CHANGED))
 }
@@ -36,5 +48,5 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useTvSyncEnabled(): boolean {
-  return useSyncExternalStore(subscribe, () => isTvSyncEnabled(), () => false)
+  return useSyncExternalStore(subscribe, () => isTvSyncEnabled(), () => true)
 }

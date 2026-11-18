@@ -36,6 +36,7 @@
 
 :root {
   color-scheme: dark;
+  --app-header-height: 57px;
 }
 
 html {

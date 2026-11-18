@@ -145,7 +145,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   return (
     <div data-testid="setlist-workspace" className="mb-4">
       {/* Breadcrumbs & scope bar: full-bleed like the Songbook filter bar. Compact: row 1 crumbs | Manage, row 2 Sort | QR ⋯ */}
-      <div data-testid="setlist-filter-bar" className="ui-filter-bar sticky top-0 z-30 bg-app-filter border-b border-app-border -mx-4 -mt-3 sm:-mx-6 sm:-mt-4 px-4 sm:px-6 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
+      <div data-testid="setlist-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
         <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
           <button
             type="button"
@@ -237,6 +237,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
         )}
       </div>
 
+      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
       {openSetlist ? (
         /* Single setlist view (GTAR1 CASE A) */
         <div className="space-y-3">
@@ -576,6 +577,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

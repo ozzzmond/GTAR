@@ -1628,7 +1628,7 @@ function LibraryApp() {
           isTrashActive={activeView === 'trash'}
           onOpenTrash={() => navigateSafely(() => setActiveView('trash'))}
         />
-      <main className="flex-1 min-w-0 flex overflow-hidden">
+      <main className="flex-1 min-w-0 flex overflow-x-clip">
         {activeView === 'songbook' ? (
           <SongbookHomeView onRequestTrashSetlist={setTrashSetlistId} folders={folders} trashDropIds={trashDropIds} onDismissTrashDrop={() => setTrashDropIds(null)}
             songs={songs}

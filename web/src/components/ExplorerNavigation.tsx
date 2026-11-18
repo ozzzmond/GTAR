@@ -140,7 +140,7 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
       aria-label="Music Explorer sidebar" aria-hidden={collapsed}
       inert={collapsed ? true : undefined}
       style={width && !collapsed ? { width } : undefined}
-      className={`sticky top-0 z-20 hidden md:block shrink-0 bg-app-toolbar border-r border-app-border h-full transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none overflow-hidden ${
+      className={`sticky top-[var(--app-header-height,57px)] z-20 hidden md:block shrink-0 bg-app-toolbar border-r border-app-border h-[calc(100vh-var(--app-header-height,57px))] max-h-[calc(100vh-var(--app-header-height,57px))] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none overflow-hidden ${
         collapsed ? 'w-0 border-r-0 opacity-0 pointer-events-none' : (width ? '' : 'w-64 lg:w-72')
       }`}>
       <div className="h-full w-full overflow-y-auto"><MusicExplorerNav {...nav} headerAction={collapseButton} /></div>

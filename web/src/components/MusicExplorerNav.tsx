@@ -39,7 +39,7 @@ interface TagCount {
 }
 
 const itemBase =
-  'group flex w-full min-h-11 items-center gap-2 rounded-lg px-2.5 text-xs transition-colors cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-action/60'
+  'group flex w-full min-h-[42px] h-[42px] items-center gap-2 rounded-lg px-2.5 text-xs transition-colors cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-action/60'
 const itemIdle = 'text-app-text hover:bg-app-surface/60'
 const itemActive = 'bg-app-action text-app-on-action font-semibold shadow-sm'
 const pill = 'ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none'
