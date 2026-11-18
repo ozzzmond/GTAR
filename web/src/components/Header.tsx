@@ -59,6 +59,8 @@ import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { OnlineSourcesDialog, OnlineSourcesRow } from './OnlineSourcesRow'
 import { StageToolRows } from './StageToolRows'
+import { TvSyncRow } from './TvSyncRow'
+import { TvPresentationModal } from './TvPresentationModal'
 import { MidiRow } from '../midi/MidiRow'
 import { MidiDialog } from '../midi/MidiDialog'
 import { STAGE_TOOLS } from '../stageTools/registry'
@@ -363,6 +365,9 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Stage tools: each switch puts that tool's button on the Stage toolbar */}
       <StageToolRows rowClass={popoverItem} />
+
+      {/* TV Sync: in Advanced Tools with explicit on/off switch (#574) */}
+      <TvSyncRow rowClass={popoverItem} onOpenDialog={() => openAdvancedToolsDialog('tv-sync')} />
 
       {/* MIDI: off by default; the row opens its app-level dialog (#536) */}
       <MidiRow rowClass={popoverItem} onOpenDialog={() => openAdvancedToolsDialog('midi')} />
@@ -938,7 +943,10 @@ export const Header: React.FC<HeaderProps> = ({
       {advancedToolsDialog === 'midi' && (
         <MidiDialog onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
       )}
-      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && advancedToolsDialog !== 'midi' && (
+      {advancedToolsDialog === 'tv-sync' && (
+        <TvPresentationModal isOpen onClose={closeAdvancedToolsDialog} />
+      )}
+      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && advancedToolsDialog !== 'midi' && advancedToolsDialog !== 'tv-sync' && (
         <ExtensionSettingsDialog host={extensionHost} id={advancedToolsDialog} onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
       )}
 

@@ -493,7 +493,22 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }, [activeSetlists, searchQuery, songs, songIndex, currentView, folders])
 
   type SetlistSortOption = 'manual' | 'title_asc' | 'title_desc' | 'newest' | 'oldest'
-  const [setlistSortBy, setSetlistSortBy] = useState<SetlistSortOption>('manual')
+  const [setlistSortBy, setSetlistSortBy] = useState<SetlistSortOption>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gtar_setlist_sort')
+      if (saved === 'newest' || saved === 'oldest' || saved === 'manual' || saved === 'title_asc' || saved === 'title_desc') {
+        return saved as SetlistSortOption
+      }
+    }
+    return 'newest'
+  })
+
+  const handleSetlistSortChange = (newSort: SetlistSortOption) => {
+    setSetlistSortBy(newSort)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gtar_setlist_sort', newSort)
+    }
+  }
 
   const hasReliableSetlistTimestamps = useMemo(() => {
     return (
@@ -933,7 +948,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
 
       {/* 1. Breadcrumbs & scope bar (GTAR1 filter bar) */}
       {!isSetlistContext && (
-      <div data-testid="songbook-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border px-4 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:flex-wrap sm:justify-between sm:gap-y-2">
+      <div data-testid="songbook-filter-bar" className="ui-filter-bar sticky top-0 z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:flex-wrap sm:justify-between sm:gap-y-2">
         <nav aria-label="Breadcrumb" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
           {breadcrumbItems.map((item, idx) => (
             <React.Fragment key={idx}>
@@ -1134,7 +1149,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   ? [{ value: 'newest', label: 'Newest First' }, { value: 'oldest', label: 'Oldest First' }]
                   : []),
               ],
-              onSortChange: (value) => setSetlistSortBy(value as SetlistSortOption),
+              onSortChange: (value) => handleSetlistSortChange(value as SetlistSortOption),
               onShareAll: activeSetlists.length > 0 ? handleMainShareSetlist : undefined,
               onShareSetlist,
               onImport: () => { setImportLinkError(null); setIsImportModalOpen(true) },
@@ -1165,7 +1180,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
             <button type="button" data-testid="songs-add-song" onClick={onNewSong}
-              className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+              className="min-h-[42px] h-[42px] px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
               <span>Add Song</span>
             </button>
           </div>
@@ -1178,7 +1193,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <p className="text-xs text-app-muted max-w-sm mx-auto mt-1 mb-4">Create a song or import charts.</p>
             <div className="flex justify-center gap-2 flex-wrap">
               <button type="button" onClick={onNewSong}
-                className="min-h-11 px-3.5 bg-app-action hover:brightness-110 rounded-xl text-xs text-app-on-action font-semibold flex items-center gap-1 shadow-sm cursor-pointer">
+                className="min-h-[42px] h-[42px] px-3.5 bg-app-action hover:brightness-110 rounded-xl text-xs text-app-on-action font-semibold flex items-center gap-1 shadow-sm cursor-pointer">
                 <Plus className="w-3.5 h-3.5" />
                 <span>Create First Song</span>
               </button>
@@ -1197,13 +1212,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 handleFilterTagsChange('ALL')
                 if (currentView.type === 'TAG') onSelectView?.({ type: 'ALL_SONGS' })
               }}
-              className="ui-button min-h-11 px-3 bg-app-button hover:brightness-110 rounded-xl text-xs text-app-button-text font-semibold border border-app-border cursor-pointer">
+              className="ui-button min-h-[42px] h-[42px] px-3 bg-app-button hover:brightness-110 rounded-xl text-xs text-app-button-text font-semibold border border-app-border cursor-pointer">
               Reset Filters
             </button>
           </div>
         ) : (
           <div ref={songGridRef} id="songbook-song-cards" data-testid="song-grid" data-window={songWindow.active ? `${songWindow.start}-${songWindow.end}` : undefined}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-2.5"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"
             style={songWindow.active ? { paddingTop: songWindow.padTop, paddingBottom: songWindow.padBottom } : undefined}>
             {visibleIndexedSongs.map(({ song, originalIdx }) => {
               const isSelected = originalIdx === activeSongIndex

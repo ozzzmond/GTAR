@@ -13,7 +13,15 @@ import { LiveLyricsControl } from './LiveLyrics'
 import { useLiveLyrics } from '../utils/useLiveLyrics'
 import { TvPresentationOptions } from './TvPresentationOptions'
 import { transposeContext } from '../utils/songKeySemantics'
-import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings, readStageAppearanceExtras } from '../utils/backupSettings'
+import {
+  SETTINGS_KEYS,
+  SETTINGS_CHANGED,
+  readBackupSettings,
+  readStageAppearanceExtras,
+  getThemeAssignedRole,
+  isLightTheme,
+  loadThemeModeAssignments,
+} from '../utils/backupSettings'
 import React, { useState, useLayoutEffect, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
@@ -37,7 +45,14 @@ import {
   Gauge,
   ArrowLeft,
   FileEdit,
+  Sun,
+  Moon,
 } from 'lucide-react'
+import type {
+  ThemeMode,
+  ThemeModeAssignments,
+  CustomThemeColors,
+} from './ThemeModal'
 import { StageControlDock, readPersistedDockPosition } from './StageControlDock'
 import { StageOptionsSheet } from './StageOptionsSheet'
 import { useExtensionHost } from '../extensions/host/useExtensionHost'
@@ -106,6 +121,10 @@ interface StageViewProps {
   onToggleTwoColumn?: (enabled: boolean) => void
   onOpenEditor?: () => void
   onBack?: () => void
+  onToggleThemeMode?: () => void
+  currentTheme?: ThemeMode
+  customColors?: CustomThemeColors
+  themeModeAssignments?: ThemeModeAssignments
   /** Called whenever the stage enters or exits "performance mode" (fullscreen or focus). */
   onPerformanceModeChange?: (isActive: boolean) => void
 }
@@ -172,8 +191,21 @@ export const StageView: React.FC<StageViewProps> = ({
   onToggleTwoColumn: externalOnToggleTwoColumn,
   onOpenEditor,
   onBack,
+  onToggleThemeMode,
+  currentTheme,
+  customColors,
+  themeModeAssignments,
   onPerformanceModeChange,
 }) => {
+  const effectiveTheme: ThemeMode = currentTheme ||
+    (typeof localStorage !== 'undefined' ? (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null) : null) ||
+    'solarized-dark'
+  const effectiveAssignments: ThemeModeAssignments = themeModeAssignments ||
+    (typeof localStorage !== 'undefined' ? loadThemeModeAssignments() : { light: 'paper-light', dark: 'solarized-dark' })
+  const activeRole = getThemeAssignedRole(effectiveTheme, effectiveAssignments)
+  const isCurrentLight = activeRole === 'light' || (activeRole === null && isLightTheme(effectiveTheme, customColors))
+  const targetRole = isCurrentLight ? 'dark' : 'light'
+  const modeSwitchLabel = targetRole === 'dark' ? 'Switch to dark mode' : 'Switch to light mode'
   const { host: bandHost, active: bandSyncEnabled, leader: bandLeader, remote: bandRemote } = useBandSyncGate()
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
   // Stage view configuration & controls (matching Jetpack Compose SongViewerScreen.kt)
@@ -1815,6 +1847,27 @@ export const StageView: React.FC<StageViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Dark/Light mode toggle in fullscreen options, adjacent to transpose key controls */}
+            {onToggleThemeMode && (
+              <button
+                type="button"
+                data-testid="stage-fullscreen-theme-mode-toggle"
+                aria-label={modeSwitchLabel}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleThemeMode()
+                  triggerOverlaysShow()
+                }}
+                className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border flex items-center justify-center transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+              >
+                {targetRole === 'dark' ? (
+                  <Moon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                ) : (
+                  <Sun className="w-5 h-5 shrink-0" aria-hidden="true" />
+                )}
+              </button>
+            )}
+
             {/* Key Chip */}
             <button
               type="button"
@@ -2668,7 +2721,6 @@ export const StageView: React.FC<StageViewProps> = ({
           }
         }}
         setlistName={isInSetlistMode ? activeSetlistName : undefined}
-        onOpenTvPresentation={() => setIsTvPresentationModalOpen(true)}
       >
         <TvPresentationOptions />
       </StageOptionsSheet>

@@ -10,7 +10,6 @@ import {
   Minimize,
   ListMusic,
   Check,
-  Tv,
 } from 'lucide-react'
 import type { StageChordScale, StageFontWeight, StageLineSpacing } from './SongLineRenderer'
 import type { StageNotationMode } from '../utils/nashvilleNotation'
@@ -75,8 +74,6 @@ export interface StageOptionsSheetProps {
   onSelectQueueIndex?: (index: number) => void
   setlistName?: string
 
-  // TV / Cast options
-  onOpenTvPresentation?: () => void
   children?: React.ReactNode
 }
 
@@ -114,7 +111,6 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
   currentQueueIndex,
   onSelectQueueIndex,
   setlistName,
-  onOpenTvPresentation,
   children,
 }) => {
   useEffect(() => {
@@ -573,31 +569,6 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 {isFullscreen ? 'Exit' : 'Enter'}
               </button>
             </div>
-
-            {/* TV Presentation Link (if handler provided) */}
-            {onOpenTvPresentation && (
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-app-base border border-app-border">
-                <div className="flex items-center gap-2.5">
-                  <Tv className="w-4 h-4 text-app-accent" />
-                  <div>
-                    <div className="font-semibold text-app-heading">TV & Second Screen</div>
-                    <div className="text-[11px] text-app-muted">
-                      Open Stage Cast pairing or pop-out window
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose()
-                    onOpenTvPresentation()
-                  }}
-                  className="min-h-[44px] px-4 py-2 rounded-xl font-bold transition-colors flex items-center justify-center border ui-button bg-app-button hover:brightness-110 text-app-button-text border-app-border"
-                >
-                  Pair / Cast
-                </button>
-              </div>
-            )}
 
             {/* TV Presentation & Receiver Sync Options */}
             {children}

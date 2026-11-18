@@ -1746,6 +1746,10 @@ function LibraryApp() {
               isTwoColumn={isTwoColumn}
               onToggleTwoColumn={setIsTwoColumn}
               onPerformanceModeChange={setIsStagePerformanceMode}
+              onToggleThemeMode={handleToggleThemeMode}
+              currentTheme={stageTheme}
+              customColors={customThemeColors}
+              themeModeAssignments={themeAssignments}
             />
           </StageErrorBoundary>
         )}

@@ -38,6 +38,10 @@
   color-scheme: dark;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -48,6 +52,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+[data-testid="songbook-canvas"] {
+  scrollbar-gutter: stable;
 }
 
 /* Custom scrollbars matching Solarized Stage Dark */
