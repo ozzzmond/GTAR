@@ -93,6 +93,7 @@ import { canonicalSongKey } from './utils/musicalKey'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { isDevEnv } from './utils/env'
+import { readWorkspaceWidth, rememberWorkspaceWidth, clampWorkspaceWidth } from './utils/workspacePreview'
 import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
 
 // The import dialog pulls in ChordSheetJS (~230 KB); load it only when first opened (#85).
@@ -412,6 +413,35 @@ function LibraryApp() {
     initialStageSession.isValid ? initialStageSession.queueMode : 'library'
   )
   const [searchQuery, setSearchQuery] = useState<string>('')
+
+  // GH-579 Phase 2: Optional Workspace Preview Pane (desktop/tablet only, default OFF)
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('gtar_workspace_preview_enabled') === 'true'
+    } catch {
+      return false
+    }
+  })
+  const handleToggleWorkspace = useCallback(() => {
+    setIsWorkspaceOpen(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem('gtar_workspace_preview_enabled', String(next))
+      } catch {
+        /* Storage preference is optional. */
+      }
+      return next
+    })
+  }, [])
+
+  const [workspaceWidth, setWorkspaceWidth] = useState<number | null>(() => {
+    return readWorkspaceWidth()
+  })
+  const handleWorkspaceWidthChange = useCallback((w: number) => {
+    const clamped = clampWorkspaceWidth(w)
+    setWorkspaceWidth(clamped)
+    rememberWorkspaceWidth(clamped)
+  }, [])
 
   // Display Settings (persisted in localStorage)
   const [fontStyle, setFontStyle] = useState<SongFontStyleOption>(() => {
@@ -1637,6 +1667,11 @@ function LibraryApp() {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             activeSongIndex={activeSongIndex}
+            isWorkspaceOpen={isWorkspaceOpen}
+            onToggleWorkspace={handleToggleWorkspace}
+            workspaceWidth={workspaceWidth}
+            onWorkspaceWidthChange={handleWorkspaceWidthChange}
+            onPreviewSong={handleSelectLibrarySong}
             onSelectSong={(songIdx) => {
               handleSelectLibrarySong(songIdx)
               setActiveView('stage')

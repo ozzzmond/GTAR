@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronRight, ListMusic, MoreHorizontal, Music, Pencil, Play, Search, Share2, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronRight, ListMusic, MoreHorizontal, Music, PanelRight, Pencil, Play, Search, Share2, Trash2, Upload, X } from 'lucide-react'
 import type { ActiveSongState, SetlistFolder, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
@@ -7,6 +7,8 @@ import { DropdownPortal } from './DropdownPortal'
 import { SetlistsHelp } from './menuHelp'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
 import { SwipeableActionCard } from './SwipeableActionCard'
+import { WorkspacePreviewPane } from './WorkspacePreviewPane'
+import { useIsDesktop, readWorkspaceWidth, rememberWorkspaceWidth, clampWorkspaceWidth } from '../utils/workspacePreview'
 
 /**
  * #290 S1: GTAR1 setlist workspace (collection + single-setlist views), ported from
@@ -44,6 +46,10 @@ export interface SetlistWorkspaceProps {
   shortcutsBlocked?: boolean
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
   menu?: SetlistWorkspaceMenu
+  isWorkspaceOpen?: boolean
+  onToggleWorkspace?: () => void
+  workspaceWidth?: number | null
+  onWorkspaceWidthChange?: (width: number) => void
 }
 
 export interface SetlistWorkspaceMenu {
@@ -102,7 +108,25 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onAddSongs,
   shortcutsBlocked = false,
   menu,
+  isWorkspaceOpen = false,
+  onToggleWorkspace,
+  workspaceWidth: controlledWorkspaceWidth,
+  onWorkspaceWidthChange,
 }) => {
+  const isDesktop = useIsDesktop()
+  const isEffectiveWorkspace = Boolean(isWorkspaceOpen && isDesktop)
+  const [localWorkspaceWidth, setLocalWorkspaceWidth] = useState<number | null>(() => {
+    return readWorkspaceWidth()
+  })
+  const effectiveWorkspaceWidth = controlledWorkspaceWidth !== undefined ? controlledWorkspaceWidth : localWorkspaceWidth
+  const handleWorkspaceWidthChange = (w: number) => {
+    if (onWorkspaceWidthChange) onWorkspaceWidthChange(w)
+    else {
+      const clamped = clampWorkspaceWidth(w)
+      setLocalWorkspaceWidth(clamped)
+      rememberWorkspaceWidth(clamped)
+    }
+  }
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
   const [localOpenSetlistId, setLocalOpenSetlistId] = useState<string | number | null>(null)
   const openSetlistId = controlledOpenSetlistId === undefined ? localOpenSetlistId : controlledOpenSetlistId
@@ -192,93 +216,8 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const crumbButton = 'min-h-[42px] h-[42px] flex items-center px-1 rounded-md text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer'
   const crumbCurrent = 'ui-primary-text text-app-heading font-semibold truncate'
 
-  return (
-    <div data-testid="setlist-workspace" className="mb-4">
-      {/* Breadcrumbs & scope bar: full-bleed like the Songbook filter bar. Compact: row 1 crumbs | Manage, row 2 Sort | QR ⋯ */}
-      <div data-testid="setlist-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
-        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-[42px] h-[42px] overflow-hidden whitespace-nowrap">
-          <button
-            type="button"
-            data-crumb
-            data-testid="workspace-crumb-root"
-            onClick={() => { setOpenSetlistId(null); onSelectScope?.('ALL_SETLISTS') }}
-            className={crumbButton}
-          >
-            Setlists
-          </button>
-          <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
-          {openSetlist ? (
-            <>
-              <button
-                type="button"
-                data-crumb
-                data-testid="workspace-crumb-scope"
-                onClick={() => setOpenSetlistId(null)}
-                className={crumbButton}
-              >
-                {folderName ?? SCOPE_LABEL[scope]}
-              </button>
-              <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
-              <span data-crumb aria-current="page" className={crumbCurrent}>{openSetlist.name}</span>
-            </>
-          ) : (
-            <span data-crumb aria-current="page" className={crumbCurrent}>{folderName ?? SCOPE_LABEL[scope]}</span>
-          )}
-        </nav>
-        {menu && (
-          <div data-testid="setlist-toolbar" className="contents">
-            {!openSetlist && (
-              <>
-                <select
-                  data-testid="setlist-sort-select"
-                  aria-label="Sort setlists"
-                  value={menu.sortValue}
-                  onChange={(e) => menu.onSortChange(e.target.value)}
-                  className="col-start-1 row-start-2 justify-self-start sm:ml-auto min-w-0 max-w-full min-h-[42px] h-[42px] bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
-                >
-                  {menu.sortOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            <div className={`${openSetlist ? 'row-start-1' : 'row-start-2'} col-start-2 justify-self-end flex items-center gap-1.5`}>
-                <SetlistsHelp className="mr-0.5" />
-                {!openSetlist && menu.onShareAll && (
-                  <button
-                    type="button"
-                    data-testid="main-share-setlist-btn"
-                    aria-label="Share Setlist"
-                    onClick={menu.onShareAll}
-                    className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                  >
-                    <Share2 className="w-4 h-4" />
-                  </button>
-                )}
-            <button
-              type="button"
-              data-testid="workspace-scope-menu-btn"
-              aria-label="Setlist actions"
-              aria-haspopup="menu"
-              aria-expanded={!!menuAnchor}
-              onClick={e => { e.stopPropagation(); setMenuAnchor(menuAnchor ? null : e.currentTarget) }}
-              className="ui-button min-h-11 min-w-11 shrink-0 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-            </div>
-            <DropdownPortal anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)} align="right">
-              <ScopeMenu menu={menu} openSetlist={openSetlist} onDone={() => setMenuAnchor(null)} />
-            </DropdownPortal>
-          </div>
-        )}
-      </div>
 
-      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
-      {openSetlist ? (
-        /* Single setlist view (GTAR1 CASE A) */
+  const renderSingleSetlist = (targetSetlist: WebSetlist) => (
         <div className="space-y-3">
           <div
             data-testid="workspace-setlist-header"
@@ -328,14 +267,14 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 ) : (
                   <div className="flex items-center gap-2 min-w-0">
                     <h1 data-testid="workspace-setlist-name" className="ui-primary-text text-base sm:text-lg font-bold text-app-heading truncate">
-                      {openSetlist.name}
+                      {targetSetlist.name}
                     </h1>
                     <button
                       type="button"
-                      aria-label={`Rename setlist ${openSetlist.name}`}
+                      aria-label={`Rename setlist ${targetSetlist.name}`}
                       data-testid="workspace-rename-setlist"
                       onClick={() => {
-                        setOpenSetlistNameInput(openSetlist.name)
+                        setOpenSetlistNameInput(targetSetlist.name)
                         setEditingOpenSetlistName(true)
                       }}
                       className="p-1 rounded hover:bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer shrink-0"
@@ -354,8 +293,8 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                       <select
                         aria-label="Setlist folder"
                         data-testid="workspace-setlist-folder-select"
-                        value={openSetlist.folderId ?? ''}
-                        onChange={e => onSetlistFolderChange(openSetlist.id, e.target.value || null)}
+                        value={targetSetlist.folderId ?? ''}
+                        onChange={e => onSetlistFolderChange(targetSetlist.id, e.target.value || null)}
                         className="bg-app-base border border-app-border rounded px-1.5 py-0.5 text-xs text-app-text outline-none focus:border-app-action cursor-pointer"
                       >
                         <option value="">Unfiled</option>
@@ -372,7 +311,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   type="button"
                   data-testid="workspace-play-setlist"
                   disabled={firstPlayable < 0}
-                  onClick={() => { if (firstPlayable >= 0) onPlaySetlistPosition?.(openSetlist.id, firstPlayable) }}
+                  onClick={() => { if (firstPlayable >= 0) onPlaySetlistPosition?.(targetSetlist.id, firstPlayable) }}
                   className={`${touch} px-3.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   <Play className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
@@ -396,7 +335,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   type="button"
                   data-testid="workspace-share-setlist"
                   aria-label="Share Setlist"
-                  onClick={() => menu.onShareSetlist?.(openSetlist)}
+                  onClick={() => menu.onShareSetlist?.(targetSetlist)}
                   className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center cursor-pointer shrink-0"
                 >
                   <Share2 className="w-4 h-4" aria-hidden="true" />
@@ -406,10 +345,10 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 <button
                   type="button"
                   data-testid="workspace-delete-setlist"
-                  aria-label={`Move setlist ${openSetlist.name} to Trash`}
+                  aria-label={`Move setlist ${targetSetlist.name} to Trash`}
                   onClick={() => {
-                    if (onRequestTrashSetlist) onRequestTrashSetlist(openSetlist.id)
-                    else onDeleteSetlist?.(openSetlist.id)
+                    if (onRequestTrashSetlist) onRequestTrashSetlist(targetSetlist.id)
+                    else onDeleteSetlist?.(targetSetlist.id)
                   }}
                   className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-status-error hover:brightness-110 hover:bg-status-error/10 hover:border-status-error/40 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
                 >
@@ -438,10 +377,10 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             <div className="space-y-1.5 sm:space-y-2">
               {entries.map((entry, idx) => {
                 const unavailable = entry.libraryIndex === null
-                const open = () => { if (!unavailable) onOpenSong?.(openSetlist.id, idx) }
+                const open = () => { if (!unavailable) onOpenSong?.(targetSetlist.id, idx) }
                 return (
                   <div
-                    key={openSetlist.songs[idx].entryId ?? `${openSetlist.id}_${idx}`}
+                    key={targetSetlist.songs[idx].entryId ?? `${targetSetlist.id}_${idx}`}
                     data-testid={`workspace-entry-${idx}`}
                     aria-disabled={unavailable ? 'true' : undefined}
                     onClick={open}
@@ -482,7 +421,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                             type="button"
                             data-testid={`workspace-entry-${idx}-up`}
                             disabled={idx === 0}
-                            onClick={e => { e.stopPropagation(); onMoveSong(openSetlist.id, idx, 'up') }}
+                            onClick={e => { e.stopPropagation(); onMoveSong(targetSetlist.id, idx, 'up') }}
                             aria-label={`Move ${entry.title} up`}
                             className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           >
@@ -492,7 +431,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                             type="button"
                             data-testid={`workspace-entry-${idx}-down`}
                             disabled={idx === entries.length - 1}
-                            onClick={e => { e.stopPropagation(); onMoveSong(openSetlist.id, idx, 'down') }}
+                            onClick={e => { e.stopPropagation(); onMoveSong(targetSetlist.id, idx, 'down') }}
                             aria-label={`Move ${entry.title} down`}
                             className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           >
@@ -504,7 +443,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         type="button"
                         data-testid={`workspace-entry-play-${idx}`}
                         disabled={unavailable}
-                        onClick={e => { e.stopPropagation(); if (!unavailable) onPlaySetlistPosition?.(openSetlist.id, idx) }}
+                        onClick={e => { e.stopPropagation(); if (!unavailable) onPlaySetlistPosition?.(targetSetlist.id, idx) }}
                         aria-label={`Play ${entry.title} in Stage`}
                         className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-app-action hover:brightness-110 text-app-on-action transition-colors flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -524,7 +463,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         <button
                           type="button"
                           data-testid={`workspace-entry-${idx}-remove`}
-                          onClick={e => { e.stopPropagation(); onRemoveSong(openSetlist.id, idx) }}
+                          onClick={e => { e.stopPropagation(); onRemoveSong(targetSetlist.id, idx) }}
                           aria-label={`Remove ${entry.title} from setlist`}
                           className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-app-muted hover:text-status-error hover:bg-status-error/10 border border-app-border transition-colors cursor-pointer"
                         >
@@ -538,8 +477,9 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             </div>
           )}
         </div>
-      ) : (
-        /* Setlist collection view (GTAR1 CASE B, including folder scope) */
+  )
+
+  const renderSetlistGrid = () => (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h2 data-testid="setlist-workspace-heading" className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2 min-w-0">
@@ -567,10 +507,11 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               <p className="text-xs text-app-muted mt-1">Create a new setlist from the Music Explorer.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
+            <div className={isEffectiveWorkspace ? "grid grid-cols-1 gap-3 sm:gap-3.5" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"}>
               {setlists.map(sl => {
                 const count = sl.songs?.length || 0
                 const created = formatCreated(sl.createdAt)
+                const isSelected = isEffectiveWorkspace && openSetlist?.id === sl.id
                 return (
                   <SwipeableActionCard
                     key={sl.id}
@@ -601,7 +542,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                       onAction: () => setConfirmDeleteId(sl.id),
                     } : undefined}
                     className="rounded-2xl"
-                    cardClassName="ui-setlist-card group h-full p-3 sm:p-3.5 rounded-xl bg-app-setlist hover:brightness-95 border border-app-border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60"
+                    cardClassName={`ui-setlist-card group h-full p-3 sm:p-3.5 rounded-xl border cursor-pointer transition-all shadow-sm flex flex-col justify-between outline-none focus-visible:ring-2 focus-visible:ring-app-action/60 ${isSelected ? "ui-selection-card bg-app-selected border-app-selected-border ring-2 ring-app-action/40" : "bg-app-setlist hover:brightness-95 border-app-border"}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -731,7 +672,145 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             </div>
           )}
         </div>
-      )}
+  )
+
+  return (
+    <div data-testid="setlist-workspace" className="mb-4">
+      {/* Breadcrumbs & scope bar: full-bleed like the Songbook filter bar. Compact: row 1 crumbs | Manage, row 2 Sort | QR ⋯ */}
+      <div data-testid="setlist-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
+        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-[42px] h-[42px] overflow-hidden whitespace-nowrap">
+          <button
+            type="button"
+            data-crumb
+            data-testid="workspace-crumb-root"
+            onClick={() => { setOpenSetlistId(null); onSelectScope?.('ALL_SETLISTS') }}
+            className={crumbButton}
+          >
+            Setlists
+          </button>
+          <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
+          {openSetlist && !isEffectiveWorkspace ? (
+            <>
+              <button
+                type="button"
+                data-crumb
+                data-testid="workspace-crumb-scope"
+                onClick={() => setOpenSetlistId(null)}
+                className={crumbButton}
+              >
+                {folderName ?? SCOPE_LABEL[scope]}
+              </button>
+              <ChevronRight className="w-3.5 h-3.5 text-app-muted shrink-0" aria-hidden="true" />
+              <span data-crumb aria-current="page" className={crumbCurrent}>{openSetlist.name}</span>
+            </>
+          ) : (
+            <span data-crumb aria-current="page" className={crumbCurrent}>{folderName ?? SCOPE_LABEL[scope]}</span>
+          )}
+        </nav>
+        {menu && (
+          <div data-testid="setlist-toolbar" className="contents">
+            {(!openSetlist || isEffectiveWorkspace) && (
+              <>
+                <select
+                  data-testid="setlist-sort-select"
+                  aria-label="Sort setlists"
+                  value={menu.sortValue}
+                  onChange={(e) => menu.onSortChange(e.target.value)}
+                  className="col-start-1 row-start-2 justify-self-start sm:ml-auto min-w-0 max-w-full min-h-[42px] h-[42px] bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                >
+                  {menu.sortOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <div className={`${openSetlist && !isEffectiveWorkspace ? 'row-start-1' : 'row-start-2'} col-start-2 justify-self-end flex items-center gap-1.5`}>
+                <SetlistsHelp className="mr-0.5" />
+                {(!openSetlist || isEffectiveWorkspace) && menu.onShareAll && (
+                  <button
+                    type="button"
+                    data-testid="main-share-setlist-btn"
+                    aria-label="Share Setlist"
+                    onClick={menu.onShareAll}
+                    className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-accent hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                )}
+                {onToggleWorkspace && (
+                  <button
+                    type="button"
+                    data-testid="workspace-toggle"
+                    aria-label={isWorkspaceOpen ? "Hide Preview Pane" : "Show Preview Pane"}
+                    aria-pressed={isWorkspaceOpen}
+                    onClick={onToggleWorkspace}
+                    className={`hidden md:flex items-center gap-1.5 shrink-0 min-h-11 sm:min-h-9 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                      isWorkspaceOpen
+                        ? 'bg-app-action/15 border-app-action text-app-action'
+                        : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
+                    }`}
+                  >
+                    <PanelRight className="w-4 h-4" />
+                    <span className="hidden xl:inline">Preview</span>
+                  </button>
+                )}
+            <button
+              type="button"
+              data-testid="workspace-scope-menu-btn"
+              aria-label="Setlist actions"
+              aria-haspopup="menu"
+              aria-expanded={!!menuAnchor}
+              onClick={e => { e.stopPropagation(); setMenuAnchor(menuAnchor ? null : e.currentTarget) }}
+              className="ui-button min-h-11 min-w-11 shrink-0 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            </div>
+            <DropdownPortal anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)} align="right">
+              <ScopeMenu menu={menu} openSetlist={openSetlist} onDone={() => setMenuAnchor(null)} />
+            </DropdownPortal>
+          </div>
+        )}
+      </div>
+
+      <div className="w-full">
+        {isEffectiveWorkspace ? (
+          <div className="flex-1 min-w-0 flex flex-row items-start">
+            <div className="flex-1 min-w-0 px-4 py-3 sm:px-6 sm:py-4">
+              {renderSetlistGrid()}
+            </div>
+            <WorkspacePreviewPane
+              isOpen={isEffectiveWorkspace}
+              width={effectiveWorkspaceWidth}
+              onWidthChange={handleWorkspaceWidthChange}
+              ariaLabel="Setlist Detail Pane"
+              testId="setlist-workspace-preview-pane"
+            >
+              {openSetlist ? (
+                <div key={openSetlist.id} className="h-full overflow-y-auto p-4 space-y-3 animate-in fade-in duration-150 motion-reduce:animate-none">
+                  {renderSingleSetlist(openSetlist)}
+                </div>
+              ) : (
+                <div
+                  data-testid="workspace-setlist-preview-empty"
+                  className="h-full flex flex-col items-center justify-center p-6 text-center text-app-muted select-none"
+                >
+                  <ListMusic className="w-10 h-10 mb-2 opacity-30 text-app-muted" />
+                  <h3 className="text-sm font-semibold text-app-heading">Select a setlist to view details</h3>
+                  <p className="text-xs text-app-muted max-w-xs mt-1">
+                    Songs and management options for the selected setlist will appear here.
+                  </p>
+                </div>
+              )}
+            </WorkspacePreviewPane>
+          </div>
+        ) : (
+          <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
+            {openSetlist ? renderSingleSetlist(openSetlist) : renderSetlistGrid()}
+          </div>
+        )}
       </div>
       {openSetlist && isPickerOpen && (
         <MultiSongSetlistPicker
