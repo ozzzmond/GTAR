@@ -337,4 +337,5 @@ New or renamed tests await a human choice of primary category.
 - [uiHelperCopy224.test.cjs](uiHelperCopy224.test.cjs)
 - [uiUxPolish403.test.cjs](uiUxPolish403.test.cjs)
 - [uiUxPolish436.test.cjs](uiUxPolish436.test.cjs)
+- [workspacePreviewPane579.test.cjs](workspacePreviewPane579.test.cjs)
 <!-- test-catalog:UNCLASSIFIED:end -->

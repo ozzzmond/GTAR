@@ -34,7 +34,11 @@ import {
   AlertCircle,
   Tag,
   Link,
+  PanelRight,
 } from 'lucide-react'
+import { WorkspacePreviewPane } from './WorkspacePreviewPane'
+import { WorkspaceSongPreview } from './WorkspaceSongPreview'
+import { readWorkspaceEnabled, rememberWorkspaceEnabled, useIsDesktop } from '../utils/workspacePreview'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus, formatTempoLabel, syncCanonicalDirectives } from '../utils/chordProMetadata'
 import { resolveSongKeys } from '../utils/songKeySemantics'
@@ -93,6 +97,11 @@ interface SongbookHomeViewProps {
   onEditSong?: (index: number) => void
   /** Heading "Browse Sources" (GTAR1); sources stay out of the Explorer sidebar. */
   onOpenSources?: () => void
+  isWorkspaceOpen?: boolean
+  onToggleWorkspace?: () => void
+  workspaceWidth?: number | null
+  onWorkspaceWidthChange?: (width: number) => void
+  onPreviewSong?: (index: number) => void
 }
 
 const cardMenuItem = 'w-full min-h-11 px-2.5 rounded-lg text-left hover:bg-app-base text-app-text flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
@@ -135,7 +144,34 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   view,
   onSelectView,
   onEditSong,
+  isWorkspaceOpen: controlledWorkspaceOpen,
+  onToggleWorkspace,
+  workspaceWidth: controlledWorkspaceWidth,
+  onWorkspaceWidthChange,
+  onPreviewSong,
 }) => {
+  const isDesktop = useIsDesktop()
+  const [localWorkspaceOpen, setLocalWorkspaceOpen] = useState(readWorkspaceEnabled)
+  const isWorkspaceOpen = controlledWorkspaceOpen !== undefined ? controlledWorkspaceOpen : localWorkspaceOpen
+  const handleToggleWorkspace = () => {
+    if (onToggleWorkspace) {
+      onToggleWorkspace()
+    } else {
+      setLocalWorkspaceOpen(prev => {
+        const next = !prev
+        rememberWorkspaceEnabled(next)
+        return next
+      })
+    }
+  }
+  const isEffectiveWorkspace = Boolean(isWorkspaceOpen && isDesktop)
+  const [localWorkspaceWidth, setLocalWorkspaceWidth] = useState<number | null>(null)
+  const workspaceWidth = controlledWorkspaceWidth !== undefined ? controlledWorkspaceWidth : localWorkspaceWidth
+  const handleWorkspaceWidthChange = (w: number) => {
+    if (onWorkspaceWidthChange) onWorkspaceWidthChange(w)
+    else setLocalWorkspaceWidth(w)
+  }
+
   const { colors: tagColors, onAddToTag } = useTagLibrary()
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const [tagName, setTagName] = useState('')
@@ -477,6 +513,18 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     })
     return sortDirection === 'desc' ? list.reverse() : list
   }, [filteredIndexedSongs, sortBy, sortDirection])
+
+  const effectivePreviewIdx = useMemo(() => {
+    if (sortedIndexedSongs.length === 0) return -1
+    const found = sortedIndexedSongs.find(s => s.originalIdx === activeSongIndex)
+    if (found) return found.originalIdx
+    return sortedIndexedSongs[0].originalIdx
+  }, [activeSongIndex, sortedIndexedSongs])
+
+  const effectivePreviewSong = useMemo(() => {
+    if (!isEffectiveWorkspace || effectivePreviewIdx < 0 || effectivePreviewIdx >= songs.length) return null
+    return songs[effectivePreviewIdx] || null
+  }, [isEffectiveWorkspace, songs, effectivePreviewIdx])
 
   // #252: long lists render only the rows near the viewport (no change below the threshold).
   const songGridRef = useRef<HTMLDivElement>(null)
@@ -1046,6 +1094,21 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   <span>Select</span>
                 </button>
             )}
+            <button
+              type="button"
+              data-testid="workspace-toggle"
+              aria-label={isWorkspaceOpen ? "Hide Preview Pane" : "Show Preview Pane"}
+              aria-pressed={isWorkspaceOpen}
+              onClick={handleToggleWorkspace}
+              className={`hidden md:flex items-center gap-1.5 shrink-0 min-h-11 sm:min-h-9 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                isWorkspaceOpen
+                  ? 'bg-app-action/15 border-app-action text-app-action'
+                  : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
+              }`}
+            >
+              <PanelRight className="w-4 h-4" />
+              <span className="hidden xl:inline">Preview</span>
+            </button>
             {(onOpenImportSongs || onTrashDuplicates) && (
               <div className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto flex items-center gap-2 shrink-0`}>
                 <SongsLibraryHelp canImport={Boolean(onOpenImportSongs)} canCheckDuplicates={Boolean(onTrashDuplicates)} />
@@ -1148,6 +1211,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             onRemoveSong={onRemoveSong}
             onAddSongs={onAddSongs}
             shortcutsBlocked={shortcutsBlocked}
+            isWorkspaceOpen={isWorkspaceOpen}
+            onToggleWorkspace={handleToggleWorkspace}
+            workspaceWidth={workspaceWidth}
+            onWorkspaceWidthChange={handleWorkspaceWidthChange}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
             onOpenSong={onSelectSetlistSong}
             openSetlistId={openSetlistId}
@@ -1174,7 +1241,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           />
         </>
       ) : (
-      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
+      <div className="w-full flex-1 min-w-0 flex flex-row items-start">
+        <div className="flex-1 min-w-0 px-4 py-3 sm:px-6 sm:py-4">
       {isDuplicateReviewOpen && onTrashDuplicates && (
         <DuplicateReviewDialog songs={songs} setlists={setlists} onTrashDuplicates={onTrashDuplicates}
           onClose={() => setIsDuplicateReviewOpen(false)} />
@@ -1231,10 +1299,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
         ) : (
           <div ref={songGridRef} id="songbook-song-cards" data-testid="song-grid" data-window={songWindow.active ? `${songWindow.start}-${songWindow.end}` : undefined}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"
+            className={isEffectiveWorkspace ? "grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-3.5" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"}
             style={songWindow.active ? { paddingTop: songWindow.padTop, paddingBottom: songWindow.padBottom } : undefined}>
             {visibleIndexedSongs.map(({ song, originalIdx }) => {
-              const isSelected = originalIdx === activeSongIndex
+              const isSelected = isEffectiveWorkspace ? originalIdx === effectivePreviewIdx : originalIdx === activeSongIndex
               const isDeleting = confirmDeleteIdx === originalIdx
               const isMenuOpen = activeMenuSongIdx === originalIdx
               const isSongChosen = selectedSongIds.has(song.id ?? originalIdx)
@@ -1264,13 +1332,16 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   className="rounded-2xl"
                   cardClassName={`ui-song-card group relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm h-full ${
                     isSongChosen || isSelected
-                      ? 'ui-selection-card bg-app-selected border-app-selected-border'
+                      ? 'ui-selection-card bg-app-selected border-app-selected-border ring-2 ring-app-action/40'
                       : 'bg-app-song hover:brightness-95 border-app-border'
                   }`}
                   onClick={() => {
                     if (isRenaming) return
                     if (isSongSelectionMode) {
                       toggleSongSelection(song.id ?? originalIdx)
+                    } else if (isEffectiveWorkspace) {
+                      if (onPreviewSong) onPreviewSong(originalIdx)
+                      else onSelectSong(originalIdx)
                     } else {
                       onSelectSong(originalIdx)
                     }
@@ -1744,6 +1815,28 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
         )}
       </section>
+        </div>
+        <WorkspacePreviewPane
+          isOpen={isEffectiveWorkspace}
+          width={workspaceWidth}
+          onWidthChange={handleWorkspaceWidthChange}
+          ariaLabel="Song Preview Pane"
+          testId="workspace-preview-pane"
+        >
+          <WorkspaceSongPreview
+            song={effectivePreviewSong}
+            onMaximize={() => {
+              if (effectivePreviewSong && effectivePreviewIdx >= 0) {
+                onSelectSong(effectivePreviewIdx)
+              }
+            }}
+            onTransposeChange={onUpdateSong ? (newOffset) => {
+              if (effectivePreviewSong) {
+                onUpdateSong({ id: effectivePreviewSong.id, transposeOffset: newOffset })
+              }
+            } : undefined}
+          />
+        </WorkspacePreviewPane>
       </div>
       )}
     </div>
