@@ -369,6 +369,27 @@ Example: PROD v1.2.4 -> baseline v1.1.4-dev.0 -> v1.1.4-dev.1 (PROD v1.2.5)
 -> v1.1.4-dev.2 (PROD v1.2.6). This tooling change does not bump current stamps.
 No data migration is required.
 
+### Trusted controller refresh for GH578
+
+The main-targeted draft installs the accepted dev.0 contract and verification
+diagnostics. Main installation requires separate owner authorization and
+confirmation of the production build guard in the bootstrap procedure below.
+The installation commit has no eligible DEV tag or matching PROD tag.
+
+After owner-approved installation, reconcile the exact installed main SHA
+into dev through a separate PR that preserves main ancestry. Confirm the
+release metadata, identity and repository helpers are byte-equal to installed
+main. Run the required checks at the final DEV tip before owner acceptance and
+separate authorization of a new numeric checkpoint tag.
+
+Existing `v1.1.4-dev.1` peels to
+`38f7549e8dd76134b6b716413daf0113003d3e80`, which predates the main installation.
+It cannot contain that installation in its ancestry or equal the reconciled DEV
+tip. Leave it at its existing SHA. The next higher checkpoint on this base,
+`v1.1.4-dev.2`, maps to `v1.2.6`, so using a fresh checkpoint requires the
+owner to reconsider the proposed `v1.2.5` release number under the current
+arithmetic and latest-checkpoint gate.
+
 ## R2 version scheme and owner-only controller bootstrap (#439)
 
 The provisional final old-scheme checkpoint is **v1.0.145-dev.3** (T).
