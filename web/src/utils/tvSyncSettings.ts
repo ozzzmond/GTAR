@@ -8,11 +8,11 @@ export const TV_SYNC_CHANGED = 'gtar-tv-sync-changed'
 export function isTvSyncEnabled(storage: Pick<Storage, 'getItem'> | null = safeStorage()): boolean {
   try {
     const val = storage?.getItem(TV_SYNC_KEY)
-    if (val === '0') return false
     if (val === '1') return true
-    return true
+    if (val === '0') return false
+    return false
   } catch {
-    return true
+    return false
   }
 }
 
@@ -48,5 +48,5 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useTvSyncEnabled(): boolean {
-  return useSyncExternalStore(subscribe, () => isTvSyncEnabled(), () => true)
+  return useSyncExternalStore(subscribe, () => isTvSyncEnabled(), () => isTvSyncEnabled())
 }

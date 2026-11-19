@@ -55,7 +55,7 @@ export function TvPresentationOptions() {
               type="button"
               aria-pressed={chords === visible}
               onClick={() => stageCast2Controller.setChords(visible)}
-              className={`min-h-11 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer ${
+              className={`min-h-[42px] h-[42px] py-1.5 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center ${
                 chords === visible
                   ? 'bg-app-action text-app-on-action border-app-action shadow-sm'
                   : 'bg-app-base text-app-text border-app-border hover:border-app-action'
@@ -71,7 +71,7 @@ export function TvPresentationOptions() {
       <div className="flex flex-col gap-2 pt-1">
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono text-app-muted w-20 shrink-0">TV Zoom</span>
-          <div className="flex items-center bg-app-base rounded-xl border border-app-border flex-1">
+          <div className="flex items-center bg-app-base rounded-xl border border-app-border flex-1 min-h-[42px] h-[42px]">
             <button
               type="button"
               onClick={() => handleStepSize(-2)}

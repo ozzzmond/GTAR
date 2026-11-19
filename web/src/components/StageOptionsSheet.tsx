@@ -180,7 +180,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 type="button"
                 onClick={() => onAutoScrollSpeedChange(Math.max(5, autoScrollSpeed - 5))}
                 aria-label="Decrease auto-scroll speed by 5"
-                className="ui-button min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-app-button hover:brightness-110 text-app-button-text font-bold border border-app-border"
+                className="ui-button min-w-[42px] min-h-[42px] h-[42px] flex items-center justify-center rounded-xl bg-app-button hover:brightness-110 text-app-button-text font-bold border border-app-border"
               >
                 -5
               </button>
@@ -198,7 +198,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 type="button"
                 onClick={() => onAutoScrollSpeedChange(Math.min(180, autoScrollSpeed + 5))}
                 aria-label="Increase auto-scroll speed by 5"
-                className="ui-button min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-app-button hover:brightness-110 text-app-button-text font-bold border border-app-border"
+                className="ui-button min-w-[42px] min-h-[42px] h-[42px] flex items-center justify-center rounded-xl bg-app-button hover:brightness-110 text-app-button-text font-bold border border-app-border"
               >
                 +5
               </button>
@@ -212,7 +212,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
               <button
                 type="button"
                 onClick={() => onNotationChange('chords')}
-                className={`min-h-[44px] py-2 px-3 rounded-xl font-bold transition-all border flex items-center justify-center ${
+                className={`min-h-[42px] h-[42px] py-2 px-3 rounded-xl font-bold transition-all border flex items-center justify-center ${
                   notation === 'chords'
                     ? 'bg-app-action border-app-action text-app-on-action shadow-md'
                     : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -223,7 +223,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
               <button
                 type="button"
                 onClick={() => onNotationChange('numbers')}
-                className={`min-h-[44px] py-2 px-3 rounded-xl font-bold transition-all border flex items-center justify-center ${
+                className={`min-h-[42px] h-[42px] py-2 px-3 rounded-xl font-bold transition-all border flex items-center justify-center ${
                   notation === 'numbers'
                     ? 'bg-app-action border-app-action text-app-on-action shadow-md'
                     : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -246,7 +246,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 type="button"
                 onClick={() => onFontSizeChange(Math.max(12, fontSize - 2))}
                 aria-label="Decrease font size"
-                className="min-h-[44px] min-w-[56px] px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action hover:bg-app-surface active:scale-95 transition-all flex items-center justify-center cursor-pointer"
+                className="min-h-[42px] h-[42px] min-w-[56px] px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action hover:bg-app-surface active:scale-95 transition-all flex items-center justify-center cursor-pointer"
               >
                 A-
               </button>
@@ -260,7 +260,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 type="button"
                 onClick={() => onFontSizeChange(Math.min(38, fontSize + 2))}
                 aria-label="Increase font size"
-                className="min-h-[44px] min-w-[56px] px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action hover:bg-app-surface active:scale-95 transition-all flex items-center justify-center cursor-pointer"
+                className="min-h-[42px] h-[42px] min-w-[56px] px-4 py-2 text-sm font-extrabold text-app-text hover:text-app-action hover:bg-app-surface active:scale-95 transition-all flex items-center justify-center cursor-pointer"
               >
                 A+
               </button>
@@ -272,7 +272,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                   key={p.label}
                   type="button"
                   onClick={() => onFontSizeChange(p.value)}
-                  className={`min-h-[44px] py-2 rounded-xl font-bold transition-all border ${
+                  className={`min-h-[42px] h-[42px] py-2 rounded-xl font-bold transition-all border ${
                     fontSize === p.value
                       ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                       : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -293,7 +293,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                   key={p.label}
                   type="button"
                   onClick={() => onChordScaleChange(p.value)}
-                  className={`min-h-[44px] py-2 rounded-xl font-bold transition-all border ${
+                  className={`min-h-[42px] h-[42px] py-2 rounded-xl font-bold transition-all border ${
                     chordScale === p.value
                       ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                       : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -315,7 +315,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                     key={p.value}
                     type="button"
                     onClick={() => onFontWeightChange(p.value)}
-                    className={`min-h-[44px] py-1.5 rounded-lg font-medium text-[11px] transition-all border flex items-center justify-center ${
+                    className={`min-h-[42px] h-[42px] py-1.5 rounded-lg font-medium text-[11px] transition-all border flex items-center justify-center ${
                       fontWeight === p.value
                         ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                         : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -335,7 +335,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                     key={p.value}
                     type="button"
                     onClick={() => onLineSpacingChange(p.value)}
-                    className={`min-h-[44px] py-1.5 rounded-lg font-medium text-[11px] transition-all border flex items-center justify-center ${
+                    className={`min-h-[42px] h-[42px] py-1.5 rounded-lg font-medium text-[11px] transition-all border flex items-center justify-center ${
                       lineSpacing === p.value
                         ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                         : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -357,7 +357,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                   key={p.value}
                   type="button"
                   onClick={() => onFontFamilyChange(p.value)}
-                  className={`min-h-[44px] py-2 rounded-xl font-medium transition-all border flex items-center justify-center ${
+                  className={`min-h-[42px] h-[42px] py-2 rounded-xl font-medium transition-all border flex items-center justify-center ${
                     fontFamily === p.value
                       ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                       : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -390,7 +390,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 aria-checked={isTwoColumn}
                 aria-label="Two-Column Layout"
                 onClick={() => onToggleTwoColumn(!isTwoColumn)}
-                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+                className="min-w-[42px] min-h-[42px] h-[42px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
               >
                 <div
                   className={`w-11 h-6 rounded-full transition-colors relative p-0.5 border ${
@@ -427,7 +427,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 aria-checked={autoHideControls}
                 aria-label="Auto-Hide Controls"
                 onClick={() => onToggleAutoHideControls(!autoHideControls)}
-                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+                className="min-w-[42px] min-h-[42px] h-[42px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
               >
                 <div
                   className={`w-11 h-6 rounded-full transition-colors relative p-0.5 border ${
@@ -460,7 +460,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 aria-checked={showDock}
                 aria-label="Floating Control Dock"
                 onClick={() => onToggleShowDock(!showDock)}
-                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+                className="min-w-[42px] min-h-[42px] h-[42px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
               >
                 <div
                   className={`w-11 h-6 rounded-full transition-colors relative p-0.5 border ${
@@ -523,7 +523,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 aria-checked={wakeLockActive}
                 aria-label="Keep Screen Awake"
                 onClick={onToggleWakeLock}
-                className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+                className="min-w-[42px] min-h-[42px] h-[42px] inline-flex items-center justify-center p-1 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
               >
                 <div
                   className={`w-11 h-6 rounded-full transition-colors relative p-0.5 border ${
@@ -560,7 +560,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                 type="button"
                 onClick={onToggleFullscreen}
                 aria-label={isFullscreen ? 'Exit Fullscreen Mode' : 'Enter Fullscreen Mode'}
-                className={`min-h-[44px] min-w-[72px] px-4 py-2 rounded-xl font-bold transition-colors flex items-center justify-center border ${
+                className={`min-h-[42px] h-[42px] min-w-[72px] px-4 py-2 rounded-xl font-bold transition-colors flex items-center justify-center border ${
                   isFullscreen
                     ? 'bg-app-action text-app-on-action border-app-action'
                     : 'ui-button bg-app-button hover:brightness-110 text-app-button-text border-app-border'
@@ -590,7 +590,7 @@ export const StageOptionsSheet: React.FC<StageOptionsSheetProps> = ({
                       onSelectQueueIndex?.(idx)
                       onClose()
                     }}
-                    className={`w-full min-h-[44px] flex items-center justify-between p-2 rounded-xl text-left transition-colors ${
+                    className={`w-full min-h-[42px] h-[42px] flex items-center justify-between p-2 rounded-xl text-left transition-colors ${
                       currentQueueIndex === idx
                         ? 'bg-app-action text-app-on-action font-bold'
                         : 'hover:bg-app-surface text-app-text'

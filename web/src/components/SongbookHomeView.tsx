@@ -949,13 +949,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       {/* 1. Breadcrumbs & scope bar (GTAR1 filter bar) */}
       {!isSetlistContext && (
       <div data-testid="songbook-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:flex-wrap sm:justify-between sm:gap-y-2">
-        <nav aria-label="Breadcrumb" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
+        <nav aria-label="Breadcrumb" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-[42px] h-[42px] overflow-hidden whitespace-nowrap">
           {breadcrumbItems.map((item, idx) => (
             <React.Fragment key={idx}>
               {idx > 0 && <ChevronRight className="w-3.5 h-3.5 text-app-muted/70 shrink-0" />}
               {item.target ? (
                 <button type="button" onClick={() => onSelectView?.(item.target!)}
-                  className="min-h-11 shrink-0 text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer">
+                  className="min-h-[42px] h-[42px] flex items-center shrink-0 text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer">
                   {item.label}
                 </button>
               ) : (

@@ -1170,7 +1170,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               type="button"
               data-testid="theme-save-btn"
               onClick={handleSave}
-              className="ui-button px-4 sm:px-5 py-2 rounded-xl bg-app-action hover:bg-app-action/90 text-app-on-action font-bold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+              className="ui-button min-h-[42px] h-[42px] px-4 sm:px-5 py-2 rounded-xl bg-app-action hover:bg-app-action/90 text-app-on-action font-bold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center gap-1.5"
             >
               <Check className="w-4 h-4 stroke-[3]" />
               <span>Save</span>
@@ -1190,7 +1190,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               type="button"
               data-testid="theme-cancel-btn"
               onClick={handleCancel}
-              className="ui-button px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface ui-primary-text text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors"
+              className="ui-button min-h-[42px] h-[42px] px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface ui-primary-text text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors flex items-center justify-center"
             >
               Cancel
             </button>
@@ -1198,7 +1198,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
               type="button"
               data-testid="theme-apply-btn"
               onClick={handleApply}
-              className="ui-button px-4 sm:px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center justify-center"
+              className="ui-button min-h-[42px] h-[42px] px-4 sm:px-5 py-2 rounded-xl bg-app-button hover:bg-app-button text-app-button-text font-semibold text-xs sm:text-sm cursor-pointer transition-all shadow-md active:scale-95 flex items-center justify-center"
             >
               Apply
             </button>

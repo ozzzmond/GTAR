@@ -43,8 +43,8 @@ test('1_TV_SYNC: TV Sync row in Advanced Tools with explicit ON/OFF toggle and d
   const { TvSyncRow } = require('../src/components/TvSyncRow.tsx')
   const { isTvSyncEnabled, setTvSyncEnabled } = require('../src/utils/tvSyncSettings.ts')
 
-  // Default is ON (preserves existing GTAR Stage Preview behavior)
-  assert.equal(isTvSyncEnabled(), true)
+  // Default is OFF for new users / fresh settings
+  assert.equal(isTvSyncEnabled(), false)
 
   let dialogOpened = false
   const root = createRoot(document.getElementById('root'))
@@ -58,17 +58,17 @@ test('1_TV_SYNC: TV Sync row in Advanced Tools with explicit ON/OFF toggle and d
   const toggle = document.querySelector('[data-testid="settings-tv-sync"]')
   assert.ok(toggle, 'TV Sync switch toggle exists')
   assert.equal(toggle.getAttribute('role'), 'switch')
-  assert.equal(toggle.getAttribute('aria-checked'), 'true')
+  assert.equal(toggle.getAttribute('aria-checked'), 'false')
 
-  // Clicking toggle turns TV Sync OFF
-  await act(async () => { toggle.click() })
-  assert.equal(isTvSyncEnabled(), false)
-  assert.equal(localStorage.getItem('gtar_tv_sync'), '0')
-
-  // Clicking toggle again turns TV Sync ON
+  // Clicking toggle turns TV Sync ON
   await act(async () => { toggle.click() })
   assert.equal(isTvSyncEnabled(), true)
   assert.equal(localStorage.getItem('gtar_tv_sync'), '1')
+
+  // Clicking toggle again turns TV Sync OFF
+  await act(async () => { toggle.click() })
+  assert.equal(isTvSyncEnabled(), false)
+  assert.equal(localStorage.getItem('gtar_tv_sync'), '0')
 
   // Clicking launcher opens dialog
   const launcher = document.querySelector('[data-testid="tv-sync-expand"]')
@@ -138,6 +138,23 @@ test('4_CONTROL_HEIGHT: Applicable layout controls standardized to 42px', () => 
     /data-testid="songs-add-song"[\s\S]*?min-h-\[42px\] h-\[42px\]/,
     'Add Song button standardized to 42px'
   )
+  assert.match(
+    songbookSource,
+    /aria-label="Breadcrumb"[\s\S]*?min-h-\[42px\] h-\[42px\]/,
+    'Songbook breadcrumb navigation standardized to 42px'
+  )
+
+  const setlistSource = read('components/SetlistWorkspace.tsx')
+  assert.match(
+    setlistSource,
+    /aria-label="Breadcrumb"[\s\S]*?min-h-\[42px\] h-\[42px\]/,
+    'Setlist breadcrumb navigation standardized to 42px'
+  )
+  assert.match(
+    setlistSource,
+    /crumbButton = 'min-h-\[42px\] h-\[42px\]/,
+    'Setlist crumb button standardized to 42px'
+  )
 
   const explorerNavSource = read('components/MusicExplorerNav.tsx')
   assert.match(
@@ -151,6 +168,44 @@ test('4_CONTROL_HEIGHT: Applicable layout controls standardized to 42px', () => 
     folderTreeSource,
     /min-h-\[42px\] h-\[42px\] min-w-0 flex-1/,
     'Music Explorer folder tree items standardized to 42px'
+  )
+
+  const keyPickerSource = read('components/KeyPickerModal.tsx')
+  assert.match(
+    keyPickerSource,
+    /h-\[42px\] min-h-\[42px\] px-3 py-1\.5 rounded-xl border flex items-center justify-between/,
+    'Transpose key option buttons standardized to 42px'
+  )
+  assert.match(
+    keyPickerSource,
+    /h-\[42px\] min-h-\[42px\] px-4 rounded-lg bg-app-surface text-app-heading/,
+    'KeyPickerModal close button standardized to 42px'
+  )
+
+  const castCssSource = read('components/StageCast2Panel.css')
+  assert.match(
+    castCssSource,
+    /\.cast2 button, \.cast2 input, \.cast2 summary\s*\{[^}]*min-height:\s*42px;/,
+    'TV cast controls standardized to 42px'
+  )
+
+  const editorSource = read('components/DesktopEditor.tsx')
+  assert.match(
+    editorSource,
+    /className="ui-button h-9 min-h-9 px-2\.5 rounded-lg border text-xs font-semibold/,
+    'Editor back button uses compact 36px styling'
+  )
+  assert.match(
+    editorSource,
+    /useState<'code' \| 'raw'>\([\s\S]*?return 'raw'/,
+    'Editor opens in RAW mode by default'
+  )
+
+  const stageViewSource = read('components/StageView.tsx')
+  assert.match(
+    stageViewSource,
+    /<StagePreviewHelp \/>\s*\{?\/\*.*?\*\/\}?\s*<button[^>]*onClick=\{toggleFullscreen\}/,
+    'Help icon sits immediately to the left of the Fullscreen button'
   )
 })
 

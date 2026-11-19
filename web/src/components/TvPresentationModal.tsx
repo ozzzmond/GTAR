@@ -159,7 +159,7 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-bold rounded-lg bg-app-base border border-app-border text-app-text hover:text-app-action hover:border-app-action transition-colors cursor-pointer"
+            className="h-[42px] min-h-[42px] px-4 text-xs font-bold rounded-lg bg-app-base border border-app-border text-app-text hover:text-app-action hover:border-app-action transition-colors cursor-pointer flex items-center justify-center"
           >
             Back to Stage Controls
           </button>

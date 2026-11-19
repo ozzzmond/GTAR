@@ -100,6 +100,7 @@ beforeEach(() => {
   }
   root = createRoot(container)
   clipboardText = ''
+  localStorage.setItem('gtar_editor_mode', 'code')
 })
 
 afterEach(async () => {
@@ -107,6 +108,7 @@ afterEach(async () => {
     await act(async () => root.unmount())
   }
   container.innerHTML = ''
+  localStorage.removeItem('gtar_editor_mode')
 })
 
 test('UX_SECTION_FOLDING: Recognizes standard ChordPro sections and displays folding controls', async () => {

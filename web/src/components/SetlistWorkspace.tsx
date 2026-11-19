@@ -139,14 +139,14 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   }, [openSetlist, songs, songIndex])
   const firstPlayable = entries.findIndex(entry => entry.libraryIndex !== null)
 
-  const crumbButton = `${touch} px-1 rounded-md text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer`
+  const crumbButton = 'min-h-[42px] h-[42px] flex items-center px-1 rounded-md text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer'
   const crumbCurrent = 'ui-primary-text text-app-heading font-semibold truncate'
 
   return (
     <div data-testid="setlist-workspace" className="mb-4">
       {/* Breadcrumbs & scope bar: full-bleed like the Songbook filter bar. Compact: row 1 crumbs | Manage, row 2 Sort | QR ⋯ */}
       <div data-testid="setlist-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
-        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
+        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-[42px] h-[42px] overflow-hidden whitespace-nowrap">
           <button
             type="button"
             data-crumb
