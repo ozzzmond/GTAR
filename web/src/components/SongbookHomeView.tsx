@@ -64,6 +64,11 @@ interface SongbookHomeViewProps {
   onDeleteSong: (index: number) => void
   onRequestTrashSetlist?: (id: string | number) => void
   onDeleteSetlist?: (setlistId: string | number) => boolean
+  onMoveSong?: (setlistId: string | number, index: number, direction: 'up' | 'down') => boolean
+  onRemoveSong?: (setlistId: string | number, index: number) => boolean
+  onAddSongs?: (setlistId: string | number, songIds: Array<string | number>) => boolean | Promise<boolean>
+  onSetlistFolderChange?: (id: string | number, folderId: string | null) => boolean
+  shortcutsBlocked?: boolean
   setlists?: WebSetlist[]
   onSelectSetlistSong?: (setlistId: string | number, songIdx: number) => void
   openSetlistId?: string | number | null
@@ -104,11 +109,15 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   onNewSetlist,
   onOpenSetlists,
   onManageSetlist,
-  onOpenSetlistManager,
   onDeleteSong,
   onRequestTrashSetlist,
   onRenameSetlist,
   onDeleteSetlist,
+  onMoveSong,
+  onRemoveSong,
+  onAddSongs,
+  onSetlistFolderChange,
+  shortcutsBlocked,
   setlists = [],
   onSelectSetlistSong,
   openSetlistId,
@@ -1126,6 +1135,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           <SetlistWorkspace onRequestTrashSetlist={onRequestTrashSetlist}
             key={currentView.type === 'FOLDER' ? currentView.folderId : currentView.type}
             folderName={currentView.type === 'FOLDER' ? folders.find(folder => folder.id === currentView.folderId)?.name : undefined}
+            folders={folders}
+            onSetlistFolderChange={onSetlistFolderChange}
             scope={currentView.type === 'FOLDER' ? 'ALL_SETLISTS' : currentView.type as SetlistWorkspaceScope}
             setlists={sortedSetlists}
             songs={songs}
@@ -1133,6 +1144,10 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             onManageSetlist={onManageSetlist}
             onRenameSetlist={onRenameSetlist}
             onDeleteSetlist={onDeleteSetlist}
+            onMoveSong={onMoveSong}
+            onRemoveSong={onRemoveSong}
+            onAddSongs={onAddSongs}
+            shortcutsBlocked={shortcutsBlocked}
             onPlaySetlistPosition={(setlistId, position) => onSelectSetlistSong?.(setlistId, position)}
             onOpenSong={onSelectSetlistSong}
             openSetlistId={openSetlistId}
@@ -1155,7 +1170,6 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               onExportSetlist: (sl) => exportSingleSetlistJson(sl, songs),
               onExportAllSetlists: () => exportAllDataJson(songs, setlists, folders, tagColors),
               onNewSetlist: onNewSetlist,
-              onManageSetlists: onOpenSetlistManager ?? onOpenSetlists,
             }}
           />
         </>
