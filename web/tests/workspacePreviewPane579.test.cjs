@@ -106,12 +106,16 @@ test('WORKSPACE_STORAGE: defaults to false when uninitialized; persists on chang
 })
 
 test('WORKSPACE_WIDTH: clamps to valid min and max boundaries', () => {
-  assert.equal(clampWorkspaceWidth(100), 280)
-  assert.equal(clampWorkspaceWidth(400), 400)
-  assert.equal(clampWorkspaceWidth(1000), 680)
+  assert.equal(clampWorkspaceWidth(10), 30) // clamps to min 30%
+  assert.equal(clampWorkspaceWidth(40), 40) // default 40%
+  assert.equal(clampWorkspaceWidth(55), 55)
+  assert.equal(clampWorkspaceWidth(90), 70) // clamps to max 70%
 
-  localStorage.setItem(WORKSPACE_WIDTH_STORAGE_KEY, '500')
-  assert.equal(readWorkspaceWidth(), 500)
+  // Legacy pixel migration (e.g. 500px -> ~42%)
+  assert.equal(clampWorkspaceWidth(500), 42)
+
+  localStorage.setItem(WORKSPACE_WIDTH_STORAGE_KEY, '45')
+  assert.equal(readWorkspaceWidth(), 45)
 })
 
 test('WORKSPACE_TOGGLE: renders toggle button in songs toolbar and setlists toolbar on desktop/tablet', async () => {
@@ -458,7 +462,7 @@ test('PREVIEW_PANE_RESIZING: Resize handle supports pointer dragging and keyboar
   const container = document.getElementById('root')
   root = createRoot(container)
 
-  let currentWidth = 440
+  let currentWidth = 40
 
   const Harness = () => {
     const [w, setW] = React.useState(currentWidth)
@@ -480,18 +484,68 @@ test('PREVIEW_PANE_RESIZING: Resize handle supports pointer dragging and keyboar
 
   const resizeHandle = document.querySelector('[data-testid="workspace-resize-handle"]')
   assert.ok(resizeHandle, 'Resize handle must exist when pane is open')
+  assert.equal(resizeHandle.getAttribute('role'), 'separator')
+  assert.equal(resizeHandle.getAttribute('aria-orientation'), 'vertical')
+  assert.equal(resizeHandle.getAttribute('aria-valuemin'), '30')
+  assert.equal(resizeHandle.getAttribute('aria-valuemax'), '70')
+  assert.equal(resizeHandle.getAttribute('aria-valuenow'), '40')
 
-  // Keyboard ArrowLeft expands width
+  // Keyboard ArrowLeft expands width (+2%)
   await act(async () => {
     resizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
   })
-  assert.equal(currentWidth, 456, 'ArrowLeft should widen the pane by 16px')
+  assert.equal(currentWidth, 42, 'ArrowLeft should widen the pane by 2%')
 
-  // Keyboard ArrowRight shrinks width
+  // Keyboard ArrowRight shrinks width (-2%)
   await act(async () => {
     resizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
   })
-  assert.equal(currentWidth, 440, 'ArrowRight should shrink the pane by 16px')
+  assert.equal(currentWidth, 40, 'ArrowRight should shrink the pane by 2%')
+
+  // Keyboard End jumps to max 70%
+  await act(async () => {
+    resizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+  })
+  assert.equal(currentWidth, 70, 'End should expand the pane to max 70%')
+
+  // Keyboard Home jumps to min 30%
+  await act(async () => {
+    resizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+  })
+  assert.equal(currentWidth, 30, 'Home should shrink the pane to min 30%')
+})
+
+test('ULTRAWIDE_RESIZING: Preview Pane scales up to 70% of available Workspace on large and ultrawide displays', async () => {
+  const container = document.getElementById('root')
+  root = createRoot(container)
+
+  // Test clamp with large container widths (ultrawide 3440px monitor, available workspace = 3100px)
+  const ultrawideAvailableWidth = 3100
+  // 30% of 3100 = 930px
+  assert.equal(clampWorkspaceWidth(20, ultrawideAvailableWidth), 30)
+  // 40% default = 1240px
+  assert.equal(clampWorkspaceWidth(40, ultrawideAvailableWidth), 40)
+  // 70% maximum = 2170px
+  assert.equal(clampWorkspaceWidth(70, ultrawideAvailableWidth), 70)
+  // Exceeding 70% clamped to 70%
+  assert.equal(clampWorkspaceWidth(85, ultrawideAvailableWidth), 70)
+
+  // Verify pane renders with percentage width in DOM
+  await act(async () => {
+    root.render(
+      h(WorkspacePreviewPane, {
+        isOpen: true,
+        width: 65,
+        onWidthChange: () => {},
+        ariaLabel: 'Preview Pane',
+        testId: 'workspace-preview-pane',
+      }, h('div', null, 'Content'))
+    )
+  })
+
+  const pane = document.querySelector('[data-testid="workspace-preview-pane"]')
+  assert.ok(pane)
+  assert.equal(pane.style.width, '65%', 'Pane must apply 65% width style')
 })
 
 test('WORKSPACE_SINGLE_COLUMN_GRID: Workspace ON renders exactly 1 column for songs and setlists; Workspace OFF restores responsive 3-column grid', async () => {

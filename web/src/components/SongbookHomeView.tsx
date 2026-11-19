@@ -38,7 +38,7 @@ import {
 } from 'lucide-react'
 import { WorkspacePreviewPane } from './WorkspacePreviewPane'
 import { WorkspaceSongPreview } from './WorkspaceSongPreview'
-import { readWorkspaceEnabled, rememberWorkspaceEnabled, useIsDesktop } from '../utils/workspacePreview'
+import { readWorkspaceEnabled, rememberWorkspaceEnabled, readWorkspaceWidth, rememberWorkspaceWidth, clampWorkspaceWidth, useIsDesktop } from '../utils/workspacePreview'
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus, formatTempoLabel, syncCanonicalDirectives } from '../utils/chordProMetadata'
 import { resolveSongKeys } from '../utils/songKeySemantics'
@@ -165,11 +165,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
   }
   const isEffectiveWorkspace = Boolean(isWorkspaceOpen && isDesktop)
-  const [localWorkspaceWidth, setLocalWorkspaceWidth] = useState<number | null>(null)
+  const [localWorkspaceWidth, setLocalWorkspaceWidth] = useState<number | null>(() => {
+    return readWorkspaceWidth()
+  })
   const workspaceWidth = controlledWorkspaceWidth !== undefined ? controlledWorkspaceWidth : localWorkspaceWidth
   const handleWorkspaceWidthChange = (w: number) => {
     if (onWorkspaceWidthChange) onWorkspaceWidthChange(w)
-    else setLocalWorkspaceWidth(w)
+    else {
+      const clamped = clampWorkspaceWidth(w)
+      setLocalWorkspaceWidth(clamped)
+      rememberWorkspaceWidth(clamped)
+    }
   }
 
   const { colors: tagColors, onAddToTag } = useTagLibrary()

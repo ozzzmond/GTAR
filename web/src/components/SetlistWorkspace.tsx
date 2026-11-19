@@ -8,7 +8,7 @@ import { SetlistsHelp } from './menuHelp'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
 import { SwipeableActionCard } from './SwipeableActionCard'
 import { WorkspacePreviewPane } from './WorkspacePreviewPane'
-import { useIsDesktop } from '../utils/workspacePreview'
+import { useIsDesktop, readWorkspaceWidth, rememberWorkspaceWidth, clampWorkspaceWidth } from '../utils/workspacePreview'
 
 /**
  * #290 S1: GTAR1 setlist workspace (collection + single-setlist views), ported from
@@ -110,11 +110,23 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   menu,
   isWorkspaceOpen = false,
   onToggleWorkspace,
-  workspaceWidth,
+  workspaceWidth: controlledWorkspaceWidth,
   onWorkspaceWidthChange,
 }) => {
   const isDesktop = useIsDesktop()
   const isEffectiveWorkspace = Boolean(isWorkspaceOpen && isDesktop)
+  const [localWorkspaceWidth, setLocalWorkspaceWidth] = useState<number | null>(() => {
+    return readWorkspaceWidth()
+  })
+  const effectiveWorkspaceWidth = controlledWorkspaceWidth !== undefined ? controlledWorkspaceWidth : localWorkspaceWidth
+  const handleWorkspaceWidthChange = (w: number) => {
+    if (onWorkspaceWidthChange) onWorkspaceWidthChange(w)
+    else {
+      const clamped = clampWorkspaceWidth(w)
+      setLocalWorkspaceWidth(clamped)
+      rememberWorkspaceWidth(clamped)
+    }
+  }
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
   const [localOpenSetlistId, setLocalOpenSetlistId] = useState<string | number | null>(null)
   const openSetlistId = controlledOpenSetlistId === undefined ? localOpenSetlistId : controlledOpenSetlistId
@@ -771,8 +783,8 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             </div>
             <WorkspacePreviewPane
               isOpen={isEffectiveWorkspace}
-              width={workspaceWidth ?? null}
-              onWidthChange={onWorkspaceWidthChange ?? (() => {})}
+              width={effectiveWorkspaceWidth}
+              onWidthChange={handleWorkspaceWidthChange}
               ariaLabel="Setlist Detail Pane"
               testId="setlist-workspace-preview-pane"
             >

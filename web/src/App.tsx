@@ -93,6 +93,7 @@ import { canonicalSongKey } from './utils/musicalKey'
 import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { isDevEnv } from './utils/env'
+import { readWorkspaceWidth, rememberWorkspaceWidth, clampWorkspaceWidth } from './utils/workspacePreview'
 import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
 
 // The import dialog pulls in ChordSheetJS (~230 KB); load it only when first opened (#85).
@@ -434,21 +435,12 @@ function LibraryApp() {
   }, [])
 
   const [workspaceWidth, setWorkspaceWidth] = useState<number | null>(() => {
-    try {
-      const raw = Number(localStorage.getItem('gtar_workspace_preview_width'))
-      return Number.isFinite(raw) && raw > 0 ? Math.round(Math.min(680, Math.max(280, raw))) : null
-    } catch {
-      return null
-    }
+    return readWorkspaceWidth()
   })
   const handleWorkspaceWidthChange = useCallback((w: number) => {
-    const clamped = Math.round(Math.min(680, Math.max(280, w)))
+    const clamped = clampWorkspaceWidth(w)
     setWorkspaceWidth(clamped)
-    try {
-      localStorage.setItem('gtar_workspace_preview_width', String(clamped))
-    } catch {
-      /* Storage preference is optional. */
-    }
+    rememberWorkspaceWidth(clamped)
   }, [])
 
   // Display Settings (persisted in localStorage)

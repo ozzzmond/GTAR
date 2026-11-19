@@ -6,13 +6,39 @@ import { useEffect, useState } from 'react'
 export const WORKSPACE_STORAGE_KEY = 'gtar_workspace_preview_enabled'
 export const WORKSPACE_WIDTH_STORAGE_KEY = 'gtar_workspace_preview_width'
 
-export const WORKSPACE_MIN_WIDTH = 280
-export const WORKSPACE_MAX_WIDTH = 680
-export const WORKSPACE_DEFAULT_WIDTH = 440
+export const WORKSPACE_MIN_PERCENT = 30
+export const WORKSPACE_MAX_PERCENT = 70
+export const WORKSPACE_DEFAULT_PERCENT = 40
+
+export const BROWSE_MIN_WIDTH_PX = 280
+export const PREVIEW_MIN_WIDTH_PX = 280
 export const DESKTOP_QUERY = 768
 
-export const clampWorkspaceWidth = (value: number): number =>
-  Math.round(Math.min(WORKSPACE_MAX_WIDTH, Math.max(WORKSPACE_MIN_WIDTH, value)))
+export const clampWorkspaceWidth = (value: number, containerWidth?: number): number => {
+  let minPct = WORKSPACE_MIN_PERCENT
+  let maxPct = WORKSPACE_MAX_PERCENT
+
+  if (containerWidth && containerWidth > 0) {
+    const minFromPx = (PREVIEW_MIN_WIDTH_PX / containerWidth) * 100
+    if (minFromPx > minPct && minFromPx <= maxPct) {
+      minPct = minFromPx
+    }
+    const maxFromBrowse = ((containerWidth - BROWSE_MIN_WIDTH_PX) / containerWidth) * 100
+    if (maxFromBrowse < maxPct && maxFromBrowse >= minPct) {
+      maxPct = maxFromBrowse
+    }
+  }
+
+  // Handle legacy pixel values (> 100) by converting against container or typical 1200px desktop
+  if (value > 100) {
+    const estimated = containerWidth && containerWidth > 0
+      ? (value / containerWidth) * 100
+      : (value / 1200) * 100
+    return Math.round(Math.min(maxPct, Math.max(minPct, estimated)))
+  }
+
+  return Math.round(Math.min(maxPct, Math.max(minPct, value)))
+}
 
 export const readWorkspaceEnabled = (): boolean => {
   try {
