@@ -10,17 +10,22 @@ const R2_CHECKPOINT = Object.freeze({
   tag: 'v1.0.145-dev.3', prodTag: 'v1.2.0', nextDevTag: 'v1.1.0-dev.1',
 })
 
+// promotable=true means a positive iteration; checkpoint metadata and all release
+// gates must still pass. Baselines return false and have no PROD identity.
 function parseDevTag(tag) {
-  const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.([1-9]\d*)$/.exec(tag)
+  const match = /^v1\.([01])\.(0|[1-9]\d*)-dev\.(0|[1-9]\d*)$/.exec(tag)
   if (!match || match[0] !== tag) throw new Error('Invalid canonical DEV tag')
   const minor = Number(match[1]), base = Number(match[2]), iteration = Number(match[3])
   if (minor === 0 && base === 0) throw new Error('Invalid canonical DEV tag')
   if (!Number.isSafeInteger(base) || !Number.isSafeInteger(iteration) || !Number.isSafeInteger(base + iteration)) throw new Error('Unsafe canonical version arithmetic')
+  // Baseline stamps have no promotion identity, even if a stray Git tag exists.
+  if (iteration === 0) return { tag, minor, base, iteration, promotable: false, classification: 'NON_PROMOTABLE', prodTag: null, nextDevTag: null }
   const patch = base + iteration
   const r2 = tag === R2_CHECKPOINT.tag
-  return { tag, minor, base, iteration,
+  return { tag, minor, base, iteration, promotable: true,
     prodTag: r2 ? R2_CHECKPOINT.prodTag : `v1.${minor + 1}.${patch}`,
-    nextDevTag: r2 ? R2_CHECKPOINT.nextDevTag : `v1.${minor}.${patch}-dev.1` }
+    // Preserve the immutable R2 mapping constant; current advice starts at zero.
+    nextDevTag: r2 ? R2_CHECKPOINT.nextDevTag.replace(/-dev\.1$/, '-dev.0') : `v1.${minor}.${patch}-dev.0` }
 }
 
 // Ascending scheme/version order; callers reverse it for latest-first selection.
@@ -109,7 +114,7 @@ function main(args = process.argv.slice(2)) {
   try {
     if (args.length !== 2 || args[0] !== '--tag') throw new Error('Require exactly --tag <canonical DEV tag>')
     const tag = args[1]
-    parseDevTag(tag)
+    const parsed = parseDevTag(tag)
     const root = path.resolve(__dirname, '..')
     const git = (...argv) => execFileSync('git', argv, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
     // Exact ref lookup accepts lightweight and annotated tags, and rejects branch aliases.
@@ -117,8 +122,8 @@ function main(args = process.argv.slice(2)) {
     const taggedCommit = git('rev-parse', '--verify', `refs/tags/${tag}^{commit}`)
     if (taggedCommit !== git('rev-parse', '--verify', 'HEAD')) throw new Error('Peeled tag commit must equal HEAD')
     const legacy = HISTORICAL_TAG_EXCEPTIONS[tag]
-    let promotable = true
-    let statusLine = ''
+    let promotable = parsed.promotable
+    let statusLine = parsed.classification ? `METADATA_STATUS=${parsed.classification}\n` : ''
     if (legacy) {
       if (taggedCommit !== legacy.sha) throw new Error('Historical tag moved; immutable history required')
       const version = JSON.parse(readFileSync(path.join(root, 'web/package.json'), 'utf8')).version

@@ -112,25 +112,40 @@ test('configuration drift, unsupported layouts and missing bindings block before
 })
 test('plan and fresh post-approval main path cannot reach promotion on D1 HOLD', async t => {
   const f = fixture(t), events = []
+  // The real entry point validates DEV_TAG before the independently stubbed plan.
+  const mainEnv = { ...e, DEV_TAG: 'v1.1.4-dev.1' }
   const module = { exports: {} }
   const context = vm.createContext({ require: createRequire(path.resolve(__dirname, '../.github/prod_controller.cjs')), module, __dirname: path.resolve(__dirname, '../.github'),
     process: { cwd: () => f.root }, fetch, AbortSignal, console, setTimeout,
-    p: f.p, project, rows, events, git: f.git })
+    p: f.p, project, rows, events, git: f.git, refreshCalls: 0 })
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../.github/prod_controller.cjs'), 'utf8'), context)
   // Replace independent gates only; exercise the actual D1 gate and main ordering.
-  vm.runInContext(`refresh = () => {}; plan = () => p; remoteRefs = () => ({});
+  vm.runInContext(`refresh = () => { refreshCalls++ }; plan = () => p; remoteRefs = () => ({});
     snapshotContract = () => {}; externalGate = async () => ({ project, protection: 'test' });
     readD1Migrations = async () => rows;
     freshContract = () => events.push('fresh'); emit = value => events.push(value);
     promote = () => { events.push('mutation'); return { state: 'PROD_PROMOTED_BUT_UNVERIFIED' } };`, context)
   for (const mode of ['plan', 'promote']) {
     context.rows = rows.slice(0, 1)
-    await assert.rejects(module.exports.main(mode, e), /HOLD.*0002_songbook_sync.sql/)
+    await assert.rejects(module.exports.main(mode, mainEnv), /HOLD.*0002_songbook_sync.sql/)
     assert.deepEqual(events, [])
     context.rows = rows
-    await module.exports.main(mode, e)
+    await module.exports.main(mode, mainEnv)
     if (mode === 'plan') { assert.equal(events[0].ready, true); assert.equal(JSON.parse(events[0].d1).state, 'PASS') }
     else assert.ok(events.includes('mutation') && events.includes('fresh'))
     events.length = 0
+  }
+  assert.equal(context.refreshCalls, 4)
+  // Baseline and invalid inputs must never reach refresh, D1 gates or promotion.
+  for (const mode of ['plan', 'promote']) {
+    for (const [DEV_TAG, error] of [
+      ['v1.1.4-dev.0', /NON_PROMOTABLE/],
+      [undefined, /Invalid canonical DEV tag/],
+      ['v1.1.4-dev.1a', /Invalid canonical DEV tag/],
+    ]) {
+      await assert.rejects(module.exports.main(mode, { ...mainEnv, DEV_TAG }), error)
+      assert.equal(context.refreshCalls, 4)
+      assert.deepEqual(events, [])
+    }
   }
 })

@@ -58,7 +58,7 @@ test('canonical numeric tags, lightweight and annotated, emit exact metadata', t
 })
 test('rejects noncanonical tags and missing/ambiguous arguments without exports', t => {
   const f = fixture(t)
-  for (const tag of ['v108-dev.8', 'v1.0.0-dev.1', 'v1.0.108-dev.0', 'v1.0.0108-dev.9', 'v1.0.108-dev.09', 'v1.0.108-dev.9A', 'v1.0.108-dev.9aa', 'web-v1.0.108-dev.9', 'v1.1.117', 'v1.0.108-dev.9\n']) rejected(f, '--tag', tag)
+  for (const tag of ['v108-dev.8', 'v1.0.0-dev.1', 'v1.0.108-dev.00', 'v1.0.0108-dev.9', 'v1.0.108-dev.09', 'v1.0.108-dev.9A', 'v1.0.108-dev.9aa', 'web-v1.0.108-dev.9', 'v1.1.117', 'v1.0.108-dev.9\n']) rejected(f, '--tag', tag)
   rejected(f); rejected(f, '--tag'); rejected(f, '--tag', 'v1.0.108-dev.9', '--dev-only')
 })
 test('rejects missing tag and same-named branch', t => {
@@ -129,4 +129,15 @@ test('new zero-base preview CLI accepts numeric checkpoints, rejecting wrong sch
   }
   fs.writeFileSync(f.envFile, 'EXISTING=preserved\n')
   f.git('tag', 'v1.1.1-dev.1'); rejected(f, '--tag', 'v1.1.1-dev.1')
+})
+
+test('baseline preview metadata stays non-promotable with exact tag and package checks', t => {
+  const tag = 'v1.1.4-dev.0', f = fixture(t, tag.slice(1))
+  f.git('tag', tag)
+  const r = f.run('--tag', tag)
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /IS_PROMOTABLE=false\nMETADATA_STATUS=NON_PROMOTABLE\n/)
+  fs.writeFileSync(f.envFile, 'EXISTING=preserved\n')
+  fs.writeFileSync(path.join(f.root, 'web/package.json'), '{"version":"1.1.4-dev.1"}')
+  rejected(f, '--tag', tag)
 })

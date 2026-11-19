@@ -87,7 +87,7 @@ test('direct numeric DEV.5 checkpoint inspects and plans despite a lettered tag'
   const checkpoint = inspectCheckpoint(f.repo, 'v1.0.130-dev.5')
   assert.equal(checkpoint.tag, 'v1.0.130-dev.5')
   assert.equal(checkpoint.sha, f.checkpointSha)
-  assert.equal(checkpoint.promotable, undefined)
+  assert.equal(checkpoint.promotable, true)
   assert.equal(checkpoint.prodTag, 'v1.1.135')
 
   const plan = C.plan(f.repo, 'v1.0.130-dev.5', f.checkpointSha, 'refs/heads/main', f.baselineSha)

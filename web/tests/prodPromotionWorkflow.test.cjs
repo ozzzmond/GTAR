@@ -43,7 +43,7 @@ const deployment = sha => ({ id: 'deployment-id', project_id: 'project-id', proj
 test('shared parser retains version policy, safe arithmetic, suffix rejection', () => {
   assert.equal(parseDevTag('v1.0.108-dev.10').prodTag, 'v1.1.118')
   assert.throws(() => parseDevTag('v1.0.108-dev.10a'), /Invalid canonical DEV/)
-  for (const t of ['v1.0.0108-dev.1', 'v1.0.108-dev.0', 'v1.0.9007199254740991-dev.1', 'v1.0.108-dev.1\n']) assert.throws(() => parseDevTag(t))
+  for (const t of ['v1.0.0108-dev.1', 'v1.0.108-dev.00', 'v1.0.9007199254740991-dev.1', 'v1.0.108-dev.1\n']) assert.throws(() => parseDevTag(t))
 })
 test('valid exact-source plan is read-only and ignores legacy tags', t => {
   const f = fixture(t); f.git('tag', 'app-v1.1.999'); f.git('tag', 'web-v1.1.999')
@@ -414,4 +414,37 @@ test('moved unrelated and lettered tags remain inert during fetch and plan', t =
   for (const tag of ['unrelated', 'v1.1.0-dev.1a', 'v1.0.130-dev.4a']) {
     assert.equal(f.git('rev-parse', `refs/tags/${tag}`), f.mainSha)
   }
+})
+
+test('plan ignores stray higher dev.0 tags; dry-run mapping remains v1.2.4', t => {
+  const f = fixture(t, 'v1.1.3-dev.1')
+  f.git('tag', 'v1.1.999-dev.0')
+  const before = f.git('show-ref'), p = f.plan()
+  assert.equal(p.prodTag, 'v1.2.4')
+  assert.equal(p.nextDevTag, 'v1.1.4-dev.0')
+  assert.equal(f.git('show-ref'), before)
+})
+
+test('baseline plan, promote and CLI modes fail before any mutation', async t => {
+  const f = fixture(t, 'v1.1.4-dev.0'), before = f.git('show-ref')
+  assert.equal(inspectCheckpoint(f.repo, f.tag).promotable, false)
+  assert.throws(f.plan, /NON_PROMOTABLE/)
+  const forbidden = () => { assert.fail('baseline must not invoke mutation or ref inspection') }
+  assert.throws(() => C.promote(f.repo, { tag: f.tag }, forbidden, forbidden), /NON_PROMOTABLE/)
+  for (const mode of ['plan', 'promote']) {
+    await assert.rejects(() => C.main(mode, { DEV_TAG: f.tag }), /NON_PROMOTABLE/)
+  }
+  const adapter = (...args) => {
+    if (args[0] === 'fetch') return ''
+    if (args[0] === 'ls-remote') return f.git('show-ref', '--tags')
+    return f.git(...args)
+  }
+  for (const env of [{ GTAR_VALIDATE_SHA: f.sha }, { CF_PAGES_BRANCH: 'main', CF_PAGES_COMMIT_SHA: f.sha }]) {
+    assert.throws(() => resolveReleaseIdentity(f.repo, env, adapter), /one exact clean DEV/)
+  }
+  const { resolveDevIdentity } = require('../../.github/release_identity.cjs')
+  const dev = resolveDevIdentity(f.repo, { REQUESTED_TAG: f.tag }, adapter)
+  assert.equal(dev.tag, f.tag)
+  assert.equal(dev.promotable, false)
+  assert.equal(f.git('show-ref'), before)
 })
