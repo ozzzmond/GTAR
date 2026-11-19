@@ -495,7 +495,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               <p className="text-xs text-app-muted mt-1">Create a new setlist from the Music Explorer.</p>
             </div>
           ) : (
-            <div className={isEffectiveWorkspace ? "grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-3.5" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"}>
+            <div className={isEffectiveWorkspace ? "grid grid-cols-1 gap-3 sm:gap-3.5" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"}>
               {setlists.map(sl => {
                 const count = sl.songs?.length || 0
                 const created = formatCreated(sl.createdAt)

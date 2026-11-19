@@ -1299,7 +1299,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
           </div>
         ) : (
           <div ref={songGridRef} id="songbook-song-cards" data-testid="song-grid" data-window={songWindow.active ? `${songWindow.start}-${songWindow.end}` : undefined}
-            className={isEffectiveWorkspace ? "grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-3.5" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"}
+            className={isEffectiveWorkspace ? "grid grid-cols-1 gap-3 sm:gap-3.5" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5"}
             style={songWindow.active ? { paddingTop: songWindow.padTop, paddingBottom: songWindow.padBottom } : undefined}>
             {visibleIndexedSongs.map(({ song, originalIdx }) => {
               const isSelected = isEffectiveWorkspace ? originalIdx === effectivePreviewIdx : originalIdx === activeSongIndex

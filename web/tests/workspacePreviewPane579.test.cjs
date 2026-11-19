@@ -493,3 +493,104 @@ test('PREVIEW_PANE_RESIZING: Resize handle supports pointer dragging and keyboar
   })
   assert.equal(currentWidth, 440, 'ArrowRight should shrink the pane by 16px')
 })
+
+test('WORKSPACE_SINGLE_COLUMN_GRID: Workspace ON renders exactly 1 column for songs and setlists; Workspace OFF restores responsive 3-column grid', async () => {
+  const container = document.getElementById('root')
+  root = createRoot(container)
+
+  // 1. SongbookHomeView with Workspace ON
+  await act(async () => {
+    root.render(
+      h(SongbookHomeView, {
+        songs: sampleSongs,
+        activeSongIndex: 0,
+        onSelectSong: () => {},
+        onNewSong: () => {},
+        onOpenSetlists: () => {},
+        onDeleteSong: () => {},
+        onSongMembershipChange: () => true,
+        onCreateSetlistForSong: () => true,
+        setlists: sampleSetlists,
+        isWorkspaceOpen: true,
+        onToggleWorkspace: () => {},
+      })
+    )
+  })
+
+  const songGridOn = document.querySelector('[data-testid="song-grid"]')
+  assert.ok(songGridOn, 'Song grid must exist')
+  assert.ok(songGridOn.className.includes('grid-cols-1'), 'Workspace ON song grid must have grid-cols-1')
+  assert.equal(songGridOn.className.includes('md:grid-cols-2'), false, 'Workspace ON song grid must not have md:grid-cols-2')
+  assert.equal(songGridOn.className.includes('lg:grid-cols-3'), false, 'Workspace ON song grid must not have lg:grid-cols-3')
+  assert.equal(songGridOn.className.includes('xl:grid-cols-2'), false, 'Workspace ON song grid must not have xl:grid-cols-2')
+
+  // 2. SongbookHomeView with Workspace OFF
+  await act(async () => {
+    root.render(
+      h(SongbookHomeView, {
+        songs: sampleSongs,
+        activeSongIndex: 0,
+        onSelectSong: () => {},
+        onNewSong: () => {},
+        onOpenSetlists: () => {},
+        onDeleteSong: () => {},
+        onSongMembershipChange: () => true,
+        onCreateSetlistForSong: () => true,
+        setlists: sampleSetlists,
+        isWorkspaceOpen: false,
+        onToggleWorkspace: () => {},
+      })
+    )
+  })
+
+  const songGridOff = document.querySelector('[data-testid="song-grid"]')
+  assert.ok(songGridOff, 'Song grid must exist')
+  assert.ok(songGridOff.className.includes('grid-cols-1'), 'Workspace OFF song grid must have base grid-cols-1')
+  assert.ok(songGridOff.className.includes('md:grid-cols-2'), 'Workspace OFF song grid must restore md:grid-cols-2')
+  assert.ok(songGridOff.className.includes('lg:grid-cols-3'), 'Workspace OFF song grid must restore lg:grid-cols-3')
+
+  // 3. SetlistWorkspace with Workspace ON
+  await act(async () => {
+    root.render(
+      h(SetlistWorkspace, {
+        songs: sampleSongs,
+        setlists: sampleSetlists,
+        activeSong: null,
+        onSelectSong: () => {},
+        isWorkspaceOpen: true,
+        onToggleWorkspace: () => {},
+      })
+    )
+  })
+
+  const setlistCard0On = document.querySelector('[data-testid="workspace-setlist-card-sl-1"]')
+  assert.ok(setlistCard0On, 'Setlist card must exist')
+  const setlistGridOn = setlistCard0On.closest('.grid')
+  assert.ok(setlistGridOn, 'Setlist grid container must exist')
+  assert.ok(setlistGridOn.className.includes('grid-cols-1'), 'Workspace ON setlist grid must have grid-cols-1')
+  assert.equal(setlistGridOn.className.includes('md:grid-cols-2'), false, 'Workspace ON setlist grid must not have md:grid-cols-2')
+  assert.equal(setlistGridOn.className.includes('lg:grid-cols-3'), false, 'Workspace ON setlist grid must not have lg:grid-cols-3')
+  assert.equal(setlistGridOn.className.includes('xl:grid-cols-2'), false, 'Workspace ON setlist grid must not have xl:grid-cols-2')
+
+  // 4. SetlistWorkspace with Workspace OFF
+  await act(async () => {
+    root.render(
+      h(SetlistWorkspace, {
+        songs: sampleSongs,
+        setlists: sampleSetlists,
+        activeSong: null,
+        onSelectSong: () => {},
+        isWorkspaceOpen: false,
+        onToggleWorkspace: () => {},
+      })
+    )
+  })
+
+  const setlistCard0Off = document.querySelector('[data-testid="workspace-setlist-card-sl-1"]')
+  assert.ok(setlistCard0Off, 'Setlist card must exist')
+  const setlistGridOff = setlistCard0Off.closest('.grid')
+  assert.ok(setlistGridOff, 'Setlist grid container must exist')
+  assert.ok(setlistGridOff.className.includes('grid-cols-1'), 'Workspace OFF setlist grid must have base grid-cols-1')
+  assert.ok(setlistGridOff.className.includes('md:grid-cols-2'), 'Workspace OFF setlist grid must restore md:grid-cols-2')
+  assert.ok(setlistGridOff.className.includes('lg:grid-cols-3'), 'Workspace OFF setlist grid must restore lg:grid-cols-3')
+})
