@@ -29,6 +29,7 @@ const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
 const { SetlistWorkspace } = require('../src/components/SetlistWorkspace.tsx')
 const { WorkspacePreviewPane } = require('../src/components/WorkspacePreviewPane.tsx')
 const { WorkspaceSongPreview } = require('../src/components/WorkspaceSongPreview.tsx')
+const { ExplorerNavigation } = require('../src/components/ExplorerNavigation.tsx')
 const {
   WORKSPACE_STORAGE_KEY,
   WORKSPACE_WIDTH_STORAGE_KEY,
@@ -647,4 +648,51 @@ test('WORKSPACE_SINGLE_COLUMN_GRID: Workspace ON renders exactly 1 column for so
   assert.ok(setlistGridOff.className.includes('grid-cols-1'), 'Workspace OFF setlist grid must have base grid-cols-1')
   assert.ok(setlistGridOff.className.includes('md:grid-cols-2'), 'Workspace OFF setlist grid must restore md:grid-cols-2')
   assert.ok(setlistGridOff.className.includes('lg:grid-cols-3'), 'Workspace OFF setlist grid must restore lg:grid-cols-3')
+})
+
+test('MUSIC_EXPLORER_STICKY_RESTORE_GRIP: restore grip uses sticky positioning relative to app header during scroll', async () => {
+  const container = document.getElementById('root')
+  root = createRoot(container)
+
+  let closedCount = 0
+  const props = {
+    songs: sampleSongs,
+    setlists: sampleSetlists,
+    currentSelection: { type: 'ALL_SONGS' },
+    onSelect: () => {},
+    onNewSong: () => {},
+    onNewSetlist: () => {},
+    isOpen: false,
+    onClose: () => { closedCount++ },
+  }
+
+  // Render ExplorerNavigation and collapse it
+  await act(async () => {
+    root.render(h(ExplorerNavigation, props))
+  })
+
+  const collapseBtn = document.querySelector('[data-testid="explorer-collapse"]')
+  assert.ok(collapseBtn, 'Collapse button must exist')
+  await act(async () => {
+    collapseBtn.click()
+  })
+
+  const grip = document.querySelector('[data-testid="explorer-edge-grip"]')
+  assert.ok(grip, 'Edge grip must exist when collapsed')
+  assert.equal(grip.getAttribute('aria-label'), 'Show Music Explorer')
+  assert.equal(grip.getAttribute('aria-expanded'), 'false')
+
+  // The arrow container inside grip must have sticky positioning and top offset
+  const stickyArrow = grip.querySelector('.sticky')
+  assert.ok(stickyArrow, 'Grip must contain a sticky arrow container')
+  assert.ok(stickyArrow.className.includes('top-[var(--app-header-height,57px)]'), 'Sticky arrow must pin below header')
+  assert.ok(stickyArrow.className.includes('z-20'), 'Sticky arrow must have appropriate z-index')
+
+  // Clicking grip expands the sidebar
+  await act(async () => {
+    grip.click()
+  })
+  const sidebar = document.querySelector('[data-testid="explorer-sidebar"]')
+  assert.ok(sidebar)
+  assert.equal(sidebar.dataset.collapsed, 'false', 'Sidebar must be restored when clicking edge grip')
 })
